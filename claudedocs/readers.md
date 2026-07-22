@@ -35,6 +35,9 @@ after scrolling, the pinned copy is visible only while card chrome is surfaced. 
 top inset never changes during either transition, so hiding chrome cannot move the
 reader or its content offset. Both copies' backgrounds begin at the card's top edge,
 while the favicon is vertically centered against one-, two-, or three-line titles.
+The host applies that stable inset when each card controller is constructed, including
+an off-window card staged for a ±2 scrubber eclipse, so its title is already present
+with final geometry before it crosses onto the screen.
 RSVP has no scroll surface, so its pinned title stays visible through immersion and
 its layout never changes. `ReaderHostFactory(includesArticleTitle: false)` still
 suppresses the scroll reader's old attributed-string title to avoid a third copy.

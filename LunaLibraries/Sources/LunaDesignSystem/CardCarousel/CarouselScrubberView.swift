@@ -28,8 +28,12 @@ import UIKit
 public protocol CarouselScrubberViewDelegate: AnyObject {
     /// A new chip reached the strip's center while the user scrolls it.
     func scrubber(_ scrubber: CarouselScrubberView, didPreview index: Int)
-    /// The strip settled (or a chip was tapped): commit this index.
+    /// The strip settled after user-driven scrolling: commit this index.
     func scrubber(_ scrubber: CarouselScrubberView, didCommit index: Int)
+    /// A chip was tapped directly. Kept distinct from a scroll-settle commit so
+    /// the carousel can animate the card change instead of promoting the live
+    /// scrub preview.
+    func scrubber(_ scrubber: CarouselScrubberView, didTap index: Int)
     /// The chips intersecting the scroll viewport changed. The carousel uses
     /// this bounded window to prepare exact card content for live previews.
     func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet)
@@ -37,6 +41,9 @@ public protocol CarouselScrubberViewDelegate: AnyObject {
 
 public extension CarouselScrubberViewDelegate {
     func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet) {}
+    func scrubber(_ scrubber: CarouselScrubberView, didTap index: Int) {
+        self.scrubber(scrubber, didCommit: index)
+    }
 }
 
 public final class CarouselScrubberView: UIView {
@@ -266,7 +273,7 @@ public final class CarouselScrubberView: UIView {
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard !itemViews.isEmpty else { return }
-        delegate?.scrubber(self, didCommit: index(atX: gesture.location(in: self).x))
+        delegate?.scrubber(self, didTap: index(atX: gesture.location(in: self).x))
     }
 
     /// The chip whose centered position is closest to content offset `x` —

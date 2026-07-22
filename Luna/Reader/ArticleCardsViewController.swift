@@ -703,6 +703,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             case .candidate(_, let candidate, let item):
                 let content = ReaderCardContentViewController(
                     item: item, senderName: nil, knownContent: candidate.content)
+                content.setTopContentInset(Self.contentEdgeFade)
                 content.delegate = self
                 return content
             }
@@ -712,6 +713,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         let item = items[itemIndex]
         let content = ReaderCardContentViewController(item: item, senderName: senderName(for: item))
+        // Apply the title clearance as part of construction, not only after a
+        // card becomes centered. A scrubber jump can stage index ±2 immediately
+        // before the eclipse, and that incoming card must already have the same
+        // title/header geometry as the visible window.
+        content.setTopContentInset(Self.contentEdgeFade)
         content.delegate = self
         return content
     }

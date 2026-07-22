@@ -194,6 +194,52 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(scroll.contentInset.top, stableInset, accuracy: 0.5)
     }
 
+    func testNonAdjacentScrubberTapStagesTitleWithItsFinalInset() throws {
+        let items = (0..<4).map { index in
+            ReadingListItem(
+                seed: "staged-title-\(index)",
+                urlString: "https://example.com/staged-title-\(index)",
+                title: "Staged Article \(index)",
+                dateAdded: Date().addingTimeInterval(TimeInterval(index)),
+                state: .ready,
+                wordCount: 480)
+        }
+        let contents = Dictionary(uniqueKeysWithValues: items.map { item in
+            (item.id, UITestFixtures.sampleArticleContent(title: item.title ?? "Staged Article"))
+        })
+        ReadingListStore.shared.seedForTesting(items: items, contents: contents)
+
+        let controller = ArticleCardsViewController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = controller
+        window.isHidden = false
+        defer { window.isHidden = true }
+        controller.view.layoutIfNeeded()
+
+        let currentContent = try XCTUnwrap(controller.carousel.contentController(at: 0))
+        let currentScroll = try XCTUnwrap(firstSubview(of: UITextView.self, in: currentContent.view))
+        let stableInset = currentScroll.contentInset.top
+        XCTAssertGreaterThan(stableInset, 0)
+
+        let scrubber = try XCTUnwrap(
+            firstSubview(of: CarouselScrubberView.self, in: controller.carousel.view))
+        scrubber.delegate?.scrubber(scrubber, didTap: 2)
+
+        XCTAssertEqual(controller.carousel.currentIndex, 0)
+        let stagedContent = try XCTUnwrap(controller.carousel.contentController(at: 2))
+        stagedContent.view.layoutIfNeeded()
+        let stagedScroll = try XCTUnwrap(firstSubview(of: UITextView.self, in: stagedContent.view))
+        XCTAssertEqual(stagedScroll.contentInset.top, stableInset, accuracy: 0.5)
+        let stagedHeader = try XCTUnwrap(
+            ([stagedContent.view] + allSubviews(in: stagedContent.view)).first {
+                $0.accessibilityTraits.contains(.header)
+            })
+        XCTAssertGreaterThan(stagedHeader.bounds.height, 0)
+
+        RunLoop.current.run(
+            until: Date().addingTimeInterval(CardEclipseTransition.duration + 0.2))
+    }
+
     private func makeArticleController(
         seed: String, title: String, senderName: String? = nil
     ) -> ArticleCardsViewController {

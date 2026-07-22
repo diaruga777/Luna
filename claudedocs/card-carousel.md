@@ -66,10 +66,11 @@ own adapters later). The Downloader-specific adapters live in
   even the first and last chips center exactly; at rest the selected chip is
   always centered, whatever selected it (scrub, tap, or card swipe), with a
   selection haptic whenever a new chip crosses center during a drag. A tap on
-  a chip commits it directly. Reader mini-card taps use the same eclipse
-  transition for every visible target, including the cards two positions from
-  center: an unmounted target is staged at the incoming peek, then its new
-  neighboring window is laid out behind totality before the reveal. Chips
+  a chip commits it directly and always uses the same eclipse transition on
+  both Reader mini cards and Downloader thumbnails, whether the target is
+  adjacent or farther away. An unmounted target is staged at the incoming peek,
+  then its new neighboring window is laid out behind totality before the reveal.
+  Chips
   alpha-fade out near the strip's ends
   (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
   .edgeFadeWidth`: a non-scrolling transparent gradient mask, with no drawn veil).
@@ -117,11 +118,12 @@ deadline discards the unsaved file.
 
 ## The eclipse page transition
 
-`CardEclipseTransition` stages every single-step page as a solar eclipse
-(Reduce Motion and multi-card jumps get a crossfade instead). Its ingress runs
+`CardEclipseTransition` stages every single-step page and every direct scrubber
+tap as a solar eclipse (Reduce Motion and non-tap multi-card jumps get a crossfade
+instead). Its ingress runs
 inside a `UIViewPropertyAnimator`, so the inset pan scrubs it with the finger
 (forward and back); releasing continues to the zenith or reverses to rest. Taps
-and single-step scrub commits run the same transition non-interactively.
+and scrubber taps run the same transition non-interactively.
 
 1. **Ingress (~66%)** — the incoming side card (the moon) slides over the stationary
    outgoing card, growing from `sideScale` to a 1.03 overshoot (guaranteeing total

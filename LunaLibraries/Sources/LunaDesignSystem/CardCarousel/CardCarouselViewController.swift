@@ -838,10 +838,11 @@ public final class CardCarouselViewController: UIViewController {
         scrubPreview.show(at: index, cardCount: count, centeredCardFrame: centeredCardFrame())
     }
 
-    private func commitScrub(to index: Int) {
+    private func commitScrub(to index: Int, isDirectTap: Bool = false) {
         guard count > 0, !isTransitioning else { return }
         let target = min(max(index, 0), count - 1)
-        if scrubPreview.previewContentIndex == target,
+        if !isDirectTap,
+           scrubPreview.previewContentIndex == target,
            let content = scrubPreview.takeContent() {
             promoteScrubPreview(content, to: target)
             return
@@ -850,6 +851,8 @@ public final class CardCarouselViewController: UIViewController {
         if target == currentIndex {
             if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
             scrubber.setSelectedIndex(currentIndex, animated: true)
+        } else if isDirectTap {
+            pageScrubberTap(to: target)
         } else if style.scrubberStyle.animateScrubTransitions {
             pageMiniCardScrubber(to: target)
         } else {
@@ -861,6 +864,17 @@ public final class CardCarouselViewController: UIViewController {
     /// window. Stage that exact card and eclipse to it instead of revealing an
     /// immediate crossfade/layout pass.
     private func pageMiniCardScrubber(to target: Int) {
+        if !UIAccessibility.isReduceMotionEnabled, view.window != nil {
+            runEclipse(to: target)
+        } else {
+            jump(to: target)
+        }
+    }
+
+    /// A direct chip tap always pages through the eclipse, on both the Reader's
+    /// mini cards and the Downloader's thumbnails. Scroll-settle commits keep
+    /// their live-preview promotion behavior.
+    private func pageScrubberTap(to target: Int) {
         if !UIAccessibility.isReduceMotionEnabled, view.window != nil {
             runEclipse(to: target)
         } else {
@@ -1136,6 +1150,10 @@ extension CardCarouselViewController: CarouselScrubberViewDelegate {
 
     public func scrubber(_ scrubber: CarouselScrubberView, didCommit index: Int) {
         commitScrub(to: index)
+    }
+
+    public func scrubber(_ scrubber: CarouselScrubberView, didTap index: Int) {
+        commitScrub(to: index, isDirectTap: true)
     }
 }
 

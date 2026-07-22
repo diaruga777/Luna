@@ -179,21 +179,37 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
 }
 
 @MainActor
-final class CardCarouselMiniCardPagingTests: XCTestCase {
+final class CardCarouselScrubberTapPagingTests: XCTestCase {
 
-    func testTapTwoCardsForwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
-        try await assertMiniCardEclipse(from: 3, to: 5)
+    func testReaderTapTwoCardsForwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
+        try await assertScrubberTapEclipse(style: .miniCards, from: 3, to: 5)
     }
 
-    func testTapTwoCardsBackwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
-        try await assertMiniCardEclipse(from: 3, to: 1)
+    func testReaderTapTwoCardsBackwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
+        try await assertScrubberTapEclipse(style: .miniCards, from: 3, to: 1)
     }
 
-    private func assertMiniCardEclipse(from start: Int, to target: Int) async throws {
+    func testDownloaderTapOneCardUsesEclipse() async throws {
+        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 4)
+    }
+
+    func testDownloaderTapTwoCardsStagesTargetAndUsesEclipse() async throws {
+        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 5)
+    }
+
+    func testDownloaderTapTwoCardsBackwardStagesTargetAndUsesEclipse() async throws {
+        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 1)
+    }
+
+    private func assertScrubberTapEclipse(
+        style scrubberStyle: CarouselScrubberView.Style,
+        from start: Int,
+        to target: Int
+    ) async throws {
         let source = MiniCardPagingDataSource()
         let carousel = CardCarouselViewController()
         var style = CardCarouselStyle()
-        style.scrubberStyle = .miniCards
+        style.scrubberStyle = scrubberStyle
         carousel.style = style
         carousel.dataSource = source
 
@@ -204,7 +220,7 @@ final class CardCarouselMiniCardPagingTests: XCTestCase {
         carousel.reloadData(centeringAt: start)
 
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
-        scrubber.delegate?.scrubber(scrubber, didCommit: target)
+        scrubber.delegate?.scrubber(scrubber, didTap: target)
 
         XCTAssertEqual(carousel.currentIndex, start,
                        "The target must not replace the current card before totality")

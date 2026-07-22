@@ -45,7 +45,8 @@ own adapters later). The Downloader-specific adapters live in
 
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
-  leaves center, keeping position.
+  leaves center, keeping position. Downloader's unsaved pasteboard preview is the
+  deliberate exception: it stays paused until the user explicitly taps Play.
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
   playback timestamp (one card-width ≈ full duration). The card itself never pans.
 - **Paging** happens outside the card: a horizontal drag on the insets left/right of
@@ -97,11 +98,15 @@ seek/mute/centered hooks). Generic implementations:
 
 Downloader adds `UndownloadedMediaCardContentViewController` (download glyph +
 progress ring; observes `.downloaderJobProgressChanged` itself, keyed by its own
-source URL) and a transient pasteboard card. A supported, non-duplicate media URL
-detected on the clipboard is inserted at index zero, shows the URL and a Download
-button, and begins the normal Downloader-owned job only when tapped. The card and
-the floating footer use the moon-horizon progress presentation while that job runs;
-the clipboard change count is suppressed after consumption until it changes again.
+source URL) and a transient pasteboard pipeline. Privacy-safe probable-URL pattern
+detection inserts a paste-icon placeholder at index zero without reading its value.
+Paging onto it performs the user-initiated read, validates Downloader ownership,
+and immediately stages the media to a one-hour temporary file while the card shows
+moon-horizon progress. Completion replaces it with a normal image/GIF/video card
+and a real thumbnail in the scrubber, but suppresses center autoplay. The first
+explicit Play tap (or a still-image card tap) commits it to `SavedMediaStore`, the
+shared reading list, and Photos. Changing the pasteboard or reaching the one-hour
+deadline discards the unsaved file.
 
 ## The eclipse page transition
 
@@ -262,13 +267,18 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - The cards root has NO header bar.
 - A new pasteboard URL is represented as a synthetic leading card (so it is
   visible as the left peek) and as a `doc.on.clipboard` mini-card in the scrubber.
-  Tapping the card/chip or swiping onto it saves through the normal ingest
-  pipeline. The same action is available from the outer reader's top-left while
-  the root article layer is showing; inline reader depth replaces it with Back.
-  Availability uses `UIPasteboard.detectPatterns(.probableWebURL)`, so opening
-  Luna does not raise a paste-permission prompt; the URL value is read only after
-  the user taps/swipes to add it. The consumed pasteboard change-count is
-  suppressed until the clipboard changes.
+  `UIPasteboard.detectPatterns(.probableWebURL)` is the only launch/foreground
+  probe, so opening Luna does not read the value or raise a paste-permission
+  prompt. Paging onto the placeholder (or tapping it when there are no normal
+  cards) performs the actual read. A readable Reader-owned URL is fetched into a
+  full, unsaved live reader card and receives normal title/favicon scrubber chrome;
+  it persists only when reading activity dismisses the carousel chrome. The old
+  top-left paste button is gone. Unsupported/invalid results become an “Invalid
+  paste” card. A read taking at least 250 ms is treated only as a hint that a
+  permission sheet was shown, enabling the inline tappable Settings guidance;
+  fast failures simply say “Invalid URL.” The hint is never cached as permission
+  state. The candidate disappears when the pasteboard changes, and a consumed
+  change-count stays suppressed until the next change.
 - Settings and Share flank the mini-card scrubber in Liquid Glass circles instead of
   consuming header space. Friends is reached from Settings. The card begins
   directly below the safe area, so the reader's own header pills own the top row.

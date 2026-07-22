@@ -114,10 +114,13 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   exactly one concrete media file URL (no source link, text, or lazy provider), so it shows
   the media preview and supports normal file destinations. The current Photos-backed card
   is exported to a friendly-named temporary file in advance to minimize tap latency. A
-  supported non-duplicate URL on the
-  pasteboard appears as a transient leading card with the URL and a Download button.
-  Tapping it creates the durable undownloaded row, starts the Downloader-owned transfer,
-  and switches to the normal moon-horizon/progress UI.
+  probable URL on the pasteboard appears as a transient leading paste-icon card
+  without reading the value. Paging onto it performs the read and validates that
+  Downloader owns the URL, then starts a moon-horizon download into a one-hour
+  temporary file without creating a durable row. The completed media replaces the
+  placeholder as a normal full card and scrubber thumbnail, but starts paused.
+  Explicit Play (or tapping a still image) commits it to Luna and Photos; pasteboard
+  changes and the one-hour deadline delete an uncommitted file.
 - **Share and action extensions** — `SavedNonTextualViewController` retains its inline
   preview state machine (`pending`, `downloading`, `ready`, `alreadyDownloaded`, `failed`).
   Before deciding to auto-download or wait for a tap, it checks

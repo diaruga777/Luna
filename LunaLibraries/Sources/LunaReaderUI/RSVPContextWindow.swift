@@ -21,11 +21,16 @@ public enum RSVPContextWindow {
     /// `shownRange` is the half-open word-index range currently on screen —
     /// excluded from the returned context — `index..<(index + 1)` for a
     /// single word, or (RSVP's Phrases mode) a phrase's `wordRange`. Returns
-    /// nil when `shownRange` doesn't start within `words`.
+    /// nil when `shownRange` is empty or falls outside `words`. A negative
+    /// radius is treated as zero.
     public static func context(
         around shownRange: Range<Int>, words: [RSVPWord], radius: Int
     ) -> Context? {
-        guard words.indices.contains(shownRange.lowerBound) else { return nil }
+        guard !shownRange.isEmpty,
+              words.indices.contains(shownRange.lowerBound),
+              shownRange.upperBound <= words.endIndex
+        else { return nil }
+        let radius = max(0, radius)
         let precedingStart = max(0, shownRange.lowerBound - radius)
         let followingEnd = min(words.count, shownRange.upperBound + radius)
         return Context(

@@ -63,6 +63,18 @@ final class RSVPWordDisplayTests: XCTestCase {
         XCTAssertEqual(range, NSRange(location: 1, length: 1))
     }
 
+    func testNegativeORPIndexClampsToFirstCharacter() {
+        let highlight = UIColor.systemRed
+        let attributed = RSVPWordDisplay.attributedText(
+            for: word("hi", orpIndex: -4), font: font, highlightColor: highlight)
+        let color = attributed.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor
+        XCTAssertEqual(color, highlight)
+
+        let offsets = RSVPWordDisplay.orpOffsets(for: word("hi", orpIndex: -4), font: font)
+        XCTAssertEqual(offsets.prefixWidth, 0)
+        XCTAssertGreaterThan(offsets.orpWidth, 0)
+    }
+
     func testOrpOffsetsMatchPrefixAndLetterWidths() {
         let offsets = RSVPWordDisplay.orpOffsets(for: word("hello"), font: font)
         let expectedPrefix = NSAttributedString(string: "h", attributes: [.font: font]).size().width

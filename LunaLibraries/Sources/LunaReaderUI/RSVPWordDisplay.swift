@@ -25,7 +25,7 @@ public enum RSVPWordDisplay {
             string: word.text, attributes: [.font: font, .foregroundColor: textColor])
         let characters = Array(word.text)
         guard !characters.isEmpty else { return attributed }
-        let orp = min(word.orpIndex, characters.count - 1)
+        let orp = min(max(word.orpIndex, 0), characters.count - 1)
         let orpStart = String(characters.prefix(orp)).utf16.count
         let orpLength = String(characters[orp]).utf16.count
         attributed.addAttribute(
@@ -41,7 +41,7 @@ public enum RSVPWordDisplay {
     public static func orpOffsets(for word: RSVPWord, font: UIFont) -> (prefixWidth: CGFloat, orpWidth: CGFloat) {
         let characters = Array(word.text)
         guard !characters.isEmpty else { return (0, 0) }
-        let orp = min(word.orpIndex, characters.count - 1)
+        let orp = min(max(word.orpIndex, 0), characters.count - 1)
         let prefixWidth = NSAttributedString(
             string: String(characters.prefix(orp)), attributes: [.font: font]).size().width
         let orpWidth = NSAttributedString(

@@ -53,6 +53,23 @@ final class RSVPContextWindowTests: XCTestCase {
         XCTAssertNil(RSVPContextWindow.context(around: 5..<6, words: all, radius: 2))
     }
 
+    func testContextIsNilWhenShownRangeEndsOutOfBounds() {
+        let all = words((0..<3).map { "w\($0)" })
+        XCTAssertNil(RSVPContextWindow.context(around: 1..<4, words: all, radius: 2))
+    }
+
+    func testContextIsNilForEmptyRange() {
+        let all = words((0..<3).map { "w\($0)" })
+        XCTAssertNil(RSVPContextWindow.context(around: 1..<1, words: all, radius: 2))
+    }
+
+    func testNegativeRadiusProducesEmptyContext() {
+        let all = words((0..<3).map { "w\($0)" })
+        let context = RSVPContextWindow.context(around: 1..<2, words: all, radius: -1)
+        XCTAssertEqual(context?.preceding, "")
+        XCTAssertEqual(context?.following, "")
+    }
+
     func testContextOnEmptyDocumentIsNil() {
         XCTAssertNil(RSVPContextWindow.context(around: 0..<1, words: [], radius: 5))
     }

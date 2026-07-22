@@ -117,6 +117,20 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(textView.contentInset.top, stableInset, accuracy: 0.5)
     }
 
+    func testIncomingSenderAppearsBelowTitleWithoutOverlappingIt() throws {
+        let title = "An emailed article"
+        let controller = makeArticleController(
+            seed: "sender-title", title: title, senderName: "Ada Lovelace")
+        let pinned = try XCTUnwrap(
+            headerViews(labelled: title, in: controller.view).first { !hasScrollViewAncestor($0) })
+        let labels = allSubviews(in: pinned).compactMap { $0 as? UILabel }
+        let titleLabel = try XCTUnwrap(labels.first { $0.text == title })
+        let senderLabel = try XCTUnwrap(labels.first { $0.text == "From Ada Lovelace" })
+
+        XCTAssertGreaterThanOrEqual(senderLabel.frame.minY, titleLabel.frame.maxY)
+        XCTAssertLessThanOrEqual(senderLabel.frame.maxY, pinned.bounds.maxY)
+    }
+
     func testRSVPTitleRemainsFixedWhenCardChromeIsDismissed() throws {
         let title = "RSVP Stable Title"
         let controller = makeArticleController(seed: "rsvp-title", title: title)
@@ -180,10 +194,17 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(scroll.contentInset.top, stableInset, accuracy: 0.5)
     }
 
-    private func makeArticleController(seed: String, title: String) -> ArticleCardsViewController {
-        let item = ReadingListItem(
+    private func makeArticleController(
+        seed: String, title: String, senderName: String? = nil
+    ) -> ArticleCardsViewController {
+        var item = ReadingListItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: title,
             dateAdded: Date(), state: .ready, wordCount: 480)
+        if let senderName {
+            item.captureSource = .email
+            item.channelName = senderName
+            item.incomingSenderEmail = "sender@example.com"
+        }
         let content = UITestFixtures.sampleArticleContent(title: title)
         ReadingListStore.shared.seedForTesting(items: [item], contents: [item.id: content])
         let controller = ArticleCardsViewController()

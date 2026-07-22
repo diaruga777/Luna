@@ -989,10 +989,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     weak var delegate: ReaderCardContentDelegate?
 
     private let item: ReadingListItem
-    private let senderName: String?
     private let statusLabel = UILabel()
-    private let senderBadge = UIVisualEffectView(effect: GlassStyle.barEffect())
-    private let senderLabel = UILabel()
     /// The pinned copy shown while card chrome is surfaced and the scrollable
     /// copy that permanently occupies the reader's top content inset. Keeping
     /// both copies laid out identically lets visibility change without changing
@@ -1014,10 +1011,15 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
     init(item: ReadingListItem, senderName: String?, knownContent: ArticleContent? = nil) {
         self.item = item
-        self.senderName = senderName
         self.knownContent = knownContent
-        self.titleHeader = ReaderCardTitleHeaderView(title: item.title ?? "Untitled")
-        self.scrollTitleHeader = ReaderCardTitleHeaderView(title: item.title ?? "Untitled")
+        let senderSubtitle = senderName.flatMap { name -> String? in
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : "From \(trimmed)"
+        }
+        self.titleHeader = ReaderCardTitleHeaderView(
+            title: item.title ?? "Untitled", subtitle: senderSubtitle)
+        self.scrollTitleHeader = ReaderCardTitleHeaderView(
+            title: item.title ?? "Untitled", subtitle: senderSubtitle)
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
@@ -1036,7 +1038,6 @@ private final class ReaderCardContentViewController: CardContentViewController,
         view.backgroundColor = .clear
         embedReaderIfPossible()
         mountTitleHeader()
-        mountSenderBadgeIfNeeded()
 
         if reader == nil {
             statusLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -1057,32 +1058,6 @@ private final class ReaderCardContentViewController: CardContentViewController,
                 statusLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             ])
         }
-    }
-
-    private func mountSenderBadgeIfNeeded() {
-        guard let senderName, !senderName.isEmpty else { return }
-        senderBadge.layer.cornerRadius = 14
-        senderBadge.clipsToBounds = true
-        senderBadge.isUserInteractionEnabled = false
-        senderBadge.translatesAutoresizingMaskIntoConstraints = false
-        senderLabel.text = "From \(senderName)"
-        senderLabel.font = .systemFont(ofSize: 12, weight: .semibold)
-        senderLabel.textColor = LunaColors.secondaryText
-        senderLabel.lineBreakMode = .byTruncatingTail
-        senderLabel.translatesAutoresizingMaskIntoConstraints = false
-        senderBadge.contentView.addSubview(senderLabel)
-        view.addSubview(senderBadge)
-        NSLayoutConstraint.activate([
-            senderBadge.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            senderBadge.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            senderBadge.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 48),
-            senderBadge.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -48),
-            senderBadge.heightAnchor.constraint(equalToConstant: 28),
-            senderLabel.leadingAnchor.constraint(equalTo: senderBadge.contentView.leadingAnchor, constant: 11),
-            senderLabel.trailingAnchor.constraint(equalTo: senderBadge.contentView.trailingAnchor, constant: -11),
-            senderLabel.centerYAnchor.constraint(equalTo: senderBadge.contentView.centerYAnchor),
-        ])
-        senderBadge.accessibilityLabel = "From \(senderName)"
     }
 
     private func mountTitleHeader() {
@@ -1360,9 +1335,10 @@ private final class ReaderCardContentViewController: CardContentViewController,
 private final class ReaderCardTitleHeaderView: UIView {
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
     private var topInset: CGFloat = 0
 
-    init(title: String) {
+    init(title: String, subtitle: String?) {
         super.init(frame: .zero)
         backgroundColor = LunaColors.background
 
@@ -1378,10 +1354,20 @@ private final class ReaderCardTitleHeaderView: UIView {
         titleLabel.numberOfLines = 3
         titleLabel.lineBreakMode = .byTruncatingTail
 
+        subtitleLabel.text = subtitle
+        subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
+        subtitleLabel.adjustsFontForContentSizeCategory = true
+        subtitleLabel.textColor = LunaColors.secondaryText
+        subtitleLabel.numberOfLines = 1
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.isHidden = subtitle == nil
+
         addSubview(iconView)
         addSubview(titleLabel)
+        addSubview(subtitleLabel)
         isAccessibilityElement = true
         accessibilityLabel = title
+        accessibilityValue = subtitle
         accessibilityTraits = .header
     }
 
@@ -1404,7 +1390,12 @@ private final class ReaderCardTitleHeaderView: UIView {
         let titleWidth = max(width - 20 - 30 - 12 - 20, 0)
         let titleHeight = titleLabel.sizeThatFits(
             CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height
-        return topInset + max(30, titleHeight) + 20
+        let subtitleHeight = subtitleLabel.isHidden
+            ? 0
+            : subtitleLabel.sizeThatFits(
+                CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height
+        let textHeight = titleHeight + (subtitleHeight > 0 ? 4 + subtitleHeight : 0)
+        return topInset + max(30, textHeight) + 20
     }
 
     override func layoutSubviews() {
@@ -1415,10 +1406,22 @@ private final class ReaderCardTitleHeaderView: UIView {
             x: 20, y: topInset + (contentHeight - iconSide) / 2,
             width: iconSide, height: iconSide)
         let titleX = iconView.frame.maxX + 12
-        titleLabel.frame = CGRect(
-            x: titleX, y: topInset + 10,
-            width: max(bounds.width - titleX - 20, 0),
-            height: max(contentHeight - 20, 0))
+        let textWidth = max(bounds.width - titleX - 20, 0)
+        if subtitleLabel.isHidden {
+            titleLabel.frame = CGRect(
+                x: titleX, y: topInset + 10,
+                width: textWidth, height: max(contentHeight - 20, 0))
+            subtitleLabel.frame = .zero
+        } else {
+            let titleHeight = titleLabel.sizeThatFits(
+                CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height
+            titleLabel.frame = CGRect(
+                x: titleX, y: topInset + 10, width: textWidth, height: titleHeight)
+            subtitleLabel.frame = CGRect(
+                x: titleX, y: titleLabel.frame.maxY + 4,
+                width: textWidth,
+                height: max(0, bounds.maxY - titleLabel.frame.maxY - 14))
+        }
     }
 
     private static var readerTitleFont: UIFont {

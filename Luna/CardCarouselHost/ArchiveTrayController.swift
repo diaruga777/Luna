@@ -37,6 +37,9 @@ final class ArchiveTrayController: NSObject {
     private var progress: CGFloat = 0
     private var panStartProgress: CGFloat = 0
     private var laidOutSize = CGSize.zero
+    /// The closed tray is wholly offscreen until its host reaches the rightmost
+    /// card. Changing this state slides just the vertical pull tab into view.
+    private var pullAvailable = false
 
     private static let peek: CGFloat = 13
     private static let tabWidth: CGFloat = 30
@@ -113,9 +116,30 @@ final class ArchiveTrayController: NSObject {
         collection.reloadData()
     }
 
+    /// Re-evaluates the host's right-edge condition. Paging onto the last card
+    /// animates the closed tab from fully offscreen to its normal peek; paging
+    /// away retracts it and closes an open tray defensively.
+    func refreshPullAvailability(animated: Bool) {
+        let available = canPull()
+        guard available != pullAvailable else { return }
+        pullAvailable = available
+        if !available { progress = 0 }
+        let changes = { self.applyProgress() }
+        if animated, laidOutSize.width > 0, !UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(
+                withDuration: 0.32, delay: 0,
+                usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
+                options: [.allowUserInteraction, .beginFromCurrentState], animations: changes)
+        } else {
+            changes()
+        }
+    }
+
     func layout(in bounds: CGRect, safeAreaInsets: UIEdgeInsets) {
         guard bounds.size.width > 0 else { return }
+        let isFirstLayout = laidOutSize == .zero
         laidOutSize = bounds.size
+        if isFirstLayout { pullAvailable = canPull() }
         dismissControl.frame = bounds
         let width = bounds.width * 2 / 3
         let top = safeAreaInsets.top + 8
@@ -176,7 +200,11 @@ final class ArchiveTrayController: NSObject {
 
     private func applyProgress() {
         let width = laidOutSize.width * 2 / 3
-        let closedX = laidOutSize.width - Self.peek
+        // `tab` extends `tabWidth` points left of the tray. Moving the tray to
+        // screenWidth + tabWidth therefore hides both tray and tab exactly.
+        let closedX = pullAvailable
+            ? laidOutSize.width - Self.peek
+            : laidOutSize.width + Self.tabWidth
         let openX = laidOutSize.width - width
         tray.frame.origin.x = closedX + (openX - closedX) * progress
         let shift = -laidOutSize.width * 0.5 * progress
@@ -188,6 +216,11 @@ final class ArchiveTrayController: NSObject {
         tray.layer.shadowRadius = 18
         tray.layer.shadowOffset = CGSize(width: -5, height: 0)
     }
+
+    #if DEBUG
+    var isPullAvailableForTesting: Bool { pullAvailable }
+    var trayFrameForTesting: CGRect { tray.frame }
+    #endif
 }
 
 extension ArchiveTrayController: UIGestureRecognizerDelegate {

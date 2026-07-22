@@ -238,6 +238,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
         carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())
+        refreshArchivePullAvailability(animated: false)
         updateShareButton()
     }
 
@@ -969,6 +970,7 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
 extension SavedMediaCardsViewController: CardCarouselDelegate {
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
+        refreshArchivePullAvailability(animated: true)
         updateShareButton()
         if let state = renderedPasteboardState, index == 0 {
             if case .placeholder = state, !items.isEmpty {

@@ -23,8 +23,10 @@ own adapters later). The Downloader-specific adapters live in
 - Both roots have no header bar. The Downloader scrub strip is bounded between
   the inner edges of the 44pt Liquid Glass Settings and Share circles (64pt
   horizontal inset), with no edge blur that could show as a band on black.
-  Its thumbnail pitch uses a 20pt gap. The Reader retains its edge-to-edge,
-  fade-blurred miniature-card strip. Downloader's Share circle
+  Its thumbnail pitch uses a 20pt gap. The Reader's miniature-card strip runs
+  exactly from the Settings circle's trailing edge to the Share circle's leading
+  edge. Its mini cards disappear through a transparent alpha mask near those
+  bounds; no blur/white veil is drawn in either appearance. Downloader's Share circle
   exports the centered media file directly through the system share sheet and is
   hidden for pasteboard/undownloaded cards. Downloader has no Friends or Add
   button on the root; Friends remains reachable through Settings. Its 9:16
@@ -35,9 +37,10 @@ own adapters later). The Downloader-specific adapters live in
 ## Interaction model
 
 - **Archive tray**: Reader and Downloader each keep a distinct, non-card tray just
-  beyond the carousel's right edge. Its vertical `archive` tab remains slightly
-  visible, but the tray is absent from the carousel count and scrubber. A leftward
-  pull is accepted only on the rightmost card (or the empty state), opens the tray
+  beyond the carousel's right edge. Its vertical `archive` tab is fully offscreen
+  away from the rightmost card, then spring-peeks in when the rightmost card becomes
+  centered (the empty state also exposes it). The tray is absent from the carousel
+  count and scrubber. A leftward pull opens the tray
   to 2/3 screen width, and shifts the card/empty UX left by 1/2 screen width. The
   gesture is interactive in both directions; tapping the exposed outside area
   spring-dismisses it. `ArchiveTrayController` owns this shared presentation and
@@ -63,9 +66,9 @@ own adapters later). The Downloader-specific adapters live in
   even the first and last chips center exactly; at rest the selected chip is
   always centered, whatever selected it (scrub, tap, or card swipe), with a
   selection haptic whenever a new chip crosses center during a drag. A tap on
-  a chip commits it directly. Chips fade-blur out near the strip's ends
+  a chip commits it directly. Chips alpha-fade out near the strip's ends
   (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
-  .edgeFadeWidth`: an alpha gradient mask plus gradient-masked blur veils).
+  .edgeFadeWidth`: a non-scrolling transparent gradient mask, with no drawn veil).
   The Downloader opts into `autoplaysScrubPreviewContent`: as each thumbnail
   reaches the strip's center, the large overlay mounts that card's real content
   immediately and autoplays it using the carousel's current mute state

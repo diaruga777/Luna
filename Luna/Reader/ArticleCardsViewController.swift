@@ -579,6 +579,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
         carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())
+        refreshArchivePullAvailability(animated: false)
         updateReaderChrome()
     }
 
@@ -826,6 +827,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
+        refreshArchivePullAvailability(animated: true)
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:

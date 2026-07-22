@@ -83,6 +83,10 @@ class CardCarouselHostViewController: UIViewController {
         archiveTray = ArchiveTrayController(host: self, shiftedViews: views, canPull: canPull)
     }
 
+    final func refreshArchivePullAvailability(animated: Bool) {
+        archiveTray?.refreshPullAvailability(animated: animated)
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         archiveTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)

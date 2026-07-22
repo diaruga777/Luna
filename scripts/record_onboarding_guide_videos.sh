@@ -2,9 +2,10 @@
 # Regenerates the PiP guide clips from the live UIKit onboarding illustration.
 #
 # This runs before Copy Bundle Resources for every Luna app target. It does no
-# work unless OnboardingAnimationView.swift changed (or a generated clip is
-# missing), and only attempts recording from a Debug iOS Simulator build. Device
-# and Archive builds stay fast and use the last known-good bundled clips.
+# work unless one of the OnboardingAnimationView source files changed (or a
+# generated clip is missing), and only attempts recording from a Debug iOS
+# Simulator build. Device and Archive builds stay fast and use the last
+# known-good bundled clips.
 
 set -u
 
@@ -23,7 +24,8 @@ if [ "${CONFIGURATION:-}" != "Debug" ] || [ "${PLATFORM_NAME:-}" != "iphonesimul
     exit 0
 fi
 
-SOURCE_FILE="${SRCROOT}/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift"
+SOURCE_DIR="${SRCROOT}/LunaLibraries/Sources/LunaSocialUI"
+SOURCE_FILE="${SOURCE_DIR}/OnboardingAnimationView.swift"
 RESOURCE_DIR="${SRCROOT}/Luna/Resources"
 STAMP_FILE="${RESOURCE_DIR}/.onboarding-guide-video-source.sha256"
 GUIDES="\
@@ -39,7 +41,15 @@ if [ ! -f "$SOURCE_FILE" ]; then
     exit 0
 fi
 
-source_hash=$(/usr/bin/shasum -a 256 "$SOURCE_FILE" | /usr/bin/awk '{ print $1 }')
+# The implementation is split across extensions. Hashing only the base file
+# would miss scene edits and leave bundled guide videos stale.
+source_hash=$(
+    LC_ALL=C
+    export LC_ALL
+    for source in "${SOURCE_DIR}"/OnboardingAnimationView*.swift; do
+        /usr/bin/shasum -a 256 "$source" | /usr/bin/awk '{ print $1 }'
+    done | /usr/bin/shasum -a 256 | /usr/bin/awk '{ print $1 }'
+)
 
 guides_exist() {
     for guide in $GUIDES; do
@@ -111,9 +121,18 @@ recording_dir=$(/usr/bin/mktemp -d "${TARGET_TEMP_DIR:-${TMPDIR:-/tmp}}/Onboardi
 
 derived_data="${recording_dir}/DerivedData"
 log_file="${recording_dir}/recording.log"
-echo "note: Recording onboarding PiP guides from OnboardingAnimationView.swift for Reader, Downloader, and Price Tracker."
+echo "note: Recording onboarding PiP guides from the OnboardingAnimationView sources for Reader, Downloader, and Price Tracker."
 
-if ! env \
+# A build phase exports hundreds of Xcode build settings. If inherited by the
+# nested recorder build, values such as BUILD_DIR redirect unrelated SwiftPM
+# targets into the host app and produce duplicate-output failures. Start the
+# nested build with only the small environment it actually needs.
+if ! /usr/bin/env -i \
+    HOME="${HOME:-}" \
+    USER="${USER:-}" \
+    PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    DEVELOPER_DIR="${DEVELOPER_DIR:-}" \
     LUNA_GUIDE_VIDEO_RECORDING=1 \
     TEST_RUNNER_RECORD_GUIDE_VIDEOS=1 \
     TEST_RUNNER_GUIDE_VIDEO_OUTPUT_DIR="$recording_dir" \

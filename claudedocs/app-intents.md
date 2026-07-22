@@ -52,6 +52,13 @@ same screenshot or unhandled outcome that would have occurred without
 OnScreenURLs. A save timeout or network enrichment failure remains handled
 because the normal ingest task continues and persists pending work for retry.
 
+The shared **Settings → Shortcut & Safari → Handle On-Screen URLs** toggle is on
+by default. Turning it off makes `ProvideContextIntent` ignore the `OnScreenURLs`
+input entirely and continue through the same onboarding and app/screenshot
+decision it would use when no URL was supplied. The preference is stored in the
+App Group through `AppIntentSettings`, so the settings UI and background intent
+execution always read the same value across all three apps.
+
 When no usable on-screen URL was supplied, the **onboarding hijack** runs:
 `ActionButtonOnboardingStore.shared
 .handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)` gets the

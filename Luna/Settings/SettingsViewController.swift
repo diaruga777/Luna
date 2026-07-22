@@ -377,8 +377,8 @@ final class ReadingListSettingsScreen: NavHeaderTableController {
 
 final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Section 0: the Safari extension's surface-specific button visibility.
-    /// Section 1: the Action-Button shortcut rows.
-    private enum Section: Int, CaseIterable { case suggestionButton, shortcut }
+    /// Sections 1-2: the Action-Button shortcut's URL preference and actions.
+    private enum Section: Int, CaseIterable { case suggestionButton, onScreenURLs, shortcut }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
     private var safariButtonName: String {
@@ -407,12 +407,17 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch visibleSections[section] {
         case .suggestionButton: return 1
+        case .onScreenURLs: return 1
         case .shortcut: return Row.allCases.count
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        visibleSections[section] == .suggestionButton ? "\(safariButtonName) Button" : "Action Button Shortcut"
+        switch visibleSections[section] {
+        case .suggestionButton: return "\(safariButtonName) Button"
+        case .onScreenURLs: return "On-Screen URLs"
+        case .shortcut: return "Action Button Shortcut"
+        }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
@@ -420,6 +425,8 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         case .suggestionButton:
             return "When browsing in Safari (with the Luna extension enabled), show the "
                 + "\"\(safariButtonName)\" button when it applies. Choose when it appears."
+        case .onScreenURLs:
+            return "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling."
         case .shortcut:
             let base = "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
             return base
@@ -451,6 +458,19 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
             return cell
         }
 
+        if visibleSections[indexPath.section] == .onScreenURLs {
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.selectionStyle = .none
+            var content = cell.defaultContentConfiguration()
+            content.text = "Handle On-Screen URLs"
+            content.image = UIImage(systemName: "link")
+            cell.contentConfiguration = content
+            cell.accessoryView = makeToggle(
+                isOn: AppIntentSettings.handleOnScreenURLs,
+                action: #selector(handleOnScreenURLsToggled(_:)))
+            return cell
+        }
+
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
         content.textProperties.color = view.tintColor ?? .systemBlue
@@ -472,6 +492,10 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     @objc private func suggestionModeChanged(_ control: UISegmentedControl) {
         let modes = SafariSuggestionMode.allCases
         SafariSuggestionSettings.mode = modes[max(0, min(control.selectedSegmentIndex, modes.count - 1))]
+    }
+
+    @objc private func handleOnScreenURLsToggled(_ sender: UISwitch) {
+        AppIntentSettings.handleOnScreenURLs = sender.isOn
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

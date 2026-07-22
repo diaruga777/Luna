@@ -67,7 +67,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         // input and continues to use its extension-backed URL store below.
         if let urlString = ProvideContextOnScreenURL.collapseText(
             onScreenURLs,
-            isSafari: isSafari
+            isSafari: isSafari,
+            isEnabled: AppIntentSettings.handleOnScreenURLs
         ), let result = try await saveURL(
             urlString,
             interopBlockHandling: .fallBack

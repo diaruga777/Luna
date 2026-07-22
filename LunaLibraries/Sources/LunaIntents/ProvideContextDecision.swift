@@ -21,8 +21,14 @@ public enum ProvideContextOnScreenURL {
     /// representation before applying the ordinary collapse rules. The system
     /// may supply bare newline-delimited values, a comma-delimited list, or
     /// values wrapped in descriptive/JSON-like text.
-    public static func collapseText(_ value: String?, isSafari: Bool) -> String? {
-        guard !isSafari, let value, !value.isEmpty, let embeddedWebURL else { return nil }
+    public static func collapseText(
+        _ value: String?,
+        isSafari: Bool,
+        isEnabled: Bool = true
+    ) -> String? {
+        guard isEnabled, !isSafari, let value, !value.isEmpty, let embeddedWebURL else {
+            return nil
+        }
         let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
         let values: [String] = embeddedWebURL.matches(in: value, range: fullRange).compactMap { match -> String? in
             guard let range = Range(match.range, in: value) else { return nil }

@@ -7,6 +7,16 @@ import LunaIntents
 import XCTest
 
 final class ProvideContextOnScreenURLTests: XCTestCase {
+    func testDisabledIgnoresOtherwiseValidURL() {
+        XCTAssertNil(
+            ProvideContextOnScreenURL.collapseText(
+                "https://example.com/article",
+                isSafari: false,
+                isEnabled: false
+            )
+        )
+    }
+
     func testNilAndEmptyInputsDoNotProduceURL() {
         XCTAssertNil(ProvideContextOnScreenURL.collapse(nil, isSafari: false))
         XCTAssertNil(ProvideContextOnScreenURL.collapse([], isSafari: false))

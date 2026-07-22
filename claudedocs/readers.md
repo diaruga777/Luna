@@ -41,7 +41,10 @@ reader or its content offset. Both copies' backgrounds begin at the card's top e
 while the favicon is vertically centered against one-, two-, or three-line titles.
 The host applies that stable inset when each card controller is constructed, including
 an off-window card staged for a ±2 scrubber eclipse, so its title is already present
-with final geometry before it crosses onto the screen.
+with final geometry before it crosses onto the screen. The card's bounds are the
+authoritative width for both copies: the nested scroll view can retain a provisional
+screen-wide width for one parent layout pass, but that stale width must never reach
+the visible title or change its line breaks after first paint.
 RSVP has no scroll surface, so its pinned title stays visible through immersion and
 its layout never changes. `ReaderHostFactory(includesArticleTitle: false)` still
 suppresses the scroll reader's old attributed-string title to avoid a third copy.

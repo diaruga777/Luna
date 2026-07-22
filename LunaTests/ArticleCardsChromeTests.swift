@@ -126,6 +126,30 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(textView.contentInset.top, stableInset, accuracy: 0.5)
     }
 
+    func testScrollableTitleUsesCardWidthWhileReaderBoundsAreStillProvisional() throws {
+        let title = "A deliberately long title whose line breaks expose provisional reader width"
+        let controller = makeArticleController(seed: "provisional-title-width", title: title)
+        let content = try XCTUnwrap(
+            controller.carousel.contentController(at: controller.carousel.currentIndex))
+        let textView = try XCTUnwrap(firstSubview(of: UITextView.self, in: content.view))
+        let headers = headerViews(labelled: title, in: content.view)
+        let pinned = try XCTUnwrap(headers.first { !hasScrollViewAncestor($0) })
+        let scrolling = try XCTUnwrap(headers.first { hasScrollViewAncestor($0) })
+
+        // The nested reader can still report its old, screen-wide bounds during
+        // the card's parent layout pass. The title must already use the card's
+        // final width rather than visibly re-wrap on the following pass.
+        textView.bounds.size.width = content.view.bounds.width + 80
+        content.view.setNeedsLayout()
+        content.view.layoutIfNeeded()
+
+        XCTAssertEqual(scrolling.bounds.width, pinned.bounds.width, accuracy: 0.5)
+        let pinnedLabel = try XCTUnwrap(firstSubview(of: UILabel.self, in: pinned))
+        let scrollingLabel = try XCTUnwrap(firstSubview(of: UILabel.self, in: scrolling))
+        XCTAssertEqual(scrollingLabel.bounds.width, pinnedLabel.bounds.width, accuracy: 0.5)
+        XCTAssertEqual(scrollingLabel.bounds.height, pinnedLabel.bounds.height, accuracy: 0.5)
+    }
+
     func testIncomingSenderAppearsBelowTitleWithoutOverlappingIt() throws {
         let title = "An emailed article"
         let controller = makeArticleController(

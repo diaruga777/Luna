@@ -1517,9 +1517,14 @@ private final class ReaderCardContentViewController: CardContentViewController,
             updatePinnedTitleVisibility(animated: false)
             return
         }
+        // The nested reader lays out after this card. During the first visible
+        // parent pass its scroll view can therefore still carry the old,
+        // screen-wide bounds, even though the card already has its final width.
+        // Size both title copies from the card so the scrolling copy cannot
+        // paint wide and then visibly re-wrap on the reader's following pass.
         scrollTitleHeader.frame = CGRect(
             x: 0, y: -titleHeaderHeight,
-            width: focused.bounds.width, height: titleHeaderHeight)
+            width: view.bounds.width, height: titleHeaderHeight)
         focused.bringSubviewToFront(scrollTitleHeader)
         updatePinnedTitleVisibility(animated: false)
     }

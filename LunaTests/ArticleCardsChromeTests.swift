@@ -109,6 +109,12 @@ final class ArticleCardsChromeTests: XCTestCase {
 
         textView.setContentOffset(
             CGPoint(x: 0, y: -textView.adjustedContentInset.top + 40), animated: false)
+        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
+        textView.setContentOffset(
+            CGPoint(
+                x: 0,
+                y: -textView.adjustedContentInset.top + scrolling.bounds.height + 2),
+            animated: false)
         XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
         controller.carousel(controller.carousel, didTapCenteredCardAt: 0)
 
@@ -185,6 +191,12 @@ final class ArticleCardsChromeTests: XCTestCase {
         defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
         scroll.setContentOffset(
             CGPoint(x: 0, y: -scroll.adjustedContentInset.top + 40), animated: false)
+        XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
+        scroll.setContentOffset(
+            CGPoint(
+                x: 0,
+                y: -scroll.adjustedContentInset.top + scrolling.bounds.height + 2),
+            animated: false)
         XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
 
         controller.carousel(controller.carousel, didTapCenteredCardAt: 0)

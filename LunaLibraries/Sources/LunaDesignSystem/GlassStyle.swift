@@ -82,8 +82,8 @@ public enum GlassStyle {
     public static var glassBorderColor: UIColor {
         UIColor { traits in
             traits.userInterfaceStyle == .dark
-                ? UIColor(white: 1.0, alpha: 0.22)
-                : UIColor(white: 0.0, alpha: 0.10)
+                ? UIColor(white: 1.0, alpha: 0.14)
+                : UIColor(white: 0.0, alpha: 0.07)
         }
     }
 

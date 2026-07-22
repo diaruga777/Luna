@@ -61,7 +61,7 @@ public class CardSurfaceView: UIView {
         borderMaskView.layer.addSublayer(borderMask)
         borderView.mask = borderMaskView
         borderHighlight.fillColor = UIColor.clear.cgColor
-        borderHighlight.lineWidth = 0.75
+        borderHighlight.lineWidth = 0.5
         borderView.contentView.layer.addSublayer(borderHighlight)
         borderView.isHidden = true
         addSubview(borderView)
@@ -83,7 +83,7 @@ public class CardSurfaceView: UIView {
         }
         let outer = UIBezierPath(
             roundedRect: bounds, cornerRadius: Self.cornerRadius)
-        let rimWidth: CGFloat = 3
+        let rimWidth: CGFloat = 1.5
         let innerRect = bounds.insetBy(dx: rimWidth, dy: rimWidth)
         outer.append(UIBezierPath(
             roundedRect: innerRect,

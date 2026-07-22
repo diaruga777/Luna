@@ -403,13 +403,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             firstFullyVisibleIndex: firstFullyVisibleWordIndex())
     }
 
-    /// The exact content offset paired with `currentReadingWordIndex` — the scroll
-    /// reader's contribution to the hybrid shared position (`lastWordIndex` is the
-    /// portable anchor; this is the pixel-exact restore for a pure scroll reopen).
-    /// Falls back to the committed offset while a glance fling is being ignored.
+    /// The content offset paired with `currentReadingWordIndex` — pixel-exact after
+    /// the title region, but normalized to zero within it so a reopen never clips
+    /// the card's in-content title. Falls back to the committed offset while a
+    /// glance fling is being ignored.
     public var currentReadingScrollOffsetY: CGFloat {
-        if landedGlanceFling { return committedOffsetY }
-        return textView.contentOffset.y
+        let offset = landedGlanceFling ? committedOffsetY : textView.contentOffset.y
+        return CGFloat(ReaderScrollPosition.normalizedForPersistence(
+            Double(offset), titleHeaderHeight: Double(topChromeInset)))
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }

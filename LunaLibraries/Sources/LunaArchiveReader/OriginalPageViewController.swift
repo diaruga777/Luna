@@ -49,8 +49,13 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     public var contentScrollView: UIScrollView { webView.scrollView }
-    /// The archive's current (disjoint) scroll offset, for the host to persist.
-    public var currentScrollOffset: Double { Double(webView.scrollView.contentOffset.y) }
+    /// The archive's current disjoint scroll offset, normalized to zero while
+    /// the card's in-content title is still onscreen.
+    public var currentScrollOffset: Double {
+        ReaderScrollPosition.normalizedForPersistence(
+            Double(webView.scrollView.contentOffset.y),
+            titleHeaderHeight: Double(topContentInset))
+    }
 
     /// Stable space at the top of the archive scroll surface for card-hosted
     /// chrome. Like the scroll reader's `topChromeInset`, this is content inset

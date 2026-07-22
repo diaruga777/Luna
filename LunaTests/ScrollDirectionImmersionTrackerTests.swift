@@ -99,13 +99,13 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
-    // MARK: - Fade-in threshold (scrolling up), one third of the viewport
+    // MARK: - Fade-in threshold (scrolling up), shorter than fade-out
 
     func testUpwardTravelPastThresholdFiresImmersedFalse() {
         drag(to: 600)
-        drag(to: 450)  // run -150, below one third of the 800pt viewport
+        drag(to: 594)  // run -6, below the 10pt fade-in threshold
         XCTAssertTrue(events.isEmpty)
-        drag(to: 320)  // run -280, beyond 800 / 3
+        drag(to: 589)  // run -11, beyond the threshold
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, false)
         XCTAssertEqual(events.first?.extendsCard, true)
@@ -113,8 +113,8 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
 
     func testTinyUpwardCorrectionDoesNotRestoreChrome() {
         drag(to: 600)
-        drag(to: 588)
-        drag(to: 560)
+        drag(to: 596)
+        drag(to: 592)
         XCTAssertTrue(events.isEmpty)
     }
 

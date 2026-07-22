@@ -1293,7 +1293,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // With no scroll surface the active reader is RSVP (or a non-ready
         // placeholder), whose title is fixed and never follows card chrome.
         let showsPinnedTitle = titleScrollView == nil
-            || (cardChromeVisible && !focusedScrollIsAtTop)
+            || (cardChromeVisible && focusedScrollIsPastTitle)
         let changes = {
             self.titleHeader.alpha = showsPinnedTitle ? 1 : 0
         }
@@ -1308,9 +1308,10 @@ private final class ReaderCardContentViewController: CardContentViewController,
         }
     }
 
-    private var focusedScrollIsAtTop: Bool {
+    private var focusedScrollIsPastTitle: Bool {
         guard let scroll = titleScrollView else { return false }
-        return scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1
+        let distanceFromTop = scroll.contentOffset.y + scroll.adjustedContentInset.top
+        return distanceFromTop > titleHeaderHeight + 1
     }
 
     private func applyReaderTopInset() {

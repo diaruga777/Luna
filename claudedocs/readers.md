@@ -30,8 +30,10 @@ The Reader carousel gives every card a stable title region using the normal 30pt
 reader-title font and the saved page's asynchronously cached favicon (a globe while
 loading). Scroll and Original/web-archive modes own two pixel-identical copies: a
 permanent copy in the scroll view's top content-inset region and a pinned card copy.
-At the exact top the pinned copy is hidden, revealing the in-content copy beneath it;
-after scrolling, the pinned copy is visible only while card chrome is surfaced. The
+While any of the in-content title remains onscreen, the pinned copy is hidden; only
+after the title has fully scrolled away can it appear with surfaced card chrome. An
+offset within that title region is normalized to zero when Scroll or Original persists,
+so reopening shows the title in full instead of restoring a clipped fragment. The
 top inset never changes during either transition, so hiding chrome cannot move the
 reader or its content offset. Both copies' backgrounds begin at the card's top edge,
 while the favicon is vertically centered against one-, two-, or three-line titles.
@@ -42,6 +44,11 @@ RSVP has no scroll surface, so its pinned title stays visible through immersion 
 its layout never changes. `ReaderHostFactory(includesArticleTitle: false)` still
 suppresses the scroll reader's old attributed-string title to avoid a third copy.
 Fullscreen, share-extension, and non-carousel readers keep the original inline title.
+
+Reader and Downloader carousel cards share the same restrained glass rim: a 1.5pt
+effect ring with a 0.5pt low-contrast highlight. Reader scroll chrome dismisses after
+24pt of downward travel and returns after 10pt upward, enough to ignore tiny jitter
+without making the reader reverse a large part of the page.
 
 Original mode applies the same stable top content inset directly to its WKWebView.
 A layer restored with `.original` compares the actually mounted child (rather than

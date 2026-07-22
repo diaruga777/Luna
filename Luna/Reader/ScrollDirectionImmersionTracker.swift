@@ -43,10 +43,10 @@ final class ScrollDirectionImmersionTracker {
 
     /// Downward travel (pt) before the chrome fades away…
     private static let fadeOutTravel: CGFloat = 24
-    /// …and the fraction of the visible card the user must travel upward
-    /// before it comes back. This deliberately resists tiny reverse-scroll
-    /// corrections while remaining proportional on iPhone and iPad.
-    private static let fadeInViewportFraction: CGFloat = 1 / 3
+    /// …and the smaller upward travel that deliberately signals surfacing.
+    /// This still absorbs line-height jitter, but makes chrome return promptly
+    /// without matching the longer downward dismissal gesture.
+    private static let fadeInTravel: CGFloat = 10
 
     /// Hooks the immersion triggers onto `root`'s live content (KVO on every
     /// scroll view, play-state callbacks on every RSVP controller). Idempotent
@@ -119,8 +119,7 @@ final class ScrollDirectionImmersionTracker {
         // that clamps the offset — a synthetic ~90pt "scroll up" delivered
         // re-entrantly that would immediately fade the chrome back in. With
         // the runs cleared first, that event just seeds a fresh baseline.
-        let fadeInTravel = max(scrollView.bounds.height * Self.fadeInViewportFraction, 1)
-        if run <= -fadeInTravel {
+        if run <= -Self.fadeInTravel {
             scrollRuns = [:]
             onImmersionChange?(false, true)
         } else if run >= Self.fadeOutTravel, position > 0 {

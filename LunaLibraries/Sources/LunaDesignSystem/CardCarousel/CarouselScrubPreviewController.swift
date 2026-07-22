@@ -20,10 +20,13 @@ final class CarouselScrubPreviewController {
     private var previewOverlay: UIView?
     private var previewImageView: UIImageView?
     private var previewTitleLabel: UILabel?
-    /// Host-supplied content mounted inside the overlay. Downloader media is
-    /// live/playable; Reader supplies an inexpensive text excerpt.
+    /// Host-supplied exact card content mounted inside the overlay.
     private var previewContent: CardContentViewController?
     private(set) var previewContentIndex: Int?
+    /// Exact card controllers prepared only for mini-card chips currently in
+    /// the scrubber viewport. A preview takes its controller from this cache;
+    /// commit then promotes that same instance into the real centered slot.
+    private var preparedContent: [Int: CardContentViewController] = [:]
 
     init(carousel: CardCarouselViewController, cardArea: UIView) {
         self.carousel = carousel
@@ -85,9 +88,10 @@ final class CarouselScrubPreviewController {
         guard let overlay = previewOverlay, let dataSource = carousel.dataSource,
               index >= 0, index < cardCount
         else { return }
-        guard let content = dataSource.carousel(
+        let content = preparedContent[index] ?? dataSource.carousel(
             carousel, previewContentControllerForCardAt: index)
-        else { return }
+        guard let content else { return }
+        preparedContent[index] = content
         carousel.addChild(content)
         content.view.frame = overlay.bounds
         content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -120,6 +124,7 @@ final class CarouselScrubPreviewController {
     func remove() {
         unmountContent()
         removeOverlay()
+        preparedContent.removeAll()
     }
 
     func setMuted(_ muted: Bool) {
@@ -137,10 +142,30 @@ final class CarouselScrubPreviewController {
     /// The caller immediately installs it into a real carousel card.
     func takeContent() -> CardContentViewController? {
         guard let content = previewContent else { return nil }
+        if let index = previewContentIndex { preparedContent[index] = nil }
         previewContent = nil
         previewContentIndex = nil
         content.view.removeFromSuperview()
         removeOverlay()
         return content
+    }
+
+    /// Prepares only the controllers whose mini-card chips intersect the
+    /// scrubber viewport. Controllers outside that window are released unless
+    /// one is currently mounted as the live preview.
+    func prepare(indices: IndexSet, cardCount: Int) {
+        let valid = IndexSet(indices.filter { $0 >= 0 && $0 < cardCount })
+        for index in Array(preparedContent.keys)
+        where !valid.contains(index) && index != previewContentIndex {
+            preparedContent[index] = nil
+        }
+        guard let dataSource = carousel.dataSource else { return }
+        for index in valid where preparedContent[index] == nil {
+            guard let content = dataSource.carousel(
+                carousel, previewContentControllerForCardAt: index)
+            else { continue }
+            content.loadViewIfNeeded()
+            preparedContent[index] = content
+        }
     }
 }

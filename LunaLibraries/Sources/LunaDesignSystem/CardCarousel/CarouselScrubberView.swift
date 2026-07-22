@@ -31,6 +31,13 @@ public protocol CarouselScrubberViewDelegate: AnyObject {
     func scrubber(_ scrubber: CarouselScrubberView, didPreview index: Int)
     /// The strip settled (or a chip was tapped): commit this index.
     func scrubber(_ scrubber: CarouselScrubberView, didCommit index: Int)
+    /// The chips intersecting the scroll viewport changed. The carousel uses
+    /// this bounded window to prepare exact card content for live previews.
+    func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet)
+}
+
+public extension CarouselScrubberViewDelegate {
+    func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet) {}
 }
 
 public final class CarouselScrubberView: UIView {
@@ -106,6 +113,7 @@ public final class CarouselScrubberView: UIView {
     private let trailingBlur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
     private var itemViews: [ScrubberItemView] = []
     private var selectedIndex = 0
+    private var reportedVisibleIndices = IndexSet()
     private let selectionFeedback = UISelectionFeedbackGenerator()
 
     /// True while the strip's motion belongs to the user's finger (dragging or
@@ -175,6 +183,7 @@ public final class CarouselScrubberView: UIView {
         updateContentInsets()
         if !isUserScrolling { scrollSelectedToCenter(animated: false) }
         layoutEdgeVeils()
+        reportVisibleIndicesIfNeeded()
     }
 
     /// Symmetric insets of (viewport − chip) / 2 let EVERY chip — including
@@ -215,6 +224,8 @@ public final class CarouselScrubberView: UIView {
         selectedIndex = min(selectedIndex, max(0, count - 1))
         applySelectionAppearance()
         setNeedsLayout()
+        layoutIfNeeded()
+        reportVisibleIndicesIfNeeded()
     }
 
     public func setThumbnail(_ image: UIImage?, at index: Int) {
@@ -290,6 +301,20 @@ public final class CarouselScrubberView: UIView {
         let index = Int(((x + scrollView.contentInset.left) / pitch).rounded())
         return min(max(index, 0), itemViews.count - 1)
     }
+
+    private func reportVisibleIndicesIfNeeded() {
+        guard !itemViews.isEmpty, scrollView.bounds.width > 0 else { return }
+        let pitch = itemSize.width + spacing
+        let radius = Int(ceil(
+            (scrollView.bounds.width / 2 + itemSize.width / 2) / pitch))
+        let center = nearestIndex(toOffsetX: scrollView.contentOffset.x)
+        let lower = max(0, center - radius)
+        let upper = min(itemViews.count - 1, center + radius)
+        let visible = IndexSet(integersIn: lower...upper)
+        guard visible != reportedVisibleIndices else { return }
+        reportedVisibleIndices = visible
+        delegate?.scrubber(self, didShow: visible)
+    }
 }
 
 // MARK: - Scroll-driven scrubbing
@@ -303,6 +328,7 @@ extension CarouselScrubberView: UIScrollViewDelegate {
     /// Live preview: while the user scrolls the strip, every chip that passes
     /// the viewport's center becomes the selection (and previews its card).
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        reportVisibleIndicesIfNeeded()
         guard isUserScrolling else { return }
         let index = nearestIndex(toOffsetX: scrollView.contentOffset.x)
         guard index != selectedIndex else { return }

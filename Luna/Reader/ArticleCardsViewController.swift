@@ -593,24 +593,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         previewContentControllerForCardAt index: Int
     ) -> CardContentViewController? {
-        if renderedPasteboardURL != nil, index == 0 {
-            return PasteboardCardContentViewController(url: renderedPasteboardURL)
-        }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
-        let listedItem = items[itemIndex]
-        let item = store.item(withID: listedItem.id) ?? listedItem
-        guard let content = store.content(for: item) else {
-            return ArticleScrubPreviewViewController(
-                title: item.title ?? item.url?.host ?? item.urlString,
-                author: nil,
-                excerpt: ArticleScrubPreviewText.unavailableText(for: item.state))
-        }
-        return ArticleScrubPreviewViewController(
-            title: content.title,
-            author: content.author,
-            excerpt: ArticleScrubPreviewText.excerpt(
-                from: content, aroundWordIndex: item.lastWordIndex,
-                readingProgress: item.readingProgress))
+        self.carousel(carousel, contentControllerForCardAt: index)
     }
 
     /// Chip badge: an instant fallback (initials / mail / document / globe)

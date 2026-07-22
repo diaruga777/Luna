@@ -31,8 +31,9 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController
-    /// Lightweight content for the large scrub overlay. Hosts can return the
-    /// real card (Downloader media) or a cheap representation (Reader excerpt).
+    /// Content for the large scrub overlay. It must render identically to
+    /// `contentControllerForCardAt`; the exact instance may be promoted into
+    /// the centered card when the scrub settles.
     func carousel(
         _ carousel: CardCarouselViewController,
         previewContentControllerForCardAt index: Int
@@ -771,8 +772,7 @@ public final class CardCarouselViewController: UIViewController {
     private func commitScrub(to index: Int) {
         guard count > 0, !isTransitioning else { return }
         let target = min(max(index, 0), count - 1)
-        if style.autoplaysScrubPreviewContent,
-           scrubPreview.previewContentIndex == target,
+        if scrubPreview.previewContentIndex == target,
            let content = scrubPreview.takeContent() {
             promoteScrubPreview(content, to: target)
             return
@@ -816,6 +816,7 @@ public final class CardCarouselViewController: UIViewController {
         applyMuteState()
         for slot in slots.values { applyRestingLayout(to: slot) }
         scrubber.setSelectedIndex(target, animated: true)
+        if isViewVisible { content.cardDidBecomeCentered() }
         delegate?.carousel(self, didCenterCardAt: target)
 
         UIView.animate(
@@ -1043,6 +1044,12 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
 // MARK: - Scrub strip
 
 extension CardCarouselViewController: CarouselScrubberViewDelegate {
+
+    public func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet) {
+        guard case .miniCards = style.scrubberStyle else { return }
+        scrubPreview.prepare(indices: indices, cardCount: count)
+    }
+
     public func scrubber(_ scrubber: CarouselScrubberView, didPreview index: Int) {
         showScrubPreview(index)
     }

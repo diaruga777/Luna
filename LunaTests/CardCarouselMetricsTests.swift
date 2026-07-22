@@ -211,6 +211,36 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         XCTAssertEqual(source.normalRequestCounts[1], 1)
     }
 
+    func testMiniCardScrubberPreparesOnlyVisibleWindowAndPromotesExactPreview() throws {
+        let source = VisibleWindowScrubDataSource()
+        let carousel = CardCarouselViewController()
+        var style = CardCarouselStyle()
+        style.scrubberStyle = .miniCards
+        carousel.style = style
+        carousel.dataSource = source
+        carousel.loadViewIfNeeded()
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 0)
+        carousel.beginAppearanceTransition(true, animated: false)
+        carousel.endAppearanceTransition()
+
+        let preparedIndices = source.previewControllers.keys.sorted()
+        XCTAssertFalse(preparedIndices.isEmpty)
+        XCTAssertLessThan(preparedIndices.count, source.cardCount)
+
+        let target = try XCTUnwrap(preparedIndices.first(where: { $0 != 0 }))
+        let preview = try XCTUnwrap(source.previewControllers[target])
+        let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        scrubber.delegate?.scrubber(scrubber, didPreview: target)
+        scrubber.delegate?.scrubber(scrubber, didCommit: target)
+
+        XCTAssertEqual(carousel.currentIndex, target)
+        XCTAssertTrue(carousel.contentController(at: target) === preview)
+        XCTAssertEqual(preview.centerCount, 1)
+        XCTAssertLessThanOrEqual(source.previewRequestCounts[target] ?? 0, 2)
+    }
+
     private func firstScrubber(in view: UIView) -> CarouselScrubberView? {
         if let scrubber = view as? CarouselScrubberView { return scrubber }
         return view.subviews.lazy.compactMap { self.firstScrubber(in: $0) }.first
@@ -219,6 +249,48 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
     private func firstButton(labelled label: String, in view: UIView) -> UIButton? {
         if let button = view as? UIButton, button.accessibilityLabel == label { return button }
         return view.subviews.lazy.compactMap { self.firstButton(labelled: label, in: $0) }.first
+    }
+}
+
+@MainActor
+private final class VisibleWindowScrubDataSource: @preconcurrency CardCarouselDataSource {
+    let cardCount = 40
+    var previewControllers: [Int: CenteringSpyCardContentViewController] = [:]
+    var previewRequestCounts: [Int: Int] = [:]
+
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { cardCount }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contentControllerForCardAt index: Int
+    ) -> CardContentViewController {
+        CardContentViewController()
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController? {
+        previewRequestCounts[index, default: 0] += 1
+        let content = CenteringSpyCardContentViewController()
+        previewControllers[index] = content
+        return content
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadThumbnailForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) { completion(nil) }
+}
+
+@MainActor
+private final class CenteringSpyCardContentViewController: CardContentViewController {
+    private(set) var centerCount = 0
+
+    override func cardDidBecomeCentered() {
+        centerCount += 1
+        super.cardDidBecomeCentered()
     }
 }
 

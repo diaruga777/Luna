@@ -27,6 +27,7 @@ final class SafariArticleHeuristicTests: XCTestCase {
     /// injects it before content.js in the real extension, so the host-gating tests
     /// evaluate it first too.
     private static let newsHostsSource: String = resource("LunaSafari/Resources/news_hosts.generated.js")
+    private static let productRulesSource: String = resource("LunaSafari/Resources/product_rules.generated.js")
 
     private static func resource(_ relativePath: String) -> String {
         let thisFile = URL(fileURLWithPath: #filePath)
@@ -43,6 +44,9 @@ final class SafariArticleHeuristicTests: XCTestCase {
         XCTAssertFalse(
             Self.newsHostsSource.isEmpty,
             "news_hosts.generated.js not found on disk -- generate with TEST_RUNNER_RECORD_NEWS_HOSTS=1")
+        XCTAssertFalse(
+            Self.productRulesSource.isEmpty,
+            "product_rules.generated.js not found -- generate with TEST_RUNNER_RECORD_PRODUCT_RULES=1")
     }
 
     // MARK: - Harness
@@ -232,12 +236,15 @@ final class SafariArticleHeuristicTests: XCTestCase {
         let delegate = LoadDelegate {
             webView.evaluateJavaScript(Self.newsHostsSource) { _, error in
                 if let error { XCTFail("news_hosts.generated.js failed to evaluate: \(error)") }
-                webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
-                    if let error { XCTFail("content.js failed to evaluate: \(error)") }
-                    webView.evaluateJavaScript(expression) { result, error in
-                        if let error { XCTFail("\(expression) failed to evaluate: \(error)") }
-                        outcome = result as? Bool
-                        expectation.fulfill()
+                webView.evaluateJavaScript(Self.productRulesSource) { _, error in
+                    if let error { XCTFail("product_rules.generated.js failed to evaluate: \(error)") }
+                    webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
+                        if let error { XCTFail("content.js failed to evaluate: \(error)") }
+                        webView.evaluateJavaScript(expression) { result, error in
+                            if let error { XCTFail("\(expression) failed to evaluate: \(error)") }
+                            outcome = result as? Bool
+                            expectation.fulfill()
+                        }
                     }
                 }
             }

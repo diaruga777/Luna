@@ -230,7 +230,13 @@ Downloader-platform flow:
    hosts only) that drops/re-adds the pill as the URL changes between feed and post.
 
 Product-page flow:
-1. content.js mirrors `ProductPageDetector` (`looksLikeProductPage`). It fires only
+1. content.js mirrors `ProductPageDetector` (`looksLikeProductPage`). The declarative
+   evidence (score threshold, OpenGraph/price names, product and listing URL shapes,
+   cart phrases, and rating markers) has one Swift source of truth in
+   `ProductPageRules.swift`; `product_rules.generated.js` carries those exact values
+   into Safari. `ProductPageRulesJSParityTests` fails if the generated artifact is
+   stale, while `ProductPageJSFixtureParityTests` runs representative markup through
+   both production classifiers to catch control-flow drift. It fires only
    for a SINGLE primary product (a related/recommended rail is fine), never on a
    search / category grid showing several products at equal primacy:
    - **Listing-URL veto** (`urlIsMultiProductListing`, mirrors

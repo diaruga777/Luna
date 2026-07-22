@@ -106,6 +106,15 @@ final class ProductMetadataExtractorTests: XCTestCase {
         XCTAssertEqual(meta?.price.currency, "AUD")
     }
 
+    func testGenericEmbeddedStateWithNestedCurrencyObject() async {
+        let meta = await extract(
+            "https://shop.example/au/en/products/P123456-000/00?color=31&size=003",
+            fixture: "nested-currency-state.html")
+        XCTAssertEqual(meta?.price.amount, Decimal(string: "49.9"))
+        XCTAssertEqual(meta?.price.currency, "AUD")
+        XCTAssertEqual(meta?.name, "Pleated Travel Skort")
+    }
+
     // MARK: - No price ⇒ no metadata (mandatory-price invariant)
 
     func testNoPriceYieldsNil() async {

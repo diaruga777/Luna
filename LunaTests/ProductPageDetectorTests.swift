@@ -169,6 +169,25 @@ final class ProductPageDetectorTests: XCTestCase {
         XCTAssertEqual(price?.currency, "GBP")
     }
 
+    func testEmbeddedPriceWithNestedCurrencyObject() throws {
+        let info = try XCTUnwrap(detect(
+            "nested-currency-state.html",
+            url: "https://shop.example/au/en/products/P123456-000/00?color=31&size=003"))
+        XCTAssertEqual(info.staticPrice?.amount, Decimal(string: "49.9"))
+        XCTAssertEqual(info.staticPrice?.currency, "AUD")
+        XCTAssertEqual(info.name, "Pleated Travel Skort")
+    }
+
+    func testNestedCurrencyObjectPrimitive() {
+        let node: [String: Any] = [
+            "currency": ["code": "AUD", "symbol": "$"],
+            "value": 49.9,
+        ]
+        XCTAssertEqual(
+            ProductPageDetector.firstPrice(in: node),
+            ProductPrice(amount: Decimal(string: "49.9")!, currency: "AUD"))
+    }
+
     // MARK: - Determinism (the bug: same URL → different result each paste)
 
     /// Detection + static-price extraction over the Bunnings fixture must yield the

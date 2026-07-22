@@ -165,7 +165,9 @@ public enum Classifier {
         guard score >= ProductPageDetector.minimumHeuristicScore else { return nil }
         let ogType = (try? document.select("meta[property=og:type]").first()?.attr("content"))??
             .lowercased()
-        let declaresProductType = ogType == "product" || ogType == "product.item"
+        let declaresProductType = ogType.map {
+            ProductPageRules.productOpenGraphTypes.contains($0)
+        } ?? false
         guard embeddedPrice != nil || declaresProductType else { return nil }
         return .heuristicScore(score)
     }

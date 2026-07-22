@@ -297,7 +297,7 @@ public struct ProductPageDetector {
     /// signals. Two is deliberate: any single signal (a stray "add to cart" link in
     /// a nav, a `/p/` path) is too weak to reclassify an article, but two
     /// independent retail signals together reliably mean a product page.
-    public static let minimumHeuristicScore = 2
+    public static let minimumHeuristicScore = ProductPageRules.minimumHeuristicScore
 
     /// Scores the combinable retail signals on a page that has no structured price,
     /// and (as a side effect, since it must scan the page's scripts anyway) returns
@@ -315,7 +315,7 @@ public struct ProductPageDetector {
         var score = 0
 
         let ogType = metaContent(document, names: ["og:type"])?.lowercased()
-        if ogType == "product" || ogType == "product.item" { score += 1 }
+        if let ogType, ProductPageRules.productOpenGraphTypes.contains(ogType) { score += 1 }
 
         if hasAddToCartAffordance(document: document) { score += 1 }
         if hasRatingSignal(document: document) { score += 1 }
@@ -334,16 +334,18 @@ public struct ProductPageDetector {
         if let buttons = try? document.select("button, a, [role=button], input[type=submit]") {
             for element in buttons {
                 let text = ((try? element.text()) ?? "").lowercased()
-                if text.contains("add to cart") || text.contains("add to bag") { return true }
+                if ProductPageRules.addToCartPhrases.contains(where: text.contains) { return true }
                 let value = ((try? element.attr("value")) ?? "").lowercased()
-                if value.contains("add to cart") || value.contains("add to bag") { return true }
+                if ProductPageRules.addToCartPhrases.contains(where: value.contains) { return true }
             }
         }
         // Fall back to the raw markup: SPA handlers (`onClick={addToCart}`,
         // `data-testid="addToCart"`) and inline state name the action even when the
         // button text is rendered later by JS.
         let html = (try? document.html()) ?? ""
-        return html.range(of: "addToCart", options: .caseInsensitive) != nil
+        return ProductPageRules.addToCartMarkupNeedles.contains {
+            html.range(of: $0, options: .caseInsensitive) != nil
+        }
     }
 
     /// Whether the page shows a product rating: schema rating attributes, a
@@ -353,7 +355,7 @@ public struct ProductPageDetector {
             return true
         }
         let html = (try? document.html()) ?? ""
-        for needle in ["aggregateRating", "ratingValue", "out of 5", "Star Rating"] {
+        for needle in ProductPageRules.ratingMarkupNeedles {
             if html.range(of: needle, options: .caseInsensitive) != nil { return true }
         }
         return false
@@ -375,20 +377,14 @@ public struct ProductPageDetector {
         let segments = url.path.split(separator: "/").map { $0.lowercased() }
         // Search / browse / category / deals path segments (Amazon `/s`, `/b`; eBay
         // `/sch`; generic `/search`, `/category`, `/collections`, …).
-        let listingSegments: Set<String> = [
-            "s", "search", "sch", "b", "browse", "bestsellers",
-            "deals", "stores", "category", "categories", "collections",
-        ]
+        let listingSegments = Set(ProductPageRules.listingFirstPathSegments)
         if let first = segments.first, listingSegments.contains(first) { return true }
-        // Amazon's `/gp/search`, `/gp/bestsellers`, `/gp/browse`.
-        if segments.first == "gp", segments.count > 1,
-           ["search", "bestsellers", "browse"].contains(segments[1]) {
+        let firstTwo = segments.prefix(2).joined(separator: "/")
+        if ProductPageRules.listingTwoSegmentPaths.contains(firstTwo) {
             return true
         }
         // A search query parameter (`?k=`/`?field-keywords=` Amazon, `?q=`/`?query=`/…).
-        let searchParamNames: Set<String> = [
-            "k", "field-keywords", "q", "query", "keyword", "keywords", "searchterm",
-        ]
+        let searchParamNames = Set(ProductPageRules.searchQueryParameterNames)
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         if query.contains(where: { searchParamNames.contains($0.name.lowercased()) }) { return true }
         return false
@@ -399,15 +395,8 @@ public struct ProductPageDetector {
         guard let path = url?.path, !path.isEmpty else { return false }
         // `_p0208315` (Bunnings/SAP Hybris), `/dp/B09…` (Amazon), `/p/123` (Target/
         // Best Buy), `/products/slug` (Shopify), `/itm/123` (eBay).
-        let patterns = [
-            "_p[0-9]{4,}",
-            "/dp/[A-Z0-9]{6,}",
-            "/gp/product/",
-            "/p/[0-9]{4,}",
-            "/products/[^/]+",
-            "/itm/[0-9]{4,}",
-        ]
-        for pattern in patterns where path.range(of: pattern, options: .regularExpression) != nil {
+        for pattern in ProductPageRules.productPathPatterns
+        where path.range(of: pattern, options: .regularExpression) != nil {
             return true
         }
         return false
@@ -422,7 +411,7 @@ public struct ProductPageDetector {
     ]
     private static let priceContextKeys = [
         "priceavailable", "pricetype", "pricecurrency", "currencyiso", "currencycode",
-        "sellprice", "nowprice", "saleprice", "formattedvalue",
+        "currency", "sellprice", "nowprice", "saleprice", "formattedvalue",
     ]
     private static let currencyKeys = [
         "pricecurrency", "currencyiso", "currencycode", "currency",
@@ -447,7 +436,9 @@ public struct ProductPageDetector {
         var blobs = EmbeddedJSONBlobs.nextDataAndJSONScripts(in: document)
         // Inline state assignments: `window.__APOLLO_STATE__ = {…};`,
         // `window.__INITIAL_STATE__ = {…}`. Pull the object literal after the `=`.
-        if let scripts = try? document.select("script:not([type]), script[type=text/javascript]") {
+        let inlineScriptSelector = "script:not([type]), script[type=\"text/javascript\"], "
+            + "script[type=\"application/javascript\"]"
+        if let scripts = try? document.select(inlineScriptSelector) {
             for script in scripts {
                 let body = (try? script.html()) ?? ""
                 guard body.range(of: "window.__", options: .caseInsensitive) != nil else { continue }
@@ -553,8 +544,23 @@ public struct ProductPageDetector {
 
     private static func currency(from lowercasedKeys: [String: Any]) -> String? {
         for key in currencyKeys {
-            if let raw = lowercasedKeys[key] as? String, let code = normalizeCurrency(raw) {
-                return code
+            guard let raw = lowercasedKeys[key] else { continue }
+            if let string = raw as? String, let code = normalizeCurrency(string) { return code }
+            // Common commerce state nests the ISO code under the currency field:
+            // `{"currency":{"code":"AUD","symbol":"$"},"value":49.9}`.
+            // Accept the generic shape rather than teaching the extractor a retailer.
+            if let dictionary = raw as? [String: Any] {
+                var nested: [String: Any] = [:]
+                for nestedKey in dictionary.keys.sorted() {
+                    let lowered = nestedKey.lowercased()
+                    if nested[lowered] == nil { nested[lowered] = dictionary[nestedKey] }
+                }
+                for nestedKey in ["code", "currencycode", "isocode", "iso"] {
+                    if let string = nested[nestedKey] as? String,
+                       let code = normalizeCurrency(string) {
+                        return code
+                    }
+                }
             }
         }
         // Infer from a `formattedValue` symbol ("$99.00" → USD).
@@ -720,7 +726,7 @@ public struct ProductPageDetector {
 
     private func priceFromMetaOrMicrodata(document: Document) -> ProductPrice? {
         // OpenGraph / product meta.
-        let amountKeys = ["product:price:amount", "og:price:amount", "product:price"]
+        let amountKeys = ProductPageRules.productPriceMetaNames
         let currencyKeys = ["product:price:currency", "og:price:currency", "product:currency"]
         if let raw = metaContent(document, names: amountKeys),
            let amount = Self.parsePrice(raw), amount >= 0 {

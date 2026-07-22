@@ -12,6 +12,14 @@
     window.__queueContentScriptRan = true;
 
     var QUEUE_INDIGO = "#5856D6";
+    // Generated from ProductPageRules.swift and injected immediately before this
+    // script. No local fallback is intentional: a missing artifact must not silently
+    // resurrect an independently-maintained Safari rule set.
+    var PRODUCT_RULES = self.__LUNA_PRODUCT_RULES || {};
+
+    function productRuleArray(name) {
+        return Array.isArray(PRODUCT_RULES[name]) ? PRODUCT_RULES[name] : [];
+    }
 
     // Mirrors PaywallDetector.gateMarkers (Swift) — keep in sync. Gate phrases only
     // appear when an article body is cut off behind a subscription wall.
@@ -541,7 +549,7 @@
         return false;
     }
 
-    // Mirrors ProductPageDetector (Swift) — keep in sync. Only fires for a SINGLE
+    // Uses ProductPageDetector's generated rule data. Only fires for a SINGLE
     // primary product (a related/recommended rail is fine); never on a search /
     // category grid showing several products at equal primacy.
     //   • A search/browse/category/deals URL is a multi-product listing — vetoed up
@@ -562,23 +570,24 @@
         if (isKnownArticleHost()) { return false; }
         if (urlIsMultiProductListing()) { return false; }
         if (hasJSONLDProductOffer()) { return true; }
-        if (parsePriceNumber(metaContent(["product:price:amount", "og:price:amount", "product:price"])) !== null) {
+        if (parsePriceNumber(metaContent(productRuleArray("productPriceMetaNames"))) !== null) {
             return true;
         }
         if (hasMicrodataPrice()) { return true; }
         var score = 0;
+        var minimumScore = PRODUCT_RULES.minimumHeuristicScore || Number.MAX_SAFE_INTEGER;
         var ogType = metaContent(["og:type"]).toLowerCase();
-        if (ogType === "product" || ogType === "product.item") { score += 1; }
+        if (productRuleArray("productOpenGraphTypes").indexOf(ogType) >= 0) { score += 1; }
         if (urlLooksLikeProduct()) { score += 1; }
-        if (score < 2 && hasAddToCartAffordance()) { score += 1; }
-        if (score < 2 && hasRatingSignal()) { score += 1; }
-        return score >= 2;
+        if (score < minimumScore && hasAddToCartAffordance()) { score += 1; }
+        if (score < minimumScore && hasRatingSignal()) { score += 1; }
+        return score >= minimumScore;
     }
 
     // Exposed so the bare-WKWebView test harness can exercise product gating directly.
     window.__lunaLooksLikeProductPage = looksLikeProductPage;
 
-    // Mirrors ProductPageDetector.urlIsMultiProductListing (Swift) — keep in sync.
+    // Uses ProductPageRules' generated listing URL data.
     // URL shapes that list many products at equal primacy (search results, browse /
     // category nodes, best-seller and deals grids). A single primary product never
     // lives at such a URL, so it is never a product page whatever per-card furniture
@@ -591,15 +600,14 @@
             .map(function (s) { return s.toLowerCase(); });
         // Search / browse / category / deals path segments (Amazon `/s`, `/b`; eBay
         // `/sch`; generic `/search`, `/category`, `/collections`, …).
-        var listing = ["s", "search", "sch", "b", "browse", "bestsellers",
-            "deals", "stores", "category", "categories", "collections"];
+        var listing = productRuleArray("listingFirstPathSegments");
         if (segments.length > 0 && listing.indexOf(segments[0]) >= 0) { return true; }
-        // Amazon's `/gp/search`, `/gp/bestsellers`, `/gp/browse`.
-        if (segments[0] === "gp" && ["search", "bestsellers", "browse"].indexOf(segments[1]) >= 0) {
+        var firstTwo = segments.slice(0, 2).join("/");
+        if (productRuleArray("listingTwoSegmentPaths").indexOf(firstTwo) >= 0) {
             return true;
         }
         // A search query parameter (`?k=`/`?field-keywords=` Amazon, `?q=`/`?query=`/…).
-        var searchParams = ["k", "field-keywords", "q", "query", "keyword", "keywords", "searchterm"];
+        var searchParams = productRuleArray("searchQueryParameterNames");
         try {
             var params = new URLSearchParams(location.search || "");
             var iter = params.keys();
@@ -701,32 +709,39 @@
         var els = document.querySelectorAll('button, a, [role="button"], input[type="submit"]');
         for (var i = 0; i < els.length; i++) {
             var text = ((els[i].textContent || "") + " " + (els[i].getAttribute("value") || "")).toLowerCase();
-            if (text.indexOf("add to cart") >= 0 || text.indexOf("add to bag") >= 0) { return true; }
+            var phrases = productRuleArray("addToCartPhrases");
+            for (var phraseIndex = 0; phraseIndex < phrases.length; phraseIndex++) {
+                if (text.indexOf(phrases[phraseIndex]) >= 0) { return true; }
+            }
         }
         // SPA handlers (`onClick={addToCart}`, `data-testid="addToCart"`) name the
         // action even when the button text is rendered later by JS.
-        return (document.documentElement.innerHTML || "").toLowerCase().indexOf("addtocart") >= 0;
+        var html = (document.documentElement.innerHTML || "").toLowerCase();
+        var markupNeedles = productRuleArray("addToCartMarkupNeedles");
+        for (var i = 0; i < markupNeedles.length; i++) {
+            if (html.indexOf(markupNeedles[i]) >= 0) { return true; }
+        }
+        return false;
     }
 
     function hasRatingSignal() {
         if (document.querySelector('[itemprop="aggregateRating"], [itemprop="ratingValue"]')) { return true; }
         var html = (document.documentElement.innerHTML || "").toLowerCase();
-        var needles = ["aggregaterating", "ratingvalue", "out of 5", "star rating"];
+        var needles = productRuleArray("ratingMarkupNeedles");
         for (var i = 0; i < needles.length; i++) {
             if (html.indexOf(needles[i]) >= 0) { return true; }
         }
         return false;
     }
 
-    // Mirrors ProductPageDetector.urlLooksLikeProduct: `_p0208315` (SAP Hybris),
+    // Uses ProductPageRules.productPathPatterns: `_p0208315` (SAP Hybris),
     // `/dp/B09…` (Amazon), `/p/123` (Target/Best Buy), `/products/slug` (Shopify),
     // `/itm/123` (eBay).
     function urlLooksLikeProduct() {
         var path = location.pathname || "";
-        var patterns = [
-            /_p[0-9]{4,}/, /\/dp\/[A-Z0-9]{6,}/, /\/gp\/product\//,
-            /\/p\/[0-9]{4,}/, /\/products\/[^\/]+/, /\/itm\/[0-9]{4,}/
-        ];
+        var patterns = productRuleArray("productPathPatterns").map(function (pattern) {
+            return new RegExp(pattern);
+        });
         for (var i = 0; i < patterns.length; i++) {
             if (patterns[i].test(path)) { return true; }
         }

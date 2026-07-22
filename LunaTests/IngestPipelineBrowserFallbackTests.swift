@@ -11,6 +11,29 @@ import XCTest
 
 final class IngestPipelineBrowserFallbackTests: XCTestCase {
 
+    /// A generic SPA state shape with `value` beside a nested ISO-currency object
+    /// must complete the product route. Recognition without mandatory-price
+    /// extraction used to fall through to Reader even though Safari showed Track.
+    func testNestedCurrencyProductStateRoutesToPriceTracker() async throws {
+        let url = URL(string:
+            "https://shop.example/au/en/products/P123456-000/00?color=31&size=003"
+        )!
+        let html = BypassFixtures.html("Products/nested-currency-state.html")
+
+        let outcome = await IngestPipeline.process(
+            IngestInput(url: url, source: .paste, prefetchedHTML: html),
+            timeout: 1,
+            fetcher: MockArticleFetcher()
+        )
+
+        guard case let .product(product, _) = outcome else {
+            return XCTFail("Expected a priced product, got \(outcome)")
+        }
+        XCTAssertEqual(product.name, "Pleated Travel Skort")
+        XCTAssertEqual(product.priceAmount, Decimal(string: "49.9"))
+        XCTAssertEqual(product.priceCurrency, "AUD")
+    }
+
     /// Publisher pages can bundle priced store cards, subscription offers, and the
     /// same generic commerce components used elsewhere on the site. Those secondary
     /// components must not override an authoritative hard-paywall news-host match.

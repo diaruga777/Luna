@@ -35,7 +35,12 @@ resolvable (→ article, never a price-less tracker).
   - **`TargetPriceRule`** — `__NEXT_DATA__` `price.current_retail` (USD).
   - **`WalmartPriceRule`** — `__NEXT_DATA__` `priceInfo.currentPrice.price` (USD).
   - **Generic fallback** (`ProductPageDetector.genericStructuredPrice`) — JSON-LD
-    `Offer` → OG `product:price` → microdata → embedded app-state JSON.
+    `Offer` → OG `product:price` → microdata → embedded app-state JSON. Inline
+    `window.__… = {}` state is scanned from untyped, `text/javascript`, and
+    `application/javascript` scripts. Generic price objects may declare currency as
+    a string or as a nested ISO object beside the amount (for example,
+    `{currency:{code:"AUD",symbol:"$"},value:49.9}`); this does not require a
+    retailer-specific rule.
 - **Google Shopping aggregate pages → multi-seller trackers** (`GoogleShoppingProductParser`).
   A saved Google Shopping page is an aggregator, not a seller, so it becomes a tracker
   over the retailer pages Google lists (never `google.com`). `GoogleShoppingURL.isProductPage`
@@ -106,8 +111,9 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     same price every launch) for the first object carrying a price-context key (`priceAvailable`/
     `priceType`/`priceCurrency`/`currencyIso`/`currencyCode`/`sellPrice`/`nowPrice`/
     `salePrice`/`formattedValue`), a numeric value (`value`/`amount`/`*price`, or a
-    `formattedValue` like `"$99.00"`), and a currency (sibling currency key, or a
-    `formattedValue` symbol). Bunnings fixture → **99 AUD** (`{currencyIso:"AUD",
+    `formattedValue` like `"$99.00"`), and a currency (sibling currency string,
+    nested currency `code`/`iso` object, or a `formattedValue` symbol). Bunnings
+    fixture → **99 AUD** (`{currencyIso:"AUD",
     formattedValue:"$99.00",priceAvailable:true,priceType:"FROM",value:99}`).
   - `parsePrice` tolerates `$1,234.56` (US) and `1.234,56`/`23,50 €` (EU);
     `normalizeCurrency` maps `$£€¥` → ISO codes. `productID` from
@@ -375,7 +381,7 @@ notifies. See `social-sharing.md`.
 
 ## Tests
 
-- `ProductPageDetectorTests` (18) — fixtures `LunaTests/Fixtures/Products/`
+- `ProductPageDetectorTests` — fixtures `LunaTests/Fixtures/Products/`
   (amazon JSON-LD, shopify OG, bestbuy microdata, generic `@graph`+AggregateOffer+EU
   price, article no-price negative, **bunnings-nextdata** heuristic+embedded-JSON;
   Tier-1 candidates assert `staticPrice`) + embedded-price `firstPrice` unit tests

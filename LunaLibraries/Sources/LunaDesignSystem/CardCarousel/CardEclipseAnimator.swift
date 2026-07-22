@@ -53,7 +53,11 @@ public struct CardEclipseZenithResult {
 /// `finishInteractive()` / `cancelInteractive()` from a pan.
 public final class CardEclipseTransition {
 
+    /// Standard timing for peek taps and finger-driven page transitions.
     public static let duration: TimeInterval = 0.62
+    /// Direct scrubber taps are intentional jumps and should resolve more
+    /// briskly than a page gesture while preserving the same choreography.
+    public static let scrubberTapDuration: TimeInterval = 0.44
     /// The incoming card overshoots full size slightly at the zenith, guaranteeing
     /// the outgoing card is entirely covered when the slots are re-stacked.
     public static let zenithScale: CGFloat = 1.03
@@ -63,6 +67,7 @@ public final class CardEclipseTransition {
     private let incoming: CarouselCardView
     private let atZenith: () -> CardEclipseZenithResult
     private let completion: (_ finished: Bool) -> Void
+    private let totalDuration: TimeInterval
 
     private let ingress: UIViewPropertyAnimator
     private let dimmer: UIView
@@ -90,6 +95,7 @@ public final class CardEclipseTransition {
         forward: Bool,
         incomingTargetCenter: CGPoint,
         dimmingBounds: CGRect,
+        duration: TimeInterval = CardEclipseTransition.duration,
         atZenith: @escaping () -> CardEclipseZenithResult,
         completion: @escaping (_ finished: Bool) -> Void
     ) {
@@ -98,6 +104,7 @@ public final class CardEclipseTransition {
         self.incoming = incoming
         self.atZenith = atZenith
         self.completion = completion
+        totalDuration = max(duration, 0.01)
 
         let outgoingFrame = outgoing.frame
 
@@ -154,7 +161,7 @@ public final class CardEclipseTransition {
         // and it is swallowed as the edge sweeps past.
         container.insertSubview(flare, belowSubview: incoming)
 
-        let ingressDuration = Self.duration * 0.66
+        let ingressDuration = totalDuration * 0.66
         let dimmer = self.dimmer
         let corona = self.corona
         let flare = self.flare
@@ -285,7 +292,7 @@ public final class CardEclipseTransition {
         let corona = self.corona
         let flare = self.flare
         UIView.animateKeyframes(
-            withDuration: Self.duration - ingress.duration,
+            withDuration: totalDuration - ingress.duration,
             delay: 0,
             options: [.calculationModeCubic]
         ) {

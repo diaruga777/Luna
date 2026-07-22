@@ -101,6 +101,18 @@ class CardCarouselHostViewController: UIViewController {
         archiveTray?.refreshPullAvailability(animated: animated)
     }
 
+    /// Updates the tray from the carousel's intended target rather than its
+    /// not-yet-swapped `currentIndex`, so the tab retracts alongside paging.
+    final func updateArchivePullAvailability(
+        forTargetIndex index: Int,
+        cardCount: Int,
+        animated: Bool
+    ) {
+        archiveTray?.setPullAvailable(
+            cardCount == 0 || index == cardCount - 1,
+            animated: animated)
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         archiveTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)

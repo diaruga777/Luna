@@ -132,6 +132,13 @@ public struct CardCarouselStyle {
 public protocol CardCarouselDelegate: AnyObject {
     /// A new card is centered (paging, scrub commit, or reload).
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int)
+    /// The user's page or scrub interaction has selected a target, before any
+    /// card transition begins. A cancelled interactive page reports the still-
+    /// centered card again when it settles. Hosts use this to update peripheral
+    /// chrome without waiting for the card swap.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        navigationTargetDidChangeTo index: Int)
     /// Long-press menu for a card; return nil for none.
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -156,6 +163,9 @@ public protocol CardCarouselDelegate: AnyObject {
 
 public extension CardCarouselDelegate {
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {}
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        navigationTargetDidChangeTo index: Int) {}
     func carousel(
         _ carousel: CardCarouselViewController,
         contextMenuForCardAt index: Int
@@ -197,7 +207,7 @@ enum CardCarouselPagePanStartPolicy {
 }
 
 /// Named durations for the carousel's own non-eclipse animations (the eclipse
-/// page transition's timing lives on `CardEclipseTransition.duration`).
+/// page transition timings live on `CardEclipseTransition`).
 private enum CarouselAnimationTiming {
     /// `jump(to:)`'s crossfade between the current and target windows of
     /// mounted cards (Reduce Motion, scrub commits, multi-card jumps).
@@ -528,6 +538,7 @@ public final class CardCarouselViewController: UIViewController {
         let target = min(max(currentIndex + step, 0), max(0, count - 1))
         guard count > 0, target != currentIndex, !isTransitioning, !isImmersed
         else { return }
+        reportNavigationTarget(target)
         if abs(target - currentIndex) == 1,
            !UIAccessibility.isReduceMotionEnabled,
            view.window != nil,
@@ -641,8 +652,11 @@ public final class CardCarouselViewController: UIViewController {
 
     // MARK: - Paging
 
-    private func runEclipse(to target: Int) {
-        guard let transition = makeEclipseTransition(to: target) else {
+    private func runEclipse(
+        to target: Int,
+        duration: TimeInterval = CardEclipseTransition.duration
+    ) {
+        guard let transition = makeEclipseTransition(to: target, duration: duration) else {
             jump(to: target)
             return
         }
@@ -656,7 +670,10 @@ public final class CardCarouselViewController: UIViewController {
     /// target in the incoming peek position when this is a multi-card jump.
     /// Marks the carousel as transitioning — and retains the transition — until
     /// it settles.
-    private func makeEclipseTransition(to target: Int) -> CardEclipseTransition? {
+    private func makeEclipseTransition(
+        to target: Int,
+        duration: TimeInterval = CardEclipseTransition.duration
+    ) -> CardEclipseTransition? {
         guard let metrics,
               !isTransitioning,
               target >= 0, target < count,
@@ -694,6 +711,7 @@ public final class CardCarouselViewController: UIViewController {
                 x: metrics.centerX(forSlotOffset: 0),
                 y: metrics.centerY()),
             dimmingBounds: dimmingBounds,
+            duration: duration,
             atZenith: { [weak self] in
                 guard let self else {
                     return CardEclipseZenithResult(reappearingPeeks: [])
@@ -721,6 +739,9 @@ public final class CardCarouselViewController: UIViewController {
         view.isUserInteractionEnabled = true
         for slot in slots.values { applyRestingLayout(to: slot) }
         removeOrphanCardViews()
+        // Restores target-dependent chrome when an interactive page reverses,
+        // and confirms the new target after a successful transition.
+        reportNavigationTarget(currentIndex)
         if case .pending(let centerIndex) = pendingReload {
             pendingReload = .none
             reloadData(centeringAt: centerIndex)
@@ -834,6 +855,7 @@ public final class CardCarouselViewController: UIViewController {
 
     private func showScrubPreview(_ index: Int) {
         guard count > 0, !isTransitioning else { return }
+        reportNavigationTarget(index)
         slots[currentIndex]?.content.setPlaying(false)
         scrubPreview.show(at: index, cardCount: count, centeredCardFrame: centeredCardFrame())
     }
@@ -841,6 +863,7 @@ public final class CardCarouselViewController: UIViewController {
     private func commitScrub(to index: Int, isDirectTap: Bool = false) {
         guard count > 0, !isTransitioning else { return }
         let target = min(max(index, 0), count - 1)
+        reportNavigationTarget(target)
         if !isDirectTap,
            scrubPreview.previewContentIndex == target,
            let content = scrubPreview.takeContent() {
@@ -876,7 +899,7 @@ public final class CardCarouselViewController: UIViewController {
     /// their live-preview promotion behavior.
     private func pageScrubberTap(to target: Int) {
         if !UIAccessibility.isReduceMotionEnabled, view.window != nil {
-            runEclipse(to: target)
+            runEclipse(to: target, duration: CardEclipseTransition.scrubberTapDuration)
         } else {
             jump(to: target)
         }
@@ -1042,6 +1065,7 @@ public final class CardCarouselViewController: UIViewController {
             page(by: step)
             return
         }
+        reportNavigationTarget(target)
         guard let transition = makeEclipseTransition(to: target) else { return }
         // Finger travel maps to the incoming card's journey from its peek slot
         // to center.
@@ -1049,6 +1073,10 @@ public final class CardCarouselViewController: UIViewController {
             abs(metrics.centerX(forSlotOffset: step) - metrics.centerX(forSlotOffset: 0)),
             1)
         pagingTransition = .interactive(transition)
+    }
+
+    private func reportNavigationTarget(_ index: Int) {
+        delegate?.carousel(self, navigationTargetDidChangeTo: index)
     }
 
     @objc private func handleScrubPan(_ gesture: UIPanGestureRecognizer) {

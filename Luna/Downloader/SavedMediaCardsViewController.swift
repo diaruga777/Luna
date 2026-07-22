@@ -1012,6 +1012,16 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
 
 extension SavedMediaCardsViewController: CardCarouselDelegate {
 
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        navigationTargetDidChangeTo index: Int
+    ) {
+        updateArchivePullAvailability(
+            forTargetIndex: index,
+            cardCount: items.count + cardOffset,
+            animated: true)
+    }
+
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         refreshArchivePullAvailability(animated: true)
         updateShareButton()

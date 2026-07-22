@@ -819,6 +819,16 @@ extension ArticleCardsViewController: CardCarouselDelegate {
 
     func carousel(
         _ carousel: CardCarouselViewController,
+        navigationTargetDidChangeTo index: Int
+    ) {
+        updateArchivePullAvailability(
+            forTargetIndex: index,
+            cardCount: items.count + cardOffset,
+            animated: true)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
         contextMenuForCardAt index: Int
     ) -> UIContextMenuConfiguration? {
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }

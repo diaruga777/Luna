@@ -249,7 +249,8 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertGreaterThan(stagedHeader.bounds.height, 0)
 
         RunLoop.current.run(
-            until: Date().addingTimeInterval(CardEclipseTransition.duration + 0.2))
+            until: Date().addingTimeInterval(
+                CardEclipseTransition.scrubberTapDuration + 0.2))
     }
 
     private func makeArticleController(

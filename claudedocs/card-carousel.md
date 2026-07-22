@@ -44,7 +44,10 @@ own adapters later). The Downloader-specific adapters live in
   to 2/3 screen width, and shifts the card/empty UX left by 1/2 screen width. The
   gesture is interactive in both directions; tapping the exposed outside area
   spring-dismisses it. `ArchiveTrayController` owns this shared presentation and
-  a vertically scrolling 2-column square grid.
+  a vertically scrolling 2-column square grid. The carousel reports its intended
+  navigation target before card motion begins: scrubbing, tapping a scrubber chip,
+  or swiping away from the rightmost card retracts the tray concurrently instead
+  of waiting for the card swap; scrubbing back or cancelling a page restores it.
 
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
@@ -120,7 +123,9 @@ deadline discards the unsaved file.
 
 `CardEclipseTransition` stages every single-step page and every direct scrubber
 tap as a solar eclipse (Reduce Motion and non-tap multi-card jumps get a crossfade
-instead). Its ingress runs
+instead). Peek taps and interactive paging retain the deliberate 0.62-second
+timing; direct scrubber taps use the same keyframes at a brisker 0.44 seconds.
+Its ingress runs
 inside a `UIViewPropertyAnimator`, so the inset pan scrubs it with the finger
 (forward and back); releasing continues to the zenith or reverses to rest. Taps
 and scrubber taps run the same transition non-interactively.

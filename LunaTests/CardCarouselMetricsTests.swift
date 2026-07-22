@@ -181,6 +181,12 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
 @MainActor
 final class CardCarouselScrubberTapPagingTests: XCTestCase {
 
+    func testScrubberTapEclipseIsFasterThanStandardPaging() {
+        XCTAssertLessThan(
+            CardEclipseTransition.scrubberTapDuration,
+            CardEclipseTransition.duration)
+    }
+
     func testReaderTapTwoCardsForwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
         try await assertScrubberTapEclipse(style: .miniCards, from: 3, to: 5)
     }
@@ -207,11 +213,13 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
         to target: Int
     ) async throws {
         let source = MiniCardPagingDataSource()
+        let delegate = NavigationTargetSpy()
         let carousel = CardCarouselViewController()
         var style = CardCarouselStyle()
         style.scrubberStyle = scrubberStyle
         carousel.style = style
         carousel.dataSource = source
+        carousel.delegate = delegate
 
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = carousel
@@ -222,6 +230,8 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
         scrubber.delegate?.scrubber(scrubber, didTap: target)
 
+        XCTAssertEqual(delegate.targets, [target],
+                       "Peripheral chrome must receive the target before the eclipse")
         XCTAssertEqual(carousel.currentIndex, start,
                        "The target must not replace the current card before totality")
         XCTAssertFalse(carousel.view.isUserInteractionEnabled,
@@ -232,10 +242,13 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
         XCTAssertGreaterThan(staged.view.bounds.height, 0)
 
         let settled = expectation(description: "multi-card eclipse settled")
-        DispatchQueue.main.asyncAfter(deadline: .now() + CardEclipseTransition.duration + 0.2) {
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + CardEclipseTransition.scrubberTapDuration + 0.12
+        ) {
             settled.fulfill()
         }
-        await fulfillment(of: [settled], timeout: CardEclipseTransition.duration + 1)
+        await fulfillment(
+            of: [settled], timeout: CardEclipseTransition.scrubberTapDuration + 1)
 
         XCTAssertEqual(carousel.currentIndex, target)
         XCTAssertTrue(carousel.view.isUserInteractionEnabled)
@@ -248,6 +261,18 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
     private func firstScrubber(in view: UIView) -> CarouselScrubberView? {
         if let scrubber = view as? CarouselScrubberView { return scrubber }
         return view.subviews.lazy.compactMap { self.firstScrubber(in: $0) }.first
+    }
+}
+
+@MainActor
+private final class NavigationTargetSpy: @preconcurrency CardCarouselDelegate {
+    private(set) var targets: [Int] = []
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        navigationTargetDidChangeTo index: Int
+    ) {
+        targets.append(index)
     }
 }
 
@@ -279,11 +304,13 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
 
     func testCommitPromotesPlayingPreviewWithoutPausingOrReplacingItAndPreservesSoundState() throws {
         let source = ScrubPromotionDataSource()
+        let delegate = NavigationTargetSpy()
         let carousel = CardCarouselViewController()
         var style = CardCarouselStyle()
         style.autoplaysScrubPreviewContent = true
         carousel.style = style
         carousel.dataSource = source
+        carousel.delegate = delegate
         carousel.loadViewIfNeeded()
         carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         carousel.view.layoutIfNeeded()
@@ -294,6 +321,7 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
 
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
         scrubber.delegate?.scrubber(scrubber, didPreview: 1)
+        XCTAssertEqual(delegate.targets, [1])
         XCTAssertTrue(source.preview.isPlaying)
         XCTAssertFalse(source.preview.isMuted)
         XCTAssertEqual(source.preview.pauseCount, 0)

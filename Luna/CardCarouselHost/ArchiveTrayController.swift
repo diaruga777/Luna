@@ -120,7 +120,13 @@ final class ArchiveTrayController: NSObject {
     /// animates the closed tab from fully offscreen to its normal peek; paging
     /// away retracts it and closes an open tray defensively.
     func refreshPullAvailability(animated: Bool) {
-        let available = canPull()
+        setPullAvailable(canPull(), animated: animated)
+    }
+
+    /// Updates availability from an in-flight carousel target. This does not
+    /// consult `canPull`, whose current-index answer intentionally lags until
+    /// the card transition reaches its swap point.
+    func setPullAvailable(_ available: Bool, animated: Bool) {
         guard available != pullAvailable else { return }
         pullAvailable = available
         if !available { progress = 0 }

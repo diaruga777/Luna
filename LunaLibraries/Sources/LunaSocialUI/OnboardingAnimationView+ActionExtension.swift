@@ -12,7 +12,7 @@ extension OnboardingAnimationView {
 
     func buildActionExtension() {
         let phone = UIView()
-        phone.backgroundColor = .systemBackground
+        phone.backgroundColor = LunaColors.background
         phone.layer.borderColor = UIColor.systemGray3.cgColor
         phone.layer.borderWidth = 3
         phone.layer.cornerRadius = 30
@@ -23,10 +23,10 @@ extension OnboardingAnimationView {
 
         // Safari page: text lines + a bottom toolbar with the Share button.
         let page = UIView()
-        page.backgroundColor = .secondarySystemBackground
+        page.backgroundColor = LunaColors.secondaryBackground
         page.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(page)
-        let headline = bar(width: 0.7, height: 9, color: .label.withAlphaComponent(0.7))
+        let headline = bar(width: 0.7, height: 9, color: LunaColors.primaryText.withAlphaComponent(0.7))
         let lines = UIStackView(arrangedSubviews: [
             headline, bar(width: 0.95, height: 5), bar(width: 0.9, height: 5),
             bar(width: 0.93, height: 5), bar(width: 0.6, height: 5)])
@@ -40,12 +40,12 @@ extension OnboardingAnimationView {
         // Safari bottom chrome: a URL pill above a row of toolbar icons
         // (back, forward, Share, book, tabs) — matching real Safari.
         let toolbar = UIView()
-        toolbar.backgroundColor = .systemBackground
+        toolbar.backgroundColor = LunaColors.background
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(toolbar)
 
         let urlPill = UIView()
-        urlPill.backgroundColor = .secondarySystemBackground
+        urlPill.backgroundColor = LunaColors.secondaryBackground
         urlPill.layer.cornerRadius = 9
         urlPill.layer.cornerCurve = .continuous
         urlPill.translatesAutoresizingMaskIntoConstraints = false
@@ -53,7 +53,7 @@ extension OnboardingAnimationView {
         // A grey placeholder bar stands in for the URL text — the animation uses
         // no literal text anywhere, just grey boxes where text would be.
         let urlPlaceholder = UIView()
-        urlPlaceholder.backgroundColor = UIColor.label.withAlphaComponent(0.3)
+        urlPlaceholder.backgroundColor = LunaColors.primaryText.withAlphaComponent(0.3)
         urlPlaceholder.layer.cornerRadius = 3
         urlPlaceholder.translatesAutoresizingMaskIntoConstraints = false
         urlPill.addSubview(urlPlaceholder)
@@ -78,11 +78,11 @@ extension OnboardingAnimationView {
         toolbar.addSubview(axShareRipple)
 
         // Share sheet (slides up): grabber, app-icon row, then the scrolling actions.
-        axShareSheet.backgroundColor = .systemBackground
+        axShareSheet.backgroundColor = LunaColors.background
         axShareSheet.layer.cornerRadius = 18
         axShareSheet.layer.cornerCurve = .continuous
         axShareSheet.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        axShareSheet.layer.borderColor = UIColor.separator.cgColor
+        axShareSheet.layer.borderColor = LunaColors.separator.cgColor
         axShareSheet.layer.borderWidth = 0.5
         axShareSheet.clipsToBounds = true
         axShareSheet.translatesAutoresizingMaskIntoConstraints = false
@@ -125,23 +125,23 @@ extension OnboardingAnimationView {
         }
 
         // The action-extension UI (the Luna reader) — slides up over everything.
-        axActionCard.backgroundColor = .systemBackground
+        axActionCard.backgroundColor = LunaColors.background
         axActionCard.layer.cornerRadius = 18
         axActionCard.layer.cornerCurve = .continuous
         axActionCard.clipsToBounds = true
         axActionCard.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(axActionCard)
         let cardBar = UIView()
-        cardBar.backgroundColor = .secondarySystemBackground
+        cardBar.backgroundColor = LunaColors.secondaryBackground
         cardBar.translatesAutoresizingMaskIntoConstraints = false
         axActionCard.addSubview(cardBar)
         // A grey placeholder bar stands in for the "Done" button text.
         let donePlaceholder = UIView()
-        donePlaceholder.backgroundColor = UIColor.label.withAlphaComponent(0.3)
+        donePlaceholder.backgroundColor = LunaColors.primaryText.withAlphaComponent(0.3)
         donePlaceholder.layer.cornerRadius = 3
         donePlaceholder.translatesAutoresizingMaskIntoConstraints = false
         cardBar.addSubview(donePlaceholder)
-        let cardHeadline = bar(width: 0.8, height: 10, color: .label.withAlphaComponent(0.8))
+        let cardHeadline = bar(width: 0.8, height: 10, color: LunaColors.primaryText.withAlphaComponent(0.8))
         let cardLines = UIStackView(arrangedSubviews: [
             cardHeadline, bar(width: 0.96, height: 5), bar(width: 0.92, height: 5),
             bar(width: 0.95, height: 5), bar(width: 0.7, height: 5)])

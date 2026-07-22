@@ -36,7 +36,7 @@ final class CarouselScrubPreviewController {
     func show(at index: Int, cardCount: Int, centeredCardFrame: CGRect) {
         if previewOverlay == nil {
             let overlay = UIView()
-            overlay.backgroundColor = .secondarySystemBackground
+            overlay.backgroundColor = LunaColors.secondaryBackground
             overlay.layer.cornerRadius = CarouselCardView.cornerRadius
             overlay.layer.cornerCurve = .continuous
             overlay.clipsToBounds = true
@@ -51,7 +51,7 @@ final class CarouselScrubPreviewController {
             case .miniCards:
                 let label = UILabel()
                 label.font = .preferredFont(forTextStyle: .title2)
-                label.textColor = .label
+                label.textColor = LunaColors.primaryText
                 label.textAlignment = .center
                 label.numberOfLines = 0
                 label.translatesAutoresizingMaskIntoConstraints = false

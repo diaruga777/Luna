@@ -23,7 +23,7 @@ extension OnboardingAnimationView {
     /// A grey Share-sheet caption placeholder underneath an app icon.
     private func captionPlaceholder() -> UIView {
         let v = UIView()
-        v.backgroundColor = UIColor.label.withAlphaComponent(0.3)
+        v.backgroundColor = LunaColors.primaryText.withAlphaComponent(0.3)
         v.layer.cornerRadius = 2.5
         v.translatesAutoresizingMaskIntoConstraints = false
         v.widthAnchor.constraint(equalToConstant: 26).isActive = true
@@ -57,7 +57,7 @@ extension OnboardingAnimationView {
 
     func buildShortcutInstall() {
         let phone = UIView()
-        phone.backgroundColor = .systemBackground
+        phone.backgroundColor = LunaColors.background
         phone.layer.borderColor = UIColor.systemGray3.cgColor
         phone.layer.borderWidth = 3
         phone.layer.cornerRadius = 26
@@ -71,11 +71,11 @@ extension OnboardingAnimationView {
         // it communicates what the user is looking at without recursively running
         // another animation inside itself.
         let page = UIView()
-        page.backgroundColor = .secondarySystemBackground
+        page.backgroundColor = LunaColors.secondaryBackground
         page.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(page)
         let nestedPhone = UIView()
-        nestedPhone.backgroundColor = .systemBackground
+        nestedPhone.backgroundColor = LunaColors.background
         nestedPhone.layer.cornerRadius = 10
         nestedPhone.layer.borderColor = UIColor.systemGray3.cgColor
         nestedPhone.layer.borderWidth = 1.5
@@ -133,7 +133,7 @@ extension OnboardingAnimationView {
         let shortcutsCaption = UILabel()
         shortcutsCaption.text = "Shortcuts"
         shortcutsCaption.font = .systemFont(ofSize: 9, weight: .medium)
-        shortcutsCaption.textColor = .label
+        shortcutsCaption.textColor = LunaColors.primaryText
         shortcutsCaption.setContentCompressionResistancePriority(.required, for: .horizontal)
         let shortcutsItem = iconWithCaption(shortcutsAppIcon(), caption: shortcutsCaption)
         let generic2 = iconWithCaption(axAppIcon(), caption: captionPlaceholder())

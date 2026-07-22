@@ -251,7 +251,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             systemItem: .done, primaryAction: UIAction { [weak self] _ in
                 guard let self else { return }
@@ -378,7 +378,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private func setUpLoadingOverlay() {
         // The cover is effectively opaque until its five-tap escape hatch is used.
         // Only its background is translucent so the loading controls stay crisp.
-        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.99)
+        loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
         let revealGesture = UITapGestureRecognizer(
             target: self, action: #selector(archiveCoverTapped(_:)))
@@ -388,7 +388,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         overlaySpinner.startAnimating()
 
         overlayLabel.text = "Unlocking article…"
-        overlayLabel.textColor = .secondaryLabel
+        overlayLabel.textColor = LunaColors.secondaryText
         overlayLabel.font = .preferredFont(forTextStyle: .callout)
         overlayLabel.textAlignment = .center
         overlayLabel.numberOfLines = 0
@@ -429,7 +429,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         archiveCoverTapCount += 1
         guard archiveCoverTapCount == 5 else { return }
 
-        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.1)
+        loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.1)
         loadingOverlay.isUserInteractionEnabled = false
     }
 
@@ -979,7 +979,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         view.bringSubviewToFront(loadingOverlay)
         loadingOverlay.isHidden = false
         overlayLabel.text = Self.mayBeStuckMessage
-        overlayLabel.textColor = .secondaryLabel
+        overlayLabel.textColor = LunaColors.secondaryText
         overlaySafariButton.isHidden = (onOpenInBrowser == nil)
         overlaySpinner.startAnimating()
     }
@@ -1002,8 +1002,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         loadingOverlay.isHidden = false
         overlaySpinner.stopAnimating()
         overlayLabel.text = message
-        overlayLabel.textColor = .label
+        overlayLabel.textColor = LunaColors.primaryText
         overlaySafariButton.isHidden = (onOpenInBrowser == nil)
-        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.99)
+        loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)
     }
 }

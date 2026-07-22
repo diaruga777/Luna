@@ -116,7 +116,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         title = "Luna Downloader"
 
         let onDone = self.onDone
@@ -131,7 +131,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
         savedLabel.text = "Saved"
         savedLabel.font = .preferredFont(forTextStyle: .body)
-        savedLabel.textColor = .secondaryLabel
+        savedLabel.textColor = LunaColors.secondaryText
         savedLabel.textAlignment = .center
         savedLabel.numberOfLines = 0
 
@@ -174,7 +174,7 @@ public final class SavedNonTextualViewController: UIViewController {
         }
 
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.backgroundColor = .secondarySystemBackground
+        previewContainer.backgroundColor = LunaColors.secondaryBackground
         previewContainer.layer.cornerRadius = 12
         previewContainer.clipsToBounds = true
 
@@ -186,7 +186,7 @@ public final class SavedNonTextualViewController: UIViewController {
         pendingIconView.image = UIImage(
             systemName: "play.rectangle.on.rectangle",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 48, weight: .regular))
-        pendingIconView.tintColor = .tertiaryLabel
+        pendingIconView.tintColor = LunaColors.tertiaryText
         pendingIconView.contentMode = .center
         pendingIconView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(pendingIconView)
@@ -205,7 +205,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
         previewPlaceholder.text = "Unable to preview media"
         previewPlaceholder.font = .preferredFont(forTextStyle: .subheadline)
-        previewPlaceholder.textColor = .secondaryLabel
+        previewPlaceholder.textColor = LunaColors.secondaryText
         previewPlaceholder.textAlignment = .center
         previewPlaceholder.numberOfLines = 0
         previewPlaceholder.isHidden = true
@@ -291,7 +291,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
         downloadStatus.isHidden = true
         downloadStatus.font = .preferredFont(forTextStyle: .subheadline)
-        downloadStatus.textColor = .secondaryLabel
+        downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.textAlignment = .center
         downloadStatus.numberOfLines = 0
 
@@ -367,7 +367,7 @@ public final class SavedNonTextualViewController: UIViewController {
             shareButton.isEnabled = false
             saveButton.isEnabled = false
             downloadStatus.text = "Downloading…"
-            downloadStatus.textColor = .secondaryLabel
+            downloadStatus.textColor = LunaColors.secondaryText
             downloadStatus.isHidden = false
 
         case .ready(let media):
@@ -707,7 +707,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
     private func showSavingStatus() {
         downloadStatus.text = "Saving to Photos…"
-        downloadStatus.textColor = .secondaryLabel
+        downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
     }
 
@@ -746,7 +746,7 @@ public final class SavedNonTextualViewController: UIViewController {
         shareButton.isEnabled = false
         saveButton.isEnabled = false
         downloadStatus.text = "Deleting…"
-        downloadStatus.textColor = .secondaryLabel
+        downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
 
         Task { [weak self] in

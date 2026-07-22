@@ -59,7 +59,7 @@ final class EmailEntryViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         // The hero owns the title. Modal login carries Cancel on the left;
         // onboarding embeds this screen directly and offers its skip action on
         // the top right instead.

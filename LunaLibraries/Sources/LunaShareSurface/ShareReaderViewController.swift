@@ -62,7 +62,7 @@ public final class ShareReaderViewController: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         spinner.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(spinner)
@@ -179,7 +179,7 @@ public final class ShareReaderViewController: UIViewController {
 
         let label = UILabel()
         label.text = "Tracking price for \(productName)"
-        label.textColor = .label
+        label.textColor = LunaColors.primaryText
         label.font = .preferredFont(forTextStyle: .headline)
         label.textAlignment = .center
         label.numberOfLines = 0

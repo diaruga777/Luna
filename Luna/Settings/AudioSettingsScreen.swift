@@ -66,7 +66,7 @@ final class AudioSettingsScreen: NavHeaderTableController {
         case .cleanup:
             content.text = "Clean Up Articles for Listening"
             content.secondaryText = "Apple Intelligence"
-            content.secondaryTextProperties.color = .secondaryLabel
+            content.secondaryTextProperties.color = LunaColors.secondaryText
             content.secondaryTextProperties.font = .systemFont(ofSize: 12)
             cell.selectionStyle = .none
             cell.accessoryView = makeToggle(

@@ -39,7 +39,7 @@ public final class MediaDownloadStatusView: UIView {
         icon.setContentHuggingPriority(.required, for: .horizontal)
 
         label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textColor = .label
+        label.textColor = LunaColors.primaryText
 
         progress.setContentHuggingPriority(.defaultLow, for: .horizontal)
 

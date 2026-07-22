@@ -23,14 +23,14 @@ public final class ArticleShareView: UIView {
 
     private func build() {
         let separator = UIView()
-        separator.backgroundColor = .separator
+        separator.backgroundColor = LunaColors.separator
         separator.translatesAutoresizingMaskIntoConstraints = false
         separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
 
         let prompt = UILabel()
         prompt.text = "Done reading? Share it."
         prompt.font = .preferredFont(forTextStyle: .subheadline)
-        prompt.textColor = .secondaryLabel
+        prompt.textColor = LunaColors.secondaryText
         prompt.textAlignment = .center
 
         var shareConfig = UIButton.Configuration.filled()

@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import UIKit
 
 /// Display-ready archive entry shared by the Reader and Downloader trays.
@@ -97,7 +98,7 @@ final class ArchiveTrayController: NSObject {
 
         emptyLabel.text = "No archived items"
         emptyLabel.font = .preferredFont(forTextStyle: .subheadline)
-        emptyLabel.textColor = .secondaryLabel
+        emptyLabel.textColor = LunaColors.secondaryText
         emptyLabel.textAlignment = .center
         tray.addSubview(emptyLabel)
 
@@ -235,18 +236,18 @@ private final class ArchiveTrayCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        contentView.backgroundColor = .secondarySystemBackground
+        contentView.backgroundColor = LunaColors.secondaryBackground
         contentView.layer.cornerRadius = 16
         contentView.layer.cornerCurve = .continuous
         contentView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         titleLabel.font = .preferredFont(forTextStyle: .caption1)
-        titleLabel.textColor = .label
+        titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = 3
         footerLabel.font = .preferredFont(forTextStyle: .caption2)
-        footerLabel.textColor = .secondaryLabel
-        unavailableIcon.tintColor = .label
+        footerLabel.textColor = LunaColors.secondaryText
+        unavailableIcon.tintColor = LunaColors.primaryText
         unavailableIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 25)
         for child in [imageView, titleLabel, footerLabel, unavailableIcon] {
             child.translatesAutoresizingMaskIntoConstraints = false

@@ -374,13 +374,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             lip.backgroundColor = .clear
             lip.addTarget(self, action: action, for: .touchUpInside)
             label.font = .systemFont(ofSize: 14, weight: .semibold)
-            label.textColor = .label
+            label.textColor = LunaColors.primaryText
             label.lineBreakMode = .byTruncatingTail
             lip.addSubview(label)   // framed manually in layoutChrome
             view.addSubview(lip)
         }
         bottomLipLabel.font = .systemFont(ofSize: 14, weight: .regular)
-        bottomLipLabel.textColor = .secondaryLabel
+        bottomLipLabel.textColor = LunaColors.secondaryText
 
         indentView.isUserInteractionEnabled = false   // tapping the indent never pops
         indentView.backgroundColor = .clear
@@ -634,7 +634,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         let label = UILabel()
         label.tag = Self.errorLabelTag
         label.text = "Couldn’t load this page."
-        label.textColor = .secondaryLabel
+        label.textColor = LunaColors.secondaryText
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textAlignment = .center
         view.addSubview(label)   // centred manually in viewDidLayoutSubviews

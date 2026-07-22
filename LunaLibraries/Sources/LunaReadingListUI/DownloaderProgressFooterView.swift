@@ -50,16 +50,16 @@ public final class DownloaderProgressFooterView: UIView {
         thumbnail.layer.cornerRadius = 8
         thumbnail.layer.cornerCurve = .continuous
         thumbnail.clipsToBounds = true
-        thumbnail.backgroundColor = .secondarySystemBackground
-        thumbnail.tintColor = .secondaryLabel
+        thumbnail.backgroundColor = LunaColors.secondaryBackground
+        thumbnail.tintColor = LunaColors.secondaryText
         thumbnail.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.textColor = .label
+        titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = 1
 
         messageLabel.font = .systemFont(ofSize: 13, weight: .regular)
-        messageLabel.textColor = .secondaryLabel
+        messageLabel.textColor = LunaColors.secondaryText
         messageLabel.numberOfLines = 1
 
         let textStack = UIStackView(arrangedSubviews: [titleLabel, messageLabel])
@@ -124,7 +124,7 @@ public final class DownloaderProgressFooterView: UIView {
         hideWorkItem?.cancel()
         titleLabel.text = snapshot.title
         messageLabel.text = snapshot.message
-        messageLabel.textColor = snapshot.phase == .failed ? .systemRed : .secondaryLabel
+        messageLabel.textColor = snapshot.phase == .failed ? .systemRed : LunaColors.secondaryText
         let thumbnailImage: UIImage?
         if let fileName = snapshot.thumbnailFileName {
             if fileName != cachedThumbnailFileName {

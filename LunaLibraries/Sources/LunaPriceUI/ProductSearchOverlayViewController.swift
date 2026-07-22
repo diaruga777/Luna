@@ -135,7 +135,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         card.layer.cornerRadius = Self.cardCornerRadius
         card.layer.cornerCurve = .continuous
         card.layer.borderWidth = 0.5
-        card.layer.borderColor = UIColor.separator.withAlphaComponent(0.6).cgColor
+        card.layer.borderColor = LunaColors.separator.withAlphaComponent(0.6).cgColor
         card.clipsToBounds = true
         view.addSubview(card)
 
@@ -214,7 +214,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         header.contentView.addSubview(forwardButton)
 
         titleLabel.font = .preferredFont(forTextStyle: .subheadline)
-        titleLabel.textColor = .secondaryLabel
+        titleLabel.textColor = LunaColors.secondaryText
         titleLabel.textAlignment = .center
         titleLabel.text = "Find a seller"
         header.contentView.addSubview(titleLabel)

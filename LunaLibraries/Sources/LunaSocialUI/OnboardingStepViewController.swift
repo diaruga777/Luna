@@ -77,7 +77,7 @@ public final class OnboardingStepViewController: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         navigationItem.hidesBackButton = true
 
         let accent = GlassStyle.lunaBrandAccent
@@ -114,7 +114,7 @@ public final class OnboardingStepViewController: UIViewController {
 
         bodyLabel.text = body
         bodyLabel.font = .preferredFont(forTextStyle: .body)
-        bodyLabel.textColor = .secondaryLabel
+        bodyLabel.textColor = LunaColors.secondaryText
         bodyLabel.textAlignment = .center
         bodyLabel.numberOfLines = 0
 

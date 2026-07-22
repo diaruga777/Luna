@@ -64,12 +64,12 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
-        webView.underPageBackgroundColor = .systemBackground
+        webView.backgroundColor = LunaColors.background
+        webView.scrollView.backgroundColor = LunaColors.background
+        webView.underPageBackgroundColor = LunaColors.background
         webView.navigationDelegate = self
         view.addSubview(webView)
         NSLayoutConstraint.activate([

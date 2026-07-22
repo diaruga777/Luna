@@ -117,7 +117,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         navigationItem.largeTitleDisplayMode = .never
 
         for (index, mode) in availableModes.enumerated() {
@@ -159,7 +159,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
                 let subtitleLabel = UILabel()
                 subtitleLabel.text = subtitle
                 subtitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-                subtitleLabel.textColor = .secondaryLabel
+                subtitleLabel.textColor = LunaColors.secondaryText
                 subtitleLabel.textAlignment = .center
                 subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
                 inlineHeader.addSubview(subtitleLabel)
@@ -187,7 +187,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             // against the solid reader background.
             let appearance = UINavigationBarAppearance()
             appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = .systemBackground
+            appearance.backgroundColor = LunaColors.background
             navigationItem.standardAppearance = appearance
             navigationItem.scrollEdgeAppearance = appearance
             navigationItem.rightBarButtonItems = [UIBarButtonItem(customView: audioButton)]

@@ -100,7 +100,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         var style = CardCarouselStyle()
         style.edgeGap = 10
@@ -1022,7 +1022,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
         if reader == nil {
             statusLabel.font = .preferredFont(forTextStyle: .subheadline)
-            statusLabel.textColor = .secondaryLabel
+            statusLabel.textColor = LunaColors.secondaryText
             statusLabel.textAlignment = .center
             statusLabel.numberOfLines = 0
             switch item.state {
@@ -1049,7 +1049,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         senderBadge.translatesAutoresizingMaskIntoConstraints = false
         senderLabel.text = "From \(senderName)"
         senderLabel.font = .systemFont(ofSize: 12, weight: .semibold)
-        senderLabel.textColor = .secondaryLabel
+        senderLabel.textColor = LunaColors.secondaryText
         senderLabel.lineBreakMode = .byTruncatingTail
         senderLabel.translatesAutoresizingMaskIntoConstraints = false
         senderBadge.contentView.addSubview(senderLabel)
@@ -1298,17 +1298,17 @@ private final class ReaderCardTitleHeaderView: UIView {
 
     init(title: String) {
         super.init(frame: .zero)
-        backgroundColor = .systemBackground
+        backgroundColor = LunaColors.background
 
         iconView.image = UIImage(systemName: "globe")
-        iconView.tintColor = .secondaryLabel
+        iconView.tintColor = LunaColors.secondaryText
         iconView.contentMode = .scaleAspectFit
         iconView.layer.cornerRadius = 6
         iconView.clipsToBounds = true
 
         titleLabel.text = title
         titleLabel.font = Self.readerTitleFont
-        titleLabel.textColor = .label
+        titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = 3
         titleLabel.lineBreakMode = .byTruncatingTail
 
@@ -1392,7 +1392,7 @@ private final class ReaderFooterContentFadeView: UIView {
     }
 
     private func updateColors() {
-        let background = UIColor.systemBackground.resolvedColor(with: traitCollection)
+        let background = LunaColors.background.resolvedColor(with: traitCollection)
         gradient.colors = [
             background.withAlphaComponent(0).cgColor,
             background.cgColor,

@@ -77,7 +77,7 @@ public final class InteropPromptViewController: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         let owner = kind.owner
 
         switch kind {
@@ -106,7 +106,7 @@ public final class InteropPromptViewController: UIViewController {
 
         let explainer = UILabel()
         explainer.font = .preferredFont(forTextStyle: .body)
-        explainer.textColor = .secondaryLabel
+        explainer.textColor = LunaColors.secondaryText
         explainer.textAlignment = .center
         explainer.numberOfLines = 0
 
@@ -182,7 +182,7 @@ public final class InteropPromptViewController: UIViewController {
         let detailLabel = UILabel()
         detailLabel.text = detail
         detailLabel.font = .preferredFont(forTextStyle: .subheadline)
-        detailLabel.textColor = .secondaryLabel
+        detailLabel.textColor = LunaColors.secondaryText
         detailLabel.numberOfLines = 0
 
         let textStack = UIStackView(arrangedSubviews: [titleLabel, detailLabel])
@@ -195,7 +195,7 @@ public final class InteropPromptViewController: UIViewController {
         row.spacing = 12
 
         let card = UIView()
-        card.backgroundColor = .secondarySystemBackground
+        card.backgroundColor = LunaColors.secondaryBackground
         card.layer.cornerRadius = 12
         row.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(row)
@@ -218,7 +218,7 @@ public final class InteropPromptViewController: UIViewController {
         config.baseBackgroundColor = GlassStyle.readingAccent
 
         payStatus.font = .preferredFont(forTextStyle: .subheadline)
-        payStatus.textColor = .secondaryLabel
+        payStatus.textColor = LunaColors.secondaryText
         payStatus.textAlignment = .center
         payStatus.numberOfLines = 0
         payStatus.isHidden = true
@@ -249,7 +249,7 @@ public final class InteropPromptViewController: UIViewController {
 
             let fallback = UILabel()
             fallback.font = .preferredFont(forTextStyle: .footnote)
-            fallback.textColor = .secondaryLabel
+            fallback.textColor = LunaColors.secondaryText
             fallback.textAlignment = .center
             fallback.numberOfLines = 0
             fallback.text = "If nothing opens, open \(currentSurface.displayName) and go to "
@@ -265,7 +265,7 @@ public final class InteropPromptViewController: UIViewController {
     private func purchaseInline() {
         payButton.isEnabled = false
         payStatus.text = "Contacting the App Store…"
-        payStatus.textColor = .secondaryLabel
+        payStatus.textColor = LunaColors.secondaryText
         payStatus.isHidden = false
         Task { [weak self] in
             guard let self else { return }

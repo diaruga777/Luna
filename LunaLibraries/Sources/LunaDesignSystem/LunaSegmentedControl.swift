@@ -327,7 +327,7 @@ private final class SegmentView: UIView {
     }
 
     func updateColors() {
-        let color: UIColor = isSelected ? .label : .secondaryLabel
+        let color: UIColor = isSelected ? LunaColors.primaryText : LunaColors.secondaryText
         titleLabel.textColor = color
         imageView.tintColor = color
     }

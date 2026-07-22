@@ -450,7 +450,7 @@ private final class ScrubberItemView: UIView {
             imageView.clipsToBounds = true
             imageView.layer.cornerRadius = 6
             imageView.layer.cornerCurve = .continuous
-            imageView.backgroundColor = .tertiarySystemFill
+            imageView.backgroundColor = LunaColors.tertiaryFill
             // This view is created before Auto Layout gives its parent `size`.
             // Starting at `size` and also using flexible width/height doubles
             // the image when the parent grows from zero to its constrained
@@ -471,18 +471,18 @@ private final class ScrubberItemView: UIView {
         // The chip carries its own card surface even when the shadow is off,
         // so unselected chips still read as tiny cards floating on the
         // background.
-        backgroundColor = .systemBackground
+        backgroundColor = LunaColors.background
         let inset: CGFloat = 6
         let contentWidth = size.width - inset * 2
 
         badgeView.frame = CGRect(x: inset, y: inset, width: 16, height: 16)
         addSubview(badgeView)
 
-        addBar(x: inset, y: 28, width: contentWidth, height: 4, color: .systemFill)
-        addBar(x: inset, y: 35, width: contentWidth * 0.72, height: 4, color: .systemFill)
-        addBar(x: inset, y: 45, width: contentWidth, height: 3, color: .tertiarySystemFill)
-        addBar(x: inset, y: 51, width: contentWidth, height: 3, color: .tertiarySystemFill)
-        addBar(x: inset, y: 57, width: contentWidth * 0.6, height: 3, color: .tertiarySystemFill)
+        addBar(x: inset, y: 28, width: contentWidth, height: 4, color: LunaColors.fill)
+        addBar(x: inset, y: 35, width: contentWidth * 0.72, height: 4, color: LunaColors.fill)
+        addBar(x: inset, y: 45, width: contentWidth, height: 3, color: LunaColors.tertiaryFill)
+        addBar(x: inset, y: 51, width: contentWidth, height: 3, color: LunaColors.tertiaryFill)
+        addBar(x: inset, y: 57, width: contentWidth * 0.6, height: 3, color: LunaColors.tertiaryFill)
     }
 
     private func addBar(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, color: UIColor) {

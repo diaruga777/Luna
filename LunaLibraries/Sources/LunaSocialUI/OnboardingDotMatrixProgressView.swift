@@ -82,7 +82,7 @@ public final class OnboardingDotMatrixProgressView: UIView {
 
     private func applyColors() {
         let accent = GlassStyle.lunaBrandAccent.resolvedColor(with: traitCollection).cgColor
-        let dim = UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.18).cgColor
+        let dim = LunaColors.primaryText.resolvedColor(with: traitCollection).withAlphaComponent(0.18).cgColor
         for (index, dot) in dotLayers.enumerated() {
             dot.backgroundColor = index <= currentIndex ? accent : dim
         }

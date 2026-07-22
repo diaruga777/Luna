@@ -15,6 +15,7 @@
 
 import AVFoundation
 import CoreVideo
+import LunaDesignSystem
 import LunaSocialUI
 import UIKit
 import XCTest
@@ -129,12 +130,12 @@ final class GuideVideoRecorderTests: XCTestCase {
         let natural = naturalSize(for: kind)
 
         let animation = OnboardingAnimationView(kind: kind, appIcon: appIcon)
-        animation.backgroundColor = .systemBackground
+        animation.backgroundColor = LunaColors.background
 
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: natural)
         window.overrideUserInterfaceStyle = style
-        window.backgroundColor = .systemBackground
+        window.backgroundColor = LunaColors.background
         window.addSubview(animation)
         // The illustration carries its own fixed width/height constraints (== natural),
         // so centering it makes it exactly fill the window.

@@ -75,7 +75,7 @@ public final class CarouselCardView: CardSurfaceView {
     /// content edge fades dissolve into the SCREEN background — a visible
     /// card-toned band behind them would silhouette the retired container.
     public func setSurfaceHidden(_ hidden: Bool) {
-        backgroundColor = hidden ? .clear : .secondarySystemBackground
+        backgroundColor = hidden ? .clear : LunaColors.secondaryBackground
     }
 
     /// The resting darkness for a non-centered card.

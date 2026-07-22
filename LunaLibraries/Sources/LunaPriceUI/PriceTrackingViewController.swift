@@ -121,7 +121,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         label.text = "Sellers"
         label.font = .preferredFont(forTextStyle: .footnote)
         label.adjustsFontForContentSizeCategory = true
-        label.textColor = .secondaryLabel
+        label.textColor = LunaColors.secondaryText
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
         container.addSubview(addSellerButton)
@@ -166,16 +166,16 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = LunaColors.groupedBackground
 
         navHeader.title = "Price Tracker"
         navHeader.mount(in: self)
 
-        productHeader.backgroundColor = .systemGroupedBackground
+        productHeader.backgroundColor = LunaColors.groupedBackground
         productHeader.translatesAutoresizingMaskIntoConstraints = false
         productTitleLabel.font = .preferredFont(forTextStyle: .title3)
         productTitleLabel.adjustsFontForContentSizeCategory = true
-        productTitleLabel.textColor = .label
+        productTitleLabel.textColor = LunaColors.primaryText
         productTitleLabel.numberOfLines = 0
         productTitleLabel.lineBreakMode = .byWordWrapping
         productTitleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -323,12 +323,12 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     // MARK: - Price-history graph
 
     private func configureGraphContainer() {
-        graphContainer.backgroundColor = .systemGroupedBackground
+        graphContainer.backgroundColor = LunaColors.groupedBackground
         graphContainer.translatesAutoresizingMaskIntoConstraints = false
 
         graphTitleLabel.text = "Price History"
         graphTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        graphTitleLabel.textColor = .secondaryLabel
+        graphTitleLabel.textColor = LunaColors.secondaryText
         graphTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         graphContainer.addSubview(graphTitleLabel)
 
@@ -364,7 +364,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     private func makeThresholdFooter() -> UIView {
         let container = UIView()
-        container.backgroundColor = .systemGroupedBackground
+        container.backgroundColor = LunaColors.groupedBackground
 
         thresholdSlider.onCommitted = { [weak self] fraction in
             guard let self, var tracker = self.tracker else { return }

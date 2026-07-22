@@ -11,7 +11,7 @@ extension OnboardingAnimationView {
     // MARK: - Notification banner
 
     func buildNotification() {
-        banner.backgroundColor = .secondarySystemBackground
+        banner.backgroundColor = LunaColors.secondaryBackground
         banner.layer.cornerRadius = 16
         banner.layer.cornerCurve = .continuous
         banner.translatesAutoresizingMaskIntoConstraints = false
@@ -29,7 +29,7 @@ extension OnboardingAnimationView {
         let bodyText = UILabel()
         bodyText.text = "htest shared an article"
         bodyText.font = .systemFont(ofSize: 13)
-        bodyText.textColor = .secondaryLabel
+        bodyText.textColor = LunaColors.secondaryText
         let textStack = UIStackView(arrangedSubviews: [title, bodyText])
         textStack.axis = .vertical
         textStack.translatesAutoresizingMaskIntoConstraints = false

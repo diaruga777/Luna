@@ -42,7 +42,7 @@ public final class InteropPaywallViewController: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         title = "Luna Interoperability"
 
         stateBadge.contentMode = .center
@@ -52,7 +52,7 @@ public final class InteropPaywallViewController: UIViewController {
         headline.numberOfLines = 0
 
         explainer.font = .preferredFont(forTextStyle: .body)
-        explainer.textColor = .secondaryLabel
+        explainer.textColor = LunaColors.secondaryText
         explainer.textAlignment = .center
         explainer.numberOfLines = 0
         explainer.text = "Send any link to any Luna app. Save articles you find while "
@@ -78,7 +78,7 @@ public final class InteropPaywallViewController: UIViewController {
         restoreButton.addAction(UIAction { [weak self] _ in self?.restoreTapped() }, for: .touchUpInside)
 
         restoreCaveat.font = .preferredFont(forTextStyle: .footnote)
-        restoreCaveat.textColor = .secondaryLabel
+        restoreCaveat.textColor = LunaColors.secondaryText
         restoreCaveat.textAlignment = .center
         restoreCaveat.numberOfLines = 0
         restoreCaveat.text = "Purchases restore through the Luna app you originally bought "
@@ -86,7 +86,7 @@ public final class InteropPaywallViewController: UIViewController {
             + "Restore there. Apps on this device already share one unlock."
 
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = LunaColors.secondaryText
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
         statusLabel.isHidden = true
@@ -219,7 +219,7 @@ public final class InteropPaywallViewController: UIViewController {
 
     private func showStatus(_ text: String, isError: Bool = false) {
         statusLabel.text = text
-        statusLabel.textColor = isError ? .systemRed : .secondaryLabel
+        statusLabel.textColor = isError ? .systemRed : LunaColors.secondaryText
         statusLabel.isHidden = false
     }
 }

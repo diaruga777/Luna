@@ -31,12 +31,12 @@ public enum MoonHorizonStyle {
     /// The unlit horizon ahead of the sun — barely-there in either appearance.
     public static func darkHorizon(for traits: UITraitCollection) -> UIColor {
         let alpha: CGFloat = traits.userInterfaceStyle == .dark ? 0.30 : 0.18
-        return UIColor.label.resolvedColor(with: traits).withAlphaComponent(alpha)
+        return LunaColors.primaryText.resolvedColor(with: traits).withAlphaComponent(alpha)
     }
 
     /// The faint suggestion of the moon's surface below the horizon line.
     public static func surface(for traits: UITraitCollection) -> UIColor {
-        UIColor.label.resolvedColor(with: traits).withAlphaComponent(0.05)
+        LunaColors.primaryText.resolvedColor(with: traits).withAlphaComponent(0.05)
     }
 
     /// Control points of the horizon curve: a quadratic Bézier spanning the full

@@ -28,7 +28,7 @@ public enum AlertThresholdPillChrome {
         let title = UILabel()
         title.text = "Alert threshold"
         title.font = .preferredFont(forTextStyle: .headline)
-        title.textColor = .label
+        title.textColor = LunaColors.primaryText
         return title
     }
 }
@@ -80,7 +80,7 @@ public final class AlertThresholdSlider: UIView {
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         readoutLabel.font = .preferredFont(forTextStyle: .subheadline)
-        readoutLabel.textColor = .secondaryLabel
+        readoutLabel.textColor = LunaColors.secondaryText
         readoutLabel.numberOfLines = 0
 
         let stack = UIStackView(arrangedSubviews: [title, slider, readoutLabel])

@@ -19,7 +19,7 @@ public enum RSVPWordDisplay {
     /// `highlightColor`. Safe on an empty word (returns the plain string).
     public static func attributedText(
         for word: RSVPWord, font: UIFont,
-        textColor: UIColor = .label, highlightColor: UIColor = GlassStyle.readingAccent
+        textColor: UIColor = LunaColors.primaryText, highlightColor: UIColor = GlassStyle.readingAccent
     ) -> NSAttributedString {
         let attributed = NSMutableAttributedString(
             string: word.text, attributes: [.font: font, .foregroundColor: textColor])

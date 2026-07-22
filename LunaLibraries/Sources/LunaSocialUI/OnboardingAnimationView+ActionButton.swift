@@ -13,7 +13,7 @@ extension OnboardingAnimationView {
     func buildActionButton() {
         // Portrait phone.
         let phone = UIView()
-        phone.backgroundColor = .systemBackground
+        phone.backgroundColor = LunaColors.background
         phone.layer.borderColor = UIColor.systemGray3.cgColor
         phone.layer.borderWidth = 3
         phone.layer.cornerRadius = 26
@@ -37,10 +37,10 @@ extension OnboardingAnimationView {
 
         // A Safari facsimile inside the phone: a page, then a bottom address bar.
         let page = UIView()
-        page.backgroundColor = .secondarySystemBackground
+        page.backgroundColor = LunaColors.secondaryBackground
         page.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(page)
-        let headline = bar(width: 0.7, height: 9, color: .label.withAlphaComponent(0.7))
+        let headline = bar(width: 0.7, height: 9, color: LunaColors.primaryText.withAlphaComponent(0.7))
         let line1 = bar(width: 0.92, height: 5)
         let line2 = bar(width: 0.85, height: 5)
         let line3 = bar(width: 0.6, height: 5)
@@ -53,20 +53,20 @@ extension OnboardingAnimationView {
         page.addSubview(lines)
 
         let addressBar = UIView()
-        addressBar.backgroundColor = .systemBackground
+        addressBar.backgroundColor = LunaColors.background
         addressBar.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(addressBar)
         let urlPill = UIView()
-        urlPill.backgroundColor = .secondarySystemBackground
+        urlPill.backgroundColor = LunaColors.secondaryBackground
         urlPill.layer.cornerRadius = 9
         urlPill.translatesAutoresizingMaskIntoConstraints = false
         let lock = UIImageView(image: UIImage(
             systemName: "lock.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 8)))
-        lock.tintColor = .secondaryLabel
+        lock.tintColor = LunaColors.secondaryText
         let host = UILabel()
         host.text = "example.com"
         host.font = .systemFont(ofSize: 9, weight: .medium)
-        host.textColor = .secondaryLabel
+        host.textColor = LunaColors.secondaryText
         let urlStack = UIStackView(arrangedSubviews: [lock, host])
         urlStack.spacing = 3
         urlStack.alignment = .center

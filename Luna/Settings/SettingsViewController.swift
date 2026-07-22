@@ -182,7 +182,7 @@ final class ReaderSettingsScreen: NavHeaderTableController {
         case .speed:
             wpmLabel.text = "\(Int(ReaderSettings.baseWPM)) wpm"
             wpmLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
-            wpmLabel.textColor = .secondaryLabel
+            wpmLabel.textColor = LunaColors.secondaryText
             wpmLabel.sizeToFit()
             let slider = UISlider()
             slider.minimumValue = 100

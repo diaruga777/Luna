@@ -32,7 +32,7 @@ public final class NavHeaderBar: UIView {
     // blur would have added little visual benefit.
     private let backgroundFill: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         view.translatesAutoresizingMaskIntoConstraints = false
         view.alpha = 0
         return view
@@ -40,7 +40,7 @@ public final class NavHeaderBar: UIView {
 
     private let separator: UIView = {
         let line = UIView()
-        line.backgroundColor = .separator
+        line.backgroundColor = LunaColors.separator
         line.translatesAutoresizingMaskIntoConstraints = false
         line.alpha = 0
         return line
@@ -85,7 +85,7 @@ public final class NavHeaderBar: UIView {
         addSubview(barRow)
 
         titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
-        titleLabel.textColor = .label
+        titleLabel.textColor = LunaColors.primaryText
         titleLabel.textAlignment = .center
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -191,7 +191,7 @@ public final class NavHeaderBar: UIView {
             UIImage(systemName: "chevron.backward",
                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)),
             for: .normal)
-        button.tintColor = .label
+        button.tintColor = LunaColors.primaryText
         button.accessibilityLabel = "Back"
         button.addTarget(target, action: action, for: .touchUpInside)
         sizeToBarButton(button)
@@ -201,7 +201,7 @@ public final class NavHeaderBar: UIView {
     /// An icon (SF Symbol) bar button styled like a plain `UIBarButtonItem` image item.
     public static func imageButton(
         systemName: String, target: Any?, action: Selector,
-        tint: UIColor = .label, accessibilityLabel: String? = nil
+        tint: UIColor = LunaColors.primaryText, accessibilityLabel: String? = nil
     ) -> UIButton {
         let button = UIButton(type: .system)
         button.setImage(

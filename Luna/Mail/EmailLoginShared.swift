@@ -63,18 +63,18 @@ enum EmailLoginUI {
         let label = UILabel()
         label.text = text
         label.font = .preferredFont(forTextStyle: .body)
-        label.textColor = .secondaryLabel
+        label.textColor = LunaColors.secondaryText
         label.textAlignment = .center
         label.numberOfLines = 0
         return label
     }
 
-    /// A rounded `.secondarySystemBackground` card the text field sits inside,
+    /// A rounded `LunaColors.secondaryBackground` card the text field sits inside,
     /// matching the comfortable 52-56pt row height used elsewhere for tappable
     /// list-like rows.
     static func fieldCard() -> UIView {
         let card = UIView()
-        card.backgroundColor = .secondarySystemBackground
+        card.backgroundColor = LunaColors.secondaryBackground
         card.layer.cornerRadius = 14
         card.layer.cornerCurve = .continuous
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -86,7 +86,7 @@ enum EmailLoginUI {
     static func leadingGlyph(_ symbol: String) -> UIImageView {
         let icon = UIImageView(image: UIImage(systemName: symbol,
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)))
-        icon.tintColor = .tertiaryLabel
+        icon.tintColor = LunaColors.tertiaryText
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.setContentHuggingPriority(.required, for: .horizontal)
         return icon

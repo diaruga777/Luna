@@ -452,7 +452,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         configureTextView()
         configureGestures()
         configureFooter()

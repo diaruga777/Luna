@@ -14,11 +14,11 @@ extension OnboardingAnimationView {
     /// matching the system share-sheet / menu chrome used by several of the
     /// illustrations below.
     func configureSheetShell(_ v: UIView, cornerRadius: CGFloat = 18) {
-        v.backgroundColor = .systemBackground
+        v.backgroundColor = LunaColors.background
         v.layer.cornerRadius = cornerRadius
         v.layer.cornerCurve = .continuous
         v.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        v.layer.borderColor = UIColor.separator.cgColor
+        v.layer.borderColor = LunaColors.separator.cgColor
         v.layer.borderWidth = 0.5
         v.clipsToBounds = true
         v.translatesAutoresizingMaskIntoConstraints = false
@@ -36,7 +36,7 @@ extension OnboardingAnimationView {
     /// A literal (non-placeholder) share-sheet-style row: an SF Symbol leading
     /// icon and a real text label, used for the handful of rows the new
     /// illustrations call out by name (e.g. "Manage Extensions").
-    func literalActionRow(symbol: String, text: String, tint: UIColor = .label) -> UIView {
+    func literalActionRow(symbol: String, text: String, tint: UIColor = LunaColors.primaryText) -> UIView {
         let icon = UIImageView(image: UIImage(
             systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12)))
         icon.tintColor = tint
@@ -96,7 +96,7 @@ extension OnboardingAnimationView {
     func toolbarIcon(_ symbol: String) -> UIImageView {
         let icon = UIImageView(image: UIImage(
             systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14)))
-        icon.tintColor = .secondaryLabel
+        icon.tintColor = LunaColors.secondaryText
         icon.contentMode = .center
         return icon
     }
@@ -118,12 +118,12 @@ extension OnboardingAnimationView {
     func axActionRow(symbol: String, placeholderWidth: CGFloat) -> UIView {
         let icon = UIImageView(image: UIImage(
             systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12)))
-        icon.tintColor = .label
+        icon.tintColor = LunaColors.primaryText
         icon.contentMode = .center
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.widthAnchor.constraint(equalToConstant: 18).isActive = true
         let labelPlaceholder = UIView()
-        labelPlaceholder.backgroundColor = UIColor.label.withAlphaComponent(0.35)
+        labelPlaceholder.backgroundColor = LunaColors.primaryText.withAlphaComponent(0.35)
         labelPlaceholder.layer.cornerRadius = 3
         labelPlaceholder.translatesAutoresizingMaskIntoConstraints = false
         labelPlaceholder.widthAnchor.constraint(equalToConstant: placeholderWidth).isActive = true

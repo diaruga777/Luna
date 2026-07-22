@@ -371,7 +371,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         configureSubModeControl()
         configureFocusPill()
@@ -497,14 +497,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func configureWordLabel() {
         wordLabel.font = wordFont
-        wordLabel.textColor = .label
+        wordLabel.textColor = LunaColors.primaryText
         view.addSubview(wordLabel)
     }
 
     private func configurePhraseLabel() {
         view.addSubview(phrasePanel)
         phraseLabel.font = phraseFont
-        phraseLabel.textColor = .label
+        phraseLabel.textColor = LunaColors.primaryText
         phraseLabel.numberOfLines = 2
         phraseLabel.textAlignment = .center
         phraseLabel.lineBreakMode = .byWordWrapping
@@ -535,7 +535,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func configureContext() {
         for label in [previousContextLabel, nextContextLabel] {
             label.font = .systemFont(ofSize: 15, weight: .regular)
-            label.textColor = .tertiaryLabel
+            label.textColor = LunaColors.tertiaryText
             label.numberOfLines = 3
             label.lineBreakMode = .byTruncatingTail
             label.alpha = 1 // The reader starts paused.
@@ -587,7 +587,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         config.imagePadding = 6
         config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12)
         // Desaturated text/icon so the pill stays quiet behind the reading word.
-        config.baseForegroundColor = .secondaryLabel
+        config.baseForegroundColor = LunaColors.secondaryText
         config.contentInsets = NSDirectionalEdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14)
         linkPill.configuration = config
         linkPill.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
@@ -711,7 +711,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         scrubber.addTarget(self, action: #selector(scrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         statusLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .regular)
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = LunaColors.secondaryText
         statusLabel.textAlignment = .center
 
         wpmDownButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "tortoise.fill", padding: 18)
@@ -907,7 +907,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let chunk = chunks[index]
         let attributed = NSMutableAttributedString(
             string: chunk.displayText,
-            attributes: [.font: phraseFont, .foregroundColor: UIColor.label])
+            attributes: [.font: phraseFont, .foregroundColor: LunaColors.primaryText])
 
         if let highlightWord, chunk.wordRange.contains(highlightWord) {
             // Locate the highlighted word's range within the joined phrase string.

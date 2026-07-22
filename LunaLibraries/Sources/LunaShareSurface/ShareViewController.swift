@@ -141,12 +141,12 @@ public final class ShareViewController: UIViewController {
     // MARK: - Status / error UI (action extension)
 
     private func setUpStatusUI() {
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         spinner.translatesAutoresizingMaskIntoConstraints = false
         spinner.startAnimating()
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.text = "Opening in Luna…"
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = LunaColors.secondaryText
         statusLabel.font = .preferredFont(forTextStyle: .body)
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
@@ -177,7 +177,7 @@ public final class ShareViewController: UIViewController {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.spinner.stopAnimating()
-            self.statusLabel.textColor = .label
+            self.statusLabel.textColor = LunaColors.primaryText
             self.statusLabel.text = message
             self.closeButton.isHidden = false
         }
@@ -552,7 +552,7 @@ public final class ShareViewController: UIViewController {
         let label = UILabel()
         label.text = text
         label.font = .systemFont(ofSize: 16, weight: .semibold)
-        label.textColor = .label
+        label.textColor = LunaColors.primaryText
         let stack = UIStackView(arrangedSubviews: [spinner, label])
         stack.axis = .vertical
         stack.spacing = 8
@@ -601,7 +601,7 @@ public final class ShareViewController: UIViewController {
         let label = UILabel()
         label.text = "Saved"
         label.font = .systemFont(ofSize: 16, weight: .semibold)
-        label.textColor = .label
+        label.textColor = LunaColors.primaryText
         let stack = UIStackView(arrangedSubviews: [check, label])
         stack.axis = .vertical
         stack.spacing = 6

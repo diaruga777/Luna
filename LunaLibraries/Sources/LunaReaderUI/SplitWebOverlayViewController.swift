@@ -752,7 +752,7 @@ private final class InlineReaderTabButton: UIButton {
         self.url = url
         super.init(frame: .zero)
         accessibilityLabel = "Return to \(title)"
-        backgroundColor = .systemBackground
+        backgroundColor = LunaColors.background
         clipsToBounds = false
         layer.mask = tabShapeMask
 
@@ -771,7 +771,7 @@ private final class InlineReaderTabButton: UIButton {
 
         titleLabelView.text = title
         titleLabelView.font = .systemFont(ofSize: 12, weight: .semibold)
-        titleLabelView.textColor = .label
+        titleLabelView.textColor = LunaColors.primaryText
         titleLabelView.lineBreakMode = .byTruncatingTail
         addSubview(titleLabelView)
 

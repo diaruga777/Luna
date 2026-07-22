@@ -35,7 +35,7 @@ extension OnboardingAnimationView {
         phone.translatesAutoresizingMaskIntoConstraints = false
         addSubview(phone)
 
-        abSettingsScreen.backgroundColor = .systemBackground
+        abSettingsScreen.backgroundColor = LunaColors.background
         abSettingsScreen.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(abSettingsScreen)
 
@@ -51,26 +51,26 @@ extension OnboardingAnimationView {
         abSettingsScreen.addSubview(statusIsland)
         let status = UIImageView(image: UIImage(
             systemName: "wifi", withConfiguration: UIImage.SymbolConfiguration(pointSize: 7, weight: .bold)))
-        status.tintColor = .label
+        status.tintColor = LunaColors.primaryText
         status.translatesAutoresizingMaskIntoConstraints = false
         abSettingsScreen.addSubview(status)
 
         let backCircle = UIView()
-        backCircle.backgroundColor = .tertiarySystemFill
+        backCircle.backgroundColor = LunaColors.tertiaryFill
         backCircle.layer.cornerRadius = 13
         backCircle.translatesAutoresizingMaskIntoConstraints = false
         abSettingsScreen.addSubview(backCircle)
         let backChevron = UIImageView(image: UIImage(
             systemName: "chevron.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
-        backChevron.tintColor = .label
+        backChevron.tintColor = LunaColors.primaryText
         backChevron.translatesAutoresizingMaskIntoConstraints = false
         backCircle.addSubview(backChevron)
 
         let device = UIView()
-        device.backgroundColor = .secondarySystemBackground
+        device.backgroundColor = LunaColors.secondaryBackground
         device.layer.cornerRadius = 42
         device.layer.cornerCurve = .continuous
-        device.layer.borderColor = UIColor.separator.cgColor
+        device.layer.borderColor = LunaColors.separator.cgColor
         device.layer.borderWidth = 1
         device.translatesAutoresizingMaskIntoConstraints = false
         abSettingsScreen.addSubview(device)
@@ -103,7 +103,7 @@ extension OnboardingAnimationView {
         var glyphConstraints: [NSLayoutConstraint] = []
         for (index, symbol) in carouselSymbols.enumerated() {
             let offset = CGFloat(index - 1) * abCarouselStep
-            let outer = abCarouselGlyph(symbol, tint: .tertiaryLabel)
+            let outer = abCarouselGlyph(symbol, tint: LunaColors.tertiaryText)
             abOuterGlyphStrip.addSubview(outer)
             let inner = abCarouselGlyph(symbol, tint: .white)
             abInnerGlyphStrip.addSubview(inner)
@@ -127,7 +127,7 @@ extension OnboardingAnimationView {
             case 8: dot = abDotShortcut
             default: dot = UIView()
             }
-            dot.backgroundColor = index == 7 ? .label : .tertiaryLabel
+            dot.backgroundColor = index == 7 ? LunaColors.primaryText : LunaColors.tertiaryText
             dot.layer.cornerRadius = 2.5
             dot.translatesAutoresizingMaskIntoConstraints = false
             dot.widthAnchor.constraint(equalToConstant: 5).isActive = true
@@ -149,7 +149,7 @@ extension OnboardingAnimationView {
         func configurePageSubtitle(_ label: UILabel, _ text: String) {
             label.text = text
             label.font = .systemFont(ofSize: 9)
-            label.textColor = .secondaryLabel
+            label.textColor = LunaColors.secondaryText
             label.textAlignment = .center
             label.numberOfLines = 2
             label.translatesAutoresizingMaskIntoConstraints = false
@@ -173,7 +173,7 @@ extension OnboardingAnimationView {
         abChooseLabel.translatesAutoresizingMaskIntoConstraints = false
         abChooseButton.addSubview(abChooseLabel)
 
-        abLunaChoice.backgroundColor = .tertiarySystemFill
+        abLunaChoice.backgroundColor = LunaColors.tertiaryFill
         abLunaChoice.layer.cornerRadius = 12
         abLunaChoice.translatesAutoresizingMaskIntoConstraints = false
         abSettingsScreen.addSubview(abLunaChoice)
@@ -192,7 +192,7 @@ extension OnboardingAnimationView {
 
         // Root Settings page shown first, matching the real navigation path. It
         // pushes left after a visible tap on Action Button.
-        abRootSettingsScreen.backgroundColor = .systemGroupedBackground
+        abRootSettingsScreen.backgroundColor = LunaColors.groupedBackground
         abRootSettingsScreen.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(abRootSettingsScreen)
         let rootTime = UILabel()
@@ -207,7 +207,7 @@ extension OnboardingAnimationView {
         abRootSettingsScreen.addSubview(rootIsland)
         let rootStatus = UIImageView(image: UIImage(
             systemName: "wifi", withConfiguration: UIImage.SymbolConfiguration(pointSize: 7, weight: .bold)))
-        rootStatus.tintColor = .label
+        rootStatus.tintColor = LunaColors.primaryText
         rootStatus.translatesAutoresizingMaskIntoConstraints = false
         abRootSettingsScreen.addSubview(rootStatus)
         let rootTitle = UILabel()
@@ -236,13 +236,13 @@ extension OnboardingAnimationView {
             label.translatesAutoresizingMaskIntoConstraints = false
             let chevron = UIImageView(image: UIImage(
                 systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 8, weight: .semibold)))
-            chevron.tintColor = .tertiaryLabel
+            chevron.tintColor = LunaColors.tertiaryText
             chevron.translatesAutoresizingMaskIntoConstraints = false
             row.addSubview(tile)
             row.addSubview(label)
             row.addSubview(chevron)
             let divider = UIView()
-            divider.backgroundColor = .separator
+            divider.backgroundColor = LunaColors.separator
             divider.translatesAutoresizingMaskIntoConstraints = false
             row.addSubview(divider)
             NSLayoutConstraint.activate([
@@ -258,7 +258,7 @@ extension OnboardingAnimationView {
         }
 
         let connectivityGroup = UIView()
-        connectivityGroup.backgroundColor = .secondarySystemGroupedBackground
+        connectivityGroup.backgroundColor = LunaColors.secondaryGroupedBackground
         connectivityGroup.layer.cornerRadius = 12
         connectivityGroup.clipsToBounds = true
         connectivityGroup.translatesAutoresizingMaskIntoConstraints = false
@@ -275,7 +275,7 @@ extension OnboardingAnimationView {
         connectivityGroup.addSubview(connectivityRows)
 
         let systemGroup = UIView()
-        systemGroup.backgroundColor = .secondarySystemGroupedBackground
+        systemGroup.backgroundColor = LunaColors.secondaryGroupedBackground
         systemGroup.layer.cornerRadius = 12
         systemGroup.clipsToBounds = true
         systemGroup.translatesAutoresizingMaskIntoConstraints = false
@@ -296,11 +296,11 @@ extension OnboardingAnimationView {
 
         // Safari page used after setup: gray-box website, correct bottom safe-area
         // order, physical-button feedback, and a Dynamic Island save confirmation.
-        abSafariScreen.backgroundColor = .secondarySystemBackground
+        abSafariScreen.backgroundColor = LunaColors.secondaryBackground
         abSafariScreen.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(abSafariScreen)
         let webLines = UIStackView(arrangedSubviews: [
-            bar(width: 0.72, height: 10, color: .label.withAlphaComponent(0.65)),
+            bar(width: 0.72, height: 10, color: LunaColors.primaryText.withAlphaComponent(0.65)),
             bar(width: 0.94, height: 5), bar(width: 0.86, height: 5),
             bar(width: 0.91, height: 5), bar(width: 0.64, height: 5),
         ])
@@ -311,18 +311,18 @@ extension OnboardingAnimationView {
         webLines.translatesAutoresizingMaskIntoConstraints = false
         abSafariScreen.addSubview(webLines)
         let safariChrome = UIView()
-        safariChrome.backgroundColor = .systemBackground
+        safariChrome.backgroundColor = LunaColors.background
         safariChrome.translatesAutoresizingMaskIntoConstraints = false
         abSafariScreen.addSubview(safariChrome)
         let urlPill = UIView()
-        urlPill.backgroundColor = .secondarySystemBackground
+        urlPill.backgroundColor = LunaColors.secondaryBackground
         urlPill.layer.cornerRadius = 10
         urlPill.translatesAutoresizingMaskIntoConstraints = false
         safariChrome.addSubview(urlPill)
         let urlText = UILabel()
         urlText.text = "example.com"
         urlText.font = .systemFont(ofSize: 8, weight: .medium)
-        urlText.textColor = .secondaryLabel
+        urlText.textColor = LunaColors.secondaryText
         urlText.translatesAutoresizingMaskIntoConstraints = false
         urlPill.addSubview(urlText)
         let chromeIcons = UIStackView(arrangedSubviews: [toolbarIcon("chevron.left"), toolbarIcon("chevron.right"),
@@ -332,7 +332,7 @@ extension OnboardingAnimationView {
         chromeIcons.translatesAutoresizingMaskIntoConstraints = false
         safariChrome.addSubview(chromeIcons)
         let home = UIView()
-        home.backgroundColor = .label
+        home.backgroundColor = LunaColors.primaryText
         home.layer.cornerRadius = 1.5
         home.translatesAutoresizingMaskIntoConstraints = false
         safariChrome.addSubview(home)
@@ -477,8 +477,8 @@ extension OnboardingAnimationView {
             abSettingsScreen.clipsToBounds = true
             abOuterGlyphStrip.transform = .identity
             abInnerGlyphStrip.transform = .identity
-            abDotControls.backgroundColor = .label
-            abDotShortcut.backgroundColor = .tertiaryLabel
+            abDotControls.backgroundColor = LunaColors.primaryText
+            abDotShortcut.backgroundColor = LunaColors.tertiaryText
             abControlsTitle.alpha = 1
             abControlsSubtitle.alpha = 1
             abShortcutTitle.alpha = 0
@@ -528,8 +528,8 @@ extension OnboardingAnimationView {
                 let pan = CGAffineTransform(translationX: -self.abCarouselStep, y: 0)
                 self.abOuterGlyphStrip.transform = pan
                 self.abInnerGlyphStrip.transform = pan
-                self.abDotControls.backgroundColor = .tertiaryLabel
-                self.abDotShortcut.backgroundColor = .label
+                self.abDotControls.backgroundColor = LunaColors.tertiaryText
+                self.abDotShortcut.backgroundColor = LunaColors.primaryText
                 self.abControlsTitle.alpha = 0
                 self.abControlsSubtitle.alpha = 0
             }

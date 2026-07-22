@@ -547,7 +547,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         view.addSubview(card)
 
         focusLabel.textAlignment = .center
-        focusLabel.textColor = .label
+        focusLabel.textColor = LunaColors.primaryText
         focusLabel.font = .systemFont(ofSize: 25, weight: .semibold)
         focusLabel.numberOfLines = 2
         focusLabel.adjustsFontSizeToFitWidth = true
@@ -557,19 +557,19 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         card.contentView.addSubview(topMark)
         card.contentView.addSubview(bottomMark)
 
-        lockImage.tintColor = .label
+        lockImage.tintColor = LunaColors.primaryText
         lockImage.alpha = 0
         lockImage.contentMode = .scaleAspectFit
         card.contentView.addSubview(lockImage)
 
         speedLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        speedLabel.textColor = .secondaryLabel
+        speedLabel.textColor = LunaColors.secondaryText
         speedLabel.textAlignment = .center
         card.contentView.addSubview(speedLabel)
 
         for label in [previousContextLabel, nextContextLabel] {
             label.font = .systemFont(ofSize: 12, weight: .regular)
-            label.textColor = .secondaryLabel
+            label.textColor = LunaColors.secondaryText
             label.textAlignment = .center
             label.numberOfLines = 1
             label.lineBreakMode = .byTruncatingTail
@@ -867,7 +867,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private func configureChin() {
         chin.alpha = 0
         chin.layer.borderWidth = 0.5
-        chin.layer.borderColor = UIColor.separator.withAlphaComponent(0.45).cgColor
+        chin.layer.borderColor = LunaColors.separator.withAlphaComponent(0.45).cgColor
         card.contentView.addSubview(chin)
 
         let buttons: [(UIButton, String, String)] = [
@@ -1023,14 +1023,14 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         moreActionsHint.isUserInteractionEnabled = false
 
         let arrow = UIImageView(image: UIImage(systemName: "chevron.up"))
-        arrow.tintColor = .secondaryLabel
+        arrow.tintColor = LunaColors.secondaryText
         arrow.contentMode = .scaleAspectFit
         arrow.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
             pointSize: 12, weight: .semibold)
         let label = UILabel()
         label.text = "More actions"
         label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .secondaryLabel
+        label.textColor = LunaColors.secondaryText
         label.textAlignment = .center
 
         let stack = UIStackView(arrangedSubviews: [arrow, label])
@@ -1061,7 +1061,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         for action in LinkPreviewAction.allCases {
             let row = UIView()
             let image = UIImageView(image: UIImage(systemName: action.symbol))
-            image.tintColor = .label
+            image.tintColor = LunaColors.primaryText
             image.tag = 1
             let label = UILabel()
             label.text = action.title

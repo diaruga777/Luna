@@ -83,7 +83,7 @@ public enum ArticleTextRenderer {
                 string: content.title + "\n",
                 attributes: [
                     .font: serifFont(size: 30, weight: .bold),
-                    .foregroundColor: UIColor.label,
+                    .foregroundColor: LunaColors.primaryText,
                     .paragraphStyle: titleParagraph,
                 ]))
         }
@@ -95,7 +95,7 @@ public enum ArticleTextRenderer {
                 string: author + "\n",
                 attributes: [
                     .font: UIFont.preferredFont(forTextStyle: .subheadline),
-                    .foregroundColor: UIColor.secondaryLabel,
+                    .foregroundColor: LunaColors.secondaryText,
                     .paragraphStyle: authorParagraph,
                 ]))
         }
@@ -210,7 +210,7 @@ public enum ArticleTextRenderer {
         let displayHeight = max(44, displayWidth / CGFloat(width) * CGFloat(height))
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: displayWidth, height: displayHeight))
         let image = renderer.image { context in
-            UIColor.secondarySystemFill.setFill()
+            LunaColors.secondaryFill.setFill()
             context.fill(CGRect(origin: .zero, size: CGSize(width: displayWidth, height: displayHeight)))
         }
         let attachment = ScalingImageAttachment(
@@ -267,7 +267,7 @@ public enum ArticleTextRenderer {
         paragraph.lineSpacing = 5
 
         var attributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: UIColor.label,
+            .foregroundColor: LunaColors.primaryText,
             .paragraphStyle: paragraph,
         ]
         var prefix = ""
@@ -280,7 +280,7 @@ public enum ArticleTextRenderer {
             paragraph.paragraphSpacingBefore = 12
         case .quote:
             attributes[.font] = italicSerifFont(size: 19)
-            attributes[.foregroundColor] = UIColor.secondaryLabel
+            attributes[.foregroundColor] = LunaColors.secondaryText
             paragraph.firstLineHeadIndent = 16
             paragraph.headIndent = 16
         case .listItem:

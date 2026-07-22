@@ -60,7 +60,7 @@ final class VoiceSettingsScreen: NavHeaderTableController {
             let installed = VoiceModelStore.isAppleEnhancedInstalled
             content.text = installed ? "Enhanced voices installed" : "Not installed"
             content.image = UIImage(systemName: installed ? "checkmark.circle.fill" : "xmark.circle")
-            content.imageProperties.tintColor = installed ? .systemGreen : .secondaryLabel
+            content.imageProperties.tintColor = installed ? .systemGreen : LunaColors.secondaryText
             cell.selectionStyle = .none
         case .install, .none:
             content.text = "Install Enhanced Voices"

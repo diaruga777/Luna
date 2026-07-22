@@ -105,7 +105,7 @@ public final class ReadingListItemCell: UITableViewCell {
         subtitleLabel.font = .preferredFont(forTextStyle: .footnote)
         subtitleLabel.numberOfLines = 1
 
-        thumbContainer.backgroundColor = .secondarySystemFill
+        thumbContainer.backgroundColor = LunaColors.secondaryFill
         thumbContainer.layer.cornerRadius = 6
         thumbContainer.layer.cornerCurve = .continuous
         thumbContainer.clipsToBounds = true
@@ -172,7 +172,7 @@ public final class ReadingListItemCell: UITableViewCell {
         if AppEnvironment.isSimulator {
             simulatorMenuButton.translatesAutoresizingMaskIntoConstraints = false
             simulatorMenuButton.showsMenuAsPrimaryAction = true
-            simulatorMenuButton.tintColor = .tertiaryLabel
+            simulatorMenuButton.tintColor = LunaColors.tertiaryText
             simulatorMenuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
             simulatorMenuButton.accessibilityLabel = "Row actions"
             simulatorMenuButton.isHidden = true
@@ -277,7 +277,7 @@ public final class ReadingListItemCell: UITableViewCell {
         } else {
             thumbImageView.image = UIImage(systemName: glyph)?
                 .withRenderingMode(.alwaysTemplate)
-            thumbImageView.tintColor = .secondaryLabel
+            thumbImageView.tintColor = LunaColors.secondaryText
             thumbImageView.contentMode = .center
         }
     }

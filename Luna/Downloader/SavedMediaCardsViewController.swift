@@ -87,7 +87,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         var style = CardCarouselStyle()
         style.pageSwipeMovementMultiplier = 1.5
@@ -1054,7 +1054,7 @@ private final class PasteboardMediaDownloadCardContentViewController: CardConten
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
         icon.tintColor = GlassStyle.readingAccent
@@ -1064,20 +1064,20 @@ private final class PasteboardMediaDownloadCardContentViewController: CardConten
         let title = UILabel()
         title.text = titleText
         title.font = .preferredFont(forTextStyle: .title2)
-        title.textColor = .label
+        title.textColor = LunaColors.primaryText
         title.textAlignment = .center
 
         let urlLabel = UILabel()
         urlLabel.text = url.absoluteString
         urlLabel.font = .preferredFont(forTextStyle: .subheadline)
-        urlLabel.textColor = .secondaryLabel
+        urlLabel.textColor = LunaColors.secondaryText
         urlLabel.textAlignment = .center
         urlLabel.numberOfLines = 4
         urlLabel.lineBreakMode = .byTruncatingMiddle
 
         statusLabel.text = "Downloading temporary preview…"
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = LunaColors.secondaryText
         statusLabel.textAlignment = .center
         progress.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1211,7 +1211,7 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
             ?? UIImage(systemName: "arrow.down.circle")
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
             pointSize: 52, weight: .regular)
-        configuration.baseForegroundColor = .secondaryLabel
+        configuration.baseForegroundColor = LunaColors.secondaryText
         button.configuration = configuration
         button.accessibilityLabel = "Download media"
         button.addAction(UIAction { [weak self] _ in self?.download() }, for: .touchUpInside)
@@ -1283,10 +1283,10 @@ private final class CircularDownloadProgressView: UIView {
         backgroundColor = .clear
         isUserInteractionEnabled = false
         trackLayer.fillColor = UIColor.clear.cgColor
-        trackLayer.strokeColor = UIColor.secondaryLabel.withAlphaComponent(0.35).cgColor
+        trackLayer.strokeColor = LunaColors.secondaryText.withAlphaComponent(0.35).cgColor
         trackLayer.lineWidth = 3
         progressLayer.fillColor = UIColor.clear.cgColor
-        progressLayer.strokeColor = UIColor.label.cgColor
+        progressLayer.strokeColor = LunaColors.primaryText.cgColor
         progressLayer.lineWidth = 3
         progressLayer.lineCap = .round
         progressLayer.strokeEnd = 0

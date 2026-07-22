@@ -39,7 +39,7 @@ final class CredentialViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         // The hero owns the title; the back button (pushed, not presented at this
         // step) is the only nav-bar chrome.
 
@@ -65,7 +65,7 @@ final class CredentialViewController: UIViewController {
         passwordField.addTarget(self, action: #selector(signIn), for: .editingDidEndOnExit)
         passwordField.addTarget(self, action: #selector(passwordEdited), for: .editingChanged)
 
-        revealButton.tintColor = .tertiaryLabel
+        revealButton.tintColor = LunaColors.tertiaryText
         revealButton.setImage(UIImage(systemName: "eye"), for: .normal)
         revealButton.translatesAutoresizingMaskIntoConstraints = false
         revealButton.addTarget(self, action: #selector(toggleReveal), for: .touchUpInside)

@@ -285,7 +285,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         textField.autocorrectionType = .no
         textField.keyboardType = secure ? .default : .emailAddress
         textField.textAlignment = .right
-        textField.textColor = .secondaryLabel
+        textField.textColor = LunaColors.secondaryText
         textField.addTarget(self, action: #selector(fieldEdited(_:)), for: .editingChanged)
         textField.addTarget(self, action: #selector(fieldEdited(_:)), for: .editingDidEnd)
 

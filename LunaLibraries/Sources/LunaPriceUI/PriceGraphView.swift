@@ -117,14 +117,14 @@ public final class PriceGraphView: UIView {
         // Scrubber.
         if let index = selectedIndex, points.indices.contains(index) {
             let p = point(at: index)
-            context.setStrokeColor(UIColor.tertiaryLabel.cgColor)
+            context.setStrokeColor(LunaColors.tertiaryText.cgColor)
             context.setLineWidth(1)
             context.move(to: CGPoint(x: p.x, y: plot.minY))
             context.addLine(to: CGPoint(x: p.x, y: plot.maxY))
             context.strokePath()
             accent.setFill()
             UIBezierPath(ovalIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)).fill()
-            UIColor.systemBackground.setStroke()
+            LunaColors.background.setStroke()
             let ring = UIBezierPath(ovalIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
             ring.lineWidth = 1.5
             ring.stroke()
@@ -139,7 +139,7 @@ public final class PriceGraphView: UIView {
         let plot = rect.inset(by: plotInsets)
         drawGrid(in: plot, context: context)
         // Solid x and y axes.
-        context.setStrokeColor(UIColor.tertiaryLabel.cgColor)
+        context.setStrokeColor(LunaColors.tertiaryText.cgColor)
         context.setLineWidth(1)
         context.move(to: CGPoint(x: plot.minX, y: plot.minY))
         context.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
@@ -151,7 +151,7 @@ public final class PriceGraphView: UIView {
         let caption = "Awaiting more data"
         let attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: UIColor.tertiaryLabel,
+            .foregroundColor: LunaColors.tertiaryText,
         ]
         let size = (caption as NSString).size(withAttributes: attrs)
         (caption as NSString).draw(
@@ -171,7 +171,7 @@ public final class PriceGraphView: UIView {
     }
 
     private func drawGrid(in plot: CGRect, context: CGContext) {
-        context.setStrokeColor(UIColor.quaternaryLabel.withAlphaComponent(0.45).cgColor)
+        context.setStrokeColor(LunaColors.quaternaryText.withAlphaComponent(0.45).cgColor)
         context.setLineWidth(1)
         let rows = 3
         for i in 0...rows {
@@ -212,7 +212,7 @@ public final class PriceGraphView: UIView {
     private func drawAxisLabel(_ text: String, at origin: CGPoint, align: LabelAlign) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: UIColor.secondaryLabel,
+            .foregroundColor: LunaColors.secondaryText,
         ]
         let size = (text as NSString).size(withAttributes: attrs)
         let x = align == .right ? origin.x - size.width : origin.x
@@ -265,14 +265,14 @@ public final class PriceGraphView: UIView {
     }
 
     private func configureCallout() {
-        calloutView.backgroundColor = .secondarySystemBackground
+        calloutView.backgroundColor = LunaColors.secondaryBackground
         calloutView.layer.cornerRadius = 8
         calloutView.layer.cornerCurve = .continuous
         calloutView.isHidden = true
         calloutView.isUserInteractionEnabled = false
         calloutLabel.numberOfLines = 3
         calloutLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        calloutLabel.textColor = .label
+        calloutLabel.textColor = LunaColors.primaryText
         calloutLabel.translatesAutoresizingMaskIntoConstraints = false
         calloutView.addSubview(calloutLabel)
         NSLayoutConstraint.activate([

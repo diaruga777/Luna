@@ -145,16 +145,16 @@ class CardCarouselHostViewController: UIViewController {
     static func makeEmptyStateView(symbol: String, title: String, subtitle: String) -> UIView {
         let container = UIView()
         let image = UIImageView(image: UIImage(systemName: symbol))
-        image.tintColor = .tertiaryLabel
+        image.tintColor = LunaColors.tertiaryText
         image.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 44, weight: .regular)
         let titleLabel = UILabel()
         titleLabel.text = title
         titleLabel.font = .preferredFont(forTextStyle: .title3)
-        titleLabel.textColor = .label
+        titleLabel.textColor = LunaColors.primaryText
         let subtitleLabel = UILabel()
         subtitleLabel.text = subtitle
         subtitleLabel.font = .preferredFont(forTextStyle: .subheadline)
-        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.textColor = LunaColors.secondaryText
         subtitleLabel.textAlignment = .center
         subtitleLabel.numberOfLines = 0
         let stack = UIStackView(arrangedSubviews: [image, titleLabel, subtitleLabel])
@@ -194,7 +194,7 @@ final class PasteboardPlaceholderCardContentViewController: CardContentViewContr
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
         view.isAccessibilityElement = true
         view.accessibilityLabel = titleText
         view.accessibilityHint = detailText
@@ -208,13 +208,13 @@ final class PasteboardPlaceholderCardContentViewController: CardContentViewContr
         let title = UILabel()
         title.text = titleText
         title.font = .preferredFont(forTextStyle: .title2)
-        title.textColor = .label
+        title.textColor = LunaColors.primaryText
         title.textAlignment = .center
 
         let detail = UILabel()
         detail.text = detailText
         detail.font = .preferredFont(forTextStyle: .subheadline)
-        detail.textColor = .secondaryLabel
+        detail.textColor = LunaColors.secondaryText
         detail.textAlignment = .center
         detail.numberOfLines = 0
 
@@ -247,17 +247,17 @@ final class InvalidPasteCardContentViewController: CardContentViewController, UI
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         let icon = UIImageView(image: UIImage(systemName: "exclamationmark.circle"))
-        icon.tintColor = .secondaryLabel
+        icon.tintColor = LunaColors.secondaryText
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
             pointSize: 40, weight: .medium)
 
         let title = UILabel()
         title.text = "Invalid paste"
         title.font = .preferredFont(forTextStyle: .title2)
-        title.textColor = .label
+        title.textColor = LunaColors.primaryText
         title.textAlignment = .center
 
         let detail: UIView
@@ -267,7 +267,7 @@ final class InvalidPasteCardContentViewController: CardContentViewController, UI
             let label = UILabel()
             label.text = "Invalid URL"
             label.font = .preferredFont(forTextStyle: .subheadline)
-            label.textColor = .secondaryLabel
+            label.textColor = LunaColors.secondaryText
             label.textAlignment = .center
             label.numberOfLines = 0
             detail = label
@@ -291,12 +291,12 @@ final class InvalidPasteCardContentViewController: CardContentViewController, UI
     private func makeSettingsTextView() -> UITextView {
         let font = UIFont.preferredFont(forTextStyle: .subheadline)
         let text = NSMutableAttributedString(string: "Go to ", attributes: [
-            .font: font, .foregroundColor: UIColor.secondaryLabel,
+            .font: font, .foregroundColor: LunaColors.secondaryText,
         ])
         let linkStart = text.length
         let attachment = NSTextAttachment()
         attachment.image = UIImage(systemName: "gearshape.fill")?.withTintColor(
-            .secondaryLabel, renderingMode: .alwaysOriginal)
+            LunaColors.secondaryText, renderingMode: .alwaysOriginal)
         attachment.bounds = CGRect(x: 0, y: -3, width: 16, height: 16)
         text.append(NSAttributedString(attachment: attachment))
         text.append(NSAttributedString(string: " Settings", attributes: [
@@ -307,7 +307,7 @@ final class InvalidPasteCardContentViewController: CardContentViewController, UI
             range: NSRange(location: linkStart, length: text.length - linkStart))
         text.append(NSAttributedString(
             string: " and select “Allow” under “Paste from Other Apps” to automatically handle pastes from now on.",
-            attributes: [.font: font, .foregroundColor: UIColor.secondaryLabel]))
+            attributes: [.font: font, .foregroundColor: LunaColors.secondaryText]))
 
         let textView = UITextView()
         textView.attributedText = text

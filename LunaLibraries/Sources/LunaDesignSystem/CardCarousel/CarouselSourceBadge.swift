@@ -91,11 +91,11 @@ public final class CarouselSourceBadgeView: UIView {
         initialsLabel.isHidden = true
         switch badge {
         case nil:
-            backgroundColor = .tertiarySystemFill
+            backgroundColor = LunaColors.tertiaryFill
         case .icon(let image):
             // A subtle fill backs transparent favicons so they keep a card-like
             // footprint whatever their artwork.
-            backgroundColor = .tertiarySystemFill
+            backgroundColor = LunaColors.tertiaryFill
             imageView.contentMode = .scaleAspectFill
             imageView.image = image
             imageView.isHidden = false
@@ -104,9 +104,9 @@ public final class CarouselSourceBadgeView: UIView {
             initialsLabel.text = CarouselSourceBadge.initials(fromName: name)
             initialsLabel.isHidden = false
         case .symbol(let symbolName):
-            backgroundColor = .quaternarySystemFill
+            backgroundColor = LunaColors.quaternaryFill
             imageView.contentMode = .center
-            imageView.tintColor = .secondaryLabel
+            imageView.tintColor = LunaColors.secondaryText
             imageView.image = UIImage(
                 systemName: symbolName,
                 withConfiguration: UIImage.SymbolConfiguration(

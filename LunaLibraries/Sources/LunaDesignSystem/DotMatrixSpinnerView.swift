@@ -35,9 +35,9 @@ public final class DotMatrixSpinnerView: UIView {
     /// One full ripple cycle, in seconds.
     private let cycleDuration: CFTimeInterval = 1.1
 
-    /// Mirrors `UIActivityIndicatorView.color` — the dot tint. Defaults to `.label`
+    /// Mirrors `UIActivityIndicatorView.color` — the dot tint. Defaults to `LunaColors.primaryText`
     /// so it adapts to light/dark automatically.
-    public var color: UIColor = .label {
+    public var color: UIColor = LunaColors.primaryText {
         didSet { applyColor() }
     }
 

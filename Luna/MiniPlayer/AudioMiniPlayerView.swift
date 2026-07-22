@@ -106,10 +106,10 @@ final class AudioMiniPlayerView: UIView {
         thumbnailView.clipsToBounds = true
         thumbnailView.layer.cornerRadius = 8
         thumbnailView.layer.cornerCurve = .continuous
-        thumbnailView.backgroundColor = .quaternarySystemFill
+        thumbnailView.backgroundColor = LunaColors.quaternaryFill
 
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = .label
+        titleLabel.textColor = LunaColors.primaryText
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.setContentHuggingPriority(.defaultLow - 10, for: .horizontal)
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -123,7 +123,7 @@ final class AudioMiniPlayerView: UIView {
 
         rateButton.setTitle("1×", for: .normal)
         rateButton.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        rateButton.setTitleColor(.label, for: .normal)
+        rateButton.setTitleColor(LunaColors.primaryText, for: .normal)
         rateButton.accessibilityLabel = "Playback speed"
         rateButton.addTarget(self, action: #selector(rateTapped), for: .touchUpInside)
 
@@ -190,7 +190,7 @@ final class AudioMiniPlayerView: UIView {
         config.image = UIImage(systemName: symbol)
         config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: pointSize)
         config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 5, bottom: 6, trailing: 5)
-        config.baseForegroundColor = .label
+        config.baseForegroundColor = LunaColors.primaryText
         button.configuration = config
         button.accessibilityLabel = accessibilityLabel
         button.addTarget(self, action: action, for: .touchUpInside)
@@ -218,13 +218,13 @@ final class AudioMiniPlayerView: UIView {
         self.display = display
 
         titleLabel.text = display.isUpNext ? "Up Next · \(display.title)" : display.title
-        titleLabel.textColor = display.isUpNext ? .secondaryLabel : .label
+        titleLabel.textColor = display.isUpNext ? LunaColors.secondaryText : LunaColors.primaryText
         playPauseButton.configuration?.image = UIImage(
             systemName: display.isPlaying ? "pause.fill" : "play.fill")
         playPauseButton.accessibilityLabel = display.isPlaying ? "Pause" : "Play"
         rateButton.setTitle(
             display.rate == 1.0 ? "1×" : String(format: "%g×", display.rate), for: .normal)
-        autoplayButton.tintColor = display.isAutoplayOn ? GlassStyle.readingAccent : .secondaryLabel
+        autoplayButton.tintColor = display.isAutoplayOn ? GlassStyle.readingAccent : LunaColors.secondaryText
         autoplayButton.accessibilityValue = display.isAutoplayOn ? "on" : "off"
 
         if display.thumbnailPath != previousPath {

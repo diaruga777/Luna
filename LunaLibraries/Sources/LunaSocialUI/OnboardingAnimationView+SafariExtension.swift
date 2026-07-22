@@ -12,7 +12,7 @@ extension OnboardingAnimationView {
 
     func buildSafariExtension() {
         let phone = UIView()
-        phone.backgroundColor = .systemBackground
+        phone.backgroundColor = LunaColors.background
         phone.layer.borderColor = UIColor.systemGray3.cgColor
         phone.layer.borderWidth = 3
         phone.layer.cornerRadius = 30
@@ -23,10 +23,10 @@ extension OnboardingAnimationView {
 
         // Safari page.
         let page = UIView()
-        page.backgroundColor = .secondarySystemBackground
+        page.backgroundColor = LunaColors.secondaryBackground
         page.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(page)
-        let headline = bar(width: 0.7, height: 9, color: .label.withAlphaComponent(0.7))
+        let headline = bar(width: 0.7, height: 9, color: LunaColors.primaryText.withAlphaComponent(0.7))
         let lines = UIStackView(arrangedSubviews: [
             headline, bar(width: 0.95, height: 5), bar(width: 0.9, height: 5), bar(width: 0.6, height: 5)])
         lines.axis = .vertical
@@ -38,7 +38,7 @@ extension OnboardingAnimationView {
 
         // Bottom address bar: page-menu button (left), URL pill, trailing icons.
         let addressBar = UIView()
-        addressBar.backgroundColor = .systemBackground
+        addressBar.backgroundColor = LunaColors.background
         addressBar.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(addressBar)
 
@@ -50,13 +50,13 @@ extension OnboardingAnimationView {
         addressBar.addSubview(pageMenuButton)
 
         let urlPill = UIView()
-        urlPill.backgroundColor = .secondarySystemBackground
+        urlPill.backgroundColor = LunaColors.secondaryBackground
         urlPill.layer.cornerRadius = 9
         urlPill.layer.cornerCurve = .continuous
         urlPill.translatesAutoresizingMaskIntoConstraints = false
         addressBar.addSubview(urlPill)
         let urlPlaceholder = UIView()
-        urlPlaceholder.backgroundColor = UIColor.label.withAlphaComponent(0.3)
+        urlPlaceholder.backgroundColor = LunaColors.primaryText.withAlphaComponent(0.3)
         urlPlaceholder.layer.cornerRadius = 3
         urlPlaceholder.translatesAutoresizingMaskIntoConstraints = false
         urlPill.addSubview(urlPlaceholder)
@@ -78,7 +78,7 @@ extension OnboardingAnimationView {
         // safe-area strip inside the phone makes the address bar read as Safari UI
         // instead of looking like it is sitting underneath the system gesture bar.
         let homeIndicator = UIView()
-        homeIndicator.backgroundColor = .label
+        homeIndicator.backgroundColor = LunaColors.primaryText
         homeIndicator.layer.cornerRadius = 1.5
         homeIndicator.translatesAutoresizingMaskIntoConstraints = false
         addressBar.addSubview(homeIndicator)
@@ -115,7 +115,7 @@ extension OnboardingAnimationView {
         extTitle.text = "Manage Extensions"
         extTitle.font = .systemFont(ofSize: 12, weight: .semibold)
         extTitle.textAlignment = .center
-        extTitle.textColor = .label
+        extTitle.textColor = LunaColors.primaryText
         extTitle.translatesAutoresizingMaskIntoConstraints = false
         sxExtShell.addSubview(extTitle)
 

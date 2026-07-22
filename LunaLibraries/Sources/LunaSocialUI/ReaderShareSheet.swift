@@ -87,7 +87,7 @@ public final class ReaderShareSheet: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         let titleLabel = UILabel()
         titleLabel.text = "Share"
@@ -123,7 +123,7 @@ public final class ReaderShareSheet: UIViewController {
             config.background.backgroundColor = GlassStyle.readingAccent
             config.background.cornerRadius = 14
         } else {
-            config.background.backgroundColor = .secondarySystemBackground
+            config.background.backgroundColor = LunaColors.secondaryBackground
             config.background.cornerRadius = 14
         }
         config.titleAlignment = .leading

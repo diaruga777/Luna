@@ -28,11 +28,11 @@ final class DiagnosticsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = LunaColors.background
 
         textView.isEditable = false
         textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        textView.textColor = .label
+        textView.textColor = LunaColors.primaryText
         textView.alwaysBounceVertical = true
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView)

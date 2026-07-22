@@ -23,7 +23,7 @@ final class EmailLoginLoadingCover {
         // dimension: 7 so the checkmark shape in `resolveToCheckmark` reads clearly —
         // the default 4×4 grid is too coarse for a recognizable check.
         spinner = DotMatrixSpinnerView(dimension: 7, side: 40)
-        coverView.backgroundColor = .systemBackground
+        coverView.backgroundColor = LunaColors.background
         coverView.isUserInteractionEnabled = true
         coverView.translatesAutoresizingMaskIntoConstraints = false
 

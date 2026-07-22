@@ -407,7 +407,7 @@ final class ReadingListViewController: UITableViewController {
         let label = UILabel()
         label.text = message
         label.font = .preferredFont(forTextStyle: .body)
-        label.textColor = .secondaryLabel
+        label.textColor = LunaColors.secondaryText
         label.textAlignment = .center
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -662,7 +662,7 @@ final class ReadingListViewController: UITableViewController {
             titleRow.translatesAutoresizingMaskIntoConstraints = false
             largeTitleLabel.text = "Reading List"
             largeTitleLabel.font = .systemFont(ofSize: 34, weight: .bold)
-            largeTitleLabel.textColor = .label
+            largeTitleLabel.textColor = LunaColors.primaryText
             largeTitleLabel.adjustsFontForContentSizeCategory = true
             largeTitleLabel.translatesAutoresizingMaskIntoConstraints = false
             titleRow.addSubview(largeTitleLabel)
@@ -881,7 +881,7 @@ final class ReadingListViewController: UITableViewController {
         header.tag = kind.rawValue
 
         // The error section is tinted red to flag it; the rest are muted.
-        let headerColor: UIColor = kind == .error ? .systemRed : .secondaryLabel
+        let headerColor: UIColor = kind == .error ? .systemRed : LunaColors.secondaryText
 
         let label = UILabel()
         label.font = .preferredFont(forTextStyle: .headline)
@@ -942,7 +942,7 @@ final class ReadingListViewController: UITableViewController {
 
         let titleColor: UIColor = item.state == .failed
             ? .systemRed
-            : (item.readState == .unopened ? .label : .secondaryLabel)
+            : (item.readState == .unopened ? LunaColors.primaryText : LunaColors.secondaryText)
 
         if isPasteboard {
             // Spinner while evaluating; the candidate's preview thumbnail once
@@ -994,7 +994,7 @@ final class ReadingListViewController: UITableViewController {
         }
         let titleColor: UIColor = item.state == .failed
             ? .systemRed
-            : (item.readState == .unopened ? .label : .secondaryLabel)
+            : (item.readState == .unopened ? LunaColors.primaryText : LunaColors.secondaryText)
         cell.configure(
             title: item.title ?? item.urlString,
             titleColor: titleColor,
@@ -1015,7 +1015,7 @@ final class ReadingListViewController: UITableViewController {
         let priceText = PriceFormatting.string(
             amount: tracker.currentBestPrice, currency: tracker.displayCurrency)
 
-        let baseColor: UIColor = alerting ? .systemRed : .secondaryLabel
+        let baseColor: UIColor = alerting ? .systemRed : LunaColors.secondaryText
         let subtitle = NSMutableAttributedString(
             string: priceText, attributes: [.foregroundColor: baseColor])
         if alerting {
@@ -1038,7 +1038,7 @@ final class ReadingListViewController: UITableViewController {
 
         cell.configure(
             title: tracker.productName,
-            titleColor: alerting ? .systemRed : .label,
+            titleColor: alerting ? .systemRed : LunaColors.primaryText,
             subtitle: subtitle,
             thumbnail: thumbnail,
             showsDisclosure: true,
@@ -1049,7 +1049,7 @@ final class ReadingListViewController: UITableViewController {
     /// Builds the grey metadata line, with the "from <friend>" attribution in
     /// the accent color so social shares stand out.
     private func secondaryText(for item: ReadingListItem) -> NSAttributedString {
-        let baseColor: UIColor = item.readState == .unopened ? .secondaryLabel : .tertiaryLabel
+        let baseColor: UIColor = item.readState == .unopened ? LunaColors.secondaryText : LunaColors.tertiaryText
         let host = item.url?.host ?? ""
         // Platform items show a logical container, never the bare host.
         let leadingLabel: String

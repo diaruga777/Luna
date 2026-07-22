@@ -90,9 +90,11 @@ Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
 armed (see `double-save.md`). Because `.done` bypasses `SaveIntent`,
 `ProvideContextIntent` also sends a downloadable tracked Safari URL through the
 shared permission-aware Downloader handoff before returning. With **Return
-Downloaded Media** on (the default), it awaits completion and attaches the static
-image/GIF/video as `media`; with the setting off, it starts the existing Live
-Activity-backed background download and returns `media = nil`. A friend-prompt
+Downloaded Media** on (the default), it resolves the content length and checks storage.
+A known file up to 100 MiB runs through the Live Activity/background engine and is
+awaited so the completed static image/GIF/video can be attached as `media`; larger or
+unknown files start the same durable transfer and return `media = nil` immediately.
+With the setting off, every file uses that immediate background handoff. A friend-prompt
 outcome foregrounds Luna.
 
 ## `SaveIntent` (`app: String`, `screenshot: IntentFile`) → `SaveResultEntity`
@@ -127,10 +129,12 @@ Non-media saves and background-download mode return `media = nil`.
    shared `lunaInstalled.downloader` marker exists and the URL is downloadable,
    the intent performs exactly one Downloader-owned media handoff regardless of the
    invoking host or per-platform toggles. `AutoDownloadSettings.returnMediaFromAppIntents`
-   is App-Group-backed and defaults on: on awaits `MediaDownloadService`, reuses an
-   already-downloaded local/Photos-backed item when present, and returns an `IntentFile`;
-   off calls `MediaAutoDownloader.startDownloaderIntentDownload` for the prior Live
-   Activity-backed background behavior. Reader, Downloader, and Price Tracker each embed
+   is App-Group-backed and defaults on: it reuses an already-downloaded local/Photos-backed
+   item when present, otherwise resolves the content length and checks available storage.
+   A known file at or below 100 MiB is awaited through `LiveMediaDownloadManager` and
+   returned as an `IntentFile`; larger/unknown files and all setting-off invocations call
+   `MediaAutoDownloader.startDownloaderIntentDownload` and return nil while the Live
+   Activity/background transfer continues. Reader, Downloader, and Price Tracker each embed
    the shared Live Activity widget source. Synchronous results are materialized at a
    temporary URL whose last path component is a sanitized saved-item title (or platform
    base name such as `tiktok.mp4`) and use the concrete file UTI, so downstream Share
@@ -139,7 +143,8 @@ Non-media saves and background-download mode return `media = nil`.
    duplicate/double-save timeout cannot suppress the media handoff.
    Downloader's shared “Save Downloads to Photos” preference is honored: an undetermined
    read/write permission request foregrounds the invoking app first; denial falls back to
-   the shared local media library. A `friendPromptRequested` outcome also foregrounds Luna.
+   the shared local media library. Insufficient space throws a user-facing intent error
+   before transfer. A `friendPromptRequested` outcome also foregrounds Luna.
 5. Errors are thrown as `SaveError: CustomLocalizedStringResourceConvertible`
    (`unsupportedApp`, `modelUnavailable`, `networkUnavailable`,
    `quotaLimitReached`, `serviceUnavailable`, `nothingIdentifiable`,

@@ -1,7 +1,8 @@
 # Social Media Download
 
 Luna downloads the first still image, GIF, or video from supported X, Instagram,
-TikTok, and Facebook posts. Resolution is keyless/client-side and therefore best effort.
+TikTok, Facebook, Reddit, and YouTube links. Resolution is keyless/client-side and
+therefore best effort.
 
 ## Downloader storage model
 
@@ -9,8 +10,10 @@ Every Downloader save has one durable `SavedMediaItem` row and exactly one visib
 `StorageState`:
 
 1. **`undownloaded`** — the URL is saved, but no media backing exists yet. The
-   carousel card shows a dotted-outline download glyph (with a live progress ring
-   while a job runs). Tapping the glyph starts the download.
+   carousel card shows a dotted-outline download glyph. While a job runs it becomes
+   a downloading card with an explicit **Downloading** status, moon-horizon progress
+   bar, and a static poster as soon as the resolver exposes one. Tapping the glyph
+   starts the download.
 2. **`localFile(fileName:)`** — the media file lives under the shared App Group at
    `SavedMedia/Files`; an optional generated thumbnail lives in `SavedMedia/Thumbnails`.
 3. **`photosReference(localIdentifier:…)`** — the manifest keeps PhotoKit's durable
@@ -143,11 +146,12 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   `MediaAutoDownloader`, while `.appIntent` ingestion deliberately skips the awaited inline
   downloader and any automatic Downloader-host Live Activity; the Save/Provide Context intent
   owns the single handoff after the reading-list result is known. **Return Downloaded Media**
-  (`AutoDownloadSettings.returnMediaFromAppIntents`, App-Group-backed, default on) awaits the
-  durable Downloader download and exposes the completed static image/GIF/video to Shortcuts as
-  an optional `IntentFile` property on the returned transient entity. It reuses existing local
-  files; Photos-backed rows are copied to a transient file for the result. Turning the setting
-  off retains the former `LiveMediaDownloadManager` background job and returns no media file.
+  (`AutoDownloadSettings.returnMediaFromAppIntents`, App-Group-backed, default on) first resolves
+  the asset and its advertised/HEAD content length. Known files up to **100 MiB** run through the
+  Live Activity/background URLSession engine and are awaited so the intent can return an optional
+  `IntentFile`. Larger or indeterminate files are handed to that engine and the intent returns
+  immediately with no file. Existing local files are reused and Photos-backed rows are copied to
+  a transient file. Turning the setting off always uses the immediate background handoff.
   Intent exports use a sanitized item title or platform base name (for example
   `tiktok.mp4`) as the actual temporary URL filename and declare its concrete file type,
   rather than leaking the durable UUID-backed library filename to Shortcuts.
@@ -160,7 +164,7 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   interrupted/crashed save is restartable by pasting the URL again. Store-change notifications
   and live job-progress notifications from async ingestion / URLSession delegates are marshalled
   onto the main queue before UIKit carousel/footer observers run. A launch pass compares every
-  persisted resolving/downloading job with the background session's real tasks and recreates a
+  persisted resolving/downloading/waiting job with the background session's real tasks and recreates a
   missing transfer; pasting the same interrupted URL performs the same repair immediately. New
   jobs register their background task before notifying UI, so a termination cannot leave a
   durable forever-resolving job in the old persist-before-task window.
@@ -175,6 +179,48 @@ The carousel observes both `.savedMediaChanged` and `.readingListChanged`.
 `SavedMediaStore` also posts an App-Group-specific Darwin notification for mutations made
 in another process; the carousel bridges it back to `.savedMediaChanged` and reloads on app
 activation because Darwin notifications may be dropped while suspended.
+
+## Long downloads, interruption, and storage
+
+`LiveMediaDownloadManager` uses a shared-container background `URLSession` with launch
+events, connectivity waiting, and a seven-day resource timeout. Jobs persist expected and
+received byte counts, resolver stage, source range, and a sidecar resume-data file. A user
+pause asks `URLSessionDownloadTask` to produce resume data; transient network failures retry
+once and then remain in the visible **Waiting to resume** state instead of being discarded.
+Launch/foreground repair and Downloader's twice-daily BG processing job compare persisted jobs
+with the background session and restart every missing resolving, downloading, or waiting task.
+The local saving/YouTube-range-export stage is persisted too: the untouched transfer stays in a
+`.source` staging file until the final output exists, so overnight repair can finish an export
+without applying a range twice.
+
+Every foreground and background path checks
+`volumeAvailableCapacityForImportantUsage` before starting or resuming. The required capacity
+includes the expected file, a 256 MiB reserve, transfer overhead, and a second full-file allowance
+when a timestamp range requires local video export. Unknown sizes require the reserve. Failure is
+shown in the card/Live Activity (and thrown as an App Intent dialog) with a user-facing amount to
+free. The corresponding `E174.1` disk-space required-reason declaration lives in the
+`LunaMediaDownload` privacy manifest.
+
+## YouTube
+
+`PlatformRecognizer` accepts concrete video URLs on `youtube.com` and all subdomains (including
+`m.youtube.com`), `youtube-nocookie.com`, and `youtu.be`: watch URLs, Shorts, live, embed, `/v/`,
+and `/clip/`. `YouTubeLink` normalizes these to a canonical video id and preserves `t`, `start`,
+`end`, and `#t=` values (plain seconds or `1h2m3s`). Clip pages expand their underlying video id
+and millisecond range. The downloaded progressive MP4 is trimmed locally for a requested start/end
+range before it is committed.
+
+`YouTubeMediaResolver` reads the public watch/embed player response and selects the best direct
+progressive MP4 that includes audio; it intentionally never returns an adaptive video-only stream.
+The durable resolver can also use the watch page's exposed Innertube embedded-player configuration.
+Posters come from `i.ytimg.com` immediately, and an expired signed CDN URL (HTTP 403 after a later
+resume) causes the source page to be resolved again rather than retrying stale bytes.
+
+This deliberately does not embed `yt-dlp`, execute downloaded code, decipher player JavaScript,
+or bypass login/DRM/age/region/private-video controls. YouTube increasingly requires PO tokens or
+player challenges for some formats, so those videos fail explicitly when no direct public
+progressive stream is present. YouTube's developer policies also restrict downloading/offline
+playback without authorization; shipping this feature requires a separate product/legal review.
 
 ## Clipboard completion action
 
@@ -214,6 +260,10 @@ their legacy per-platform Photos auto-save controls.
   Facebook. X uses fxtwitter JSON; TikTok parses hydration/reflow JSON; Instagram prefers
   embed `contextJSON`; Facebook prefers playable URLs in browser-page JSON. Instagram and
   Facebook fall back to Open Graph media. TikTok media requests set its required Referer.
+- `YouTubeMediaResolver.swift` normalizes the YouTube URL family, expands clips, parses player
+  responses, and selects direct progressive MP4 media.
+- `MediaDownloadPreflight.swift` owns size, 100 MiB intent, and storage-reserve policy;
+  `MediaVideoTrimmer.swift` applies source-requested video ranges.
 - `MediaDownloadService.swift` resolves and streams remote media to a temporary file,
   then applies Downloader destination and clipboard policy. Downloads never hold a full
   video in memory.
@@ -244,7 +294,8 @@ share-extension Info plists. The share plist needs both because downloadable med
 ## Caveats and tests
 
 Undocumented media endpoints can change, rate-limit, or return only a poster. Twitter
-“GIFs” are MP4 videos; TikTok CDN URLs may reject requests without expected cookies.
+“GIFs” are MP4 videos; TikTok CDN URLs may reject requests without expected cookies;
+YouTube may require a PO token/player challenge and expose no usable progressive stream.
 
 Parser and extension mapping are covered by `SocialMediaResolverTests`; three-state
 storage, migration, settings defaults, retention, and transition recovery are covered by

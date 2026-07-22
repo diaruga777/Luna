@@ -601,13 +601,13 @@ public final class CardCarouselViewController: UIViewController {
         slot.content.removeFromParent()
     }
 
-    private func applyRestingLayout(to slot: Slot) {
+    private func applyRestingLayout(to slot: Slot, atSlotOffset stagedOffset: Int? = nil) {
         guard let metrics else { return }
         if slot.index == currentIndex, isImmersed {
             applyImmersionLayout()
             return
         }
-        let offset = slot.index - currentIndex
+        let offset = stagedOffset ?? (slot.index - currentIndex)
         slot.card.layer.cornerRadius = CarouselCardView.cornerRadius
         slot.card.alpha = isImmersed ? 0 : 1
         slot.card.borderAlpha = 1
@@ -652,17 +652,32 @@ public final class CardCarouselViewController: UIViewController {
         transition.animateToFinish()
     }
 
-    /// Builds one eclipse page transition to `target` (must be ±1 and mounted),
-    /// marking the carousel as transitioning — and retaining the transition —
-    /// until it settles.
+    /// Builds one eclipse page transition to `target`, staging an unmounted
+    /// target in the incoming peek position when this is a multi-card jump.
+    /// Marks the carousel as transitioning — and retains the transition — until
+    /// it settles.
     private func makeEclipseTransition(to target: Int) -> CardEclipseTransition? {
         guard let metrics,
               !isTransitioning,
-              let outgoing = slots[currentIndex],
-              let incoming = slots[target]
+              target >= 0, target < count,
+              target != currentIndex,
+              let outgoing = slots[currentIndex]
         else { return nil }
         let step = target - currentIndex
-        let opposite = slots[currentIndex - step]
+        let direction = step > 0 ? 1 : -1
+        let incoming: Slot
+        if let mounted = slots[target] {
+            incoming = mounted
+        } else if let staged = mount(index: target) {
+            slots[target] = staged
+            applyRestingLayout(to: staged, atSlotOffset: direction)
+            staged.card.layoutIfNeeded()
+            staged.content.view.layoutIfNeeded()
+            incoming = staged
+        } else {
+            return nil
+        }
+        let opposite = slots[currentIndex - direction]
 
         isTransitioning = true
 
@@ -681,7 +696,13 @@ public final class CardCarouselViewController: UIViewController {
             dimmingBounds: dimmingBounds,
             atZenith: { [weak self] in
                 guard let self else {
-                    return CardEclipseZenithResult(repositionedOutgoing: nil, enteringPeek: nil)
+                    return CardEclipseZenithResult(reappearingPeeks: [])
+                }
+                if abs(step) > 1 {
+                    return self.performZenithJump(
+                        outgoing: outgoing,
+                        incoming: incoming,
+                        target: target)
                 }
                 return self.performZenithSwap(outgoing: outgoing, step: step, opposite: opposite)
             },
@@ -740,11 +761,53 @@ public final class CardCarouselViewController: UIViewController {
         scrubber.setSelectedIndex(currentIndex, animated: true)
         delegate?.carousel(self, didCenterCardAt: currentIndex)
         return CardEclipseZenithResult(
-            repositionedOutgoing: outgoing.card,
-            enteringPeek: enteringCard)
+            reappearingPeeks: [outgoing.card, enteringCard].compactMap { $0 })
     }
 
-    /// Non-eclipse move (Reduce Motion, scrub commits, multi-card jumps).
+    /// A non-adjacent target is already the moon crossing the current card.
+    /// At totality, keep that exact target centered, retire cards outside its
+    /// new three-card window, and lay out both new peeks while they are hidden.
+    private func performZenithJump(
+        outgoing: Slot,
+        incoming: Slot,
+        target: Int
+    ) -> CardEclipseZenithResult {
+        outgoing.content.cardDidLeaveCenter()
+
+        let keep = Set((target - 1)...(target + 1))
+        for slot in Array(slots.values) where !keep.contains(slot.index) {
+            unmount(slot)
+            slots[slot.index] = nil
+        }
+        currentIndex = target
+
+        var reappearingPeeks: [UIView] = []
+        for index in [target - 1, target + 1] where index >= 0 && index < count {
+            let slot: Slot
+            if let mounted = slots[index] {
+                slot = mounted
+            } else if let mounted = mount(index: index) {
+                slots[index] = mounted
+                slot = mounted
+            } else {
+                continue
+            }
+            applyRestingLayout(to: slot)
+            slot.card.layoutIfNeeded()
+            slot.content.view.layoutIfNeeded()
+            reappearingPeeks.append(slot.card)
+        }
+
+        incoming.content.setMuted(audioSession.isMuted)
+        if isViewVisible { incoming.content.cardDidBecomeCentered() }
+        updateMuteUI()
+        scrubber.setSelectedIndex(currentIndex, animated: true)
+        delegate?.carousel(self, didCenterCardAt: currentIndex)
+        return CardEclipseZenithResult(reappearingPeeks: reappearingPeeks)
+    }
+
+    /// Non-eclipse move (Reduce Motion, off-window updates, and generic
+    /// multi-card jumps).
     private func jump(to target: Int) {
         guard target != currentIndex, !isTransitioning else { return }
         slots[currentIndex]?.content.cardDidLeaveCenter()
@@ -787,8 +850,19 @@ public final class CardCarouselViewController: UIViewController {
         if target == currentIndex {
             if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
             scrubber.setSelectedIndex(currentIndex, animated: true)
-        } else if style.scrubberStyle.animateScrubTransitions, abs(target - currentIndex) == 1 {
-            page(by: target - currentIndex)
+        } else if style.scrubberStyle.animateScrubTransitions {
+            pageMiniCardScrubber(to: target)
+        } else {
+            jump(to: target)
+        }
+    }
+
+    /// Mini-card chips can expose a target outside the carousel's mounted ±1
+    /// window. Stage that exact card and eclipse to it instead of revealing an
+    /// immediate crossfade/layout pass.
+    private func pageMiniCardScrubber(to target: Int) {
+        if !UIAccessibility.isReduceMotionEnabled, view.window != nil {
+            runEclipse(to: target)
         } else {
             jump(to: target)
         }

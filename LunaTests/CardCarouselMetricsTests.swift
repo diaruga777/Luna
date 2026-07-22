@@ -179,6 +179,86 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
 }
 
 @MainActor
+final class CardCarouselMiniCardPagingTests: XCTestCase {
+
+    func testTapTwoCardsForwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
+        try await assertMiniCardEclipse(from: 3, to: 5)
+    }
+
+    func testTapTwoCardsBackwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
+        try await assertMiniCardEclipse(from: 3, to: 1)
+    }
+
+    private func assertMiniCardEclipse(from start: Int, to target: Int) async throws {
+        let source = MiniCardPagingDataSource()
+        let carousel = CardCarouselViewController()
+        var style = CardCarouselStyle()
+        style.scrubberStyle = .miniCards
+        carousel.style = style
+        carousel.dataSource = source
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = carousel
+        window.isHidden = false
+        window.layoutIfNeeded()
+        carousel.reloadData(centeringAt: start)
+
+        let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        scrubber.delegate?.scrubber(scrubber, didCommit: target)
+
+        XCTAssertEqual(carousel.currentIndex, start,
+                       "The target must not replace the current card before totality")
+        XCTAssertFalse(carousel.view.isUserInteractionEnabled,
+                       "An automatic eclipse blocks input while it is in flight")
+        let staged = try XCTUnwrap(source.contentControllers[target])
+        XCTAssertTrue(staged.parent === carousel)
+        XCTAssertGreaterThan(staged.view.bounds.width, 0)
+        XCTAssertGreaterThan(staged.view.bounds.height, 0)
+
+        let settled = expectation(description: "multi-card eclipse settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + CardEclipseTransition.duration + 0.2) {
+            settled.fulfill()
+        }
+        await fulfillment(of: [settled], timeout: CardEclipseTransition.duration + 1)
+
+        XCTAssertEqual(carousel.currentIndex, target)
+        XCTAssertTrue(carousel.view.isUserInteractionEnabled)
+        XCTAssertTrue(carousel.contentController(at: target) === staged)
+        XCTAssertNotNil(carousel.contentController(at: max(0, target - 1)))
+        XCTAssertNotNil(carousel.contentController(at: min(source.cardCount - 1, target + 1)))
+        window.isHidden = true
+    }
+
+    private func firstScrubber(in view: UIView) -> CarouselScrubberView? {
+        if let scrubber = view as? CarouselScrubberView { return scrubber }
+        return view.subviews.lazy.compactMap { self.firstScrubber(in: $0) }.first
+    }
+}
+
+@MainActor
+private final class MiniCardPagingDataSource: @preconcurrency CardCarouselDataSource {
+    let cardCount = 7
+    private(set) var contentControllers: [Int: CardContentViewController] = [:]
+
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { cardCount }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contentControllerForCardAt index: Int
+    ) -> CardContentViewController {
+        let content = CardContentViewController()
+        contentControllers[index] = content
+        return content
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadThumbnailForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) { completion(nil) }
+}
+
+@MainActor
 final class CardCarouselScrubPromotionTests: XCTestCase {
 
     func testCommitPromotesPlayingPreviewWithoutPausingOrReplacingItAndPreservesSoundState() throws {

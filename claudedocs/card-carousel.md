@@ -66,7 +66,11 @@ own adapters later). The Downloader-specific adapters live in
   even the first and last chips center exactly; at rest the selected chip is
   always centered, whatever selected it (scrub, tap, or card swipe), with a
   selection haptic whenever a new chip crosses center during a drag. A tap on
-  a chip commits it directly. Chips alpha-fade out near the strip's ends
+  a chip commits it directly. Reader mini-card taps use the same eclipse
+  transition for every visible target, including the cards two positions from
+  center: an unmounted target is staged at the incoming peek, then its new
+  neighboring window is laid out behind totality before the reveal. Chips
+  alpha-fade out near the strip's ends
   (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
   .edgeFadeWidth`: a non-scrolling transparent gradient mask, with no drawn veil).
   The Downloader opts into `autoplaysScrubPreviewContent`: as each thumbnail

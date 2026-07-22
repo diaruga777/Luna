@@ -38,16 +38,13 @@ import UIKit
 
 /// What the carousel changed at the zenith, for the transition to reveal on egress.
 public struct CardEclipseZenithResult {
-    /// The outgoing card, now positioned at the opposite peek slot (it slides in
-    /// from that screen edge).
-    public let repositionedOutgoing: UIView?
-    /// A freshly mounted peek on the side the incoming card vacated (slides in
-    /// from that screen edge).
-    public let enteringPeek: UIView?
+    /// Side cards revealed after totality. An adjacent page reuses the outgoing
+    /// card on one side and mounts the next peek on the other; a multi-card jump
+    /// instead supplies the two peeks surrounding its new center.
+    public let reappearingPeeks: [UIView]
 
-    public init(repositionedOutgoing: UIView?, enteringPeek: UIView?) {
-        self.repositionedOutgoing = repositionedOutgoing
-        self.enteringPeek = enteringPeek
+    public init(reappearingPeeks: [UIView]) {
+        self.reappearingPeeks = reappearingPeeks
     }
 }
 
@@ -276,7 +273,7 @@ public final class CardEclipseTransition {
         // rather than popping it in place. The travel is exactly the peek amount.
         let containerWidth = container.bounds.width
         var slideIns: [(card: UIView, restingCenter: CGPoint)] = []
-        for card in [result.repositionedOutgoing, result.enteringPeek].compactMap({ $0 }) {
+        for card in result.reappearingPeeks {
             container.insertSubview(card, belowSubview: dimmer)
             let restingCenter = card.center
             card.center = Self.offscreenPeekCenter(for: card, containerWidth: containerWidth)

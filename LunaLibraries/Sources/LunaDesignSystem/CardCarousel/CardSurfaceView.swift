@@ -139,7 +139,6 @@ private final class VerticalEdgeFadeMaskView: UIView {
 
     override class var layerClass: AnyClass { CAGradientLayer.self }
     private var gradient: CAGradientLayer { layer as! CAGradientLayer }
-    private var fadeHeight: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -157,7 +156,6 @@ private final class VerticalEdgeFadeMaskView: UIView {
     /// Recomputes the fade run as a fraction of the current height — call on
     /// every size change.
     func setFadeHeight(_ height: CGFloat) {
-        fadeHeight = height
         guard bounds.height > 0 else { return }
         let fraction = min(max(height / bounds.height, 0), 0.5)
         gradient.locations = [0, NSNumber(value: fraction), NSNumber(value: 1 - fraction), 1]

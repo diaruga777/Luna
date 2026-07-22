@@ -36,13 +36,20 @@ final class ArchiveTrayControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testLongPressCancelsTheCellTapItReplaces() {
+    func testCellContextMenuOffersUnarchiveAndShare() {
         let host = UIViewController()
         host.loadViewIfNeeded()
         let tray = ArchiveTrayController(
             host: host, shiftedViews: { [] }, canPull: { true })
+        tray.setItems([ArchiveTrayItem(
+            id: UUID(), title: "Archived item", footer: nil, showsMetadata: true,
+            isAvailable: true, loadImage: { $0(nil) }, tap: {}, share: { _ in },
+            unarchive: {})])
 
-        XCTAssertTrue(tray.unarchivePressCancelsTouchesForTesting)
+        let titles = tray.contextMenuForTesting(itemAt: 0).children.compactMap {
+            ($0 as? UIAction)?.title
+        }
+        XCTAssertEqual(titles, ["Unarchive", "Share"])
     }
 
     @MainActor

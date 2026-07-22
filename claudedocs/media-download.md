@@ -108,7 +108,8 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   `PHImageManager.requestAVAsset`. Long-press menus offer **Save to Photos** on local
   rows (Photos-backed rows do not offer a redundant save action), Share, Archive, and Delete.
   The archive tray shows thumbnail-only square cells. Available local/PhotoKit media opens
-  fullscreen; unavailable media re-downloads on tap; long-press offers Unarchive.
+  fullscreen; unavailable media re-downloads on tap; long-press offers Unarchive
+  and Share.
   Settings and direct system file sharing flank the edge-to-edge scrub strip in glass
   circles; there is no root Friends or Add button. Sharing hands the activity controller
   exactly one concrete media file URL (no source link, text, or lazy provider), so it shows

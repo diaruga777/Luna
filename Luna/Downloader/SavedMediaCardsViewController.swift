@@ -262,6 +262,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                     self?.loadThumbnail(for: item, completion: completion)
                 },
                 tap: { [weak self] in self?.openArchivedMedia(item) },
+                share: { [weak self] sourceView in
+                    self?.share(item, sourceView: sourceView)
+                },
                 unarchive: { [weak self] in self?.store.setArchived(false, for: item.id) })
         }
     }
@@ -578,6 +581,11 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     // MARK: - Item actions (context menu)
 
     private func share(_ item: SavedMediaItem, sourceIndex: Int) {
+        let sourceView = carousel.cardView(at: sourceIndex) ?? shareButton
+        share(item, sourceView: sourceView)
+    }
+
+    private func share(_ item: SavedMediaItem, sourceView: UIView) {
         Task { @MainActor [weak self] in
             guard let self,
                   let fileURL = await self.prepareShareFile(for: item)
@@ -595,10 +603,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             activity.completionWithItemsHandler = { [weak self] _, _, _, _ in
                 Task { @MainActor in self?.discardPreparedShareFile(for: item.id) }
             }
-            if let card = self.carousel.cardView(at: sourceIndex) {
-                activity.popoverPresentationController?.sourceView = card
-                activity.popoverPresentationController?.sourceRect = card.bounds
-            }
+            activity.popoverPresentationController?.sourceView = sourceView
+            activity.popoverPresentationController?.sourceRect = sourceView.bounds
             self.present(activity, animated: true)
         }
     }

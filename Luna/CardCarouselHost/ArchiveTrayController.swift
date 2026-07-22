@@ -17,6 +17,7 @@ struct ArchiveTrayItem {
     let isAvailable: Bool
     let loadImage: (@escaping (UIImage?) -> Void) -> Void
     let tap: () -> Void
+    let share: (UIView) -> Void
     let unarchive: () -> Void
 }
 
@@ -35,7 +36,6 @@ final class ArchiveTrayController: NSObject {
     private let collection: UICollectionView
     private let emptyLabel = UILabel()
     private var pan: UIPanGestureRecognizer!
-    private var unarchivePress: UILongPressGestureRecognizer!
     private var items: [ArchiveTrayItem] = []
     private var progress: CGFloat = 0
     private var panStartProgress: CGFloat = 0
@@ -110,9 +110,6 @@ final class ArchiveTrayController: NSObject {
         collection.delegate = self
         collection.register(ArchiveTrayCell.self, forCellWithReuseIdentifier: ArchiveTrayCell.reuseID)
         tray.addSubview(collection)
-        unarchivePress = UILongPressGestureRecognizer(
-            target: self, action: #selector(handleUnarchivePress(_:)))
-        collection.addGestureRecognizer(unarchivePress)
 
         emptyLabel.text = "No archived items"
         emptyLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -182,14 +179,6 @@ final class ArchiveTrayController: NSObject {
 
     @objc private func dismissTapped() { setOpen(false, animated: true) }
 
-    @objc private func handleUnarchivePress(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began,
-              let indexPath = collection.indexPathForItem(at: gesture.location(in: collection))
-        else { return }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        items[indexPath.item].unarchive()
-    }
-
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard laidOutSize.width > 0 else { return }
         switch gesture.state {
@@ -249,7 +238,9 @@ final class ArchiveTrayController: NSObject {
     var itemSizeForTesting: CGSize {
         (collection.collectionViewLayout as? UICollectionViewFlowLayout)?.itemSize ?? .zero
     }
-    var unarchivePressCancelsTouchesForTesting: Bool { unarchivePress.cancelsTouchesInView }
+    func contextMenuForTesting(itemAt index: Int) -> UIMenu {
+        contextMenu(for: items[index], sourceView: collection)
+    }
     func setOpenForTesting(_ open: Bool) { setOpen(open, animated: false) }
     #endif
 }
@@ -284,6 +275,29 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         items[indexPath.item].tap()
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        contextMenuConfigurationForItemAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        let item = items[indexPath.item]
+        let sourceView = collectionView.cellForItem(at: indexPath) ?? collectionView
+        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+            self?.contextMenu(for: item, sourceView: sourceView)
+        })
+    }
+
+    private func contextMenu(for item: ArchiveTrayItem, sourceView: UIView) -> UIMenu {
+        UIMenu(children: [
+            UIAction(
+                title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")
+            ) { _ in item.unarchive() },
+            UIAction(
+                title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+            ) { _ in item.share(sourceView) },
+        ])
     }
 
 }

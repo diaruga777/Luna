@@ -634,6 +634,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                     }
                 },
                 tap: { [weak self] in self?.openExternally(item) },
+                share: { [weak self] sourceView in
+                    guard let self else { return }
+                    AppReaderShareProvider.shared.presentShareSheet(
+                        urlString: item.urlString,
+                        title: item.title,
+                        from: self,
+                        sourceView: sourceView)
+                },
                 unarchive: { [weak self] in self?.store.markUnread(item.id) })
         }
     }

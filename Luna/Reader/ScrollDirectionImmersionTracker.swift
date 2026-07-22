@@ -42,11 +42,11 @@ final class ScrollDirectionImmersionTracker {
     private var scrollRuns: [ObjectIdentifier: (last: CGFloat, run: CGFloat)] = [:]
 
     /// Downward travel (pt) before the chrome fades away…
-    private static let fadeOutTravel: CGFloat = 24
+    private static let fadeOutTravel: CGFloat = 100
     /// …and the smaller upward travel that deliberately signals surfacing.
     /// This still absorbs line-height jitter, but makes chrome return promptly
     /// without matching the longer downward dismissal gesture.
-    private static let fadeInTravel: CGFloat = 10
+    private static let fadeInTravel: CGFloat = 50
 
     /// Hooks the immersion triggers onto `root`'s live content (KVO on every
     /// scroll view, play-state callbacks on every RSVP controller). Idempotent

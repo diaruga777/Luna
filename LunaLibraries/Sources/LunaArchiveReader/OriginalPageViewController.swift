@@ -33,7 +33,13 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
         self.persistsScrollOffset = persistsScrollOffset
         self.pendingRestoreOffset = savedScrollOffset ?? (persistsScrollOffset ? item.lastOriginalScrollOffset : nil)
         let configuration = WKWebViewConfiguration()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        // A web archive is the captured page, not merely static HTML. Publishers such
+        // as The New Yorker install their CSS and finish layout from deferred script
+        // bundles; disabling JavaScript leaves the archived DOM present but unstyled
+        // (often with large empty lazy-layout regions). The archive already contains
+        // the scripts captured from the page, so replay it with normal WebKit page
+        // semantics just as it rendered at capture time.
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         self.webView = WKWebView(frame: .zero, configuration: configuration)
         super.init(nibName: nil, bundle: nil)
     }
@@ -49,6 +55,13 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     public var contentScrollView: UIScrollView { webView.scrollView }
+    #if DEBUG
+    /// Regression seam: archived pages that install layout/CSS from script must be
+    /// replayed with JavaScript enabled.
+    public var allowsContentJavaScriptForTesting: Bool {
+        webView.configuration.defaultWebpagePreferences.allowsContentJavaScript
+    }
+    #endif
     /// The archive's current disjoint scroll offset, normalized to zero while
     /// the card's in-content title is still onscreen.
     public var currentScrollOffset: Double {

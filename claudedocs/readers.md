@@ -51,6 +51,9 @@ effect ring with a 0.5pt low-contrast highlight. Reader scroll chrome dismisses 
 without making the reader reverse a large part of the page.
 
 Original mode applies the same stable top content inset directly to its WKWebView.
+Saved web archives replay with content JavaScript enabled because some publishers
+install captured CSS and complete page layout from deferred scripts; disabling it can
+leave the archived DOM visible but unstyled with large empty lazy-layout regions.
 A layer restored with `.original` compares the actually mounted child (rather than
 mistaking the restored mode value for an already-mounted reader), so a cold launch
 loads the saved web archive immediately without requiring a mode round trip.

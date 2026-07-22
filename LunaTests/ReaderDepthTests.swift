@@ -19,6 +19,25 @@ final class ReaderDepthTests: XCTestCase {
         return w
     }
 
+    private func contrastRatio(gray: CGFloat) -> CGFloat {
+        let luminance = gray <= 0.04045
+            ? gray / 12.92
+            : pow((gray + 0.055) / 1.055, 2.4)
+        return (luminance + 0.05) / 0.05
+    }
+
+    func testLightPaletteUsesDarkestAccessibleGrayAndBlackText() {
+        let background = white(LunaColors.background, light)
+        XCTAssertEqual(background, 0.46, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(contrastRatio(gray: background), 4.5)
+        XCTAssertEqual(white(LunaColors.primaryText, light), 0, accuracy: 0.001)
+    }
+
+    func testDarkPaletteRemainsWhiteOnBlack() {
+        XCTAssertEqual(white(LunaColors.background, dark), 0, accuracy: 0.001)
+        XCTAssertEqual(white(LunaColors.primaryText, dark), 1, accuracy: 0.001)
+    }
+
     func testDarkModeGetsLighterWithDepth() {
         let levels = (0...4).map { white(ReaderDepth.backgroundColor(for: $0), dark) }
         XCTAssertEqual(levels[0], 0.0, accuracy: 0.001)
@@ -27,12 +46,12 @@ final class ReaderDepthTests: XCTestCase {
         for i in 1...4 { XCTAssertGreaterThan(levels[i], levels[i - 1]) }
     }
 
-    func testLightModeGetsDarkerWithDepth() {
+    func testLightModeUsesLighterCharcoalWithDepth() {
         let levels = (0...4).map { white(ReaderDepth.backgroundColor(for: $0), light) }
-        XCTAssertEqual(levels[0], 1.0, accuracy: 0.001)
-        XCTAssertEqual(levels[4], 0.87, accuracy: 0.001)
-        // Strictly decreasing (each nested level a touch darker).
-        for i in 1...4 { XCTAssertLessThan(levels[i], levels[i - 1]) }
+        XCTAssertEqual(levels[0], 0.46, accuracy: 0.001)
+        XCTAssertEqual(levels[4], 0.66, accuracy: 0.001)
+        // Nested layers stay in the charcoal family while gaining depth.
+        for i in 1...4 { XCTAssertGreaterThan(levels[i], levels[i - 1]) }
     }
 
     func testDepthClampsAboveMax() {

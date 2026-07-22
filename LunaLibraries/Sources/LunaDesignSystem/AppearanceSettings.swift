@@ -50,6 +50,8 @@ public enum AppearanceSettings {
     /// Applies the current `interfaceStyle` override to a window. Call at every
     /// window-creation site so the whole app honors the chosen theme.
     public static func apply(to window: UIWindow) {
+        LunaColors.installGlobalAppearance()
         window.overrideUserInterfaceStyle = interfaceStyle.uiStyle
+        window.backgroundColor = LunaColors.background
     }
 }

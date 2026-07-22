@@ -4,6 +4,19 @@ Luna uses ordinary UIKit presentation, navigation, and content-change animations
 shared custom effects are the loading indicator, onboarding progress dots, moon-horizon
 download progress, and the Reader-only Lunar Eclipse navigation treatment.
 
+## Appearance palette
+
+`LunaColors` in `LunaDesignSystem` is the semantic palette shared by all three apps and
+their extensions. Dark mode is white text on a true-black base. Light mode deliberately
+remains charcoal: black text sits on a 46% sRGB-gray base (approximately 4.58:1 contrast),
+with progressively lighter gray surfaces for cards, grouped content, and nested readers.
+This is the darkest neutral base that clears the 4.5:1 normal-text contrast target.
+
+App UI must use `LunaColors` instead of UIKit's label/background/grouped/fill/separator
+semantic colors, because UIKit's light variants return white surfaces. `AppearanceSettings`
+also installs matching appearances for UIKit-owned table, collection, text-input,
+navigation-bar, and tab-bar surfaces before each scene builds its root controller.
+
 ## Loading spinner (`DotMatrixSpinnerView`)
 
 `LunaLibraries/Sources/LunaDesignSystem/DotMatrixSpinnerView.swift` is the shared loading

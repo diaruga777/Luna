@@ -64,13 +64,14 @@ public enum GlassStyle {
         var config: UIButton.Configuration
         if #available(iOS 26.0, *) {
             config = .glass()
+            config.baseBackgroundColor = LunaColors.secondaryBackground.withAlphaComponent(0.85)
         } else {
             config = .filled()
-            config.baseBackgroundColor = .secondarySystemBackground
+            config.baseBackgroundColor = LunaColors.secondaryBackground
         }
         config.image = UIImage(systemName: symbol)
         config.cornerStyle = .capsule
-        config.baseForegroundColor = .label
+        config.baseForegroundColor = LunaColors.primaryText
         config.contentInsets = NSDirectionalEdgeInsets(
             top: padding, leading: padding, bottom: padding, trailing: padding)
         return config
@@ -89,7 +90,9 @@ public enum GlassStyle {
     /// The effect for floating bars (footer controls).
     public static func barEffect() -> UIVisualEffect {
         if #available(iOS 26.0, *) {
-            return UIGlassEffect()
+            let glass = UIGlassEffect()
+            glass.tintColor = LunaColors.secondaryBackground.withAlphaComponent(0.72)
+            return glass
         }
         return UIBlurEffect(style: .systemMaterial)
     }
@@ -108,7 +111,7 @@ public enum GlassStyle {
         UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(white: 0.16, alpha: 0.94)
-                : UIColor(white: 0.97, alpha: 0.94)
+                : UIColor(white: 0.51, alpha: 0.94)
         }
     }
 
@@ -122,7 +125,7 @@ public enum GlassStyle {
         config.baseBackgroundColor = solidButtonFill
         config.image = UIImage(systemName: symbol)
         config.cornerStyle = .capsule
-        config.baseForegroundColor = .label
+        config.baseForegroundColor = LunaColors.primaryText
         config.contentInsets = NSDirectionalEdgeInsets(
             top: padding, leading: padding, bottom: padding, trailing: padding)
         return config

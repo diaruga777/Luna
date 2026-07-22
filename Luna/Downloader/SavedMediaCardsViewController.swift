@@ -24,6 +24,40 @@ import UIKit
 
 final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
+    private enum PasteboardCardState {
+        case placeholder(changeCount: Int)
+        case invalid(changeCount: Int, showsSettingsGuidance: Bool)
+        case downloading(
+            changeCount: Int, url: URL, title: String, progress: Double)
+        case ready(
+            changeCount: Int, url: URL, title: String,
+            media: DownloadedMedia, expiresAt: Date)
+
+        var changeCount: Int {
+            switch self {
+            case .placeholder(let count), .invalid(let count, _),
+                 .downloading(let count, _, _, _), .ready(let count, _, _, _, _):
+                return count
+            }
+        }
+
+        var fingerprint: String {
+            switch self {
+            case .placeholder(let count): return "placeholder|\(count)"
+            case .invalid(let count, let guidance): return "invalid|\(count)|\(guidance)"
+            case .downloading(let count, let url, _, _):
+                return "downloading|\(count)|\(url.absoluteString)"
+            case .ready(let count, let url, _, let media, _):
+                return "ready|\(count)|\(url.absoluteString)|\(media.fileURL.path)"
+            }
+        }
+
+        var temporaryMedia: DownloadedMedia? {
+            guard case .ready(_, _, _, let media, _) = self else { return nil }
+            return media
+        }
+    }
+
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
     private let downloadFooter = DownloaderProgressFooterView()
@@ -35,10 +69,13 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private var items: [SavedMediaItem] = []
     private var archivedItems: [SavedMediaItem] = []
     private var isReconcilingPhotos = false
-    private var pasteboardURL: URL?
-    private var renderedPasteboardURL: URL?
+    private var pasteboardState: PasteboardCardState?
+    private var renderedPasteboardState: PasteboardCardState?
     private var consumedPasteboardChangeCount: Int?
     private var pendingPasteboardDownloadURLString: String?
+    private var pasteboardDownloadTask: Task<Void, Never>?
+    private var pasteboardExpiryWorkItem: DispatchWorkItem?
+    private var isCommittingPasteboardMedia = false
     /// Concrete exports keyed by item so the share sheet never receives a lazy
     /// provider and the current Photos-backed card can be warmed before a tap.
     private var preparedShareFiles: [UUID: URL] = [:]
@@ -156,6 +193,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     @objc private func applicationForegrounded() {
         store.purgeExpired()
+        expireTemporaryPasteboardMediaIfNeeded()
         reload()
         refreshPasteboardURL()
     }
@@ -163,7 +201,11 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     @objc private func reload() {
         store.purgeExpired()
         let allItems = store.items()
-        let updated = allItems.filter { !$0.isArchived }
+        var updated = allItems.filter { !$0.isArchived }
+        if isCommittingPasteboardMedia,
+           case .ready(_, let url, _, _, _) = renderedPasteboardState {
+            updated.removeAll { $0.sourceURLString == url.absoluteString }
+        }
         let updatedArchive = allItems.filter(\.isArchived).sorted {
             ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
@@ -173,27 +215,28 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         fingerprint.append(contentsOf: updatedArchive.map { item in
             "archive|\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
         })
-        fingerprint.insert("paste|\(pasteboardURL?.absoluteString ?? "")", at: 0)
+        fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
         defer { reconcilePhotosReferencesIfAuthorized() }
         guard fingerprint != appliedFingerprint else { return }
         appliedFingerprint = fingerprint
 
+        let wasPasteboardCentered = renderedPasteboardState != nil && carousel.currentIndex == 0
         let oldItemIndex = carousel.currentIndex - cardOffset
         let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
         items = updated
         archivedItems = updatedArchive
-        renderedPasteboardURL = pasteboardURL
+        renderedPasteboardState = pasteboardState
         let pendingIndex = pendingPasteboardDownloadURLString.flatMap { pending in
             items.firstIndex { $0.sourceURLString == pending }
         }
-        let centeredIndex = centeredID.flatMap { id in
+        let centeredIndex = wasPasteboardCentered && renderedPasteboardState != nil ? 0 : centeredID.flatMap { id in
             items.firstIndex { $0.id == id }.map { $0 + cardOffset }
         } ?? pendingIndex.map { $0 + cardOffset }
             ?? (items.isEmpty ? 0 : cardOffset)
         if pendingIndex != nil { pendingPasteboardDownloadURLString = nil }
         carousel.reloadData(centeringAt: centeredIndex)
-        emptyView.isHidden = !items.isEmpty || renderedPasteboardURL != nil
-        carousel.view.isHidden = items.isEmpty && renderedPasteboardURL == nil
+        emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
+        carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())
         updateShareButton()
     }
@@ -286,7 +329,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    override var hasLeadingPasteboardCard: Bool { renderedPasteboardURL != nil }
+    override var hasLeadingPasteboardCard: Bool { renderedPasteboardState != nil }
 
     private func mediaIndex(forCarouselIndex index: Int) -> Int? {
         itemIndex(forCarouselIndex: index, itemCount: items.count)
@@ -321,50 +364,195 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     @objc private func refreshPasteboardURL() {
         let pasteboard = UIPasteboard.general
         if consumedPasteboardChangeCount == pasteboard.changeCount {
-            guard pasteboardURL != nil else { return }
-            pasteboardURL = nil
-            reload()
+            clearPasteboardCard(removingTemporaryFile: true)
             return
         }
+        guard pasteboardState?.changeCount != pasteboard.changeCount else { return }
+        pasteboardDownloadTask?.cancel()
+        clearPasteboardCard(removingTemporaryFile: true)
         let changeCount = pasteboard.changeCount
-        // Ask UIKit for the structured URL value in one operation rather than
-        // reading loosely typed pasteboard contents and reparsing them.
-        pasteboard.detectValues(for: [\.probableWebURL]) { [weak self] result in
+        // Privacy-preserving pre-validation only. The URL value is not read
+        // until the user reaches this synthetic leading card.
+        pasteboard.detectPatterns(for: [\.probableWebURL]) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self, UIPasteboard.general.changeCount == changeCount else { return }
-                let value = try? result.get().probableWebURL
-                let candidate = value.flatMap {
-                    URLUnwrapper.ingestURL(from: $0, allowBareHost: true)
-                }.flatMap { url -> URL? in
-                    guard MediaDownloadablePlatform.supports(url.absoluteString),
-                          self.store.matchingItem(forURLString: url.absoluteString) == nil
-                    else { return nil }
-                    return url
-                }
-                guard candidate != self.pasteboardURL else {
-                    self.reload()
-                    return
-                }
-                self.pasteboardURL = candidate
+                let hasLink = (try? result.get())?.contains(\.probableWebURL) == true
+                self.pasteboardState = hasLink ? .placeholder(changeCount: changeCount) : nil
                 self.reload()
             }
         }
     }
 
-    private func downloadPasteboardURL() {
-        guard let url = renderedPasteboardURL ?? pasteboardURL else { return }
-        consumedPasteboardChangeCount = UIPasteboard.general.changeCount
-        pasteboardURL = nil
-        pendingPasteboardDownloadURLString = url.absoluteString
-        Task {
-            _ = await DownloaderIntentPhotoPermission.requestIfNeeded()
-            _ = await LiveMediaDownloadManager.shared.start(
-                urlString: url.absoluteString,
-                ownership: .downloader,
-                manual: true)
+    private func readPasteboardPlaceholder() {
+        guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
+        let result = PasteboardReadTiming.readGeneralPasteboard()
+        guard result.changeCount == expectedChangeCount,
+              UIPasteboard.general.changeCount == expectedChangeCount,
+              let value = result.value,
+              let url = URLUnwrapper.ingestURL(from: value, allowBareHost: true),
+              MediaDownloadablePlatform.supports(url.absoluteString),
+              store.matchingItem(forURLString: url.absoluteString) == nil
+        else {
+            pasteboardState = .invalid(
+                changeCount: expectedChangeCount,
+                showsSettingsGuidance: result.likelyPresentedPermissionPrompt)
+            reload()
+            return
+        }
+
+        let title = PlatformRecognizer.recognize(url.absoluteString)?.platform.displayName
+            ?? url.host ?? "Pasted Media"
+        pasteboardState = .downloading(
+            changeCount: expectedChangeCount, url: url, title: title, progress: 0)
+        reload()
+        pasteboardDownloadTask?.cancel()
+        pasteboardDownloadTask = Task { [weak self] in
+            do {
+                let media = try await MediaDownloadService().downloadFirstMediaToFile(
+                    from: url,
+                    onProgress: { progress in
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self,
+                                  case .downloading(let count, let currentURL, let currentTitle, _) = self.pasteboardState,
+                                  count == expectedChangeCount, currentURL == url
+                            else { return }
+                            self.pasteboardState = .downloading(
+                                changeCount: count, url: currentURL,
+                                title: currentTitle, progress: progress)
+                            (self.carousel.contentController(at: 0)
+                                as? PasteboardMediaDownloadCardContentViewController)?
+                                .setProgress(progress)
+                        }
+                    })
+                guard !Task.isCancelled else {
+                    try? FileManager.default.removeItem(at: media.fileURL)
+                    return
+                }
+                await MainActor.run {
+                    guard let self,
+                          case .downloading(let count, let currentURL, let currentTitle, _) = self.pasteboardState,
+                          count == expectedChangeCount, currentURL == url,
+                          UIPasteboard.general.changeCount == expectedChangeCount
+                    else {
+                        try? FileManager.default.removeItem(at: media.fileURL)
+                        return
+                    }
+                    let expiry = Date().addingTimeInterval(PasteboardTemporaryMediaPolicy.lifetime)
+                    self.pasteboardState = .ready(
+                        changeCount: count, url: currentURL, title: currentTitle,
+                        media: media, expiresAt: expiry)
+                    self.reload()
+                    self.schedulePasteboardExpiry(at: expiry)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self,
+                          self.pasteboardState?.changeCount == expectedChangeCount
+                    else { return }
+                    self.pasteboardState = .invalid(
+                        changeCount: expectedChangeCount,
+                        showsSettingsGuidance: result.likelyPresentedPermissionPrompt)
+                    self.reload()
+                }
+            }
+        }
+    }
+
+    private func commitTemporaryPasteboardMedia() {
+        guard !isCommittingPasteboardMedia,
+              case .ready(let changeCount, let url, let title, let media, _) = renderedPasteboardState
+        else { return }
+        isCommittingPasteboardMedia = true
+        Task { [weak self] in
+            guard let self else { return }
+            let persistentCopy = MediaDownloadStorage.newFileURL(
+                extension: media.fileURL.pathExtension)
+            do {
+                try FileManager.default.copyItem(at: media.fileURL, to: persistentCopy)
+            } catch {
+                await MainActor.run {
+                    self.isCommittingPasteboardMedia = false
+                    self.presentAlert(title: "Save Failed", message: "Couldn't keep the pasted media.")
+                }
+                return
+            }
+
+            let saved: SavedMediaItem
+            do {
+                saved = try self.store.addDownloadedFile(
+                    persistentCopy, kind: media.kind,
+                    sourceURLString: url.absoluteString, title: title)
+            } catch {
+                try? FileManager.default.removeItem(at: persistentCopy)
+                await MainActor.run {
+                    self.isCommittingPasteboardMedia = false
+                    self.presentAlert(title: "Save Failed", message: "Couldn't keep the pasted media.")
+                }
+                return
+            }
+
+            var photosFailure = false
+            if await self.photoSaver.requestReadAuthorization() {
+                do {
+                    let identifier = try await self.photoSaver.save(
+                        fileURL: media.fileURL, kind: media.kind, shouldMoveFile: false)
+                    _ = try self.store.transitionToPhotosReference(
+                        saved.id, localIdentifier: identifier, kind: media.kind)
+                } catch {
+                    photosFailure = true
+                }
+            } else {
+                photosFailure = true
+            }
+            AutoDownloadSettings.markDownloaded(url.absoluteString)
             _ = await ReadingListIngestor.shared.handleSavePress(
                 urlString: url.absoluteString, source: .paste)
+
+            await MainActor.run {
+                self.isCommittingPasteboardMedia = false
+                self.pendingPasteboardDownloadURLString = url.absoluteString
+                self.consumedPasteboardChangeCount = changeCount
+                self.clearPasteboardCard(removingTemporaryFile: true)
+                if photosFailure {
+                    self.presentAlert(
+                        title: "Photos Access Needed",
+                        message: "The media was saved in Luna. Allow photo library access in Settings to also save it to Photos.")
+                }
+            }
         }
+    }
+
+    private func clearPasteboardCard(removingTemporaryFile: Bool) {
+        pasteboardExpiryWorkItem?.cancel()
+        pasteboardExpiryWorkItem = nil
+        if removingTemporaryFile {
+            let urls = [pasteboardState?.temporaryMedia?.fileURL,
+                        renderedPasteboardState?.temporaryMedia?.fileURL]
+            for url in Set(urls.compactMap { $0 }) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        pasteboardState = nil
+        reload()
+    }
+
+    private func schedulePasteboardExpiry(at date: Date) {
+        pasteboardExpiryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.expireTemporaryPasteboardMediaIfNeeded()
+        }
+        pasteboardExpiryWorkItem = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0, date.timeIntervalSinceNow), execute: work)
+    }
+
+    private func expireTemporaryPasteboardMediaIfNeeded(now: Date = Date()) {
+        guard case .ready(let count, _, _, _, let expiry) = pasteboardState,
+              PasteboardTemporaryMediaPolicy.isExpired(expiresAt: expiry, now: now)
+        else { return }
+        consumedPasteboardChangeCount = count
+        clearPasteboardCard(removingTemporaryFile: true)
     }
 
     // MARK: - Item actions (context menu)
@@ -565,9 +753,20 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
-        if let url = renderedPasteboardURL, index == 0 {
-            return PasteboardMediaCardContentViewController(url: url) { [weak self] in
-                self?.downloadPasteboardURL()
+        if let state = renderedPasteboardState, index == 0 {
+            switch state {
+            case .placeholder:
+                return PasteboardPlaceholderCardContentViewController(
+                    title: "Paste Link", detail: "Swipe here to preview the pasted URL.")
+            case .invalid(_, let guidance):
+                return InvalidPasteCardContentViewController(showsSettingsGuidance: guidance)
+            case .downloading(_, let url, let title, let progress):
+                return PasteboardMediaDownloadCardContentViewController(
+                    url: url, title: title, progress: progress)
+            case .ready(_, _, _, let media, _):
+                return TemporaryPasteboardMediaCardContentViewController(
+                    media: media,
+                    onFirstPlay: { [weak self] in self?.commitTemporaryPasteboardMedia() })
             }
         }
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
@@ -628,8 +827,15 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
-        if renderedPasteboardURL != nil, index == 0 {
-            completion(UIImage(systemName: "doc.on.clipboard"))
+        if let state = renderedPasteboardState, index == 0 {
+            switch state {
+            case .placeholder, .downloading:
+                completion(UIImage(systemName: "doc.on.clipboard"))
+            case .invalid:
+                completion(UIImage(systemName: "exclamationmark.circle"))
+            case .ready(_, _, _, let media, _):
+                Self.loadTemporaryThumbnail(for: media, completion: completion)
+            }
             return
         }
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
@@ -691,6 +897,22 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         }
     }
 
+    private static func loadTemporaryThumbnail(
+        for media: DownloadedMedia, completion: @escaping (UIImage?) -> Void
+    ) {
+        if media.kind == .video {
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: media.fileURL))
+            generator.appliesPreferredTrackTransform = true
+            generator.generateCGImageAsynchronously(for: .zero) { image, _, _ in
+                completion(image.map(UIImage.init))
+            }
+        } else {
+            DispatchQueue.global(qos: .userInitiated).async {
+                completion(UIImage(contentsOfFile: media.fileURL.path))
+            }
+        }
+    }
+
     private static func loadPhotosImage(
         identifier: String,
         targetSize: CGSize,
@@ -748,6 +970,12 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         updateShareButton()
+        if let state = renderedPasteboardState, index == 0 {
+            if case .placeholder = state, !items.isEmpty {
+                readPasteboardPlaceholder()
+            }
+            return
+        }
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return }
         let item = items[mediaIndex]
         markOpened(item)
@@ -755,8 +983,18 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
-        guard renderedPasteboardURL != nil, index == 0 else { return }
-        downloadPasteboardURL()
+        guard let state = renderedPasteboardState, index == 0 else { return }
+        switch state {
+        case .placeholder:
+            readPasteboardPlaceholder()
+        case .ready(_, _, _, let media, _):
+            // Still images are non-playable, so their card tap arrives here.
+            // Video/GIF taps go through `setPlaying(true)` on the temporary
+            // content controller and commit from there.
+            if media.kind == .image { commitTemporaryPasteboardMedia() }
+        case .invalid, .downloading:
+            break
+        }
     }
 
     func carousel(
@@ -797,19 +1035,20 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
 
 // MARK: - Pasteboard card
 
-/// A transient leading card for a supported media URL detected on the
-/// pasteboard. Nothing is persisted or downloaded until the user taps it.
-private final class PasteboardMediaCardContentViewController: CardContentViewController {
+/// The user-triggered paste read succeeded and its media is being staged in a
+/// one-hour temporary file. The paste icon remains in the scrubber until this
+/// progress card is replaced by the real, paused media card.
+private final class PasteboardMediaDownloadCardContentViewController: CardContentViewController {
     private let url: URL
-    private let download: () -> Void
-    private let downloadButton = UIButton(type: .system)
+    private let titleText: String
+    private let initialProgress: Double
     private let statusLabel = UILabel()
     private let progress = MoonHorizonProgressBar()
-    private var hasStarted = false
 
-    init(url: URL, download: @escaping () -> Void) {
+    init(url: URL, title: String, progress: Double) {
         self.url = url
-        self.download = download
+        self.titleText = title
+        self.initialProgress = progress
         super.init()
     }
 
@@ -823,7 +1062,7 @@ private final class PasteboardMediaCardContentViewController: CardContentViewCon
             pointSize: 42, weight: .medium)
 
         let title = UILabel()
-        title.text = "Download Pasted Link"
+        title.text = titleText
         title.font = .preferredFont(forTextStyle: .title2)
         title.textColor = .label
         title.textAlignment = .center
@@ -836,29 +1075,14 @@ private final class PasteboardMediaCardContentViewController: CardContentViewCon
         urlLabel.numberOfLines = 4
         urlLabel.lineBreakMode = .byTruncatingMiddle
 
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = "Download"
-        configuration.image = UIImage(systemName: "arrow.down.circle")
-        configuration.imagePadding = 8
-        configuration.cornerStyle = .capsule
-        configuration.baseBackgroundColor = GlassStyle.readingAccent
-        downloadButton.configuration = configuration
-        downloadButton.accessibilityHint = url.absoluteString
-        downloadButton.addAction(UIAction { [weak self] _ in
-            self?.beginDownload()
-        }, for: .touchUpInside)
-
-        statusLabel.text = "Starting download…"
+        statusLabel.text = "Downloading temporary preview…"
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
-        statusLabel.isHidden = true
-
-        progress.isHidden = true
         progress.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = UIStackView(arrangedSubviews: [
-            icon, title, urlLabel, downloadButton, statusLabel, progress,
+            icon, title, urlLabel, statusLabel, progress,
         ])
         stack.axis = .vertical
         stack.alignment = .center
@@ -874,40 +1098,87 @@ private final class PasteboardMediaCardContentViewController: CardContentViewCon
             progress.widthAnchor.constraint(equalTo: stack.widthAnchor),
             progress.heightAnchor.constraint(equalToConstant: 20),
         ])
-
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleJobProgressChanged(_:)),
-            name: .downloaderJobProgressChanged, object: nil)
-        if let current = LiveMediaDownloadManager.shared.currentDownloadProgress(
-            forSourceURLString: url.absoluteString) {
-            showProgress(current)
-        }
+        setProgress(initialProgress)
     }
 
-    deinit { NotificationCenter.default.removeObserver(self) }
-
-    private func beginDownload() {
-        guard !hasStarted else { return }
-        hasStarted = true
-        showProgress(0)
-        download()
-    }
-
-    @objc private func handleJobProgressChanged(_ notification: Notification) {
-        guard let source = notification.userInfo?["sourceURLString"] as? String,
-              source == url.absoluteString
-        else { return }
-        if let snapshot = notification.userInfo?["snapshot"] as? DownloaderJobSnapshot {
-            statusLabel.text = snapshot.message
-        }
-        showProgress(notification.userInfo?["progress"] as? Double ?? 0)
-    }
-
-    private func showProgress(_ value: Double) {
-        downloadButton.isHidden = true
-        statusLabel.isHidden = false
-        progress.isHidden = false
+    func setProgress(_ value: Double) {
+        guard isViewLoaded else { return }
         progress.setProgress(Float(value), animated: true)
+    }
+}
+
+/// A fully downloaded but unsaved pasteboard card. It deliberately suppresses
+/// the carousel's normal center-autoplay. The first explicit play tap commits
+/// the file to Luna and Photos; still images commit through the host's normal
+/// non-playable card-tap callback.
+final class TemporaryPasteboardMediaCardContentViewController: CardContentViewController {
+    private let content: CardContentViewController
+    private let onFirstPlay: () -> Void
+    private var didRequestCommit = false
+
+    init(media: DownloadedMedia, onFirstPlay: @escaping () -> Void) {
+        switch media.kind {
+        case .video:
+            self.content = VideoCardContentViewController(fileURL: media.fileURL)
+        case .gif:
+            self.content = AnimatedImageCardContentViewController(fileURL: media.fileURL)
+        case .image:
+            self.content = ImageCardContentViewController(loader: { completion in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let raw = UIImage(contentsOfFile: media.fileURL.path)
+                    completion(raw?.preparingForDisplay() ?? raw)
+                }
+            })
+        }
+        self.onFirstPlay = onFirstPlay
+        super.init()
+        content.audioAvailabilityChanged = { [weak self] in
+            self?.audioAvailabilityChanged?()
+        }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        addChild(content)
+        content.view.frame = view.bounds
+        content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(content.view)
+        content.didMove(toParent: self)
+    }
+
+    override var isPlayable: Bool { content.isPlayable }
+    override var supportsAudio: Bool { content.supportsAudio }
+    override var isPlaying: Bool { content.isPlaying }
+    override var playbackFraction: Double { content.playbackFraction }
+
+    override func setPlaying(_ playing: Bool) {
+        if playing, !didRequestCommit {
+            didRequestCommit = true
+            onFirstPlay()
+        }
+        content.setPlaying(playing)
+    }
+
+    override func seek(toFraction fraction: Double) {
+        content.seek(toFraction: fraction)
+    }
+
+    override func setMuted(_ muted: Bool) {
+        content.setMuted(muted)
+    }
+
+    override func allowsCardTap(at point: CGPoint) -> Bool {
+        content.allowsCardTap(at: point)
+    }
+
+    override func cardDidBecomeCentered() {
+        // Unlike durable media cards, a temporary paste always starts paused.
+        content.setPlaying(false)
+    }
+
+    override func cardDidLeaveCenter() {
+        content.cardDidLeaveCenter()
     }
 }
 

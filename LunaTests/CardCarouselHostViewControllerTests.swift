@@ -13,6 +13,7 @@
 //  need a store-injection seam this wave doesn't add, so it isn't covered here.
 //
 
+import LunaMediaDownload
 import XCTest
 @testable import Luna
 
@@ -83,5 +84,46 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
         XCTAssertNil(host.itemIndex(forCarouselIndex: 0, itemCount: 0))
         host.pasteboardCardShowing = true
         XCTAssertNil(host.itemIndex(forCarouselIndex: 1, itemCount: 0))
+    }
+
+    // MARK: - Pasteboard privacy and temporary-media policy
+
+    func testPasteboardReadTimingUsesOnlyConspicuouslyLongReadsAsPromptHint() {
+        XCTAssertFalse(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 0))
+        XCTAssertFalse(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 0.249))
+        XCTAssertTrue(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 0.25))
+        XCTAssertTrue(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 2))
+    }
+
+    func testTemporaryPasteboardMediaExpiresAfterOneHour() {
+        XCTAssertEqual(PasteboardTemporaryMediaPolicy.lifetime, 3_600)
+        let expiry = Date(timeIntervalSince1970: 10_000)
+        XCTAssertFalse(PasteboardTemporaryMediaPolicy.isExpired(
+            expiresAt: expiry, now: expiry.addingTimeInterval(-0.001)))
+        XCTAssertTrue(PasteboardTemporaryMediaPolicy.isExpired(
+            expiresAt: expiry, now: expiry))
+    }
+
+    func testTemporaryVideoStartsPausedAndCommitsOnlyOnFirstPlay() {
+        var commitCount = 0
+        let media = DownloadedMedia(
+            fileURL: URL(fileURLWithPath: "/tmp/temporary-pasteboard-video.mp4"),
+            kind: .video)
+        let content = TemporaryPasteboardMediaCardContentViewController(media: media) {
+            commitCount += 1
+        }
+
+        content.cardDidBecomeCentered()
+        XCTAssertTrue(content.isPlayable)
+        XCTAssertFalse(content.isPlaying)
+        XCTAssertEqual(commitCount, 0)
+
+        content.setPlaying(true)
+        XCTAssertTrue(content.isPlaying)
+        XCTAssertEqual(commitCount, 1)
+
+        content.setPlaying(false)
+        content.setPlaying(true)
+        XCTAssertEqual(commitCount, 1)
     }
 }

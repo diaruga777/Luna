@@ -39,7 +39,30 @@ import UIKit
 
 final class ArticleCardsViewController: CardCarouselHostViewController {
 
-    private static let pasteboardCardMarker = URL(string: "https://pasteboard.invalid")!
+    private enum PasteboardCardState {
+        case placeholder(changeCount: Int)
+        case loading(changeCount: Int, urlString: String, likelyPrompted: Bool)
+        case candidate(changeCount: Int, candidate: PasteboardCandidate, item: ReadingListItem)
+        case invalid(changeCount: Int, showsSettingsGuidance: Bool)
+
+        var changeCount: Int {
+            switch self {
+            case .placeholder(let count), .loading(let count, _, _),
+                 .candidate(let count, _, _), .invalid(let count, _):
+                return count
+            }
+        }
+
+        var fingerprint: String {
+            switch self {
+            case .placeholder(let count): return "placeholder|\(count)"
+            case .loading(let count, let url, _): return "loading|\(count)|\(url)"
+            case .candidate(let count, let candidate, _):
+                return "candidate|\(count)|\(candidate.urlString)|\(candidate.title)"
+            case .invalid(let count, let guidance): return "invalid|\(count)|\(guidance)"
+            }
+        }
+    }
 
     private let store = ReadingListStore.shared
     private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
@@ -49,7 +72,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
     private let readerChromeRow = UIView()
     private let readerBackButton = UIButton(type: .system)
-    private let readerPasteButton = UIButton(type: .system)
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
     private let readerShareButton = UIButton(type: .system)
@@ -67,12 +89,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private var items: [ReadingListItem] = []
     private var archivedItems: [ReadingListItem] = []
     private var appliedFingerprint: [String] = []
-    private var pasteboardURL: URL?
-    /// The paste item currently represented by the carousel's data source.
-    /// Kept separate so adding/removing the synthetic leading card can map the
-    /// previously centered article through the old index space.
-    private var renderedPasteboardURL: URL?
+    private var pasteboardState: PasteboardCardState?
+    /// Kept separate from the latest probe state so reload can map the centered
+    /// saved article through the old index space when a leading card appears.
+    private var renderedPasteboardState: PasteboardCardState?
     private var consumedPasteboardChangeCount: Int?
+    private var pasteboardEvaluationTask: Task<Void, Never>?
+    private var isCommittingPasteboardCandidate = false
+    private var pendingPasteboardSavedID: UUID?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -200,12 +224,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             readerBackButton, symbol: "chevron.backward", action: #selector(readerBackTapped),
             label: "Back")
         configureChromeButton(
-            readerPasteButton, symbol: "doc.on.clipboard", action: #selector(readerPasteTapped),
-            label: "Add Pasted Link")
-        configureChromeButton(
             readerAudioButton, symbol: "speaker.slash", action: #selector(readerAudioTapped),
             label: "Read Aloud")
-        for control in [readerBackButton, readerPasteButton, readerAudioButton] {
+        for control in [readerBackButton, readerAudioButton] {
             readerChromeRow.addSubview(control)
         }
 
@@ -218,8 +239,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
             readerBackButton.leadingAnchor.constraint(equalTo: readerChromeRow.leadingAnchor),
             readerBackButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
-            readerPasteButton.leadingAnchor.constraint(equalTo: readerChromeRow.leadingAnchor),
-            readerPasteButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
             readerAudioButton.trailingAnchor.constraint(equalTo: readerChromeRow.trailingAnchor),
             readerAudioButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
         ])
@@ -312,9 +331,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     private func updateReaderChrome() {
         let state = readerForChrome?.chromeState
-        readerChromeRow.isHidden = state == nil && renderedPasteboardURL == nil
+        readerChromeRow.isHidden = state == nil
         readerBackButton.isHidden = state?.showsBack != true
-        readerPasteButton.isHidden = state?.showsBack == true || renderedPasteboardURL == nil
         guard let state else {
             readerAudioButton.isHidden = true
             readerModeControl.isHidden = true
@@ -343,7 +361,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     @objc private func readerBackTapped() { readerForChrome?.chromeBack(); updateReaderChrome() }
     @objc private func readerAudioTapped() { readerForChrome?.chromeToggleAudio(); updateReaderChrome() }
     @objc private func readerShareTapped() { readerForChrome?.chromeShare(from: readerShareButton) }
-    @objc private func readerPasteTapped() { addPasteboardURL() }
     @objc private func readerModeChanged() {
         guard chromeModes.indices.contains(readerModeControl.selectedSegmentIndex) else { return }
         readerForChrome?.chromeSetMode(chromeModes[readerModeControl.selectedSegmentIndex])
@@ -410,54 +427,127 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     @objc private func refreshPasteboardURL() {
         let pasteboard = UIPasteboard.general
         if consumedPasteboardChangeCount == pasteboard.changeCount {
-            guard pasteboardURL != nil else { return }
-            pasteboardURL = nil
-            reload()
+            setPasteboardState(nil)
             return
         }
+        guard pasteboardState?.changeCount != pasteboard.changeCount else { return }
+        pasteboardEvaluationTask?.cancel()
+        setPasteboardState(nil)
         let changeCount = pasteboard.changeCount
-        // Pattern detection can reveal that a URL is available without reading
-        // its value, so merely opening Luna never raises the system paste prompt.
-        pasteboard.detectPatterns(for: [.probableWebURL]) { [weak self] result in
+        // Pattern detection reveals only that a probable URL exists and does not
+        // notify the user. The value itself is read only after this card is paged
+        // onto (or tapped when it is the sole card).
+        pasteboard.detectPatterns(for: [\.probableWebURL]) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self, UIPasteboard.general.changeCount == changeCount else { return }
-                let hasLink = (try? result.get())?.contains(.probableWebURL) == true
-                let candidate = hasLink ? Self.pasteboardCardMarker : nil
-                guard candidate != self.pasteboardURL else {
-                    self.reload()
-                    return
-                }
-                self.pasteboardURL = candidate
-                self.reload()
+                let hasLink = (try? result.get())?.contains(\.probableWebURL) == true
+                self.setPasteboardState(hasLink ? .placeholder(changeCount: changeCount) : nil)
             }
         }
     }
 
-    override var hasLeadingPasteboardCard: Bool { renderedPasteboardURL != nil }
+    private func setPasteboardState(_ state: PasteboardCardState?) {
+        pasteboardState = state
+        reload()
+    }
+
+    private func readPasteboardPlaceholder() {
+        guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
+        let result = PasteboardReadTiming.readGeneralPasteboard()
+        guard result.changeCount == expectedChangeCount,
+              UIPasteboard.general.changeCount == expectedChangeCount,
+              let value = result.value,
+              let url = URLUnwrapper.ingestURL(from: value)
+        else {
+            setPasteboardState(.invalid(
+                changeCount: expectedChangeCount,
+                showsSettingsGuidance: result.likelyPresentedPermissionPrompt))
+            return
+        }
+
+        let urlString = url.absoluteString
+        setPasteboardState(.loading(
+            changeCount: expectedChangeCount, urlString: urlString,
+            likelyPrompted: result.likelyPresentedPermissionPrompt))
+        pasteboardEvaluationTask?.cancel()
+        pasteboardEvaluationTask = Task { [weak self] in
+            let candidate = await PasteboardSuggester.shared.evaluate(urlString: urlString)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      case .loading(let count, let currentURL, let likelyPrompted) = self.pasteboardState,
+                      count == expectedChangeCount, currentURL == urlString,
+                      UIPasteboard.general.changeCount == expectedChangeCount
+                else { return }
+                guard let candidate, candidate.platform == nil,
+                      candidate.content != nil || candidate.requiresUnlock
+                else {
+                    self.setPasteboardState(.invalid(
+                        changeCount: expectedChangeCount,
+                        showsSettingsGuidance: likelyPrompted))
+                    return
+                }
+                var item = ReadingListItem(urlString: candidate.urlString)
+                item.title = candidate.title
+                item.channelName = candidate.channelName
+                item.state = candidate.requiresUnlock ? .needsCaptcha : .ready
+                self.setPasteboardState(.candidate(
+                    changeCount: expectedChangeCount, candidate: candidate, item: item))
+            }
+        }
+    }
+
+    override var hasLeadingPasteboardCard: Bool { renderedPasteboardState != nil }
 
     private func articleIndex(forCarouselIndex index: Int) -> Int? {
         itemIndex(forCarouselIndex: index, itemCount: items.count)
     }
 
-    private func addPasteboardURL() {
-        guard renderedPasteboardURL != nil || pasteboardURL != nil else { return }
-        let pasteboard = UIPasteboard.general
-        guard let value = pasteboard.url?.absoluteString ?? pasteboard.string,
-              let url = URLUnwrapper.ingestURL(from: value),
-              store.item(forURLString: url.absoluteString) == nil
+    private func commitPasteboardCandidate(openLockedAfterSave: Bool = false) {
+        guard !isCommittingPasteboardCandidate,
+              case .candidate(let changeCount, let candidate, _) = renderedPasteboardState
         else { return }
-        consumedPasteboardChangeCount = UIPasteboard.general.changeCount
-        pasteboardURL = nil
-        reload()
-        Task {
-            _ = await ReadingListIngestor.shared.handleSavePress(
-                urlString: url.absoluteString, source: .paste)
+        isCommittingPasteboardCandidate = true
+        Task { [weak self] in
+            let saved: ReadingListItem?
+            if let content = candidate.content {
+                saved = await ReadingListIngestor.shared.saveNewWithContent(
+                    urlString: candidate.urlString, content: content, source: .paste)
+            } else {
+                let result = await ReadingListIngestor.shared.handleSavePress(
+                    urlString: candidate.urlString, source: .paste)
+                switch result {
+                case .saved(let item), .savedNeedsOwnerInstall(let item, _),
+                     .sentToEreaders(let item), .sentToFriends(let item),
+                     .friendPromptRequested(let item):
+                    saved = item
+                case .ignored, .blockedByInterop:
+                    saved = nil
+                }
+            }
+            await MainActor.run {
+                guard let self else { return }
+                self.isCommittingPasteboardCandidate = false
+                guard let saved else { return }
+                self.pendingPasteboardSavedID = saved.id
+                self.consumedPasteboardChangeCount = changeCount
+                self.pasteboardState = nil
+                self.reload()
+                if openLockedAfterSave,
+                   let fresh = self.store.item(withID: saved.id), let url = fresh.url {
+                    self.presentArchiveReader(for: fresh, articleURL: url)
+                }
+            }
         }
     }
 
     @objc private func reload() {
         let allReaderItems = store.items().filter { ReadingListSectioning.rendersAsReader($0) }
-        let updated = Self.orderedReaderItems(allReaderItems)
+        var updated = Self.orderedReaderItems(allReaderItems)
+        if isCommittingPasteboardCandidate,
+           case .candidate(_, let candidate, _) = renderedPasteboardState {
+            updated.removeAll { $0.urlString == candidate.urlString }
+        }
         let updatedArchive = allReaderItems.filter(\.isArchived).sorted {
             ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
@@ -467,22 +557,27 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         fingerprint.append(contentsOf: updatedArchive.map {
             "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
         })
-        fingerprint.insert("paste|\(pasteboardURL?.absoluteString ?? "")", at: 0)
+        fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
         guard fingerprint != appliedFingerprint else { return }
         appliedFingerprint = fingerprint
 
+        let wasPasteboardCentered = renderedPasteboardState != nil && carousel.currentIndex == 0
         let oldItemIndex = carousel.currentIndex - cardOffset
         let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
         items = updated
         archivedItems = updatedArchive
-        renderedPasteboardURL = pasteboardURL
+        renderedPasteboardState = pasteboardState
         let newOffset = cardOffset
-        let centeredIndex = centeredID.flatMap { id in
+        let pendingIndex = pendingPasteboardSavedID.flatMap { id in
+            items.firstIndex { $0.id == id }
+        }
+        let centeredIndex = wasPasteboardCentered && renderedPasteboardState != nil ? 0 : centeredID.flatMap { id in
             items.firstIndex { $0.id == id }.map { $0 + newOffset }
-        } ?? (items.isEmpty ? 0 : newOffset)
+        } ?? pendingIndex.map { $0 + newOffset } ?? (items.isEmpty ? 0 : newOffset)
+        if pendingIndex != nil { pendingPasteboardSavedID = nil }
         carousel.reloadData(centeringAt: centeredIndex)
-        emptyView.isHidden = !items.isEmpty || renderedPasteboardURL != nil
-        carousel.view.isHidden = items.isEmpty && renderedPasteboardURL == nil
+        emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
+        carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())
         updateReaderChrome()
     }
@@ -586,8 +681,22 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
-        if renderedPasteboardURL != nil, index == 0 {
-            return PasteboardCardContentViewController(url: nil)
+        if let state = renderedPasteboardState, index == 0 {
+            switch state {
+            case .placeholder:
+                return PasteboardPlaceholderCardContentViewController(
+                    title: "Paste Link", detail: "Swipe here to preview the pasted URL.")
+            case .loading:
+                return PasteboardPlaceholderCardContentViewController(
+                    title: "Loading Paste", detail: "Preparing a temporary reader card…")
+            case .invalid(_, let guidance):
+                return InvalidPasteCardContentViewController(showsSettingsGuidance: guidance)
+            case .candidate(_, let candidate, let item):
+                let content = ReaderCardContentViewController(
+                    item: item, senderName: nil, knownContent: candidate.content)
+                content.delegate = self
+                return content
+            }
         }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else {
             return CardContentViewController()
@@ -641,8 +750,20 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
-        if renderedPasteboardURL != nil, index == 0 {
-            completion(.symbol("doc.on.clipboard"))
+        if let state = renderedPasteboardState, index == 0 {
+            switch state {
+            case .placeholder, .loading:
+                completion(.symbol("doc.on.clipboard"))
+            case .invalid:
+                completion(.symbol("exclamationmark.circle"))
+            case .candidate(_, _, let item):
+                completion(ArticleSourceBadge.fallback(for: item))
+                if ArticleSourceBadge.wantsFavicon(item), let url = item.url {
+                    SourceIconCache.shared.icon(forPageURL: url) { image in
+                        if let image { completion(.icon(image)) }
+                    }
+                }
+            }
             return
         }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else {
@@ -661,7 +782,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String? {
-        if renderedPasteboardURL != nil, index == 0 { return "Add Pasted Link" }
+        if let state = renderedPasteboardState, index == 0 {
+            switch state {
+            case .placeholder: return "Paste Link"
+            case .loading: return "Loading Paste"
+            case .invalid: return "Invalid paste"
+            case .candidate(_, let candidate, _): return candidate.title
+            }
+        }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
         let item = items[itemIndex]
         return item.title ?? item.url?.host ?? item.urlString
@@ -698,14 +826,27 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        if renderedPasteboardURL != nil, index == 0 {
-            readerForChrome = nil
-            updateReaderChrome()
-            layoutCardScrollIndicator(animated: false)
-            // With no saved articles this card is centered by initial layout,
-            // not by user intent; wait for its tap. Otherwise reaching index 0
-            // is a swipe or mini-carousel selection and should add immediately.
-            if !items.isEmpty { addPasteboardURL() }
+        if let state = renderedPasteboardState, index == 0 {
+            switch state {
+            case .placeholder:
+                readerForChrome = nil
+                updateReaderChrome()
+                layoutCardScrollIndicator(animated: false)
+                // When no normal cards exist, initial layout centers the
+                // placeholder without user intent; a tap performs the read.
+                if !items.isEmpty { readPasteboardPlaceholder() }
+            case .loading, .invalid:
+                readerForChrome = nil
+                updateReaderChrome()
+                layoutCardScrollIndicator(animated: false)
+            case .candidate:
+                let card = carousel.contentController(at: index) as? ReaderCardContentViewController
+                card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
+                readerForChrome = card?.rabbitHoleReader
+                updateExternalReaderInsets()
+                updateReaderChrome()
+                layoutCardScrollIndicator(animated: false)
+            }
             return
         }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return }
@@ -719,8 +860,23 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
-        if renderedPasteboardURL != nil, index == 0 {
-            addPasteboardURL()
+        if let state = renderedPasteboardState, index == 0 {
+            switch state {
+            case .placeholder:
+                readPasteboardPlaceholder()
+            case .candidate(_, let candidate, _):
+                if candidate.requiresUnlock {
+                    commitPasteboardCandidate(openLockedAfterSave: true)
+                } else if let card = carousel.contentController(at: index)
+                            as? ReaderCardContentViewController,
+                          card.rabbitHoleReader != nil {
+                    readerCard(
+                        card, didChangeImmersion: !carousel.isImmersed,
+                        extendsCard: card.rabbitHoleReader?.focusedContentScrollView != nil)
+                }
+            case .loading, .invalid:
+                break
+            }
             return
         }
         guard let card = carousel.contentController(at: index) as? ReaderCardContentViewController,
@@ -743,6 +899,11 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     fileprivate func readerCard(
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool
     ) {
+        if immersed, renderedPasteboardState != nil,
+           carousel.currentIndex == 0,
+           carousel.contentController(at: 0) === card {
+            commitPasteboardCandidate()
+        }
         card.setCardChromeVisible(!immersed, animated: true)
         carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
         updateBottomModeSwitcher(immersed: immersed, animated: true)
@@ -786,73 +947,6 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
 
 // MARK: - Card content
 
-/// The synthetic leading card for a URL waiting on the pasteboard. It is
-/// intentionally a normal non-playable carousel card: tapping it, tapping its
-/// mini-card chip, or paging onto it all reach the same add action in the host.
-private final class PasteboardCardContentViewController: CardContentViewController {
-    private let url: URL?
-
-    init(url: URL?) {
-        self.url = url
-        super.init()
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-        view.isAccessibilityElement = true
-        view.accessibilityLabel = "Add Pasted Link"
-        view.accessibilityHint = "Adds the URL from the pasteboard"
-        view.accessibilityTraits = .button
-
-        let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
-        icon.tintColor = GlassStyle.readingAccent
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-            pointSize: 42, weight: .medium)
-
-        let title = UILabel()
-        title.text = "Add Pasted Link"
-        title.font = .preferredFont(forTextStyle: .title2)
-        title.textColor = .label
-        title.textAlignment = .center
-
-        let detail = UILabel()
-        detail.text = url?.host ?? url?.absoluteString
-        detail.font = .preferredFont(forTextStyle: .subheadline)
-        detail.textColor = .secondaryLabel
-        detail.textAlignment = .center
-        detail.numberOfLines = 2
-
-        let stack = UIStackView(arrangedSubviews: [icon, title, detail])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 14
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-
-        // When this card is the left neighbor only its trailing ~14pt peeks
-        // into the screen. Keep a tiny copy of the glyph inside that slice so
-        // the peek reads as Pasteboard instead of an anonymous grey edge.
-        let edgeIcon = UIImageView(image: UIImage(systemName: "doc.on.clipboard.fill"))
-        edgeIcon.tintColor = GlassStyle.readingAccent
-        edgeIcon.contentMode = .scaleAspectFit
-        edgeIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-            pointSize: 10, weight: .semibold)
-        edgeIcon.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(edgeIcon)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
-            edgeIcon.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -1),
-            edgeIcon.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            edgeIcon.widthAnchor.constraint(equalToConstant: 13),
-            edgeIcon.heightAnchor.constraint(equalToConstant: 18),
-        ])
-    }
-}
-
 /// The push/pull contract between a `ReaderCardContentViewController` and its
 /// host: three pushes (immersion changed, the reader became ready, an inline
 /// reader presented/dismissed) and one pull (the card's resting frame in the
@@ -890,6 +984,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     private let senderBadge = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let senderLabel = UILabel()
     private let titleHeader: ReaderCardTitleHeaderView
+    private let knownContent: ArticleContent?
     private var reader: UIViewController?
     private let immersionTracker = ScrollDirectionImmersionTracker()
     private var baseTopContentInset: CGFloat = 0
@@ -900,9 +995,10 @@ private final class ReaderCardContentViewController: CardContentViewController,
         reader as? LunaReaderUI.RabbitHoleReaderViewController
     }
 
-    init(item: ReadingListItem, senderName: String?) {
+    init(item: ReadingListItem, senderName: String?, knownContent: ArticleContent? = nil) {
         self.item = item
         self.senderName = senderName
+        self.knownContent = knownContent
         self.titleHeader = ReaderCardTitleHeaderView(title: item.title ?? "Untitled")
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
@@ -1015,7 +1111,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
     private func embedReaderIfPossible() {
         guard reader == nil, item.state == .ready,
-              let content = ReadingListStore.shared.content(for: item)
+              let content = knownContent ?? ReadingListStore.shared.content(for: item)
         else { return }
         titleHeader.setTitle(content.title)
         // Render only the initial scroll viewport while this is a side card or

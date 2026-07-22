@@ -163,6 +163,19 @@ public final class MoonHorizonProgressBar: UIView {
     private var pulseTimer: Timer?
 
     public private(set) var progress: Float = 0
+    /// Whether an activity point periodically travels from the start to the
+    /// progress head. Download surfaces leave this enabled; playback progress
+    /// bars disable it because their changing fraction already conveys motion.
+    public var showsActivityPulse = true {
+        didSet {
+            guard showsActivityPulse != oldValue else { return }
+            updatePulseTimer()
+            if !showsActivityPulse {
+                pulseLayer.removeAllAnimations()
+                flareLayer.removeAllAnimations()
+            }
+        }
+    }
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -250,7 +263,11 @@ public final class MoonHorizonProgressBar: UIView {
 
     public override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window == nil {
+        updatePulseTimer()
+    }
+
+    private func updatePulseTimer() {
+        if window == nil || !showsActivityPulse {
             pulseTimer?.invalidate()
             pulseTimer = nil
         } else if pulseTimer == nil {
@@ -306,7 +323,7 @@ public final class MoonHorizonProgressBar: UIView {
     /// One pulse cycle: a dim point of light launches from the left edge,
     /// accelerates along the lit stretch, and merges with the head in a flare.
     private func firePulse() {
-        guard window != nil, !isHidden, alpha > 0.01,
+        guard showsActivityPulse, window != nil, !isHidden, alpha > 0.01,
               !UIAccessibility.isReduceMotionEnabled else { return }
         let fraction = CGFloat(progress)
         guard fraction > MoonHorizonStyle.pulseMinimumFraction, fraction < 1,
@@ -343,7 +360,7 @@ public final class MoonHorizonProgressBar: UIView {
     }
 
     private func fireMergeFlare() {
-        guard window != nil, bounds.width > 0 else { return }
+        guard showsActivityPulse, window != nil, bounds.width > 0 else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         flareLayer.position = MoonHorizonStyle.point(atFraction: CGFloat(progress), in: bounds)

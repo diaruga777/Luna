@@ -9,6 +9,7 @@
 //
 
 import LunaAudioPlayback
+import LunaDesignSystem
 import LunaReaderUI
 import LunaModels
 import UIKit
@@ -41,6 +42,13 @@ final class AudioMiniPlayerTests: XCTestCase {
         let id = UUID()
         XCTAssertEqual(AudioMiniPlayerView.barMode(state: .playing(itemID: id), hasMeldAnchor: true), .slim)
         XCTAssertEqual(AudioMiniPlayerView.barMode(state: .paused(itemID: id), hasMeldAnchor: true), .slim)
+    }
+
+    func testAudioProgressDoesNotShowDownloadActivityPulse() throws {
+        let bar = AudioMiniPlayerView()
+        let progress = try XCTUnwrap(
+            bar.subviews.first { $0 is MoonHorizonProgressBar } as? MoonHorizonProgressBar)
+        XCTAssertFalse(progress.showsActivityPulse)
     }
 
     // MARK: - Tap-to-return stack resolution

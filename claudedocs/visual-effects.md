@@ -42,6 +42,9 @@ SwiftUI/WidgetKit renderer. Both honor Reduce Motion.
 
 The effect is used by Downloader progress surfaces including the Live Activity, action
 extension saved-media screen, reading-list status pill, and Downloader App Clip.
+Download surfaces show the traveling activity pulse. Playback uses of the UIKit bar
+(the audio mini-player and video scrub overlay) disable it, leaving only determinate
+progress and its head point.
 
 ## Lunar Eclipse navigation
 

@@ -325,6 +325,7 @@ public final class CardCarouselViewController: UIViewController {
         view.addSubview(cardArea)
         playbackScrubProgress.alpha = 0
         playbackScrubProgress.isHidden = true
+        playbackScrubProgress.showsActivityPulse = false
         playbackScrubProgress.accessibilityLabel = "Video position"
         cardArea.addSubview(playbackScrubProgress)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)

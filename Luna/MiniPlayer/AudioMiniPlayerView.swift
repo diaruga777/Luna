@@ -153,6 +153,7 @@ final class AudioMiniPlayerView: UIView {
         addSubview(row)
 
         progressBar.translatesAutoresizingMaskIntoConstraints = false
+        progressBar.showsActivityPulse = false
         addSubview(progressBar)
 
         let rowHeight = row.heightAnchor.constraint(equalToConstant: 36)

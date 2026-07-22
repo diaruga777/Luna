@@ -54,7 +54,12 @@ own adapters later). The Downloader-specific adapters live in
   leaves center, keeping position. Downloader's unsaved pasteboard preview is the
   deliberate exception: it stays paused until the user explicitly taps Play.
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
-  playback timestamp (one card-width ≈ full duration). The card itself never pans.
+  playback timestamp (one card-width ≈ full duration). While a Downloader
+  video is actively being scrubbed, a transient
+  `MoonHorizonProgressBar` floats just above the card's bottom edge and follows
+  the seek position; it fades away when the drag ends. GIF scrubbing retains
+  its existing gesture without showing the video-position bar.
+  The card itself never pans.
 - **Paging** happens outside the card: a horizontal drag on the insets left/right of
   the card drives the eclipse transition *interactively* — it tracks the finger,
   with 1.5× horizontal movement on both the Reader and Downloader root screens,

@@ -36,6 +36,12 @@ open class CardContentViewController: UIViewController {
     /// Current playback position as a fraction (0...1) of the duration.
     open var playbackFraction: Double { 0 }
 
+    /// Whether the carousel should show its transient moon-horizon position
+    /// bar while the user drags to seek this content. Video opts in; other
+    /// playable content (such as animated images) keeps its existing gesture
+    /// without presenting video-specific chrome.
+    open var showsPlaybackScrubProgress: Bool { false }
+
     open func setPlaying(_ playing: Bool) {}
 
     open func seek(toFraction fraction: Double) {}

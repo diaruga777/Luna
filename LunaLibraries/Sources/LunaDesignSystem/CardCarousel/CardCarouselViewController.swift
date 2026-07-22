@@ -125,6 +125,9 @@ public struct CardCarouselStyle {
     /// bottom edges instead of hitting a hard clip — scrolled reader text fades
     /// away as it approaches an edge. 0 (the default) keeps the hard clip.
     public var contentEdgeFadeHeight: CGFloat = 0
+    /// Show a transient moon-horizon position bar over opted-in playable
+    /// content while an in-card horizontal drag seeks through it.
+    public var showsPlaybackScrubProgress = false
 
     public init() {}
 }
@@ -296,6 +299,8 @@ public final class CardCarouselViewController: UIViewController {
 
     private var scrubStartFraction: Double = 0
     private var wasPlayingBeforeScrub = false
+    private let playbackScrubProgress = MoonHorizonProgressBar()
+    private var playbackScrubPresentation = 0
 
     public init() {
         super.init(nibName: nil, bundle: nil)
@@ -318,6 +323,10 @@ public final class CardCarouselViewController: UIViewController {
         cardArea.clipsToBounds = false
         cardArea.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(cardArea)
+        playbackScrubProgress.alpha = 0
+        playbackScrubProgress.isHidden = true
+        playbackScrubProgress.accessibilityLabel = "Video position"
+        cardArea.addSubview(playbackScrubProgress)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
             scrubber.leadingAnchor.constraint(
@@ -370,6 +379,7 @@ public final class CardCarouselViewController: UIViewController {
         guard !isTransitioning else { return }
         for slot in slots.values { applyRestingLayout(to: slot) }
         scrubPreview.layout(centeredCardFrame: centeredCardFrame())
+        layoutPlaybackScrubProgress()
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -648,6 +658,55 @@ public final class CardCarouselViewController: UIViewController {
 
     private func centeredCardFrame() -> CGRect {
         metrics?.centeredCardFrame() ?? .zero
+    }
+
+    private func layoutPlaybackScrubProgress() {
+        let cardFrame = centeredCardFrame()
+        let horizontalInset: CGFloat = 18
+        let height = playbackScrubProgress.intrinsicContentSize.height
+        playbackScrubProgress.frame = CGRect(
+            x: cardFrame.minX + horizontalInset,
+            y: cardFrame.maxY - height - 14,
+            width: max(cardFrame.width - horizontalInset * 2, 0),
+            height: height)
+    }
+
+    private func showPlaybackScrubProgress(at fraction: Double) {
+        guard style.showsPlaybackScrubProgress else { return }
+        playbackScrubPresentation += 1
+        playbackScrubProgress.layer.removeAllAnimations()
+        playbackScrubProgress.setProgress(Float(min(max(fraction, 0), 1)), animated: false)
+        playbackScrubProgress.isHidden = false
+        playbackScrubProgress.alpha = 0
+        cardArea.bringSubviewToFront(playbackScrubProgress)
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.16,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            self.playbackScrubProgress.alpha = 1
+        }
+    }
+
+    private func updatePlaybackScrubProgress(to fraction: Double) {
+        guard !playbackScrubProgress.isHidden else { return }
+        playbackScrubProgress.setProgress(Float(min(max(fraction, 0), 1)), animated: false)
+    }
+
+    private func hidePlaybackScrubProgress() {
+        guard !playbackScrubProgress.isHidden else { return }
+        playbackScrubPresentation += 1
+        let presentation = playbackScrubPresentation
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.2,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            self.playbackScrubProgress.alpha = 0
+        } completion: { [weak self] finished in
+            guard let self, finished, presentation == self.playbackScrubPresentation else { return }
+            self.playbackScrubProgress.isHidden = true
+        }
     }
 
     // MARK: - Paging
@@ -1087,11 +1146,16 @@ public final class CardCarouselViewController: UIViewController {
             scrubStartFraction = content.playbackFraction
             wasPlayingBeforeScrub = content.isPlaying
             content.setPlaying(false)
+            if content.showsPlaybackScrubProgress {
+                showPlaybackScrubProgress(at: scrubStartFraction)
+            }
         case .changed:
             let translation = gesture.translation(in: cardArea).x
             let fraction = scrubStartFraction + Double(translation / metrics.cardSize.width)
             content.seek(toFraction: fraction)
+            updatePlaybackScrubProgress(to: fraction)
         case .ended, .cancelled, .failed:
+            hidePlaybackScrubProgress()
             if wasPlayingBeforeScrub { content.setPlaying(true) }
         default:
             break

@@ -306,7 +306,8 @@ public final class MoonHorizonProgressBar: UIView {
     /// One pulse cycle: a dim point of light launches from the left edge,
     /// accelerates along the lit stretch, and merges with the head in a flare.
     private func firePulse() {
-        guard window != nil, !UIAccessibility.isReduceMotionEnabled else { return }
+        guard window != nil, !isHidden, alpha > 0.01,
+              !UIAccessibility.isReduceMotionEnabled else { return }
         let fraction = CGFloat(progress)
         guard fraction > MoonHorizonStyle.pulseMinimumFraction, fraction < 1,
             bounds.width > 0

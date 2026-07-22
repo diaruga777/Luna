@@ -100,6 +100,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         style.scrubberHorizontalInset = 64
         style.scrubberEdgeFadeWidth = 0
         style.showsCardBorder = true
+        style.showsPlaybackScrubProgress = true
         carousel.style = style
         carousel.dataSource = self
         carousel.delegate = self
@@ -1210,6 +1211,7 @@ final class TemporaryPasteboardMediaCardContentViewController: CardContentViewCo
     override var supportsAudio: Bool { content.supportsAudio }
     override var isPlaying: Bool { content.isPlaying }
     override var playbackFraction: Double { content.playbackFraction }
+    override var showsPlaybackScrubProgress: Bool { content.showsPlaybackScrubProgress }
 
     override func setPlaying(_ playing: Bool) {
         if playing, !didRequestCommit {

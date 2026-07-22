@@ -117,6 +117,8 @@ public final class VideoCardContentViewController: CardContentViewController {
 
     public override var isPlaying: Bool { wantsPlaying }
 
+    public override var showsPlaybackScrubProgress: Bool { true }
+
     public override var playbackFraction: Double {
         guard let item = player.currentItem else { return 0 }
         let duration = item.duration.seconds

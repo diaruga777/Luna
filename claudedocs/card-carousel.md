@@ -195,9 +195,11 @@ Differences from the Downloader, via `CardCarouselStyle`:
   card's bounds — the card view IS the fullscreen reader view (one header, one
   layout for both states), and paging never shows a placeholder. The layer
   header is not a bar: back (inline-reader layers only) or Pasteboard (root
-  layer when a URL is available) occupies top-left, the mode switcher remains
-  centered, and read-aloud sits top-right. Share is the bottom-right floating
-  circle. The ROOT layer shows no back pill; deeper inline layers do.
+  layer when a URL is available) occupies top-left and read-aloud sits top-right.
+  The mode switcher occupies the bottom-center lane only while card chrome is
+  dismissed, replacing the mini carousel there; the two controls trade places
+  with a short translation + fade. Share is the bottom-right floating circle.
+  The ROOT layer shows no back pill; deeper inline layers do.
 - Reader cards use a real Liquid Glass edge surface: a `UIGlassEffect` view is
   masked to a narrow rounded ring over the card content, with a trait-aware
   hairline highlight. The rim refracts the page beneath it instead of drawing
@@ -223,8 +225,10 @@ Differences from the Downloader, via `CardCarouselStyle`:
   fades the peeking side cards and the scrub strip out and — for the scroll
   reader (`extendsCard: true`) — extends only the centered card's bottom edge
   into the room the strip frees up (top, sides, corner radius, and the
-  reader's own header pills never move or change; peek taps and the strip are
-  inert while immersed). A horizontal pan beginning in either screen-edge
+  reader's own content never moves or changes; peek taps and the strip are
+  inert while immersed). The mini carousel fades and drifts down as the bottom
+  mode switcher fades into its place; surfacing reverses that handoff. A
+  horizontal pan beginning in either screen-edge
   inset synchronously restores the resting card geometry and carousel chrome,
   then continues that same gesture into interactive paging — immersion never
   requires a separate surfacing swipe. RSVP immerses with `extendsCard: false`:
@@ -234,8 +238,9 @@ Differences from the Downloader, via `CardCarouselStyle`:
   `cardArea.bounds`, where hit-testing can't reach them. The immersed
   card also clears its surface tone (`setSurfaceHidden`) so the edge fades
   dissolve into the screen background instead of silhouetting the retired
-  card. The screen-level header row and the flanking Settings/Share circles
-  PERSIST through immersion — only carousel chrome fades.
+  card. The screen-level corner controls and the flanking Settings/Share
+  circles PERSIST through immersion; the bottom mode switcher appears only
+  after carousel chrome is dismissed.
   The card content drives it directionally from the embedded reader (KVO on
   its scroll views, re-swept via
   `RabbitHoleReaderViewController.onContentHierarchyChanged` when a dive/pop/

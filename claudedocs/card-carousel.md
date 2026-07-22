@@ -217,10 +217,12 @@ Differences from the Downloader, via `CardCarouselStyle`:
   commit. Reader previews remain on the scroll reader's Phase-1 prefix: only
   enough text and inline images for the visible content window are laid out or
   loaded. Promotion of that same controller permanently lifts the primary gate
-  and starts the seamless Phase-2 full-content swap. The preview therefore
-  cannot swap to different content when the strip settles, while whole-article
-  layout and image loading stay off the scrub path. A deep saved position still
-  renders enough content up front to restore its actual viewport.
+  and starts the seamless Phase-2 full-content swap. Programmatic offsets from
+  that swap are presentation-silent: they neither flash the horizon indicator
+  nor momentarily exchange the pinned and scrolling title copies. The preview
+  therefore cannot swap to different content when the strip settles, while
+  whole-article layout and image loading stay off the scrub path. A deep saved
+  position still renders enough content up front to restore its actual viewport.
 - EVERY mounted card (centered + both side peeks) embeds a full live
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one

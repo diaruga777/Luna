@@ -62,7 +62,8 @@ final class ArticleCardsChromeTests: XCTestCase {
         UIView.setAnimationsEnabled(false)
         defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
 
-        controller.carousel(controller.carousel, didTapCenteredCardAt: 0)
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
 
         XCTAssertTrue(controller.carousel.isImmersed)
         XCTAssertEqual(modeSwitcher.alpha, 1, accuracy: 0.001)
@@ -71,7 +72,8 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(miniCarousel.alpha, 0, accuracy: 0.001)
         XCTAssertEqual(miniCarousel.transform.ty, 8, accuracy: 0.001)
 
-        controller.carousel(controller.carousel, didTapCenteredCardAt: 0)
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
 
         XCTAssertFalse(controller.carousel.isImmersed)
         XCTAssertEqual(modeSwitcher.alpha, 0, accuracy: 0.001)
@@ -116,7 +118,8 @@ final class ArticleCardsChromeTests: XCTestCase {
                 y: -textView.adjustedContentInset.top + scrolling.bounds.height + 2),
             animated: false)
         XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
-        controller.carousel(controller.carousel, didTapCenteredCardAt: 0)
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
 
         XCTAssertTrue(controller.carousel.isImmersed)
         XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
@@ -157,7 +160,8 @@ final class ArticleCardsChromeTests: XCTestCase {
         UIView.setAnimationsEnabled(false)
         defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
 
-        controller.carousel(controller.carousel, didTapCenteredCardAt: 0)
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
 
         XCTAssertTrue(controller.carousel.isImmersed)
         XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
@@ -199,7 +203,8 @@ final class ArticleCardsChromeTests: XCTestCase {
             animated: false)
         XCTAssertEqual(pinned.alpha, 1, accuracy: 0.001)
 
-        controller.carousel(controller.carousel, didTapCenteredCardAt: 0)
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
 
         XCTAssertTrue(controller.carousel.isImmersed)
         XCTAssertEqual(pinned.alpha, 0, accuracy: 0.001)
@@ -251,6 +256,24 @@ final class ArticleCardsChromeTests: XCTestCase {
         RunLoop.current.run(
             until: Date().addingTimeInterval(
                 CardEclipseTransition.scrubberTapDuration + 0.2))
+
+        let hostedIndicator = try XCTUnwrap(
+            controller.view.subviews.compactMap { $0 as? HorizonScrollIndicator }.first)
+        XCTAssertEqual(hostedIndicator.alpha, 0, accuracy: 0.001)
+    }
+
+    func testProgrammaticScrollDoesNotFlashHorizonIndicator() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        scrollView.contentSize = CGSize(width: 320, height: 1_200)
+        let indicator = HorizonScrollIndicator.makeHosted()
+        indicator.frame = scrollView.bounds
+        indicator.track(scrollView)
+        indicator.layoutIfNeeded()
+
+        scrollView.setContentOffset(CGPoint(x: 0, y: 240), animated: false)
+        indicator.layoutIfNeeded()
+
+        XCTAssertEqual(indicator.alpha, 0, accuracy: 0.001)
     }
 
     private func makeArticleController(

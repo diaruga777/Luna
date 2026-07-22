@@ -1033,6 +1033,10 @@ private final class ReaderCardContentViewController: CardContentViewController,
     private var cardChromeVisible = true
     private weak var titleScrollView: UIScrollView?
     private var titleScrollObservation: NSKeyValueObservation?
+    /// Coalesces UIKit's intermediate programmatic offsets (notably the
+    /// prefix-to-full article swap) so the pinned/scrolling title copies never
+    /// trade visibility for a single frame after a card transition.
+    private var pendingProgrammaticTitleUpdate: DispatchWorkItem?
     private(set) var isCentered = false
     var rabbitHoleReader: LunaReaderUI.RabbitHoleReaderViewController? {
         reader as? LunaReaderUI.RabbitHoleReaderViewController
@@ -1289,6 +1293,8 @@ private final class ReaderCardContentViewController: CardContentViewController,
     private func synchronizeScrollableTitleHeader() {
         let focused = rabbitHoleReader?.focusedContentScrollView
         if focused !== titleScrollView {
+            pendingProgrammaticTitleUpdate?.cancel()
+            pendingProgrammaticTitleUpdate = nil
             titleScrollObservation = nil
             scrollTitleHeader.removeFromSuperview()
             titleScrollView = focused
@@ -1296,8 +1302,8 @@ private final class ReaderCardContentViewController: CardContentViewController,
                 focused.addSubview(scrollTitleHeader)
                 focused.bringSubviewToFront(scrollTitleHeader)
                 titleScrollObservation = focused.observe(\.contentOffset, options: [.new]) {
-                    [weak self] _, _ in
-                    self?.updatePinnedTitleVisibility(animated: false)
+                    [weak self, weak focused] _, _ in
+                    self?.scrollOffsetDidChange(in: focused)
                 }
             }
         }
@@ -1310,6 +1316,30 @@ private final class ReaderCardContentViewController: CardContentViewController,
             width: focused.bounds.width, height: titleHeaderHeight)
         focused.bringSubviewToFront(scrollTitleHeader)
         updatePinnedTitleVisibility(animated: false)
+    }
+
+    private func scrollOffsetDidChange(in scrollView: UIScrollView?) {
+        guard let scrollView, scrollView === titleScrollView else { return }
+        if !ScrollPresentationState.isSuppressed(for: scrollView)
+            || scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating {
+            pendingProgrammaticTitleUpdate?.cancel()
+            pendingProgrammaticTitleUpdate = nil
+            updatePinnedTitleVisibility(animated: false)
+            return
+        }
+
+        // Assigning the full attributed string can briefly clamp the offset
+        // before ScrollReader restores it in the same runloop turn. Evaluate
+        // only the settled value so the two identical title copies cannot
+        // flicker between each other or appear to re-layout.
+        pendingProgrammaticTitleUpdate?.cancel()
+        let work = DispatchWorkItem { [weak self, weak scrollView] in
+            guard let self, let scrollView, scrollView === self.titleScrollView else { return }
+            self.pendingProgrammaticTitleUpdate = nil
+            self.updatePinnedTitleVisibility(animated: false)
+        }
+        pendingProgrammaticTitleUpdate = work
+        DispatchQueue.main.async(execute: work)
     }
 
     private func updatePinnedTitleVisibility(animated: Bool) {

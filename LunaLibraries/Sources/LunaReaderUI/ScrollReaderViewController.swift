@@ -657,6 +657,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         rendered = full
         wordMap = WordMap(content: content, rendered: full)
 
+        // Replacing attributed text can publish a transient clamped offset
+        // before the captured position is restored below. Keep external scroll
+        // chrome quiet until this synchronous geometry transaction settles.
+        ScrollPresentationState.setSuppressed(true, for: textView)
+        defer { ScrollPresentationState.setSuppressed(false, for: textView) }
         UIView.performWithoutAnimation {
             textView.attributedText = full.text
             textView.layoutManager.ensureLayout(for: textView.textContainer)

@@ -3,7 +3,26 @@
 //  Luna
 //
 
+import ObjectiveC
 import UIKit
+
+private var suppressesScrollPresentationKey: UInt8 = 0
+
+public enum ScrollPresentationState {
+    /// True while an owner is making a batch of internal geometry/offset
+    /// changes that should settle without presenting scroll-driven chrome.
+    /// Observers may coalesce until the batch ends, but the final geometry is
+    /// still authoritative.
+    public static func isSuppressed(for scrollView: UIScrollView) -> Bool {
+        (objc_getAssociatedObject(scrollView, &suppressesScrollPresentationKey) as? Bool) == true
+    }
+
+    public static func setSuppressed(_ suppressed: Bool, for scrollView: UIScrollView) {
+        objc_setAssociatedObject(
+            scrollView, &suppressesScrollPresentationKey, suppressed,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+}
 
 /// A custom vertical scroll indicator drawn in the "moon horizon" visual
 /// language of `MoonHorizonProgressBar`, rotated upright: a thin, faint tinted
@@ -146,6 +165,13 @@ public final class HorizonScrollIndicator: UIView {
     /// does this as the reader swaps its live layer — or nil to detach.
     public func track(_ scrollView: UIScrollView?) {
         guard scrollView !== self.scrollView else { return }
+        // A newly-centered carousel card must not inherit the outgoing card's
+        // in-flight flash/fade presentation. Retargeting is structural, not a
+        // scroll gesture, so always begin the new surface fully quiet.
+        hideWorkItem?.cancel()
+        hideWorkItem = nil
+        layer.removeAllAnimations()
+        alpha = 0
         offsetObservation = nil
         sizeObservation = nil
         self.scrollView = scrollView
@@ -259,6 +285,14 @@ public final class HorizonScrollIndicator: UIView {
 
     private func scrollChanged() {
         setNeedsLayout()
+        // UIKit can publish contentOffset changes while restoring an offset,
+        // changing content insets, or replacing a text view's attributed text.
+        // Those internal updates should move the indicator head but must not
+        // flash it as though the reader dragged the page. This also keeps a
+        // deferred full-article swap after card paging visually silent.
+        guard let scrollView,
+              scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
+        else { return }
         flash()
     }
 

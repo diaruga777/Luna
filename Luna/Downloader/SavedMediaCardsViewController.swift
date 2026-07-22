@@ -76,10 +76,12 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private var pasteboardDownloadTask: Task<Void, Never>?
     private var pasteboardExpiryWorkItem: DispatchWorkItem?
     private var isCommittingPasteboardMedia = false
-    /// Concrete exports keyed by item so the share sheet never receives a lazy
-    /// provider and the current Photos-backed card can be warmed before a tap.
-    private var preparedShareFiles: [UUID: URL] = [:]
-    private var sharePreparationTasks: [UUID: Task<URL?, Never>] = [:]
+    /// One concrete export for the centered item. Photos-backed videos can be
+    /// large, so superseded exports are cancelled and reclaimed immediately.
+    private var sharePreparationItemID: UUID?
+    private var preparedShareFile: URL?
+    private var sharePreparationTask: Task<URL?, Never>?
+    private var sharePreparationGeneration = UUID()
     /// Fingerprint of the last-applied item list, so store notifications that
     /// changed nothing visible (frequent on foreground/activation catch-ups)
     /// don't tear down and rebuild live card content mid-playback.
@@ -586,6 +588,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             // without attaching Luna metadata, text, or the source URL.
             let activity = UIActivityViewController(
                 activityItems: [fileURL], applicationActivities: nil)
+            activity.completionWithItemsHandler = { [weak self] _, _, _, _ in
+                Task { @MainActor in self?.discardPreparedShareFile(for: item.id) }
+            }
             if let card = self.carousel.cardView(at: sourceIndex) {
                 activity.popoverPresentationController?.sourceView = card
                 activity.popoverPresentationController?.sourceRect = card.bounds
@@ -595,6 +600,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     }
 
     private func prewarmShareFile(for item: SavedMediaItem) {
+        if sharePreparationItemID != item.id { discardPreparedShareFile() }
         guard case .photosReference = item.storageState else { return }
         Task { @MainActor [weak self] in
             _ = await self?.prepareShareFile(for: item)
@@ -602,24 +608,48 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     }
 
     private func prepareShareFile(for item: SavedMediaItem) async -> URL? {
-        if let existing = preparedShareFiles[item.id],
+        if sharePreparationItemID == item.id,
+           let existing = preparedShareFile,
            FileManager.default.fileExists(atPath: existing.path) {
             return existing
         }
-        if let existingTask = sharePreparationTasks[item.id] {
+        if sharePreparationItemID == item.id, let existingTask = sharePreparationTask {
             return await existingTask.value
         }
 
-        let task = Task {
-            await MediaAutoDownloader.exportFile(from: item)?.fileURL
+        discardPreparedShareFile()
+        let generation = UUID()
+        sharePreparationGeneration = generation
+        sharePreparationItemID = item.id
+        let task = Task<URL?, Never>.detached(priority: .userInitiated) {
+            let fileURL = await MediaAutoDownloader.exportFile(from: item)?.fileURL
+            if Task.isCancelled, let fileURL {
+                MediaDownloadStorage.discardIntentExport(at: fileURL)
+                return nil
+            }
+            return fileURL
         }
-        sharePreparationTasks[item.id] = task
+        sharePreparationTask = task
         let fileURL = await task.value
-        sharePreparationTasks[item.id] = nil
-        if let fileURL {
-            preparedShareFiles[item.id] = fileURL
+        guard sharePreparationGeneration == generation else {
+            if let fileURL { MediaDownloadStorage.discardIntentExport(at: fileURL) }
+            return nil
         }
+        sharePreparationTask = nil
+        preparedShareFile = fileURL
         return fileURL
+    }
+
+    private func discardPreparedShareFile(for itemID: UUID? = nil) {
+        if let itemID, sharePreparationItemID != itemID { return }
+        sharePreparationGeneration = UUID()
+        sharePreparationTask?.cancel()
+        sharePreparationTask = nil
+        if let preparedShareFile {
+            MediaDownloadStorage.discardIntentExport(at: preparedShareFile)
+        }
+        preparedShareFile = nil
+        sharePreparationItemID = nil
     }
 
     /// Saves a defensive COPY of the item's local file to Photos (never the file
@@ -986,12 +1016,16 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
         refreshArchivePullAvailability(animated: true)
         updateShareButton()
         if let state = renderedPasteboardState, index == 0 {
+            discardPreparedShareFile()
             if case .placeholder = state, !items.isEmpty {
                 readPasteboardPlaceholder()
             }
             return
         }
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return }
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
+            discardPreparedShareFile()
+            return
+        }
         let item = items[mediaIndex]
         markOpened(item)
         prewarmShareFile(for: item)

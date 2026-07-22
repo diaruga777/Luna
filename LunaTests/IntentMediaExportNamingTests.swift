@@ -25,10 +25,24 @@ final class IntentMediaExportNamingTests: XCTestCase {
 
         let result = await MediaAutoDownloader.exportFile(from: item)
         let exported = try XCTUnwrap(result)
-        defer { try? FileManager.default.removeItem(at: exported.fileURL.deletingLastPathComponent()) }
+        defer { MediaDownloadStorage.discardIntentExport(at: exported.fileURL) }
 
         XCTAssertEqual(exported.fileURL.lastPathComponent, "A useful clip.mp4")
         XCTAssertEqual(try Data(contentsOf: exported.fileURL), bytes)
+    }
+
+    func testDiscardIntentExportRemovesOnlyItsUniqueExportDirectory() throws {
+        let export = MediaDownloadStorage.newIntentExportURL(fileName: "share.mp4")
+        try Data("bytes".utf8).write(to: export)
+        MediaDownloadStorage.discardIntentExport(at: export)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: export.path))
+
+        let unrelated = FileManager.default.temporaryDirectory
+            .appendingPathComponent("unrelated-\(UUID().uuidString).mp4")
+        try Data("keep".utf8).write(to: unrelated)
+        defer { try? FileManager.default.removeItem(at: unrelated) }
+        MediaDownloadStorage.discardIntentExport(at: unrelated)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
     }
 
     func testVideoUsesSanitizedTitleAndMP4Extension() {

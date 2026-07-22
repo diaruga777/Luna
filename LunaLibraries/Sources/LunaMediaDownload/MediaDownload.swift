@@ -140,6 +140,17 @@ public enum MediaDownloadStorage {
         return exportDirectory.appendingPathComponent(fileName)
     }
 
+    /// Removes one unique intent/share export directory. The containment check
+    /// keeps a malformed or unrelated URL from broadening the deletion target.
+    public static func discardIntentExport(at fileURL: URL) {
+        let exportsRoot = directory
+            .appendingPathComponent("IntentExports", isDirectory: true)
+            .standardizedFileURL
+        let exportDirectory = fileURL.deletingLastPathComponent().standardizedFileURL
+        guard exportDirectory.deletingLastPathComponent() == exportsRoot else { return }
+        try? FileManager.default.removeItem(at: exportDirectory)
+    }
+
     /// Deletes every file in the media-downloads directory. Called once at app
     /// launch to reclaim orphans from a previous run that was terminated before its
     /// preview view controller could delete its own file.

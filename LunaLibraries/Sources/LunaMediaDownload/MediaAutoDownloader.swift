@@ -137,7 +137,7 @@ public enum MediaAutoDownloader {
                 }
                 return DownloadedMedia(fileURL: exportURL, kind: kind)
             } catch {
-                try? FileManager.default.removeItem(at: exportURL.deletingLastPathComponent())
+                MediaDownloadStorage.discardIntentExport(at: exportURL)
                 return nil
             }
         case .photosReference(let identifier, _, _):
@@ -146,7 +146,7 @@ public enum MediaAutoDownloader {
                     localIdentifier: identifier, kind: kind, to: exportURL)
                 return DownloadedMedia(fileURL: exportURL, kind: kind)
             } catch {
-                try? FileManager.default.removeItem(at: exportURL.deletingLastPathComponent())
+                MediaDownloadStorage.discardIntentExport(at: exportURL)
                 return nil
             }
         case .undownloaded:

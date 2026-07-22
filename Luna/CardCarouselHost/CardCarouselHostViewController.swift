@@ -46,6 +46,20 @@ enum PasteboardTemporaryMediaPolicy {
     }
 }
 
+enum PasteboardCommitPolicy {
+    /// A completed save may clear only the synthetic card it started from.
+    /// If a newer card is already represented, it must survive the older
+    /// save's asynchronous storage/Photos completion.
+    static func shouldClearCommittedCard(
+        committedChangeCount: Int,
+        currentPasteboardChangeCount: Int,
+        representedChangeCount: Int?
+    ) -> Bool {
+        currentPasteboardChangeCount == committedChangeCount
+            || representedChangeCount == committedChangeCount
+    }
+}
+
 /// The shared skeleton behind Reader's and Downloader's root screens: both
 /// present one `CardCarouselViewController` full-screen, flank its scrub strip
 /// with two persistent Liquid Glass circles (Settings + a share/action button),

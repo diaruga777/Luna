@@ -514,7 +514,20 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 self.isCommittingPasteboardMedia = false
                 self.pendingPasteboardDownloadURLString = url.absoluteString
                 self.consumedPasteboardChangeCount = changeCount
-                self.clearPasteboardCard(removingTemporaryFile: true)
+                let pasteboardChanged = UIPasteboard.general.changeCount != changeCount
+                if PasteboardCommitPolicy.shouldClearCommittedCard(
+                    committedChangeCount: changeCount,
+                    currentPasteboardChangeCount: UIPasteboard.general.changeCount,
+                    representedChangeCount: self.pasteboardState?.changeCount
+                ) {
+                    self.clearPasteboardCard(removingTemporaryFile: true)
+                } else {
+                    // A newer paste arrived while Photos/storage work was in
+                    // flight. Keep its synthetic card and only fold the saved
+                    // media row into the current carousel snapshot.
+                    self.reload()
+                }
+                if pasteboardChanged { self.refreshPasteboardURL() }
                 if photosFailure {
                     self.presentAlert(
                         title: "Photos Access Needed",

@@ -19,6 +19,20 @@ import XCTest
 
 final class CardCarouselHostViewControllerTests: XCTestCase {
 
+    func testPasteboardCommitKeepsAlreadyRepresentedNewerPaste() {
+        XCTAssertFalse(PasteboardCommitPolicy.shouldClearCommittedCard(
+            committedChangeCount: 10,
+            currentPasteboardChangeCount: 11,
+            representedChangeCount: 11))
+    }
+
+    func testPasteboardCommitClearsItsOwnRepresentedCardBeforeRefreshing() {
+        XCTAssertTrue(PasteboardCommitPolicy.shouldClearCommittedCard(
+            committedChangeCount: 10,
+            currentPasteboardChangeCount: 11,
+            representedChangeCount: 10))
+    }
+
     /// Flips `hasLeadingPasteboardCard` on demand, mirroring how a real
     /// subclass reflects its own pasteboard state.
     private final class TestHost: CardCarouselHostViewController {

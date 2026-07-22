@@ -531,8 +531,16 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 guard let saved else { return }
                 self.pendingPasteboardSavedID = saved.id
                 self.consumedPasteboardChangeCount = changeCount
-                self.pasteboardState = nil
+                let pasteboardChanged = UIPasteboard.general.changeCount != changeCount
+                if PasteboardCommitPolicy.shouldClearCommittedCard(
+                    committedChangeCount: changeCount,
+                    currentPasteboardChangeCount: UIPasteboard.general.changeCount,
+                    representedChangeCount: self.pasteboardState?.changeCount
+                ) {
+                    self.pasteboardState = nil
+                }
                 self.reload()
+                if pasteboardChanged { self.refreshPasteboardURL() }
                 if openLockedAfterSave,
                    let fresh = self.store.item(withID: saved.id), let url = fresh.url {
                     self.presentArchiveReader(for: fresh, articleURL: url)

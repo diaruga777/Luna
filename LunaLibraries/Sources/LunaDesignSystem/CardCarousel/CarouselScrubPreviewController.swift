@@ -20,6 +20,9 @@ final class CarouselScrubPreviewController {
     private var previewOverlay: UIView?
     private var previewImageView: UIImageView?
     private var previewTitleLabel: UILabel?
+    /// The card the visible overlay currently represents. Async thumbnail
+    /// completions must match it before touching the image view.
+    private var previewedIndex: Int?
     /// Host-supplied exact card content mounted inside the overlay.
     private var previewContent: CardContentViewController?
     private(set) var previewContentIndex: Int?
@@ -34,6 +37,7 @@ final class CarouselScrubPreviewController {
     }
 
     func show(at index: Int, cardCount: Int, centeredCardFrame: CGRect) {
+        guard index >= 0, index < cardCount else { return }
         if previewOverlay == nil {
             let overlay = UIView()
             overlay.backgroundColor = LunaColors.secondaryBackground
@@ -67,10 +71,16 @@ final class CarouselScrubPreviewController {
             previewOverlay = overlay
             layout(centeredCardFrame: centeredCardFrame)
         }
+        let previousIndex = previewedIndex
+        previewedIndex = index
         switch carousel.style.scrubberStyle {
         case .thumbnails:
+            if previousIndex != index { previewImageView?.image = nil }
             carousel.dataSource?.carousel(carousel, loadThumbnailForCardAt: index) { [weak self] image in
-                DispatchQueue.main.async { self?.previewImageView?.image = image }
+                DispatchQueue.main.async {
+                    guard let self, self.previewedIndex == index else { return }
+                    self.previewImageView?.image = image
+                }
             }
             if carousel.style.autoplaysScrubPreviewContent {
                 mountContent(at: index, cardCount: cardCount, autoplay: true)
@@ -136,7 +146,12 @@ final class CarouselScrubPreviewController {
         previewOverlay = nil
         previewImageView = nil
         previewTitleLabel = nil
+        previewedIndex = nil
     }
+
+    #if DEBUG
+    var previewImageForTesting: UIImage? { previewImageView?.image }
+    #endif
 
     /// Detaches the live preview without pausing or removing it as a child.
     /// The caller immediately installs it into a real carousel card.

@@ -419,3 +419,54 @@ private final class PlaybackSpyCardContentViewController: CardContentViewControl
         isMuted = muted
     }
 }
+
+@MainActor
+final class CarouselScrubPreviewRaceTests: XCTestCase {
+
+    func testLateThumbnailCannotReplaceTheNewerScrubPreview() async throws {
+        let source = DelayedThumbnailDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.dataSource = source
+        carousel.loadViewIfNeeded()
+        let cardArea = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 560))
+        let preview = CarouselScrubPreviewController(carousel: carousel, cardArea: cardArea)
+        let frame = CGRect(x: 10, y: 10, width: 300, height: 520)
+        let oldImage = UIImage(systemName: "1.circle")
+        let currentImage = UIImage(systemName: "2.circle")
+
+        preview.show(at: 0, cardCount: 2, centeredCardFrame: frame)
+        preview.show(at: 1, cardCount: 2, centeredCardFrame: frame)
+        source.complete(index: 1, with: currentImage)
+        source.complete(index: 0, with: oldImage)
+
+        let mainQueueDrained = expectation(description: "thumbnail completions applied")
+        DispatchQueue.main.async { mainQueueDrained.fulfill() }
+        await fulfillment(of: [mainQueueDrained], timeout: 1)
+
+        XCTAssertTrue(preview.previewImageForTesting === currentImage)
+    }
+}
+
+@MainActor
+private final class DelayedThumbnailDataSource: @preconcurrency CardCarouselDataSource {
+    private var completions: [Int: (UIImage?) -> Void] = [:]
+
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 2 }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contentControllerForCardAt index: Int
+    ) -> CardContentViewController { CardContentViewController() }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadThumbnailForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        completions[index] = completion
+    }
+
+    func complete(index: Int, with image: UIImage?) {
+        completions.removeValue(forKey: index)?(image)
+    }
+}

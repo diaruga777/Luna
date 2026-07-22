@@ -22,6 +22,22 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertEqual(href, "https://www.facebook.com/reel/1610065874019369/")
     }
 
+    func testYouTubeBackgroundResolutionCanonicalizesCommonURLForms() throws {
+        let mobile = try XCTUnwrap(URL(string:
+            "https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=90s"))
+        let resolve = try XCTUnwrap(LiveMediaDownloadManager.resolveRequest(for: mobile))
+        XCTAssertEqual(resolve.kind, "youtubeWatch")
+        XCTAssertEqual(resolve.request.url?.absoluteString,
+                       "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        XCTAssertEqual(resolve.request.httpShouldHandleCookies, false)
+
+        let clip = try XCTUnwrap(URL(string:
+            "https://www.youtube.com/clip/UgkxOpaqueClipToken"))
+        let clipResolve = try XCTUnwrap(LiveMediaDownloadManager.resolveRequest(for: clip))
+        XCTAssertEqual(clipResolve.kind, "youtubeClip")
+        XCTAssertEqual(clipResolve.request.url, clip)
+    }
+
     func testDownloaderStartPolicyRestartsMissingAndUndownloadedMedia() {
         XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(storageState: nil))
         XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(
@@ -48,7 +64,10 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             id: "1", sourceURLString: "https://www.tiktok.com/@a/video/1",
             assetURLString: nil, mediaKind: "video", title: "Media",
             resolveKind: nil, phase: .resolving, progress: 0,
-            thumbnailFileName: nil, fileExtension: nil, errorMessage: nil,
+            thumbnailFileName: nil, fileExtension: nil,
+            expectedByteCount: nil, receivedByteCount: nil,
+            resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
+            resolvedVideoID: nil, errorMessage: nil,
             errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
             suspendDeadline: nil, ownership: .downloader)
         let decoded = try JSONDecoder().decode(
@@ -62,6 +81,8 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             phase: .resolving, hasActiveTask: false))
         XCTAssertTrue(LiveMediaDownloadResumePolicy.shouldRestart(
             phase: .downloading, hasActiveTask: false))
+        XCTAssertTrue(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .waiting, hasActiveTask: false))
 
         XCTAssertFalse(LiveMediaDownloadResumePolicy.shouldRestart(
             phase: .resolving, hasActiveTask: true))
@@ -91,7 +112,10 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             id: "notification-thread", sourceURLString: sourceURL,
             assetURLString: nil, mediaKind: "unknown", title: "Media",
             resolveKind: "x", phase: .resolving, progress: 0,
-            thumbnailFileName: nil, fileExtension: nil, errorMessage: nil,
+            thumbnailFileName: nil, fileExtension: nil,
+            expectedByteCount: nil, receivedByteCount: nil,
+            resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
+            resolvedVideoID: nil, errorMessage: nil,
             errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
             suspendDeadline: nil, ownership: .downloader)
         DispatchQueue.global(qos: .userInitiated).async {
@@ -126,5 +150,29 @@ final class LiveMediaDownloadJobTests: XCTestCase {
     func testWiFiOnlyGateNeverDefersNonDownloaderOwnership() {
         XCTAssertFalse(WiFiOnlyDownloadGate.shouldDefer(
             ownership: .invokingApp, manual: false, wifiOnlyEnabled: true, isOnWiFi: false))
+    }
+
+    func testIntentSizePolicyOnlyAwaitsKnownFilesAtOrBelowLimit() {
+        XCTAssertTrue(IntentMediaDownloadPolicy.shouldAwait(
+            expectedByteCount: IntentMediaDownloadPolicy.inlineByteLimit))
+        XCTAssertFalse(IntentMediaDownloadPolicy.shouldAwait(
+            expectedByteCount: IntentMediaDownloadPolicy.inlineByteLimit + 1))
+        XCTAssertFalse(IntentMediaDownloadPolicy.shouldAwait(expectedByteCount: nil))
+    }
+
+    func testStoragePolicyIncludesReserveAndTransferOverhead() {
+        let expected: Int64 = 1_000_000_000
+        let required = MediaStoragePolicy.requiredByteCount(expectedByteCount: expected)
+        XCTAssertEqual(
+            required,
+            expected + MediaStoragePolicy.reserveByteCount + expected / 10)
+        XCTAssertFalse(MediaStoragePolicy.hasCapacity(
+            expectedByteCount: expected, availableByteCount: required - 1))
+        XCTAssertTrue(MediaStoragePolicy.hasCapacity(
+            expectedByteCount: expected, availableByteCount: required))
+        XCTAssertEqual(
+            MediaStoragePolicy.requiredByteCount(
+                expectedByteCount: expected, requiresProcessingCopy: true),
+            required + expected)
     }
 }

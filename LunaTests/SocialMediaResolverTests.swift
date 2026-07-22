@@ -3,7 +3,7 @@
 //  LunaTests
 //
 
-import LunaMediaDownload
+@testable import LunaMediaDownload
 import LunaModels
 import LunaURLClassification
 import XCTest
@@ -145,7 +145,10 @@ final class SocialMediaResolverTests: XCTestCase {
         let assets = await resolver.resolveAssets(for: source)
 
         XCTAssertEqual(assets, [
-            MediaAsset(url: URL(string: "https://video.example.com/reel.mp4?x=1&y=2")!, kind: .video),
+            MediaAsset(
+                url: URL(string: "https://video.example.com/reel.mp4?x=1&y=2")!,
+                kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/poster.jpg")!),
         ])
     }
 
@@ -178,7 +181,10 @@ final class SocialMediaResolverTests: XCTestCase {
         """#
 
         XCTAssertEqual(FacebookMediaParser.assets(fromHTML: html), [
-            MediaAsset(url: URL(string: "https://video.example.com/hd.mp4?token=one&encoded=yes%3D%3D")!, kind: .video),
+            MediaAsset(
+                url: URL(string: "https://video.example.com/hd.mp4?token=one&encoded=yes%3D%3D")!,
+                kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/poster.jpg")!),
         ])
     }
 
@@ -189,7 +195,9 @@ final class SocialMediaResolverTests: XCTestCase {
         let html = #"window.__additionalDataLoaded("/embed/", {"contextJSON": \#(literal)});"#
 
         XCTAssertEqual(InstagramMediaParser.assetsFromEmbedContextJSON(html), [
-            MediaAsset(url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video),
+            MediaAsset(
+                url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/reel.jpg")!),
         ])
     }
 
@@ -240,5 +248,63 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertEqual(TikTokMediaParser.assets(fromHTML: html), [
             MediaAsset(url: URL(string: "https://video.example.com/download.mp4")!, kind: .video),
         ])
+    }
+
+    func testYouTubeURLFamilyNormalizesVideoIDAndTimestampRange() throws {
+        let cases: [(String, Double)] = [
+            ("https://youtu.be/dQw4w9WgXcQ?t=1m30s", 90),
+            ("https://m.youtube.com/watch?v=dQw4w9WgXcQ&start=45", 45),
+            ("https://www.youtube.com/shorts/dQw4w9WgXcQ#t=12s", 12),
+            ("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ", 0),
+        ]
+        for (raw, expectedStart) in cases {
+            let link = try XCTUnwrap(URL(string: raw).flatMap(YouTubeLink.init(url:)))
+            XCTAssertEqual(link.videoID, "dQw4w9WgXcQ", raw)
+            XCTAssertEqual(link.timeRange?.startSeconds ?? 0, expectedStart, raw)
+            XCTAssertEqual(link.canonicalWatchURL?.absoluteString,
+                           "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        }
+        let ranged = try XCTUnwrap(YouTubeLink(
+            url: URL(string: "https://youtube.com/watch?v=dQw4w9WgXcQ&t=5&end=15")!))
+        XCTAssertEqual(ranged.timeRange, MediaTimeRange(startSeconds: 5, endSeconds: 15))
+    }
+
+    func testYouTubePlayerResponseSelectsProgressiveMP4WithAudioAndPoster() throws {
+        let response = #"""
+        {"streamingData":{"formats":[
+          {"mimeType":"video/mp4; codecs=\"avc1, mp4a\"","url":"https://video.example.com/360.mp4","audioQuality":"AUDIO_QUALITY_MEDIUM","height":360,"bitrate":800000,"contentLength":"12000000"},
+          {"mimeType":"video/mp4; codecs=\"avc1, mp4a\"","url":"https://video.example.com/720.mp4","audioQuality":"AUDIO_QUALITY_MEDIUM","height":720,"bitrate":2000000,"contentLength":"30000000"},
+          {"mimeType":"video/mp4; codecs=\"avc1\"","signatureCipher":"url=https%3A%2F%2Fvideo.example.com%2Fciphered.mp4","height":1080,"bitrate":5000000}
+        ]},"videoDetails":{"lengthSeconds":"120","thumbnail":{"thumbnails":[{"url":"https://img.example.com/small.jpg"},{"url":"https://img.example.com/large.jpg"}]}}}
+        """#
+
+        let asset = try XCTUnwrap(YouTubePlayerResponseParser.asset(
+            from: Data(response.utf8), videoID: "dQw4w9WgXcQ",
+            timeRange: MediaTimeRange(startSeconds: 10, endSeconds: 20)))
+
+        XCTAssertEqual(asset.url.absoluteString, "https://video.example.com/720.mp4")
+        XCTAssertEqual(asset.kind, .video)
+        XCTAssertEqual(asset.thumbnailURL?.absoluteString, "https://img.example.com/large.jpg")
+        XCTAssertEqual(asset.estimatedByteCount, 30_000_000)
+        XCTAssertEqual(asset.timeRange, MediaTimeRange(startSeconds: 10, endSeconds: 20))
+    }
+
+    func testYouTubeHTMLParserSkipsNullPlayerResponseBeforeRealAssignment() throws {
+        let html = #"""
+        <script>var ytInitialPlayerResponse = null;</script>
+        <script>var unrelated = {"formats":"not a player"};</script>
+        <script>var ytInitialPlayerResponse = {"streamingData":{"formats":[{"mimeType":"video/mp4; codecs=\"avc1, mp4a\"","url":"https://video.example.com/direct.mp4","audioQuality":"AUDIO_QUALITY_MEDIUM","height":360,"bitrate":800000}]}};</script>
+        """#
+        let asset = try XCTUnwrap(YouTubePlayerResponseParser.asset(
+            from: Data(html.utf8), videoID: "dQw4w9WgXcQ", timeRange: nil))
+        XCTAssertEqual(asset.url.absoluteString, "https://video.example.com/direct.mp4")
+    }
+
+    func testYouTubeClipParserFindsUnderlyingVideoAndRange() throws {
+        let html = #"<script>var clipConfig={\"videoId\":\"dQw4w9WgXcQ\",\"startTimeMs\":\"12500\",\"endTimeMs\":\"28750\"};</script>"#
+        let descriptor = try XCTUnwrap(YouTubeClipParser.descriptor(fromHTML: html))
+        XCTAssertEqual(descriptor.videoID, "dQw4w9WgXcQ")
+        XCTAssertEqual(descriptor.timeRange,
+                       MediaTimeRange(startSeconds: 12.5, endSeconds: 28.75))
     }
 }

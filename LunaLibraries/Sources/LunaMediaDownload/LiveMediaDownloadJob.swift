@@ -9,6 +9,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     enum Phase: String, Codable {
         case resolving
         case downloading
+        case waiting
         case suspended
         case saving
         case finished
@@ -33,6 +34,17 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     var progress: Double
     var thumbnailFileName: String?
     var fileExtension: String?
+    /// Size/transfer state survives process death. Resume data is stored as a
+    /// sibling file instead of bloating jobs.json with base64 bytes.
+    var expectedByteCount: Int64?
+    var receivedByteCount: Int64?
+    var resumeDataFileName: String?
+    /// Optional source-requested range (notably YouTube timestamp/clip links).
+    var rangeStartSeconds: Double?
+    var rangeEndSeconds: Double?
+    /// The underlying YouTube video id after a `/clip/` URL has been expanded.
+    /// Persisting it lets a later resolver stage survive a process relaunch.
+    var resolvedVideoID: String?
     var errorMessage: String?
     var errorKind: ErrorKind?
     var resolveAttempts: Int
@@ -71,6 +83,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         switch phase {
         case .resolving: return "Preparing download"
         case .downloading: return "Downloading"
+        case .waiting: return "Waiting to resume"
         case .suspended: return "Paused. Resume within 5 seconds."
         case .saving: return isDownloaderOwned ? "Saving to Luna" : "Saving to Photos"
         case .finished: return isDownloaderOwned ? "Saved to Luna" : "Saved to Photos"

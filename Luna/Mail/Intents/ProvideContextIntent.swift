@@ -167,7 +167,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                     currentAppName: InteropSurface.current.displayName))
         }
 
-        let media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
+        let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
             for: savedURLString
         ) {
             try? await requestToContinueInForeground()
@@ -179,13 +179,23 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 /// Shared plumbing for the two Action Button intents (Provide Context + Save).
 enum ActionButtonIntentSupport {
 
+    enum MediaHandoffError: Error, CustomLocalizedStringResourceConvertible {
+        case insufficientStorage(String)
+
+        var localizedStringResource: LocalizedStringResource {
+            switch self {
+            case .insufficientStorage(let message): return "\(message)"
+            }
+        }
+    }
+
     /// One media handoff shared by ProvideContext's completed Safari fast path
     /// and SaveIntent's screenshot/search path. `foreground` is invoked only
     /// when a first read/write Photos authorization prompt needs a visible host.
     static func downloadMediaIfNeeded(
         for urlString: String,
         foreground: () async -> Void
-    ) async -> IntentFile? {
+    ) async throws -> IntentFile? {
         guard MediaAutoDownloader.shouldStartDownloaderIntentDownload(
             forURLString: urlString)
         else {
@@ -198,19 +208,34 @@ enum ActionButtonIntentSupport {
             await foreground()
         }
         let photosAuthorized = await DownloaderIntentPhotoPermission.requestIfNeeded()
-        if AutoDownloadSettings.returnMediaFromAppIntents {
+        if AutoDownloadSettings.returnMediaFromAppIntents,
+           let existing = SavedMediaStore.shared.existingDownloadedItem(
+               forURLString: urlString) {
+            let media = await MediaAutoDownloader.exportFile(from: existing)
+            return media.map { intentFile(for: $0) }
+        }
+        if AutoDownloadSettings.returnMediaFromAppIntents,
+           let sourceURL = URL(string: urlString),
+           let inspection = await MediaDownloadPreflight.inspect(sourceURL: sourceURL) {
+            if let error = MediaDownloadPreflight.storageError(for: inspection) {
+                throw MediaHandoffError.insufficientStorage(error.message)
+            }
+            guard IntentMediaDownloadPolicy.shouldAwait(
+                expectedByteCount: inspection.expectedByteCount)
+            else {
+                let started = await MediaAutoDownloader.startDownloaderIntentDownload(
+                    forURLString: urlString)
+                SharedDiagnosticLog.record(
+                    "intent media handoff: synchronous=false, reason=size, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), started=\(started), photosAuthorized=\(photosAuthorized)",
+                    category: "media-download")
+                return nil
+            }
             let media = await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
                 forURLString: urlString)
             SharedDiagnosticLog.record(
-                "intent media handoff: synchronous=true, completed=\(media != nil), photosAuthorized=\(photosAuthorized)",
+                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), completed=\(media != nil), photosAuthorized=\(photosAuthorized)",
                 category: "media-download")
-            guard let media else { return nil }
-            let type = UTType(filenameExtension: media.fileURL.pathExtension)
-                ?? (media.kind == .video ? .mpeg4Movie : .image)
-            return IntentFile(
-                fileURL: media.fileURL,
-                filename: media.fileURL.lastPathComponent,
-                type: type)
+            return media.map { intentFile(for: $0) }
         } else {
             let started = await MediaAutoDownloader.startDownloaderIntentDownload(
                 forURLString: urlString)
@@ -219,6 +244,15 @@ enum ActionButtonIntentSupport {
                 category: "media-download")
             return nil
         }
+    }
+
+    private static func intentFile(for media: DownloadedMedia) -> IntentFile {
+        let type = UTType(filenameExtension: media.fileURL.pathExtension)
+            ?? (media.kind == .video ? .mpeg4Movie : .image)
+        return IntentFile(
+            fileURL: media.fileURL,
+            filename: media.fileURL.lastPathComponent,
+            type: type)
     }
 
     /// The double-save action (send to Kindle / friend on a repeat press within

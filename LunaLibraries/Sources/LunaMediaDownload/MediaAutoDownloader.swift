@@ -84,8 +84,7 @@ public enum MediaAutoDownloader {
     /// Photos-backed item is copied to a transient file because `IntentFile`
     /// needs an on-disk resource it can hand to Shortcuts.
     public static func downloadForDownloaderIntentAwaiting(
-        forURLString urlString: String,
-        service: MediaDownloading = MediaDownloadService()
+        forURLString urlString: String
     ) async -> DownloadedMedia? {
         guard shouldStartDownloaderIntentDownload(forURLString: urlString),
               let url = URL(string: urlString)
@@ -97,17 +96,20 @@ public enum MediaAutoDownloader {
             return await exportFile(from: existing)
         }
 
-        do {
-            let item = try await service.downloadFirstMediaToAppStorage(
-                from: url,
-                title: ReadingListStore.shared.item(forURLString: urlString)?.title,
-                onProgress: { _ in })
-            AutoDownloadSettings.markDownloaded(urlString)
-            return await exportFile(from: item)
-        } catch {
+        let started = await LiveMediaDownloadManager.shared.start(
+            urlString: url.absoluteString,
+            title: ReadingListStore.shared.item(forURLString: urlString)?.title,
+            ownership: .downloader)
+        guard started || LiveMediaDownloadManager.shared.currentDownloadSnapshot(
+            forSourceURLString: urlString) != nil
+        else {
             AutoDownloadSettings.unmarkDownloaded(urlString)
             return nil
         }
+        guard let item = await LiveMediaDownloadManager.shared.waitForDownloaderResult(
+            forSourceURLString: urlString)
+        else { return nil }
+        return await exportFile(from: item)
     }
 
     /// Materializes one saved item as a concrete, shareable file URL with a

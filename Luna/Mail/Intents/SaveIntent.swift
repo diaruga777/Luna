@@ -107,7 +107,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                 urlString: savedURLString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
-            let media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
+            let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: savedURLString
             ) {
                 try? await requestToContinueInForeground()
@@ -193,7 +193,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         // independent consequence of resolving downloadable media.
         let media: IntentFile?
         if let downloadURLString = resolvedPlatformURLString ?? savedURLString {
-            media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
+            media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: downloadURLString
             ) {
                 try? await requestToContinueInForeground()

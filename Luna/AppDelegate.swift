@@ -290,11 +290,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         work = Task {
             await IncomingMailImporter.shared.importNewMail()
             ArticleSendCoordinator.shared.retryPendingSends()
-            // Backstop for Wi-Fi-only downloads: the live reconnect observer and
-            // the launch/foreground resume (see SceneDelegate) handle the fast
-            // paths; this covers the case where the app was never reopened.
+            // Overnight backstop for every unfinished media job, including a
+            // transfer whose server supplied resume data after an interruption.
+            // The background URLSession continues after this processing task exits.
             if AppSurfaceConfig.current == .downloader {
-                await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads()
+                await LiveMediaDownloadManager.shared.resumeUnfinishedDownloads()
             }
             task.setTaskCompleted(success: !Task.isCancelled)
         }

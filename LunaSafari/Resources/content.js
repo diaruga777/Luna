@@ -915,7 +915,25 @@
         if (hostMatches(host, platformHosts("tiktok"))) { return "tiktok"; }
         if (hostMatches(host, platformHosts("instagram"))) { return "instagram"; }
         if (hostMatches(host, platformHosts("facebook"))) { return "facebook"; }
+        if (hostMatches(host, platformHosts("youtube")) && currentYouTubeIsVideo(host, segments)) {
+            return "youtube";
+        }
         return null;
+    }
+
+    // Mirrors PlatformRecognizer.youtube: a concrete watch/short/embed/live video
+    // or clip only, never the YouTube home page/channel/feed.
+    function currentYouTubeIsVideo(host, segments) {
+        function validID(value) {
+            return typeof value === "string" && /^[A-Za-z0-9_-]{11}$/.test(value);
+        }
+        if (host === "youtu.be") { return validID(segments[0]); }
+        if (segments[0] === "clip") { return !!nonEmptySegment(segments[1]); }
+        try {
+            if (validID(new URL(location.href).searchParams.get("v"))) { return true; }
+        } catch (e) {}
+        return ["shorts", "live", "embed", "v"].indexOf(segments[0]) >= 0
+            && validID(segments[1]);
     }
 
     // The Bluesky post rkey from /profile/<author>/post/<rkey>, or null — mirrors

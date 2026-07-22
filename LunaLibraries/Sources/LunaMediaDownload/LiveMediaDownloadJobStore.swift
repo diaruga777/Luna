@@ -42,7 +42,15 @@ final class JobStore {
         directory.appendingPathComponent(fileName)
     }
 
+    static func stagingURL(fileName: String) -> URL {
+        directory.appendingPathComponent(fileName)
+    }
+
     static func thumbnailURL(fileName: String) -> URL {
+        directory.appendingPathComponent(fileName)
+    }
+
+    static func resumeDataURL(fileName: String) -> URL {
         directory.appendingPathComponent(fileName)
     }
 
@@ -128,6 +136,29 @@ final class JobStore {
             if let thumbnailFileName = job.thumbnailFileName {
                 try? fileManager.removeItem(at: Self.thumbnailURL(fileName: thumbnailFileName))
             }
+            if let resumeDataFileName = job.resumeDataFileName {
+                try? fileManager.removeItem(at: Self.resumeDataURL(fileName: resumeDataFileName))
+            }
         }
+    }
+
+    func saveResumeData(_ data: Data, for jobID: String) -> String? {
+        let fileName = "\(jobID).resumeData"
+        do {
+            try data.write(to: Self.resumeDataURL(fileName: fileName), options: .atomic)
+            return fileName
+        } catch {
+            return nil
+        }
+    }
+
+    func resumeData(for job: LiveMediaDownloadJob) -> Data? {
+        guard let fileName = job.resumeDataFileName else { return nil }
+        return try? Data(contentsOf: Self.resumeDataURL(fileName: fileName))
+    }
+
+    func removeResumeData(for job: LiveMediaDownloadJob) {
+        guard let fileName = job.resumeDataFileName else { return }
+        try? FileManager.default.removeItem(at: Self.resumeDataURL(fileName: fileName))
     }
 }

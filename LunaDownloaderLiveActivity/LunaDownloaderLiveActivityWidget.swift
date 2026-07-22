@@ -163,7 +163,7 @@ private struct ActivityControlButton: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel download")
-        case .suspended:
+        case .suspended, .waiting:
             Button(intent: ResumeLiveMediaDownloadIntent(jobID: context.attributes.jobID)) {
                 Image(systemName: "arrow.clockwise.circle.fill")
                     .font(.title3)

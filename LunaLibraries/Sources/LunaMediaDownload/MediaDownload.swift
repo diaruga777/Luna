@@ -28,13 +28,50 @@ public struct MediaAsset: Equatable {
     /// consults if that guess (and a second, legacy-convention guess) both
     /// fail to actually download. `nil` for every non-Reddit asset.
     public let dashManifestURL: URL?
+    /// A small static poster that can be displayed while the full media is still
+    /// transferring. Unlike `url`, this is never treated as the downloaded result.
+    public let thumbnailURL: URL?
+    /// Best size advertised by the resolver. The preflight layer verifies with a
+    /// HEAD request when this is absent.
+    public let estimatedByteCount: Int64?
+    /// Optional source-requested clip range. The remote asset is downloaded first,
+    /// then trimmed locally before it becomes durable media.
+    public let timeRange: MediaTimeRange?
 
-    public init(url: URL, kind: Kind, audioURL: URL? = nil, dashManifestURL: URL? = nil) {
+    public init(
+        url: URL,
+        kind: Kind,
+        audioURL: URL? = nil,
+        dashManifestURL: URL? = nil,
+        thumbnailURL: URL? = nil,
+        estimatedByteCount: Int64? = nil,
+        timeRange: MediaTimeRange? = nil
+    ) {
         self.url = url
         self.kind = kind
         self.audioURL = audioURL
         self.dashManifestURL = dashManifestURL
+        self.thumbnailURL = thumbnailURL
+        self.estimatedByteCount = estimatedByteCount
+        self.timeRange = timeRange
     }
+}
+
+/// A half-open media interval. A nil end means "from start to the source end".
+public struct MediaTimeRange: Codable, Equatable, Sendable {
+    public let startSeconds: Double
+    public let endSeconds: Double?
+
+    public init(startSeconds: Double, endSeconds: Double?) {
+        self.startSeconds = max(0, startSeconds)
+        if let endSeconds, endSeconds > self.startSeconds {
+            self.endSeconds = endSeconds
+        } else {
+            self.endSeconds = nil
+        }
+    }
+
+    public var isEffective: Bool { startSeconds > 0 || endSeconds != nil }
 }
 
 /// Why a media download failed, with a user-facing message.
@@ -44,6 +81,7 @@ public enum MediaDownloadError: Error {
     case permissionDenied // Photos add access not granted
     case downloadFailed   // the media file couldn't be fetched
     case saveFailed       // PhotoKit rejected the save
+    case insufficientStorage(requiredBytes: Int64, availableBytes: Int64?)
 
     /// A short message suitable for a toast / status label.
     public var message: String {
@@ -53,6 +91,10 @@ public enum MediaDownloadError: Error {
         case .permissionDenied: return "Allow Photos access in Settings to save media."
         case .downloadFailed: return "Couldn't download the media."
         case .saveFailed: return "Couldn't save to your photo library."
+        case .insufficientStorage(let required, _):
+            let amount = ByteCountFormatter.string(
+                fromByteCount: required, countStyle: .file)
+            return "Not enough storage. Free at least \(amount) and try again."
         }
     }
 }
@@ -62,7 +104,9 @@ public enum MediaDownloadError: Error {
 /// list row's long-press menu) both gate on this.
 public enum MediaDownloadablePlatform {
     /// The platforms whose posts expose downloadable still/gif/video media.
-    public static let supported: Set<ContentPlatform> = [.x, .instagram, .tiktok, .facebook, .reddit]
+    public static let supported: Set<ContentPlatform> = [
+        .x, .instagram, .tiktok, .facebook, .reddit, .youtube,
+    ]
 
     /// Whether `urlString` is a post on a platform we can pull media from.
     public static func supports(_ urlString: String) -> Bool {

@@ -66,6 +66,8 @@ public enum AppNamePlatform {
             return "Respond with a single line for the Reddit post on screen, in the exact form \"subreddit ; title ; author\" (the subreddit, then \" ; \", then the post title, then \" ; \", then the author). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .x, .tiktok, .instagram, .facebook:
             return "Respond with a single line for the post on screen as \"handle ; phrase\" — the author handle, then \" ; \", then a short EXACT quote (5–10 words copied verbatim) from the post's text. If the post's date or time is visible, append \" ; \" and that date (e.g. \"Jun 14, 2026\"). If nothing identifiable is on screen, respond with exactly \"none\"."
+        case .youtube:
+            return nil
         }
     }
 

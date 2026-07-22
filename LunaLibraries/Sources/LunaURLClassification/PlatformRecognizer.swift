@@ -79,6 +79,7 @@ public enum PlatformRecognizer {
         tiktok,
         instagram,
         facebook,
+        youtube,
     ]
 
     /// Recognizes `urlString` as a platform URL, or nil for an ordinary
@@ -208,5 +209,33 @@ public enum PlatformRecognizer {
             }
             return nil
         })
+
+    /// YouTube videos: long/mobile/no-cookie watch URLs, shorts/live/embed paths,
+    /// youtu.be short links, and `/clip/<id>` range links. Clip URLs deliberately
+    /// have no item id until their public page reveals the underlying video.
+    public static let youtube = PlatformRule(
+        platform: .youtube,
+        hosts: ["youtube.com", "youtube-nocookie.com", "youtu.be"],
+        recognizes: { youtubeVideoID($0) != nil || $0.segments.first == "clip" },
+        itemID: { youtubeVideoID($0) })
+
+    private static func youtubeVideoID(_ parts: PlatformURLParts) -> String? {
+        func valid(_ value: String?) -> String? {
+            guard let value, value.count == 11,
+                  value.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+            else { return nil }
+            return value
+        }
+        if parts.host == "youtu.be" { return valid(parts.segments.first) }
+        if let queryID = parts.query.first(where: { $0.name == "v" })?.value,
+           let validID = valid(queryID) {
+            return validID
+        }
+        guard let first = parts.segments.first,
+              ["shorts", "live", "embed", "v"].contains(first),
+              parts.segments.count > 1
+        else { return nil }
+        return valid(parts.segments[1])
+    }
 
 }

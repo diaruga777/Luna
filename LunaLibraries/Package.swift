@@ -88,7 +88,10 @@ let package = Package(
         .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaMail", "LunaSend", "LunaAppConfig", "LunaHTMLClassification", "LunaModels", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaDesignSystem", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem", "LunaAppConfig", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaMediaDownload", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage"]),
+        .target(
+            name: "LunaMediaDownload",
+            dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage"],
+            resources: [.process("Resources")]),
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
         .target(name: "LunaReaderEngine", dependencies: ["LunaModels"]),
         // Offline speech rendering (AVSpeechSynthesizer.write -> PCM) + a long-lived

@@ -13,6 +13,7 @@ import Foundation
 ///   • TikTok — the page's `__UNIVERSAL_DATA_FOR_REHYDRATION__` JSON
 ///              (`playAddr` video, or `imagePost` photo carousel).
 ///   • Instagram — the post/embed HTML (`video_url` / `display_url` / og tags).
+///   • YouTube — public watch/embed player JSON (progressive MP4 with audio).
 /// Network fetching is injectable so the per-platform PARSERS can be unit-tested
 /// against fixtures without hitting the network.
 public struct SocialMediaResolver: SocialMediaResolving {
@@ -36,6 +37,8 @@ public struct SocialMediaResolver: SocialMediaResolving {
             return await resolveFacebook(url: url)
         case .reddit:
             return await resolveReddit(url: url, itemID: recognized.itemID)
+        case .youtube:
+            return await YouTubeMediaResolver(fetch: fetch).resolveAssets(for: url)
         default:
             return []
         }
@@ -144,7 +147,9 @@ public struct SocialMediaResolver: SocialMediaResolving {
         if let videoURL = OpenGraphMediaParser.content(named: "og:video", in: html)
             ?? OpenGraphMediaParser.content(named: "og:video:secure_url", in: html),
            let url = URL(string: videoURL) {
-            return [MediaAsset(url: url, kind: .video)]
+            let poster = OpenGraphMediaParser.content(named: "og:image", in: html)
+                .flatMap(URL.init(string:))
+            return [MediaAsset(url: url, kind: .video, thumbnailURL: poster)]
         }
         return []
     }
@@ -301,8 +306,12 @@ public enum XMediaParser {
             let assets = all.compactMap { item -> MediaAsset? in
                 guard let urlString = item["url"] as? String, let url = URL(string: urlString) else { return nil }
                 let type = (item["type"] as? String)?.lowercased() ?? "photo"
+                let thumbnail = (item["thumbnail_url"] as? String)
+                    .flatMap(URL.init(string:))
                 // Twitter GIFs and videos are both mp4 files → save as video.
-                return MediaAsset(url: url, kind: type == "photo" ? .image : .video)
+                return MediaAsset(
+                    url: url, kind: type == "photo" ? .image : .video,
+                    thumbnailURL: thumbnail)
             }
             if !assets.isEmpty { return assets }
         }
@@ -344,7 +353,11 @@ public enum TikTokMediaParser {
             let address = (video["playAddr"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                 ?? (video["downloadAddr"] as? String)
             if let address, let url = URL(string: address) {
-                return [MediaAsset(url: url, kind: .video)]
+                let thumbnail = ["cover", "originCover", "dynamicCover"]
+                    .compactMap { video[$0] as? String }
+                    .compactMap(URL.init(string:))
+                    .first
+                return [MediaAsset(url: url, kind: .video, thumbnailURL: thumbnail)]
             }
         }
         return []
@@ -406,7 +419,9 @@ public enum InstagramMediaParser {
     private static func asset(fromNode node: [String: Any]) -> MediaAsset? {
         let isVideo = (node["is_video"] as? Bool) ?? (node["__typename"] as? String == "GraphVideo")
         if isVideo, let videoURL = node["video_url"] as? String, let url = URL(string: videoURL) {
-            return MediaAsset(url: url, kind: .video)
+            return MediaAsset(
+                url: url, kind: .video,
+                thumbnailURL: (node["display_url"] as? String).flatMap(URL.init(string:)))
         }
         if let displayURL = node["display_url"] as? String, let url = URL(string: displayURL) {
             return MediaAsset(url: url, kind: .image)
@@ -450,13 +465,15 @@ public enum InstagramMediaParser {
     }
 
     public static func assets(fromHTML html: String) -> [MediaAsset] {
+        let poster = OpenGraphMediaParser.content(named: "og:image", in: html)
+            .flatMap { URL(string: unescape($0)) }
         // Videos / reels first.
         for pattern in [#""video_url":"(.*?)""#,
                         #"property="og:video" content="(.*?)""#,
                         #"property="og:video:secure_url" content="(.*?)""#] {
             if let raw = firstGroup(in: html, pattern: pattern),
                let url = URL(string: unescape(raw)) {
-                return [MediaAsset(url: url, kind: .video)]
+                return [MediaAsset(url: url, kind: .video, thumbnailURL: poster)]
             }
         }
         // Still images.
@@ -506,6 +523,8 @@ public enum FacebookMediaParser {
     }
 
     public static func assets(fromHTML html: String) -> [MediaAsset] {
+        let poster = OpenGraphMediaParser.content(named: "og:image", in: html)
+            .flatMap { URL(string: unescape($0)) }
         // Playable video URL, HD first. Facebook uses several key names across its
         // page variants; try them in quality order. Values are JSON string literals
         // with escaped slashes / ampersands.
@@ -513,7 +532,7 @@ public enum FacebookMediaParser {
                     "browser_native_sd_url", "playable_url", "sd_src"] {
             if let raw = firstGroup(in: html, pattern: "\"\(key)\":\"(.*?)\""),
                let url = URL(string: unescape(raw)) {
-                return [MediaAsset(url: url, kind: .video)]
+                return [MediaAsset(url: url, kind: .video, thumbnailURL: poster)]
             }
         }
         // Open Graph video as a last resort. Deliberately ignore `og:image`: for
@@ -521,7 +540,7 @@ public enum FacebookMediaParser {
         for property in ["og:video", "og:video:secure_url", "og:video:url"] {
             if let raw = OpenGraphMediaParser.content(named: property, in: html),
                let url = URL(string: unescape(raw)) {
-                return [MediaAsset(url: url, kind: .video)]
+                return [MediaAsset(url: url, kind: .video, thumbnailURL: poster)]
             }
         }
         return []
@@ -559,12 +578,16 @@ public enum RedditMediaParser {
         else { return nil }
 
         let hasAudio = redditVideo["has_audio"] as? Bool ?? false
-        guard hasAudio else { return MediaAsset(url: videoURL, kind: .video) }
+        let thumbnail = (post["thumbnail"] as? String).flatMap(URL.init(string:))
+        guard hasAudio else {
+            return MediaAsset(url: videoURL, kind: .video, thumbnailURL: thumbnail)
+        }
         let dashManifestURL = (redditVideo["dash_url"] as? String).flatMap { URL(string: unescape($0)) }
         return MediaAsset(
             url: videoURL, kind: .video,
             audioURL: audioURL(forVideoURL: videoURL),
-            dashManifestURL: dashManifestURL)
+            dashManifestURL: dashManifestURL,
+            thumbnailURL: thumbnail)
     }
 
     /// Reddit consistently serves a video's audio track at this sibling path

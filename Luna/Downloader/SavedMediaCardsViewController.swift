@@ -1257,17 +1257,26 @@ final class TemporaryPasteboardMediaCardContentViewController: CardContentViewCo
 
 // MARK: - Undownloaded card content
 
-/// Card content for an item whose media hasn't been fetched yet: a large
-/// download button, replaced by a progress ring while the Downloader-owned job
-/// runs. Progress arrives via `.downloaderJobProgressChanged`, observed here
-/// directly (the notification carries the source URL, and this controller knows
-/// its own), so the host doesn't route per-card updates.
+/// Card content for an item whose media hasn't been fetched yet. During a job it
+/// becomes a real downloading card: early poster, explicit status, and the same
+/// moon-horizon progress bar used by the Live Activity/footer.
 private final class UndownloadedMediaCardContentViewController: CardContentViewController {
 
     private let sourceURLString: String
     private let download: () -> Void
     private let button = UIButton(configuration: .plain())
-    private let progressRing = CircularDownloadProgressView()
+    private let poster = UIImageView()
+    private let posterDim = UIView()
+    private let statusLabel = UILabel()
+    private let progress = MoonHorizonProgressBar()
+    private lazy var statusStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [statusLabel, progress])
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.spacing = 10
+        return stack
+    }()
+    private var loadedThumbnailFileName: String?
 
     init(item: SavedMediaItem, download: @escaping () -> Void) {
         self.sourceURLString = item.sourceURLString
@@ -1278,6 +1287,17 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
+
+        poster.contentMode = .scaleAspectFit
+        poster.clipsToBounds = true
+        poster.isHidden = true
+        poster.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(poster)
+
+        posterDim.backgroundColor = UIColor.black.withAlphaComponent(0.24)
+        posterDim.isHidden = true
+        posterDim.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(posterDim)
 
         var configuration = UIButton.Configuration.plain()
         configuration.image = UIImage(systemName: "arrow.down.circle.dotted")
@@ -1291,23 +1311,43 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
 
-        progressRing.isHidden = true
-        progressRing.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(progressRing)
+        statusLabel.text = "Downloading"
+        statusLabel.textAlignment = .center
+        statusLabel.textColor = .white
+        statusLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        statusLabel.layer.shadowColor = UIColor.black.cgColor
+        statusLabel.layer.shadowOpacity = 0.45
+        statusLabel.layer.shadowRadius = 3
+
+        progress.translatesAutoresizingMaskIntoConstraints = false
+        statusStack.isHidden = true
+        statusStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(statusStack)
 
         NSLayoutConstraint.activate([
+            poster.topAnchor.constraint(equalTo: view.topAnchor),
+            poster.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            poster.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            poster.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            posterDim.topAnchor.constraint(equalTo: view.topAnchor),
+            posterDim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            posterDim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            posterDim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             button.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            progressRing.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            progressRing.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            progressRing.widthAnchor.constraint(equalToConstant: 44),
-            progressRing.heightAnchor.constraint(equalToConstant: 44),
+            statusStack.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor, constant: 28),
+            statusStack.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor, constant: -28),
+            statusStack.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
+            progress.heightAnchor.constraint(equalToConstant: 20),
         ])
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleJobProgressChanged(_:)),
             name: .downloaderJobProgressChanged, object: nil)
-        updateProgress(LiveMediaDownloadManager.shared.currentDownloadProgress(
+        apply(LiveMediaDownloadManager.shared.currentDownloadSnapshot(
             forSourceURLString: sourceURLString))
     }
 
@@ -1315,69 +1355,46 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
         guard let urlString = notification.userInfo?["sourceURLString"] as? String,
               urlString == sourceURLString
         else { return }
-        let progress = notification.userInfo?["progress"] as? Double
+        let snapshot = notification.userInfo?["snapshot"] as? DownloaderJobSnapshot
         DispatchQueue.main.async { [weak self] in
-            self?.updateProgress(progress)
+            self?.apply(snapshot)
         }
     }
 
-    private func updateProgress(_ progress: Double?) {
-        if let progress {
-            progressRing.progress = progress
-            progressRing.isHidden = false
-            button.isHidden = true
-        } else {
-            progressRing.isHidden = true
+    private func apply(_ snapshot: DownloaderJobSnapshot?) {
+        guard let snapshot else {
+            statusStack.isHidden = true
+            posterDim.isHidden = true
             button.isHidden = false
+            return
         }
-    }
-}
 
-/// A ring that fills clockwise from 0 to `progress` (0...1). Track + progress
-/// arc as two `CAShapeLayer`s so updates are a cheap `strokeEnd` animation.
-private final class CircularDownloadProgressView: UIView {
-    var progress: Double = 0 {
-        didSet {
-            let clamped = min(1, max(0, progress))
-            let animation = CABasicAnimation(keyPath: "strokeEnd")
-            animation.fromValue = progressLayer.presentation()?.strokeEnd ?? oldValue
-            animation.toValue = clamped
-            animation.duration = 0.2
-            progressLayer.strokeEnd = clamped
-            progressLayer.add(animation, forKey: "strokeEnd")
+        statusLabel.text = snapshot.phase == .downloading
+            ? "Downloading"
+            : snapshot.message
+        statusLabel.textColor = snapshot.phase == .failed ? .systemRed : .white
+        progress.isHidden = snapshot.phase == .failed
+        progress.setProgress(Float(snapshot.progress), animated: true)
+        statusStack.isHidden = false
+        button.isHidden = snapshot.phase != .failed
+
+        guard let fileName = snapshot.thumbnailFileName,
+              fileName != loadedThumbnailFileName
+        else {
+            posterDim.isHidden = poster.isHidden
+            return
         }
-    }
-
-    private let trackLayer = CAShapeLayer()
-    private let progressLayer = CAShapeLayer()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .clear
-        isUserInteractionEnabled = false
-        trackLayer.fillColor = UIColor.clear.cgColor
-        trackLayer.strokeColor = LunaColors.secondaryText.withAlphaComponent(0.35).cgColor
-        trackLayer.lineWidth = 3
-        progressLayer.fillColor = UIColor.clear.cgColor
-        progressLayer.strokeColor = LunaColors.primaryText.cgColor
-        progressLayer.lineWidth = 3
-        progressLayer.lineCap = .round
-        progressLayer.strokeEnd = 0
-        layer.addSublayer(trackLayer)
-        layer.addSublayer(progressLayer)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let radius = min(bounds.width, bounds.height) / 2 - 2
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let path = UIBezierPath(
-            arcCenter: center, radius: radius,
-            startAngle: -.pi / 2, endAngle: .pi * 1.5,
-            clockwise: true)
-        trackLayer.path = path.cgPath
-        progressLayer.path = path.cgPath
+        loadedThumbnailFileName = fileName
+        let path = LiveMediaDownloadAssets.thumbnailURL(fileName: fileName).path
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let image = UIImage(contentsOfFile: path)?.preparingForDisplay()
+            DispatchQueue.main.async {
+                guard let self, self.loadedThumbnailFileName == fileName,
+                      let image else { return }
+                self.poster.image = image
+                self.poster.isHidden = false
+                self.posterDim.isHidden = false
+            }
+        }
     }
 }

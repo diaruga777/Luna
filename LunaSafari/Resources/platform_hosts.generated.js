@@ -23,5 +23,10 @@ self.__LUNA_PLATFORM_HOSTS = {
     "facebook.com",
     "fb.watch",
     "fb.com",
+  ],
+  youtube: [
+    "youtube.com",
+    "youtube-nocookie.com",
+    "youtu.be",
   ]
 };

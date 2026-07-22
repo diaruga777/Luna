@@ -133,6 +133,15 @@ final class PlatformHostsJSFixtureParityTests: XCTestCase {
         assertParity("https://instagr.am/p/AbC123/")
     }
 
+    func testYouTubeURLs() {
+        assertParity("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        assertParity("https://m.youtube.com/shorts/dQw4w9WgXcQ?t=30")
+        assertParity("https://youtu.be/dQw4w9WgXcQ?t=30")
+        assertParity("https://www.youtube.com/clip/UgkxOpaqueClipToken")
+        assertParity("https://www.youtube.com/")
+        assertParity("https://www.youtube.com/channel/UCexample")
+    }
+
     func testFacebookURLs() {
         assertParity("https://www.facebook.com/watch/?v=123")
         assertParity("https://facebook.com/reel/456")

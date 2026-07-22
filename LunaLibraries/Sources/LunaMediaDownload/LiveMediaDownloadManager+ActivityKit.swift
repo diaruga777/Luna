@@ -25,6 +25,7 @@ private extension LiveMediaDownloadAttributes.ContentState.Phase {
         switch jobPhase {
         case .resolving: self = .resolving
         case .downloading: self = .downloading
+        case .waiting: self = .waiting
         case .suspended: self = .suspended
         case .saving: self = .saving
         case .finished: self = .finished
@@ -81,6 +82,12 @@ extension LiveMediaDownloadManager {
             progress: 0,
             thumbnailFileName: nil,
             fileExtension: nil,
+            expectedByteCount: nil,
+            receivedByteCount: nil,
+            resumeDataFileName: nil,
+            rangeStartSeconds: nil,
+            rangeEndSeconds: nil,
+            resolvedVideoID: nil,
             errorMessage: message,
             errorKind: errorKind,
             resolveAttempts: 0,

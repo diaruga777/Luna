@@ -33,6 +33,13 @@ public struct MediaDownloadService: MediaDownloading {
 
         let assets = await resolver.resolveAssets(for: url)
         guard let asset = assets.first else { throw MediaDownloadError.noMedia }
+        let expected = await MediaDownloadPreflight.expectedByteCount(
+            for: asset, sourceURL: url)
+        if let error = MediaDownloadPreflight.storageError(
+            expectedByteCount: expected,
+            requiresProcessingCopy: asset.timeRange?.isEffective == true) {
+            throw error
+        }
 
         let referer = MediaDownloadService.referer(for: url)
         let fileURL: URL
@@ -65,6 +72,13 @@ public struct MediaDownloadService: MediaDownloading {
             title: title)
         let assets = await resolver.resolveAssets(for: url)
         guard let asset = assets.first else { throw MediaDownloadError.noMedia }
+        let expected = await MediaDownloadPreflight.expectedByteCount(
+            for: asset, sourceURL: url)
+        if let error = MediaDownloadPreflight.storageError(
+            expectedByteCount: expected,
+            requiresProcessingCopy: asset.timeRange?.isEffective == true) {
+            throw error
+        }
 
         let referer = MediaDownloadService.referer(for: url)
         let fileURL: URL
@@ -117,6 +131,13 @@ public struct MediaDownloadService: MediaDownloading {
         // is deferred until the user taps "Save to Photos".
         let assets = await resolver.resolveAssets(for: url)
         guard let asset = assets.first else { throw MediaDownloadError.noMedia }
+        let expected = await MediaDownloadPreflight.expectedByteCount(
+            for: asset, sourceURL: url)
+        if let error = MediaDownloadPreflight.storageError(
+            expectedByteCount: expected,
+            requiresProcessingCopy: asset.timeRange?.isEffective == true) {
+            throw error
+        }
 
         let referer = MediaDownloadService.referer(for: url)
         do {
@@ -139,7 +160,7 @@ public struct MediaDownloadService: MediaDownloading {
         }
     }
 
-    /// TikTok and Reddit media CDNs require their site's Referer; others download bare.
+    /// TikTok, Reddit, and YouTube media CDNs receive their site's Referer.
     /// `url` is always the already-recognized source post URL (every caller gates on
     /// `MediaDownloadablePlatform.supports` first), so an anchored host-suffix match
     /// is exactly as reliable here as the old substring check and doesn't risk a
@@ -149,6 +170,9 @@ public struct MediaDownloadService: MediaDownloading {
         if HostMatching.hostSuffixMatches(host, "tiktok.com") { return "https://www.tiktok.com/" }
         if HostMatching.hostSuffixMatches(host, anyOf: ["reddit.com", "redd.it"]) {
             return "https://www.reddit.com/"
+        }
+        if PlatformRecognizer.recognize(url.absoluteString)?.platform == .youtube {
+            return "https://www.youtube.com/"
         }
         return nil
     }
@@ -162,13 +186,24 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
     public static func download(
         _ asset: MediaAsset, referer: String?, onProgress: @escaping (Double) -> Void
     ) async throws -> URL {
+        let downloaded: URL
         if let audioURL = asset.audioURL {
-            return try await downloadAndMux(
+            downloaded = try await downloadAndMux(
                 videoURL: asset.url, audioURL: audioURL, dashManifestURL: asset.dashManifestURL,
                 referer: referer, onProgress: onProgress)
+        } else {
+            let downloader = MediaFileDownloader(asset: asset, onProgress: onProgress)
+            downloaded = try await downloader.run(referer: referer)
         }
-        let downloader = MediaFileDownloader(asset: asset, onProgress: onProgress)
-        return try await downloader.run(referer: referer)
+        do {
+            let final = try await MediaVideoTrimmer.trimIfNeeded(
+                fileURL: downloaded, timeRange: asset.timeRange)
+            if final != downloaded { try? FileManager.default.removeItem(at: downloaded) }
+            return final
+        } catch {
+            try? FileManager.default.removeItem(at: downloaded)
+            throw error
+        }
     }
 
     /// Reddit hosts video and audio as two separate files — downloads the
@@ -226,7 +261,11 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
         if let referer { request.setValue(referer, forHTTPHeaderField: "Referer") }
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
-            session.downloadTask(with: request).resume()
+            let task = session.downloadTask(with: request)
+            if let expected = asset.estimatedByteCount, expected > 0 {
+                task.countOfBytesClientExpectsToReceive = expected
+            }
+            task.resume()
         }
     }
 

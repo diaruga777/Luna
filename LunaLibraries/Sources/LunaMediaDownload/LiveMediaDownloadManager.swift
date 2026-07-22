@@ -37,7 +37,7 @@ enum LiveMediaDownloadResumePolicy {
         phase: LiveMediaDownloadJob.Phase, hasActiveTask: Bool
     ) -> Bool {
         guard !hasActiveTask else { return false }
-        return phase == .resolving || phase == .downloading
+        return phase == .resolving || phase == .downloading || phase == .waiting
     }
 }
 
@@ -70,6 +70,7 @@ extension Notification.Name {
 public enum DownloaderJobPhase: String {
     case resolving
     case downloading
+    case waiting
     case suspended
     case saving
     case finished
@@ -142,6 +143,9 @@ public final class LiveMediaDownloadManager: NSObject {
         configuration.sharedContainerIdentifier = AppConfig.appGroupID
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
 
@@ -196,6 +200,14 @@ public final class LiveMediaDownloadManager: NSObject {
 
         let ownership = ownership ?? (MediaAutoDownloader.isRunningInDownloader
             ? .downloader : .invokingApp)
+        if let storageError = MediaDownloadPreflight.storageError(
+            expectedByteCount: nil,
+            directory: JobStore.directory
+        ) {
+            await startFailedActivity(
+                urlString: urlString, title: title, message: storageError.message)
+            return nil
+        }
         let readingItem = ReadingListStore.shared.item(forURLString: urlString)
         if ownership == .downloader {
             let savedItem = try? SavedMediaStore.shared.ensureUndownloaded(
@@ -297,6 +309,12 @@ public final class LiveMediaDownloadManager: NSObject {
             progress: 0,
             thumbnailFileName: nil,
             fileExtension: nil,
+            expectedByteCount: nil,
+            receivedByteCount: nil,
+            resumeDataFileName: nil,
+            rangeStartSeconds: nil,
+            rangeEndSeconds: nil,
+            resolvedVideoID: nil,
             errorMessage: nil,
             errorKind: nil,
             resolveAttempts: 0,
@@ -304,6 +322,11 @@ public final class LiveMediaDownloadManager: NSObject {
             suspendDeadline: nil,
             ownership: gated.ownership
         )
+        if let youtube = YouTubeLink(url: gated.sourceURL) {
+            job.resolvedVideoID = youtube.videoID
+            job.rangeStartSeconds = youtube.timeRange?.startSeconds
+            job.rangeEndSeconds = youtube.timeRange?.endSeconds
+        }
         guard let resolve = Self.resolveRequest(for: gated.sourceURL) else {
             store.upsert(job)
             await failJob(job, message: MediaDownloadError.unsupported.message)
@@ -315,6 +338,9 @@ public final class LiveMediaDownloadManager: NSObject {
         // process death right after this point still has a real transfer to resume —
         // never just a persisted job stuck at "resolving" forever.
         startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+        if let thumbnailURL = YouTubeLink(url: gated.sourceURL)?.thumbnailURL {
+            Task { await self.fetchAndPublishThumbnail(from: thumbnailURL, jobID: job.id) }
+        }
         if job.isDownloaderOwned {
             postDownloaderJobProgress(job: job, progress: 0)
         }
@@ -323,39 +349,75 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func startMediaDownload(for job: LiveMediaDownloadJob, asset: MediaAsset) {
-        guard let sourceURL = URL(string: job.sourceURLString) else { return }
-        var job = job
+        Task { await prepareAndStartMediaDownload(for: job, asset: asset) }
+    }
+
+    /// Runs the two checks that need a resolved asset: determine its actual size
+    /// and verify storage before creating the background transfer. Poster fetching
+    /// runs independently so the card/Live Activity can become visual as soon as
+    /// the resolver exposes a thumbnail.
+    private func prepareAndStartMediaDownload(
+        for persistedJob: LiveMediaDownloadJob, asset: MediaAsset
+    ) async {
+        guard let sourceURL = URL(string: persistedJob.sourceURLString),
+              var job = store.job(id: persistedJob.id), !job.isTerminal
+        else { return }
+
+        let thumbnailURL = asset.thumbnailURL ?? (asset.kind == .video ? nil : asset.url)
+        if let thumbnailURL, job.thumbnailFileName == nil {
+            Task { await self.fetchAndPublishThumbnail(from: thumbnailURL, jobID: job.id) }
+        }
+
+        let expected = await MediaDownloadPreflight.expectedByteCount(
+            for: asset, sourceURL: sourceURL)
+        guard let current = store.job(id: job.id), !current.isTerminal else { return }
+        job = current
+        if let storageError = MediaDownloadPreflight.storageError(
+            expectedByteCount: expected,
+            directory: JobStore.directory,
+            requiresProcessingCopy: asset.timeRange?.isEffective == true
+        ) {
+            await failJob(job, message: storageError.message)
+            return
+        }
+
         job.assetURLString = asset.url.absoluteString
         job.mediaKind = asset.kind.liveActivityKind
         job.fileExtension = MediaFileDownloader.fileExtension(for: asset, mimeType: nil)
+        job.expectedByteCount = expected
+        job.rangeStartSeconds = asset.timeRange?.startSeconds
+        job.rangeEndSeconds = asset.timeRange?.endSeconds
         job.phase = .downloading
+        job.errorMessage = nil
         store.upsert(job)
-        Task { await updateActivity(for: job) }
+        await updateActivity(for: job)
         if job.isDownloaderOwned {
             postDownloaderJobProgress(job: job, progress: job.progress)
         }
 
         if let audioURL = asset.audioURL {
             startRedditMuxedDownload(
-                for: job, videoURL: asset.url, audioURL: audioURL, dashManifestURL: asset.dashManifestURL)
+                for: job, videoURL: asset.url, audioURL: audioURL,
+                dashManifestURL: asset.dashManifestURL)
             return
-        }
-
-        if asset.kind != .video {
-            Task {
-                var updated = job
-                updated.thumbnailFileName = await makeThumbnail(from: asset.url, jobID: job.id)
-                store.upsert(updated)
-                await updateActivity(for: updated)
-                if updated.isDownloaderOwned {
-                    postDownloaderJobProgress(job: updated, progress: updated.progress)
-                }
-            }
         }
 
         startTask(
             Self.mediaAssetRequest(assetURL: asset.url, sourceURL: sourceURL),
-            jobID: job.id, role: .media, attempt: job.mediaAttempts)
+            jobID: job.id, role: .media, attempt: job.mediaAttempts,
+            expectedByteCount: expected)
+    }
+
+    private func fetchAndPublishThumbnail(from url: URL, jobID: String) async {
+        guard let fileName = await makeThumbnail(from: url, jobID: jobID),
+              var job = store.job(id: jobID), !job.isTerminal
+        else { return }
+        job.thumbnailFileName = fileName
+        store.upsert(job)
+        await updateActivity(for: job)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(job: job, progress: job.progress)
+        }
     }
 
     public func attachBackgroundCompletionHandler(_ completionHandler: @escaping () -> Void) {
@@ -366,23 +428,38 @@ public final class LiveMediaDownloadManager: NSObject {
 
     public func resumeLiveActivities() {
         Task {
-            await reapExpiredSuspensions()
-            let activeJobIDs = await activeTaskJobIDs()
-            for job in store.jobs().filter({ !$0.isTerminal }) {
-                if LiveMediaDownloadResumePolicy.shouldRestart(
-                    phase: job.phase,
-                    hasActiveTask: activeJobIDs.contains(job.id)
-                ) {
-                    await restartTransfer(for: job)
-                }
-                // Restart can reject an invalid persisted URL and remove its job;
-                // never recreate UI/activity state from the stale pre-repair copy.
-                guard let current = store.job(id: job.id), !current.isTerminal else { continue }
-                await updateActivity(for: current)
-                if current.isDownloaderOwned {
-                    postDownloaderJobProgress(job: current, progress: current.progress)
-                }
+            await resumeUnfinishedDownloads()
+        }
+    }
+
+    /// Restarts every persisted transfer that no longer has a live background
+    /// task. Used on launch/foreground and by the overnight processing job.
+    public func resumeUnfinishedDownloads() async {
+        await reapExpiredSuspensions()
+        let activeJobIDs = await activeTaskJobIDs()
+        for job in store.jobs().filter({ !$0.isTerminal }) {
+            if job.phase == .saving {
+                resumeFinalization(for: job)
+                continue
             }
+            if LiveMediaDownloadResumePolicy.shouldRestart(
+                phase: job.phase,
+                hasActiveTask: activeJobIDs.contains(job.id)
+            ) {
+                await restartTransfer(for: job)
+            }
+            // Restart can reject an invalid persisted URL and remove its job;
+            // never recreate UI/activity state from the stale pre-repair copy.
+            guard let current = store.job(id: job.id), !current.isTerminal else { continue }
+            await updateActivity(for: current)
+            if current.isDownloaderOwned {
+                postDownloaderJobProgress(job: current, progress: current.progress)
+            }
+        }
+        if AutoDownloadSettings.wifiOnlyDownloads {
+            await resumePendingWiFiDownloads()
+        } else {
+            await startPendingWiFiDownloads(manual: true)
         }
     }
 
@@ -417,7 +494,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 resolve.request, jobID: job.id,
                 role: .resolve, attempt: job.resolveAttempts)
 
-        case .downloading:
+        case .downloading, .waiting:
             guard let assetURLString = job.assetURLString,
                   let assetURL = URL(string: assetURLString),
                   let sourceURL = URL(string: job.sourceURLString)
@@ -436,11 +513,28 @@ public final class LiveMediaDownloadManager: NSObject {
                 await restartTransfer(for: job)
                 return
             }
+            if let storageError = MediaDownloadPreflight.storageError(
+                expectedByteCount: job.expectedByteCount,
+                directory: JobStore.directory,
+                requiresProcessingCopy: job.rangeStartSeconds != nil
+                    || job.rangeEndSeconds != nil
+            ) {
+                await failJob(job, message: storageError.message)
+                return
+            }
             job.errorMessage = nil
+            job.phase = .downloading
             store.upsert(job)
-            startTask(
-                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL), jobID: job.id,
-                role: .media, attempt: job.mediaAttempts)
+            if let resumeData = store.resumeData(for: job) {
+                startTask(
+                    resumeData: resumeData, jobID: job.id, role: .media,
+                    attempt: job.mediaAttempts, expectedByteCount: job.expectedByteCount)
+            } else {
+                startTask(
+                    Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                    jobID: job.id, role: .media, attempt: job.mediaAttempts,
+                    expectedByteCount: job.expectedByteCount)
+            }
 
         case .suspended, .saving, .finished, .failed:
             return
@@ -479,6 +573,33 @@ public final class LiveMediaDownloadManager: NSObject {
         return job.progress
     }
 
+    public func currentDownloadSnapshot(
+        forSourceURLString urlString: String
+    ) -> DownloaderJobSnapshot? {
+        guard let job = store.job(forSourceURLString: urlString), job.isDownloaderOwned else {
+            return nil
+        }
+        return job.downloaderSnapshot
+    }
+
+    /// Waits for a Downloader-owned background/Live Activity job to materialize
+    /// its durable file. Used only for App Intent downloads below the inline size
+    /// threshold; the transfer itself still runs through the same background
+    /// URLSession state machine as larger handoffs.
+    public func waitForDownloaderResult(
+        forSourceURLString urlString: String
+    ) async -> SavedMediaItem? {
+        while !Task.isCancelled {
+            if let item = SavedMediaStore.shared.existingDownloadedItem(
+                forURLString: urlString) {
+                return item
+            }
+            guard store.job(forSourceURLString: urlString) != nil else { return nil }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        return nil
+    }
+
     public func suspend(jobID: String) async {
         await reapExpiredSuspensions()
         guard var job = store.job(id: jobID),
@@ -492,7 +613,7 @@ public final class LiveMediaDownloadManager: NSObject {
         if job.isDownloaderOwned {
             postDownloaderJobProgress(job: job, progress: job.progress)
         }
-        await cancelTasks(jobID: jobID)
+        await suspendTasks(jobID: jobID)
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(Self.suspensionGracePeriod * 1_000_000_000))
@@ -501,7 +622,13 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     public func resume(jobID: String) async {
-        guard var job = store.job(id: jobID), job.phase == .suspended else { return }
+        guard var job = store.job(id: jobID),
+              job.phase == .suspended || job.phase == .waiting
+        else { return }
+        if job.phase == .waiting {
+            await restartTransfer(for: job)
+            return
+        }
         if let deadline = job.suspendDeadline, deadline <= Date() {
             await tearDownSuspendedJob(job)
             return
@@ -513,15 +640,31 @@ public final class LiveMediaDownloadManager: NSObject {
         if let assetURLString = job.assetURLString,
            let assetURL = URL(string: assetURLString),
            let sourceURL = URL(string: job.sourceURLString) {
+            if let storageError = MediaDownloadPreflight.storageError(
+                expectedByteCount: job.expectedByteCount,
+                directory: JobStore.directory,
+                requiresProcessingCopy: job.rangeStartSeconds != nil
+                    || job.rangeEndSeconds != nil
+            ) {
+                await failJob(job, message: storageError.message)
+                return
+            }
             job.phase = .downloading
             store.upsert(job)
             await updateActivity(for: job)
             if job.isDownloaderOwned {
                 postDownloaderJobProgress(job: job, progress: job.progress)
             }
-            startTask(
-                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
-                jobID: job.id, role: .media, attempt: job.mediaAttempts)
+            if let resumeData = store.resumeData(for: job) {
+                startTask(
+                    resumeData: resumeData, jobID: job.id, role: .media,
+                    attempt: job.mediaAttempts, expectedByteCount: job.expectedByteCount)
+            } else {
+                startTask(
+                    Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                    jobID: job.id, role: .media, attempt: job.mediaAttempts,
+                    expectedByteCount: job.expectedByteCount)
+            }
         } else if let sourceURL = URL(string: job.sourceURLString),
                   let resolve = Self.resolveRequest(for: sourceURL) {
             job.phase = .resolving
@@ -578,13 +721,39 @@ public final class LiveMediaDownloadManager: NSObject {
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
         if HostMatching.hostSuffixMatches(sourceURL.host?.lowercased() ?? "", "tiktok.com") {
             request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
+        } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .youtube {
+            request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
         }
         return request
     }
 
-    private func startTask(_ request: URLRequest, jobID: String, role: TaskRole, attempt: Int) {
+    private func startTask(
+        _ request: URLRequest,
+        jobID: String,
+        role: TaskRole,
+        attempt: Int,
+        expectedByteCount: Int64? = nil
+    ) {
         let task = session.downloadTask(with: request)
         task.taskDescription = "\(jobID)|\(role.rawValue)|\(attempt)"
+        if let expectedByteCount, expectedByteCount > 0 {
+            task.countOfBytesClientExpectsToReceive = expectedByteCount
+        }
+        task.resume()
+    }
+
+    private func startTask(
+        resumeData: Data,
+        jobID: String,
+        role: TaskRole,
+        attempt: Int,
+        expectedByteCount: Int64?
+    ) {
+        let task = session.downloadTask(withResumeData: resumeData)
+        task.taskDescription = "\(jobID)|\(role.rawValue)|\(attempt)"
+        if let expectedByteCount, expectedByteCount > 0 {
+            task.countOfBytesClientExpectsToReceive = expectedByteCount
+        }
         task.resume()
     }
 
@@ -596,6 +765,43 @@ public final class LiveMediaDownloadManager: NSObject {
                     task.cancel()
                 }
                 continuation.resume()
+            }
+        }
+    }
+
+    /// Pauses download tasks while asking URLSession for resumable state. Resolve
+    /// pages are small and simply cancel; media tasks persist their opaque resume
+    /// blob beside jobs.json before this method returns.
+    private func suspendTasks(jobID: String) async {
+        await withCheckedContinuation { continuation in
+            session.getAllTasks { tasks in
+                let matching = tasks.filter { $0.taskDescription?.hasPrefix("\(jobID)|") == true }
+                guard !matching.isEmpty else {
+                    continuation.resume()
+                    return
+                }
+                let group = DispatchGroup()
+                for task in matching {
+                    guard let downloadTask = task as? URLSessionDownloadTask,
+                          Self.taskParts(task.taskDescription ?? "")?.role == .media
+                    else {
+                        task.cancel()
+                        continue
+                    }
+                    group.enter()
+                    downloadTask.cancel(byProducingResumeData: { resumeData in
+                        if let resumeData,
+                           var job = self.store.job(id: jobID),
+                           let fileName = self.store.saveResumeData(resumeData, for: jobID) {
+                            job.resumeDataFileName = fileName
+                            self.store.upsert(job)
+                        }
+                        group.leave()
+                    })
+                }
+                group.notify(queue: .global(qos: .utility)) {
+                    continuation.resume()
+                }
             }
         }
     }
@@ -618,6 +824,10 @@ public final class LiveMediaDownloadManager: NSObject {
         case facebook
         case facebookShort
         case reddit
+        case youtubeClip
+        case youtubeWatch
+        case youtubePlayer
+        case youtubeEmbed
     }
 
     static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
@@ -667,6 +877,16 @@ public final class LiveMediaDownloadManager: NSObject {
             else { return nil }
             resolveURL = url
             kind = .reddit
+        case .youtube:
+            guard let link = YouTubeLink(url: url) else { return nil }
+            if link.isClip {
+                resolveURL = url
+                kind = .youtubeClip
+            } else {
+                guard let watchURL = link.canonicalWatchURL else { return nil }
+                resolveURL = watchURL
+                kind = .youtubeWatch
+            }
         default:
             return nil
         }
@@ -678,6 +898,8 @@ public final class LiveMediaDownloadManager: NSObject {
             request = SocialMediaResolver.facebookPageRequest(
                 resolveURL, userAgent: MediaDownloadHTTP.desktopBrowserUserAgent,
                 timeoutInterval: 60)
+        } else if kind == .youtubeClip || kind == .youtubeWatch || kind == .youtubeEmbed {
+            request = YouTubeMediaResolver.htmlRequest(resolveURL)
         } else {
             request = URLRequest(url: resolveURL, timeoutInterval: 60)
             request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
@@ -703,6 +925,19 @@ public final class LiveMediaDownloadManager: NSObject {
             return FacebookMediaParser.assets(fromHTML: html).first
         case .reddit:
             return RedditMediaParser.asset(fromListingJSON: data)
+        case .youtubeWatch, .youtubePlayer, .youtubeEmbed:
+            guard let videoID = job.resolvedVideoID
+                ?? URL(string: job.sourceURLString).flatMap(YouTubeLink.init(url:))?.videoID
+            else { return nil }
+            let range = MediaTimeRange(
+                startSeconds: job.rangeStartSeconds ?? 0,
+                endSeconds: job.rangeEndSeconds)
+            return YouTubePlayerResponseParser.asset(
+                from: data,
+                videoID: videoID,
+                timeRange: range.isEffective ? range : nil)
+        case .youtubeClip:
+            return nil
         case nil:
             return nil
         }
@@ -750,6 +985,7 @@ public final class LiveMediaDownloadManager: NSObject {
         guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
+            if http.statusCode == 403, restartExpiredYouTubeMedia(job) { return }
             Task {
                 await retryOrFail(
                     job: job, role: .media, response: response,
@@ -773,13 +1009,11 @@ public final class LiveMediaDownloadManager: NSObject {
         job: LiveMediaDownloadJob, temporaryLocation: URL, fileExtension ext: String, kind: MediaAsset.Kind
     ) {
         var job = job
-        let destination = JobStore.downloadURL(fileName: "\(job.id).\(ext)")
+        let staging = JobStore.stagingURL(fileName: "\(job.id).source.\(ext)")
         do {
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: temporaryLocation, to: destination)
-            if kind == .video, job.thumbnailFileName == nil {
-                job.thumbnailFileName = makeVideoThumbnail(from: destination, jobID: job.id)
-            }
+            try? FileManager.default.removeItem(at: staging)
+            try FileManager.default.moveItem(at: temporaryLocation, to: staging)
+            job.fileExtension = ext
             job.phase = .saving
             job.progress = 1
             store.upsert(job)
@@ -787,9 +1021,51 @@ public final class LiveMediaDownloadManager: NSObject {
             if job.isDownloaderOwned {
                 postDownloaderJobProgress(job: job, progress: 1)
             }
-            Task { await save(job: job, fileURL: destination, kind: kind) }
+            resumeFinalization(for: job)
         } catch {
             Task { await failJob(job, message: MediaDownloadError.downloadFailed.message) }
+        }
+    }
+
+    /// Completes a persisted local post-processing stage. The original transfer
+    /// lives at `.source.<ext>` until any requested trim has successfully produced
+    /// the final file. If termination occurs after the final move, the absence of
+    /// the staging file proves that trimming already completed and prevents a
+    /// timestamp range from being applied twice.
+    private func resumeFinalization(for persistedJob: LiveMediaDownloadJob) {
+        let jobID = persistedJob.id
+        Task {
+            guard var job = self.store.job(id: jobID), job.phase == .saving else { return }
+            let ext = job.fileExtension ?? (job.mediaAssetKind == .video ? "mp4" : "jpg")
+            let staging = JobStore.stagingURL(fileName: "\(job.id).source.\(ext)")
+            let destination = JobStore.downloadURL(fileName: "\(job.id).\(ext)")
+            do {
+                if FileManager.default.fileExists(atPath: staging.path) {
+                    let range = MediaTimeRange(
+                        startSeconds: job.rangeStartSeconds ?? 0,
+                        endSeconds: job.rangeEndSeconds)
+                    let processed = try await MediaVideoTrimmer.trimIfNeeded(
+                        fileURL: staging,
+                        timeRange: job.mediaAssetKind == .video ? range : nil)
+                    try? FileManager.default.removeItem(at: destination)
+                    try FileManager.default.moveItem(at: processed, to: destination)
+                    if processed != staging {
+                        try? FileManager.default.removeItem(at: staging)
+                    }
+                }
+                guard FileManager.default.fileExists(atPath: destination.path) else {
+                    throw MediaDownloadError.downloadFailed
+                }
+                if job.mediaAssetKind == .video, job.thumbnailFileName == nil {
+                    job.thumbnailFileName = makeVideoThumbnail(
+                        from: destination, jobID: job.id)
+                }
+                store.upsert(job)
+                await save(job: job, fileURL: destination, kind: job.mediaAssetKind)
+            } catch {
+                guard let current = self.store.job(id: jobID) else { return }
+                await failJob(current, message: MediaDownloadError.downloadFailed.message)
+            }
         }
     }
 
@@ -878,11 +1154,12 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func finishResolve(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {
-        let job = job
+        var job = job
         guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
             if startNextFacebookResolve(after: job, data: nil) { return }
+            if startNextYouTubeResolve(after: job, data: nil) { return }
             Task {
                 await retryOrFail(
                     job: job, role: .resolve, response: response,
@@ -894,13 +1171,86 @@ public final class LiveMediaDownloadManager: NSObject {
             Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
             return
         }
+        if job.resolveKind == ResolveKind.youtubeClip.rawValue,
+           let html = String(data: data, encoding: .utf8),
+           let clip = YouTubeClipParser.descriptor(fromHTML: html),
+           let watchURL = YouTubeLink.watchURL(videoID: clip.videoID) {
+            job.resolvedVideoID = clip.videoID
+            job.rangeStartSeconds = clip.timeRange.startSeconds
+            job.rangeEndSeconds = clip.timeRange.endSeconds
+            job.resolveKind = ResolveKind.youtubeWatch.rawValue
+            store.upsert(job)
+            startTask(
+                YouTubeMediaResolver.htmlRequest(watchURL),
+                jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+            if let thumbnail = YouTubeLink.thumbnailURL(videoID: clip.videoID) {
+                Task { await self.fetchAndPublishThumbnail(from: thumbnail, jobID: job.id) }
+            }
+            return
+        }
         if let asset = resolvedAsset(from: data, job: job) {
             startMediaDownload(for: job, asset: asset)
             return
         }
         if startNextFacebookResolve(after: job, data: data) { return }
+        if startNextYouTubeResolve(after: job, data: data) { return }
         Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
         return
+    }
+
+    private func startNextYouTubeResolve(
+        after persistedJob: LiveMediaDownloadJob, data: Data?
+    ) -> Bool {
+        guard let videoID = persistedJob.resolvedVideoID
+            ?? URL(string: persistedJob.sourceURLString).flatMap(YouTubeLink.init(url:))?.videoID
+        else { return false }
+
+        let request: URLRequest
+        let kind: ResolveKind
+        switch persistedJob.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
+        case .youtubeWatch:
+            if let data,
+               let playerRequest = YouTubeMediaResolver.playerRequest(
+                fromWatchData: data, videoID: videoID) {
+                request = playerRequest
+                kind = .youtubePlayer
+            } else if let embedURL = YouTubeLink.embedURL(videoID: videoID) {
+                request = YouTubeMediaResolver.htmlRequest(embedURL)
+                kind = .youtubeEmbed
+            } else { return false }
+        case .youtubePlayer:
+            guard let embedURL = YouTubeLink.embedURL(videoID: videoID) else { return false }
+            request = YouTubeMediaResolver.htmlRequest(embedURL)
+            kind = .youtubeEmbed
+        default:
+            return false
+        }
+        var job = persistedJob
+        job.resolveKind = kind.rawValue
+        store.upsert(job)
+        startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+        return true
+    }
+
+    /// YouTube CDN URLs are signed and expire. A resumed transfer that receives
+    /// 403 must refresh the direct URL from the original page instead of retrying
+    /// the stale URL forever.
+    private func restartExpiredYouTubeMedia(_ persistedJob: LiveMediaDownloadJob) -> Bool {
+        guard PlatformRecognizer.recognize(persistedJob.sourceURLString)?.platform == .youtube,
+              let sourceURL = URL(string: persistedJob.sourceURLString),
+              let resolve = Self.resolveRequest(for: sourceURL)
+        else { return false }
+        var job = persistedJob
+        store.removeResumeData(for: job)
+        job.resumeDataFileName = nil
+        job.assetURLString = nil
+        job.phase = .resolving
+        job.progress = 0
+        job.receivedByteCount = nil
+        job.resolveKind = resolve.kind
+        store.upsert(job)
+        startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+        return true
     }
 
     /// Advances the durable Facebook resolver through the same useful sources as
@@ -1007,12 +1357,42 @@ public final class LiveMediaDownloadManager: NSObject {
         error: Error? = nil,
         message: String
     ) async {
-        guard isTransient(response: response, error: error),
-              var retryJob = store.job(id: job.id)
-        else {
+        let transient = isTransient(response: response, error: error)
+        if !transient, role == .media,
+           var freshJob = store.job(id: job.id),
+           freshJob.resumeDataFileName != nil,
+           let assetURLString = freshJob.assetURLString,
+           let assetURL = URL(string: assetURLString),
+           let sourceURL = URL(string: freshJob.sourceURLString) {
+            if let storageError = MediaDownloadPreflight.storageError(
+                expectedByteCount: freshJob.expectedByteCount,
+                directory: JobStore.directory,
+                requiresProcessingCopy: freshJob.rangeStartSeconds != nil
+                    || freshJob.rangeEndSeconds != nil
+            ) {
+                await failJob(freshJob, message: storageError.message)
+                return
+            }
+            // Resume blobs are server/OS opaque and can become invalid. One clean
+            // range-less restart is safer than permanently failing an otherwise
+            // valid source; clearing the filename prevents a restart loop.
+            store.removeResumeData(for: freshJob)
+            freshJob.resumeDataFileName = nil
+            freshJob.receivedByteCount = nil
+            freshJob.progress = 0
+            freshJob.mediaAttempts += 1
+            store.upsert(freshJob)
+            startTask(
+                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                jobID: freshJob.id, role: .media, attempt: freshJob.mediaAttempts,
+                expectedByteCount: freshJob.expectedByteCount)
+            return
+        }
+        guard transient else {
             await failJob(job, message: message)
             return
         }
+        guard var retryJob = store.job(id: job.id) else { return }
 
         switch role {
         case .resolve:
@@ -1020,7 +1400,7 @@ public final class LiveMediaDownloadManager: NSObject {
                   let url = URL(string: retryJob.sourceURLString),
                   let resolve = Self.resolveRequest(for: url)
             else {
-                await failJob(retryJob, message: message)
+                await waitToResume(retryJob)
                 return
             }
             retryJob.resolveAttempts += 1
@@ -1033,15 +1413,43 @@ public final class LiveMediaDownloadManager: NSObject {
                   let assetURL = URL(string: assetURLString),
                   let sourceURL = URL(string: retryJob.sourceURLString)
             else {
-                await failJob(retryJob, message: message)
+                await waitToResume(retryJob)
+                return
+            }
+            if let storageError = MediaDownloadPreflight.storageError(
+                expectedByteCount: retryJob.expectedByteCount,
+                directory: JobStore.directory,
+                requiresProcessingCopy: retryJob.rangeStartSeconds != nil
+                    || retryJob.rangeEndSeconds != nil
+            ) {
+                await failJob(retryJob, message: storageError.message)
                 return
             }
             retryJob.mediaAttempts += 1
             retryJob.errorMessage = nil
             store.upsert(retryJob)
-            startTask(
-                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
-                jobID: retryJob.id, role: .media, attempt: retryJob.mediaAttempts)
+            if let resumeData = store.resumeData(for: retryJob) {
+                startTask(
+                    resumeData: resumeData, jobID: retryJob.id, role: .media,
+                    attempt: retryJob.mediaAttempts,
+                    expectedByteCount: retryJob.expectedByteCount)
+            } else {
+                startTask(
+                    Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                    jobID: retryJob.id, role: .media, attempt: retryJob.mediaAttempts,
+                    expectedByteCount: retryJob.expectedByteCount)
+            }
+        }
+    }
+
+    private func waitToResume(_ persistedJob: LiveMediaDownloadJob) async {
+        guard var job = store.job(id: persistedJob.id), !job.isTerminal else { return }
+        job.phase = .waiting
+        job.errorMessage = nil
+        store.upsert(job)
+        await updateActivity(for: job)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(job: job, progress: job.progress)
         }
     }
 
@@ -1107,6 +1515,8 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
         let phaseChanged = job.phase != .downloading
         job.phase = .downloading
         job.progress = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        job.receivedByteCount = totalBytesWritten
+        job.expectedByteCount = totalBytesExpectedToWrite
         let percentChanged = Int(job.progress * 100) != previousPercent
         store.upsert(job, progressOnly: !phaseChanged)
         if job.isDownloaderOwned, percentChanged {
@@ -1131,6 +1541,9 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
               let job = store.job(id: jobID)
         else { return }
         guard job.phase != .suspended else { return }
+        if parts.role == .media {
+            store.removeResumeData(for: job)
+        }
         if parts.role == .resolve {
             finishResolve(job: job, downloadedTo: location, response: downloadTask.response)
         } else {
@@ -1150,6 +1563,12 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
               var job = store.job(id: jobID)
         else { return }
         guard job.phase != .suspended else { return }
+        if parts.role == .media,
+           let resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data,
+           let fileName = store.saveResumeData(resumeData, for: job.id) {
+            job.resumeDataFileName = fileName
+            store.upsert(job)
+        }
         Task {
             await retryOrFail(
                 job: job,

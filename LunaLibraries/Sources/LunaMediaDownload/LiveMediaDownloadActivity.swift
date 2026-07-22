@@ -22,6 +22,7 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
         public enum Phase: String, Codable, Hashable {
             case resolving
             case downloading
+            case waiting
             case suspended
             case saving
             case finished

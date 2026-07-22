@@ -18,6 +18,7 @@ public final class FinishedReadingBadgeView: UIView {
     private let messageBackground = UIView()
     private let messageLabel = UILabel()
     private var hideWorkItem: DispatchWorkItem?
+    private var presentationGeneration = 0
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -58,7 +59,8 @@ public final class FinishedReadingBadgeView: UIView {
         messageBackground.addSubview(messageLabel)
     }
 
-    public required init?(coder: NSCoder) { fatalError("not used") }
+    @available(*, unavailable)
+    public required init?(coder: NSCoder) { nil }
 
     public override func layoutSubviews() {
         super.layoutSubviews()
@@ -77,6 +79,7 @@ public final class FinishedReadingBadgeView: UIView {
     /// explains the pending archive automatically; later ones reveal it on tap.
     public func present() {
         hideWorkItem?.cancel()
+        presentationGeneration += 1
         let shouldExplain = !UserDefaults.standard.bool(forKey: Self.didExplainDefaultsKey)
         if shouldExplain {
             UserDefaults.standard.set(true, forKey: Self.didExplainDefaultsKey)
@@ -101,6 +104,10 @@ public final class FinishedReadingBadgeView: UIView {
     public func resetForReuse() {
         hideWorkItem?.cancel()
         hideWorkItem = nil
+        presentationGeneration += 1
+        layer.removeAllAnimations()
+        checkButton.layer.removeAllAnimations()
+        messageBackground.layer.removeAllAnimations()
         isHidden = true
         alpha = 0
         checkButton.transform = .identity
@@ -136,15 +143,22 @@ public final class FinishedReadingBadgeView: UIView {
     }
 
     private func dismiss() {
+        hideWorkItem = nil
+        let generation = presentationGeneration
         UIView.animate(
             withDuration: 0.24, delay: 0, options: [.beginFromCurrentState, .curveEaseIn]
         ) {
             self.alpha = 0
             self.checkButton.transform = CGAffineTransform(scaleX: 0.72, y: 0.72)
         } completion: { _ in
+            guard self.presentationGeneration == generation else { return }
             self.isHidden = true
             self.checkButton.transform = .identity
             self.setMessageVisible(false, animated: false)
         }
     }
+
+    #if DEBUG
+    func dismissForTesting() { dismiss() }
+    #endif
 }

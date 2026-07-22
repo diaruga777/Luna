@@ -15,4 +15,14 @@ public enum ReaderScrollPosition {
     ) -> Double {
         offset <= max(0, titleHeaderHeight) ? 0 : offset
     }
+
+    /// Converts the canonical persisted top (`0`) back to UIKit's raw content
+    /// offset. A scroll view with a top inset rests at `-adjustedTopInset`, not at
+    /// raw zero; restoring raw zero would immediately hide the in-inset title.
+    /// Nonzero persisted offsets retain their existing pixel-exact semantics.
+    public static func contentOffsetForRestoration(
+        _ persistedOffset: Double, adjustedTopInset: Double
+    ) -> Double {
+        persistedOffset == 0 ? -max(0, adjustedTopInset) : persistedOffset
+    }
 }

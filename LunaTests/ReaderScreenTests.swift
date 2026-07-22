@@ -212,6 +212,26 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertEqual(textView.alpha, 1)
     }
 
+    func testInProgressScrollReaderRestoresPersistedZeroToVisualTop() {
+        var inProgress = item
+        inProgress.readState = .opened
+        inProgress.lastScrollOffset = 0
+        let reader = ScrollReaderViewController(item: inProgress, content: longScrollArticleContent())
+        reader.topChromeInset = 96
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let textView = findTextView(in: reader.view) else {
+            XCTFail("Scroll reader should contain its text view")
+            return
+        }
+        XCTAssertEqual(
+            textView.contentOffset.y, -textView.adjustedContentInset.top, accuracy: 1,
+            "Persisted zero must reveal the complete title-inset region")
+        XCTAssertEqual(reader.currentReadingScrollOffsetY, 0, accuracy: 0.001)
+    }
+
     func testRSVPSkipToEndFinishesReading() {
         let delegate = RecordingReaderCompletionDelegate()
         let reader = RSVPViewController(item: item, content: shortArticleContent())

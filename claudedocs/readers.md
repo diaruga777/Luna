@@ -33,7 +33,9 @@ permanent copy in the scroll view's top content-inset region and a pinned card c
 While any of the in-content title remains onscreen, the pinned copy is hidden; only
 after the title has fully scrolled away can it appear with surfaced card chrome. An
 offset within that title region is normalized to zero when Scroll or Original persists,
-so reopening shows the title in full instead of restoring a clipped fragment. The
+so reopening shows the title in full instead of restoring a clipped fragment. That
+canonical zero is converted back to UIKit's inset-relative top offset on restore
+(`-adjustedContentInset.top`); applying it as raw zero would hide the title again. The
 top inset never changes during either transition, so hiding chrome cannot move the
 reader or its content offset. Both copies' backgrounds begin at the card's top edge,
 while the favicon is vertically centered against one-, two-, or three-line titles.

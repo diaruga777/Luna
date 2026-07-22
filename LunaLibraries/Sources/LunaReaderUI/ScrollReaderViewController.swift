@@ -913,7 +913,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
            wordMap.attributedRange(forWord: resume) != nil {
             scrollWord(resume, toFractionFromTop: 0.25)
         } else if item.readState != .read, let saved = item.lastScrollOffset {
-            restoreScroll(to: CGFloat(saved))
+            let restored = ReaderScrollPosition.contentOffsetForRestoration(
+                saved, adjustedTopInset: Double(textView.adjustedContentInset.top))
+            restoreScroll(to: CGFloat(restored))
         } else if item.readState != .read, let word = item.lastWordIndex,
                   wordMap.attributedRange(forWord: word) != nil {
             scrollWord(word, toFractionFromTop: 0.25)

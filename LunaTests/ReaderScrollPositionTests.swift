@@ -23,4 +23,14 @@ final class ReaderScrollPositionTests: XCTestCase {
         XCTAssertEqual(
             ReaderScrollPosition.normalizedForPersistence(96.1, titleHeaderHeight: 96), 96.1)
     }
+
+    func testPersistedTopRestoresToInsetRelativeUIKitTop() {
+        XCTAssertEqual(
+            ReaderScrollPosition.contentOffsetForRestoration(0, adjustedTopInset: 96), -96)
+    }
+
+    func testNonzeroPersistedOffsetRestoresExactly() {
+        XCTAssertEqual(
+            ReaderScrollPosition.contentOffsetForRestoration(96.1, adjustedTopInset: 96), 96.1)
+    }
 }

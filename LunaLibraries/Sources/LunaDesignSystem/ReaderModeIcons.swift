@@ -6,11 +6,11 @@
 import LunaModels
 import UIKit
 
-/// Programmatic glyphs for the reader's mode switcher. Scroll uses an SF Symbol;
-/// the chunk-highlight and speed (RSVP) modes use stylized "Abc" marks — one with
-/// a highlight behind the letters, one with the RSVP focal reticule above/below —
-/// so each mode reads as what it does. All are template images so the segmented
-/// control tints them.
+/// Glyphs for the reader's mode switcher: a rich-text archive for the extracted
+/// scrolling reader, fast-forward for RSVP speed reading, and a latitude /
+/// longitude globe for the saved original web page. Highlight is retained only
+/// for decoding the retired standalone mode. All are template images so the
+/// segmented control tints them.
 public enum ReaderModeIcons {
     private static let size = CGSize(width: 30, height: 22)
     private static let font = UIFont.systemFont(ofSize: 13, weight: .bold)
@@ -19,14 +19,15 @@ public enum ReaderModeIcons {
     public static func image(for mode: ReadingListItem.ReaderMode) -> UIImage {
         switch mode {
         case .scroll:
-            return UIImage(systemName: "text.alignleft")?
+            return UIImage(systemName: "doc.richtext")?
                 .withRenderingMode(.alwaysTemplate) ?? UIImage()
         case .highlight:
             return highlightedText()
         case .rsvp:
-            return reticuleText()
+            return UIImage(systemName: "forward.fill")?
+                .withRenderingMode(.alwaysTemplate) ?? UIImage()
         case .original:
-            return UIImage(systemName: "doc.richtext")?
+            return UIImage(systemName: "globe")?
                 .withRenderingMode(.alwaysTemplate) ?? UIImage()
         }
     }
@@ -54,24 +55,4 @@ public enum ReaderModeIcons {
         return image.withRenderingMode(.alwaysTemplate)
     }
 
-    /// "Abc" with short reticule bars centered above and below — the RSVP focus.
-    private static func reticuleText() -> UIImage {
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.black]
-        let textSize = sample.size(withAttributes: attributes)
-        let origin = textOrigin(for: textSize)
-        let image = UIGraphicsImageRenderer(size: size).image { _ in
-            sample.draw(at: origin, withAttributes: attributes)
-            let markWidth: CGFloat = 2.2
-            let markHeight: CGFloat = 4
-            let centerX = size.width / 2
-            UIColor.black.setFill()
-            UIBezierPath(roundedRect: CGRect(
-                x: centerX - markWidth / 2, y: 0, width: markWidth, height: markHeight),
-                cornerRadius: markWidth / 2).fill()
-            UIBezierPath(roundedRect: CGRect(
-                x: centerX - markWidth / 2, y: size.height - markHeight,
-                width: markWidth, height: markHeight), cornerRadius: markWidth / 2).fill()
-        }
-        return image.withRenderingMode(.alwaysTemplate)
-    }
 }

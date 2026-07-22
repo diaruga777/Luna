@@ -46,7 +46,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         symbol: "books.vertical", title: "No Saved Articles",
         subtitle: "Articles you save appear here as cards.")
     private let settingsButton = UIButton(type: .system)
-    // Screen-level reader chrome (see mountTopChrome).
+    // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
     private let readerChromeRow = UIView()
     private let readerBackButton = UIButton(type: .system)
     private let readerPasteButton = UIButton(type: .system)
@@ -205,10 +205,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         configureChromeButton(
             readerAudioButton, symbol: "speaker.slash", action: #selector(readerAudioTapped),
             label: "Read Aloud")
-        readerModeControl.addTarget(self, action: #selector(readerModeChanged), for: .valueChanged)
-        readerModeControl.translatesAutoresizingMaskIntoConstraints = false
-
-        for control in [readerBackButton, readerPasteButton, readerAudioButton, readerModeControl] {
+        for control in [readerBackButton, readerPasteButton, readerAudioButton] {
             readerChromeRow.addSubview(control)
         }
 
@@ -225,9 +222,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             readerPasteButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
             readerAudioButton.trailingAnchor.constraint(equalTo: readerChromeRow.trailingAnchor),
             readerAudioButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
-            readerModeControl.centerXAnchor.constraint(equalTo: readerChromeRow.centerXAnchor),
-            readerModeControl.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
-            readerModeControl.heightAnchor.constraint(equalToConstant: 32),
         ])
         updateReaderChrome()
     }
@@ -341,6 +335,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         readerModeControl.selectedSegmentIndex = state.modes.firstIndex(of: state.selectedMode) ?? 0
         readerModeControl.isHidden = !state.isArticle
+        updateBottomModeSwitcher(immersed: carousel.isImmersed, animated: false)
         readerAudioButton.isHidden = !state.isArticle
         readerShareButton.isHidden = !state.offersSaveShare
     }
@@ -366,6 +361,48 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             readerShareButton, symbol: "square.and.arrow.up", action: #selector(readerShareTapped),
             accessibilityLabel: "Share")
         mountBottomControls(leading: settingsButton, trailing: readerShareButton)
+
+        // The mode switcher owns the mini carousel's bottom-center lane only
+        // while the surrounding card chrome is dismissed. It begins just below
+        // its resting position so the first reveal can translate and fade in.
+        readerModeControl.addTarget(self, action: #selector(readerModeChanged), for: .valueChanged)
+        readerModeControl.translatesAutoresizingMaskIntoConstraints = false
+        readerModeControl.alpha = 0
+        readerModeControl.transform = Self.dismissedBottomControlTransform
+        readerModeControl.isUserInteractionEnabled = false
+        readerModeControl.accessibilityElementsHidden = true
+        view.addSubview(readerModeControl)
+        NSLayoutConstraint.activate([
+            readerModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            readerModeControl.centerYAnchor.constraint(equalTo: settingsButton.centerYAnchor),
+            readerModeControl.heightAnchor.constraint(equalToConstant: 32),
+        ])
+    }
+
+    private static let dismissedBottomControlTransform = CGAffineTransform(
+        translationX: 0, y: 8)
+
+    /// Crossfades the bottom-center lane between the mini carousel and the
+    /// reader modes. The carousel owns its matching scrubber animation; this
+    /// half keeps the replacement control in exact visual lockstep.
+    private func updateBottomModeSwitcher(immersed: Bool, animated: Bool) {
+        let visible = immersed && !readerModeControl.isHidden
+        readerModeControl.isUserInteractionEnabled = visible
+        readerModeControl.accessibilityElementsHidden = !visible
+        let changes = {
+            self.readerModeControl.alpha = visible ? 1 : 0
+            self.readerModeControl.transform = visible
+                ? .identity
+                : Self.dismissedBottomControlTransform
+        }
+        guard animated, !UIAccessibility.isReduceMotionEnabled else {
+            changes()
+            return
+        }
+        UIView.animate(
+            withDuration: 0.24, delay: visible ? 0.06 : 0,
+            options: [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState],
+            animations: changes)
     }
 
     // MARK: - Data
@@ -654,6 +691,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         // The carousel has already restored its card geometry so this same pan
         // can page. Keep the screen-level footer veil and indicator in lockstep.
         footerContentFade.alpha = 0
+        updateBottomModeSwitcher(immersed: false, animated: false)
         layoutCardScrollIndicator(animated: false)
     }
 
@@ -703,6 +741,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool
     ) {
         carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
+        updateBottomModeSwitcher(immersed: immersed, animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,
             options: [.curveEaseInOut, .allowUserInteraction]

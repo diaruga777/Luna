@@ -491,6 +491,12 @@ public final class CardCarouselViewController: UIViewController {
 
     private func applyImmersionLayout() {
         scrubber.alpha = isImmersed ? 0 : 1
+        // The Reader replaces this bottom-center strip with its mode switcher
+        // during immersion. A short downward drift makes that handoff read as
+        // one control yielding the lane to the other instead of a hard swap.
+        scrubber.transform = isImmersed && !UIAccessibility.isReduceMotionEnabled
+            ? CGAffineTransform(translationX: 0, y: 8)
+            : .identity
         for other in slots.values where other.index != currentIndex {
             other.card.alpha = isImmersed ? 0 : 1
         }

@@ -76,10 +76,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// can pause exactly that playback, and so the host can tell whether the
     /// playing article lives somewhere in this reader's trail.
     private(set) var embeddedReaderItemID: UUID?
-    /// The item auto-marked `.read` when the embedded reader reached the end THIS
-    /// session, plus its prior progress — so scrolling back before the end can revert
-    /// the transient completion (mirrors `ReaderViewController`'s mark/unmark dance).
-    private var autoMarkedRead: (id: UUID, priorProgress: Double?)?
     private weak var readerChild: UIViewController?
     private var currentRole: RabbitHoleLayout.Role = .focused
     private var webView: WKWebView?
@@ -766,26 +762,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return item
     }
 
-    /// The embedded reader reached the end → mark its item finished (read + archived).
+    /// The embedded reader reached the end → mark it read and queue its archive.
     /// For the root layer this is the real saved item; for a dived-into saved link it's
     /// that item; for an unsaved transient page `markFinishedReading` is a no-op (the id
-    /// isn't in the store). Remembers a from-unread auto-mark so it can be reverted.
+    /// isn't in the store).
     private func markEmbeddedItemRead() {
         guard let id = embeddedReaderItemID else { return }
-        if ReadingListStore.shared.item(withID: id)?.readState != .read {
-            autoMarkedRead = (id, ReadingListStore.shared.item(withID: id)?.readingProgress)
-        }
         ReadingListStore.shared.markFinishedReading(id)
-    }
-
-    /// The reader moved back before the end → undo a completion we auto-applied this
-    /// session (so an article the user is still reading isn't left archived after a
-    /// glance at the bottom). Only reverts our own from-unread mark on the same item.
-    private func unmarkEmbeddedItemReadIfAutoMarked() {
-        guard let auto = autoMarkedRead, auto.id == embeddedReaderItemID else { return }
-        autoMarkedRead = nil
-        ReadingListStore.shared.restoreFinishedReadingState(
-            readState: .opened, readingProgress: auto.priorProgress, for: auto.id)
     }
 
     private func showChild(_ child: UIViewController) {
@@ -912,6 +895,6 @@ extension RabbitHoleLayerViewController: ReaderCompletionDelegate {
         markEmbeddedItemRead()
     }
     public func readerDidMoveAwayFromEnd(_ reader: UIViewController) {
-        unmarkEmbeddedItemReadIfAutoMarked()
+        // Completion remains durable while the user revisits earlier content.
     }
 }

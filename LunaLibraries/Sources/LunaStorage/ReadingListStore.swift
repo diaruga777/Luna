@@ -321,10 +321,18 @@ public final class ReadingListStore {
     public func setArchived(_ archived: Bool, for itemID: UUID, at date: Date = Date()) {
         let changed = coordinatedMutate { all -> Bool in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            let value: Date? = archived ? date : nil
-            guard all[index].archivedAt != value else { return false }
-            if archived, all[index].archivedAt != nil { return false }
-            all[index].archivedAt = value
+            if archived {
+                guard all[index].archivedAt == nil || all[index].pendingArchiveAt != nil else {
+                    return false
+                }
+                if all[index].archivedAt == nil { all[index].archivedAt = date }
+            } else {
+                guard all[index].archivedAt != nil || all[index].pendingArchiveAt != nil else {
+                    return false
+                }
+                all[index].archivedAt = nil
+            }
+            all[index].pendingArchiveAt = nil
             return true
         }
         if changed, archived {
@@ -536,12 +544,17 @@ public final class ReadingListStore {
         }
     }
 
-    /// Marks an article finished and archives it in the reading list.
+    /// Marks an article finished and queues it for archive at the next app
+    /// lifecycle boundary. Keeping `archivedAt` nil preserves the current card
+    /// for the remainder of this foreground session.
     ///
-    /// Article "archive" status is derived from `.read`, so keep the completion
-    /// transition and the terminal progress update together for end-of-reader
-    /// paths.
+    /// Keep the read transition, terminal progress, and durable pending marker
+    /// together for end-of-reader paths.
     public func markFinishedReading(_ itemID: UUID) {
+        markFinishedReading(itemID, at: Date())
+    }
+
+    public func markFinishedReading(_ itemID: UUID, at date: Date) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             var changed = false
@@ -553,32 +566,30 @@ public final class ReadingListStore {
                 all[index].readingProgress = 1
                 changed = true
             }
+            if all[index].archivedAt == nil, all[index].pendingArchiveAt == nil {
+                all[index].pendingArchiveAt = date
+                changed = true
+            }
             return changed
         }
     }
 
-    /// Reverts the transient "finished in this viewer session" state when the
-    /// reader moves back before the end. This intentionally allows a downgrade,
-    /// unlike `markReadState`, but callers provide the exact state/progress they
-    /// are restoring.
-    public func restoreFinishedReadingState(
-        readState: ReadingListItem.ReadState,
-        readingProgress: Double?,
-        for itemID: UUID
-    ) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            var changed = false
-            if all[index].readState != readState {
-                all[index].readState = readState
-                changed = true
+    /// Moves every reader-completed item into Archive in one coordinated write.
+    /// Called by the Reader app on background and once during cold launch.
+    public func archivePendingFinishedItems() {
+        let archivedIDs: [UUID] = coordinatedMutate { all in
+            var ids: [UUID] = []
+            for index in all.indices {
+                guard let pending = all[index].pendingArchiveAt else { continue }
+                if all[index].archivedAt == nil {
+                    all[index].archivedAt = pending
+                    ids.append(all[index].id)
+                }
+                all[index].pendingArchiveAt = nil
             }
-            if all[index].readingProgress != readingProgress {
-                all[index].readingProgress = readingProgress
-                changed = true
-            }
-            return changed
+            return ids
         }
+        for id in archivedIDs { preloads.releaseTree(rootID: id) }
     }
 
     /// Forces an item back to unread (the Archive-section "Unarchive" action) — a
@@ -586,8 +597,10 @@ public final class ReadingListStore {
     public func markUnread(_ itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].readState != .unopened else { return false }
+                  all[index].readState != .unopened || all[index].pendingArchiveAt != nil
+            else { return false }
             all[index].readState = .unopened
+            all[index].pendingArchiveAt = nil
             return true
         }
     }

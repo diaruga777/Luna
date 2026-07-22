@@ -23,9 +23,6 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     private let store = ReadingListStore.shared
     private var mode: ReadingListItem.ReaderMode
     private var audioOn = false
-    private let readStateOnEntry: ReadingListItem.ReadState
-    private let readingProgressOnEntry: Double?
-    private var didAutoMarkFinishedThisSession = false
     private var currentChild: UIViewController?
     /// Reading position carried from the outgoing child to the next on a mode
     /// switch (nil on first open → each child uses its own persisted default).
@@ -85,8 +82,6 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
          onModeChange: ((ReadingListItem.ReaderMode) -> Void)? = nil) {
         self.item = item
         self.content = content
-        self.readStateOnEntry = item.readState
-        self.readingProgressOnEntry = item.readingProgress
         self.shareProvider = shareProvider
         self.persistsModePreference = persistsModePreference
         self.marksOpenedOnLoad = marksOpenedOnLoad
@@ -427,18 +422,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     }
 
     private func markRead() {
-        if readStateOnEntry != .read {
-            didAutoMarkFinishedThisSession = true
-        }
         store.markFinishedReading(item.id)
-    }
-
-    private func unmarkReadIfAutoMarkedThisSession() {
-        guard didAutoMarkFinishedThisSession, readStateOnEntry != .read else { return }
-        didAutoMarkFinishedThisSession = false
-        let restoredState: ReadingListItem.ReadState = marksOpenedOnLoad ? .opened : readStateOnEntry
-        store.restoreFinishedReadingState(
-            readState: restoredState, readingProgress: readingProgressOnEntry, for: item.id)
     }
 }
 
@@ -447,6 +431,6 @@ extension ReaderViewController: ReaderCompletionDelegate {
         markRead()
     }
     public func readerDidMoveAwayFromEnd(_ reader: UIViewController) {
-        unmarkReadIfAutoMarkedThisSession()
+        // Completion remains durable while the user revisits earlier content.
     }
 }

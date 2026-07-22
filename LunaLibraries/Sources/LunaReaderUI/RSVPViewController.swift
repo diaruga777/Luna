@@ -157,6 +157,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private lazy var shareView = makeShareView()
     private var didRevealShare = false
     private var finishedReadingTracker = FinishedReadingTracker()
+    private let finishedBadge = FinishedReadingBadgeView()
     private let statusLabel = UILabel()
     private let wpmDownButton = UIButton(type: .system)
     private let wpmUpButton = UIButton(type: .system)
@@ -259,6 +260,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         linkPillHideTimer = nil
         linkPillURL = nil
         linkPill.alpha = 0
+        finishedBadge.resetForReuse()
     }
 
     /// Rebuilds the word engine/chunks for `content`, resolves the resume
@@ -382,6 +384,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         configureLinkPreview()
         configureControls()
         configureGestures()
+        configureFinishedBadge()
 
         // NB: the audio session is NOT touched here — only when read-aloud
         // actually starts playing (see `play()`), so opening the silent speed
@@ -411,6 +414,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         layoutPhrasePanel()
         layoutContext()
         layoutLinkPill()
+        layoutFinishedBadge()
         refreshDisplay()
     }
 
@@ -1211,7 +1215,21 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         guard finishedReadingTracker.update(reachedEnd: true) == .finished else { return }
         pause()
         revealShareView()
+        finishedBadge.present()
         completionDelegate?.readerDidFinishReading(self)
+    }
+
+    private func configureFinishedBadge() {
+        view.addSubview(finishedBadge)
+    }
+
+    /// Occupies the quiet band immediately above the focused word or phrase.
+    private func layoutFinishedBadge() {
+        let width = min(view.bounds.width, 320)
+        finishedBadge.frame = CGRect(
+            x: (view.bounds.width - width) / 2,
+            y: max(subModeControl.frame.maxY + 8, focalCenterY - 150),
+            width: width, height: 92)
     }
 
     // MARK: - Controls

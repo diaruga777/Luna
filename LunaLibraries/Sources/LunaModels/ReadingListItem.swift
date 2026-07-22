@@ -70,6 +70,11 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// When non-nil, the item is kept in the archive tray instead of the main
     /// surface. The original save date remains unchanged for the tray footer.
     public var archivedAt: Date?
+    /// Set when a reader reaches its end. The item stays on the active surface
+    /// for the rest of the foreground session; the Reader app promotes this
+    /// timestamp to `archivedAt` when it next backgrounds (or on the next cold
+    /// launch if the process was terminated first).
+    public var pendingArchiveAt: Date?
     /// When the user last "bumped" this item — re-sorts it to the top of the reading
     /// list and, where a view sorts by recency (e.g. the card-carousel root), takes
     /// priority over the save date.
@@ -212,6 +217,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.title = nil
         self.dateAdded = Date()
         self.archivedAt = nil
+        self.pendingArchiveAt = nil
         self.bumpDate = nil
         self.state = .pending
         self.contentFileName = nil
@@ -272,6 +278,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.title = title
         self.dateAdded = dateAdded
         self.archivedAt = nil
+        self.pendingArchiveAt = nil
         self.bumpDate = bumpDate
         self.state = state
         self.contentFileName = nil
@@ -346,6 +353,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         title = try container.decodeIfPresent(String.self, forKey: .title)
         dateAdded = try container.decode(Date.self, forKey: .dateAdded)
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
+        pendingArchiveAt = try container.decodeIfPresent(Date.self, forKey: .pendingArchiveAt)
         bumpDate = try container.decodeIfPresent(Date.self, forKey: .bumpDate)
         // Unknown state → .pending: the safe floor (the item is re-ingested
         // rather than dropped or mislabeled ready).

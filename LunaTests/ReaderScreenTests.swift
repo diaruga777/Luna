@@ -171,6 +171,7 @@ final class ReaderScreenTests: XCTestCase {
         reader.scrollViewDidScroll(textView)
 
         XCTAssertTrue(delegate.didFinish, "Scrolling to the full article end should mark the article read")
+        XCTAssertFalse(findView(of: FinishedReadingBadgeView.self, in: reader.view)?.isHidden ?? true)
     }
 
     func testFinishedScrollReaderStartsAtTopInsteadOfPersistedEnd() {
@@ -224,9 +225,10 @@ final class ReaderScreenTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
         XCTAssertTrue(delegate.didFinish, "Skipping onto the final RSVP word should mark the article read")
+        XCTAssertFalse(findView(of: FinishedReadingBadgeView.self, in: reader.view)?.isHidden ?? true)
     }
 
-    func testReaderHostMarksScrollCompletionReadAndArchived() {
+    func testReaderHostMarksScrollCompletionReadAndPendingArchive() {
         let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/scroll-finish-\(UUID().uuidString)")
         defer { ReadingListStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
@@ -255,9 +257,11 @@ final class ReaderScreenTests: XCTestCase {
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
+        XCTAssertNotNil(fresh?.pendingArchiveAt)
+        XCTAssertNil(fresh?.archivedAt)
     }
 
-    func testReaderHostUnmarksScrollCompletionWhenUserScrollsBack() {
+    func testReaderHostKeepsScrollCompletionWhenUserScrollsBack() {
         let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/scroll-unfinish-\(UUID().uuidString)")
         defer { ReadingListStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
@@ -286,8 +290,10 @@ final class ReaderScreenTests: XCTestCase {
         scroll.scrollViewDidScroll(textView)
 
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
-        XCTAssertEqual(fresh?.readState, .opened)
-        XCTAssertNil(fresh?.readingProgress)
+        XCTAssertEqual(fresh?.readState, .read)
+        XCTAssertEqual(fresh?.readingProgress, 1)
+        XCTAssertNotNil(fresh?.pendingArchiveAt)
+        XCTAssertNil(fresh?.archivedAt)
     }
 
     func testReaderHostDoesNotUnmarkScrollArticleThatWasReadOnEntry() {
@@ -325,7 +331,7 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertEqual(fresh?.readingProgress, 1)
     }
 
-    func testReaderHostMarksRSVPCompletionReadAndArchived() {
+    func testReaderHostMarksRSVPCompletionReadAndPendingArchive() {
         let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-finish-\(UUID().uuidString)")
         defer { ReadingListStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
@@ -347,9 +353,11 @@ final class ReaderScreenTests: XCTestCase {
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
+        XCTAssertNotNil(fresh?.pendingArchiveAt)
+        XCTAssertNil(fresh?.archivedAt)
     }
 
-    func testReaderHostUnmarksRSVPCompletionWhenUserPagesBack() {
+    func testReaderHostKeepsRSVPCompletionWhenUserPagesBack() {
         let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-unfinish-\(UUID().uuidString)")
         defer { ReadingListStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
@@ -375,8 +383,10 @@ final class ReaderScreenTests: XCTestCase {
         ReadingListStore.shared.flushPendingUpdates()
 
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
-        XCTAssertEqual(fresh?.readState, .opened)
-        XCTAssertNil(fresh?.readingProgress)
+        XCTAssertEqual(fresh?.readState, .read)
+        XCTAssertEqual(fresh?.readingProgress, 1)
+        XCTAssertNotNil(fresh?.pendingArchiveAt)
+        XCTAssertNil(fresh?.archivedAt)
     }
 
     /// A continuous scrubber drag (`.valueChanged`, UISlider's default continuous
@@ -464,6 +474,14 @@ final class ReaderScreenTests: XCTestCase {
         if let textView = view as? UITextView { return textView }
         for subview in view.subviews {
             if let found = findTextView(in: subview) { return found }
+        }
+        return nil
+    }
+
+    private func findView<T: UIView>(of type: T.Type, in view: UIView) -> T? {
+        if let match = view as? T { return match }
+        for subview in view.subviews {
+            if let match = findView(of: type, in: subview) { return match }
         }
         return nil
     }

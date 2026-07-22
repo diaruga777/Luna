@@ -53,6 +53,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Mark this surface installed so any Safari extension host knows which
         // sibling Luna apps its page buttons can deep-link into.
         InstalledAppMarkers.recordCurrentApp()
+        // A completion written before a force-quit never received the normal
+        // background callback. Promote it before constructing the Reader UI.
+        if AppSurfaceConfig.current == .reader {
+            ReadingListStore.shared.archivePendingFinishedItems()
+        }
         // Cross-app interop purchase (claudedocs/interop-purchase.md): start the
         // long-lived transaction listener, then sweep this app's current
         // entitlements in case an update arrived while it was not running.
@@ -237,6 +242,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        if AppSurfaceConfig.current == .reader {
+            ReadingListStore.shared.archivePendingFinishedItems()
+        }
         // Action Button onboarding: only advances if we were backgrounded right
         // after "Install Shortcut" (the user is presumably in the Shortcuts app).
         ActionButtonOnboardingStore.shared.handleAppBackgrounded(

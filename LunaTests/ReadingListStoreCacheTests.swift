@@ -141,4 +141,27 @@ final class ReadingListStoreCacheTests: XCTestCase {
         wait(for: [unarchived], timeout: 2)
         XCTAssertNil(store.item(withID: item.id)?.archivedAt)
     }
+
+    func testFinishedItemRemainsActiveUntilPendingArchiveIsCommitted() {
+        let item = addAndWaitForNotification("https://example.com/finish-later")
+        let finishedAt = Date(timeIntervalSince1970: 456)
+
+        let finished = expectation(forNotification: .readingListChanged, object: nil)
+        store.markFinishedReading(item.id, at: finishedAt)
+        wait(for: [finished], timeout: 2)
+
+        let pending = store.item(withID: item.id)
+        XCTAssertEqual(pending?.readState, .read)
+        XCTAssertEqual(pending?.readingProgress, 1)
+        XCTAssertEqual(pending?.pendingArchiveAt, finishedAt)
+        XCTAssertNil(pending?.archivedAt, "completion must not remove the foreground card")
+
+        let archived = expectation(forNotification: .readingListChanged, object: nil)
+        store.archivePendingFinishedItems()
+        wait(for: [archived], timeout: 2)
+
+        let committed = store.item(withID: item.id)
+        XCTAssertNil(committed?.pendingArchiveAt)
+        XCTAssertEqual(committed?.archivedAt, finishedAt)
+    }
 }

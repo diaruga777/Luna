@@ -80,6 +80,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private let textView = UITextView(usingTextLayoutManager: false)
     private let store = ReadingListStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
+    private let finishedBadge = FinishedReadingBadgeView()
     private var didRestoreScroll = false
 
     // MARK: - Progressive (two-phase) load
@@ -248,8 +249,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         imageDownloadTask?.cancel()
         speech?.stop()
         speech = nil
-        contentSizeObservation?.invalidate()
-        contentSizeObservation = nil
         removeHighlight()
 
         finishedReadingTracker = FinishedReadingTracker()
@@ -263,6 +262,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         committedOffsetY = 0
         landedGlanceFling = false
         pendingFlingSpeedPointsPerSecond = 0
+        finishedBadge.resetForReuse()
         highlightedRange = nil
         followPlayback = true
     }
@@ -432,28 +432,36 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             })
     }
 
-    /// Positions the share view just below the text content and reserves scroll
-    /// room for it (and the floating footer) so it clears the controls.
+    /// Positions the completion acknowledgement in the whitespace below the text,
+    /// then the optional share view, and reserves room for both.
     private func layoutShareView() {
-        // Only once the footer is actually attached (after the full content lands).
-        guard let shareView, shareView.superview != nil else { return }
         let width = textView.bounds.width
         guard width > 0 else { return }
-        let height = shareView.systemLayoutSizeFitting(
-            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel).height
-        shareView.frame = CGRect(x: 0, y: textView.contentSize.height, width: width, height: height)
+        let badgeHeight: CGFloat = 92
+        finishedBadge.frame = CGRect(
+            x: 0, y: textView.contentSize.height, width: width, height: badgeHeight)
+        var shareHeight: CGFloat = 0
+        if let shareView, shareView.superview != nil {
+            shareHeight = shareView.systemLayoutSizeFitting(
+                CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel).height
+            shareView.frame = CGRect(
+                x: 0, y: textView.contentSize.height + badgeHeight,
+                width: width, height: shareHeight)
+        }
         let footerSpace = footer.isHidden ? 0 : footer.bounds.height
         // Add the bottom safe area so the last lines + share footer clear the
         // home indicator instead of sitting under it.
-        textView.contentInset.bottom = height + footerSpace + view.safeAreaInsets.bottom + 16
+        textView.contentInset.bottom = badgeHeight + shareHeight + footerSpace
+            + view.safeAreaInsets.bottom + 16
     }
 
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
         configureTextView()
+        installFinishedBadge()
         configureGestures()
         configureFooter()
 
@@ -489,6 +497,13 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         ])
         HorizonScrollIndicator.install(on: textView, in: view)
         applyTopChromeInset(preservingVisiblePosition: false)
+    }
+
+    private func installFinishedBadge() {
+        textView.addSubview(finishedBadge)
+        contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+            self?.layoutShareView()
+        }
     }
 
     private func configureGestures() {
@@ -684,9 +699,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private func attachShareFooterIfNeeded() {
         guard let shareView, shareView.superview == nil else { return }
         textView.addSubview(shareView)
-        contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
-            self?.layoutShareView()
-        }
+        layoutShareView()
     }
 
     // MARK: - Inline images
@@ -1220,9 +1233,13 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // Phase 2 expands it. Wait for the full content.
         guard didLoadFullContent, textView.contentSize.height > 0 else { return }
         let visibleBottom = textView.contentOffset.y + textView.bounds.height
-        let reachedEnd = visibleBottom >= textView.contentSize.height - 40
+        // Require the user to enter the reserved whitespace far enough for the
+        // green check itself to be visible when its animation starts.
+        let reachedEnd = visibleBottom >= textView.contentSize.height + 80
         switch finishedReadingTracker.update(reachedEnd: reachedEnd) {
-        case .finished: completionDelegate?.readerDidFinishReading(self)
+        case .finished:
+            finishedBadge.present()
+            completionDelegate?.readerDidFinishReading(self)
         case .movedAway: completionDelegate?.readerDidMoveAwayFromEnd(self)
         case nil: break
         }
@@ -1506,6 +1523,7 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
 
     public func speechDidFinishArticle(_ controller: SpeechController) {
         finishedReadingTracker.markFinished()
+        finishedBadge.present()
         completionDelegate?.readerDidFinishReading(self)
         footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")
         removeHighlight()

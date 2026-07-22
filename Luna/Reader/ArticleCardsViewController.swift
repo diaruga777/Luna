@@ -590,8 +590,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         candidates
             .filter { ReadingListSectioning.rendersAsReader($0) && !$0.isArchived }
             .sorted { lhs, rhs in
-                let lhsIsRead = lhs.readState == .read
-                let rhsIsRead = rhs.readState == .read
+                // A just-finished card remains in its current foreground-session
+                // position until the pending archive is committed on background.
+                let lhsIsRead = lhs.readState == .read && lhs.pendingArchiveAt == nil
+                let rhsIsRead = rhs.readState == .read && rhs.pendingArchiveAt == nil
                 if lhsIsRead != rhsIsRead { return !lhsIsRead }
                 let lhsDate = lhs.bumpDate ?? lhs.dateAdded
                 let rhsDate = rhs.bumpDate ?? rhs.dateAdded

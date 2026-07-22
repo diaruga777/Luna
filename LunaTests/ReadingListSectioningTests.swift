@@ -84,6 +84,14 @@ final class ReadingListSectioningTests: XCTestCase {
         XCTAssertTrue(buckets.reading.isEmpty)
     }
 
+    func testJustFinishedArticleStaysInReadingUntilLifecycleArchive() {
+        var pending = article(addedDaysAgo: 0, readState: .read)
+        pending.pendingArchiveAt = now
+        let buckets = ReadingListSectioning.assignSections(items: [pending], now: now)
+        XCTAssertEqual(buckets.reading.map(\.id), [pending.id])
+        XCTAssertTrue(buckets.archive.isEmpty)
+    }
+
     func testUnreadButAgedOutGoesToArchive() {
         let buckets = ReadingListSectioning.assignSections(
             items: [article(addedDaysAgo: 8)], now: now)

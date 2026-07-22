@@ -6,57 +6,71 @@
 import LunaDesignSystem
 import UIKit
 
-/// Short-lived completion acknowledgement shared by both reader modes.
+/// A persistent Liquid Glass completion pill shared by both reader modes.
 public final class FinishedReadingBadgeView: UIView {
     public static let accessibilityIdentifier = "reader.finishedReadingBadge"
     public static let messageAccessibilityIdentifier = "reader.finishedReadingMessage"
+    public static let pillHeight: CGFloat = 36
 
     private static let didExplainDefaultsKey = "reader.finishedReadingBadge.didExplain"
-    private static let visibleDuration: TimeInterval = 3.0
+    private static let collapsedWidth: CGFloat = 88
+    private static let expandedWidth: CGFloat = 154
+    private static let automaticExpansionDelay: TimeInterval = 1.0
+    private static let expandedDuration: TimeInterval = 2.0
 
-    private let checkButton = UIButton(type: .system)
-    private let messageBackground = UIView()
-    private let messageLabel = UILabel()
-    private var hideWorkItem: DispatchWorkItem?
-    private var presentationGeneration = 0
+    private let glassView: UIVisualEffectView
+    private let checkLayer = CAShapeLayer()
+    private let readLabel = UILabel()
+    private let archiveLabel = UILabel()
+    private var automaticExpansionWorkItem: DispatchWorkItem?
+    private var collapseWorkItem: DispatchWorkItem?
+    private var isExpanded = false
 
     public override init(frame: CGRect) {
+        let effectView: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect()
+            glass.isInteractive = true
+            effectView = UIVisualEffectView(effect: glass)
+        } else {
+            effectView = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        }
+        glassView = effectView
         super.init(frame: frame)
         isHidden = true
+        clipsToBounds = false
 
-        var configuration = UIButton.Configuration.filled()
-        configuration.image = UIImage(
-            systemName: "checkmark",
-            withConfiguration: UIImage.SymbolConfiguration(weight: .bold))
-        configuration.baseBackgroundColor = .systemGreen
-        configuration.baseForegroundColor = .white
-        configuration.cornerStyle = .capsule
-        configuration.contentInsets = NSDirectionalEdgeInsets(
-            top: 11, leading: 11, bottom: 11, trailing: 11)
-        checkButton.configuration = configuration
-        checkButton.accessibilityIdentifier = Self.accessibilityIdentifier
-        checkButton.accessibilityLabel = "Finished reading"
-        checkButton.accessibilityHint = "Shows what happens to this article"
-        checkButton.addTarget(self, action: #selector(checkTapped), for: .touchUpInside)
-        addSubview(checkButton)
+        if #available(iOS 26.0, *) {
+            glassView.cornerConfiguration = .capsule()
+        } else {
+            glassView.layer.cornerRadius = Self.pillHeight / 2
+            glassView.layer.cornerCurve = .continuous
+            glassView.clipsToBounds = true
+        }
+        glassView.isUserInteractionEnabled = false
+        addSubview(glassView)
 
-        messageBackground.layer.cornerRadius = 15
-        messageBackground.layer.cornerCurve = .continuous
-        messageBackground.clipsToBounds = true
-        messageBackground.backgroundColor = LunaColors.secondaryBackground
-        messageBackground.isUserInteractionEnabled = false
-        messageBackground.alpha = 0
-        messageBackground.transform = CGAffineTransform(scaleX: 0.88, y: 0.88)
-        addSubview(messageBackground)
+        checkLayer.fillColor = UIColor.clear.cgColor
+        checkLayer.lineCap = .round
+        checkLayer.lineJoin = .round
+        checkLayer.lineWidth = 2.4
+        glassView.contentView.layer.addSublayer(checkLayer)
 
-        messageLabel.text = "Finished reading, sending to archive"
-        messageLabel.font = .preferredFont(forTextStyle: .footnote)
-        messageLabel.adjustsFontForContentSizeCategory = true
-        messageLabel.textColor = LunaColors.primaryText
-        messageLabel.textAlignment = .center
-        messageLabel.numberOfLines = 1
-        messageLabel.accessibilityIdentifier = Self.messageAccessibilityIdentifier
-        messageBackground.addSubview(messageLabel)
+        configure(label: readLabel, text: "Read")
+        glassView.contentView.addSubview(readLabel)
+
+        configure(label: archiveLabel, text: "Sent to archive")
+        archiveLabel.textAlignment = .center
+        archiveLabel.accessibilityIdentifier = Self.messageAccessibilityIdentifier
+        archiveLabel.alpha = 0
+        glassView.contentView.addSubview(archiveLabel)
+
+        accessibilityIdentifier = Self.accessibilityIdentifier
+        accessibilityLabel = "Read"
+        accessibilityHint = "Shows archive status"
+        accessibilityTraits = .button
+        isAccessibilityElement = true
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pillTapped)))
     }
 
     @available(*, unavailable)
@@ -64,101 +78,193 @@ public final class FinishedReadingBadgeView: UIView {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-        let buttonSide: CGFloat = 44
-        checkButton.frame = CGRect(
-            x: (bounds.width - buttonSide) / 2, y: bounds.height - buttonSide - 2,
-            width: buttonSide, height: buttonSide)
-        let messageWidth = min(max(bounds.width - 32, 0), 250)
-        messageBackground.frame = CGRect(
-            x: (bounds.width - messageWidth) / 2, y: 0,
-            width: messageWidth, height: 34)
-        messageLabel.frame = messageBackground.bounds.insetBy(dx: 12, dy: 4)
+        guard glassView.layer.animationKeys()?.isEmpty != false else { return }
+        glassView.frame = pillFrame(width: isExpanded ? Self.expandedWidth : Self.collapsedWidth)
+        layoutPillContents()
     }
 
-    /// Springs the check into view. The first presentation per app install also
-    /// explains the pending archive automatically; later ones reveal it on tap.
+    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateForegroundColor()
+    }
+
+    public override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        !isHidden && glassView.frame.contains(point)
+    }
+
+    /// Draws the check, reveals “Read,” and leaves the pill in place. On the
+    /// first completion per install, the archive state expands after a beat.
     public func present() {
-        hideWorkItem?.cancel()
-        presentationGeneration += 1
+        cancelScheduledTransitions()
         let shouldExplain = !UserDefaults.standard.bool(forKey: Self.didExplainDefaultsKey)
         if shouldExplain {
             UserDefaults.standard.set(true, forKey: Self.didExplainDefaultsKey)
         }
 
         isHidden = false
-        alpha = 0
-        checkButton.transform = CGAffineTransform(scaleX: 0.55, y: 0.55)
-        setMessageVisible(shouldExplain, animated: false)
+        alpha = 1
+        isExpanded = false
+        glassView.layer.removeAllAnimations()
+        glassView.frame = pillFrame(width: Self.collapsedWidth)
+        checkLayer.isHidden = false
+        checkLayer.strokeEnd = 1
+        readLabel.alpha = 0
+        readLabel.transform = CGAffineTransform(translationX: -5, y: 0)
+        archiveLabel.alpha = 0
+        layoutPillContents()
+        updateForegroundColor()
+
+        let draw = CABasicAnimation(keyPath: "strokeEnd")
+        draw.fromValue = 0
+        draw.toValue = 1
+        draw.duration = 0.42
+        draw.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        checkLayer.add(draw, forKey: "drawCheckmark")
         UIView.animate(
-            withDuration: 0.48, delay: 0,
-            usingSpringWithDamping: 0.58, initialSpringVelocity: 0.8,
-            options: [.beginFromCurrentState, .allowUserInteraction]
+            withDuration: 0.28, delay: 0.36,
+            options: [.beginFromCurrentState, .curveEaseOut, .allowUserInteraction]
         ) {
-            self.alpha = 1
-            self.checkButton.transform = .identity
+            self.readLabel.alpha = 1
+            self.readLabel.transform = .identity
         }
-        scheduleHide()
-        UIAccessibility.post(notification: .announcement, argument: "Finished reading")
+
+        if shouldExplain {
+            let work = DispatchWorkItem { [weak self] in self?.expand() }
+            automaticExpansionWorkItem = work
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.automaticExpansionDelay, execute: work)
+        }
+        UIAccessibility.post(notification: .announcement, argument: "Read")
     }
 
     public func resetForReuse() {
-        hideWorkItem?.cancel()
-        hideWorkItem = nil
-        presentationGeneration += 1
+        cancelScheduledTransitions()
         layer.removeAllAnimations()
-        checkButton.layer.removeAllAnimations()
-        messageBackground.layer.removeAllAnimations()
+        glassView.layer.removeAllAnimations()
+        checkLayer.removeAllAnimations()
+        readLabel.layer.removeAllAnimations()
+        archiveLabel.layer.removeAllAnimations()
+        isExpanded = false
         isHidden = true
-        alpha = 0
-        checkButton.transform = .identity
-        setMessageVisible(false, animated: false)
+        alpha = 1
+        checkLayer.isHidden = false
+        readLabel.alpha = 1
+        readLabel.transform = .identity
+        archiveLabel.alpha = 0
+        accessibilityLabel = "Read"
     }
 
-    @objc private func checkTapped() {
-        setMessageVisible(true, animated: true)
-        scheduleHide()
+    private func configure(label: UILabel, text: String) {
+        label.text = text
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = LunaColors.primaryText
     }
 
-    private func setMessageVisible(_ visible: Bool, animated: Bool) {
-        let changes = {
-            self.messageBackground.alpha = visible ? 1 : 0
-            self.messageBackground.transform = visible
-                ? .identity : CGAffineTransform(scaleX: 0.88, y: 0.88)
-        }
-        if animated {
-            UIView.animate(
-                withDuration: 0.28, delay: 0,
-                usingSpringWithDamping: 0.78, initialSpringVelocity: 0.4,
-                options: [.beginFromCurrentState, .allowUserInteraction], animations: changes)
-        } else {
-            changes()
-        }
+    private func pillFrame(width: CGFloat) -> CGRect {
+        CGRect(
+            x: (bounds.width - width) / 2,
+            y: (bounds.height - Self.pillHeight) / 2,
+            width: width,
+            height: Self.pillHeight)
     }
 
-    private func scheduleHide() {
-        hideWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.dismiss() }
-        hideWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.visibleDuration, execute: work)
+    private func layoutPillContents() {
+        let height = glassView.bounds.height
+        let checkSize: CGFloat = 16
+        let checkX: CGFloat = 17
+        checkLayer.frame = CGRect(x: checkX, y: (height - checkSize) / 2, width: checkSize, height: checkSize)
+        checkLayer.path = UIBezierPath.checkmark(in: checkLayer.bounds).cgPath
+        readLabel.frame = CGRect(x: 42, y: 0, width: 40, height: height)
+        archiveLabel.frame = glassView.bounds.insetBy(dx: 12, dy: 0)
     }
 
-    private func dismiss() {
-        hideWorkItem = nil
-        let generation = presentationGeneration
+    private func updateForegroundColor() {
+        let color = LunaColors.primaryText.resolvedColor(with: traitCollection)
+        checkLayer.strokeColor = color.cgColor
+        readLabel.textColor = color
+        archiveLabel.textColor = color
+    }
+
+    @objc private func pillTapped() {
+        expand()
+    }
+
+    private func expand() {
+        guard !isHidden else { return }
+        automaticExpansionWorkItem?.cancel()
+        automaticExpansionWorkItem = nil
+        collapseWorkItem?.cancel()
+        isExpanded = true
+        accessibilityLabel = "Sent to archive"
+
+        // The expanded status replaces the collapsed check-and-label content;
+        // the glass surface itself remains continuously visible.
+        checkLayer.isHidden = true
         UIView.animate(
-            withDuration: 0.24, delay: 0, options: [.beginFromCurrentState, .curveEaseIn]
+            withDuration: 0.34, delay: 0,
+            usingSpringWithDamping: 0.82, initialSpringVelocity: 0.2,
+            options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
-            self.alpha = 0
-            self.checkButton.transform = CGAffineTransform(scaleX: 0.72, y: 0.72)
-        } completion: { _ in
-            guard self.presentationGeneration == generation else { return }
-            self.isHidden = true
-            self.checkButton.transform = .identity
-            self.setMessageVisible(false, animated: false)
+            self.glassView.frame = self.pillFrame(width: Self.expandedWidth)
+            self.readLabel.alpha = 0
+            self.archiveLabel.alpha = 1
+            self.layoutPillContents()
         }
+
+        let work = DispatchWorkItem { [weak self] in self?.collapse() }
+        collapseWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.expandedDuration, execute: work)
+    }
+
+    private func collapse() {
+        guard isExpanded else { return }
+        collapseWorkItem?.cancel()
+        collapseWorkItem = nil
+        isExpanded = false
+        accessibilityLabel = "Read"
+        UIView.animate(
+            withDuration: 0.32, delay: 0,
+            usingSpringWithDamping: 0.84, initialSpringVelocity: 0.2,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            self.glassView.frame = self.pillFrame(width: Self.collapsedWidth)
+            self.archiveLabel.alpha = 0
+            self.layoutPillContents()
+        } completion: { _ in
+            guard !self.isExpanded else { return }
+            self.checkLayer.isHidden = false
+            self.readLabel.alpha = 1
+        }
+    }
+
+    private func cancelScheduledTransitions() {
+        automaticExpansionWorkItem?.cancel()
+        automaticExpansionWorkItem = nil
+        collapseWorkItem?.cancel()
+        collapseWorkItem = nil
     }
 
     #if DEBUG
-    func dismissForTesting() { dismiss() }
+    var isExpandedForTesting: Bool { isExpanded }
+    var checkmarkIsHiddenForTesting: Bool { checkLayer.isHidden }
+    var checkmarkIsDrawingForTesting: Bool {
+        checkLayer.animation(forKey: "drawCheckmark") != nil
+    }
+    func expandForTesting() { expand() }
+    func collapseForTesting() { collapse() }
+    static func resetExplanationForTesting() {
+        UserDefaults.standard.removeObject(forKey: didExplainDefaultsKey)
+    }
     #endif
+}
+
+private extension UIBezierPath {
+    static func checkmark(in bounds: CGRect) -> UIBezierPath {
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: bounds.width * 0.12, y: bounds.height * 0.53))
+        path.addLine(to: CGPoint(x: bounds.width * 0.41, y: bounds.height * 0.80))
+        path.addLine(to: CGPoint(x: bounds.width * 0.90, y: bounds.height * 0.20))
+        return path
+    }
 }

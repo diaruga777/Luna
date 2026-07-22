@@ -171,7 +171,8 @@ final class ReaderScreenTests: XCTestCase {
         reader.scrollViewDidScroll(textView)
 
         XCTAssertTrue(delegate.didFinish, "Scrolling to the full article end should mark the article read")
-        XCTAssertFalse(findView(of: FinishedReadingBadgeView.self, in: reader.view)?.isHidden ?? true)
+        let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view)
+        XCTAssertFalse(badge?.isHidden ?? true)
     }
 
     func testFinishedScrollReaderStartsAtTopInsteadOfPersistedEnd() {
@@ -225,7 +226,9 @@ final class ReaderScreenTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
         XCTAssertTrue(delegate.didFinish, "Skipping onto the final RSVP word should mark the article read")
-        XCTAssertFalse(findView(of: FinishedReadingBadgeView.self, in: reader.view)?.isHidden ?? true)
+        let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view)
+        XCTAssertFalse(badge?.isHidden ?? true)
+        XCTAssertEqual(badge?.bounds.height, FinishedReadingBadgeView.pillHeight)
     }
 
     func testReaderHostMarksScrollCompletionReadAndPendingArchive() {

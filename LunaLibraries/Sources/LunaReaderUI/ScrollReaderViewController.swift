@@ -437,7 +437,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private func layoutShareView() {
         let width = textView.bounds.width
         guard width > 0 else { return }
-        let badgeHeight: CGFloat = 92
+        let badgeHeight: CGFloat = 60
         finishedBadge.frame = CGRect(
             x: 0, y: textView.contentSize.height, width: width, height: badgeHeight)
         var shareHeight: CGFloat = 0
@@ -1234,8 +1234,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         guard didLoadFullContent, textView.contentSize.height > 0 else { return }
         let visibleBottom = textView.contentOffset.y + textView.bounds.height
         // Require the user to enter the reserved whitespace far enough for the
-        // green check itself to be visible when its animation starts.
-        let reachedEnd = visibleBottom >= textView.contentSize.height + 80
+        // persistent glass pill to be visible when its checkmark starts drawing.
+        let reachedEnd = visibleBottom >= textView.contentSize.height + 52
         switch finishedReadingTracker.update(reachedEnd: reachedEnd) {
         case .finished:
             finishedBadge.present()

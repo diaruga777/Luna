@@ -1215,6 +1215,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         guard finishedReadingTracker.update(reachedEnd: true) == .finished else { return }
         pause()
         revealShareView()
+        hideLinkPill()
         finishedBadge.present()
         completionDelegate?.readerDidFinishReading(self)
     }
@@ -1223,13 +1224,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         view.addSubview(finishedBadge)
     }
 
-    /// Occupies the quiet band immediately above the focused word or phrase.
+    /// Reuses the link-pill lane and its exact height so completion replaces,
+    /// rather than competes with, a link preview at the end of the article.
     private func layoutFinishedBadge() {
-        let width = min(view.bounds.width, 320)
+        let width = min(view.bounds.width - 64, 220)
         finishedBadge.frame = CGRect(
             x: (view.bounds.width - width) / 2,
-            y: max(subModeControl.frame.maxY + 8, focalCenterY - 150),
-            width: width, height: 92)
+            y: linkPill.frame.minY,
+            width: width, height: Self.phrasePillHeight)
     }
 
     // MARK: - Controls

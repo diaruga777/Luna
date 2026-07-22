@@ -642,7 +642,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                         from: self,
                         sourceView: sourceView)
                 },
-                unarchive: { [weak self] in self?.store.markUnread(item.id) })
+                unarchive: { [weak self] in self?.store.markUnread(item.id) },
+                delete: nil)
         }
     }
 

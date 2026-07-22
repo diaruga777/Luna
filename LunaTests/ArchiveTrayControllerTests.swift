@@ -44,12 +44,34 @@ final class ArchiveTrayControllerTests: XCTestCase {
         tray.setItems([ArchiveTrayItem(
             id: UUID(), title: "Archived item", footer: nil, showsMetadata: true,
             isAvailable: true, loadImage: { $0(nil) }, tap: {}, share: { _ in },
-            unarchive: {})])
+            unarchive: {}, delete: nil)])
 
         let titles = tray.contextMenuForTesting(itemAt: 0).children.compactMap {
             ($0 as? UIAction)?.title
         }
         XCTAssertEqual(titles, ["Unarchive", "Share"])
+    }
+
+    @MainActor
+    func testCellContextMenuOffersDestructiveDeleteWhenSurfaceProvidesIt() throws {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        var didDelete = false
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [] }, canPull: { true })
+        tray.setItems([ArchiveTrayItem(
+            id: UUID(), title: nil, footer: nil, showsMetadata: false,
+            isAvailable: false, loadImage: { $0(nil) }, tap: {}, share: { _ in },
+            unarchive: {}, delete: { didDelete = true })])
+
+        let menu = tray.contextMenuForTesting(itemAt: 0)
+        let actions = menu.children.compactMap { $0 as? UIAction }
+        XCTAssertEqual(actions.map(\.title), ["Unarchive", "Share", "Delete"])
+        let delete = try XCTUnwrap(actions.last)
+        XCTAssertTrue(delete.attributes.contains(.destructive))
+
+        delete.performWithSender(nil, target: nil)
+        XCTAssertTrue(didDelete)
     }
 
     @MainActor

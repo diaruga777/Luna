@@ -19,6 +19,9 @@ struct ArchiveTrayItem {
     let tap: () -> Void
     let share: (UIView) -> Void
     let unarchive: () -> Void
+    /// Surface-owned permanent deletion. Reader leaves this nil; Downloader
+    /// supplies its full saved-media + shared-reading-list cleanup path.
+    let delete: (() -> Void)?
 }
 
 /// A non-carousel drawer that peeks from the right edge and opens to two thirds
@@ -290,14 +293,21 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
     }
 
     private func contextMenu(for item: ArchiveTrayItem, sourceView: UIView) -> UIMenu {
-        UIMenu(children: [
+        var actions: [UIAction] = [
             UIAction(
                 title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")
             ) { _ in item.unarchive() },
             UIAction(
                 title: "Share", image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in item.share(sourceView) },
-        ])
+        ]
+        if let delete = item.delete {
+            actions.append(UIAction(
+                title: "Delete", image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { _ in delete() })
+        }
+        return UIMenu(children: actions)
     }
 
 }

@@ -46,7 +46,9 @@ own adapters later). The Downloader-specific adapters live in
   spring-dismisses it. `ArchiveTrayController` owns this shared presentation and
   a vertically scrolling single-column list of wide rectangular items. Its opaque
   neutral background follows light/dark appearance and covers card chrome beneath
-  it while open. The carousel reports its intended
+  it while open. Long-pressing a tray item offers Unarchive and Share; Downloader
+  also offers a destructive Delete that removes the complete save through its
+  normal cleanup path. The carousel reports its intended
   navigation target before card motion begins: scrubbing, tapping a scrubber chip,
   or swiping away from the rightmost card retracts the tray concurrently instead
   of waiting for the card swap. Paging toward the rightmost card reveals the tab

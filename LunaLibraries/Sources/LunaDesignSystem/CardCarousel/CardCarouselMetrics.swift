@@ -101,6 +101,21 @@ public struct CardCarouselMetrics: Equatable {
             width: cardSize.width,
             height: cardSize.height)
     }
+
+    /// Positions the transient playback indicator in the open runway beneath
+    /// the centered card, where it reads against the carousel background.
+    func playbackScrubProgressFrame(
+        horizontalInset: CGFloat = 18,
+        topSpacing: CGFloat = 8,
+        height: CGFloat
+    ) -> CGRect {
+        let cardFrame = centeredCardFrame()
+        return CGRect(
+            x: cardFrame.minX + horizontalInset,
+            y: cardFrame.maxY + topSpacing,
+            width: max(cardFrame.width - horizontalInset * 2, 0),
+            height: height)
+    }
 }
 
 /// Shared math for the thumbnail scrub strip under the cards: which card index

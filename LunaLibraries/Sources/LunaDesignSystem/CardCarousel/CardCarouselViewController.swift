@@ -125,7 +125,7 @@ public struct CardCarouselStyle {
     /// bottom edges instead of hitting a hard clip — scrolled reader text fades
     /// away as it approaches an edge. 0 (the default) keeps the hard clip.
     public var contentEdgeFadeHeight: CGFloat = 0
-    /// Show a transient moon-horizon position bar over opted-in playable
+    /// Show a transient moon-horizon position bar beneath opted-in playable
     /// content while an in-card horizontal drag seeks through it.
     public var showsPlaybackScrubProgress = false
 
@@ -325,6 +325,8 @@ public final class CardCarouselViewController: UIViewController {
         view.addSubview(cardArea)
         playbackScrubProgress.alpha = 0
         playbackScrubProgress.isHidden = true
+        // The traveling activity pulse belongs to download progress, not
+        // deterministic media playback position.
         playbackScrubProgress.showsActivityPulse = false
         playbackScrubProgress.accessibilityLabel = "Video position"
         cardArea.addSubview(playbackScrubProgress)
@@ -662,14 +664,9 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     private func layoutPlaybackScrubProgress() {
-        let cardFrame = centeredCardFrame()
-        let horizontalInset: CGFloat = 18
+        guard let metrics else { return }
         let height = playbackScrubProgress.intrinsicContentSize.height
-        playbackScrubProgress.frame = CGRect(
-            x: cardFrame.minX + horizontalInset,
-            y: cardFrame.maxY - height - 14,
-            width: max(cardFrame.width - horizontalInset * 2, 0),
-            height: height)
+        playbackScrubProgress.frame = metrics.playbackScrubProgressFrame(height: height)
     }
 
     private func showPlaybackScrubProgress(at fraction: Double) {

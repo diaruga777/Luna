@@ -59,9 +59,11 @@ own adapters later). The Downloader-specific adapters live in
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
   playback timestamp (one card-width ≈ full duration). While a Downloader
   video is actively being scrubbed, a transient
-  `MoonHorizonProgressBar` floats just above the card's bottom edge and follows
-  the seek position; it fades away when the drag ends. GIF scrubbing retains
-  its existing gesture without showing the video-position bar.
+  `MoonHorizonProgressBar` sits just below the card, against the black carousel
+  background, and follows the seek position; it fades away when the drag ends.
+  It shows only determinate progress and the head point—the traveling activity
+  pulse remains exclusive to download progress. GIF scrubbing retains its
+  existing gesture without showing the video-position bar.
   The card itself never pans.
 - **Paging** happens outside the card: a horizontal drag on the insets left/right of
   the card drives the eclipse transition *interactively* — it tracks the finger,

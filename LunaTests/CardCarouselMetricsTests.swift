@@ -81,6 +81,16 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertEqual(frame.size, metrics.cardSize)
     }
 
+    func testPlaybackScrubProgressSitsBelowCenteredCard() {
+        let metrics = CardCarouselMetrics.resolve(containerSize: CGSize(width: 400, height: 800))
+        let cardFrame = metrics.centeredCardFrame()
+        let progressFrame = metrics.playbackScrubProgressFrame(height: 20)
+
+        XCTAssertEqual(progressFrame.minY, cardFrame.maxY + 8, accuracy: 0.01)
+        XCTAssertEqual(progressFrame.minX, cardFrame.minX + 18, accuracy: 0.01)
+        XCTAssertEqual(progressFrame.maxX, cardFrame.maxX - 18, accuracy: 0.01)
+    }
+
     func testTinyContainerDegradesGracefully() {
         let metrics = CardCarouselMetrics.resolve(containerSize: CGSize(width: 10, height: 10))
         XCTAssertGreaterThan(metrics.cardSize.width, 0)

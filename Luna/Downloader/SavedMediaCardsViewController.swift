@@ -22,6 +22,12 @@ import LunaURLClassification
 import Photos
 import UIKit
 
+enum SavedMediaCardOrdering {
+    static func newestFirst(_ items: [SavedMediaItem]) -> [SavedMediaItem] {
+        items.sorted { $0.dateSaved > $1.dateSaved }
+    }
+}
+
 final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     private enum PasteboardCardState {
@@ -207,7 +213,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     @objc private func reload() {
         store.purgeExpired()
         let allItems = store.items()
-        var updated = allItems.filter { !$0.isArchived }
+        var updated = SavedMediaCardOrdering.newestFirst(
+            allItems.filter { !$0.isArchived })
         if isCommittingPasteboardMedia,
            case .ready(_, let url, _, _, _) = renderedPasteboardState {
             updated.removeAll { $0.sourceURLString == url.absoluteString }

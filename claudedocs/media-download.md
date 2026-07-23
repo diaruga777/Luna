@@ -104,7 +104,7 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
 ## Entry points and UI
 
 - **Main Downloader carousel** — `SavedMediaCardsViewController` (the root screen)
-  displays all three states in chronological order as full-content cards; there is no
+  displays all three states newest-first from left to right as full-content cards; there is no
   separate pushed viewer (see `claudedocs/card-carousel.md` for the carousel's
   interaction model). Local media plays from its App Group file; Photos-backed images
   load with PhotoKit image APIs and Photos-backed videos load through

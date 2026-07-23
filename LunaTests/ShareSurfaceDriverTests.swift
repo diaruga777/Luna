@@ -274,16 +274,20 @@ final class ShareSurfaceDriverTests: XCTestCase {
         XCTAssertTrue(shareHost.presented.isEmpty)
     }
 
-    /// `.failed` shows an error in the action extension and completes without UI in
-    /// the share extension (marking the item failed for retry).
-    func testFailedSurfacesErrorInActionAndQuietCompleteInShare() {
+    /// `.failed` now presents the URL-rescue hand-off card in the action extension
+    /// (never a misleading "Saved") and completes without UI in the share extension
+    /// — both marking the item failed for retry. (See `claudedocs/url-rescue.md`;
+    /// the dedicated `ShareSurfaceDriverRescueTests` assert the card details.)
+    func testFailedPresentsRescueCardInActionAndQuietCompleteInShare() {
         let urlString = "https://example.com/dead"
 
         _ = store.add(urlString: urlString)
         let (actionDriver, actionHost) = makeDriver(isActionExtension: true)
         actionDriver.present(.failed, url: url(urlString))
-        XCTAssertNotNil(actionHost.error, "action ext surfaces an error on failure")
+        XCTAssertTrue(actionHost.presented.contains { $0 is RescueFailureViewController },
+                      "action ext presents the rescue hand-off card on failure")
         XCTAssertFalse(actionHost.confirmedSaved, "never a misleading Saved on failure")
+        XCTAssertEqual(store.item(forURLString: urlString)?.state, .failed)
 
         store.delete(store.item(forURLString: urlString)!)
         _ = store.add(urlString: urlString)

@@ -52,7 +52,7 @@ final class SurfaceParityTests: XCTestCase {
     /// The presentation intent a surface produces — the common vocabulary both the
     /// main-app presenter and the extension driver map an `Outcome` into.
     private enum SurfaceIntent: Equatable {
-        case reader, tracker, nonTextual, savedDocument, archiveReader, error
+        case reader, tracker, nonTextual, savedDocument, archiveReader, error, rescue
     }
 
     // MARK: - Fake extension host (records what the driver presented)
@@ -83,6 +83,7 @@ final class SurfaceParityTests: XCTestCase {
                 if last is ShareReaderViewController { return .reader }
                 if last is SavedNonTextualViewController { return .nonTextual }
                 if last is ArchiveWebReaderViewController { return .archiveReader }
+                if last is RescueFailureViewController { return .rescue }
             }
             if error != nil { return .error }
             if autoDownloadedURL != nil { return .nonTextual }
@@ -258,8 +259,16 @@ final class SurfaceParityTests: XCTestCase {
             let outcome = await process(link, source: .manual)
             let appIntent = mainAppIntent(for: outcome)
             let actionIntent = extensionIntent(for: outcome, link: link, isAction: true)
-            XCTAssertEqual(actionIntent, appIntent,
-                           "\(link.name): action extension must present the same intent as the main app")
+            if appIntent == .error {
+                // URL Rescue (claudedocs/url-rescue.md): a `.failed` outcome now
+                // legitimately diverges by surface — the action extension presents
+                // the rescue hand-off card while the main app shows the failed row.
+                XCTAssertEqual(actionIntent, .rescue,
+                               "\(link.name): action extension presents the rescue card on failure")
+            } else {
+                XCTAssertEqual(actionIntent, appIntent,
+                               "\(link.name): action extension must present the same intent as the main app")
+            }
 
             // The zero-UI share extension agrees on the interactive intents (tracker,
             // archive) and never mis-presents; for article/document it saves silently
@@ -273,8 +282,9 @@ final class SurfaceParityTests: XCTestCase {
             case .reader, .savedDocument:
                 XCTAssertEqual(shareIntent, .savedDocument,
                                "\(link.name): share extension saves articles/documents silently")
-            case .error:
-                break // share ext completes quietly on failure (by design)
+            case .error, .rescue:
+                break // share ext completes quietly on failure (by design) — the
+                       // rescue card is an action-extension-only affordance
             }
 
             if let expected = link.expectedExtensionActionIntent {

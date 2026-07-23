@@ -36,17 +36,23 @@ own adapters later). The Downloader-specific adapters live in
 
 ## Interaction model
 
-- **Archive tray**: Reader and Downloader each keep a distinct, non-card tray just
-  beyond the carousel's right edge. Its vertical `archive` tab is fully offscreen
-  away from the rightmost card, then spring-peeks in when the rightmost card becomes
-  centered (the empty state also exposes it). The tray is absent from the carousel
-  count and scrubber. A leftward pull opens the tray
-  to 2/3 screen width, and shifts the card/empty UX left by 1/2 screen width. The
-  gesture is interactive in both directions; tapping the exposed outside area
-  spring-dismisses it. `ArchiveTrayController` owns this shared presentation and
-  a vertically scrolling single-column list of wide rectangular items. Its opaque
-  neutral background follows light/dark appearance and covers card chrome beneath
-  it while open. Long-pressing a tray item offers Unarchive and Share; both Reader
+- **Archive arc**: Reader and Downloader each keep a distinct, non-card, chrome-less
+  archive drawer just beyond the carousel's right edge — no background, no pull tab;
+  the cells are the entire surface. Closed, the arc is fully offscreen away from the
+  rightmost card; when the rightmost card centers AND the archive has items, the
+  cells spring-peek in from the right edge (26pt). An empty archive never peeks but
+  can still be pulled open (the empty carousel state also allows the pull). The
+  drawer is absent from the carousel count and scrubber. A leftward pull opens it
+  over the right 2/3 of the screen while the card/empty UX translates left by the
+  same 2/3, ceding that space. The gesture is interactive in both directions;
+  tapping the exposed outside area spring-dismisses it. `ArchiveTrayController`
+  owns this shared presentation; `ArchiveArcLayout` (a custom
+  `UICollectionViewLayout`) arranges an "archive" header cell plus narrowed item
+  cells (drawer width − 56) along a circular arc whose pivot sits far off the right
+  edge (radius ≈ 1.4× drawer height), so the column bows left. Vertical scrolling
+  reinterprets as rotation: each item's position/tilt derives from its arc-length
+  distance to the viewport midline, cells fanning spoke-like toward the pivot.
+  Long-pressing an item cell offers Unarchive and Share; both Reader
   and Downloader also offer a destructive Delete that removes the complete save
   through the surface's normal cleanup path. Reader unarchive writes immediately,
   bumps the article to the first active position, and cross-dissolves the tray-cell

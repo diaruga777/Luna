@@ -26,18 +26,98 @@ struct ArchiveTrayItem {
     let delete: (() -> Void)?
 }
 
-/// A non-carousel drawer that peeks from the right edge and opens to two thirds
-/// of the screen. Its pan moves the current card/empty state only half a screen,
-/// leaving the tray visually independent from carousel paging.
+/// Lays the archive cells (and the leading "archive" header cell) along a
+/// circular arc whose pivot sits far off the screen's right edge, so the
+/// column bows left. Scrolling stays ordinary vertical scrolling, but each
+/// item's position and tilt derive from its arc-length distance to the
+/// viewport's vertical midline — so the whole arc visibly rotates about the
+/// offscreen pivot as it scrolls.
+final class ArchiveArcLayout: UICollectionViewLayout {
+    var itemSize = CGSize(width: 200, height: 128)
+    var headerHeight: CGFloat = 40
+    var spacing: CGFloat = 10
+    var topInset: CGFloat = 18
+    var bottomInset: CGFloat = 28
+    /// Gap between the container's leading edge and the arc's apex (its
+    /// leftmost cell). Kept small so the peeking closed state shows cell, not
+    /// margin.
+    var leadingInset: CGFloat = 8
+    /// Distance from every cell to the offscreen pivot. Larger = flatter arc.
+    var radius: CGFloat = 1_000
+
+    /// Arc-length position of each item's center, top to bottom.
+    private var arcCenters: [CGFloat] = []
+    private var contentHeight: CGFloat = 0
+
+    override func prepare() {
+        super.prepare()
+        guard let collectionView else { return }
+        arcCenters.removeAll()
+        var y = topInset
+        for index in 0..<collectionView.numberOfItems(inSection: 0) {
+            let height = index == 0 ? headerHeight : itemSize.height
+            arcCenters.append(y + height / 2)
+            y += height + spacing
+        }
+        contentHeight = arcCenters.isEmpty ? 0 : y - spacing + bottomInset
+    }
+
+    override var collectionViewContentSize: CGSize {
+        CGSize(width: collectionView?.bounds.width ?? 0, height: contentHeight)
+    }
+
+    /// Every position depends on the scroll offset (the arc's rotation), so
+    /// any bounds change must relayout.
+    override func shouldInvalidateLayout(forBoundsChange newBounds: CGRect) -> Bool { true }
+
+    override func layoutAttributesForElements(
+        in rect: CGRect
+    ) -> [UICollectionViewLayoutAttributes]? {
+        (0..<arcCenters.count)
+            .compactMap { layoutAttributesForItem(at: IndexPath(item: $0, section: 0)) }
+            .filter { $0.frame.intersects(rect) }
+    }
+
+    override func layoutAttributesForItem(
+        at indexPath: IndexPath
+    ) -> UICollectionViewLayoutAttributes? {
+        guard let collectionView, arcCenters.indices.contains(indexPath.item) else { return nil }
+        let attributes = UICollectionViewLayoutAttributes(forCellWith: indexPath)
+        attributes.size = indexPath.item == 0
+            ? CGSize(width: itemSize.width, height: headerHeight)
+            : itemSize
+        // The item's sweep angle away from the viewport midline (the apex).
+        let viewportMid = collectionView.contentOffset.y + collectionView.bounds.height / 2
+        let angle = (arcCenters[indexPath.item] - viewportMid) / max(radius, 1)
+        let apexCenterX = leadingInset + itemSize.width / 2
+        attributes.center = CGPoint(
+            x: apexCenterX + radius * (1 - cos(angle)),
+            y: viewportMid + radius * sin(angle))
+        // Point each cell's long axis at the pivot, spoke-like. Negated
+        // because UIKit's positive rotation is clockwise in its y-down space.
+        attributes.transform = CGAffineTransform(rotationAngle: -angle)
+        attributes.zIndex = indexPath.item
+        return attributes
+    }
+}
+
+/// A chrome-less drawer of archive cells arranged along a right-edge arc.
+/// There is no tray background or pull tab — the cells are the entire
+/// surface. Closed, the arc sits offscreen; while the host rests on its
+/// rightmost card (or empty state) and the archive has items, the apex cells
+/// peek in from the right edge. A leftward pull opens the arc over the right
+/// two thirds of the screen while the current card/empty state translates
+/// left by the same two thirds, ceding that space to the arc.
 final class ArchiveTrayController: NSObject {
     private weak var host: UIViewController?
     private let shiftedViews: () -> [UIView]
     private let canPull: () -> Bool
     private let openStateChanged: (Bool) -> Void
+    /// Invisible container that carries the arc's horizontal reveal. It still
+    /// hit-tests, so an open arc blocks taps from reaching the shifted card.
     private let tray = UIView()
-    private let tab = UIView()
-    private let tabLabel = UILabel()
     private let dismissControl = UIControl()
+    private let arcLayout = ArchiveArcLayout()
     private let collection: UICollectionView
     private let emptyLabel = UILabel()
     private var pan: UIPanGestureRecognizer!
@@ -45,12 +125,14 @@ final class ArchiveTrayController: NSObject {
     private var progress: CGFloat = 0
     private var panStartProgress: CGFloat = 0
     private var laidOutSize = CGSize.zero
-    /// The closed tray is wholly offscreen until its host reaches the rightmost
-    /// card. Changing this state slides just the vertical pull tab into view.
+    /// The closed arc is wholly offscreen until its host reaches the rightmost
+    /// card. Changing this state slides the apex cells' peek into view.
     private var pullAvailable = false
 
-    private static let peek: CGFloat = 13
-    private static let tabWidth: CGFloat = 30
+    /// How far the apex cells poke past the screen edge while closed-but-
+    /// available. Wider than the old pull tab's 13pt because what peeks now is
+    /// the cells themselves.
+    private static let peek: CGFloat = 26
 
     init(
         host: UIViewController,
@@ -62,11 +144,7 @@ final class ArchiveTrayController: NSObject {
         self.shiftedViews = shiftedViews
         self.canPull = canPull
         self.openStateChanged = openStateChanged
-        let layout = UICollectionViewFlowLayout()
-        layout.minimumInteritemSpacing = 10
-        layout.minimumLineSpacing = 10
-        layout.sectionInset = UIEdgeInsets(top: 18, left: 14, bottom: 28, right: 14)
-        collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        collection = UICollectionView(frame: .zero, collectionViewLayout: arcLayout)
         super.init()
         configure()
     }
@@ -79,41 +157,17 @@ final class ArchiveTrayController: NSObject {
         dismissControl.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
         view.addSubview(dismissControl)
 
-        // This surface overlaps the shifted card while open, so it must remain
-        // opaque. The semantic neutral also follows Luna's light/dark appearance.
-        tray.backgroundColor = LunaColors.secondaryBackground
-        tray.layer.cornerRadius = 28
-        tray.layer.cornerCurve = .continuous
-        tray.clipsToBounds = false
+        tray.backgroundColor = .clear
         view.addSubview(tray)
-
-        tab.backgroundColor = LunaColors.tertiaryBackground
-        tab.layer.cornerRadius = 10
-        tab.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-        tab.clipsToBounds = true
-        tab.isAccessibilityElement = true
-        tab.accessibilityLabel = "Archive"
-        tray.addSubview(tab)
-
-        // Rotate one unbroken word rather than stacking seven lines. The latter
-        // can exceed the fixed tab height at larger Dynamic Type sizes and gets
-        // ellipsized by UILabel.
-        tabLabel.text = "archive"
-        tabLabel.numberOfLines = 1
-        tabLabel.textAlignment = .center
-        tabLabel.font = .preferredFont(forTextStyle: .caption2)
-        tabLabel.adjustsFontForContentSizeCategory = true
-        tabLabel.adjustsFontSizeToFitWidth = true
-        tabLabel.minimumScaleFactor = 0.72
-        tabLabel.textColor = LunaColors.primaryText
-        tabLabel.isAccessibilityElement = false
-        tab.addSubview(tabLabel)
 
         collection.backgroundColor = .clear
         collection.alwaysBounceVertical = true
+        collection.showsVerticalScrollIndicator = false
         collection.dataSource = self
         collection.delegate = self
         collection.register(ArchiveTrayCell.self, forCellWithReuseIdentifier: ArchiveTrayCell.reuseID)
+        collection.register(
+            ArchiveArcHeaderCell.self, forCellWithReuseIdentifier: ArchiveArcHeaderCell.reuseID)
         tray.addSubview(collection)
 
         emptyLabel.text = "No archived items"
@@ -131,16 +185,19 @@ final class ArchiveTrayController: NSObject {
         self.items = items
         emptyLabel.isHidden = !items.isEmpty
         collection.reloadData()
+        // The closed peek exists only when there are cells to peek, so a
+        // change in emptiness repositions the closed arc.
+        applyProgress()
     }
 
     /// Re-evaluates the host's right-edge condition. Paging onto the last card
-    /// animates the closed tab from fully offscreen to its normal peek; paging
-    /// away retracts it and closes an open tray defensively.
+    /// animates the closed arc from fully offscreen to its cell peek; paging
+    /// away retracts it and closes an open arc defensively.
     func refreshPullAvailability(animated: Bool) {
         setPullAvailable(canPull(), animated: animated)
     }
 
-    /// Closes an open tray. Surface-owned item transitions use this to keep the
+    /// Closes an open arc. Surface-owned item transitions use this to keep the
     /// drawer dismissal in lockstep with their own animation.
     func dismiss(animated: Bool) {
         setOpen(false, animated: animated)
@@ -175,17 +232,15 @@ final class ArchiveTrayController: NSObject {
         let bottom = safeAreaInsets.bottom + 8
         tray.bounds = CGRect(x: 0, y: 0, width: width, height: max(0, bounds.height - top - bottom))
         tray.center.y = top + tray.bounds.height / 2
-        tab.frame = CGRect(x: -Self.tabWidth, y: 64, width: Self.tabWidth, height: 126)
-        tabLabel.bounds = CGRect(x: 0, y: 0, width: tab.bounds.height - 16, height: tab.bounds.width)
-        tabLabel.center = CGPoint(x: tab.bounds.midX, y: tab.bounds.midY)
-        tabLabel.transform = CGAffineTransform(rotationAngle: -.pi / 2)
         collection.frame = tray.bounds
         emptyLabel.frame = tray.bounds.insetBy(dx: 18, dy: 18)
+        // Narrower than the old full-width rows: the trailing slack is what
+        // lets off-apex cells drift rightward along the arc without leaving
+        // the screen immediately.
+        arcLayout.itemSize = CGSize(width: max(0, floor(width) - 56), height: 128)
+        arcLayout.radius = max(tray.bounds.height, 400) * 1.4
+        arcLayout.invalidateLayout()
         applyProgress()
-        if let layout = collection.collectionViewLayout as? UICollectionViewFlowLayout {
-            let usable = floor(width - layout.sectionInset.left - layout.sectionInset.right)
-            layout.itemSize = CGSize(width: usable, height: 128)
-        }
     }
 
     @objc private func dismissTapped() { setOpen(false, animated: true) }
@@ -221,34 +276,30 @@ final class ArchiveTrayController: NSObject {
     }
 
     private func applyProgress() {
+        guard laidOutSize.width > 0 else { return }
         let width = laidOutSize.width * 2 / 3
-        // `tab` extends `tabWidth` points left of the tray. Moving the tray to
-        // screenWidth + tabWidth therefore hides both tray and tab exactly.
-        let closedX = pullAvailable
+        // Closed, the arc is wholly offscreen — unless the rightmost card is
+        // centered AND the archive has items, when the apex cells peek in
+        // where the old pull tab used to.
+        let closedX = pullAvailable && !items.isEmpty
             ? laidOutSize.width - Self.peek
-            : laidOutSize.width + Self.tabWidth
+            : laidOutSize.width
         let openX = laidOutSize.width - width
         tray.frame.origin.x = closedX + (openX - closedX) * progress
-        let shift = -laidOutSize.width * 0.5 * progress
+        // The card (or empty state) clears the arc's full region.
+        let shift = -laidOutSize.width * 2 / 3 * progress
         shiftedViews().forEach { $0.transform = CGAffineTransform(translationX: shift, y: 0) }
         openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01
         dismissControl.alpha = progress * 0.18
-        tray.layer.shadowColor = UIColor.black.cgColor
-        tray.layer.shadowOpacity = Float(progress * 0.22)
-        tray.layer.shadowRadius = 18
-        tray.layer.shadowOffset = CGSize(width: -5, height: 0)
     }
 
     #if DEBUG
     var isPullAvailableForTesting: Bool { pullAvailable }
     var trayFrameForTesting: CGRect { tray.frame }
-    var trayBackgroundColorForTesting: UIColor? { tray.backgroundColor }
-    var archiveLabelTextForTesting: String? { tabLabel.text }
-    var archiveLabelNumberOfLinesForTesting: Int { tabLabel.numberOfLines }
-    var itemSizeForTesting: CGSize {
-        (collection.collectionViewLayout as? UICollectionViewFlowLayout)?.itemSize ?? .zero
-    }
+    var itemSizeForTesting: CGSize { arcLayout.itemSize }
+    var arcLayoutForTesting: ArchiveArcLayout { arcLayout }
+    var headerTitleForTesting: String { ArchiveArcHeaderCell.title }
     func contextMenuForTesting(itemAt index: Int) -> UIMenu {
         contextMenu(for: items[index], sourceView: collection)
     }
@@ -271,21 +322,27 @@ extension ArchiveTrayController: UIGestureRecognizerDelegate {
 }
 
 extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDelegate {
+    /// Item 0 is always the "archive" header cell; archive entries follow.
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        items.count
+        items.count + 1
     }
 
     func collectionView(
         _ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
+        if indexPath.item == 0 {
+            return collectionView.dequeueReusableCell(
+                withReuseIdentifier: ArchiveArcHeaderCell.reuseID, for: indexPath)
+        }
         let cell = collectionView.dequeueReusableCell(
             withReuseIdentifier: ArchiveTrayCell.reuseID, for: indexPath) as! ArchiveTrayCell
-        cell.configure(with: items[indexPath.item])
+        cell.configure(with: items[indexPath.item - 1])
         return cell
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        items[indexPath.item].tap()
+        guard indexPath.item > 0 else { return }
+        items[indexPath.item - 1].tap()
     }
 
     func collectionView(
@@ -293,7 +350,8 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
         contextMenuConfigurationForItemAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        let item = items[indexPath.item]
+        guard indexPath.item > 0 else { return nil }
+        let item = items[indexPath.item - 1]
         let sourceView = collectionView.cellForItem(at: indexPath) ?? collectionView
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
             self?.contextMenu(for: item, sourceView: sourceView)
@@ -318,6 +376,38 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
         return UIMenu(children: actions)
     }
 
+}
+
+/// The arc's leading cell: the pane's "archive" title, positioned and tilted
+/// by the same arc math as the item cells so it scrolls with them.
+private final class ArchiveArcHeaderCell: UICollectionViewCell {
+    static let reuseID = "ArchiveArcHeaderCell"
+    static let title = "archive"
+    private let label = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isAccessibilityElement = true
+        accessibilityTraits = .header
+        accessibilityLabel = "Archive"
+        label.text = Self.title
+        label.font = UIFontMetrics(forTextStyle: .title3)
+            .scaledFont(for: .systemFont(ofSize: 20, weight: .semibold))
+        label.adjustsFontForContentSizeCategory = true
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.72
+        label.textColor = LunaColors.primaryText
+        label.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10),
+            label.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 }
 
 private final class ArchiveTrayCell: UICollectionViewCell {

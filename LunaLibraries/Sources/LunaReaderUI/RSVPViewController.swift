@@ -17,7 +17,7 @@ import UIKit
 /// - **Words**: one word at a time on a fixed focal column, the ORP letter tinted
 ///   in the reading accent, word-length-aware timing — the classic RSVP view.
 /// - **Phrases**: a whole phrase (the former chunk-highlight engine) shown over
-///   two lines in a glass reticule, with the surrounding prose always visible
+///   two lines in a glass focus panel, with the surrounding prose always visible
 ///   above and below and updating as the phrase advances. The phrase boundaries
 ///   and per-phrase timing follow speed-reading practice (`ChunkPlanner`).
 ///
@@ -135,7 +135,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     private let wordLabel = UILabel()
-    /// Multi-line phrase text shown in the reticule in Phrases mode.
+    /// Multi-line phrase text shown in the focus panel in Phrases mode.
     private let phraseLabel = UILabel()
     /// Surrounding prose. In Words mode this is only visible while paused (so the
     /// single-word focus isn't diluted during playback); in Phrases mode it's
@@ -143,9 +143,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// thread of the sentence.
     private let previousContextLabel = UILabel()
     private let nextContextLabel = UILabel()
-    /// Glass reticule marks above and below the ORP letter (Words mode).
-    private let reticuleTop = GlassStyle.reticuleMark()
-    private let reticuleBottom = GlassStyle.reticuleMark()
     /// Glass panel behind the two-line phrase (Phrases mode).
     private let phrasePanel = GlassStyle.focusPanel()
     private let playPauseButton = UIButton(type: .system)
@@ -189,8 +186,25 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
     private static let contextWordCount = 20
-    /// Vertical center of the focal word / phrase reticule (above the controls).
-    private var focalCenterY: CGFloat { view.bounds.midY - 40 }
+    /// Vertical center of the focal word / phrase. It is derived from the actual
+    /// space between the title-aware mode switcher and the playback controls so a
+    /// tall title header can never push the reading display over the controls.
+    private var focalCenterY: CGFloat {
+        let top = max(view.safeAreaInsets.top, subModeControl.frame.maxY) + 18
+        let controlsTop = controlsStack.frame.minY > 0
+            ? controlsStack.frame.minY
+            : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
+        // Keep the link/completion lane below the focused content. With the old
+        // focus marks removed, this is the only vertical clearance the word needs.
+        let lowerClearance: CGFloat = displayMode == .phrases ? 104 : 106
+        let upperClearance: CGFloat = displayMode == .phrases ? 54 : 30
+        let minimumCenter = top + upperClearance
+        let maximumCenter = controlsTop - 12 - lowerClearance
+        guard maximumCenter >= minimumCenter else {
+            return (top + controlsTop) / 2
+        }
+        return min(max(view.bounds.midY - 40, minimumCenter), maximumCenter)
+    }
 
     /// Sized at init from the device width so `targetCharactersAcross`
     /// characters fit beside the focal column without running off-screen.
@@ -376,7 +390,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         view.backgroundColor = LunaColors.background
 
         configureSubModeControl()
-        configureFocusPill()
         configureWordLabel()
         configurePhraseLabel()
         configureContext()
@@ -410,7 +423,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        layoutFocusPill()
         layoutPhrasePanel()
         layoutContext()
         layoutLinkPill()
@@ -470,33 +482,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             subModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             subModeControl.widthAnchor.constraint(equalToConstant: 220),
         ])
-    }
-
-    private func configureFocusPill() {
-        view.addSubview(reticuleTop)
-        view.addSubview(reticuleBottom)
-    }
-
-    /// Positions the two reticule marks as short vertical bars centered on the
-    /// focal column, just above and below the word band, pointing at the ORP
-    /// letter.
-    private func layoutFocusPill() {
-        let focalX = view.bounds.width * Self.focalFraction
-        let centerY = focalCenterY
-        let wordHalfHeight: CGFloat = 30
-        let markWidth: CGFloat = 7
-        let markHeight: CGFloat = 20
-        let gap: CGFloat = 10
-        reticuleTop.frame = CGRect(
-            x: focalX - markWidth / 2, y: centerY - wordHalfHeight - gap - markHeight,
-            width: markWidth, height: markHeight)
-        reticuleBottom.frame = CGRect(
-            x: focalX - markWidth / 2, y: centerY + wordHalfHeight + gap,
-            width: markWidth, height: markHeight)
-        if #unavailable(iOS 26.0) {
-            reticuleTop.layer.cornerRadius = markWidth / 2
-            reticuleBottom.layer.cornerRadius = markWidth / 2
-        }
     }
 
     private func configureWordLabel() {
@@ -601,11 +586,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     /// Centers the link pill below the focal word / phrase band. In Phrases mode it
-    /// tucks into the gap JUST below the reticule panel (above the lower context,
+    /// tucks into the gap JUST below the focus panel (above the lower context,
     /// which is laid out below it) rather than floating down over the context text.
-    /// In Words mode it sits centered in the band between the bottom reticule mark
-    /// (ends at centerY + 60, see layoutFocusPill) and the lower context text
-    /// (starts at centerY + 116, see layoutContext), clear of both.
+    /// In Words mode it sits in the clear lane below the focused word and above
+    /// the lower context text.
     private func layoutLinkPill() {
         let centerY = focalCenterY
         let maxWidth = view.bounds.width - 64
@@ -832,8 +816,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func applyDisplayMode() {
         let phrases = displayMode == .phrases
         wordLabel.isHidden = phrases
-        reticuleTop.isHidden = phrases
-        reticuleBottom.isHidden = phrases
         phraseLabel.isHidden = !phrases
         phrasePanel.isHidden = !phrases
         // Context is always shown in Phrases; in Words it follows play/pause.
@@ -934,7 +916,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     /// Fills the surrounding-prose labels for the current position. In Phrases
-    /// mode the context excludes the words currently in the reticule; in Words
+    /// mode the context excludes the words currently in the focus panel; in Words
     /// mode it surrounds the single focal word.
     private func updateContextText() {
         let shownRange: Range<Int> = displayMode == .phrases && chunks.indices.contains(currentChunkIndex)

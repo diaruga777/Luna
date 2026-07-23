@@ -175,6 +175,63 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertFalse(badge?.isHidden ?? true)
     }
 
+    func testScrollReaderCompletionLaneKeepsBottomOffsetStable() {
+        let reader = ScrollReaderViewController(item: item, content: longScrollArticleContent())
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        if !reader.didLoadFullContentForTesting {
+            reader.prepareFullContent()
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while !reader.didLoadFullContentForTesting, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        guard let textView = findTextView(in: reader.view) else {
+            XCTFail("Scroll reader should contain its text view")
+            return
+        }
+        func maximumOffset() -> CGFloat {
+            max(
+                -textView.adjustedContentInset.top,
+                textView.contentSize.height + textView.adjustedContentInset.bottom
+                    - textView.bounds.height)
+        }
+
+        textView.contentOffset.y = maximumOffset()
+        reader.scrollViewDidScroll(textView)
+        let settledMaximum = maximumOffset()
+        for _ in 0..<5 {
+            reader.view.setNeedsLayout()
+            reader.view.layoutIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+
+        XCTAssertEqual(maximumOffset(), settledMaximum, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(textView.contentOffset.y, maximumOffset() + 0.5)
+    }
+
+    func testRSVPControlsRemainVisibleBelowTallTitleInset() {
+        let reader = RSVPViewController(item: item, content: shortArticleContent())
+        reader.topContentInset = 150
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let controls = [
+            "Skip back 25 words", "Slow down", "Play", "Speed up",
+            "Skip forward 25 words",
+        ].compactMap { findControl(in: reader.view, accessibilityLabel: $0) }
+
+        XCTAssertEqual(controls.count, 5)
+        for control in controls {
+            let frame = control.convert(control.bounds, to: reader.view)
+            XCTAssertGreaterThanOrEqual(frame.minY, reader.view.bounds.minY)
+            XCTAssertLessThanOrEqual(frame.maxY, reader.view.bounds.maxY)
+        }
+    }
+
     func testFinishedScrollReaderStartsAtTopInsteadOfPersistedEnd() {
         var finished = item
         finished.readState = .read

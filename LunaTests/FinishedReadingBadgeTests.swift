@@ -20,6 +20,7 @@ final class FinishedReadingBadgeTests: XCTestCase {
 
         XCTAssertFalse(badge.isHidden)
         XCTAssertTrue(badge.checkmarkIsDrawingForTesting)
+        XCTAssertTrue(badge.readLabelIsStationaryForTesting)
         XCTAssertEqual(badge.accessibilityLabel, "Read")
     }
 

@@ -163,6 +163,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// there's no share provider).
     private lazy var shareView: ArticleShareView? = makeShareView()
     private var contentSizeObservation: NSKeyValueObservation?
+    /// Stable whitespace appended after the final text line. The completion pill
+    /// lives inside this lane instead of being positioned from `contentSize`,
+    /// which also changes when the scroll view's bottom inset changes.
+    private static let completionAreaHeight: CGFloat = 88
 
     // Matches the RSVP reader's liquid-glass focus accent (an inline text
     // highlight, since a glass overlay would sit in front of and blur the very
@@ -441,14 +445,27 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             })
     }
 
-    /// Positions the completion acknowledgement in the whitespace below the text,
-    /// then the optional share view, and reserves room for both.
+    /// The bottom of TextKit's laid-out article, independent of the scroll view's
+    /// content inset and any footer subviews. Unlike `contentSize.height`, this
+    /// remains stable while the bottom footer geometry is being updated.
+    private var articleContentBottom: CGFloat {
+        textView.layoutManager.ensureLayout(for: textView.textContainer)
+        let usedRect = textView.layoutManager.usedRect(for: textView.textContainer)
+        return ceil(
+            usedRect.maxY
+                + textView.textContainerInset.top
+                + textView.textContainerInset.bottom)
+    }
+
+    /// Positions the completion acknowledgement in a fixed-height lane below the
+    /// text, then the optional share view, and reserves room for both.
     private func layoutShareView() {
         let width = textView.bounds.width
         guard width > 0 else { return }
-        let badgeHeight: CGFloat = 60
+        let articleBottom = articleContentBottom
         finishedBadge.frame = CGRect(
-            x: 0, y: textView.contentSize.height, width: width, height: badgeHeight)
+            x: 0, y: articleBottom,
+            width: width, height: Self.completionAreaHeight)
         var shareHeight: CGFloat = 0
         if let shareView, shareView.superview != nil {
             shareHeight = shareView.systemLayoutSizeFitting(
@@ -456,14 +473,19 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 withHorizontalFittingPriority: .required,
                 verticalFittingPriority: .fittingSizeLevel).height
             shareView.frame = CGRect(
-                x: 0, y: textView.contentSize.height + badgeHeight,
+                x: 0, y: articleBottom + Self.completionAreaHeight,
                 width: width, height: shareHeight)
         }
         let footerSpace = footer.isHidden ? 0 : footer.bounds.height
         // Add the bottom safe area so the last lines + share footer clear the
         // home indicator instead of sitting under it.
-        textView.contentInset.bottom = badgeHeight + shareHeight + footerSpace
+        let bottomInset = Self.completionAreaHeight + shareHeight + footerSpace
             + view.safeAreaInsets.bottom + 16
+        // Avoid feeding identical inset writes back through UITextView's
+        // content-size observation while the user is resting at the bottom.
+        if abs(textView.contentInset.bottom - bottomInset) > 0.5 {
+            textView.contentInset.bottom = bottomInset
+        }
     }
 
     public override func viewDidLoad() {
@@ -1306,7 +1328,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let visibleBottom = textView.contentOffset.y + textView.bounds.height
         // Require the user to enter the reserved whitespace far enough for the
         // persistent glass pill to be visible when its checkmark starts drawing.
-        let reachedEnd = visibleBottom >= textView.contentSize.height + 52
+        let reachedEnd = visibleBottom >= articleContentBottom + 52
         switch finishedReadingTracker.update(reachedEnd: reachedEnd) {
         case .finished:
             finishedBadge.present()

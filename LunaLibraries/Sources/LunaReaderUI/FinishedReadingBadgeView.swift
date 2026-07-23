@@ -109,8 +109,11 @@ public final class FinishedReadingBadgeView: UIView {
         glassView.frame = pillFrame(width: Self.collapsedWidth)
         checkLayer.isHidden = false
         checkLayer.strokeEnd = 1
-        readLabel.alpha = 0
-        readLabel.transform = CGAffineTransform(translationX: -5, y: 0)
+        // The label is already in its final position; only the checkmark draws.
+        // Moving "Read" independently makes the compact pill look like its text
+        // is slipping sideways as the reader settles at the end.
+        readLabel.alpha = 1
+        readLabel.transform = .identity
         archiveLabel.alpha = 0
         layoutPillContents()
         updateForegroundColor()
@@ -121,13 +124,6 @@ public final class FinishedReadingBadgeView: UIView {
         draw.duration = 0.42
         draw.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         checkLayer.add(draw, forKey: "drawCheckmark")
-        UIView.animate(
-            withDuration: 0.28, delay: 0.36,
-            options: [.beginFromCurrentState, .curveEaseOut, .allowUserInteraction]
-        ) {
-            self.readLabel.alpha = 1
-            self.readLabel.transform = .identity
-        }
 
         if shouldExplain {
             let work = DispatchWorkItem { [weak self] in self?.expand() }
@@ -251,6 +247,11 @@ public final class FinishedReadingBadgeView: UIView {
     var checkmarkIsHiddenForTesting: Bool { checkLayer.isHidden }
     var checkmarkIsDrawingForTesting: Bool {
         checkLayer.animation(forKey: "drawCheckmark") != nil
+    }
+    var readLabelIsStationaryForTesting: Bool {
+        readLabel.layer.animationKeys()?.isEmpty != false
+            && readLabel.transform == .identity
+            && readLabel.alpha == 1
     }
     func expandForTesting() { expand() }
     func collapseForTesting() { collapse() }

@@ -18,10 +18,6 @@ import LunaURLRescue
 /// by surface. See `claudedocs/url-rescue.md`.
 enum URLRescueWiring {
 
-    /// A media applier the Downloader wires up (Phase 6) to turn rescued assets
-    /// into a real download. nil ⇒ media rescues can't complete (return false).
-    static var mediaApplier: ((_ sourceURLString: String, _ title: String?, _ assets: [MediaAsset]) async -> Bool)?
-
     static func install() {
         let engine = URLRescueEngine()
 
@@ -65,8 +61,10 @@ enum URLRescueWiring {
         case .rescued(let result, _):
             return await ReadingListIngestor.shared.applyRescued(result, forItemID: item.id, interactive: interactive)
         case .rescuedMedia(let assets, _):
-            guard let applier = mediaApplier else { return false }
-            return await applier(url.absoluteString, item.title, assets)
+            // Download the engine-resolved assets without re-running platform
+            // resolution (the source page already failed to resolve normally).
+            return await LiveMediaDownloadManager.shared.startWithResolvedAssets(
+                sourceURLString: url.absoluteString, title: item.title, assets: assets)
         case .unrescuable, .unavailable, .quotaExhausted, .failed:
             return false
         }

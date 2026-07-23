@@ -488,6 +488,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
                 guard let price else {
                     if let report {
                         report(.noPrice)
+                    } else if Self.intelligentPriceResolver != nil {
+                        self.presentNoPriceWithRescueOption(urlString: urlString)
                     } else {
                         self.presentPriceMessage(
                             title: "No price found",
@@ -504,6 +506,41 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         }
     }
 
+
+    /// The no-price alert, plus an "Ask Apple Intelligence" action (only shown
+    /// when the resolver is installed — i.e. the main app, never extensions).
+    private func presentNoPriceWithRescueOption(urlString: String) {
+        let alert = UIAlertController(
+            title: "No price found",
+            message: "We couldn't read a price on that page. Apple Intelligence can try to find it.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Ask Apple Intelligence", style: .default) { [weak self] _ in
+            self?.askIntelligenceForPrice(urlString: urlString)
+        })
+        alert.addAction(UIAlertAction(title: "Not Now", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    /// Runs the injected URL-rescue price resolver and, on success, adds the seller
+    /// through the same upsert tail the normal add path uses.
+    private func askIntelligenceForPrice(urlString: String) {
+        guard let resolver = Self.intelligentPriceResolver else { return }
+        Task { @MainActor [weak self] in
+            let resolved = await resolver(urlString)
+            guard let self, var current = self.tracker else { return }
+            guard let resolved else {
+                self.presentPriceMessage(
+                    title: "Still no price",
+                    message: "Apple Intelligence couldn't find a price on this page either.")
+                return
+            }
+            current.upsertStore(PriceTrackerStore(
+                urlString: urlString, lastPrice: resolved.amount,
+                currency: resolved.currency, lastRefreshed: Date()))
+            self.store.updatePriceTracker(current, for: self.itemID)
+            self.tableView.reloadData()
+        }
+    }
 
     // MARK: - Search overlay
 

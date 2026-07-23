@@ -840,9 +840,15 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         let item = items[mediaIndex]
         switch item.storageState {
         case .undownloaded:
-            return UndownloadedMediaCardContentViewController(item: item) { [weak self] in
+            return UndownloadedMediaCardContentViewController(item: item, download: { [weak self] in
                 self?.startDownload(item)
-            }
+            }, rescue: URLRescueCoordinator.engine?.isAvailable() == true ? {
+                let itemID = ReadingListStore.shared.item(forURLString: item.sourceURLString)?.id
+                    ?? ReadingListStore.shared.addIfAbsent(urlString: item.sourceURLString, source: .manual)?.id
+                if let itemID {
+                    URLRescueCoordinator.shared.requestManualRescue(itemID: itemID, hint: .media)
+                }
+            } : nil)
         case .localFile:
             guard let fileURL = item.fileURL else { return CardContentViewController() }
             switch item.kind {
@@ -1280,7 +1286,9 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
 
     private let sourceURLString: String
     private let download: () -> Void
+    private let rescue: (() -> Void)?
     private let button = UIButton(configuration: .plain())
+    private let rescueButton = UIButton(configuration: .plain())
     private let poster = UIImageView()
     private let posterDim = UIView()
     private let statusLabel = UILabel()
@@ -1294,9 +1302,10 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
     }()
     private var loadedThumbnailFileName: String?
 
-    init(item: SavedMediaItem, download: @escaping () -> Void) {
+    init(item: SavedMediaItem, download: @escaping () -> Void, rescue: (() -> Void)? = nil) {
         self.sourceURLString = item.sourceURLString
         self.download = download
+        self.rescue = rescue
         super.init()
     }
 
@@ -1326,6 +1335,23 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
         button.addAction(UIAction { [weak self] _ in self?.download() }, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
+
+        // "Try Apple Intelligence" — shown only on a no-media failure when a model
+        // is available. Runs a one-shot URL rescue with the media hint.
+        var rescueConfig = UIButton.Configuration.tinted()
+        rescueConfig.image = UIImage(systemName: "wand.and.stars")
+        rescueConfig.title = "Try Apple Intelligence"
+        rescueConfig.imagePadding = 6
+        rescueConfig.cornerStyle = .capsule
+        rescueButton.configuration = rescueConfig
+        rescueButton.isHidden = true
+        rescueButton.addAction(UIAction { [weak self] _ in
+            self?.rescueButton.isHidden = true
+            self?.statusLabel.text = "Asking Apple Intelligence…"
+            self?.rescue?()
+        }, for: .touchUpInside)
+        rescueButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(rescueButton)
 
         statusLabel.text = "Downloading"
         statusLabel.textAlignment = .center
@@ -1358,6 +1384,8 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
             statusStack.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
             progress.heightAnchor.constraint(equalToConstant: 20),
+            rescueButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            rescueButton.bottomAnchor.constraint(equalTo: statusStack.topAnchor, constant: -16),
         ])
 
         NotificationCenter.default.addObserver(
@@ -1382,6 +1410,7 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
             statusStack.isHidden = true
             posterDim.isHidden = true
             button.isHidden = false
+            rescueButton.isHidden = true
             return
         }
 
@@ -1393,6 +1422,9 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
         progress.setProgress(Float(snapshot.progress), animated: true)
         statusStack.isHidden = false
         button.isHidden = snapshot.phase != .failed
+        // Offer the AI rescue only on a genuine no-media failure, when installed.
+        rescueButton.isHidden = !(snapshot.phase == .failed
+            && snapshot.failureKind == .noMedia && rescue != nil)
 
         guard let fileName = snapshot.thumbnailFileName,
               fileName != loadedThumbnailFileName

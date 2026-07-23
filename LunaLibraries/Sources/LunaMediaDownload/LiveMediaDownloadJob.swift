@@ -19,6 +19,8 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     enum ErrorKind: String, Codable {
         case download
         case photosPermission
+        /// Resolution found no downloadable assets — the case URL rescue targets.
+        case noMedia
     }
 
     var id: String
@@ -97,12 +99,18 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     }
 
     var downloaderSnapshot: DownloaderJobSnapshot {
-        DownloaderJobSnapshot(
+        let failureKind: DownloaderJobSnapshot.FailureKind?
+        switch phase {
+        case .failed: failureKind = errorKind == .noMedia ? .noMedia : .other
+        default: failureKind = nil
+        }
+        return DownloaderJobSnapshot(
             sourceURLString: sourceURLString,
             title: title,
             phase: DownloaderJobPhase(rawValue: phase.rawValue) ?? .failed,
             progress: progress,
             message: statusMessage,
-            thumbnailFileName: thumbnailFileName)
+            thumbnailFileName: thumbnailFileName,
+            failureKind: failureKind)
     }
 }

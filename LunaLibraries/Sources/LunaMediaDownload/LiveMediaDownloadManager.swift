@@ -81,12 +81,19 @@ public enum DownloaderJobPhase: String {
 /// footer status view needs to mirror the Live Activity (title, phase/message,
 /// progress, thumbnail).
 public struct DownloaderJobSnapshot: Equatable {
+    /// Why a `.failed` job failed, when known — lets the Downloader offer the
+    /// URL-rescue "Try Apple Intelligence" affordance only for `.noMedia`.
+    public enum FailureKind: String, Equatable {
+        case noMedia
+        case other
+    }
     public let sourceURLString: String
     public let title: String
     public let phase: DownloaderJobPhase
     public let progress: Double
     public let message: String
     public let thumbnailFileName: String?
+    public let failureKind: FailureKind?
 }
 
 func postDownloaderJobProgress(job: LiveMediaDownloadJob, progress: Double?) {
@@ -301,6 +308,58 @@ public final class LiveMediaDownloadManager: NSObject {
 
     /// Creates the persisted job and starts its resolve task — reached only
     /// when no existing job for this source URL was found above.
+    /// Downloads media assets ALREADY resolved by the URL-rescue engine
+    /// (`claudedocs/url-rescue.md`), skipping the platform-support gate that
+    /// normally rejects a raw CDN URL — the assets are in hand, so there is
+    /// nothing to resolve. Ownership + Photos authorization still apply. Returns
+    /// true when a download was started.
+    public func startWithResolvedAssets(
+        sourceURLString: String, title: String?, assets: [MediaAsset]
+    ) async -> Bool {
+        guard let asset = assets.first, let sourceURL = URL(string: sourceURLString) else { return false }
+        let ownership: LiveMediaDownloadOwnership = MediaAutoDownloader.isRunningInDownloader
+            ? .downloader : .invokingApp
+        // Non-Downloader saves write straight to Photos, so we need add-authorization.
+        let canSave = ownership == .downloader ? true : await saver.requestAddAuthorization()
+        guard canSave else {
+            await startFailedActivity(
+                urlString: sourceURLString, title: title,
+                message: MediaDownloadError.permissionDenied.message, errorKind: .photosPermission)
+            return false
+        }
+        let readingItem = ReadingListStore.shared.item(forURLString: sourceURLString)
+        var job = LiveMediaDownloadJob(
+            id: UUID().uuidString,
+            sourceURLString: sourceURLString,
+            assetURLString: asset.url.absoluteString,
+            mediaKind: asset.kind.rawValue,
+            title: title ?? readingItem?.title ?? Self.title(for: sourceURL),
+            creator: readingItem?.channelName,
+            resolveKind: "rescue",
+            phase: .downloading,
+            progress: 0,
+            thumbnailFileName: nil,
+            fileExtension: nil,
+            expectedByteCount: asset.estimatedByteCount,
+            receivedByteCount: nil,
+            resumeDataFileName: nil,
+            rangeStartSeconds: nil,
+            rangeEndSeconds: nil,
+            resolvedVideoID: nil,
+            youtubeVisitorData: nil,
+            errorMessage: nil,
+            errorKind: nil,
+            resolveAttempts: 0,
+            mediaAttempts: 0,
+            suspendDeadline: nil,
+            ownership: ownership)
+        store.upsert(job)
+        if job.isDownloaderOwned { postDownloaderJobProgress(job: job, progress: 0) }
+        await startActivity(for: job)
+        startMediaDownload(for: job, asset: asset)
+        return true
+    }
+
     private func createAndStartJob(_ gated: GateResult, title: String?) async -> Bool {
         let jobID = UUID().uuidString
         var job = LiveMediaDownloadJob(
@@ -1202,7 +1261,7 @@ public final class LiveMediaDownloadManager: NSObject {
             return
         }
         guard let data = try? Data(contentsOf: location) else {
-            Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
+            Task { await failJob(job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia) }
             return
         }
         if job.resolveKind == ResolveKind.youtubeClip.rawValue,
@@ -1228,7 +1287,7 @@ public final class LiveMediaDownloadManager: NSObject {
         }
         if startNextFacebookResolve(after: job, data: data) { return }
         if startNextYouTubeResolve(after: job, data: data) { return }
-        Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
+        Task { await failJob(job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia) }
         return
     }
 

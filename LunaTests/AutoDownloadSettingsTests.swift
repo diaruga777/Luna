@@ -131,12 +131,12 @@ final class AutoDownloadSettingsTests: XCTestCase {
     func testDownloaderIntentPreflightOnlyAcceptsDownloadableMedia() {
         XCTAssertTrue(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
             forURLString: "https://www.tiktok.com/@luna/video/123",
-            downloaderWasInstalled: true))
+            handlesMedia: true))
         XCTAssertFalse(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
             forURLString: "https://example.com/article",
-            downloaderWasInstalled: true))
+            handlesMedia: true))
         XCTAssertFalse(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
             forURLString: "https://www.tiktok.com/@luna/video/123",
-            downloaderWasInstalled: false))
+            handlesMedia: false))
     }
 }

@@ -15,12 +15,12 @@ final class ProvideContextDecisionTests: XCTestCase {
         isShortcuts: Bool = false,
         platform: ContentPlatform? = nil,
         safariURLFresh: Bool = false,
-        owningSurfaceInstalled: Bool = false,
+        handlesMediaKind: Bool = false,
         visionModelAvailable: Bool = false
     ) -> ProvideContextDecision.Result {
         ProvideContextDecision.decide(
             appName: appName, isSafari: isSafari, isShortcuts: isShortcuts, platform: platform,
-            safariURLFresh: safariURLFresh, owningSurfaceInstalled: owningSurfaceInstalled,
+            safariURLFresh: safariURLFresh, handlesMediaKind: handlesMediaKind,
             visionModelAvailable: visionModelAvailable)
     }
 
@@ -80,29 +80,29 @@ final class ProvideContextDecisionTests: XCTestCase {
 
     func testPlatformAppNotInstalledIsUnsupported() {
         XCTAssertEqual(
-            decide(appName: "TikTok", platform: .tiktok, owningSurfaceInstalled: false, visionModelAvailable: true),
+            decide(appName: "TikTok", platform: .tiktok, handlesMediaKind: false, visionModelAvailable: true),
             .unsupported)
     }
 
     func testPlatformAppInstalledWithoutVisionIsUnsupported() {
         XCTAssertEqual(
-            decide(appName: "TikTok", platform: .tiktok, owningSurfaceInstalled: true, visionModelAvailable: false),
+            decide(appName: "TikTok", platform: .tiktok, handlesMediaKind: true, visionModelAvailable: false),
             .unsupported)
     }
 
     func testPlatformAppInstalledWithVisionNeedsScreenshot() {
         XCTAssertEqual(
-            decide(appName: "TikTok", platform: .tiktok, owningSurfaceInstalled: true, visionModelAvailable: true),
+            decide(appName: "TikTok", platform: .tiktok, handlesMediaKind: true, visionModelAvailable: true),
             .screenshotNeeded)
     }
 
     func testEveryRecognizedPlatformTakesTheSameRoute() {
         for platform in ContentPlatform.allCases {
             XCTAssertEqual(
-                decide(appName: "SomeApp", platform: platform, owningSurfaceInstalled: true, visionModelAvailable: true),
+                decide(appName: "SomeApp", platform: platform, handlesMediaKind: true, visionModelAvailable: true),
                 .screenshotNeeded, "platform \(platform) should need a screenshot when installed + vision available")
             XCTAssertEqual(
-                decide(appName: "SomeApp", platform: platform, owningSurfaceInstalled: false, visionModelAvailable: true),
+                decide(appName: "SomeApp", platform: platform, handlesMediaKind: false, visionModelAvailable: true),
                 .unsupported, "platform \(platform) should be unsupported when its owning surface isn't installed")
         }
     }
@@ -111,7 +111,7 @@ final class ProvideContextDecisionTests: XCTestCase {
 
     func testUnrecognizedAppIsUnsupported() {
         XCTAssertEqual(
-            decide(appName: "SomeRandomApp", owningSurfaceInstalled: true, visionModelAvailable: true),
+            decide(appName: "SomeRandomApp", handlesMediaKind: true, visionModelAvailable: true),
             .unsupported)
     }
 }

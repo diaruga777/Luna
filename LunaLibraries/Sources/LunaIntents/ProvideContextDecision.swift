@@ -116,9 +116,9 @@ public enum ProvideContextOnScreenURL {
 /// | Safari                          | !`safariURLFresh`, `visionModelAvailable`             | `.screenshotNeeded`|
 /// | Safari                          | !`safariURLFresh`, !`visionModelAvailable`            | `.unsupported`     |
 /// | Shortcuts (outside onboarding)  | — (no meaningful screenshot of Shortcuts' own UI)     | `.unsupported`     |
-/// | recognized platform             | !`owningSurfaceInstalled`                             | `.unsupported`     |
-/// | recognized platform             | `owningSurfaceInstalled`, !`visionModelAvailable`     | `.unsupported`     |
-/// | recognized platform             | `owningSurfaceInstalled`, `visionModelAvailable`      | `.screenshotNeeded`|
+/// | recognized platform             | !`handlesMediaKind`                                   | `.unsupported`     |
+/// | recognized platform             | `handlesMediaKind`, !`visionModelAvailable`           | `.unsupported`     |
+/// | recognized platform             | `handlesMediaKind`, `visionModelAvailable`            | `.screenshotNeeded`|
 /// | unrecognized app                | —                                                      | `.unsupported`     |
 public enum ProvideContextDecision {
     public enum Result: Equatable {
@@ -138,7 +138,7 @@ public enum ProvideContextDecision {
         isShortcuts: Bool,
         platform: ContentPlatform?,
         safariURLFresh: Bool,
-        owningSurfaceInstalled: Bool,
+        handlesMediaKind: Bool,
         visionModelAvailable: Bool
     ) -> Result {
         guard let appName, !appName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -159,9 +159,9 @@ public enum ProvideContextDecision {
 
         if platform != nil {
             // Platform identity isn't itself branched on below — only
-            // whether its owning surface (all recognized platforms route to
-            // Downloader today) is installed.
-            if !owningSurfaceInstalled { return .unsupported }
+            // whether THIS app handles the media kind (a recognized platform
+            // save is media; Downloader and the central Luna app handle it).
+            if !handlesMediaKind { return .unsupported }
             return visionModelAvailable ? .screenshotNeeded : .unsupported
         }
 

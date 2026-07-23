@@ -107,9 +107,9 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             platform: app.flatMap { AppNamePlatform.platform(forAppName: $0) },
             safariURLFresh: SafariURLStore.isFresh()
                 && !(SafariURLStore.lastURL ?? "").isEmpty,
-            // All recognized platforms are Downloader-owned today.
-            owningSurfaceInstalled: AppSurfaceConfig.current == .downloader
-                || InstalledAppMarkers.isInstalled(.downloader),
+            // A recognized-platform save is media, so only media-handling apps
+            // (Downloader, the central Luna app) proceed to a screenshot save.
+            handlesMediaKind: AppSurfaceConfig.current.handlesMedia,
             visionModelAvailable: ScreenCaptureModelSessionFactory.makeDefault().isAvailable)
 
         switch decision {
@@ -198,7 +198,7 @@ enum ActionButtonIntentSupport {
             forURLString: urlString)
         else {
             SharedDiagnosticLog.record(
-                "intent media handoff skipped: downloaderInstalled=\(LunaInstallationMarkers.downloaderWasInstalled), supported=\(MediaDownloadablePlatform.supports(urlString))",
+                "intent media handoff skipped: handlesMedia=\(MediaAutoDownloader.isRunningInDownloader), supported=\(MediaDownloadablePlatform.supports(urlString))",
                 category: "media-download")
             return nil
         }

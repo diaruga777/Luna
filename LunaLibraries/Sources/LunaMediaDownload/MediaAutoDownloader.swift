@@ -66,9 +66,12 @@ public enum MediaAutoDownloader {
     /// path when the Downloader has ever launched, independent of platform toggles.
     public static func shouldStartDownloaderIntentDownload(
         forURLString urlString: String,
-        downloaderWasInstalled: Bool = LunaInstallationMarkers.downloaderWasInstalled
+        handlesMedia: Bool = MediaAutoDownloader.isRunningInDownloader
     ) -> Bool {
-        guard downloaderWasInstalled,
+        // Media handoffs are media handling: only apps that handle media
+        // (Downloader and the central Luna app) start one — never a sibling
+        // app writing cross-app on Downloader's behalf.
+        guard handlesMedia,
               MediaDownloadablePlatform.supports(urlString)
         else { return false }
         if DirectMediaURL.kind(for: urlString) != nil { return true }

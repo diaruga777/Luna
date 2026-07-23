@@ -356,4 +356,23 @@ resolves no assets), an optional LLM fallback re-runs the URL — see
 injected raw-pipeline closure**, so a rescue can never trigger a second rescue.
 `ReadingListIngestor.rescueTrigger` fires on a genuine `.failed` outcome;
 `applyResult(...)` is the shared persistence tail both a first pass and a rescued
-result flow through, so rescued items obey the same interop gate.
+result flow through, so rescued items obey the same per-app surface gate (`claudedocs/surface-support.md`).
+
+## Per-kind processing split (compile-time surfaces)
+
+The pipeline's per-kind PROCESSING is no longer compiled into every app.
+`LunaIngest` keeps unwrap → classify (incl. the single shared HTML fetch and
+product DETECTION) plus the `IngestKindProcessors` registry; the processing
+implementations live in link-optional modules:
+
+- `LunaArticleIngest.ArticleIngestProcessor` — `ArticleResolver` + silent
+  `BypassPlan` leg (Reader + central Luna only).
+- `LunaPriceIngest.ProductIngestProcessor` — `ProductMetadataExtractor` + the
+  per-host `ProductPriceRule` table (Price Tracker + central Luna only). The
+  Amazon storefront host/currency registry stayed in `LunaURLClassification`
+  (`AmazonStorefronts`) because the host list is classification data.
+
+A classified kind with no registered processor returns
+`Outcome.unsupported(owner:)`, dropped by every surface via `SurfaceSupport`
+(see `claudedocs/surface-support.md`, incl. the per-target composition files
+that do the registering — `#if canImport` is NOT target-reliable here).

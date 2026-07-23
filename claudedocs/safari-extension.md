@@ -63,19 +63,18 @@ injection used by the Luna action pill.
 
 ## "Read in Luna" / "Download in Luna" / "Track in Luna" button
 
-The same extension also presents a page button: "Read in Luna" on article pages,
-"Download in Luna" on recognized Downloader-platform pages, or "Track in Luna" on
-recognized product pages. This is independent from
-the iOS 27+ Action Button shortcut setup; keep it available on earlier iOS versions
-as long as the Safari web extension and deep-link/App Clip path work there.
-
-**Installed-app detection.** Each app writes a `lunaInstalled.<surface>` marker into
-the App Group at launch (`Luna/Settings/InstalledAppMarkers.swift`, called from
-AppDelegate). The native handler reports `readerInstalled` / `priceTrackerInstalled`
-in the `buttonContext` reply: true when the marker is set OR when the extension's own
-host IS that app (bundle-id suffix — the host is installed by definition). Markers can
-go stale after an uninstall (App Group data outlives any one app); treated as
-best-effort.
+The same extension also presents a page button — but ONLY for the page kinds its
+containing app handles, and a tap always deep-links into that app via its own
+scheme (`claudedocs/surface-support.md`): the central Luna app's extension shows
+all three pill types (via `luna://`); Reader's shows only "Read in Luna",
+Downloader's only "Download in Luna", Price Tracker's only "Track in Luna". The
+native handler's `buttonContext` reply carries `scheme` +
+`supportsArticles`/`supportsMedia`/`supportsProducts`, derived from the
+extension's own bundle-id suffix (the bare `<prefix>.safari` id is the central
+app). There is no cross-app routing, no installed-marker checks, and no App
+Clip/App Store fallback in the pills anymore — the target app is the host and is
+installed by definition. This is independent from the iOS 27+ Action Button
+shortcut setup; keep it available on earlier iOS versions.
 
 `LunaSafari/Resources/content.js` is injected **programmatically** by `background.js`
 (`scripting.executeScript` on every `tabs.onUpdated`/`status:complete` http(s) page),
@@ -89,8 +88,8 @@ Article flow:
 1. content.js asks background `{type:"buttonContext"}`; background relays to the native handler,
    which returns the app's `SafariSuggestionMode` (`never` / `all` / `onlyLocked`, default
    `all`) from the App Group (`SafariSuggestionSettings`, key `safariSuggestionMode`).
-2. If `never`, or the page isn't an article, or (`onlyLocked`) the page isn't locked, it
-   does nothing. A page is an article when the DOM is **not** an obvious index/listing
+2. If `never`, the host app doesn't handle articles, or the page isn't an article, or
+   (`onlyLocked`) the page isn't locked, it does nothing. A page is an article when the DOM is **not** an obvious index/listing
    and either its host is a known news/article host (`isKnownArticleHost` — see "Shared
    news-host list" below) OR the DOM scorer accepts it (`looksLikeArticle`). An index
    vetoes both paths: 4+ `<article>` elements, a whole-page link density above 0.5, or
@@ -98,13 +97,9 @@ Article flow:
    headline-sized destination links. A page is "locked" for `onlyLocked` when its host is a known
    hard-paywall site (`isKnownHardPaywallHost`) OR it shows paywall markers (`looksPaywalled`
    — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` + `content_tier`).
-3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping it
-   prefers `LunaReaderAppClipURL?url=<source>` from `LunaSafari/Info.plist`; that URL is
-   filled in after App Store Connect has the Reader App Clip experience and should open the
-   full Reader app when installed or the Reader App Clip otherwise. Until that value exists,
-   it falls back to `lunareader://read?url=<encoded>` (`LunaDeepLink`) when Reader is
-   installed — ONLY Reader registers `lunareader://` now, so with Reader absent and no
-   App Clip URL the button isn't shown on article pages.
+3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping
+   it opens `<ownScheme>://read?url=<encoded>` (`LunaDeepLink`) — the extension's own
+   containing app.
 
 **Shared news-host list (`isKnownArticleHost` / `isKnownHardPaywallHost`).** The main app
 recognizes news/article sites by URL host alone — `afr.com` and ~450 others in
@@ -173,13 +168,14 @@ index/listing veto above runs before both the host fallback and this scorer.
   bare `WKWebView` (no extension host); it exposes `window.__lunaLooksLikeArticle` for
   exactly this. See `LunaTests/SafariArticleHeuristicTests.swift`.
 
-**Per-app URL schemes.** Each app registers ONLY its own scheme — `lunareader://`
+**Per-app URL schemes.** Each app registers ONLY its own scheme — `luna://`
+(the central Luna app), `lunareader://`
 (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker) — via
 `$(LUNA_URL_SCHEME)` in the shared `Luna/Info.plist`, a per-app-target build setting in
 `project.pbxproj` (literal values: the schemes are mirrored as literals in `LunaDeepLink`
 and content.js, so they deliberately do NOT derive from `LUNA_NAMESPACE`). A deep link
 therefore opens exactly the app it names. `LunaDeepLink.articleURL(from:)` accepts any of
-the three schemes (the OS only delivers what the running app registered);
+the four schemes (the OS only delivers what the running app registered);
 `LunaDeepLink.ownScheme` reads the running bundle's registered scheme for links that must
 reopen the current app (e.g. the Live Activity photos-permission action URL).
 
@@ -201,12 +197,9 @@ Downloader-platform flow:
    Bluesky, Reddit, TikTok, Instagram, Facebook) via `recognizedPlatformPage` — see
    "Shared platform-host list" below. These pages are never classified as articles by
    text length, even when a caption/comment body is long.
-3. On a recognized platform URL, the button says "Download in Luna". With the Downloader
-   app installed (its own extension host, or the launch marker), it deep-links
-   `lunadownloader://read?url=...`. Otherwise it routes to
-   `LunaDownloaderAppClipURL?url=<source>`. If `LunaDownloaderAppClipURL` is empty
-   (the default until the production App Clip invocation URL exists), no button is shown
-   on platform pages when Downloader isn't installed.
+3. On a recognized platform URL, the button says "Download in Luna" — shown only when
+   the host app handles media (Downloader / central Luna), deep-linking
+   `<ownScheme>://read?url=...`.
 4. **Static-image posts are not proactively suggested.** The Downloader still accepts
    those URLs if the user adds/saves them manually, but the Safari extension only shows
    the "Download in Luna" pill when a platform page is not a static-image post. Explicit
@@ -256,17 +249,16 @@ Product-page flow:
      re-classifies on save).
    Checked after the platform check and BEFORE the article heuristics, so a wordy
    retail page never shows "Read in Luna".
-2. On a product page the button says "Track in Luna". With Price Tracker installed
-   it opens `lunapricetracker://read?url=<source>` — Price Tracker's own scheme, so
-   the tap always lands in Price Tracker. Without it, the button opens
-   `LunaPriceTrackerAppStoreURL` from `LunaSafari/Info.plist` (Price Tracker's App
-   Store page — fill in once the app is live); while that key is empty, no button is
-   shown on product pages when Price Tracker isn't installed.
+2. On a product page the button says "Track in Luna" — shown only when the host app
+   handles products (Price Tracker / central Luna), deep-linking
+   `<ownScheme>://read?url=<source>`.
 
 Paywall unlock + toast:
-- The native handler always answers `bypassEnabled` true. This enables both the
-  declarative Referer ruleset (background.js) and the in-page overlay cleanup
-  (content.js `revealArticle`) without a user preference.
+- The native handler answers `bypassEnabled` true only for article-handling hosts
+  (Reader and the central Luna app) — unlocking is article handling, so the
+  Downloader / Price Tracker extensions never enable the declarative Referer
+  ruleset (background.js) or the in-page overlay cleanup (content.js
+  `revealArticle`). No user preference.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
   content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered
@@ -296,12 +288,13 @@ background.js (script load) → sendNativeMessage {type: "onboardingStatus"}
   → SafariWebExtensionHandler "onboardingStatus" case
   → SharedOnboardingStatus.recordEnabledAndConsumeTakeover()
     - reads + clears onboarding.safariTakeoverPending.<surface> (App Group)
-  → responds {takeover: true/false, scheme: "<lunareader|lunadownloader|lunapricetracker>"}
+  → responds {takeover: true/false, scheme: "<luna|lunareader|lunadownloader|lunapricetracker>"}
   → background.js: if takeover, inject a full-page overlay on the active tab
 ```
 
 - `LunaSafari/SharedOnboardingStatus.swift` derives THIS extension's surface +
-  scheme from its own bundle id suffix (`<host>.reader|.downloader|.pricetracker.safari`
+  scheme from its own bundle id suffix (`<host>.reader|.downloader|.pricetracker.safari`;
+  the bare `<prefix>.safari` is the central Luna app → surface "luna", scheme `luna://`
   — mirrors `SafariWebExtensionHandler`'s existing `isHost(appSuffix:)` pattern) and
   owns the key literals (`safariExtensionHasRun.<surface>`,
   `safariExtensionEnabled.<surface>`,

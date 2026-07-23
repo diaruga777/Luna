@@ -54,7 +54,7 @@ Each item records where it came from: `ReadingListItem.captureSource`
   `ArticleCardsViewController`, `SavedMediaCardsViewController`).
 - **`.manual`** — the default: typed URL, reader save button, deep links.
 - **`.friendShare`** — declared in `CaptureSource` and handled by
-  `SourceSendSettings`/`InteropGate`/`ReadingListIngestor`, but **no
+  `SourceSendSettings`/`SurfaceSupport`/`ReadingListIngestor`, but **no
   production code path currently assigns it**: the one place a friend share
   is actually imported (`IncomingMailImporter.autoImport`) tags the item
   `.email`, and `ReadingListItem.sharedByUsername` (the field the friend-share

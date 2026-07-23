@@ -71,7 +71,7 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   The engine is injected as a closure by the app shell — the module never links
   `LunaURLRescue`.
 - **Trigger** — `ReadingListIngestor.applyResult` is the shared persistence tail
-  (interop gate + repoint + presenter) for both a first-pass save and a rescued
+  (surface gate + repoint + presenter) for both a first-pass save and a rescued
   result; a `.failed` outcome fires `ReadingListIngestor.rescueTrigger`.
 - **Bookkeeping** — sidecars in `LunaStorage`, never new `ReadingListItem` fields
   (a sibling app's re-encode would drop unknown keys): `RescueLedgerStore`

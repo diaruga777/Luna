@@ -47,9 +47,9 @@ chosen after ignoring an `http` versus `https` scheme difference (on-screen
 detection commonly returns both forms for the same page), then sent through the
 same immediate-URL save function used by the Safari-extension
 fast path. A persisted save returns `.done` (with synchronous media when
-applicable). Explicit interop rejection is swallowed and falls through to the
-same screenshot or unhandled outcome that would have occurred without
-OnScreenURLs. A save timeout or network enrichment failure remains handled
+applicable). An explicit unsupported-kind rejection (`SurfaceSupport`) is swallowed and
+falls through to the same screenshot or unhandled outcome that would have
+occurred without OnScreenURLs. A save timeout or network enrichment failure remains handled
 because the normal ingest task continues and persists pending work for retry.
 
 The shared **Settings → Shortcut & Safari → Handle On-Screen URLs** toggle is on
@@ -76,14 +76,14 @@ evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 | Safari | URL stale/absent, vision model available | **requiresScreenshot** |
 | Safari | URL stale/absent, no vision model | **unhandled** |
 | Shortcuts (outside onboarding) | — | **unhandled** (no meaningful screenshot of Shortcuts' own UI) |
-| Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | owning surface (all → Downloader) not installed | **unhandled** |
-| Platform app | installed, no vision model | **unhandled** |
-| Platform app | installed, vision model available | **requiresScreenshot** |
+| Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | this app doesn't handle media | **unhandled** |
+| Platform app | handles media, no vision model | **unhandled** |
+| Platform app | handles media, vision model available | **requiresScreenshot** |
 | Unrecognized | — | **unhandled** |
 
 Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
-`owningSurfaceInstalled` = running app IS Downloader ||
-`InstalledAppMarkers.isInstalled(.downloader)` (markers written every launch);
+`handlesMediaKind` = `AppSurfaceConfig.current.handlesMedia` (Downloader or the
+central Luna app — a sibling never hands off cross-app anymore);
 `visionModelAvailable` = `ScreenCaptureModelSessionFactory.makeDefault()
 .isAvailable`. The immediate Safari save (1) goes through
 `IntentIngestHelper.handleSavePress` with the Reader-only double-save surface
@@ -126,9 +126,8 @@ Non-media saves and background-download mode return `media = nil`.
    saved URL string.
 4. On success the reading-list row is persisted immediately and ingestion continues
    best-effort, so metadata work cannot consume the intent's 12-second budget. If the
-   shared `lunaInstalled.downloader` marker exists and the URL is downloadable,
-   the intent performs exactly one Downloader-owned media handoff regardless of the
-   invoking host or per-platform toggles. `AutoDownloadSettings.returnMediaFromAppIntents`
+   RUNNING app handles media (Downloader / central Luna) and the URL is downloadable,
+   the intent performs exactly one media handoff regardless of per-platform toggles. `AutoDownloadSettings.returnMediaFromAppIntents`
    is App-Group-backed and defaults on: it reuses an already-downloaded local/Photos-backed
    item when present, otherwise resolves the content length and checks available storage.
    A known file at or below 100 MiB is awaited through `LiveMediaDownloadManager` and
@@ -146,7 +145,7 @@ Non-media saves and background-download mode return `media = nil`.
    the shared local media library. Insufficient space throws a user-facing intent error
    before transfer. A `friendPromptRequested` outcome also foregrounds Luna.
 5. Errors are thrown as `SaveError: CustomLocalizedStringResourceConvertible`
-   (`unsupportedApp`, `modelUnavailable`, `networkUnavailable`,
+   (`unsupportedApp`, `unsupportedKind`, `modelUnavailable`, `networkUnavailable`,
    `quotaLimitReached`, `serviceUnavailable`, `nothingIdentifiable`,
    `notFound`). The happy path returns `SaveResultEntity`.
 

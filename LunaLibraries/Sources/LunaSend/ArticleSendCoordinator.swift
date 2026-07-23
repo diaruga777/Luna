@@ -10,12 +10,6 @@ import LunaMailAccount
 import Foundation
 import os
 
-/// Stable destination ids, used as keys in `ReadingListItem.sendStates` and to
-/// target explicit sends.
-public enum ArticleDestinationID {
-    public static let kindle = "kindle"
-}
-
 /// One destination an article can be delivered to.
 /// The coordinator's gating/state logic is destination-agnostic; each
 /// destination just knows whether it's configured, when it auto-sends, and how

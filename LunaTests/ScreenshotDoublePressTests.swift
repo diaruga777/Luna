@@ -6,6 +6,7 @@
 import LunaIntents
 @testable import LunaStorage
 import LunaSend
+import LunaModels
 import XCTest
 
 final class ScreenshotDoublePressTests: XCTestCase {

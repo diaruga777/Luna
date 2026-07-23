@@ -7,6 +7,7 @@ import LunaSocialUI
 import LunaReadingList
 import LunaModels
 import LunaReaderUI
+import LunaSend
 import LunaStorage
 import LunaURLClassification
 import UIKit

@@ -4,6 +4,7 @@
 //
 
 import LunaReadingList
+import LunaSend
 import LunaStorage
 import LunaModels
 import XCTest

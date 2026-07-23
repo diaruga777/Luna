@@ -6,7 +6,6 @@
 import LunaMail
 import LunaMailAccount
 import LunaMailTransport
-import LunaSend
 import LunaSocial
 import LunaStorage
 import LunaModels
@@ -223,7 +222,9 @@ public final class IncomingMailImporter {
             let item = store.add(urlString: "lunamail://\(message.id)", source: .email)
             recordSender(message, contact: contact, itemID: item.id)
             let ready = store.saveContent(content, for: item)
-            if ready.state == .ready { ArticleSendCoordinator.shared.articleBecameReady(ready) }
+            // Article-kind hook (Kindle/ereader auto-send) — a no-op in apps
+            // without article handling, which have no send destinations anyway.
+            if ready.state == .ready { IngestorKindHandlers.article?.articleBecameReady(ready) }
         } else if let url = incoming.urls.first, let item = store.addIfAbsent(
             urlString: url.absoluteString, source: .email) {
             recordSender(message, contact: contact, itemID: item.id)

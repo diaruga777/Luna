@@ -92,7 +92,9 @@ let package = Package(
         // deps. Reuses LunaMail's MIME parsers. Linked by the app, not extensions.
         .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaMail", "LunaSend", "LunaAppConfig", "LunaHTMLClassification", "LunaModels", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaDesignSystem", dependencies: ["LunaAppConfig", "LunaModels"]),
-        .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem", "LunaAppConfig", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // LunaMediaDownload: the media ingest handler (`PlatformItemIngestor`)
+        // hands recognized items to the auto-download pipeline.
+        .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem", "LunaAppConfig", "LunaPriceMetadata", "LunaMediaDownload", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(
             name: "LunaMediaDownload",
             dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage"],
@@ -115,8 +117,10 @@ let package = Package(
         // readers hand read-aloud to the app-wide `AudioPlaybackCenter` when the app shell
         // installs it, and keep the legacy self-contained SpeechController path when it's
         // absent (the share/action extensions never install it).
-        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaPriceMetadata", "LunaAudioPlayback", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaPriceIngest", "LunaReaderUI", "LunaAppConfig", "LunaArchiveReader", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaPriceMetadata", "LunaAudioPlayback", "LunaDocuments", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // LunaSocial: `PriceRefreshCoordinator` posts price-drop local
+        // notifications through LunaSocial's `NotificationManager`.
+        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaPriceIngest", "LunaReaderUI", "LunaAppConfig", "LunaArchiveReader", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", "LunaSocial", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // LunaAudioPlayback: Phase 6 — `ExtensionAudioScriptWriter` writes a heuristics-only
         // audio script to the cache right after an extension-context article save (see
         // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().
@@ -134,9 +138,13 @@ let package = Package(
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial"]),
-        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaIngest", "LunaPlatforms", "LunaReadingList", "LunaSocial", "LunaSend"]),
-        .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI", "LunaSend"]),
-        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaSend", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaMediaDownload", "LunaPlatforms", "LunaPriceUI", "LunaReaderUI", "LunaArchiveReader", "LunaSocial", "LunaAppConfig", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaIngest", "LunaPlatforms", "LunaReadingList", "LunaSocial"]),
+        .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI"]),
+        // Universal ingest orchestration linked by EVERY app: no kind-specific
+        // modules here. Per-kind persistence lives behind `IngestorKindHandlers`
+        // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
+        // registered by each app's `KindWiring` composition root.
+        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
         .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),
         .testTarget(name: "LunaModelsTests", dependencies: ["LunaModels"]),
         .testTarget(name: "LunaURLClassificationTests", dependencies: ["LunaURLClassification"]),

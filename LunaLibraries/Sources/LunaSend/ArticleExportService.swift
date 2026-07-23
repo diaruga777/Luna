@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaSend
 import LunaEpub
 import LunaStorage
 import LunaModels

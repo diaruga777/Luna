@@ -8,7 +8,6 @@ import LunaStorage
 import LunaMailAccount
 import LunaMailTransport
 import LunaSocial
-import LunaPriceUI
 import UIKit
 
 /// Sends a reading-list item (or a bare URL) to one or more recipients as a
@@ -18,6 +17,13 @@ import UIKit
 public final class EmailShareCenter {
 
     public static let shared = EmailShareCenter()
+
+    /// Renders a tracker's price graph to a JPEG hero image, installed by the
+    /// product-handling apps' `KindWiring` (the graph view lives in LunaPriceUI,
+    /// which LunaReadingList must not depend on). nil ⇒ the shared tracker email
+    /// falls back to the item's thumbnail — which is all a non-product app can
+    /// ever need, since its store holds no trackers.
+    public static var priceGraphSnapshot: (@MainActor (PriceTracker) -> Data?)?
 
     private let store: ReadingListStore
     private let accountStore: EmailAccountStore
@@ -117,7 +123,7 @@ public final class EmailShareCenter {
 
         if let tracker = item?.priceTracker {
             detailLines.append(priceSummary(for: tracker))
-            if let snapshot = priceSnapshot(for: tracker) {
+            if let snapshot = Self.priceGraphSnapshot?(tracker) {
                 heroImage = InlineImage(contentID: "hero", mimeType: "image/jpeg", data: snapshot)
             } else if let thumb = item?.thumbnailFileName {
                 heroImage = inlineImage(fileName: thumb, cid: "hero")
@@ -157,19 +163,4 @@ public final class EmailShareCenter {
         return InlineImage(contentID: cid, mimeType: mime, data: data)
     }
 
-    /// Renders the price graph to a JPEG for inline embedding.
-    @MainActor
-    private func priceSnapshot(for tracker: PriceTracker) -> Data? {
-        let series = PriceHistory.series(for: tracker)
-        guard series.count >= 2 else { return nil }
-        let view = PriceGraphView(frame: CGRect(x: 0, y: 0, width: 600, height: 300))
-        view.backgroundColor = .white
-        view.setData(series, currency: tracker.displayCurrency)
-        view.layoutIfNeeded()
-        let renderer = UIGraphicsImageRenderer(bounds: view.bounds)
-        let image = renderer.image { _ in
-            view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
-        }
-        return image.jpegData(compressionQuality: 0.85)
-    }
 }

@@ -154,6 +154,7 @@
 		6D41811DE97444B1C1FA8C2F /* LunaSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LunaSocialUI */; };
 		6DB54C62E882943203C6DB3B /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 57FF3B9C9B72CD1D8FEF8E90 /* LunaDesignSystem */; };
 		6EB6D5F0813EB5125A8D1488 /* LunaMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */; };
+		6ECDB5104F8EA5F7EAD8A3CC /* LunaArticleIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 1737084DBE86A2783F8C4632 /* LunaArticleIngest */; };
 		6F438E9F1C4DEAAF57A692B8 /* LunaArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LunaArchiveReader */; };
 		6FC987A819941677EC289003 /* LunaPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunaPaywallBypass */; };
 		6FE4239F00242F26D77260A2 /* LunaReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LunaReadingListUI */; };
@@ -1297,6 +1298,7 @@
 				34DB81C51D28B1B5D6864DBA /* LunaModels in Frameworks */,
 				9A9A430C4BCDDC17325CF280 /* LunaReaderUI in Frameworks */,
 				166333B003B1CA56E9ECFAE4 /* LunaURLClassification in Frameworks */,
+				6ECDB5104F8EA5F7EAD8A3CC /* LunaArticleIngest in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1566,6 +1568,7 @@
 				C100000000000000000000016 /* LunaModels */,
 				436F1044DB2553FED3D9DB4C /* LunaReaderUI */,
 				C100000000000000000000011 /* LunaURLClassification */,
+				1737084DBE86A2783F8C4632 /* LunaArticleIngest */,
 			);
 			productName = LunaReaderClip;
 			productReference = D90FE9B094CA527A09D21E73 /* LunaReaderClip.app */;
@@ -4998,6 +5001,10 @@
 		0A5E4DC54DD727092F10D7B7 /* LunaPriceIngest */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LunaPriceIngest;
+		};
+		1737084DBE86A2783F8C4632 /* LunaArticleIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LunaArticleIngest;
 		};
 		182108EE181A9FAAB156FAD6 /* LunaMailAccount */ = {
 			isa = XCSwiftPackageProductDependency;

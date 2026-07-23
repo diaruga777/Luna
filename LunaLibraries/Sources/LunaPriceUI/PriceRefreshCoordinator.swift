@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaPriceUI
 import LunaSocial
 import LunaStorage
 import LunaModels

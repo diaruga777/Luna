@@ -3,12 +3,6 @@
 //  Luna
 //
 
-import LunaReaderUI
-import LunaArchiveReader
-import LunaMediaDownload
-import LunaPlatforms
-import LunaSend
-import LunaDocuments
 import LunaStorage
 import LunaIngest
 import LunaFetch
@@ -179,8 +173,9 @@ public final class ReadingListIngestor {
                containingStoreURL: resolvedURL.absoluteString),
            existingTrackerItemID != item.id {
             store.delete(item)
-            postPriceTrackerSaved(itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
-                                  isMerge: true, highlightedURL: resolvedURL.absoluteString)
+            PriceTrackerSaveAnnouncement.post(
+                itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
+                isMerge: true, highlightedURL: resolvedURL.absoluteString)
             return decision
         }
 
@@ -230,56 +225,15 @@ public final class ReadingListIngestor {
 
     // MARK: - Outcome handling (the main-app presenter, store-writing)
 
-    /// Persists a readable article: downloads its images + cover art, saves the
-    /// content, and flips ready.
+    /// Persists a readable article via the registered article handler.
     fileprivate func persistArticle(
         _ content: ArticleContent, html: String, for item: ReadingListItem, url: URL
     ) async {
-        let contentWithCachedImages = ArticleImageDownloader.resolveLocalImages(content, store: store)
-        let initialContent = await ArticleImageDownloader.downloadInitialLayoutImages(
-            contentWithCachedImages, itemID: item.id, store: store, refererURL: url)
-        // Persist reader content and flip the row to `.ready` FIRST — the reader is the
-        // primary artifact and must not wait on non-visible remote image downloads,
-        // row thumbnail fetches, or the (up-to-20s) web-archive capture. Only
-        // unknown-size images near the top are fetched before readiness; known-size
-        // images get stable placeholders and load later.
-        let updated = store.saveContent(initialContent, for: item)
-        if updated.state == .ready {
-            ArticleSendCoordinator.shared.articleBecameReady(updated)
-            // Background-preload this article's links so the inline link viewer opens
-            // instantly. Non-blocking; no-op when the depth setting is 0.
-            PreloadCoordinator.shared.preload(rootID: updated.id)
+        guard let handler = IngestorKindHandlers.article else {
+            missingHandlerFallback(kind: "article", for: item)
+            return
         }
-        Task { [self] in
-            await finishArticleArtifacts(
-                initialContent, html: html, for: item, url: url)
-        }
-    }
-
-    /// Finishes non-critical article artifacts after the row is already readable.
-    /// This keeps ingestion latency tied to text extraction instead of remote media
-    /// and WebKit archive capture.
-    private func finishArticleArtifacts(
-        _ content: ArticleContent, html: String, for item: ReadingListItem, url: URL
-    ) async {
-        async let downloadedContent = ArticleImageDownloader.download(
-            content, itemID: item.id, store: store, refererURL: url)
-        async let coverData = ArticleCoverThumbnail.coverImageData(html: html, baseURL: url)
-
-        if let coverData = await coverData,
-           store.item(withID: item.id)?.thumbnailFileName == nil {
-            store.setThumbnail(coverData, for: item.id)
-        }
-
-        let resolvedContent = await downloadedContent
-        if resolvedContent.blocks.contains(where: { $0.kind == .image && $0.imageFileName != nil }) {
-            _ = store.saveContent(resolvedContent, for: item)
-        }
-
-        // Capture the unlocked HTML returned by the resolver. A fresh live navigation
-        // can return the publisher's paywall even though this exact response produced
-        // the complete native reader; live capture is only the fallback.
-        await captureWebArchiveIfPossible(for: item, url: url, html: html)
+        await handler.persistArticle(content, html: html, for: item, url: url, store: store)
     }
 
     /// Parks a paywalled article for the interactive archive reader.
@@ -292,168 +246,65 @@ public final class ReadingListIngestor {
         store.markFailed(item.id)
     }
 
-    /// Ingests a document outcome.
+    /// Ingests a document outcome via the registered article handler (documents
+    /// are article-kind: they read in the article reader and are Kindle-eligible).
     fileprivate func handleDocument(type: String, for item: ReadingListItem) async {
-        await ingestDocument(item)
+        guard let handler = IngestorKindHandlers.article else {
+            missingHandlerFallback(kind: "article (document)", for: item)
+            return
+        }
+        await handler.ingestDocument(item, store: store)
     }
 
-    /// Ingests a recognized video outcome.
+    /// Ingests a recognized video outcome via the registered media handler.
     fileprivate func handleVideo(
         _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem
     ) async {
-        await ingestPlatformItem(
-            item, match: PlatformMatch(platform: platform, itemID: itemID))
+        await ingestPlatformItem(item, platform: platform, itemID: itemID)
     }
 
     /// Ingests a recognized social platform outcome (best-effort metadata).
     fileprivate func handlePlatform(
         _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem
     ) async {
-        await ingestPlatformItem(
-            item, match: PlatformMatch(platform: platform, itemID: itemID))
+        await ingestPlatformItem(item, platform: platform, itemID: itemID)
     }
 
-    /// Turns a detected product page into a price tracker. Intelligent matching:
-    /// if the product matches an existing tracker (by product id, else fuzzy
-    /// name+brand), the new URL is MERGED into that tracker; otherwise a new
-    /// tracker is created on this item.
+    /// Turns a detected product page into a price tracker via the registered
+    /// product handler.
     fileprivate func ingestProductTracker(
         _ item: ReadingListItem, url: URL, product: ProductInfo
     ) async {
-        // Try to merge into an existing tracker for the same product.
-        let existing: [(id: UUID, tracker: PriceTracker)] = store.items().compactMap {
-            guard let tracker = $0.priceTracker, $0.id != item.id else { return nil }
-            return ($0.id, tracker)
-        }
-        if let matchID = ProductMatcher.bestMatch(for: product, among: existing),
-           var matched = store.item(withID: matchID)?.priceTracker {
-            let stores = product.trackerStores(fallbackURL: url)
-            let newStores = stores.filter { !matched.hasStore(urlString: $0.urlString) }
-            guard !newStores.isEmpty else {
-                store.delete(item)
-                postPriceTrackerSaved(itemID: matchID, source: item.effectiveCaptureSource,
-                                      isMerge: true, highlightedURL: stores.first?.urlString)
-                return
-            }
-            for storeListing in newStores {
-                matched.upsertStore(storeListing)
-            }
-            store.updatePriceTracker(matched, for: matchID)
-            // The just-saved item was a duplicate route into an existing tracker;
-            // drop its placeholder item so only the merged tracker remains.
-            store.delete(item)
-            postPriceTrackerSaved(itemID: matchID, source: item.effectiveCaptureSource,
-                                  isMerge: true, highlightedURL: newStores.first?.urlString)
+        guard let handler = IngestorKindHandlers.product else {
+            missingHandlerFallback(kind: "product", for: item)
             return
         }
-
-        var tracker = PriceTracker(
-            productName: product.name, stores: product.trackerStores(fallbackURL: url),
-            brand: product.brand, productID: product.productID)
-        if let imageURL = product.imageURL,
-           let data = await downloadProductImage(imageURL) {
-            let fileName = "\(item.id.uuidString)-product.jpg"
-            try? data.write(
-                to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
-            tracker.imageFileName = fileName
-        }
-        store.savePriceTracker(tracker, for: item.id)
-
-        postPriceTrackerSaved(itemID: item.id, source: item.effectiveCaptureSource,
-                              isMerge: false, highlightedURL: nil)
+        await handler.ingestProductTracker(item, url: url, product: product, store: store)
     }
 
-    /// Announces a just-created/merged price tracker from an interactive in-app
-    /// save (paste/manual) so the foreground list can present the price editor.
-    /// App Intents, extensions, and background/friend saves must never trigger UI.
-    private func postPriceTrackerSaved(
-        itemID: UUID, source: CaptureSource, isMerge: Bool, highlightedURL: String?
-    ) {
-        switch source {
-        case .paste, .manual:
-            break
-        case .appIntent, .shareSheet, .friendShare, .email:
+    /// Ingests a recognized platform item via the registered media handler.
+    private func ingestPlatformItem(
+        _ item: ReadingListItem, platform: ContentPlatform, itemID: String?
+    ) async {
+        guard let handler = IngestorKindHandlers.media else {
+            missingHandlerFallback(kind: "media", for: item)
             return
         }
-        let userInfo: [String: Any] = [
-            "itemID": itemID, "isMerge": isMerge,
-            "highlightedURL": highlightedURL as Any,
-        ]
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(
-                name: .priceTrackerSavedInteractively, object: nil, userInfo: userInfo)
-        }
+        await handler.ingestPlatformItem(
+            item, platform: platform, platformItemID: itemID, store: store)
     }
 
-    /// Downloads a product image. Returns nil on any failure.
-    private func downloadProductImage(_ imageURL: URL) async -> Data? {
-        var request = URLRequest(url: imageURL, timeoutInterval: 8)
-        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              data.count > 512, data.count <= 5 * 1024 * 1024
-        else { return nil }
-        return data
-    }
-
-    /// Document ingestion: parse the imported file (stored at
-    /// `Articles/<id>-source.<type>`) into article content. Documents are
-    /// Kindle-eligible, so the becameReady hook runs as for web articles.
-    private func ingestDocument(_ item: ReadingListItem) async {
-        guard let type = item.sanitizedDocumentType else {
-            store.markFailed(item.id)
-            return
-        }
-        let sourceURL = store.articlesDirectory
-            .appendingPathComponent("\(item.id.uuidString)-source.\(type)")
-        guard let content = DocumentParser.parse(
-            fileURL: sourceURL, type: type, title: item.title ?? "Document")
-        else {
-            store.markFailed(item.id)
-            return
-        }
-        let updated = store.saveContent(content, for: item)
-        if updated.state == .ready {
-            ArticleSendCoordinator.shared.articleBecameReady(updated)
-        }
-    }
-
-    /// Ingests a recognized platform item: best-effort metadata (title/creator/
-    /// thumbnail via the module's optional fetcher), then marks `.ready`.
-    /// Recognized platform items NEVER enter `.failed` — they render from a logo
-    /// + deep link even when metadata is unavailable.
-    private func ingestPlatformItem(_ item: ReadingListItem, match: PlatformMatch) async {
-        let module = PlatformRegistry.shared.module(for: match.platform)
-        let metadata = await module?.metadataFetcher?.fetchMetadata(
-            for: match, urlString: item.urlString)
-
-        var thumbnailFileName: String?
-        if let data = metadata?.thumbnailData, !data.isEmpty {
-            let fileName = "\(item.id.uuidString)-thumb.jpg"
-            try? data.write(
-                to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
-            thumbnailFileName = fileName
-        }
-
-        _ = store.savePlatformMetadata(
-            platform: match.platform,
-            platformItemID: match.itemID,
-            title: metadata?.title,
-            creator: metadata?.creator,
-            thumbnailFileName: thumbnailFileName,
-            for: item.id)
-
-        // Downloader normally uses the system-owned background job. App Intents
-        // own their media handoff after the save result is known so the user's
-        // setting can choose awaited file return or the same Live Activity path
-        // without racing a second transfer from this ingestion task.
-        if MediaAutoDownloader.isRunningInDownloader,
-           item.effectiveCaptureSource != .appIntent {
-            _ = await LiveMediaDownloadManager.shared.start(
-                urlString: item.urlString, title: item.title, ownership: .downloader)
-        } else if item.effectiveCaptureSource != .appIntent {
-            await MediaAutoDownloader.runIfEnabledAwaiting(forURLString: item.urlString)
-        }
+    /// A kind reached the presenter without its handler registered. That's a
+    /// programming error — the `SurfaceSupport` gate runs BEFORE presentation, so
+    /// an app only ever presents kinds it declared, and its composition root
+    /// (`KindWiring`) must have installed the matching handler. Fail loudly in
+    /// debug; in release, mark the item failed rather than leaving it pending.
+    private func missingHandlerFallback(kind: String, for item: ReadingListItem) {
+        assertionFailure("no IngestorKindHandlers handler registered for \(kind)")
+        SharedDiagnosticLog.record(
+            "ingest: no \(kind) handler registered — marking \(item.id) failed",
+            category: "ingest")
+        store.markFailed(item.id)
     }
 
     /// Kicks off ingestion for everything not yet ready (app launch / foreground).
@@ -480,91 +331,23 @@ public final class ReadingListIngestor {
         }
     }
 
-    /// True while a thumbnail backfill pass is running, so overlapping
-    /// `ingestAllPending()` calls (launch + foreground + pull-to-refresh) don't run
-    /// duplicate cover fetches for the same items.
-    @MainActor private var isBackfillingThumbnails = false
-    /// Items whose thumbnail backfill was attempted-and-failed this session (no
-    /// resolvable cover), so an un-coverable page isn't re-fetched on every pass.
-    @MainActor private var thumbnailBackfillAttempted: Set<UUID> = []
-
     /// Repairs ready and locked web articles that have no row thumbnail — the
     /// action/share extension persists article content WITHOUT fetching the page's
     /// cover image (it's short-lived and sandbox-limited), and locked rows can often
-    /// still expose `og:image` before unlock. This runs in the app process (full
-    /// network) and brings them in line: a downloaded lead image is reused as-is,
-    /// otherwise the page's `og:image` is fetched once. Idempotent — items that
-    /// already have a thumbnail are skipped — so it also backfills any historical
-    /// rows saved before thumbnails existed.
+    /// still expose `og:image` before unlock. Delegates to the article handler
+    /// (which owns the cover-fetch machinery and the per-session attempt state);
+    /// a silent no-op in apps that don't handle articles, whose stores can't
+    /// contain thumbnail-less article rows in the first place.
     public func backfillMissingThumbnails() {
-        Task { @MainActor in
-            guard !isBackfillingThumbnails else { return }
-            isBackfillingThumbnails = true
-            defer { isBackfillingThumbnails = false }
-
-            let candidates = store.items().filter { item in
-                (item.state == .ready || item.state == .needsCaptcha)
-                    && item.thumbnailFileName == nil
-                    && item.platform == nil                       // videos/platforms own their thumbnail
-                    && item.priceTracker == nil                   // trackers own their image
-                    && item.sanitizedDocumentType == nil          // documents have no cover
-                    && !thumbnailBackfillAttempted.contains(item.id)
-                    && (item.url?.scheme?.hasPrefix("http") ?? false)  // excludes lunamail:// / lunadoc://
-            }
-            // Cap per pass so a large backlog can't fire a burst of cover fetches.
-            for item in candidates.prefix(12) {
-                thumbnailBackfillAttempted.insert(item.id)
-                await ArticleCoverThumbnail.backfillThumbnail(for: item, store: store)
-            }
-        }
+        IngestorKindHandlers.article?.backfillMissingThumbnails(store: store)
     }
-
-    /// True while a backfill pass is running, so overlapping `ingestAllPending()`
-    /// calls (launch + pull-to-refresh) don't spin up a second fleet of web views.
-    @MainActor private var isBackfillingArchives = false
-    /// Items whose archive capture was attempted-and-failed this session, so we don't
-    /// re-attempt an un-archivable page (which never gets a saved file, so it would
-    /// otherwise re-enter the candidate set on every pass) on every refresh.
-    @MainActor private var archiveBackfillAttempted: Set<UUID> = []
 
     /// `.webarchive` capture was added after many items were saved, and several save
-    /// surfaces (extensions, paste, friend-share) don't capture inline. This repairs
-    /// every ready web page that lacks an archive — one WebKit capture at a time so we
-    /// never run a fleet of web views — which is also how those surfaces get covered.
+    /// surfaces (extensions, paste, friend-share) don't capture inline. Delegates to
+    /// the article handler (which owns the WebKit capture machinery and the
+    /// per-session attempt state); a silent no-op in apps that don't handle articles.
     public func backfillMissingWebArchives() {
-        Task { @MainActor in
-            guard !isBackfillingArchives else { return }
-            isBackfillingArchives = true
-            defer { isBackfillingArchives = false }
-
-            let candidates = store.items().filter { item in
-                item.state == .ready
-                    && item.sanitizedDocumentType == nil          // documents already have a source file
-                    && store.webArchiveURL(for: item) == nil
-                    && !archiveBackfillAttempted.contains(item.id)  // don't retry a failed page forever
-                    && (URL(string: item.urlString)?.scheme?.hasPrefix("http") ?? false)  // excludes lunamail://
-            }
-            // Cap per pass so a large backlog doesn't tie up a web view indefinitely.
-            for item in candidates.prefix(8) {
-                guard let url = URL(string: item.urlString) else { continue }
-                archiveBackfillAttempted.insert(item.id)
-                await captureWebArchiveIfPossible(for: item, url: url, html: nil)
-            }
-        }
-    }
-
-    /// Captures and stores a cleaned `.webarchive`, preferring the resolver's exact
-    /// unlocked HTML over a fresh live navigation that may reintroduce a paywall.
-    fileprivate func captureWebArchiveIfPossible(for item: ReadingListItem, url: URL, html: String?) async {
-        guard url.scheme?.hasPrefix("http") ?? false else { return }   // never for lunamail://, lunadoc://
-        var archive: Data?
-        if let html, !html.isEmpty {
-            archive = await WebArchiveCapturer.capture(html: html, baseURL: url)
-        }
-        if archive == nil {
-            archive = await WebArchiveCapturer.capture(url: url)
-        }
-        if let archive { store.saveWebArchive(archive, for: item) }
+        IngestorKindHandlers.article?.backfillMissingWebArchives(store: store)
     }
 
     /// What a save press did, so intents can wait on the right work.
@@ -614,7 +397,7 @@ public final class ReadingListIngestor {
             existingItem: existing,
             previousPressDate: previousPress,
             now: Date(),
-            doubleSaveDestinationIDs: ArticleSendCoordinator.shared.doubleSaveDestinationIDs(),
+            doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [],
             intentAction: doubleSaveActionSurface.flatMap(Self.resolvedIntentAction(forSurface:)))
 
         switch decision {
@@ -646,7 +429,8 @@ public final class ReadingListIngestor {
             // The policy only returns this for an existing item.
             guard let existing else { return .ignored }
             for destinationID in destinationIDs {
-                await ArticleSendCoordinator.shared.send(existing, toDestinationID: destinationID)
+                await IngestorKindHandlers.article?.sendToDestination(
+                    existing, destinationID: destinationID)
             }
             return .sentToEreaders(existing)
         case .sendToFriends(let emails):
@@ -689,8 +473,8 @@ public final class ReadingListIngestor {
         let store = DoubleSaveActionStore.shared
         switch store.action(forSurface: surface) {
         case .sendToKindle:
-            guard ArticleSendCoordinator.shared.isConfigured(
-                destinationID: ArticleDestinationID.kindle) else { return nil }
+            guard IngestorKindHandlers.article?.isDestinationConfigured(
+                ArticleDestinationID.kindle) ?? false else { return nil }
             return .sendToKindle
         case .sendToFriend:
             // Preset recipients need a configured sharing account to actually
@@ -755,7 +539,7 @@ public final class ReadingListIngestor {
         }
         let saved = store.saveContent(content, for: item)
         if saved.state == .ready {
-            ArticleSendCoordinator.shared.articleBecameReady(saved)
+            IngestorKindHandlers.article?.articleBecameReady(saved)
         }
         return saved
     }

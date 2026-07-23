@@ -11,6 +11,7 @@
 import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
+import LunaReaderUI
 import LunaArchiveReader
 import LunaDesignSystem
 import LunaStorage

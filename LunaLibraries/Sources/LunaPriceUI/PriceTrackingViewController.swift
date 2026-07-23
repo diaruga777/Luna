@@ -11,15 +11,6 @@ import LunaModels
 import LunaDesignSystem
 import UIKit
 
-public extension Notification.Name {
-    /// Posted when an interactive save (paste/manual/app intent) created or merged
-    /// a price tracker, so the foreground reading list can present its editor with
-    /// a "Read instead" → save-as-article fallback. `userInfo`: `itemID: UUID`,
-    /// `isMerge: Bool`, `highlightedURL: String?`.
-    public static let priceTrackerSavedInteractively =
-        Notification.Name("priceTrackerSavedInteractively")
-}
-
 /// Shows and edits one price tracker: a table of its seller URLs (each row shows
 /// the extracted price; tapping opens the URL in the in-app browser), an **Add
 /// seller** footer (paste a URL, or web-search/browse to one), and a bottom

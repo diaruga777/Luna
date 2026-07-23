@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaPlatforms
 import LunaStorage
 import LunaFetch
 import LunaHTMLClassification
@@ -55,6 +54,15 @@ public protocol PasteboardSuggesting {
 public final class PasteboardSuggester: PasteboardSuggesting {
     public static let shared = PasteboardSuggester()
 
+    /// Best-effort preview art for a recognized platform URL, installed by the
+    /// media-handling apps' `KindWiring` (it needs `PlatformRegistry`'s metadata
+    /// fetchers, which LunaReadingList must not depend on). nil ⇒ no art; the
+    /// platform CANDIDATE is still produced — recognition itself is URL-only
+    /// (`PlatformRecognizer`) — and the shell's per-surface filter
+    /// (`surfaceAllows`) drops foreign-kind candidates as before.
+    public static var platformPreviewArt:
+        ((_ platform: ContentPlatform, _ itemID: String?, _ urlString: String) async -> UIImage?)?
+
     private let store: ReadingListStore
     private let fetcher: HTMLFetching
 
@@ -74,10 +82,9 @@ public final class PasteboardSuggester: PasteboardSuggesting {
 
         // A recognized platform URL surfaces as a platform
         // candidate (saved + ingested on tap; no article preview).
-        if let match = PlatformRegistry.shared.detect(normalizedURLString) {
-            let art = await PlatformRegistry.shared.module(for: match.platform)?
-                .metadataFetcher?.fetchMetadata(for: match, urlString: normalizedURLString)?
-                .thumbnailData.flatMap { UIImage(data: $0) }
+        if let match = PlatformRecognizer.recognize(normalizedURLString) {
+            let art = await Self.platformPreviewArt?(
+                match.platform, match.itemID, normalizedURLString)
             return PasteboardCandidate(
                 urlString: normalizedURLString, title: match.platform.displayName,
                 channelName: nil, content: nil, platform: match.platform,
@@ -95,7 +102,8 @@ public final class PasteboardSuggester: PasteboardSuggesting {
             // Eagerly preload this clipboard candidate's linked pages (text + images) so an
             // open/save is instant offline. Bounded to the current clipboard link and
             // Wi-Fi-gated; harmlessly re-triggered (deduped) if the same URL is re-evaluated.
-            PreloadCoordinator.shared.preloadPasteboard(content: content, sourceURL: url)
+            // Routed through the article handler (`PreloadCoordinator` is article-kind).
+            IngestorKindHandlers.article?.preloadPasteboard(content: content, sourceURL: url)
             return PasteboardCandidate(
                 urlString: normalizedURLString, title: content.title,
                 channelName: nil, content: content, thumbnail: cover)

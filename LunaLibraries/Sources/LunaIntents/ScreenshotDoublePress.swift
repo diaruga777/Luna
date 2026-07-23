@@ -4,7 +4,7 @@
 //
 
 import LunaStorage
-import LunaSend
+import LunaModels
 import Foundation
 
 /// Pure double-press detection for the Save App Intent's screenshot path:

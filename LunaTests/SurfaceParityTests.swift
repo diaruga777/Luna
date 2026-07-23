@@ -4,6 +4,7 @@
 //
 
 import LunaArticleIngest
+import LunaPriceIngest
 import LunaShareSurface
 import LunaPriceUI
 import LunaArchiveReader
@@ -200,9 +201,14 @@ final class SurfaceParityTests: XCTestCase {
     /// render, short bounded timeout — no network).
     private func process(_ link: Link, source: CaptureSource) async -> Outcome {
         let prefetched = link.fixtures.keys.first.map { BypassFixtures.html($0) }
+        // Processors passed EXPLICITLY: the test bundle can hold its own copy
+        // of the LunaIngest framework, so the host app's launch registration
+        // (KindWiring) isn't necessarily visible through the registry here.
         return await IngestPipeline.process(
             IngestInput(url: url(link.url), source: source, prefetchedHTML: prefetched),
-            timeout: 10, session: OfflineFailingProtocol.session(), fetcher: fetcher(for: link))
+            timeout: 10, session: OfflineFailingProtocol.session(), fetcher: fetcher(for: link),
+            articleProcessor: ArticleIngestProcessor(),
+            productProcessor: ProductIngestProcessor())
     }
 
     /// The main-app surface's presentation intent for an `Outcome` (mirrors

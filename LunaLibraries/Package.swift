@@ -35,6 +35,7 @@ let package = Package(
         .library(name: "LunaReaderUI", targets: ["LunaReaderUI"]),
         .library(name: "LunaPriceUI", targets: ["LunaPriceUI"]),
         .library(name: "LunaShareSurface", targets: ["LunaShareSurface"]),
+        .library(name: "LunaURLRescue", targets: ["LunaURLRescue"]),
         .library(name: "LunaReadingList", targets: ["LunaReadingList"]),
         .library(name: "LunaSocialUI", targets: ["LunaSocialUI"]),
         .library(name: "LunaIntents", targets: ["LunaIntents"]),
@@ -116,6 +117,18 @@ let package = Package(
         // audio script to the cache right after an extension-context article save (see
         // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().
         .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaInterop", "LunaInteropUI"]),
+        // The LLM URL-rescue engine (see claudedocs/url-rescue.md): when primary
+        // ingestion fails, an Apple FoundationModels pass (on-device iOS 26 baseline,
+        // Private Cloud Compute opportunistically on iOS 27/Xcode 27 builds) proposes
+        // a final payload / reroute / WKWebView-JS directive that is validated and
+        // applied by re-entering the raw IngestPipeline exactly once. MAIN-APP ONLY —
+        // never link this into the share/action extensions (WKWebView runner, long
+        // budgets, FoundationModels). Same tier as LunaPriceUI.
+        .target(name: "LunaURLRescue", dependencies: [
+            "LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaHTMLClassification",
+            "LunaFetch", "LunaPaywallBypass", "LunaIngest", "LunaStorage", "LunaMediaDownload",
+            .product(name: "SwiftSoup", package: "SwiftSoup"),
+        ]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial"]),
         .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaInterop", "LunaPlatforms", "LunaReadingList", "LunaSocial", "LunaSend"]),
         .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI", "LunaSend"]),

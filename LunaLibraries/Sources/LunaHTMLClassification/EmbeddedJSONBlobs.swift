@@ -11,8 +11,10 @@ import SwiftSoup
 /// `application/json` script. `ProductPageDetector` layers a third, inline
 /// `window.__X__ = {…}` source on top for its own scan; `ProductMetadataExtractor`
 /// uses just these two.
-enum EmbeddedJSONBlobs {
-    static func nextDataAndJSONScripts(in document: Document) -> [String] {
+/// Public so `LunaURLRescue`'s digest builder scans the exact same blob sources
+/// the product extractors do.
+public enum EmbeddedJSONBlobs {
+    public static func nextDataAndJSONScripts(in document: Document) -> [String] {
         var blobs: [String] = []
         if let next = try? document.select("script#__NEXT_DATA__").first(),
            let json = try? next.html().trimmedNonEmpty {

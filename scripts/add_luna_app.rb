@@ -25,7 +25,7 @@ PBX = Xcodeproj::Project::Object
 clip      = proj.targets.find { |t| t.name == 'Luna' }
 share_src = proj.targets.find { |t| t.name == 'LunaShare' }
 safari_src = proj.targets.find { |t| t.name == 'LunaSafari' }
-action_src = proj.targets.find { |t| t.name == 'Luna Action Extension' }
+action_src = proj.targets.find { |t| t.name == 'LunaAction' }
 
 # Synchronized source groups (reused across apps), keyed by display name.
 sync = {}

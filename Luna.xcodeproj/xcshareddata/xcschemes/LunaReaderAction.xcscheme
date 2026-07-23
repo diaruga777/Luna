@@ -16,8 +16,8 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "AAE300000000000000000000"
-               BuildableName = "LunaShare.appex"
+               BlueprintIdentifier = "79583DFB2FE0BAD100C775CA"
+               BuildableName = "LunaReaderAction.appex"
                ReferencedContainer = "container:Luna.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -30,7 +30,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AAE000000000000000000000"
-               BuildableName = "Luna.app"
+               BuildableName = "LunaReader.app"
                ReferencedContainer = "container:Luna.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -61,7 +61,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AAE000000000000000000000"
-            BuildableName = "Luna.app"
+            BuildableName = "LunaReader.app"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -79,7 +79,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AAE000000000000000000000"
-            BuildableName = "Luna.app"
+            BuildableName = "LunaReader.app"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

@@ -1078,37 +1078,35 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
 
     func carousel(
         _ carousel: CardCarouselViewController,
-        contextMenuForCardAt index: Int
-    ) -> UIContextMenuConfiguration? {
+        menuForCardAt index: Int
+    ) -> UIMenu? {
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
         let item = items[mediaIndex]
-        return UIContextMenuConfiguration(actionProvider: { _ in
-            var actions: [UIMenuElement] = []
-            switch item.storageState {
-            case .undownloaded:
-                actions.append(UIAction(
-                    title: "Download", image: UIImage(systemName: "arrow.down.circle")
-                ) { [weak self] _ in self?.startDownload(item) })
-            case .localFile:
-                actions.append(UIAction(
-                    title: "Share", image: UIImage(systemName: "square.and.arrow.up")
-                ) { [weak self] _ in self?.share(item, sourceIndex: index) })
-                actions.append(UIAction(
-                    title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")
-                ) { [weak self] _ in self?.saveToPhotos(item) })
-            case .photosReference:
-                actions.append(UIAction(
-                    title: "Share", image: UIImage(systemName: "square.and.arrow.up")
-                ) { [weak self] _ in self?.share(item, sourceIndex: index) })
-            }
+        var actions: [UIMenuElement] = []
+        switch item.storageState {
+        case .undownloaded:
             actions.append(UIAction(
-                title: "Archive", image: UIImage(systemName: "archivebox")
-            ) { [weak self] _ in self?.store.setArchived(true, for: item.id) })
+                title: "Download", image: UIImage(systemName: "arrow.down.circle")
+            ) { [weak self] _ in self?.startDownload(item) })
+        case .localFile:
             actions.append(UIAction(
-                title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
-            ) { [weak self] _ in self?.deleteSavedItem(for: item) })
-            return UIMenu(children: actions)
-        })
+                title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+            ) { [weak self] _ in self?.share(item, sourceIndex: index) })
+            actions.append(UIAction(
+                title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")
+            ) { [weak self] _ in self?.saveToPhotos(item) })
+        case .photosReference:
+            actions.append(UIAction(
+                title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+            ) { [weak self] _ in self?.share(item, sourceIndex: index) })
+        }
+        actions.append(UIAction(
+            title: "Archive", image: UIImage(systemName: "archivebox")
+        ) { [weak self] _ in self?.store.setArchived(true, for: item.id) })
+        actions.append(UIAction(
+            title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
+        ) { [weak self] _ in self?.deleteSavedItem(for: item) })
+        return UIMenu(children: actions)
     }
 }
 

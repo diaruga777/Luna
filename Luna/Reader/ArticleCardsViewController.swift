@@ -768,29 +768,24 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             return
         }
 
-        // `dismiss` has installed the tray's closed model values, so conversion
-        // now yields the card's final unshifted frame even while UIKit animates
-        // the presentation layer out of the open-tray transform.
-        let destinationFrame = destination.convert(destination.bounds, to: view)
+        // The tray cell and reader card have intentionally different aspect
+        // ratios. Morphing one snapshot frame into the other visibly stretches
+        // the archived artwork, so keep the source geometry intact and dissolve
+        // it into the already-final destination content instead.
         carousel.view.isUserInteractionEnabled = false
+        destination.transform = CGAffineTransform(scaleX: 0.985, y: 0.985)
         UIView.animate(
-            withDuration: 0.5, delay: 0,
-            usingSpringWithDamping: 0.86, initialSpringVelocity: 0.1,
-            options: [.beginFromCurrentState, .allowUserInteraction]
-        ) {
-            snapshot.frame = destinationFrame
-            snapshot.layer.cornerRadius = destination.layer.cornerRadius
-        } completion: { [weak self, weak destination] _ in
-            snapshot.removeFromSuperview()
-            destination?.alpha = 1
-            self?.finishUnarchiveTransition()
-        }
-        UIView.animate(
-            withDuration: 0.18, delay: 0.3,
+            withDuration: 0.34, delay: 0,
             options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
         ) {
             snapshot.alpha = 0
             destination.alpha = 1
+            destination.transform = .identity
+        } completion: { [weak self, weak destination] _ in
+            snapshot.removeFromSuperview()
+            destination?.alpha = 1
+            destination?.transform = .identity
+            self?.finishUnarchiveTransition()
         }
     }
 
@@ -1050,13 +1045,11 @@ extension ArticleCardsViewController: CardCarouselDelegate {
 
     func carousel(
         _ carousel: CardCarouselViewController,
-        contextMenuForCardAt index: Int
-    ) -> UIContextMenuConfiguration? {
+        menuForCardAt index: Int
+    ) -> UIMenu? {
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
         let item = items[itemIndex]
-        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
-            self?.cardContextMenu(for: item, carouselIndex: index) ?? UIMenu()
-        })
+        return cardContextMenu(for: item, carouselIndex: index)
     }
 
     func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {

@@ -158,19 +158,15 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 Long-pressing an inline link in Scroll, or the current link pill in RSVP, opens
 `LunaReaderUI/LinkRSVPPreview.swift`: a compact glass RSVP reader that exists only for
 the lifetime of that finger unless locked. It appears and starts playback immediately
-on the press, finger stationary — the interaction's delegate makes every non-pan
-recognizer sharing the touch (context-menu presses, a host carousel's long-press,
-whether installed before or after it, at any hierarchy level) require the link-only
-press's failure, so none of them can recognize mid-hold and cancel the preview; pans
-stay independent so a drag that starts on a link still scrolls. One hazard lives
-OUTSIDE the failure-requirement graph: a `UIContextMenuInteraction` anywhere on the
-touch's view chain whose delegate answers nil config installs a long-press "click
-driver" (`_UITouchDurationObservingGestureRecognizer` + `_UIRelationshipGestureRecognizer`
-pairs) that never fails while the finger is stationary and gates ACTION DELIVERY for
-every other long press — the link press transitions to `.began` but its handler doesn't
-run until the finger moves or lifts. `CardCarouselViewController` therefore installs its
-per-card context-menu interaction only for cards whose delegate actually provides a menu
-(reader cards don't; Downloader media cards do). A small glass capsule
+on the press, finger stationary — the interaction's delegate makes every ordinary
+non-pan recognizer sharing the touch (including the host carousel's long-press) require
+the link-only press's failure, so none can recognize mid-hold and cancel the preview;
+pans stay independent so a drag that starts on a link still scrolls. The carousel does
+not install `UIContextMenuInteraction` on card ancestors: its private stationary
+touch-duration driver can gate action delivery for a descendant long press until the
+finger moves. Card menus instead use the carousel's ordinary long-press recognizer and
+programmatically present `UIEditMenuInteraction`, preserving Archive/Delete and media
+menus without delaying the link preview. A small glass capsule
 floats above the card with an up chevron and "More actions", signalling the drag-up
 menu; it hides while the menu is up and once the card locks. It resolves the linked
 article from the saved item, preload cache, or a fresh extraction. Playback begins with the complete page title

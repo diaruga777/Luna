@@ -47,6 +47,11 @@ final class ScrollDirectionImmersionTracker {
     /// This still absorbs line-height jitter, but makes chrome return promptly
     /// without matching the longer downward dismissal gesture.
     private static let fadeInTravel: CGFloat = 50
+    /// A downward reading gesture this close to the bottom must not dismiss
+    /// chrome. The position-driven bottom restore is about to take ownership,
+    /// and letting the directional rule fire in the same region makes the two
+    /// states fight while the scroll view is still decelerating.
+    private static let bottomDismissalDeadZoneViewportFraction: CGFloat = 0.5
 
     /// Hooks the immersion triggers onto `root`'s live content (KVO on every
     /// scroll view, play-state callbacks on every RSVP controller). Idempotent
@@ -95,6 +100,9 @@ final class ScrollDirectionImmersionTracker {
                 + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
         let remainingToBottom = max(0, maximumPosition - position)
         let revealAtBottom = max(0, bottomRevealDistance?() ?? 0)
+        let dismissalDeadZoneStart = max(
+            revealAtBottom,
+            scrollView.bounds.height * Self.bottomDismissalDeadZoneViewportFraction)
 
         // Position exceptions do not need a directional run. At the top the
         // chrome always returns immediately; near the bottom it returns at the
@@ -112,6 +120,12 @@ final class ScrollDirectionImmersionTracker {
             return
         }
         let delta = position - previous.last
+        if delta >= 0, remainingToBottom <= dismissalDeadZoneStart {
+            // Keep a fresh baseline so travel accumulated above the dead zone
+            // cannot fire on a later layout/clamping offset near the bottom.
+            scrollRuns[key] = (position, 0)
+            return
+        }
         let run = (delta >= 0) == (previous.run >= 0) ? previous.run + delta : delta
         scrollRuns[key] = (position, run)
         // Re-seed the runs BEFORE firing: the fade's card-bottom extension

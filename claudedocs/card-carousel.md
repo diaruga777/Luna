@@ -49,8 +49,9 @@ own adapters later). The Downloader-specific adapters live in
   it while open. Long-pressing a tray item offers Unarchive and Share; both Reader
   and Downloader also offer a destructive Delete that removes the complete save
   through the surface's normal cleanup path. Reader unarchive writes immediately,
-  bumps the article to the first active position, and animates a snapshot from its
-  tray cell into the centered first-card frame while the tray spring-dismisses.
+  bumps the article to the first active position, and cross-dissolves the tray-cell
+  snapshot into the centered card's final content while the tray spring-dismisses;
+  the mismatched cell/card aspect ratios are never interpolated or stretched.
   The carousel reports its intended
   navigation target before card motion begins: scrubbing, tapping a scrubber chip,
   or swiping away from the rightmost card retracts the tray concurrently instead
@@ -281,12 +282,14 @@ Differences from the Downloader, via `CardCarouselStyle`:
   its scroll views, re-swept via
   `RabbitHoleReaderViewController.onContentHierarchyChanged` when a dive/pop/
   mode switch swaps them, sampled synchronously so flicks aren't misread as
-  settled): **scrolling down** past a small directional run (24pt, resetting
+  settled): **scrolling down** past a directional run (100pt, resetting
   on direction flips so jitter can't toggle it) fades the chrome away;
-  **scrolling up — from anywhere in the article —** by one third of the visible
-  card height fades it back in; reaching the top restores it immediately, and
+  **scrolling up — from anywhere in the article —** by 50pt fades it back in;
+  reaching the top restores it immediately, and
   approaching the article bottom restores it when the content edge meets the
-  resting card's future bottom edge. Tapping plain reader content also toggles
+  resting card's future bottom edge. Downward dismissal is disabled from half a
+  viewport before that bottom-restore boundary, preventing the directional and
+  position rules from fighting during the final deceleration. Tapping plain reader content also toggles
   immersion, while links and inline images retain their normal actions. During
   scroll immersion, a screen-level dissolve becomes opaque at the top edge of
   the persistent Settings/Share buttons so content never bleeds into their

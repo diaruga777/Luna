@@ -65,15 +65,15 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     func testDownwardTravelBelowThresholdDoesNotFire() {
         drag(to: 0)
         drag(to: 10)
-        drag(to: 20) // cumulative run 20 < fadeOutTravel (24)
+        drag(to: 80) // cumulative run 80 < fadeOutTravel (100)
         XCTAssertTrue(events.isEmpty)
     }
 
     func testDownwardTravelPastThresholdFiresImmersedTrue() {
         drag(to: 0)
-        drag(to: 10)
-        drag(to: 20)
-        drag(to: 30) // cumulative run 30 >= 24
+        drag(to: 40)
+        drag(to: 80)
+        drag(to: 110) // cumulative run 110 >= 100
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, true)
         XCTAssertEqual(events.first?.extendsCard, true, "the scroll reader extends the card on immersion")
@@ -81,10 +81,10 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
 
     func testTravelAccumulatesAcrossMultipleSmallDeltasNotJustTheLastOne() {
         drag(to: 0)
-        drag(to: 8)   // run 8
-        drag(to: 16)  // run 16
-        XCTAssertTrue(events.isEmpty, "16pt of accumulated travel hasn't crossed 24pt yet")
-        drag(to: 26)  // run 26 >= 24
+        drag(to: 30)  // run 30
+        drag(to: 70)  // run 70
+        XCTAssertTrue(events.isEmpty, "70pt of accumulated travel hasn't crossed 100pt yet")
+        drag(to: 105) // run 105 >= 100
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, true)
     }
@@ -93,9 +93,9 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
 
     func testADirectionFlipResetsTheAccumulatedRun() {
         drag(to: 0)
-        drag(to: 15)  // run 15, downward
-        drag(to: 10)  // flips upward: run resets to -5, not 15-5=10
-        drag(to: 25)  // flips back downward: run resets to 15, still short of 24
+        drag(to: 60)  // run 60, downward
+        drag(to: 50)  // flips upward: run resets to -10
+        drag(to: 125) // flips back downward: run resets to 75, still short of 100
         XCTAssertTrue(events.isEmpty)
     }
 
@@ -103,9 +103,9 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
 
     func testUpwardTravelPastThresholdFiresImmersedFalse() {
         drag(to: 600)
-        drag(to: 594)  // run -6, below the 10pt fade-in threshold
+        drag(to: 570)  // run -30, below the 50pt fade-in threshold
         XCTAssertTrue(events.isEmpty)
-        drag(to: 589)  // run -11, beyond the threshold
+        drag(to: 549)  // run -51, beyond the threshold
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, false)
         XCTAssertEqual(events.first?.extendsCard, true)
@@ -113,8 +113,8 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
 
     func testTinyUpwardCorrectionDoesNotRestoreChrome() {
         drag(to: 600)
-        drag(to: 596)
-        drag(to: 592)
+        drag(to: 584)
+        drag(to: 568)
         XCTAssertTrue(events.isEmpty)
     }
 
@@ -141,6 +141,28 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertEqual(events.first?.immersed, false)
     }
 
+    func testDownwardDismissalIsIgnoredWithinHalfAViewportOfBottomRestore() {
+        tracker.bottomRevealDistance = { 100 }
+        // With an 800pt viewport, the directional dismissal dead zone begins
+        // 400pt from the maximum position (half a viewport).
+        scrollView.fakeIsDragging = false
+        scrollView.contentOffset = CGPoint(x: 0, y: 2600)
+        drag(to: 2790) // 410pt remaining: seed just outside the dead zone
+        drag(to: 2810) // enters at 390pt remaining; accumulated down-run is discarded
+        drag(to: 2850) // further downward travel in the dead zone stays ignored
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testDownwardDismissalStillAppliesJustOutsideBottomDeadZone() {
+        tracker.bottomRevealDistance = { 100 }
+        scrollView.fakeIsDragging = false
+        scrollView.contentOffset = CGPoint(x: 0, y: 2600)
+        drag(to: 2680) // seed with 520pt remaining
+        drag(to: 2790) // 410pt remains, just outside the 400pt dead zone
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.immersed, true)
+    }
+
     // MARK: - The re-entrancy guard
 
     func testSyntheticOffsetChangeDuringTheCallbackDoesNotDoubleFire() {
@@ -157,13 +179,13 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
             }
         }
         drag(to: 0)
-        drag(to: 15)
-        drag(to: 30) // crosses fadeOutTravel, triggers the reentrant write above
+        drag(to: 60)
+        drag(to: 110) // crosses fadeOutTravel, triggers the reentrant write above
         XCTAssertEqual(events.count, 1, "the reentrant offset write must not double-fire")
 
         // The reentrant write only seeded a new baseline — a further small move
         // from it should behave like a fresh start, not immediately refire.
-        drag(to: 45) // run 5 from the 40 baseline — short of any threshold
+        drag(to: 80) // run 40 from the reentrant baseline — short of any threshold
         XCTAssertEqual(events.count, 1)
     }
 
@@ -172,17 +194,17 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     func testInactiveTrackerIgnoresOffsetChangesEntirely() {
         tracker.isActive = false
         drag(to: 0)
-        drag(to: 10)
-        drag(to: 40)
+        drag(to: 60)
+        drag(to: 110)
         XCTAssertTrue(events.isEmpty)
     }
 
     func testGoingInactiveDropsAnInProgressRunSoReactivatingStartsFresh() {
         drag(to: 0)
-        drag(to: 15) // a run in progress, short of the threshold
+        drag(to: 60) // a run in progress, short of the threshold
         tracker.isActive = false
         tracker.isActive = true
-        drag(to: 30) // if the old run had survived, this would cross 24 and fire;
+        drag(to: 110) // if the old run had survived, this would cross 100 and fire;
                      // instead it just re-seeds the baseline.
         XCTAssertTrue(events.isEmpty)
     }
@@ -200,8 +222,8 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     func testDeceleratingWithoutDraggingStillCounts() {
         scrollView.fakeIsDecelerating = true
         scrollView.contentOffset = CGPoint(x: 0, y: 0)
-        scrollView.contentOffset = CGPoint(x: 0, y: 10)
-        scrollView.contentOffset = CGPoint(x: 0, y: 30)
+        scrollView.contentOffset = CGPoint(x: 0, y: 50)
+        scrollView.contentOffset = CGPoint(x: 0, y: 110)
         XCTAssertEqual(events.count, 1)
     }
 
@@ -211,8 +233,8 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         tracker.observe(container)
         tracker.observe(container)
         drag(to: 0)
-        drag(to: 15)
-        drag(to: 30)
+        drag(to: 60)
+        drag(to: 110)
         XCTAssertEqual(events.count, 1, "a duplicate KVO registration would fire this twice")
     }
 }

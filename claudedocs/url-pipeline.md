@@ -346,3 +346,14 @@ across `.manual`/`.shareSheet`/`.appIntent`; (2) identical PRESENTATION INTENT a
 main-app presenter and the extension driver; (3) the extension persists the classified item
 any surface diverges again. (+`ShareSurfaceDriverTests` unit-drives each `Outcome` through
 the fake host.)
+
+## URL Rescue (LLM fallback)
+
+When Stage 3 returns `.failed` (or a product page yields no price / a media link
+resolves no assets), an optional LLM fallback re-runs the URL — see
+`claudedocs/url-rescue.md`. Key contract for this pipeline: the rescue engine
+(`LunaURLRescue`) re-enters `IngestPipeline.processResolved` **at most once, via an
+injected raw-pipeline closure**, so a rescue can never trigger a second rescue.
+`ReadingListIngestor.rescueTrigger` fires on a genuine `.failed` outcome;
+`applyResult(...)` is the shared persistence tail both a first pass and a rescued
+result flow through, so rescued items obey the same interop gate.

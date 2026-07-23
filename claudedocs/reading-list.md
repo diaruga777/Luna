@@ -56,3 +56,14 @@ Archive section keeps its header and controls.
 ## Tests
 
 `LunaTests/ArticleExtractorTests.swift`, `LunaTests/ReadingListStoreTests.swift`, `LunaTests/PasteboardSuggesterTests.swift`.
+
+## Failed-save rescue (Apple Intelligence)
+
+A `.failed` row is no longer a dead end: tapping it offers a one-shot LLM rescue
+with a hint picker (Article / Price Tracker / Media Download), and — when the
+"Failed Saves" setting is on — a background sweep retries failed items
+automatically (2 attempts, 24h apart, tracked in the `rescueLedger.json` sidecar).
+While a rescue runs, the row subtitle reads "trying harder…". Share/action
+extensions can't run the LLM, so a failed extension save shows a "Finish in Luna"
+card that hands off via `<scheme>://rescue` + the `PendingRescueRequestStore`
+queue. Full design: `claudedocs/url-rescue.md`.

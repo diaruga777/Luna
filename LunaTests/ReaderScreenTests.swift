@@ -112,7 +112,7 @@ final class ReaderScreenTests: XCTestCase {
         }
         XCTAssertEqual(control.numberOfSegments, 3,
                        "Scroll + RSVP + Original: a web-page save always offers the "
-                       + "original archive (live page fallback when no webarchive yet); "
+                       + "original archive (local article snapshot when no webarchive exists); "
                        + "only email-sourced saves hide it")
 
         // Segment 0 = scroll, 1 = rsvp (per ReaderViewController.baseModes).

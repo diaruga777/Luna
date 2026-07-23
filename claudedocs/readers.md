@@ -56,23 +56,29 @@ effect ring with a 0.5pt low-contrast highlight. Reader scroll chrome dismisses 
 without making the reader reverse a large part of the page.
 
 Original mode applies the same stable top content inset directly to its WKWebView.
-Saved web archives replay with content JavaScript enabled because some publishers
-install captured CSS and complete page layout from deferred scripts; disabling it can
-leave the archived DOM visible but unstyled with large empty lazy-layout regions. Both
-capture and replay use Luna's generic junk blocker, generic paywall cleanup, bundled
+Archive **capture** enables content JavaScript and waits for the DOM/CSS/font/layout
+signature to settle, because some publishers install their layout from deferred
+scripts. Capture uses Luna's generic junk blocker, generic paywall cleanup, bundled
 per-site cleanup, and per-host metering-script rules. Ingestion captures the resolver's
-unlocked HTML first and only navigates to the live publisher URL as a fallback, so the
-saved artifact does not replace a readable response with a fresh paywall. Extension
-saves attempt the same capture while alive; the main-app backfill uses the cleaned live
-capture path when the extension expires first.
+unlocked HTML first and only navigates to the live publisher URL as a capture fallback,
+so the saved artifact does not replace a readable response with a fresh paywall.
+Extension saves attempt the same capture while alive; the main-app backfill uses the
+cleaned live capture path when the extension expires first.
 The generic WebKit CSS only targets structural wall containers—not arbitrary
 `paywall` classes, because Condé Nast uses that class on the readable article
 paragraphs themselves. DOM cleanup observes late child insertion for the full page
 lifetime so a hydrated paywall cannot replace the article after first paint.
 Archive capture keeps the post-layout DOM and injected CSS but strips publisher
-`script` elements, inline event handlers, and meta refreshes before persistence.
-Replay applies the same sanitization in memory to legacy archives, preventing an old
-publisher bundle from rehydrating the saved DOM or navigating it back to a live wall.
+`script` elements/resources, frames, inline event handlers, meta refreshes, and CSP
+before persistence. Replay applies the same sanitization in memory to legacy archives,
+adds a structural-wall/contrast safety stylesheet, and runs with content JavaScript
+disabled in a non-persistent web session. It also verifies that the archive contains
+the article that Luna extracted and checks the rendered article typography after load.
+An absent, unsafe, content-mismatched, or visibly unstyled archive is replaced by a
+self-contained HTML snapshot built from the saved `ArticleContent` (including local
+images and links), with a no-network/no-script CSP and explicit light/dark palettes.
+Original mode therefore never loads the live publisher URL and cannot flash readable
+content before a paywall takes over.
 A layer restored with `.original` compares the actually mounted child (rather than
 mistaking the restored mode value for an already-mounted reader), so a cold launch
 loads the saved web archive immediately without requiring a mode round trip.
@@ -241,9 +247,10 @@ fragment) via `LunaAppClipInvocationURL.sourceURL(from:)`, runs the shared
 `persistsModePreference: false`, `marksOpenedOnLoad: false`, and `shareProvider: nil`.
 That keeps the clip read-only: no saved-list writes, no Save affordance, and no reader share
 button (iOS does not provide an API for an app/app clip to launch its own share extension as
-a share target). The live web URL is a normal shareable `ReadingListItem`, so the standard
-Original-mode capability path (`canHaveOriginalArchive` → live-page fallback) still appends
-Original alongside Scroll and RSVP.
+a share target). The source web URL is a normal shareable `ReadingListItem`, so the
+standard Original-mode capability path still appends Original alongside Scroll and RSVP.
+Original uses the frozen archive when one exists and otherwise the extracted local article
+snapshot; it never reopens the publisher URL.
 
 ## Share-sheet reader experience
 

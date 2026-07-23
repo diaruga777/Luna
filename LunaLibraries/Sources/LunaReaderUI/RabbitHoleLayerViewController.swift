@@ -98,9 +98,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private let bottomLipLabel = UILabel()
     private let indentView = UIView()
 
-    /// Reading modes offered for this layer. `.original` (loading the live web page)
-    /// is only shown when this layer actually points at a web page — saves with no real
-    /// http(s) URL (e.g. mail imports) have nothing to load, so they never get it. This
+    /// Reading modes offered for this layer. `.original` (loading the frozen archive
+    /// or its local article snapshot) is only shown when this layer actually points at
+    /// a web page — saves with no real http(s) URL (e.g. mail imports) never get it. This
     /// matches `ReadingListItem.canHaveOriginalArchive` for this reader's web-only domain
     /// (every layer is a dived-into http(s) link), sharing the same web-page URL test.
     private var orderedModes: [ReadingListItem.ReaderMode] {

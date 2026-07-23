@@ -1486,7 +1486,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     }
 
     /// Moves the permanent title copy into whichever scroll surface is focused
-    /// (Scroll, Original/web archive, or a live web fallback). It occupies the
+    /// (Scroll, Original/web archive, or its local article snapshot). It occupies the
     /// negative content-inset region, so at offset zero it lands pixel-for-pixel
     /// beneath the pinned copy and then naturally scrolls away with the page.
     private func synchronizeScrollableTitleHeader() {

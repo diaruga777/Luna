@@ -843,9 +843,9 @@ public final class ReadingListStore {
     /// Keyed off the save's *source* (`ReadingListItem.canHaveOriginalArchive`), NOT
     /// off whether the archive file is on disk yet: every web page and imported
     /// document owns an original artifact and gets the mode (a web page whose
-    /// `.webarchive` capture is still missing falls back to its live page in
-    /// `OriginalPageViewController`), while email-text imports — the only saves with
-    /// no original artifact — never get it.
+    /// `.webarchive` capture is missing gets a styled, offline snapshot of its saved
+    /// article content in `OriginalPageViewController`), while email-text imports —
+    /// the only saves with no original artifact — never get it.
     public func hasOriginalSource(for item: ReadingListItem) -> Bool {
         item.canHaveOriginalArchive
     }

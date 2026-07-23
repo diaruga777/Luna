@@ -192,8 +192,8 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// Whether the reader should offer the original-archive view mode for this save.
     ///
     /// EVERY textual save owns an original artifact and should expose it: a
-    /// `.webarchive` (or, as a fallback, the live page) for web pages, and the
-    /// imported source file for PDFs/other documents. The sole exception is an
+    /// `.webarchive` (or a styled offline snapshot of its saved article content)
+    /// for web pages, and the imported source file for PDFs/other documents. The sole exception is an
     /// EMAIL-text import (`lunamail://`, `captureSource == .email`), which has no
     /// original artifact at all. This is a *capability* of the save's source, not a
     /// statement about whether the archive file has finished downloading — so a web

@@ -10,20 +10,28 @@ import UIKit
 import WebKit
 
 /// Displays source material captured at save time: a WebKit `.webarchive` for web
-/// pages, or an imported source document such as a PDF. It never rebuilds a page
-/// from parsed reader content. It prefers the locally captured artifact and only
-/// reaches back to the network as a fallback, when a web save's `.webarchive`
-/// capture is missing (so the always-offered Original mode is never blank).
+/// pages, or an imported source document such as a PDF. It prefers the locally
+/// captured artifact and falls back to a self-contained, styled snapshot of the
+/// saved article content. It never loads a publisher URL: "Original" stays an
+/// offline saved-document viewer even when archive capture failed or a legacy
+/// archive is unsafe or unreadable.
 public final class OriginalPageViewController: UIViewController, WKNavigationDelegate {
     private var item: ReadingListItem?
     private var store: ReadingListStore
     private let webView: WKWebView
+    private enum LoadedDocument: Equatable {
+        case archive
+        case articleSnapshot
+        case sourceDocument
+        case unavailable
+    }
+    private var loadedDocument: LoadedDocument?
+    private var didValidateCurrentArchive = false
+    private var loadGeneration = 0
+    private var currentNavigation: WKNavigation?
     /// The archive's OWN scroll position to restore once its content finishes loading,
     /// kept fully disjoint from the scroll/RSVP reading position. Consumed once per load.
     private var pendingRestoreOffset: Double?
-    /// Invalidates an asynchronous blocker preparation when this reusable reader is
-    /// configured for a different item before the preparation finishes.
-    private var loadGeneration = 0
     /// When true this reader restores from / persists to `item.lastOriginalScrollOffset`
     /// itself (the plain reader path). RabbitHole leaves this false and drives the
     /// offset through its per-layer descriptor instead.
@@ -35,8 +43,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
         self.store = store
         self.persistsScrollOffset = persistsScrollOffset
         self.pendingRestoreOffset = savedScrollOffset ?? (persistsScrollOffset ? item.lastOriginalScrollOffset : nil)
-        let configuration = SavedArchiveWebConfiguration.make(
-            for: item.url ?? URL(string: "about:blank")!)
+        let configuration = SavedArchiveWebConfiguration.makeReplayConfiguration()
         self.webView = WKWebView(frame: .zero, configuration: configuration)
         super.init(nibName: nil, bundle: nil)
     }
@@ -53,10 +60,18 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
 
     public var contentScrollView: UIScrollView { webView.scrollView }
     #if DEBUG
-    /// Regression seam: archived pages that install layout/CSS from script must be
-    /// replayed with JavaScript enabled.
+    /// Regression seam: saved pages must never run publisher JavaScript on replay.
     public var allowsContentJavaScriptForTesting: Bool {
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript
+    }
+    public var loadedDocumentForTesting: String? {
+        switch loadedDocument {
+        case .archive: return "archive"
+        case .articleSnapshot: return "articleSnapshot"
+        case .sourceDocument: return "sourceDocument"
+        case .unavailable: return "unavailable"
+        case nil: return nil
+        }
     }
     #endif
     /// The archive's current disjoint scroll offset, normalized to zero while
@@ -116,9 +131,39 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
         store.saveReaderExitPosition(lastOriginalScrollOffset: currentScrollOffset, for: item.id)
     }
 
-    /// Restore the archive's own saved offset once its content has laid out. A tiny
-    /// deferral lets the scroll view settle its content size first so the offset lands.
+    /// A frozen archive can still be a historical no-style capture. Inspect the
+    /// actual computed article typography after load and switch to the local saved
+    /// snapshot when WebKit only produced its default 16px Times document.
+    ///
+    /// Restore the saved offset only after that decision, so an archive-to-snapshot
+    /// fallback doesn't consume the pending position on the discarded page.
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let currentNavigation, navigation !== currentNavigation { return }
+        if loadedDocument == .archive, !didValidateCurrentArchive {
+            didValidateCurrentArchive = true
+            validateRenderedArchive(generation: loadGeneration)
+            return
+        }
+        restorePendingOffset()
+    }
+
+    public func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        // Initial programmatic archive/document loads are `.other`. User clicks,
+        // form submissions, and reload gestures must not turn the offline viewer
+        // into a live browser.
+        if navigationAction.targetFrame?.isMainFrame == true,
+           navigationAction.navigationType != .other {
+            decisionHandler(.cancel)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
+    private func restorePendingOffset() {
         guard let offset = pendingRestoreOffset, offset > 0 else { return }
         pendingRestoreOffset = nil
         DispatchQueue.main.async { [weak self] in
@@ -131,47 +176,108 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
 
     private func loadOriginal() {
         guard let item else { return }
-        let savedItem = store.item(withID: item.id) ?? item
-        let sourceURL = savedItem.url ?? URL(string: "about:blank")!
         loadGeneration += 1
-        let generation = loadGeneration
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            // This controller is reusable. Replace the URL-specific document-end
-            // cleanup script before preparing the new host's content blockers.
-            let controller = webView.configuration.userContentController
-            controller.removeAllUserScripts()
-            WebJunkBlocker.addCleanupScript(to: controller)
-            controller.addUserScript(PaywallUnlockRules.cleanupUserScript())
-            if let siteScript = SiteCleanupScripts.userScript(for: sourceURL) {
-                controller.addUserScript(siteScript)
-            }
-            await SavedArchiveWebConfiguration.prepare(webView.configuration, for: sourceURL)
-            guard generation == loadGeneration else { return }
-            performLoad(savedItem: savedItem, sourceURL: sourceURL)
+        let savedItem = store.item(withID: item.id) ?? item
+        didValidateCurrentArchive = false
+        performLoad(savedItem: savedItem)
+    }
+
+    private func performLoad(savedItem: ReadingListItem) {
+        let content = store.content(for: savedItem)
+        if let archiveURL = store.webArchiveURL(for: savedItem),
+           let data = try? Data(contentsOf: archiveURL),
+           let replayData = WebArchiveSanitizer.sanitized(data),
+           content.map({
+               WebArchiveSanitizer.containsReadableArticle(replayData, content: $0)
+           }) ?? true {
+            // Older archives may still contain the publisher's executable bundles.
+            // Sanitize in memory on every replay. If sanitization fails, never load
+            // the raw artifact; fall through to the local saved-content snapshot.
+            loadedDocument = .archive
+            // `createWebArchiveData` documents this MIME type as loadable directly
+            // in WKWebView. The base URL is only used for the archive's own origin.
+            currentNavigation = webView.load(
+                replayData, mimeType: "application/x-webarchive",
+                characterEncodingName: "utf-8", baseURL: savedItem.url ?? archiveURL)
+        } else if let documentURL = store.originalDocumentURL(for: savedItem) {
+            loadedDocument = .sourceDocument
+            currentNavigation = webView.loadFileURL(
+                documentURL, allowingReadAccessTo: store.articlesDirectory)
+        } else if let content {
+            loadArticleSnapshot(content, for: savedItem)
+        } else {
+            loadedDocument = .unavailable
+            currentNavigation = webView.loadHTMLString(Self.unavailableHTML, baseURL: nil)
         }
     }
 
-    private func performLoad(savedItem: ReadingListItem, sourceURL: URL) {
-        if let archiveURL = store.webArchiveURL(for: savedItem),
-           let data = try? Data(contentsOf: archiveURL) {
-            // Older archives may still contain the publisher's executable bundles.
-            // Sanitize in memory on every replay so a delayed hydration cannot
-            // replace the already-captured readable DOM with a paywall or live page.
-            let replayData = WebArchiveSanitizer.sanitized(data) ?? data
-            // `createWebArchiveData` documents this MIME type as loadable directly
-            // in WKWebView. The base URL is only used for the archive's own origin.
-            webView.load(replayData, mimeType: "application/x-webarchive", characterEncodingName: "utf-8",
-                         baseURL: sourceURL)
-        } else if let documentURL = store.originalDocumentURL(for: savedItem) {
-            webView.loadFileURL(documentURL, allowingReadAccessTo: store.articlesDirectory)
-        } else if savedItem.isShareable, let liveURL = savedItem.url {
-            // The save is a web page but its `.webarchive` capture is missing (still
-            // downloading, or it failed). Fall back to the live page so the Original
-            // mode — which the reader always offers for web saves — is never blank.
-            webView.load(URLRequest(url: liveURL))
+    private func validateRenderedArchive(generation: Int) {
+        let script = """
+        (function () {
+          var candidates = Array.from(document.querySelectorAll(
+            'article p, main p, [data-testid="BodyWrapper"] p, .article__body p'));
+          var sample = candidates.find(function (p) {
+            return (p.textContent || '').trim().length > 80;
+          });
+          if (!sample) { return false; }
+          var style = getComputedStyle(sample);
+          var size = parseFloat(style.fontSize || '0');
+          var line = parseFloat(style.lineHeight || '0');
+          var family = (style.fontFamily || '').toLowerCase();
+          var defaultFamily = family.indexOf('times') >= 0;
+          var defaultMetrics = size <= 16.1 && (!line || line <= 20);
+          return !(defaultFamily && defaultMetrics);
+        })()
+        """
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.handleArchiveValidation(false, generation: generation)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: timeout)
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            timeout.cancel()
+            self?.handleArchiveValidation(
+                result as? Bool == true, generation: generation)
         }
     }
+
+    private func handleArchiveValidation(_ rendersWell: Bool, generation: Int) {
+        guard generation == loadGeneration, loadedDocument == .archive else { return }
+        if rendersWell {
+            restorePendingOffset()
+        } else if let item {
+            let savedItem = store.item(withID: item.id) ?? item
+            if let content = store.content(for: savedItem) {
+                loadArticleSnapshot(content, for: savedItem)
+            } else {
+                restorePendingOffset()
+            }
+        }
+    }
+
+    private func loadArticleSnapshot(
+        _ content: ArticleContent,
+        for item: ReadingListItem
+    ) {
+        loadedDocument = .articleSnapshot
+        didValidateCurrentArchive = true
+        let html = SavedArticleSnapshotRenderer.html(
+            content: content,
+            sourceURL: item.url,
+            imagesDirectory: store.articlesDirectory)
+        currentNavigation = webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    private static let unavailableHTML = """
+    <!doctype html><html><head>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta name="color-scheme" content="light dark">
+      <style>
+        :root { color-scheme: light dark; }
+        body { margin: 32px; color: CanvasText; background: Canvas;
+               font: 17px/1.5 -apple-system, sans-serif; }
+      </style>
+    </head><body><p>This saved source is unavailable.</p></body></html>
+    """
 
     private func applyTopContentInset() {
         webView.scrollView.contentInset.top = topContentInset

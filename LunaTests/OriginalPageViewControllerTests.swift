@@ -3,7 +3,7 @@
 //  LunaTests
 //
 
-import LunaArchiveReader
+@testable import LunaArchiveReader
 import LunaModels
 import LunaStorage
 import WebKit
@@ -11,15 +11,15 @@ import XCTest
 
 final class OriginalPageViewControllerTests: XCTestCase {
     @MainActor
-    func testWebArchiveReplayAllowsContentJavaScript() {
+    func testWebArchiveReplayDisablesContentJavaScript() {
         let item = ReadingListItem(urlString: "https://example.com/script-laid-out-article")
         let controller = OriginalPageViewController(item: item, store: .shared)
 
-        XCTAssertTrue(controller.allowsContentJavaScriptForTesting)
+        XCTAssertFalse(controller.allowsContentJavaScriptForTesting)
     }
 
     @MainActor
-    func testNewYorkerArchiveReplayInstallsPaywallAndAdCleanup() throws {
+    func testNewYorkerCaptureInstallsPaywallAndAdCleanup() throws {
         let url = try XCTUnwrap(URL(
             string: "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"))
         let configuration = SavedArchiveWebConfiguration.make(for: url)
@@ -32,29 +32,22 @@ final class OriginalPageViewControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testNewYorkerReplayKeepsArticleVisibleWhenPaywallArrivesLate() async throws {
-        let url = try XCTUnwrap(URL(
-            string: "https://www.newyorker.com/culture/the-weekend-essay/test"))
-        let configuration = SavedArchiveWebConfiguration.make(for: url)
-        await SavedArchiveWebConfiguration.prepare(configuration, for: url)
+    func testReplayNeverExecutesLatePublisherPaywall() async throws {
+        let configuration = SavedArchiveWebConfiguration.makeReplayConfiguration()
         let webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: configuration)
-        let evaluated = expectation(description: "late paywall cleaned")
+        let loaded = expectation(description: "Saved page finished loading")
         var outcome: String?
         let delegate = LoadDelegate {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                let expression = """
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                webView.evaluateJavaScript("""
                 (function () {
-                  var articleDisplay = getComputedStyle(document.querySelector('#article')).display;
                   var wall = document.querySelector('#late-wall');
-                  var wallHidden = !wall || getComputedStyle(wall).display === 'none';
-                  return articleDisplay + '|' + wallHidden;
+                  return document.querySelector('#article').textContent + '|' + (wall === null);
                 })()
-                """
-                webView.evaluateJavaScript(expression) { result, error in
-                    if let error { XCTFail("fixture expression failed: \(error)") }
+                """) { result, _ in
                     outcome = result as? String
-                    evaluated.fulfill()
+                    loaded.fulfill()
                 }
             }
         }
@@ -62,7 +55,7 @@ final class OriginalPageViewControllerTests: XCTestCase {
         webView.loadHTMLString(
             """
             <html><body>
-              <article><p id="article" class="paywall">The complete saved article.</p></article>
+              <article><p id="article">The complete saved article.</p></article>
               <script>
                 setTimeout(function () {
                   var wall = document.createElement('aside');
@@ -74,11 +67,12 @@ final class OriginalPageViewControllerTests: XCTestCase {
               </script>
             </body></html>
             """,
-            baseURL: url)
+            baseURL: nil)
 
-        await fulfillment(of: [evaluated], timeout: 5)
-        withExtendedLifetime(delegate) {}
-        XCTAssertEqual(outcome, "block|true")
+        // The assertion runs well past the publisher timer. The expectation also
+        // bounds simulator WebContent launch failures instead of hanging the suite.
+        await fulfillment(of: [loaded], timeout: 5)
+        XCTAssertEqual(outcome, "The complete saved article.|true")
     }
 
     @MainActor
@@ -115,6 +109,7 @@ final class OriginalPageViewControllerTests: XCTestCase {
         XCTAssertTrue(archivedHTML.contains("display:none !important"))
         XCTAssertTrue(archivedHTML.contains("Complete article prose remains available"))
         XCTAssertTrue(archivedHTML.contains("layout-installed-by-script"))
+        XCTAssertTrue(archivedHTML.contains("luna-archive-safety"))
         XCTAssertFalse(archivedHTML.localizedCaseInsensitiveContains("<script"))
         XCTAssertFalse(archivedHTML.contains("onload="))
     }
@@ -124,6 +119,7 @@ final class OriginalPageViewControllerTests: XCTestCase {
         <html><head>
           <style>.rendered-layout { display: grid; }</style>
           <meta http-equiv="refresh" content="1; https://example.com/live-paywall">
+          <meta http-equiv="Content-Security-Policy" content="script-src *">
         </head><body onload="installWall()">
           <article><p>Captured readable prose.</p></article>
           <script>setTimeout(installWall, 1000)</script>
@@ -137,7 +133,11 @@ final class OriginalPageViewControllerTests: XCTestCase {
                 "WebResourceTextEncodingName": "UTF-8",
                 "WebResourceURL": "https://www.newyorker.com/story",
             ],
-            "WebSubresources": [],
+            "WebSubresources": [[
+                "WebResourceData": Data("installWall()".utf8),
+                "WebResourceMIMEType": "application/javascript",
+                "WebResourceURL": "https://www.newyorker.com/publisher.js",
+            ]],
         ]
         let data = try PropertyListSerialization.data(
             fromPropertyList: archive, format: .binary, options: 0)
@@ -151,9 +151,105 @@ final class OriginalPageViewControllerTests: XCTestCase {
 
         XCTAssertTrue(result.contains("Captured readable prose"))
         XCTAssertTrue(result.contains(".rendered-layout { display: grid; }"))
+        XCTAssertTrue(result.contains("luna-archive-safety"))
+        XCTAssertTrue(result.contains("background-color: Canvas"))
         XCTAssertFalse(result.localizedCaseInsensitiveContains("<script"))
         XCTAssertFalse(result.localizedCaseInsensitiveContains("http-equiv=\"refresh\""))
+        XCTAssertFalse(result.localizedCaseInsensitiveContains("content-security-policy"))
         XCTAssertFalse(result.contains("onload="))
+        XCTAssertEqual((plist["WebSubresources"] as? [[String: Any]])?.count, 0)
+    }
+
+    func testArchiveReadabilityRejectsPublisherShellWithoutSavedArticle() throws {
+        let articleText = String(
+            repeating: "The complete article contains durable words about humane innovation. ",
+            count: 40)
+        let content = ArticleContent(
+            title: "The Voice of Google",
+            blocks: [.init(kind: .paragraph, text: articleText, links: [])])
+        let shell = try archiveData(html: """
+        <html><body><nav>News Books Culture Magazine Podcasts Shop</nav>
+        <aside>Subscribe to continue reading this story.</aside></body></html>
+        """)
+        let full = try archiveData(html: """
+        <html><body><article><p>\(articleText)</p></article></body></html>
+        """)
+
+        XCTAssertFalse(WebArchiveSanitizer.containsReadableArticle(shell, content: content))
+        XCTAssertTrue(WebArchiveSanitizer.containsReadableArticle(full, content: content))
+    }
+
+    func testSavedSnapshotIsSelfContainedAndDarkModeAware() throws {
+        let linked = "Read the supporting source"
+        let content = ArticleContent(
+            title: "A <Saved> Story",
+            author: "Claire & Co.",
+            blocks: [
+                .init(
+                    kind: .paragraph,
+                    text: linked,
+                    links: [.init(start: 9, length: 17, urlString: "https://example.com?a=1&b=2")]),
+            ])
+        let html = SavedArticleSnapshotRenderer.html(
+            content: content,
+            sourceURL: URL(string: "https://www.newyorker.com/story"),
+            imagesDirectory: FileManager.default.temporaryDirectory)
+
+        XCTAssertTrue(html.contains("default-src 'none'"))
+        XCTAssertTrue(html.contains("prefers-color-scheme: dark"))
+        XCTAssertTrue(html.contains("--background: #000000"))
+        XCTAssertTrue(html.contains("A &lt;Saved&gt; Story"))
+        XCTAssertTrue(html.contains("Claire &amp; Co."))
+        XCTAssertTrue(html.contains("href=\"https://example.com?a=1&amp;b=2\""))
+    }
+
+    @MainActor
+    func testMissingArchiveLoadsLocalSnapshotInsteadOfPublisherURL() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OriginalPageViewControllerTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ReadingListStore(containerURL: directory)
+        let item = store.add(urlString: "https://www.newyorker.com/culture/test")
+        let prose = String(repeating: "Readable saved article prose. ", count: 80)
+        let saved = store.saveContent(
+            ArticleContent(
+                title: "Saved Story",
+                blocks: [.init(kind: .paragraph, text: prose, links: [])]),
+            for: item)
+        let controller = OriginalPageViewController(item: saved, store: store)
+        controller.overrideUserInterfaceStyle = .dark
+        controller.loadViewIfNeeded()
+
+        XCTAssertEqual(controller.loadedDocumentForTesting, "articleSnapshot")
+        let webView = try XCTUnwrap(findWebView(in: controller.view))
+        XCTAssertFalse(webView.configuration.defaultWebpagePreferences.allowsContentJavaScript)
+        XCTAssertNotEqual(webView.url, saved.url)
+    }
+
+    private func archiveData(html: String) throws -> Data {
+        try PropertyListSerialization.data(
+            fromPropertyList: [
+                "WebMainResource": [
+                    "WebResourceData": Data(html.utf8),
+                    "WebResourceFrameName": "",
+                    "WebResourceMIMEType": "text/html",
+                    "WebResourceTextEncodingName": "UTF-8",
+                    "WebResourceURL": "https://www.newyorker.com/story",
+                ],
+                "WebSubresources": [],
+            ],
+            format: .binary,
+            options: 0)
+    }
+
+    @MainActor
+    private func findWebView(in view: UIView) -> WKWebView? {
+        if let webView = view as? WKWebView { return webView }
+        for child in view.subviews {
+            if let found = findWebView(in: child) { return found }
+        }
+        return nil
     }
 
     private final class LoadDelegate: NSObject, WKNavigationDelegate {

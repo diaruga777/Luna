@@ -64,13 +64,15 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Let late subresources (lazy images, async CSS) settle before archiving, so
-        // the capture isn't an incomplete first-paint snapshot.
+        // Let late subresources, fonts, injected CSS, and lazy layout settle before
+        // archiving. A fixed first-paint delay repeatedly captured complex publisher
+        // pages before their style system had reached a stable layout.
         guard !captured else { return }
         captured = true
         Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(900))
             guard let self, self.continuation != nil else { return }
+            await self.waitForStableLayout()
+            guard self.continuation != nil else { return }
             self.webView.createWebArchiveData { [weak self] result in
                 let rawData = try? result.get()
                 // Preserve the rendered DOM/CSS but never persist publisher code
@@ -79,6 +81,41 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
                 // Treat a suspiciously tiny archive as a failure (blank/empty page).
                 self?.finish((data?.count ?? 0) > 1024 ? data : nil)
             }
+        }
+    }
+
+    private func waitForStableLayout() async {
+        // Always give post-load work one turn before sampling. Then require three
+        // identical signatures, capped at four seconds so animation/ad churn cannot
+        // consume the whole capture timeout.
+        try? await Task.sleep(for: .milliseconds(500))
+        var previous: String?
+        var stableSamples = 0
+        for _ in 0..<14 {
+            guard continuation != nil else { return }
+            let signature = try? await webView.evaluateJavaScript("""
+            (function () {
+              var body = document.body;
+              if (!body) { return 'no-body'; }
+              var fonts = document.fonts ? document.fonts.status : 'unsupported';
+              return [
+                document.readyState,
+                fonts,
+                document.styleSheets.length,
+                body.innerText.length,
+                body.scrollHeight,
+                document.documentElement.scrollHeight
+              ].join('|');
+            })()
+            """) as? String
+            if let signature, signature == previous {
+                stableSamples += 1
+                if stableSamples >= 3 { return }
+            } else {
+                previous = signature
+                stableSamples = 0
+            }
+            try? await Task.sleep(for: .milliseconds(250))
         }
     }
 

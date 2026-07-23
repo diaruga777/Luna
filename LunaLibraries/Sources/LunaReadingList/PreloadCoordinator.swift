@@ -260,7 +260,7 @@ public final class PreloadCoordinator {
             store.record(url: url, rootID: rootID, kind: .platform,
                          platform: PreloadPlatform(platform: platform.rawValue, itemID: itemID))
             return []
-        case .product, .needsArchive, .document, .failed:
+        case .product, .needsArchive, .document, .failed, .unsupported:
             // No reader content to cache: a product page (live tap handles its UI), a
             // paywall the silent bypass couldn't crack, a document, or a failure. Record
             // as unrepresentable so we don't re-crawl and the viewer falls back to a

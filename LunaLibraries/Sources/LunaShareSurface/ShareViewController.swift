@@ -20,7 +20,7 @@ import UniformTypeIdentifiers
 /// When launched by tapping a Luna friend in the share sheet's people row, the
 /// shared URL is queued as an outgoing friend-share for the main app to send
 /// (the extension has no crypto/CloudKit access).
-public final class ShareViewController: UIViewController {
+open class ShareViewController: UIViewController {
 
     /// Document file types accepted from the share sheet. `.text` (public.text)
     /// covers .txt, .md/.markdown, and most source/plain formats.

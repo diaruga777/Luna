@@ -16,6 +16,8 @@ let package = Package(
         .library(name: "LunaTransitions", targets: ["LunaTransitions"]),
         .library(name: "LunaFetch", targets: ["LunaFetch"]),
         .library(name: "LunaIngest", targets: ["LunaIngest"]),
+        .library(name: "LunaArticleIngest", targets: ["LunaArticleIngest"]),
+        .library(name: "LunaPriceIngest", targets: ["LunaPriceIngest"]),
         .library(name: "LunaStorage", targets: ["LunaStorage"]),
         .library(name: "LunaDocuments", targets: ["LunaDocuments"]),
         .library(name: "LunaEpub", targets: ["LunaEpub"]),
@@ -63,8 +65,22 @@ let package = Package(
         .target(name: "LunaPriceMetadata"),
         .target(name: "LunaTransitions", dependencies: ["LunaDesignSystem"]),
         .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // The ONE shared classification pipeline every app bundles: unwrap +
+        // classify (URL table + HTML heuristics) + the per-kind PROCESSOR
+        // REGISTRY. The actual per-kind processing lives in the link-optional
+        // LunaArticleIngest / LunaPriceIngest modules below, so a
+        // single-content app never ships another kind's handling code.
         .target(name: "LunaIngest", dependencies: [
-            "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaAppConfig", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup"),]),
+            "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaAppConfig", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup"),]),
+        // Article-kind pipeline processing (resolver + silent bypass plan) —
+        // linked ONLY by article-handling targets (Reader + central Luna).
+        .target(name: "LunaArticleIngest", dependencies: [
+            "LunaIngest", "LunaPaywallBypass", "LunaFetch", "LunaHTMLClassification", "LunaModels"]),
+        // Product-kind pipeline processing (mandatory-price metadata
+        // extraction) — linked ONLY by product-handling targets
+        // (Price Tracker + central Luna).
+        .target(name: "LunaPriceIngest", dependencies: [
+            "LunaIngest", "LunaHTMLClassification", "LunaPriceMetadata", "LunaURLClassification", "LunaModels", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaStorage", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
         .target(name: "LunaDocuments", dependencies: ["LunaModels"]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
@@ -100,7 +116,7 @@ let package = Package(
         // installs it, and keep the legacy self-contained SpeechController path when it's
         // absent (the share/action extensions never install it).
         .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaPriceMetadata", "LunaAudioPlayback", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaReaderUI", "LunaAppConfig", "LunaArchiveReader", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaPriceIngest", "LunaReaderUI", "LunaAppConfig", "LunaArchiveReader", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // LunaAudioPlayback: Phase 6 — `ExtensionAudioScriptWriter` writes a heuristics-only
         // audio script to the cache right after an extension-context article save (see
         // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().

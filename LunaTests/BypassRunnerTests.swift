@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaArticleIngest
 import LunaPaywallBypass
 import LunaFetch
 import XCTest

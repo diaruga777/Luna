@@ -27,7 +27,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.ui-services</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>LunaShareSurface.ShareViewController</string>
+		<string>LunaActionEntry</string>
 	</dict>
 </dict>
 </plist>

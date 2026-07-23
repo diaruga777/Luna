@@ -157,6 +157,12 @@ public final class ShareSurfaceDriver {
             } else {
                 host.completeSilently()
             }
+
+        case .unsupported:
+            // Unreachable: the surface gate above discards an unsupported
+            // outcome before this switch runs.
+            assertionFailure("unsupported outcome reached the share presenter")
+            host.completeSilently()
         }
     }
 

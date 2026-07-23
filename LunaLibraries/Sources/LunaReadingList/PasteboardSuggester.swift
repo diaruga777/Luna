@@ -57,7 +57,6 @@ public final class PasteboardSuggester: PasteboardSuggesting {
 
     private let store: ReadingListStore
     private let fetcher: HTMLFetching
-    private let extractor = ArticleExtractor()
 
     public init(store: ReadingListStore = .shared,
          fetcher: HTMLFetching = ArticleFetcher()) {
@@ -88,7 +87,7 @@ public final class PasteboardSuggester: PasteboardSuggesting {
         guard let html = try? await fetcher.fetchHTML(from: url) else { return nil }
         let outcome = await IngestPipeline.process(
             IngestInput(url: url, source: .paste, prefetchedHTML: html),
-            fetcher: fetcher, extractor: extractor)
+            fetcher: fetcher)
         switch outcome {
         case let .article(content, _):
             guard !content.blocks.isEmpty else { return nil }

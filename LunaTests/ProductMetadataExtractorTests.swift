@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaPriceIngest
 import LunaHTMLClassification
 import XCTest
 @testable import Luna

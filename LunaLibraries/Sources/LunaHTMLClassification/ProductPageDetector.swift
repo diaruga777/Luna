@@ -269,7 +269,7 @@ public struct ProductPageDetector {
     /// `www.amazon.co.za`, …). The shared registry rejects lookalikes such as
     /// `amazon.scam.com` and keeps static-price parsing aligned with classification.
     private static func isAmazonHost(_ host: String?) -> Bool {
-        AmazonPriceRule.storefront(for: host) != nil
+        AmazonStorefronts.storefront(for: host) != nil
     }
 
     /// A currency explicitly declared in Amazon's embedded price JSON
@@ -288,7 +288,7 @@ public struct ProductPageDetector {
     /// declares no currency code (a bare `$`/`£`/… symbol can't disambiguate AUD vs
     /// USD vs CAD). Deterministic.
     public static func amazonCurrency(forHost host: String?) -> String? {
-        AmazonPriceRule.storefront(for: host)?.currency
+        AmazonStorefronts.storefront(for: host)?.currency
     }
 
     // MARK: - Heuristic detection (Tier 2)

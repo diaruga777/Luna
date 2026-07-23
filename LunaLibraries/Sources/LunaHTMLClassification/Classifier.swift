@@ -94,7 +94,7 @@ public enum Classifier {
     public static let shopSites: [KnownSite] = [
         // Amazon — every regional storefront. Amazon share domains are unwrapped
         // before classification, so they never bypass the storefront price rules.
-        KnownSite(hosts: AmazonPriceRule.storefrontHosts,
+        KnownSite(hosts: AmazonStorefronts.hosts,
                   kind: { _ in .product(.knownShopHost) }),
         // General-merchandise retailers (international list in `ShoppingSites`).
         KnownSite(hosts: ShoppingSites.retailers,

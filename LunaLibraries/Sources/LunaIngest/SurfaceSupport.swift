@@ -20,6 +20,8 @@ public extension Outcome {
             return .downloader
         case .product:
             return .priceTracker
+        case let .unsupported(owner):
+            return owner
         case .failed:
             return nil
         }

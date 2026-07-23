@@ -17,7 +17,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.share-services</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>LunaShareSurface.ShareViewController</string>
+		<string>LunaShareEntry</string>
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>IntentsSupported</key>

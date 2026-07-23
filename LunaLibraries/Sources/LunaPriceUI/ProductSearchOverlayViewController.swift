@@ -6,6 +6,7 @@
 import LunaReaderUI
 import LunaDesignSystem
 import LunaHTMLClassification
+import LunaPriceIngest
 import LunaURLClassification
 import UIKit
 import WebKit

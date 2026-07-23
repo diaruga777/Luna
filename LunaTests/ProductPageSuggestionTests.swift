@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaPriceIngest
 import LunaPriceUI
 import LunaIngest
 import LunaHTMLClassification

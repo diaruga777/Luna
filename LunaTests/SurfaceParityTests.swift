@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaArticleIngest
 import LunaShareSurface
 import LunaPriceUI
 import LunaArchiveReader
@@ -214,6 +215,7 @@ final class SurfaceParityTests: XCTestCase {
         case .document: return .savedDocument
         case .needsArchive: return .archiveReader
         case .failed: return .error
+        case .unsupported: return .error
         }
     }
 

@@ -119,7 +119,9 @@ public final class ShareReaderViewController: UIViewController {
             // host routes those to SavedNonTextualViewController) — never extract it;
             // confirm the save and let the app render it.
             presentSavedConfirmation(productName: url.host ?? "Saved")
-        case .failed:
+        case .failed, .unsupported:
+            // .unsupported can't genuinely occur here (the driver gates and
+            // discards before presenting a reader), so treat it as a failure.
             presentFailure()
         }
     }

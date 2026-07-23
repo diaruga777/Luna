@@ -25,7 +25,6 @@ public final class ReadingListIngestor {
 
     private let store: ReadingListStore
     private let fetcher = ArticleFetcher()
-    private let extractor = ArticleExtractor()
     /// The per-app content gate over a classified outcome (`SurfaceSupport`).
     /// Injectable so tests can pin the running app without touching
     /// `Bundle.main`; the production default reads the running process's app.
@@ -116,7 +115,7 @@ public final class ReadingListIngestor {
                         documentType: item.sanitizedDocumentType,
                         prefetchedHTML: prefetchedHTML, forceArticle: forceArticle,
                         trustsPrefetchedHTML: trustsPrefetchedHTML),
-            fetcher: fetcher, extractor: extractor)
+            fetcher: fetcher)
 
         let decision = await applyResult(
             result, for: item, forceArticle: forceArticle,
@@ -788,6 +787,10 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
             await ingestor.parkNeedsArchive(title: title, for: item)
         case .failed:
             await ingestor.markFailed(for: item)
+        case .unsupported:
+            // Unreachable: the surface gate in `applyResult` discards an
+            // unsupported outcome (and deletes the item) before presenting.
+            assertionFailure("unsupported outcome reached the presenter")
         }
     }
 }

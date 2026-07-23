@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaHTMLClassification
 import LunaPriceMetadata
 import LunaURLClassification
 import SwiftSoup
@@ -312,21 +313,12 @@ enum GoogleShoppingProductParser {
 public struct AmazonPriceRule: ProductPriceRule {
     public init() {}
 
-    /// Every current Amazon retail storefront and its local transaction currency.
-    /// The hostname registry is deliberately explicit (rather than accepting any
-    /// `amazon.*` domain) to prevent lookalike hosts from becoming price sources.
-    public static let storefronts: [(host: String, currency: String)] = [
-        ("amazon.com", "USD"), ("amazon.ca", "CAD"), ("amazon.com.mx", "MXN"),
-        ("amazon.com.br", "BRL"), ("amazon.co.uk", "GBP"), ("amazon.de", "EUR"),
-        ("amazon.fr", "EUR"), ("amazon.it", "EUR"), ("amazon.es", "EUR"),
-        ("amazon.nl", "EUR"), ("amazon.se", "SEK"), ("amazon.pl", "PLN"),
-        ("amazon.com.tr", "TRY"), ("amazon.com.be", "EUR"), ("amazon.ie", "EUR"),
-        ("amazon.co.jp", "JPY"), ("amazon.in", "INR"), ("amazon.com.au", "AUD"),
-        ("amazon.sg", "SGD"), ("amazon.ae", "AED"), ("amazon.sa", "SAR"),
-        ("amazon.eg", "EGP"), ("amazon.co.za", "ZAR"),
-    ]
+    /// The storefront registry is classification data shared with the
+    /// deterministic shop table (`AmazonStorefronts`, LunaURLClassification);
+    /// these aliases keep the rule's historical spelling.
+    public static let storefronts = AmazonStorefronts.storefronts
 
-    public static let storefrontHosts = storefronts.map(\.host)
+    public static let storefrontHosts = AmazonStorefronts.hosts
 
     public func matches(host: String) -> Bool {
         Self.storefront(for: host) != nil
@@ -349,11 +341,7 @@ public struct AmazonPriceRule: ProductPriceRule {
     }
 
     public static func storefront(for host: String?) -> (host: String, currency: String)? {
-        guard var normalized = host?.lowercased() else { return nil }
-        if normalized.hasSuffix(".") { normalized.removeLast() }
-        return storefronts.first { storefront in
-            normalized == storefront.host || normalized.hasSuffix("." + storefront.host)
-        }
+        AmazonStorefronts.storefront(for: host)
     }
 
     /// A currency code explicitly declared in Amazon's embedded JSON.

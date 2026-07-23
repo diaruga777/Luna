@@ -3,7 +3,6 @@
 //  ReaderKit
 //
 
-import LunaPaywallBypass
 import LunaFetch
 import LunaHTMLClassification
 import LunaURLClassification
@@ -77,6 +76,12 @@ public enum Outcome: Equatable {
     /// A genuine failure (unreachable ordinary page) OR the overall-timeout fired —
     /// the surface shows an error, never an infinite spinner.
     case failed
+    /// The classifier demanded a kind whose processor ISN'T LINKED into this
+    /// app (the compile-time surface split): an article/product URL saved in
+    /// an app that doesn't handle that kind. Surfaces drop it with the
+    /// generic unsupported-kind error (`SurfaceSupport`); the central Luna
+    /// app registers every processor and never produces this.
+    case unsupported(owner: LunaApp)
 
     public static func == (lhs: Outcome, rhs: Outcome) -> Bool {
         switch (lhs, rhs) {
@@ -88,6 +93,7 @@ public enum Outcome: Equatable {
         case let (.document(lt), .document(rt)): return lt == rt
         case let (.needsArchive(lt), .needsArchive(rt)): return lt == rt
         case (.failed, .failed): return true
+        case let (.unsupported(lo), .unsupported(ro)): return lo == ro
         default: return false
         }
     }
@@ -148,16 +154,15 @@ public enum IngestPipeline {
         timeout: TimeInterval = processTimeout,
         session: URLSession = .shared,
         fetcher: HTMLFetching = ArticleFetcher(),
-        extractor: ArticleExtractor = ArticleExtractor(),
         productDetector: ProductPageDetector = ProductPageDetector(),
-        metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
-        render: ((URL) async -> String?)? = nil,
-        runner: BypassRunning? = nil
+        articleProcessor: ArticleIngestProcessing? = IngestKindProcessors.article,
+        productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
+        render: ((URL) async -> String?)? = nil
     ) async -> Outcome {
         await processResolved(
             input, timeout: timeout, session: session, fetcher: fetcher,
-            extractor: extractor, productDetector: productDetector,
-            metadataExtractor: metadataExtractor, render: render, runner: runner).outcome
+            productDetector: productDetector, articleProcessor: articleProcessor,
+            productProcessor: productProcessor, render: render).outcome
     }
 
     /// Runs the pipeline and returns both the outcome and the canonical URL it
@@ -168,18 +173,17 @@ public enum IngestPipeline {
         timeout: TimeInterval = processTimeout,
         session: URLSession = .shared,
         fetcher: HTMLFetching = ArticleFetcher(),
-        extractor: ArticleExtractor = ArticleExtractor(),
         productDetector: ProductPageDetector = ProductPageDetector(),
-        metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
-        render: ((URL) async -> String?)? = nil,
-        runner: BypassRunning? = nil
+        articleProcessor: ArticleIngestProcessing? = IngestKindProcessors.article,
+        productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
+        render: ((URL) async -> String?)? = nil
     ) async -> IngestResult {
         await withTaskGroup(of: IngestResult?.self) { group in
             group.addTask {
                 await runUnbounded(
-                    input, session: session, fetcher: fetcher, extractor: extractor,
-                    productDetector: productDetector, metadataExtractor: metadataExtractor,
-                    render: render, runner: runner)
+                    input, session: session, fetcher: fetcher,
+                    productDetector: productDetector, articleProcessor: articleProcessor,
+                    productProcessor: productProcessor, render: render)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -203,11 +207,10 @@ public enum IngestPipeline {
         _ input: IngestInput,
         session: URLSession,
         fetcher: HTMLFetching,
-        extractor: ArticleExtractor,
         productDetector: ProductPageDetector,
-        metadataExtractor: ProductMetadataExtractor,
-        render: ((URL) async -> String?)?,
-        runner: BypassRunning?
+        articleProcessor: ArticleIngestProcessing?,
+        productProcessor: ProductIngestProcessing?,
+        render: ((URL) async -> String?)?
     ) async -> IngestResult {
         // (1) Unwrap ONCE — every surface gets the same offline-first, tracking-
         // stripped unwrap (Facebook deep links, Apple/Google News, shorteners).
@@ -229,9 +232,9 @@ public enum IngestPipeline {
             // for the undetermined/product confirmation, fetch price, resolve the
             // article, run the bypass plan.
             return IngestResult(url: url, outcome: await processWeb(
-                url: url, classifiedKind: kind, input: input, fetcher: fetcher, extractor: extractor,
-                productDetector: productDetector, metadataExtractor: metadataExtractor,
-                render: render, runner: runner))
+                url: url, classifiedKind: kind, input: input, fetcher: fetcher,
+                productDetector: productDetector, articleProcessor: articleProcessor,
+                productProcessor: productProcessor, render: render))
         }
     }
 
@@ -248,11 +251,10 @@ public enum IngestPipeline {
         classifiedKind: ContentKind,
         input: IngestInput,
         fetcher: HTMLFetching,
-        extractor: ArticleExtractor,
         productDetector: ProductPageDetector,
-        metadataExtractor: ProductMetadataExtractor,
-        render: ((URL) async -> String?)?,
-        runner: BypassRunning?
+        articleProcessor: ArticleIngestProcessing?,
+        productProcessor: ProductIngestProcessing?,
+        render: ((URL) async -> String?)?
     ) async -> Outcome {
         // Fetch the direct HTML once (reusing the surface's prefetch) — shared by
         // product detection and article resolution so we never double-fetch.
@@ -285,46 +287,26 @@ public enum IngestPipeline {
         case .article, .paywalledArticle, .social, .video, .document:
             shouldExtractProduct = false
         }
-        if !input.forceArticle, shouldExtractProduct, let html = directHTML,
-           let metadata = await metadataExtractor.extract(url: url, html: html, render: render) {
-            let product = ProductInfo(
-                name: metadata.name, priceAmount: metadata.price.amount,
-                priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
-                brand: metadata.brand, productID: metadata.productID,
-                sellers: metadata.sellers)
-            return .product(product, html: html)
+        if !input.forceArticle, shouldExtractProduct, let html = directHTML {
+            // The classification decided this page is a product for EVERY app
+            // (shared detector); whether it can be PROCESSED depends on the
+            // linked product processor. Without one, the save is dropped as
+            // Price-Tracker-owned — never silently re-read as an article.
+            guard let productProcessor else { return .unsupported(owner: .priceTracker) }
+            if let product = await productProcessor.extract(url: url, html: html, render: render) {
+                return .product(product, html: html)
+            }
+            // No trustworthy price → fall through to the article path below
+            // (matching the pre-split behavior; a product-handling app without
+            // an article processor then reports the article kind unsupported).
         }
 
         // (3b) Resolve the article: direct fetch (reusing `directHTML`), then the
-        // silent bypass strategies the gate allows.
-        let resolution = await ArticleResolver.resolve(
-            url: url, prefetchedHTML: directHTML, fetcher: fetcher,
-            extractor: extractor, runner: runner,
-            trustsPrefetchedHTML: input.trustsPrefetchedHTML)
-
-        switch resolution {
-        case let .readable(content, html):
-            return .article(content, html: html)
-        case let .paywalled(title):
-            return .needsArchive(title: title)
-        case .unreadable:
-            // A browser-only site rule means the background fetch is not the final
-            // authority. Anti-bot front doors such as Reuters/DataDome can reject
-            // URLSession before yielding even a title, while the rule's direct-unlock
-            // WKWebView leg (the same script-blocking path used by the Safari extension)
-            // can still render the article. Preserve that route instead of marking the
-            // item failed before the browser tier gets a chance to run.
-            let hasBrowserRecovery = !BypassPlan.make(
-                for: url, directHTML: directHTML
-            ).webPreStages.isEmpty
-            // A hard-paywall host or already-archived URL is likewise still readable
-            // behind a user-solved CAPTCHA. Only a truly unreachable ordinary page
-            // with no eligible browser recovery is a genuine failure.
-            if hasBrowserRecovery || ArticleFetcher.isHardPaywallHost(url)
-                || ArticleFetcher.isArchiveTodayURL(url) {
-                return .needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
-            }
-            return .failed
-        }
+        // silent bypass strategies the gate allows — article-kind processing,
+        // present only in article-handling apps.
+        guard let articleProcessor else { return .unsupported(owner: .reader) }
+        return await articleProcessor.process(
+            url: url, directHTML: directHTML,
+            trustsPrefetchedHTML: input.trustsPrefetchedHTML, fetcher: fetcher)
     }
 }

@@ -18,8 +18,8 @@ import Foundation
 /// - `ibp=oshop` / `prds` — a specific product's offers page (the canonical URL a
 ///   shared product link resolves to: e.g. a `share.google/<id>` link 301s to
 ///   `…/search?ibp=oshop&…&prds=productid:…`).
-enum GoogleShoppingURL {
-    static func isProductPage(_ url: URL) -> Bool {
+public enum GoogleShoppingURL {
+    public static func isProductPage(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased(),
               host == "google.com" || host.hasSuffix(".google.com"),
               url.path == "/search",

@@ -47,6 +47,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         DiagnosticLog.shared.record("app launch", category: "lifecycle")
+        // Register this app's per-kind pipeline processors FIRST — everything
+        // below (launch re-ingest, intents, list UI) consults the registry.
+        // Exactly one KindWiring variant is compiled per app target.
+        KindWiring.install()
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
         ReaderSettings.migrateFromStandardIfNeeded()
@@ -72,11 +76,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         PriceTrackingViewController.defaultSaveAsArticle = { urlString in
             Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
-
-        // Card-deck routing for non-article cards (the central Luna app's
-        // all-kinds deck): tracker cards open the price editor, platform cards
-        // the native-app/embed/browser ladder.
-        NonArticleCardOpening.install()
 
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaReadingList can't present UI, so the app shell installs the

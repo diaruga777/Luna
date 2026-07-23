@@ -5,6 +5,7 @@
 
 import LunaIngest
 import LunaHTMLClassification
+import LunaPriceIngest
 import LunaModels
 import Foundation
 

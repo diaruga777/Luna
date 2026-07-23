@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaArticleIngest
 import LunaIngest
 import LunaHTMLClassification
 import LunaPaywallBypass

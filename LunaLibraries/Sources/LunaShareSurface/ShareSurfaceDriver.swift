@@ -175,14 +175,45 @@ public final class ShareSurfaceDriver {
             presentArchive(url: url, title: title)
 
         case .failed:
-            // NEVER a misleading "Saved": surface the failure (action ext) / complete
-            // quietly (share ext) — the app retries in the background either way.
+            // NEVER a misleading "Saved". Mark the row failed so the main app's list
+            // shows it, then offer the Apple-Intelligence rescue hand-off: the action
+            // extension (which has UI) presents the rescue card; the zero-UI share
+            // extension completes quietly (the main app's background sweep still
+            // rescues it if auto-rescue is on).
+            store.item(forURLString: url.absoluteString).map { store.markFailed($0.id) }
             if host.readerMode != nil {
-                host.failOrComplete("Couldn't load this link.")
+                presentRescueFailure(url: url)
             } else {
-                store.item(forURLString: url.absoluteString).map { store.markFailed($0.id) }
                 host.completeSilently()
             }
+        }
+    }
+
+    /// The action-extension failure card: pick a hint, write a pending-rescue
+    /// record, best-effort open the containing app. The extension links NO rescue
+    /// engine — only the pending-record store + the deep link.
+    private func presentRescueFailure(url: URL) {
+        guard let host else { return }
+        let surface = currentSurface
+        let card = RescueFailureViewController(
+            defaultHint: Self.defaultHint(for: surface),
+            rescueURL: LunaDeepLink.rescueLink(scheme: surface.deepLinkScheme),
+            openApp: { [weak host] in host?.openURL($0) },
+            onFinish: { chosen in
+                PendingRescueRequestStore.shared.append(PendingRescueRequest(
+                    urlString: url.absoluteString, hint: chosen, dateWritten: Date(),
+                    sourceSurface: surface.storageIdentifier))
+            },
+            onDone: { [weak host] in host?.completeSilently() })
+        host.presentModally(card)
+    }
+
+    /// The natural rescue hint for a surface (matches the app-shell mapping).
+    public static func defaultHint(for surface: InteropSurface) -> RescueHint {
+        switch surface {
+        case .reader: return .article
+        case .downloader: return .media
+        case .priceTracker: return .product
         }
     }
 

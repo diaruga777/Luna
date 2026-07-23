@@ -36,12 +36,15 @@ public enum ReadingListSubtitle {
     ///     `DateFormatter` (locale/timezone dependent, so kept out of here).
     ///   - showReadingTime: the `ReaderSettings.showReadingTime` toggle.
     ///   - showReadingProgress: the `ReaderSettings.showReadingProgress` toggle.
+    ///   - isRescuing: whether a URL-rescue attempt is in flight for this item,
+    ///     so a `.failed` row reads "trying harder…" instead of "pull to retry".
     public static func parts(
         for item: ReadingListItem,
         leadingLabel: String,
         formattedDate: String,
         showReadingTime: Bool,
-        showReadingProgress: Bool
+        showReadingProgress: Bool,
+        isRescuing: Bool = false
     ) -> [String] {
         var parts = [leadingLabel, formattedDate]
 
@@ -64,7 +67,7 @@ public enum ReadingListSubtitle {
 
         switch item.state {
         case .pending: parts.append("downloading…")
-        case .failed: parts.append("pull to retry")
+        case .failed: parts.append(isRescuing ? "trying harder…" : "pull to retry")
         case .needsCaptcha: parts.append("tap to unlock")
         case .ready: break
         }

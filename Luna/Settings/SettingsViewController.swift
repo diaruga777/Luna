@@ -69,6 +69,7 @@ final class SettingsViewController: NavHeaderTableController {
         }
 
         categories.append(contentsOf: [
+            Category(title: "Failed Saves", symbol: "wand.and.stars") { RescueSettingsScreen() },
             Category(title: "Contacts", symbol: "person.2") { FriendsViewController() },
             Category(
                 title: "Luna Interoperability", symbol: "arrow.left.arrow.right",

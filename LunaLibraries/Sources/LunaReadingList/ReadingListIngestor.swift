@@ -210,6 +210,21 @@ public final class ReadingListIngestor {
         return interop
     }
 
+    /// Persists a rescued `IngestResult` for an existing item through the shared
+    /// `applyResult` tail (interop gate + presenter), returning whether the item
+    /// actually advanced (not interop-blocked). Called by `URLRescueCoordinator`'s
+    /// app-shell bridge — the public seam over the internal `applyResult`.
+    @discardableResult
+    public func applyRescued(_ result: IngestResult, forItemID id: UUID, interactive: Bool) async -> Bool {
+        guard let item = store.item(withID: id) else { return false }
+        let forceArticle: Bool
+        if case .article = result.outcome { forceArticle = true } else { forceArticle = false }
+        let decision = await applyResult(
+            result, for: item, forceArticle: forceArticle, allowsInteractivePrompt: interactive)
+        if case .blocked = decision { return false }
+        return true
+    }
+
     /// `.paste`/`.manual` are the only sources with a live UI able to show an interop
     /// prompt — App Intents get their own dialog from the intent layer, and
     /// background sweeps have no UI at all.

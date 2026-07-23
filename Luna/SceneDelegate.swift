@@ -174,6 +174,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             applyPendingInteropRoute()
             return
         }
+        if LunaDeepLink.isRescueLink(url) {
+            // The extension handoff wrote the URL + hint + consent into the shared
+            // store; just drain it (pop to root first so the list is visible when a
+            // rescued item flips ready). The coordinator also drains on foreground,
+            // so this works even if the responder-chain open silently failed.
+            mainNavigationController?.popToRootViewController(animated: false)
+            URLRescueCoordinator.shared.drainPendingRequests()
+            return
+        }
         if let scheme = url.scheme, LunaDeepLink.allSchemes.contains(scheme),
            url.host == "settings", url.path == "/photos" {
             if let settingsURL = URL(string: UIApplication.openSettingsURLString) {

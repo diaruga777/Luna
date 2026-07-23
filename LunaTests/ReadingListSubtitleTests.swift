@@ -106,6 +106,13 @@ final class ReadingListSubtitleTests: XCTestCase {
         XCTAssertEqual(parts(item(state: .failed)).last, "pull to retry")
     }
 
+    func testFailedWhileRescuingShowsTryingHarder() {
+        let result = ReadingListSubtitle.parts(
+            for: item(state: .failed), leadingLabel: "example.com", formattedDate: "Jan 1, 2024",
+            showReadingTime: true, showReadingProgress: true, isRescuing: true)
+        XCTAssertEqual(result.last, "trying harder…")
+    }
+
     func testNeedsCaptchaShowsUnlock() {
         XCTAssertEqual(parts(item(state: .needsCaptcha)).last, "tap to unlock")
     }

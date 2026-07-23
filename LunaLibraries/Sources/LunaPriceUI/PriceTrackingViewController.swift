@@ -93,6 +93,21 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// static hook (not a hard reference) to keep ShareKit free of main-app deps.
     public static var defaultSaveAsArticle: ((String) -> Void)?
 
+    /// A resolved price from the URL-rescue engine (`claudedocs/url-rescue.md`).
+    public struct ResolvedPrice {
+        public let amount: Decimal
+        public let currency: String
+        public init(amount: Decimal, currency: String) {
+            self.amount = amount
+            self.currency = currency
+        }
+    }
+
+    /// The main app's "Ask Apple Intelligence to find the price" behavior for a
+    /// no-price page, installed once at launch (nil in extensions → the button is
+    /// hidden and behavior is unchanged). Returns a price or nil.
+    public static var intelligentPriceResolver: ((String) async -> ResolvedPrice?)?
+
     /// Invoked when the editor is dismissed via the extension **Done** button, so the
     /// host (action extension) can complete its request. nil in-app (the back chevron
     /// just pops). Set by the extension host after construction.

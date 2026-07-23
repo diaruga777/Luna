@@ -1066,7 +1066,8 @@ final class ReadingListViewController: UITableViewController {
             leadingLabel: leadingLabel,
             formattedDate: dateFormatter.string(from: item.dateAdded),
             showReadingTime: ReaderSettings.showReadingTime,
-            showReadingProgress: ReaderSettings.showReadingProgress)
+            showReadingProgress: ReaderSettings.showReadingProgress,
+            isRescuing: URLRescueCoordinator.shared.isRescuing(item.id))
 
         let result = NSMutableAttributedString(
             string: parts.joined(separator: " · "),
@@ -1081,6 +1082,31 @@ final class ReadingListViewController: UITableViewController {
                 attributes: [.foregroundColor: view.tintColor ?? .systemBlue]))
         }
         return result
+    }
+
+    /// Offers a one-shot URL-rescue with a hint picker for a `.failed` row. The
+    /// surface's natural hint is listed first. Each action bypasses the auto-rescue
+    /// toggle + attempt budget (a deliberate user request).
+    private func presentRescueSheet(for item: ReadingListItem, presenter: UIViewController) {
+        let alert = UIAlertController(
+            title: "Couldn't load this page",
+            message: "Luna can try harder with Apple Intelligence. Choose what this save should become.",
+            preferredStyle: .actionSheet)
+        let defaultHint = URLRescueWiring.defaultHint(for: AppSurfaceConfig.current)
+        let ordered = [defaultHint] + RescueHint.allCases.filter { $0 != defaultHint }
+        for hint in ordered {
+            alert.addAction(UIAlertAction(title: "Rescue as \(hint.displayName)", style: .default) { _ in
+                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: hint)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY,
+                                        width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+        presenter.present(alert, animated: true)
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -1125,6 +1151,14 @@ final class ReadingListViewController: UITableViewController {
         if item.state == .needsCaptcha, let url = item.url {
             presentArchiveReader(for: item, articleURL: url, presenter: presenter)
             store.markReadState(.opened, for: item.id)
+            return
+        }
+        // A failed save can be rescued with Apple Intelligence: offer a one-shot
+        // opt-in with a hint picker (works regardless of the auto-rescue toggle —
+        // the tap IS the consent). Only when a model is actually usable; otherwise
+        // fall through to today's no-op tap.
+        if item.state == .failed, URLRescueCoordinator.engine?.isAvailable() == true {
+            presentRescueSheet(for: item, presenter: presenter)
             return
         }
         guard item.state == .ready, let content = store.content(for: item) else { return }
@@ -1335,7 +1369,11 @@ final class ReadingListViewController: UITableViewController {
             },
             unarchive: { [weak self] in self?.store.markUnread(item.id) },
             delete: { [weak self] in self?.deleteItemAnimated(item) },
-            editList: { [weak self] in self?.setEditing(true, animated: true) })
+            editList: { [weak self] in self?.setEditing(true, animated: true) },
+            canRescue: URLRescueCoordinator.engine?.isAvailable() == true,
+            rescue: { hint in
+                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: hint)
+            })
         return ReadingListRowMenuFactory.menu(for: item, actions: actions)
     }
 

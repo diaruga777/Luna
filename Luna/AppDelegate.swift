@@ -133,6 +133,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // running. Main app only (extensions don't index).
         ArticleSpotlightIndexWiring.install()
 
+        // URL Rescue (claudedocs/url-rescue.md): install the LLM-fallback engine
+        // bridge + coordinator (all three apps; main-app only — extensions never
+        // link the engine). Must precede ingestAllPending() so the ingestor's
+        // rescueTrigger is set before the launch re-ingest can surface failures.
+        URLRescueWiring.install()
+
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in
         // the main app (extensions leave it nil → the prompt is skipped).

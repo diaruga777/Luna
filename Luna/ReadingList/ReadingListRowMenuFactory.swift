@@ -29,6 +29,11 @@ struct RowMenuActions {
     let unarchive: () -> Void
     let delete: () -> Void
     let editList: () -> Void
+    /// True when a `.failed` item can be rescued (a model is usable). Gates the
+    /// "Try with Apple Intelligence" submenu.
+    var canRescue: Bool = false
+    /// Runs a one-shot rescue for the chosen hint.
+    var rescue: (RescueHint) -> Void = { _ in }
 }
 
 /// The long-press row-menu policy: which actions apply to `item`'s shape
@@ -74,6 +79,19 @@ enum ReadingListRowMenuFactory {
         }
 
         var children: [UIAction] = []
+        // A failed save can be rescued with Apple Intelligence — a submenu with the
+        // three content hints (surfaced first for the failed row, above the rest).
+        if item.state == .failed, actions.canRescue {
+            let hintActions = RescueHint.allCases.map { hint in
+                UIAction(title: "As \(hint.displayName)") { _ in actions.rescue(hint) }
+            }
+            let rescueMenu = UIMenu(
+                title: "Try with Apple Intelligence",
+                image: UIImage(systemName: "wand.and.stars"),
+                children: hintActions)
+            // A failed row's menu is just the rescue submenu + delete.
+            return UIMenu(children: [rescueMenu, delete])
+        }
         // Reading-section items only: jump an item to the top of the list.
         if actions.isInReadingSection {
             children.append(UIAction(

@@ -90,4 +90,23 @@ public enum LunaDeepLink {
     public static func isOwnInteropLink(_ url: URL) -> Bool {
         url.scheme == ownScheme && isInteropLink(url)
     }
+
+    /// `<scheme>://rescue` — the extension→app URL-rescue hand-off. No query
+    /// payload: the URL + hint + one-shot consent travel in
+    /// `PendingRescueRequestStore` (App Group), and a bare route works even when
+    /// the responder-chain open silently fails (the foreground drain still finds
+    /// the record). The extension targets its CONTAINING app's scheme.
+    public static func rescueLink(scheme: String = ownScheme) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = "rescue"
+        return components.url
+    }
+
+    /// True for `<any Luna scheme>://rescue` — any app drains its own queue, so
+    /// (unlike interop) the broad check is correct here.
+    public static func isRescueLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
+        return url.host == "rescue"
+    }
 }

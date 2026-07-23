@@ -44,6 +44,13 @@ public final class ReadingListIngestor {
     public static var interopPromptPresenter: (
         @MainActor (InteropPromptKind, _ retry: (() -> Void)?) -> Void)?
 
+    /// Installed by the app shell (`URLRescueWiring`) so a `.failed` first pass can
+    /// hand the item to `URLRescueCoordinator`. nil in extensions / tests (rescue
+    /// is main-app-only), where a failure just stays failed. Params: the item id,
+    /// the resolved URL, the capture source, and whether this was an interactive
+    /// (foreground, user-initiated) save.
+    public static var rescueTrigger: ((UUID, URL, CaptureSource, _ interactive: Bool) -> Void)?
+
     public init(
         store: ReadingListStore = .shared,
         interopDecision: @escaping (Outcome) -> InteropGate.Decision = {
@@ -57,6 +64,13 @@ public final class ReadingListIngestor {
     /// IDs currently being ingested, to avoid duplicate concurrent work.
     private var inFlight = Set<UUID>()
     private let lock = NSLock()
+
+    /// Whether `id` is mid-ingest right now — the rescue sweep checks this to
+    /// avoid racing an in-progress primary ingest.
+    public func isIngesting(_ id: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlight.contains(id)
+    }
 
     /// Runs `ingestAllPending()`'s enumeration (a full `readingList.json` decode)
     /// and backfill scans off the caller's thread — it's called synchronously
@@ -97,7 +111,6 @@ public final class ReadingListIngestor {
             lock.unlock()
         }
 
-        var item = item
         let url = initialURL
 
         // The ONE shared pipeline resolves wrappers, classifies, and processes every
@@ -110,10 +123,37 @@ public final class ReadingListIngestor {
                         trustsPrefetchedHTML: trustsPrefetchedHTML),
             fetcher: fetcher, extractor: extractor)
 
+        let decision = await applyResult(
+            result, for: item, forceArticle: forceArticle,
+            allowsInteractivePrompt: allowsInteractivePrompt)
+
+        // URL-Rescue hook: a genuine `.failed` first pass is the one place a
+        // rescue may help. `itemJustFailed` re-reads the item from the store and
+        // no-ops unless it's still `.failed` and rescue is eligible — so an
+        // interop-dropped or already-existing item never triggers one. The rescue
+        // engine re-enters the RAW pipeline (not this method), so it can't recurse.
+        if case .failed = result.outcome {
+            let interactive = allowsInteractivePrompt && isInteractivePromptSource(item.effectiveCaptureSource)
+            Self.rescueTrigger?(item.id, result.url, item.effectiveCaptureSource, interactive)
+        }
+        return decision
+    }
+
+    /// Persists an `IngestResult` for `item` through the interop gate, URL
+    /// repoint, tracker-merge dedup, and the outcome presenter — the shared tail
+    /// of a first-pass ingest. `URLRescueCoordinator` also calls this to persist
+    /// a rescued `IngestResult`, so a rescued item follows the exact same interop
+    /// and presentation rules as any save. Returns the interop decision.
+    @discardableResult
+    func applyResult(
+        _ result: IngestResult, for item: ReadingListItem, forceArticle: Bool,
+        allowsInteractivePrompt: Bool
+    ) async -> InteropGate.Decision {
+        var item = item
         let resolvedURL = result.url
-        if resolvedURL != url {
+        if let itemURL = item.url, resolvedURL != itemURL {
             SharedDiagnosticLog.record(
-                "ingest: unwrapped \(url.absoluteString) → \(resolvedURL.absoluteString)",
+                "ingest: unwrapped \(itemURL.absoluteString) → \(resolvedURL.absoluteString)",
                 category: "ingest")
             guard let updated = store.updateURL(resolvedURL.absoluteString, for: item.id) else {
                 // The unwrapped article already exists in the list; wrapper dropped.

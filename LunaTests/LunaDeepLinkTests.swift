@@ -108,4 +108,23 @@ final class LunaDeepLinkTests: XCTestCase {
     func testOwnInteropLinkRejectsWrongHost() {
         XCTAssertFalse(LunaDeepLink.isOwnInteropLink(URL(string: "lunareader://read")!))
     }
+
+    // MARK: - Rescue
+
+    func testRescueLinkTargetsOwnSchemeByDefault() {
+        XCTAssertEqual(LunaDeepLink.rescueLink()?.absoluteString, "lunareader://rescue")
+    }
+
+    func testRescueLinkForEachScheme() {
+        for scheme in LunaDeepLink.allSchemes {
+            let link = LunaDeepLink.rescueLink(scheme: scheme)
+            XCTAssertEqual(link?.absoluteString, "\(scheme)://rescue")
+            XCTAssertTrue(LunaDeepLink.isRescueLink(link!))
+        }
+    }
+
+    func testIsRescueLinkRejectsOtherHosts() {
+        XCTAssertFalse(LunaDeepLink.isRescueLink(URL(string: "lunareader://read")!))
+        XCTAssertFalse(LunaDeepLink.isRescueLink(URL(string: "https://example.com/rescue")!))
+    }
 }

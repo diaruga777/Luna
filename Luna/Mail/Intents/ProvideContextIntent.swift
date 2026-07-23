@@ -9,7 +9,7 @@
 
 import AppIntents
 import LunaIntents
-import LunaInterop
+import LunaModels
 import LunaMediaDownload
 import LunaStorage
 import Foundation
@@ -44,15 +44,15 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
     enum ProvideContextError: Error, CustomLocalizedStringResourceConvertible {
         case noTrackedPage
-        /// Unpaid cross-surface save (`claudedocs/interop-purchase.md`) — the
-        /// item was discarded; the dialog names the owning app and the unlock.
-        case interopBlocked(message: String)
+        /// Foreign-kind save (`SurfaceSupport`) — the item was discarded; the
+        /// dialog carries the generic unsupported-kind explanation.
+        case unsupportedKind(message: String)
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .noTrackedPage:
                 return "No Safari page tracked yet. Is the Luna extension enabled?"
-            case .interopBlocked(let message):
+            case .unsupportedKind(let message):
                 return "\(message)"
             }
         }
@@ -71,7 +71,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             isEnabled: AppIntentSettings.handleOnScreenURLs
         ), let result = try await saveURL(
             urlString,
-            interopBlockHandling: .fallBack
+            unsupportedKindHandling: .fallBack
         ) {
             return .result(value: result)
         }
@@ -125,15 +125,15 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             }
             guard let result = try await saveURL(
                 urlString,
-                interopBlockHandling: .throwError
+                unsupportedKindHandling: .throwError
             ) else {
-                preconditionFailure("Throwing interop handling cannot fall back")
+                preconditionFailure("Throwing unsupported-kind handling cannot fall back")
             }
             return .result(value: result)
         }
     }
 
-    private enum InteropBlockHandling: Equatable {
+    private enum UnsupportedKindHandling: Equatable {
         case throwError
         case fallBack
     }
@@ -141,10 +141,10 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     /// The one immediate-URL path for both Safari-extension URLs and URLs
     /// extracted from Shortcuts input. A timeout still counts as handled: the
     /// normal ingest task continues and persists its pending work in the
-    /// background. Only an explicit interop rejection can fall back.
+    /// background. Only an explicit foreign-kind rejection can fall back.
     private func saveURL(
         _ urlString: String,
-        interopBlockHandling: InteropBlockHandling
+        unsupportedKindHandling: UnsupportedKindHandling
     ) async throws -> ProvideContextResultEntity? {
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString,
@@ -155,16 +155,14 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         case let .friendPromptRequested(savedURL):
             try? await requestToContinueInForeground()
             savedURLString = savedURL
-        case let .completed(savedURL, _):
+        case let .completed(savedURL):
             // Nil means only that the 12-second race expired. The ingest task
             // continues, exactly as it does for a Safari-extension URL.
             savedURLString = savedURL ?? urlString
-        case let .blockedByInterop(owner, _):
-            guard interopBlockHandling == .throwError else { return nil }
-            throw ProvideContextError.interopBlocked(
-                message: IntentIngestHelper.blockedDialogText(
-                    owner: owner,
-                    currentAppName: InteropSurface.current.displayName))
+        case let .unsupportedKind(owner):
+            guard unsupportedKindHandling == .throwError else { return nil }
+            throw ProvideContextError.unsupportedKind(
+                message: IntentIngestHelper.unsupportedDialogText(owner: owner))
         }
 
         let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(

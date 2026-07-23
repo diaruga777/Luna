@@ -157,14 +157,14 @@ final class PasteboardSuggestionController: NSObject {
                 guard let self else { return }
                 let resultItem: ReadingListItem?
                 switch result {
-                case .saved(let saved), .savedNeedsOwnerInstall(let saved, _),
+                case .saved(let saved),
                      .sentToEreaders(let saved),
                      .sentToFriends(let saved), .friendPromptRequested(let saved):
                     resultItem = saved
                 case .ignored: resultItem = nil
-                case .blockedByInterop:
-                    // Unpaid cross-surface paste — discarded; the ingest
-                    // gate has already shown the interop prompt.
+                case .unsupportedKind:
+                    // Foreign-kind paste — discarded; the ingest gate has
+                    // already shown the unsupported-kind error.
                     return
                 }
                 let item = resultItem

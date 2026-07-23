@@ -5,8 +5,7 @@
 
 import LunaStorage
 import LunaHTMLClassification
-import LunaInterop
-import LunaInteropUI
+import LunaIngest
 import LunaURLClassification
 import LunaModels
 import LunaDesignSystem
@@ -315,14 +314,20 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         }
         navHeader.setLeadingControls([leftControl])
 
+        // "Read instead" re-saves the URL as an article — a Reader-owned kind —
+        // so the button only exists in apps that handle articles (Reader and
+        // the central Luna app). Elsewhere the tracker stays a tracker.
+        let readInsteadSupported =
+            SurfaceSupport.evaluateForCurrentProcess(owner: .reader) == .supported
         switch exitContext.readInsteadAction {
-        case .hidden:
-            navHeader.setTrailingControls([])
-        case .discardTracker, .revertAddedStore:
+        case .discardTracker where readInsteadSupported,
+             .revertAddedStore where readInsteadSupported:
             navHeader.setTrailingControls([
                 NavHeaderBar.textButton(
                     title: "Read instead", target: self, action: #selector(readInsteadTapped)),
             ])
+        case .hidden, .discardTracker, .revertAddedStore:
+            navHeader.setTrailingControls([])
         }
     }
 
@@ -436,36 +441,13 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// overlay can dismiss on success or show a clear message — never a silent no-op.
     /// When `report` shows the message itself, the paste path omits it and this method
     /// presents its own alert.
-    /// The interop decision for adding a seller — a cross-surface WRITE (the
-    /// tracker belongs to Luna Price Tracker) when this editor runs in another
-    /// Luna app. Static + injectable for tests; production reads process state.
-    public static var interopSellerAddDecision: () -> InteropGate.Decision = {
-        InteropGate.evaluateForCurrentProcess(owner: .priceTracker)
-    }
-
     private func addSeller(
         urlString: String, prefetchedHTML: String? = nil,
         report: ((ProductSearchAddOutcome) -> Void)? = nil
     ) {
-        // Cross-app-interop gate on the accept action (`claudedocs/
-        // interop-purchase.md`): pasting a seller URL or accepting the search
-        // overlay's `ProductPageSuggestion` writes to a Price-Tracker-owned
-        // tracker; unpaid cross-surface accepts get the prompt instead. The
-        // install note is informational — the write still proceeds.
-        switch Self.interopSellerAddDecision() {
-        case .blocked(let owner, let ownerInstalled):
-            presentInteropPrompt(
-                kind: .blocked(owner: owner, ownerInstalled: ownerInstalled),
-                onUnlocked: { [weak self] in
-                    self?.addSeller(urlString: urlString, prefetchedHTML: prefetchedHTML,
-                                    report: report)
-                })
-            return
-        case .allowedNeedsInstall(let owner):
-            presentInteropPrompt(kind: .needsInstall(owner: owner), onUnlocked: nil)
-        case .allowed:
-            break
-        }
+        // No gate: trackers belong to product-handling apps, and this editor
+        // is only ever presented in one (Price Tracker or the central Luna
+        // app) — a product save is dropped before the editor elsewhere.
         guard let tracker else { return }
         if tracker.hasStore(urlString: urlString) {
             if let report {
@@ -579,43 +561,14 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     ///   existing tracker, leaving it otherwise intact) and save that one URL as an
     ///   article.
     /// Then leave the screen. Never shown for the existing entry.
-    /// The interop decision for "Read instead" — a cross-surface WRITE when this
-    /// editor runs outside Luna Reader (the re-saved article belongs to Reader).
-    /// Static + injectable so tests can pin the decision without the App Group;
-    /// the production default reads the running process's state.
-    public static var interopReadInsteadDecision: () -> InteropGate.Decision = {
-        InteropGate.evaluateForCurrentProcess(owner: .reader)
-    }
-
+    /// Article saves belong to Reader-capable apps; `configureNavigationChrome`
+    /// only shows the button where `SurfaceSupport` allows the re-save, so the
+    /// tap performs the revert + re-save directly.
     @objc public func readInsteadTapped() {
-        // Cross-app-interop gate BEFORE any mutation (`claudedocs/
-        // interop-purchase.md`): the re-saved article belongs to Luna Reader, so
-        // in the Price Tracker app (or its extensions) an unpaid "Read instead"
-        // must not delete the tracker and then lose the article to the ingest
-        // gate — block up front, keeping the tracker intact, and show the
-        // prompt. (The extension's deferred re-append is caught by the ingest
-        // gate anyway; this gate is what protects the already-saved tracker.)
-        switch Self.interopReadInsteadDecision() {
-        case .blocked(let owner, let ownerInstalled):
-            presentInteropPrompt(
-                kind: .blocked(owner: owner, ownerInstalled: ownerInstalled),
-                onUnlocked: { [weak self] in self?.performReadInstead() })
-            return
-        case .allowedNeedsInstall(let owner):
-            // This action exits the editor. Show the informational note while
-            // the editor is still on-screen, then perform the mutation/exit
-            // after Done; presenting after `performReadInstead()` would target
-            // a controller that has already been popped or dismissed.
-            presentInteropPrompt(
-                kind: .needsInstall(owner: owner), onUnlocked: nil,
-                onDone: { [weak self] in self?.performReadInstead() })
-            return
-        case .allowed:
-            performReadInstead()
-        }
+        performReadInstead()
     }
 
-    /// The pre-gate body of `readInsteadTapped` — the actual revert + re-save.
+    /// The body of `readInsteadTapped` — the actual revert + re-save.
     private func performReadInstead() {
         // The re-save is injected (extension-safe): a per-instance handler wins, else
         // the static default the main app installs. ShareKit holds no `ReadingListIngestor`.
@@ -635,39 +588,6 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             saveAsArticle?(urlString)
         }
         dismissOrPop()
-    }
-
-    /// Presents the interop prompt over this editor. Context resolves at
-    /// presentation time: inside an extension the responder chain exposes an
-    /// `extensionContext` (deep-link opener + manual fallback); in-app the
-    /// prompt purchases inline and `onUnlocked` retries the gated action.
-    private func presentInteropPrompt(
-        kind: InteropPromptKind,
-        onUnlocked: (() -> Void)?,
-        onDone: (() -> Void)? = nil
-    ) {
-        let context: InteropPromptViewController.Context
-        if let extensionContext {
-            context = .extensionHost(openURL: { [weak extensionContext] url in
-                extensionContext?.open(url)
-            })
-        } else {
-            context = .inApp
-        }
-        let prompt = InteropPromptViewController(
-            kind: kind, context: context, onUnlocked: onUnlocked)
-        if let onDone {
-            prompt.onDone = { [weak prompt] in
-                guard let prompt else { return }
-                prompt.dismiss(animated: true, completion: onDone)
-            }
-        }
-        let nav = UINavigationController(rootViewController: prompt)
-        // The gated action may originate under a presented sheet (the search
-        // overlay) — present from the top of the chain so it actually appears.
-        var presenter: UIViewController = self
-        while let presented = presenter.presentedViewController { presenter = presented }
-        presenter.present(nav, animated: true)
     }
 
     /// Leaves the screen whichever way it was shown: pop when pushed onto a nav stack

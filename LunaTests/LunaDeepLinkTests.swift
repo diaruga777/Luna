@@ -77,36 +77,26 @@ final class LunaDeepLinkTests: XCTestCase {
         // The schemes are registered in Info.plist ($(LUNA_URL_SCHEME), set per
         // app target) and mirrored in the Safari extension's content script;
         // drift would break inbound links.
+        XCTAssertEqual(LunaDeepLink.lunaScheme, "luna")
         XCTAssertEqual(LunaDeepLink.readerScheme, "lunareader")
         XCTAssertEqual(LunaDeepLink.downloaderScheme, "lunadownloader")
         XCTAssertEqual(LunaDeepLink.priceTrackerScheme, "lunapricetracker")
         XCTAssertEqual(
             LunaDeepLink.allSchemes,
-            [LunaDeepLink.readerScheme, LunaDeepLink.downloaderScheme,
+            [LunaDeepLink.lunaScheme, LunaDeepLink.readerScheme, LunaDeepLink.downloaderScheme,
              LunaDeepLink.priceTrackerScheme])
     }
 
     func testOwnSchemeFallsBackToReaderWithoutURLTypes() {
-        // The unit-test host is the Reader app, whose registered scheme IS the
-        // reader scheme — and bundles without CFBundleURLTypes (extensions)
-        // fall back to it too.
+        // The unit-test host is the central Luna app; bundles without
+        // CFBundleURLTypes (extensions, and this test host) fall back to Reader's
+        // scheme.
         XCTAssertEqual(LunaDeepLink.ownScheme, "lunareader")
     }
 
-    func testInteropLinkTargetsOwnSchemeByDefault() {
-        let link = LunaDeepLink.interopLink()
-        XCTAssertEqual(link?.absoluteString, "lunareader://interop")
-        XCTAssertTrue(LunaDeepLink.isOwnInteropLink(link!))
-    }
-
-    func testOwnInteropLinkRejectsSiblingScheme() {
-        let sibling = LunaDeepLink.interopLink(scheme: LunaDeepLink.downloaderScheme)!
-        XCTAssertTrue(LunaDeepLink.isInteropLink(sibling), "the general parser accepts siblings")
-        XCTAssertFalse(LunaDeepLink.isOwnInteropLink(sibling), "scene routing must stay in this app")
-    }
-
-    func testOwnInteropLinkRejectsWrongHost() {
-        XCTAssertFalse(LunaDeepLink.isOwnInteropLink(URL(string: "lunareader://read")!))
+    func testArticleURLParsesTheCentralLunaScheme() {
+        let url = URL(string: "luna://read?url=https://example.com")!
+        XCTAssertEqual(LunaDeepLink.articleURL(from: url), "https://example.com")
     }
 
     // MARK: - Rescue

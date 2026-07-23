@@ -8,7 +8,6 @@ import LunaPriceUI
 import LunaArchiveReader
 import LunaStorage
 import LunaIngest
-import LunaInterop
 import LunaURLClassification
 import LunaModels
 import UIKit
@@ -219,16 +218,16 @@ final class SurfaceParityTests: XCTestCase {
     }
 
     /// The extension surface's intent: drive the REAL `ShareSurfaceDriver` with the
-    /// outcome and a fake host, then read back what it presented. The interop gate is
-    /// pinned to `.allowed` — this test is about presentation parity, not the
-    /// cross-app-purchase gate (see `ShareSurfaceDriverInteropTests` for that).
+    /// outcome and a fake host, then read back what it presented. The surface gate is
+    /// pinned to `.supported` — this test is about presentation parity, not the
+    /// per-app content gate (see `ShareSurfaceDriverSurfaceTests` for that).
     private func extensionIntent(for outcome: Outcome, link: Link, isAction: Bool) -> SurfaceIntent {
         // Each surface invocation needs its own freshly-saved item.
         let finalURLString = finalURL(for: link)
         if let existing = store.item(forURLString: finalURLString) { store.delete(existing) }
         _ = store.add(urlString: finalURLString)
         let host = FakeExtensionHost(isActionExtension: isAction)
-        let driver = ShareSurfaceDriver(host: host, store: store, interopDecision: { _ in .allowed })
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
         driver.present(outcome, url: url(finalURLString))
         return host.intent
     }

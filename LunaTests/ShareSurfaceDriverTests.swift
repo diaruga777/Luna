@@ -7,7 +7,6 @@ import LunaShareSurface
 import LunaPriceUI
 import LunaStorage
 import LunaIngest
-import LunaInterop
 import LunaHTMLClassification
 import LunaModels
 import UIKit
@@ -71,12 +70,12 @@ final class ShareSurfaceDriverTests: XCTestCase {
 
     /// Seeds an item for `urlString` and returns the driver + host wired to the test
     /// store (no live pipeline — `present` is called directly with a fixed Outcome).
-    /// The interop gate is pinned to `.allowed` — these tests exercise the per-
-    /// outcome presentation/persistence logic, not the cross-app-purchase gate
-    /// (see `ShareSurfaceDriverInteropTests` for that).
+    /// The surface gate is pinned to `.supported` — these tests exercise the per-
+    /// outcome presentation/persistence logic, not the per-app content gate
+    /// (see `ShareSurfaceDriverSurfaceTests` for that).
     private func makeDriver(isActionExtension: Bool) -> (ShareSurfaceDriver, FakeExtensionHost) {
         let host = FakeExtensionHost(isActionExtension: isActionExtension)
-        let driver = ShareSurfaceDriver(host: host, store: store, interopDecision: { _ in .allowed })
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
         return (driver, host)
     }
 

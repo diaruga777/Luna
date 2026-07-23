@@ -203,4 +203,10 @@ public enum AppSurface {
     public func includes(_ item: ReadingListItem) -> Bool {
         baseFilter.includes(item)
     }
+
+    /// Per-kind capability of the app this surface belongs to. The central
+    /// Luna app handles everything; each single-content app handles one kind.
+    public var handlesArticles: Bool { self == .all || self == .reader }
+    public var handlesMedia: Bool { self == .all || self == .downloader }
+    public var handlesProducts: Bool { self == .all || self == .priceTracker }
 }

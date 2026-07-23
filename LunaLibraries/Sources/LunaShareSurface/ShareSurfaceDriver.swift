@@ -10,11 +10,9 @@ import LunaAudioPlayback
 import LunaMediaDownload
 import LunaStorage
 import LunaIngest
-import LunaInterop
-import LunaInteropUI
+import LunaModels
 import LunaHTMLClassification
 import LunaURLClassification
-import LunaModels
 import UIKit
 
 /// The HOST-AGNOSTIC ingest+present flow for the share/action extension surfaces.
@@ -43,15 +41,12 @@ public final class ShareSurfaceDriver {
     /// Injectable so tests can drive the pipeline with a mock fetcher / fixtures and
     /// a nil render tier (extension-safe). Production uses the live defaults.
     private let process: (IngestInput) async -> IngestResult
-    /// The cross-app-interop gate over the classified outcome
-    /// (`claudedocs/interop-purchase.md`). Extension saves are always
-    /// `.shareSheet` — a gated source — so the decision only depends on the
-    /// outcome's owner + payment/install state. Injectable so tests can pin
-    /// surface/unlock/install without touching the App Group.
-    private let interopDecision: (Outcome) -> InteropGate.Decision
-    /// The surface the extension is running in, for the prompt's "unlock in
-    /// <this app>" copy + deep link.
-    private let currentSurface: InteropSurface
+    /// The per-app content gate over the classified outcome (`SurfaceSupport`):
+    /// a single-content app's extension drops foreign kinds. Injectable so
+    /// tests can pin the running app without touching `Bundle.main`.
+    private let surfaceDecision: (Outcome) -> SurfaceSupport.Decision
+    /// The app the extension is running in, for the error copy + deep links.
+    private let currentApp: LunaApp
 
     public init(
         host: ExtensionHost,
@@ -59,16 +54,16 @@ public final class ShareSurfaceDriver {
         process: @escaping (IngestInput) async -> IngestResult = {
             await IngestPipeline.processResolved($0)
         },
-        interopDecision: @escaping (Outcome) -> InteropGate.Decision = {
-            InteropGate.evaluateForCurrentProcess(owner: $0.interopOwner)
+        surfaceDecision: @escaping (Outcome) -> SurfaceSupport.Decision = {
+            SurfaceSupport.evaluateForCurrentProcess(owner: $0.owningApp)
         },
-        currentSurface: InteropSurface = .current
+        currentApp: LunaApp = .current
     ) {
         self.host = host
         self.store = store
         self.process = process
-        self.interopDecision = interopDecision
-        self.currentSurface = currentSurface
+        self.surfaceDecision = surfaceDecision
+        self.currentApp = currentApp
     }
 
     /// Runs the shared pipeline for the just-appended `originalURL`, repoints the saved
@@ -102,47 +97,27 @@ public final class ShareSurfaceDriver {
     /// The EXHAUSTIVE per-surface presenter over the unified `Outcome` (no `default`,
     /// compiler-checked). Public so the fixture can drive it directly with any Outcome.
     ///
-    /// The cross-app-interop gate runs FIRST, before any persist
-    /// (`claudedocs/interop-purchase.md`):
-    /// - `.blocked` (unpaid cross-surface): the pending row `ShareViewController`
-    ///   appended before classification is deleted (with its copied document
-    ///   file, via `store.delete`'s `removeFiles`) so NOTHING remains in the
-    ///   store, and the interop prompt (install step if the owner is missing +
-    ///   the pay step) is presented instead of any save UI.
-    /// - `.allowedNeedsInstall` (paid, owner uninstalled): the save proceeds
-    ///   byte-identically to today, and the informational install prompt
-    ///   REPLACES only the silent terminals (the zero-UI share extension's
-    ///   `completeSilently`/checkmark endings) — flows that already present
-    ///   interactive UI (reader, price editor, saved-media screen, archive
-    ///   reader) are left alone rather than stacking a second sheet.
-    /// - `.allowed` (same-surface, or `.failed`'s nil owner): exactly today.
+    /// The per-app content gate runs FIRST, before any persist: a foreign-kind
+    /// outcome deletes the pending row `ShareViewController` appended before
+    /// classification (with its copied document file, via `store.delete`'s
+    /// `removeFiles`) so NOTHING remains in the store, and the generic
+    /// unsupported-kind error is presented instead of any save UI (never a
+    /// "Saved" checkmark). A supported outcome (or `.failed`'s nil owner)
+    /// persists and presents exactly as before.
     public func present(_ outcome: Outcome, url: URL, blockedItemID: UUID? = nil) {
         guard let host else { return }
 
-        let decision = interopDecision(outcome)
-        if case let .blocked(owner, ownerInstalled) = decision {
-            discardBlockedSave(url: url, itemID: blockedItemID)
-            presentInteropPrompt(
-                kind: .blocked(owner: owner, ownerInstalled: ownerInstalled),
-                terminal: { [weak host] in host?.completeSilently() })
+        if case let .unsupported(owner) = surfaceDecision(outcome) {
+            discardUnsupportedSave(url: url, itemID: blockedItemID)
+            presentUnsupportedError(owner: owner)
             return
         }
-        let installNote: InteropPromptKind? = {
-            if case let .allowedNeedsInstall(owner) = decision {
-                return .needsInstall(owner: owner)
-            }
-            return nil
-        }()
 
         switch outcome {
         case let .article(content, html):
             persistArticle(content, html: html, url: url)
             if let mode = host.readerMode {
                 presentReader(url: url, mode: mode, outcome: outcome)
-            } else if let installNote {
-                presentInteropPrompt(
-                    kind: installNote,
-                    terminal: { [weak host] in host?.confirmSavedThenComplete() })
             } else {
                 host.completeSilently()
             }
@@ -154,19 +129,15 @@ public final class ShareSurfaceDriver {
 
         case let .video(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(url: url, installNote: installNote)
+            presentNonTextual(url: url)
 
         case let .social(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(url: url, installNote: installNote)
+            presentNonTextual(url: url)
 
         case .document:
             if host.readerMode != nil {
                 host.confirmSavedThenComplete()
-            } else if let installNote {
-                presentInteropPrompt(
-                    kind: installNote,
-                    terminal: { [weak host] in host?.confirmSavedThenComplete() })
             } else {
                 host.completeSilently()
             }
@@ -194,36 +165,36 @@ public final class ShareSurfaceDriver {
     /// engine — only the pending-record store + the deep link.
     private func presentRescueFailure(url: URL) {
         guard let host else { return }
-        let surface = currentSurface
+        let app = currentApp
         let card = RescueFailureViewController(
-            defaultHint: Self.defaultHint(for: surface),
-            rescueURL: LunaDeepLink.rescueLink(scheme: surface.deepLinkScheme),
+            defaultHint: Self.defaultHint(for: app),
+            rescueURL: LunaDeepLink.rescueLink(scheme: app.deepLinkScheme),
             openApp: { [weak host] in host?.openURL($0) },
             onFinish: { chosen in
                 PendingRescueRequestStore.shared.append(PendingRescueRequest(
                     urlString: url.absoluteString, hint: chosen, dateWritten: Date(),
-                    sourceSurface: surface.storageIdentifier))
+                    sourceSurface: app.storageIdentifier))
             },
             onDone: { [weak host] in host?.completeSilently() })
         host.presentModally(card)
     }
 
-    /// The natural rescue hint for a surface (matches the app-shell mapping).
-    public static func defaultHint(for surface: InteropSurface) -> RescueHint {
-        switch surface {
-        case .reader: return .article
+    /// The natural rescue hint for an app (matches the app-shell mapping).
+    public static func defaultHint(for app: LunaApp) -> RescueHint {
+        switch app {
+        case .luna, .reader: return .article
         case .downloader: return .media
         case .priceTracker: return .product
         }
     }
 
-    // MARK: - Interop gate (cross-app purchase)
+    // MARK: - Surface gate (per-app content kinds)
 
     /// Deletes the pending placeholder row appended before classification, so a
-    /// blocked cross-surface save leaves NOTHING behind. `store.delete` also
+    /// dropped foreign-kind save leaves NOTHING behind. `store.delete` also
     /// removes every on-disk artifact the row owns — including an imported
     /// document's copied `Articles/<id>-source.<ext>` file.
-    private func discardBlockedSave(url: URL, itemID: UUID?) {
+    private func discardUnsupportedSave(url: URL, itemID: UUID?) {
         if let itemID {
             // If wrapper dedup already removed this request's placeholder, the
             // correct blocked cleanup is a no-op. Do not fall back to URL lookup:
@@ -236,18 +207,13 @@ public final class ShareSurfaceDriver {
         store.delete(item)
     }
 
-    /// Presents the interop prompt in the host's modal chrome. `terminal` runs
-    /// when the user is done: `completeSilently` for a blocked save (nothing
-    /// was saved — never a "Saved" checkmark), `confirmSavedThenComplete` for
-    /// the informational install note (the item IS saved).
-    private func presentInteropPrompt(kind: InteropPromptKind, terminal: @escaping () -> Void) {
+    /// Presents the generic unsupported-kind error in the host's modal chrome.
+    /// Done completes silently — nothing was saved, never a "Saved" checkmark.
+    private func presentUnsupportedError(owner: LunaApp) {
         guard let host else { return }
-        let prompt = InteropPromptViewController(
-            kind: kind,
-            context: .extensionHost(openURL: { [weak host] url in host?.openURL(url) }),
-            currentSurface: currentSurface)
-        prompt.onDone = terminal
-        host.presentModally(prompt)
+        let error = UnsupportedSaveViewController(owner: owner, currentApp: currentApp)
+        error.onDone = { [weak host] in host?.completeSilently() }
+        host.presentModally(error)
     }
 
     // MARK: - Store writes (shared shape with the main app's IngestorOutcomePresenter)
@@ -334,14 +300,9 @@ public final class ShareSurfaceDriver {
 
     /// Routes a non-textual outcome. Downloadable social media always opens the
     /// saved-content screen on BOTH extension surfaces so the user can explicitly
-    /// choose the media download. Non-downloadable items retain the share extension's
-    /// silent-save behavior — except when a paid cross-surface save needs the
-    /// informational install note (`installNote`), which replaces that silent
-    /// ending (the item is saved either way; `autoDownloadThenComplete` is a
-    /// checkmark-only no-op for a non-downloadable URL, so nothing is lost).
-    private func presentNonTextual(
-        url: URL, installNote: InteropPromptKind? = nil
-    ) {
+    /// choose the media download. Non-downloadable items retain the share
+    /// extension's silent-save behavior.
+    private func presentNonTextual(url: URL) {
         guard let host else { return }
         if host.readerMode != nil || MediaDownloadablePlatform.supports(url.absoluteString) {
             let saved = SavedNonTextualViewController(
@@ -349,10 +310,6 @@ public final class ShareSurfaceDriver {
                 host?.confirmSavedThenComplete()
             }
             host.presentModally(saved)
-        } else if let installNote {
-            presentInteropPrompt(
-                kind: installNote,
-                terminal: { [weak host] in host?.confirmSavedThenComplete() })
         } else {
             host.autoDownloadThenComplete(urlString: url.absoluteString)
         }

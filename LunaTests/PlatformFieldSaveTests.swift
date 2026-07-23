@@ -19,9 +19,8 @@ final class PlatformFieldSaveTests: XCTestCase {
             outcome: .completed(savedURLString: nil))
 
         XCTAssertEqual(result.resolvedURLString, urlString)
-        if case .completed(let savedURLString, let needsInstallOwner) = result.outcome {
+        if case .completed(let savedURLString) = result.outcome {
             XCTAssertNil(savedURLString)
-            XCTAssertNil(needsInstallOwner)
         } else {
             XCTFail("Expected completed outcome")
         }

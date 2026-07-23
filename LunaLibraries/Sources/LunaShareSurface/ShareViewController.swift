@@ -7,10 +7,8 @@ import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
 import LunaIngest
-import LunaInterop
-import LunaInteropUI
-import LunaURLClassification
 import LunaModels
+import LunaURLClassification
 import Intents
 import UIKit
 import UniformTypeIdentifiers
@@ -415,51 +413,28 @@ public final class ShareViewController: UIViewController {
 
     /// The direct document-save path — imported files never route through
     /// `ShareSurfaceDriver` (no classification needed; a file IS a `.document`),
-    /// so the cross-app-interop gate runs here instead
-    /// (`claudedocs/interop-purchase.md`). Documents belong to Luna Reader.
-    /// Blocked saves are checked BEFORE appending, so a blocked document never
-    /// copies its file into the App Group at all — nothing to clean up.
-    /// Synchronous up to the append (the system deletes the source file when
-    /// the provider callback returns, so the copy can't be deferred).
+    /// so the per-app content gate runs here instead. Documents belong to Luna
+    /// Reader, so only Reader and the central Luna app accept them; a dropped
+    /// document is checked BEFORE appending, so it never copies its file into
+    /// the App Group at all — nothing to clean up. Synchronous up to the append
+    /// (the system deletes the source file when the provider callback returns,
+    /// so the copy can't be deferred).
     private func saveDocumentDirectly(sourceURL: URL) {
-        switch InteropGate.evaluateForCurrentProcess(owner: .reader) {
-        case .allowed:
+        switch SurfaceSupport.evaluateForCurrentProcess(owner: .reader) {
+        case .supported:
             SharedReadingListAppender.appendDocument(sourceURL: sourceURL)
             SharedDiagnosticLog.record(
                 "saved document \(sourceURL.lastPathComponent)", category: "share")
             completeAfterDirectSave()
-        case .allowedNeedsInstall(let owner):
-            SharedReadingListAppender.appendDocument(sourceURL: sourceURL)
+        case .unsupported(let owner):
             SharedDiagnosticLog.record(
-                "saved document \(sourceURL.lastPathComponent) (owner uninstalled)",
-                category: "share")
-            presentInteropPrompt(kind: .needsInstall(owner: owner), confirmSaved: true)
-        case .blocked(let owner, let ownerInstalled):
-            SharedDiagnosticLog.record(
-                "blocked cross-app document save (unpaid)", category: "share")
-            presentInteropPrompt(
-                kind: .blocked(owner: owner, ownerInstalled: ownerInstalled),
-                confirmSaved: false)
-        }
-    }
-
-    /// Presents the interop prompt for the direct document path. `confirmSaved`
-    /// picks the terminal: the "Saved" checkmark when the item was actually
-    /// appended (install note), a quiet completion when it was blocked.
-    private func presentInteropPrompt(kind: InteropPromptKind, confirmSaved: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let prompt = InteropPromptViewController(
-                kind: kind,
-                context: .extensionHost(openURL: { [weak self] url in self?.openURL(url) }))
-            prompt.onDone = { [weak self] in
-                if confirmSaved {
-                    self?.confirmSavedThenComplete()
-                } else {
-                    self?.completeSilently()
-                }
+                "dropped foreign-kind document save", category: "share")
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let error = UnsupportedSaveViewController(owner: owner, currentApp: .current)
+                error.onDone = { [weak self] in self?.completeSilently() }
+                self.presentModally(error)
             }
-            self.presentModally(prompt)
         }
     }
 

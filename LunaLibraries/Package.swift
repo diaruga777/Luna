@@ -10,8 +10,6 @@ let package = Package(
         .library(name: "LunaAppConfig", targets: ["LunaAppConfig"]),
         .library(name: "LunaModels", targets: ["LunaModels"]),
         .library(name: "LunaURLClassification", targets: ["LunaURLClassification"]),
-        .library(name: "LunaInterop", targets: ["LunaInterop"]),
-        .library(name: "LunaInteropUI", targets: ["LunaInteropUI"]),
         .library(name: "LunaHTMLClassification", targets: ["LunaHTMLClassification"]),
         .library(name: "LunaPaywallBypass", targets: ["LunaPaywallBypass"]),
         .library(name: "LunaPriceMetadata", targets: ["LunaPriceMetadata"]),
@@ -55,16 +53,6 @@ let package = Package(
         // Deliberately kept in the SAME low tier as LunaAppConfig/LunaModels/
         // LunaURLClassification (no fetch/HTML/UIKit) so it's cheap to link into
         // the share/action extensions and any future StoreKit-only context. The
-        // `Outcome -> InteropSurface` OWNERSHIP mapping lives one tier up, as an
-        // extension in LunaIngest (which already owns `Outcome`), rather than
-        // LunaInterop depending upward on the much heavier LunaIngest.
-        .target(name: "LunaInterop", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
-        // The interop prompt (extension + in-app) and the paywall — UIKit, so it
-        // sits one tier above LunaInterop. Deliberately depends on ONLY
-        // LunaInterop + LunaDesignSystem (not LunaStorage/etc.):
-        // it's linked into the share/action extensions via LunaShareSurface, and
-        // every host already owns its modal presentation (`ExtensionHost.presentModally`).
-        .target(name: "LunaInteropUI", dependencies: ["LunaInterop", "LunaURLClassification", "LunaDesignSystem"]),
         .target(name: "LunaHTMLClassification", dependencies: [
             "LunaModels", "LunaURLClassification", "LunaPriceMetadata",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
@@ -76,7 +64,7 @@ let package = Package(
         .target(name: "LunaTransitions", dependencies: ["LunaDesignSystem"]),
         .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaIngest", dependencies: [
-            "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaAppConfig", "LunaPriceMetadata", "LunaInterop", .product(name: "SwiftSoup", package: "SwiftSoup"),]),
+            "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaAppConfig", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup"),]),
         .target(name: "LunaStorage", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
         .target(name: "LunaDocuments", dependencies: ["LunaModels"]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
@@ -112,11 +100,11 @@ let package = Package(
         // installs it, and keep the legacy self-contained SpeechController path when it's
         // absent (the share/action extensions never install it).
         .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaPriceMetadata", "LunaAudioPlayback", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaInterop", "LunaInteropUI", "LunaReaderUI", "LunaAppConfig", "LunaArchiveReader", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaReaderUI", "LunaAppConfig", "LunaArchiveReader", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // LunaAudioPlayback: Phase 6 — `ExtensionAudioScriptWriter` writes a heuristics-only
         // audio script to the cache right after an extension-context article save (see
         // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().
-        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaInterop", "LunaInteropUI"]),
+        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms"]),
         // The LLM URL-rescue engine (see claudedocs/url-rescue.md): when primary
         // ingestion fails, an Apple FoundationModels pass (on-device iOS 26 baseline,
         // Private Cloud Compute opportunistically on iOS 27/Xcode 27 builds) proposes
@@ -130,9 +118,9 @@ let package = Package(
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial"]),
-        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaInterop", "LunaPlatforms", "LunaReadingList", "LunaSocial", "LunaSend"]),
+        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaIngest", "LunaPlatforms", "LunaReadingList", "LunaSocial", "LunaSend"]),
         .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI", "LunaSend"]),
-        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaInterop", "LunaInteropUI", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaSend", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaMediaDownload", "LunaPlatforms", "LunaPriceUI", "LunaReaderUI", "LunaArchiveReader", "LunaSocial", "LunaAppConfig", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaSend", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaMediaDownload", "LunaPlatforms", "LunaPriceUI", "LunaReaderUI", "LunaArchiveReader", "LunaSocial", "LunaAppConfig", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),
         .testTarget(name: "LunaModelsTests", dependencies: ["LunaModels"]),
         .testTarget(name: "LunaURLClassificationTests", dependencies: ["LunaURLClassification"]),

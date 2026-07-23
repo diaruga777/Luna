@@ -4,7 +4,8 @@
 //
 
 import LunaReadingList
-import LunaInterop
+import LunaIngest
+import LunaModels
 import LunaURLClassification
 import Foundation
 
@@ -18,29 +19,22 @@ public enum IntentIngestHelper {
     public enum ActionButtonSaveOutcome {
         /// Save/send handled (or duplicate). `savedURLString` is the URL that
         /// ended up saved, nil when the outcome couldn't be determined before
-        /// the timeout. `needsInstallOwner` is the owning app of a PAID
-        /// cross-surface save when that app isn't installed — the intent's
-        /// dialog mentions installing it (the item IS saved either way).
-        case completed(savedURLString: String?, needsInstallOwner: InteropSurface? = nil)
+        /// the timeout.
+        case completed(savedURLString: String?)
         /// Double save with "ask every time" — the pending friend prompt is
         /// recorded; the intent should foreground the app so the friend
         /// selector can appear. `savedURLString` is the saved item's URL (the
         /// item exists before the prompt is answered).
         case friendPromptRequested(savedURLString: String)
-        /// Unpaid cross-surface save (`claudedocs/interop-purchase.md`) — the
-        /// item was DISCARDED. The intent throws an error dialog naming the
-        /// owning app and the unlock.
-        case blockedByInterop(owner: InteropSurface, ownerInstalled: Bool)
+        /// Foreign-kind save (`SurfaceSupport`) — the item was DISCARDED. The
+        /// intent throws an error dialog with the generic explanation.
+        case unsupportedKind(owner: LunaApp)
     }
 
-    /// The user-facing dialog for a `blockedByInterop` save — used verbatim by
-    /// the Save / Provide Context intents' thrown errors. Names the owning app,
-    /// the unlock, and the direct alternative (sharing to the owning app).
-    public static func blockedDialogText(
-        owner: InteropSurface, currentAppName: String
-    ) -> String {
-        "This link is handled by \(owner.displayName). Open \(currentAppName) to unlock "
-            + "cross-app saving ($1.99), or share it to \(owner.displayName) instead."
+    /// The user-facing dialog for an `unsupportedKind` save — used verbatim by
+    /// the Save / Provide Context intents' thrown errors.
+    public static func unsupportedDialogText(owner: LunaApp) -> String {
+        SurfaceSupport.unsupportedMessage(owner: owner)
     }
 
     /// Handles a save press (save+ingest, double-press send, or ignore), giving
@@ -48,18 +42,18 @@ public enum IntentIngestHelper {
     /// off by the timeout is persisted as pending/queued and retried later.
     /// Returns the URL that ended up saved (also for duplicates, which are
     /// already in the list), or nil when the outcome couldn't be determined
-    /// before the timeout. Interop-blocked saves surface through the
+    /// before the timeout. Surface-dropped saves surface through the
     /// `ActionButtonSaveOutcome` variant; this URL-only convenience reports
     /// them as "nothing saved".
     public static func handleSavePressWithTimeout(urlString: String) async -> String? {
         switch await savePressRacingTimeout(urlString: urlString, doubleSaveActionSurface: nil) {
-        case .some(.saved(let item)), .some(.savedNeedsOwnerInstall(let item, _)),
+        case .some(.saved(let item)),
              .some(.sentToEreaders(let item)),
              .some(.sentToFriends(let item)), .some(.friendPromptRequested(let item)):
             return item.urlString
         case .some(.ignored):
             return urlString
-        case .some(.blockedByInterop), nil:
+        case .some(.unsupportedKind), nil:
             return nil
         }
     }
@@ -76,8 +70,8 @@ public enum IntentIngestHelper {
     }
 
     /// Converts the full ingest result into the intent-facing result without
-    /// erasing interop decisions. Kept internal so unit tests can lock the
-    /// important `.blockedByInterop` mapping without running a live ingest.
+    /// erasing surface decisions. Kept internal so unit tests can lock the
+    /// important `.unsupportedKind` mapping without running a live ingest.
     static func actionButtonOutcome(
         from result: ReadingListIngestor.SavePressResult?,
         ignoredURLString: String = ""
@@ -85,12 +79,10 @@ public enum IntentIngestHelper {
         switch result {
         case .some(.friendPromptRequested(let item)):
             return .friendPromptRequested(savedURLString: item.urlString)
-        case let .some(.savedNeedsOwnerInstall(item, owner)):
-            return .completed(savedURLString: item.urlString, needsInstallOwner: owner)
         case .some(.saved(let item)), .some(.sentToEreaders(let item)), .some(.sentToFriends(let item)):
             return .completed(savedURLString: item.urlString)
-        case let .some(.blockedByInterop(owner, ownerInstalled)):
-            return .blockedByInterop(owner: owner, ownerInstalled: ownerInstalled)
+        case let .some(.unsupportedKind(owner)):
+            return .unsupportedKind(owner: owner)
         case .some(.ignored):
             return .completed(savedURLString: ignoredURLString)
         case nil:
@@ -107,7 +99,7 @@ public enum IntentIngestHelper {
         urlString: String, doubleSaveActionSurface surface: String?
     ) async -> ActionButtonSaveOutcome {
         // Even when double-save is not armed, retain the full result. The old
-        // URL-only convenience mapped an unpaid interop block to nil and then
+        // URL-only convenience mapped a surface-dropped save to nil and then
         // incorrectly reported `.completed(nil)` to Shortcuts.
         actionButtonOutcome(from: await savePressRacingTimeout(
             urlString: urlString, doubleSaveActionSurface: surface),

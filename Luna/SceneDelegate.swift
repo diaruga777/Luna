@@ -17,7 +17,6 @@ import LunaStorage
 import LunaURLClassification
 import LunaSend
 import LunaMediaDownload
-import LunaInteropUI
 import LunaTransitions
 import UIKit
 
@@ -31,9 +30,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// A `lunareader://read` article URL that arrived before the main UI was up.
     private var pendingReadURL: String?
-    /// A purchase hand-off that arrived while onboarding still owned the root.
-    /// Consumed once the main navigation controller exists.
-    private var pendingInteropRoute = false
     /// Set when a tapped pending-request notification asks to open that screen.
     /// Static because the tap is delivered to the AppDelegate before any scene
     /// may have connected.
@@ -136,7 +132,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     self?.pendingReadURL = nil
                     self?.openReader(articleURL: articleURL)
                 }
-                self?.applyPendingInteropRoute()
                 self?.applyPendingNotificationRoute()
             }
             window.rootViewController = OnboardingFlow.make(onFinished: finish)
@@ -167,14 +162,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         route(url)
     }
 
-    /// Dispatches an incoming URL: a `<luna scheme>://read` link opens the reader;
-    /// this app's own `<scheme>://interop` opens its StoreKit paywall.
+    /// Dispatches an incoming URL: a `<luna scheme>://read` link opens the reader.
     private func route(_ url: URL) {
-        if LunaDeepLink.isOwnInteropLink(url) {
-            pendingInteropRoute = true
-            applyPendingInteropRoute()
-            return
-        }
         if LunaDeepLink.isRescueLink(url) {
             // The extension handoff wrote the URL + hint + consent into the shared
             // store; just drain it (pop to root first so the list is visible when a
@@ -194,18 +183,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let articleURL = LunaDeepLink.articleURL(from: url) {
             openReader(articleURL: articleURL)
         }
-    }
-
-    /// Opens the interoperability paywall once the main UI exists. Keeping the
-    /// flag set while onboarding is visible makes a cold extension hand-off
-    /// reliable; warm links consume it immediately. Pop/dismiss first so repeated
-    /// hand-offs cannot stack duplicate paywalls over an unrelated flow.
-    private func applyPendingInteropRoute() {
-        guard pendingInteropRoute, let nav = mainNavigationController else { return }
-        pendingInteropRoute = false
-        nav.dismiss(animated: false)
-        nav.popToRootViewController(animated: false)
-        nav.pushViewController(InteropPaywallViewController(), animated: true)
     }
 
     /// Saves the article (if new), then opens it the way tapping its list row does.
@@ -228,14 +205,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 trustsPrefetchedHTML: prefetchedHTML != nil)
             let itemID: UUID?
             switch result {
-            case .saved(let item), .savedNeedsOwnerInstall(let item, _),
+            case .saved(let item),
                  .sentToEreaders(let item),
                  .sentToFriends(let item), .friendPromptRequested(let item):
                 itemID = item.id
             case .ignored: itemID = ReadingListStore.shared.item(forURLString: urlString)?.id
-            case .blockedByInterop:
-                // Unpaid cross-surface save — discarded; the ingest gate has
-                // already shown the interop prompt. Nothing to open.
+            case .unsupportedKind:
+                // Foreign-kind save — discarded; the ingest gate has already
+                // shown the unsupported-kind error. Nothing to open.
                 return
             }
             nav.popToRootViewController(animated: false)

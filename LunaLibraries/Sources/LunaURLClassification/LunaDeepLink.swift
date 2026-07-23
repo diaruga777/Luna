@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaModels
 import Foundation
 
 /// The per-app `luna*://` link schemes for opening a shared link straight into
@@ -10,6 +11,7 @@ import Foundation
 ///
 /// Each app registers ONLY its own scheme (`$(LUNA_URL_SCHEME)` in the shared
 /// Info.plist, set per app target), so a link targets exactly one app:
+/// - `luna://` — the central Luna app
 /// - `lunareader://` — Luna Reader
 /// - `lunadownloader://` — Luna Downloader
 /// - `lunapricetracker://` — Luna Price Tracker
@@ -22,12 +24,14 @@ import Foundation
 /// fall back to the App Store when it isn't (only a Universal Link can). See
 /// the share flow + docs for that limitation.
 public enum LunaDeepLink {
+    /// The central Luna app's scheme.
+    public static let lunaScheme = "luna"
     /// Luna Reader's scheme — also the historical scheme every app registered
     /// before the split, so older links keep opening Reader.
     public static let readerScheme = "lunareader"
     public static let downloaderScheme = "lunadownloader"
     public static let priceTrackerScheme = "lunapricetracker"
-    public static let allSchemes = [readerScheme, downloaderScheme, priceTrackerScheme]
+    public static let allSchemes = [lunaScheme, readerScheme, downloaderScheme, priceTrackerScheme]
 
     /// The scheme THIS bundle registers (its Info.plist `CFBundleURLTypes`),
     /// falling back to Reader's. Lets shared library code build links that
@@ -65,32 +69,6 @@ public enum LunaDeepLink {
             .queryItems?.first(where: { $0.name == "url" })?.value
     }
 
-    /// `<scheme>://interop` — opens straight to the cross-app-interop paywall
-    /// (`claudedocs/interop-purchase.md`). Used by the interop prompt's
-    /// extension-surface "Open Luna" step (`extensionContext.open`, always this
-    /// app's OWN scheme, since a purchase only ever unlocks/redirects within
-    /// the app the prompt is running in) and by `SceneDelegate`'s routing.
-    public static func interopLink(scheme: String = ownScheme) -> URL? {
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = "interop"
-        return components.url
-    }
-
-    /// True for `<any Luna scheme>://interop`.
-    public static func isInteropLink(_ url: URL) -> Bool {
-        guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
-        return url.host == "interop"
-    }
-
-    /// True only for THIS containing app's `<own scheme>://interop` link.
-    /// Scene routing uses the narrower check: although the parser understands
-    /// every Luna scheme, a sibling app must never handle another app's purchase
-    /// hand-off (each app sells and restores its own StoreKit product).
-    public static func isOwnInteropLink(_ url: URL) -> Bool {
-        url.scheme == ownScheme && isInteropLink(url)
-    }
-
     /// `<scheme>://rescue` — the extension→app URL-rescue hand-off. No query
     /// payload: the URL + hint + one-shot consent travel in
     /// `PendingRescueRequestStore` (App Group), and a bare route works even when
@@ -104,9 +82,21 @@ public enum LunaDeepLink {
     }
 
     /// True for `<any Luna scheme>://rescue` — any app drains its own queue, so
-    /// (unlike interop) the broad check is correct here.
+    /// the broad check is correct here.
     public static func isRescueLink(_ url: URL) -> Bool {
         guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
         return url.host == "rescue"
+    }
+}
+
+public extension LunaApp {
+    /// This app's `luna*://` deep-link scheme (`LunaDeepLink`).
+    var deepLinkScheme: String {
+        switch self {
+        case .luna: return LunaDeepLink.lunaScheme
+        case .reader: return LunaDeepLink.readerScheme
+        case .downloader: return LunaDeepLink.downloaderScheme
+        case .priceTracker: return LunaDeepLink.priceTrackerScheme
+        }
     }
 }

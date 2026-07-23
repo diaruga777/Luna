@@ -7,8 +7,6 @@ import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
 import LunaDesignSystem
-import LunaInterop
-import LunaInteropUI
 import LunaStorage
 import LunaModels
 import UIKit
@@ -50,7 +48,7 @@ final class SettingsViewController: NavHeaderTableController {
     private let categories: [Category] = {
         var categories: [Category] = []
 
-        if AppSurfaceConfig.current == .reader {
+        if AppSurfaceConfig.current.handlesArticles {
             categories.append(contentsOf: [
                 Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
                 // Audio (read-aloud playback) subsumes the old top-level Voice row —
@@ -61,7 +59,7 @@ final class SettingsViewController: NavHeaderTableController {
             ])
         }
 
-        if AppSurfaceConfig.current == .downloader {
+        if AppSurfaceConfig.current.handlesMedia {
             categories.append(
                 Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") {
                     AutoDownloadSettingsScreen()
@@ -71,10 +69,6 @@ final class SettingsViewController: NavHeaderTableController {
         categories.append(contentsOf: [
             Category(title: "Failed Saves", symbol: "wand.and.stars") { RescueSettingsScreen() },
             Category(title: "Contacts", symbol: "person.2") { FriendsViewController() },
-            Category(
-                title: "Luna Interoperability", symbol: "arrow.left.arrow.right",
-                detail: { InteropEntitlement.shared.isUnlocked ? "Unlocked" : nil }
-            ) { InteropPaywallViewController() },
             Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
             Category(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
             Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
@@ -92,8 +86,8 @@ final class SettingsViewController: NavHeaderTableController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // A purchase happens on the pushed paywall. Refresh its row when the
-        // user comes back so the shared entitlement is immediately visible.
+        // Detail values can change on pushed screens. Refresh rows when the
+        // user comes back so they are immediately visible.
         tableView.reloadData()
     }
 

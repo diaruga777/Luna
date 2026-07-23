@@ -4,8 +4,7 @@
 //
 
 import LunaReadingList
-import LunaInterop
-import LunaInteropUI
+import LunaIngest
 import LunaPriceUI
 import LunaReaderUI
 import LunaSocial
@@ -37,10 +36,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
     private var readingListObserver: NSObjectProtocol?
     private var wifiAvailableObserver: NSObjectProtocol?
-    /// Price trackers surface only in the Price Tracker app, so only that app
-    /// registers and schedules the price-refresh job (mail fetch stays universal).
-    /// Otherwise all three apps redundantly refresh the shared store's trackers.
-    private var schedulesPriceRefresh: Bool { AppSurfaceConfig.current == .priceTracker }
+    /// Price trackers surface only in product-handling apps (Price Tracker and
+    /// the central Luna app), so only those register and schedule the
+    /// price-refresh job (mail fetch stays universal). Otherwise every app
+    /// redundantly refreshes the shared store's trackers.
+    private var schedulesPriceRefresh: Bool { AppSurfaceConfig.current.handlesProducts }
 
     func application(
         _ application: UIApplication,
@@ -55,15 +55,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         InstalledAppMarkers.recordCurrentApp()
         // A completion written before a force-quit never received the normal
         // background callback. Promote it before constructing the Reader UI.
-        if AppSurfaceConfig.current == .reader {
+        if AppSurfaceConfig.current.handlesArticles {
             ReadingListStore.shared.archivePendingFinishedItems()
         }
-        // Cross-app interop purchase (claudedocs/interop-purchase.md): start the
-        // long-lived transaction listener, then sweep this app's current
-        // entitlements in case an update arrived while it was not running.
-        InteropPurchaseController.shared.listenForTransactions()
-        Task { await InteropPurchaseController.shared.checkCurrentEntitlements() }
-
         // Diagnostic-only: the account address just feeds a log line, so defer the
         // Keychain read off the launch frame (a just-rebooted device's Keychain
         // query can be slow).
@@ -79,17 +73,18 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
 
-        // Interop prompt for blocked / needs-install INTERACTIVE in-app saves
-        // (claudedocs/interop-purchase.md): LunaReadingList can't present UI, so
-        // the app shell installs the presenter (same injected-closure pattern as
-        // defaultSaveAsArticle above). Presents over whatever is frontmost;
-        // a successful inline unlock retries the blocked save via `retry`.
-        ReadingListIngestor.interopPromptPresenter = { kind, retry in
+        // Unsupported-kind error for dropped INTERACTIVE in-app saves:
+        // LunaReadingList can't present UI, so the app shell installs the
+        // presenter (same injected-closure pattern as defaultSaveAsArticle
+        // above). Presents over whatever is frontmost.
+        ReadingListIngestor.unsupportedSavePresenter = { owner in
             guard let presenter = Self.frontmostViewController() else { return }
-            let prompt = InteropPromptViewController(
-                kind: kind, context: .inApp, onUnlocked: retry)
-            let nav = UINavigationController(rootViewController: prompt)
-            presenter.present(nav, animated: true)
+            let alert = UIAlertController(
+                title: "Can't Save This Link",
+                message: SurfaceSupport.unsupportedMessage(owner: owner),
+                preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            presenter.present(alert, animated: true)
         }
 
         // Diagnostics export header shows the connected email account (which lives
@@ -116,11 +111,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // lazily) so a cold background relaunch from a lock-screen play command
         // can restore the persisted session. READER SURFACE ONLY — read-aloud
         // (the app-wide center, its background session, the window mini-player)
-        // belongs exclusively to Luna Reader; leaving `ReaderAudioLauncher.center`
-        // nil in the Downloader / Price Tracker apps keeps the shared readers on
-        // their legacy self-contained `SpeechController` path and guarantees the
-        // audio controls never appear there.
-        if AppSurfaceConfig.current == .reader {
+        // belongs exclusively to article-handling apps (Reader and the central
+        // Luna app); leaving `ReaderAudioLauncher.center` nil in the Downloader /
+        // Price Tracker apps keeps the shared readers on their legacy
+        // self-contained `SpeechController` path and guarantees the audio
+        // controls never appear there.
+        if AppSurfaceConfig.current.handlesArticles {
             AudioPlaybackWiring.install()
             // Phase 4 (trimming): opportunistic script-cache builder, wired
             // right after playback so its scriptProvider/scriptPrefetchHandler

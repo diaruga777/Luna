@@ -12,7 +12,7 @@
 
 import AppIntents
 import LunaIntents
-import LunaInterop
+import LunaModels
 import LunaStorage
 import LunaMediaDownload
 import Foundation
@@ -54,15 +54,15 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         case serviceUnavailable
         case nothingIdentifiable
         case notFound
-        /// Unpaid cross-surface save (`claudedocs/interop-purchase.md`) — the
-        /// item was discarded; the dialog names the owning app and the unlock.
-        case interopBlocked(message: String)
+        /// Foreign-kind save (`SurfaceSupport`) — the item was discarded; the
+        /// dialog carries the generic unsupported-kind explanation.
+        case unsupportedKind(message: String)
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .unsupportedApp:
                 return "Luna can't save from this app."
-            case .interopBlocked(let message):
+            case .unsupportedKind(let message):
                 return "\(message)"
             case .modelUnavailable:
                 // ITMS-90626: never mention Apple/Siri in intent-visible strings.
@@ -169,21 +169,16 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
 
         let savedURLString: String?
-        let needsInstallOwner: InteropSurface?
         switch outcome {
-        case let .completed(saved, installOwner):
+        case let .completed(saved):
             savedURLString = saved
-            needsInstallOwner = installOwner
         case .friendPromptRequested(let saved):
             savedURLString = saved
-            needsInstallOwner = nil
-        case let .blockedByInterop(owner, _):
-            // Unpaid cross-surface save: the item was discarded
-            // (claudedocs/interop-purchase.md) — the dialog names the owning
-            // app, the unlock, and the direct alternative.
-            throw SaveError.interopBlocked(
-                message: IntentIngestHelper.blockedDialogText(
-                    owner: owner, currentAppName: InteropSurface.current.displayName))
+        case let .unsupportedKind(owner):
+            // Foreign-kind save: the item was discarded — the dialog carries
+            // the generic unsupported-kind explanation.
+            throw SaveError.unsupportedKind(
+                message: IntentIngestHelper.unsupportedDialogText(owner: owner))
         }
         if let savedURLString {
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
@@ -205,15 +200,6 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             // Foreground Luna so the friend selector (pending prompt already
             // recorded) can appear.
             try? await requestToContinueInForeground()
-        }
-        if let needsInstallOwner {
-            // Paid cross-surface save with the owning app missing: the save
-            // SUCCEEDED (it's in the shared store) — mention the install.
-            return .result(
-                value: SaveResultEntity(media: media),
-                dialog: IntentDialog(stringLiteral:
-                    "Saved. Install \(needsInstallOwner.displayName) to see it there — "
-                    + "it's waiting in your shared Luna library."))
         }
         return .result(value: SaveResultEntity(media: media), dialog: "Saved to Luna.")
     }

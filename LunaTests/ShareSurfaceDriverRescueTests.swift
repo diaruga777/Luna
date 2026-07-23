@@ -6,7 +6,6 @@
 import LunaShareSurface
 import LunaStorage
 import LunaIngest
-import LunaInterop
 import LunaModels
 import UIKit
 import XCTest
@@ -50,7 +49,7 @@ final class ShareSurfaceDriverRescueTests: XCTestCase {
 
     func testActionExtensionFailedPresentsRescueCardAndMarksFailed() {
         let host = FakeHost(isActionExtension: true)
-        let driver = ShareSurfaceDriver(host: host, store: store, interopDecision: { _ in .allowed })
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
         let url = URL(string: "https://example.com/broken")!
         let item = store.add(urlString: url.absoluteString)
 
@@ -63,7 +62,7 @@ final class ShareSurfaceDriverRescueTests: XCTestCase {
 
     func testShareExtensionFailedCompletesSilentlyNoCard() {
         let host = FakeHost(isActionExtension: false)
-        let driver = ShareSurfaceDriver(host: host, store: store, interopDecision: { _ in .allowed })
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
         let url = URL(string: "https://example.com/broken")!
         let item = store.add(urlString: url.absoluteString)
 

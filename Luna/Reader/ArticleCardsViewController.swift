@@ -527,11 +527,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 let result = await ReadingListIngestor.shared.handleSavePress(
                     urlString: candidate.urlString, source: .paste)
                 switch result {
-                case .saved(let item), .savedNeedsOwnerInstall(let item, _),
+                case .saved(let item),
                      .sentToEreaders(let item), .sentToFriends(let item),
                      .friendPromptRequested(let item):
                     saved = item
-                case .ignored, .blockedByInterop:
+                case .ignored, .unsupportedKind:
                     saved = nil
                 }
             }

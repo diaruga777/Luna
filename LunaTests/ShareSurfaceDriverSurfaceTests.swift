@@ -1,10 +1,8 @@
 //
-//  ShareSurfaceDriverInteropTests.swift
+//  ShareSurfaceDriverSurfaceTests.swift
 //  LunaTests
 //
 
-import LunaInterop
-import LunaInteropUI
 import LunaIngest
 import LunaModels
 import LunaStorage
@@ -12,16 +10,15 @@ import UIKit
 import XCTest
 @testable import LunaShareSurface
 
-/// The cross-app-interop gate inside `ShareSurfaceDriver.present`
-/// (`claudedocs/interop-purchase.md`): a blocked cross-surface save deletes the
-/// pending row (and any copied document file) and presents the interop prompt;
-/// a paid save with the owning app missing saves as today and shows the install
-/// note where the flow would otherwise end silently; same-surface saves and
+/// The per-app content gate inside `ShareSurfaceDriver.present`
+/// (`SurfaceSupport`, replacing the old cross-app-purchase `InteropGate`): an
+/// unsupported cross-app save deletes the pending row (and any copied document
+/// file) and presents `UnsupportedSaveViewController`; a same-app outcome and
 /// `.failed` are byte-identical to today. Uses a fake host + scratch store —
 /// same seams the driver was built around (the real `NSExtensionContext` has
 /// none).
 @MainActor
-final class ShareSurfaceDriverInteropTests: XCTestCase {
+final class ShareSurfaceDriverSurfaceTests: XCTestCase {
 
     private final class FakeExtensionHost: ExtensionHost {
         var readerMode: ShareReaderViewController.Mode?
@@ -47,7 +44,7 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
     override func setUp() {
         super.setUp()
         tempDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ShareSurfaceDriverInteropTests-\(UUID().uuidString)")
+            .appendingPathComponent("ShareSurfaceDriverSurfaceTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         host = FakeExtensionHost()
@@ -58,52 +55,48 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
         super.tearDown()
     }
 
-    /// A driver whose gate inputs are pinned — no App Group reads.
-    private func makeDriver(
-        current: InteropSurface, unlocked: Bool, ownerInstalled: Bool
-    ) -> ShareSurfaceDriver {
+    /// A driver whose gate input (the running app) is pinned — no `Bundle.main` reads.
+    private func makeDriver(current: LunaApp) -> ShareSurfaceDriver {
         // `process` keeps its default — these tests drive `present` directly,
         // so the pipeline closure is never invoked.
         ShareSurfaceDriver(
             host: host,
             store: store,
-            interopDecision: { outcome in
-                InteropGate.evaluate(
-                    owner: outcome.interopOwner, current: current,
-                    isUnlocked: unlocked, isInstalled: { _ in ownerInstalled })
+            surfaceDecision: { outcome in
+                SurfaceSupport.evaluate(owner: outcome.owningApp, current: current)
             },
-            currentSurface: current)
+            currentApp: current)
     }
 
     /// A non-downloadable social URL (bluesky), so the share extension's
     /// non-textual flow takes its silent-terminal branch.
     private let socialURL = URL(string: "https://bsky.app/profile/someone/post/123")!
 
-    // MARK: - Blocked (unpaid cross-surface)
+    // MARK: - Unsupported (cross-app, single-content app)
 
-    func testBlockedSocialSaveDeletesPendingRowAndPresentsPrompt() {
+    func testUnsupportedSocialSaveDeletesPendingRowAndPresentsError() {
         _ = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .reader, unlocked: false, ownerInstalled: true)
+        let driver = makeDriver(current: .reader)
 
         driver.present(.social(.bluesky, itemID: "123"), url: socialURL)
 
         XCTAssertNil(store.item(forURLString: socialURL.absoluteString),
-                     "a blocked save must leave NOTHING in the store")
+                     "an unsupported save must leave NOTHING in the store")
         XCTAssertEqual(host.presented.count, 1)
-        let prompt = host.presented.first as? InteropPromptViewController
-        XCTAssertNotNil(prompt, "blocked saves present the interop prompt")
-        XCTAssertEqual(host.confirmedSaved, 0, "never a 'Saved' checkmark for a blocked save")
+        let error = host.presented.first as? UnsupportedSaveViewController
+        XCTAssertNotNil(error, "unsupported saves present the unsupported-kind error")
+        XCTAssertEqual(host.confirmedSaved, 0, "never a 'Saved' checkmark for an unsupported save")
         XCTAssertEqual(host.autoDownloads, [])
 
-        // Done on the prompt completes quietly.
-        prompt?.onDone?()
+        // Done on the error completes quietly.
+        error?.onDone?()
         XCTAssertEqual(host.completedSilently, 1)
     }
 
-    func testBlockedArticleDeletesRowBeforePersistingAnyContent() {
+    func testUnsupportedArticleDeletesRowBeforePersistingAnyContent() {
         let url = URL(string: "https://example.com/story")!
         _ = store.add(urlString: url.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .downloader, unlocked: false, ownerInstalled: false)
+        let driver = makeDriver(current: .downloader)
 
         let content = ArticleContent(title: "Story", blocks: [
             .init(kind: .paragraph, text: "Body text.", links: []),
@@ -111,11 +104,11 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
         driver.present(.article(content, html: "<html></html>"), url: url)
 
         XCTAssertNil(store.item(forURLString: url.absoluteString))
-        XCTAssertTrue(host.presented.first is InteropPromptViewController)
-        XCTAssertEqual(host.completedSilently, 0, "waits for the prompt's Done")
+        XCTAssertTrue(host.presented.first is UnsupportedSaveViewController)
+        XCTAssertEqual(host.completedSilently, 0, "waits for the error card's Done")
     }
 
-    func testBlockedDocumentDeletesRowAndCopiedSourceFile() {
+    func testUnsupportedDocumentDeletesRowAndCopiedSourceFile() {
         let item = ReadingListItem(
             seed: "doc", urlString: "lunadoc://ABC", title: "Report",
             dateAdded: Date(), state: .pending, documentType: "pdf",
@@ -125,16 +118,16 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
             .appendingPathComponent("\(item.id.uuidString)-source.pdf")
         try? Data("pdf-bytes".utf8).write(to: sourceFile)
 
-        let driver = makeDriver(current: .priceTracker, unlocked: false, ownerInstalled: false)
+        let driver = makeDriver(current: .priceTracker)
         driver.present(.document(type: "pdf"), url: URL(string: "lunadoc://ABC")!)
 
         XCTAssertNil(store.item(forURLString: "lunadoc://ABC"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceFile.path),
                        "the copied document file must be cleaned up with the row")
-        XCTAssertTrue(host.presented.first is InteropPromptViewController)
+        XCTAssertTrue(host.presented.first is UnsupportedSaveViewController)
     }
 
-    func testBlockedResolvedWrapperDoesNotDeletePreexistingCanonicalItem() async {
+    func testUnsupportedResolvedWrapperDoesNotDeletePreexistingCanonicalItem() async {
         let wrapperURL = URL(string: "https://example.com/redirect?id=123")!
         let canonicalURL = URL(string: "https://bsky.app/profile/someone/post/123")!
         let existing = store.add(urlString: canonicalURL.absoluteString, source: .manual)
@@ -147,25 +140,25 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
                     url: canonicalURL,
                     outcome: .social(.bluesky, itemID: "123"))
             },
-            interopDecision: { _ in
-                .blocked(owner: .downloader, ownerInstalled: true)
+            surfaceDecision: { _ in
+                .unsupported(owner: .downloader)
             },
-            currentSurface: .reader)
+            currentApp: .reader)
 
         await driver.ingestAndPresent(originalURL: wrapperURL)
 
         XCTAssertNil(store.item(forURLString: wrapperURL.absoluteString),
                      "wrapper placeholder is removed by canonical dedup")
         XCTAssertEqual(store.item(forURLString: canonicalURL.absoluteString)?.id, existing.id,
-                       "blocked cleanup must preserve the older canonical save")
-        XCTAssertTrue(host.presented.first is InteropPromptViewController)
+                       "unsupported cleanup must preserve the older canonical save")
+        XCTAssertTrue(host.presented.first is UnsupportedSaveViewController)
     }
 
-    // MARK: - Same-surface / paid — byte-identical to today
+    // MARK: - Same-app outcome — byte-identical to today
 
-    func testSameSurfaceUnpaidSaveIsUntouched() {
+    func testSameAppSaveIsUntouched() {
         _ = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .downloader, unlocked: false, ownerInstalled: false)
+        let driver = makeDriver(current: .downloader)
 
         driver.present(.social(.bluesky, itemID: "123"), url: socialURL)
 
@@ -174,12 +167,12 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
         XCTAssertEqual(saved?.platform, .bluesky, "platform metadata persisted as today")
         XCTAssertEqual(host.autoDownloads, [socialURL.absoluteString],
                        "silent terminal exactly as today")
-        XCTAssertTrue(host.presented.isEmpty, "no prompt for a same-surface save")
+        XCTAssertTrue(host.presented.isEmpty, "no error card for a same-app save")
     }
 
-    func testCrossSurfacePaidWithOwnerInstalledIsUntouched() {
+    func testCentralLunaAppProcessesEveryKind() {
         _ = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .reader, unlocked: true, ownerInstalled: true)
+        let driver = makeDriver(current: .luna)
 
         driver.present(.social(.bluesky, itemID: "123"), url: socialURL)
 
@@ -188,47 +181,12 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
         XCTAssertTrue(host.presented.isEmpty)
     }
 
-    // MARK: - Paid, owner uninstalled — save proceeds + install note
-
-    func testCrossSurfacePaidOwnerUninstalledSavesAndShowsInstallNote() {
-        _ = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .reader, unlocked: true, ownerInstalled: false)
-
-        driver.present(.social(.bluesky, itemID: "123"), url: socialURL)
-
-        let saved = store.item(forURLString: socialURL.absoluteString)
-        XCTAssertNotNil(saved, "a paid cross-surface save always persists")
-        XCTAssertEqual(saved?.platform, .bluesky)
-        let prompt = host.presented.first as? InteropPromptViewController
-        XCTAssertNotNil(prompt, "install note replaces the silent terminal")
-
-        // Done on the install note confirms the (real) save.
-        prompt?.onDone?()
-        XCTAssertEqual(host.confirmedSaved, 1)
-        XCTAssertEqual(host.completedSilently, 0)
-    }
-
-    func testPaidOwnerUninstalledArticleInShareExtensionShowsInstallNoteAfterPersisting() {
-        let url = URL(string: "https://example.com/story")!
-        _ = store.add(urlString: url.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .downloader, unlocked: true, ownerInstalled: false)
-
-        let content = ArticleContent(title: "Story", blocks: [
-            .init(kind: .paragraph, text: "Body text.", links: []),
-        ])
-        driver.present(.article(content, html: ""), url: url)
-
-        XCTAssertNotNil(store.item(forURLString: url.absoluteString))
-        XCTAssertTrue(host.presented.first is InteropPromptViewController)
-        XCTAssertEqual(host.completedSilently, 0, "the prompt replaces completeSilently")
-    }
-
     // MARK: - .failed is never gated
 
     func testFailedOutcomeIsNeverGated() {
         let url = URL(string: "https://example.com/broken")!
         let item = store.add(urlString: url.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .reader, unlocked: false, ownerInstalled: false)
+        let driver = makeDriver(current: .reader)
 
         driver.present(.failed, url: url)
 

@@ -258,8 +258,12 @@ their legacy per-platform Photos auto-save controls.
   resolver/downloader/Photo-library protocols.
 - `SocialMediaResolver.swift` dispatches to pure parsers for X, Instagram, TikTok, and
   Facebook. X uses fxtwitter JSON; TikTok parses hydration/reflow JSON; Instagram prefers
-  embed `contextJSON`; Facebook prefers playable URLs in browser-page JSON. Instagram and
-  Facebook fall back to Open Graph media. TikTok media requests set its required Referer.
+  embed `contextJSON`; Facebook prefers playable URLs in browser-page JSON. Facebook share
+  tracking is removed before every resolution stage (`v` is retained for `/watch/` identity),
+  because tracked and stable permalinks can receive different logged-out response shapes.
+  Its final crawler response is parsed for both inline `browser_native_*_url` JSON and Open
+  Graph video rather than assuming crawler pages contain `og:video`. TikTok media requests
+  set its required Referer.
 - `YouTubeMediaResolver.swift` normalizes the YouTube URL family, expands clips, parses player
   responses, and selects direct progressive MP4 media.
 - `MediaDownloadPreflight.swift` owns size, 100 MiB intent, and storage-reserve policy;
@@ -269,12 +273,13 @@ their legacy per-platform Photos auto-save controls.
   video in memory.
 - `LiveMediaDownloadManager.swift` implements the equivalent background-transfer path.
   Its Facebook resolver follows the extension resolver's plugin-embed-first sequence,
-  then falls back through the desktop page, mobile page, and any canonical video page;
+  then falls back through the desktop page, mobile page, any canonical video page, and the
+  crawler page;
   this is important because logged-out `/reel/` pages commonly return HTTP 400 to the
   desktop request. Facebook resolver requests bypass cookies and cached responses so a
-  prior consent/login wall cannot mask a public reel; the mobile fallback accepts Open
-  Graph video tags regardless of attribute order or whether Facebook uses `property` or
-  `name`.
+  prior consent/login wall cannot mask a public reel. The mobile and crawler fallbacks accept
+  video metadata regardless of attribute order or whether Facebook uses inline JSON,
+  `property`, or `name`.
 - `SavedMediaStore.swift` owns `savedMedia.json`, the three-state model, legacy decoding,
   local files/thumbnails, retention, and crash recovery.
 - `PhotoLibrarySaver.swift` requests authorization, creates `.photo`/`.video` resources

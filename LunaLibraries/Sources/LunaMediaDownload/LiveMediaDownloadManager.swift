@@ -821,6 +821,7 @@ public final class LiveMediaDownloadManager: NSObject {
         case facebookDesktop
         case facebookMobile
         case facebookCanonical
+        case facebookCrawler
         case facebook
         case facebookShort
         case reddit
@@ -855,12 +856,10 @@ public final class LiveMediaDownloadManager: NSObject {
             // Facebook's logged-out reel page commonly returns HTTP 400 or a poster-only
             // login wall, while the video plugin exposes the playable hd_src/sd_src MP4.
             // Keep the stage in resolveKind so a persisted background job can fall
-            // through the desktop and mobile pages below (`startNextFacebookResolve`)
-            // the same way that function does. The two are hand-mirrored, not shared:
-            // `SocialMediaResolver.resolveFacebook` is a linear async function with a
-            // fourth (og-unfurl) fallback stage this resumable engine has no room for,
-            // while this engine re-derives the same plugin→desktop→mobile ordering as a
-            // persisted, restartable state machine so it can survive process death.
+            // through the desktop, mobile, canonical, and crawler pages below
+            // (`startNextFacebookResolve`) the same way that function does. The two are
+            // hand-mirrored because this engine persists each stage so it can survive
+            // process death, while `SocialMediaResolver.resolveFacebook` is linear async.
             // Whoever changes one function's stage order must update the other to match.
             guard let pluginURL = SocialMediaResolver.facebookVideoPluginURL(for: url)
             else { return nil }
@@ -920,6 +919,7 @@ public final class LiveMediaDownloadManager: NSObject {
             return InstagramMediaParser.assetsFromEmbedContextJSON(html).first
                 ?? InstagramMediaParser.assets(fromHTML: html).first
         case .facebookPlugin, .facebookDesktop, .facebookMobile, .facebookCanonical,
+             .facebookCrawler,
              .facebook, .facebookShort:
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return FacebookMediaParser.assets(fromHTML: html).first
@@ -1255,29 +1255,32 @@ public final class LiveMediaDownloadManager: NSObject {
 
     /// Advances the durable Facebook resolver through the same useful sources as
     /// `SocialMediaResolver.resolveFacebook`: plugin embed → desktop page → mobile
-    /// page → desktop canonical page. Returns true after starting the next
-    /// background task. Hand-mirrored against that function, not shared code — see
-    /// the comment on `resolveRequest`'s `.facebook` case for why (it has a fourth,
-    /// og-unfurl fallback stage this resumable engine skips). Whoever changes
-    /// either function's stage order must update the other to match.
+    /// page → desktop canonical page (when distinct) → crawler page. Returns true
+    /// after starting the next background task. Hand-mirrored against that function,
+    /// not shared code — see the comment on `resolveRequest`'s `.facebook` case.
     private func startNextFacebookResolve(
         after persistedJob: LiveMediaDownloadJob, data: Data?
     ) -> Bool {
         guard let sourceURL = URL(string: persistedJob.sourceURLString) else { return false }
+        let resolutionURL = SocialMediaResolver.facebookResolutionURL(for: sourceURL)
 
         let next: (url: URL, kind: ResolveKind, userAgent: String)?
         switch persistedJob.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
         case .facebookPlugin:
-            next = (sourceURL, .facebookDesktop, MediaDownloadHTTP.desktopBrowserUserAgent)
+            next = (resolutionURL, .facebookDesktop, MediaDownloadHTTP.desktopBrowserUserAgent)
         case .facebookDesktop, .facebook:
-            next = (sourceURL, .facebookMobile, MediaDownloadHTTP.browserUserAgent)
+            next = (resolutionURL, .facebookMobile, MediaDownloadHTTP.browserUserAgent)
         case .facebookMobile, .facebookShort:
-            guard let data,
-                  let html = String(data: data, encoding: .utf8),
-                  let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
-                  canonical.absoluteString != sourceURL.absoluteString
-            else { return false }
-            next = (canonical, .facebookCanonical, MediaDownloadHTTP.desktopBrowserUserAgent)
+            if let data,
+               let html = String(data: data, encoding: .utf8),
+               let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
+               canonical.absoluteString != resolutionURL.absoluteString {
+                next = (canonical, .facebookCanonical, MediaDownloadHTTP.desktopBrowserUserAgent)
+            } else {
+                next = (resolutionURL, .facebookCrawler, MediaDownloadHTTP.facebookCrawlerUserAgent)
+            }
+        case .facebookCanonical:
+            next = (resolutionURL, .facebookCrawler, MediaDownloadHTTP.facebookCrawlerUserAgent)
         default:
             return false
         }

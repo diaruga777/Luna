@@ -86,6 +86,58 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertEqual(href, "https://www.facebook.com/reel/1661338298308685/")
     }
 
+    func testFacebookResolutionURLDropsShareTrackingButPreservesWatchIdentity() throws {
+        let trackedReel = try XCTUnwrap(URL(string:
+            "https://www.facebook.com/reel/1816111149377525/?fs=e&mibextid=wwXIfr&fs=e"))
+        XCTAssertEqual(
+            SocialMediaResolver.facebookResolutionURL(for: trackedReel).absoluteString,
+            "https://www.facebook.com/reel/1816111149377525/")
+
+        let trackedWatch = try XCTUnwrap(URL(string:
+            "https://www.facebook.com/watch/?v=3928133123988446&mibextid=wwXIfr&fs=e"))
+        XCTAssertEqual(
+            SocialMediaResolver.facebookResolutionURL(for: trackedWatch).absoluteString,
+            "https://www.facebook.com/watch/?v=3928133123988446")
+
+        let shortLink = try XCTUnwrap(URL(string:
+            "https://fb.watch/IerlpQvlv-/?mibextid=wwXIfr"))
+        XCTAssertEqual(
+            SocialMediaResolver.facebookResolutionURL(for: shortLink).absoluteString,
+            "https://fb.watch/IerlpQvlv-/")
+    }
+
+    func testTrackedFacebookReelsResolveFromCrawlerInlineJSON() async throws {
+        let reportedURLs = [
+            "https://www.facebook.com/reel/1816111149377525/?fs=e&mibextid=wwXIfr&fs=e",
+            "https://www.facebook.com/reel/1351648773689048/?fs=e&mibextid=wwXIfr&fs=e",
+        ]
+
+        for rawURL in reportedURLs {
+            let source = try XCTUnwrap(URL(string: rawURL))
+            var crawlerURL: URL?
+            let resolver = SocialMediaResolver { request in
+                guard request.value(forHTTPHeaderField: "User-Agent")
+                        == MediaDownloadHTTP.facebookCrawlerUserAgent else {
+                    return Data("<html>metadata-free Facebook shell</html>".utf8)
+                }
+                crawlerURL = request.url
+                return Data(#"{"browser_native_hd_url":"https:\/\/video.example.com\/reel.mp4?x=1\u0026y=2"}"#.utf8)
+            }
+
+            let assets = await resolver.resolveAssets(for: source)
+
+            XCTAssertEqual(assets, [
+                MediaAsset(
+                    url: URL(string: "https://video.example.com/reel.mp4?x=1&y=2")!,
+                    kind: .video),
+            ], rawURL)
+            XCTAssertEqual(
+                crawlerURL?.absoluteString,
+                "https://www.facebook.com/reel/\(PlatformRecognizer.recognize(rawURL)!.itemID!)/",
+                rawURL)
+        }
+    }
+
     func testFacebookWatchShortLinkResolvesCanonicalLongPageThenVideo() async {
         // When the plugin embed can't resolve a short link and the desktop page 400s,
         // the fb.watch mobile page still exposes the canonical long-form video URL;

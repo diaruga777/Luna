@@ -97,11 +97,18 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// full page and finally the og-unfurl tags. Best-effort: private/removed posts
     /// expose no asset and the caller keeps the saved link usable.
     private func resolveFacebook(url: URL) async -> [MediaAsset] {
+        // Facebook changes its logged-out response when app-share tracking parameters
+        // are present: the same public reel permalink exposes video metadata, while
+        // `?fs=…&mibextid=…` can produce a metadata-free shell. Resolve every stage
+        // against the stable content identity, retaining only `v` when that query item
+        // is the identity (`/watch/?v=…`).
+        let resolutionURL = Self.facebookResolutionURL(for: url)
+
         // Video plugin embed: the most reliable keyless source. Returns HD `hd_src`
         // even when the logged-out reel/video page is a login wall, and works straight
         // from a `/reel/` URL. Needs the DESKTOP UA (the mobile UA gets a sourceless
         // page).
-        if let embed = Self.facebookVideoPluginURL(for: url),
+        if let embed = Self.facebookVideoPluginURL(for: resolutionURL),
            let data = await fetch(facebookVideoPageRequest(embed)),
            let html = String(data: data, encoding: .utf8) {
             let assets = FacebookMediaParser.assets(fromHTML: html)
@@ -110,7 +117,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
 
         // Desktop browser page: carries the playable video URL in inline JSON.
         // Facebook's mobile logged-out page often exposes only `og:image`.
-        if let data = await fetch(facebookVideoPageRequest(url)),
+        if let data = await fetch(facebookVideoPageRequest(resolutionURL)),
            let html = String(data: data, encoding: .utf8) {
             let assets = FacebookMediaParser.assets(fromHTML: html)
             if !assets.isEmpty { return assets }
@@ -125,10 +132,10 @@ public struct SocialMediaResolver: SocialMediaResolving {
         // reels this og:video fallback is the only asset — without it they resolved
         // to "no media" even though the video was right there on the page.
         if let data = await fetch(Self.facebookPageRequest(
-            url, userAgent: MediaDownloadHTTP.browserUserAgent)),
+            resolutionURL, userAgent: MediaDownloadHTTP.browserUserAgent)),
            let html = String(data: data, encoding: .utf8) {
             if let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
-               canonical.absoluteString != url.absoluteString,
+               canonical.absoluteString != resolutionURL.absoluteString,
                let canonicalData = await fetch(facebookVideoPageRequest(canonical)),
                let canonicalHTML = String(data: canonicalData, encoding: .utf8) {
                 let assets = FacebookMediaParser.assets(fromHTML: canonicalHTML)
@@ -138,20 +145,14 @@ public struct SocialMediaResolver: SocialMediaResolving {
             if !assets.isEmpty { return assets }
         }
 
-        // Fallback: the og-unfurl view (`facebookexternalhit`) only when it exposes
-        // a real video. Facebook video permalinks commonly expose their poster as
-        // `og:image`; saving that still would turn a video download into an image.
+        // Final logged-out fallback: `facebookexternalhit` often omits `og:video`
+        // entirely but includes `browser_native_hd_url` / `browser_native_sd_url` in
+        // its inline JSON. Run the same video-only parser used by every earlier stage;
+        // it deliberately ignores poster-only `og:image` metadata.
         guard let data = await fetch(Self.facebookPageRequest(
-            url, userAgent: MediaDownloadHTTP.facebookCrawlerUserAgent)),
+            resolutionURL, userAgent: MediaDownloadHTTP.facebookCrawlerUserAgent)),
               let html = String(data: data, encoding: .utf8) else { return [] }
-        if let videoURL = OpenGraphMediaParser.content(named: "og:video", in: html)
-            ?? OpenGraphMediaParser.content(named: "og:video:secure_url", in: html),
-           let url = URL(string: videoURL) {
-            let poster = OpenGraphMediaParser.content(named: "og:image", in: html)
-                .flatMap(URL.init(string:))
-            return [MediaAsset(url: url, kind: .video, thumbnailURL: poster)]
-        }
-        return []
+        return FacebookMediaParser.assets(fromHTML: html)
     }
 
     /// Reddit's public, subreddit-agnostic listing endpoint (`/comments/<id>.json`)
@@ -212,14 +213,22 @@ public struct SocialMediaResolver: SocialMediaResolving {
         return request
     }
 
-    /// The `/plugins/video.php?href=<url>` embed URL for a Facebook video/reel. The
-    /// tracking query (`?fs=…&mibextid=…`) is dropped so `href` is the clean permalink
-    /// the plugin recognizes. Returns nil only if the URL can't be recomposed.
+    /// Stable Facebook content URL used by every resolver stage. Path-addressed
+    /// permalinks and `fb.watch` short links need no query. `/watch/?v=<id>` retains
+    /// only `v`, since it is content identity rather than share tracking.
+    static func facebookResolutionURL(for url: URL) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return url }
+        let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value
+        components.queryItems = videoID.map { [URLQueryItem(name: "v", value: $0)] }
+        components.fragment = nil
+        return components.url ?? url
+    }
+
+    /// The `/plugins/video.php?href=<url>` embed URL for a Facebook video/reel.
+    /// Returns nil only if the URL can't be recomposed.
     static func facebookVideoPluginURL(for url: URL) -> URL? {
-        guard var clean = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-        clean.query = nil
-        clean.fragment = nil
-        guard let href = clean.url?.absoluteString else { return nil }
+        let href = facebookResolutionURL(for: url).absoluteString
         var plugin = URLComponents(string: "https://www.facebook.com/plugins/video.php")
         plugin?.queryItems = [URLQueryItem(name: "href", value: href)]
         return plugin?.url

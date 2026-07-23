@@ -37,6 +37,7 @@ enum UITestScreen: String, CaseIterable {
     case readerScroll
     case readerHighlight
     case readerRSVP
+    case readerOriginal
     case readerInlineHeader
     case readerNested
 
@@ -93,6 +94,17 @@ enum UITestScreenBuilder {
             return UINavigationController(rootViewController: reader(forceMode: .highlight))
         case .readerRSVP:
             return UINavigationController(rootViewController: reader(forceMode: .rsvp))
+        case .readerOriginal:
+            let store = ReadingListStore.shared
+            guard let item = store.items().first(where: {
+                $0.state == .ready && $0.canHaveOriginalArchive
+            }), let content = store.content(for: item) else {
+                return UINavigationController(rootViewController: ReadingListViewController())
+            }
+            let reader = ReaderViewController(
+                item: item, content: content, forceMode: .original,
+                persistsModePreference: false, marksOpenedOnLoad: false)
+            return UINavigationController(rootViewController: reader)
         case .readerInlineHeader:
             let reader = ReaderViewController(
                 item: fixtureItem, content: fixtureContent, forceMode: .scroll,

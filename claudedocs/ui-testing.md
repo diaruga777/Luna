@@ -64,7 +64,7 @@ automatically if no `-uiTestState` given). `UITestScreenBuilder` builds that scr
 (or presents it over a host) as the window root using the **same construction seams
 the snapshot tests use**. Cases: `friends`, `friendDetail`, `settings`,
 `priceTrackingEditor`, `readerScroll`/`readerHighlight`/`readerRSVP`/
-`readerNested`/
+`readerOriginal`/`readerInlineHeader`/`readerNested`/
 `shareMediaPlatform`. Share/action-extension screens are hosted in-app (the
 real share sheet can't be driven on a simulator).
 

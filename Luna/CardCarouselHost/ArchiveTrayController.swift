@@ -60,6 +60,13 @@ final class ArchiveArcLayout: UICollectionViewLayout {
             y += height + spacing
         }
         contentHeight = arcCenters.isEmpty ? 0 : y - spacing + bottomInset
+        // Content shorter than the viewport centers on the apex. Pinned to the
+        // top it would ride the arc's upper sweep, drifting right — away from
+        // the screen edge whose closed-state peek depends on it.
+        let centering = (collectionView.bounds.height - contentHeight) / 2
+        if centering > 0 {
+            arcCenters = arcCenters.map { $0 + centering }
+        }
     }
 
     override var collectionViewContentSize: CGSize {

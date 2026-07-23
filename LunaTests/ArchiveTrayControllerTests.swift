@@ -285,6 +285,17 @@ final class ArchiveArcLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testShortContentCentersOnTheApex() throws {
+        let fixture = ArcFixture(count: 2)
+        let cell = try fixture.attributes(at: 1)
+        // Header + one cell pinned to the top would ride the arc's upper
+        // sweep, drifting right off the screen edge; centered, the lone cell
+        // sits near the apex — essentially untilted and leftmost.
+        XCTAssertEqual(cell.center.y, 400, accuracy: 30)
+        XCTAssertLessThan(abs(rotation(of: cell)), 0.05)
+    }
+
+    @MainActor
     func testFirstItemUsesTheHeaderHeight() throws {
         let fixture = ArcFixture(count: 3)
         let header = try fixture.attributes(at: 0)

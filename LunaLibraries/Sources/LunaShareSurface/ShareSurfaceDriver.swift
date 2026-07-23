@@ -154,11 +154,11 @@ public final class ShareSurfaceDriver {
 
         case let .video(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(.platform(platform, itemID: itemID), url: url, installNote: installNote)
+            presentNonTextual(url: url, installNote: installNote)
 
         case let .social(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(.platform(platform, itemID: itemID), url: url, installNote: installNote)
+            presentNonTextual(url: url, installNote: installNote)
 
         case .document:
             if host.readerMode != nil {
@@ -309,12 +309,12 @@ public final class ShareSurfaceDriver {
     /// ending (the item is saved either way; `autoDownloadThenComplete` is a
     /// checkmark-only no-op for a non-downloadable URL, so nothing is lost).
     private func presentNonTextual(
-        _ content: NonTextualContent, url: URL, installNote: InteropPromptKind? = nil
+        url: URL, installNote: InteropPromptKind? = nil
     ) {
         guard let host else { return }
         if host.readerMode != nil || MediaDownloadablePlatform.supports(url.absoluteString) {
             let saved = SavedNonTextualViewController(
-                articleURLString: url.absoluteString, content: content) { [weak host] in
+                articleURLString: url.absoluteString) { [weak host] in
                 host?.confirmSavedThenComplete()
             }
             host.presentModally(saved)

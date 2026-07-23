@@ -129,8 +129,7 @@ enum UITestScreenBuilder {
 
         case .shareMediaPlatform:
             let screen = SavedNonTextualViewController(
-                articleURLString: "https://x.com/user/status/123",
-                content: .platform(.x, itemID: "123"), onDone: {})
+                articleURLString: "https://x.com/user/status/123", onDone: {})
             return UINavigationController(rootViewController: screen)
 
         }

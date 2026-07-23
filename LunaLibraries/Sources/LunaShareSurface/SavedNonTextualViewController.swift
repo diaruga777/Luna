@@ -6,8 +6,6 @@
 import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
-import LunaURLClassification
-import LunaModels
 import AVKit
 import CoreMedia
 import Photos
@@ -30,7 +28,6 @@ import UIKit
 public final class SavedNonTextualViewController: UIViewController {
 
     private let articleURLString: String
-    private let content: NonTextualContent
     private let onDone: () -> Void
 
     private let savedLabel = UILabel()
@@ -97,9 +94,8 @@ public final class SavedNonTextualViewController: UIViewController {
     private var isDeleting = false
     private var libraryPersistenceTask: Task<String?, Never>?
 
-    public init(articleURLString: String, content: NonTextualContent, onDone: @escaping () -> Void) {
+    public init(articleURLString: String, onDone: @escaping () -> Void) {
         self.articleURLString = articleURLString
-        self.content = content
         self.onDone = onDone
         super.init(nibName: nil, bundle: nil)
     }
@@ -135,17 +131,11 @@ public final class SavedNonTextualViewController: UIViewController {
         savedLabel.textAlignment = .center
         savedLabel.numberOfLines = 0
 
-        // A video shows a static poster + play button, never an autoplaying
-        // player; other platforms show the confirmation badge.
-        let topView: UIView
-        if let posterURL = content.staticPreviewImageURL {
-            topView = makeVideoPoster(thumbnailURL: posterURL)
-        } else {
-            topView = badge
-        }
-
         // Confirmation + download controls sit at the TOP.
-        let topStack = UIStackView(arrangedSubviews: [topView, savedLabel] + mediaDownloadViews())
+        // All platforms use the same confirmation header. Downloadable media,
+        // including YouTube videos, renders only in the extension playback area
+        // below so there is one resolver, one preview, and one set of controls.
+        let topStack = UIStackView(arrangedSubviews: [badge, savedLabel] + mediaDownloadViews())
         topStack.axis = .vertical
         topStack.spacing = 16
         topStack.setCustomSpacing(24, after: savedLabel)
@@ -923,39 +913,4 @@ public final class SavedNonTextualViewController: UIViewController {
         ])
     }
 
-    /// A static 16:9 video poster (loaded from `thumbnailURL`) with a system-style
-    /// play button — shown instead of an autoplaying embed.
-    private func makeVideoPoster(thumbnailURL: URL) -> UIView {
-        let container = UIView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-
-        let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFill
-        imageView.clipsToBounds = true
-        imageView.backgroundColor = .black
-        imageView.layer.cornerRadius = 12
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(imageView)
-
-        let playBadge = UIView()
-        playBadge.isUserInteractionEnabled = false
-        playBadge.translatesAutoresizingMaskIntoConstraints = false
-        Self.styleAsSystemPlayButton(playBadge, diameter: 60)
-        container.addSubview(playBadge)
-
-        NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: container.topAnchor),
-            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor, multiplier: 9.0 / 16.0),
-            playBadge.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            playBadge.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-        ])
-        Task { [weak imageView] in
-            let image = await MediaPreviewFetcher.image(from: thumbnailURL, maxPixelSize: 1280)
-            await MainActor.run { imageView?.image = image }
-        }
-        return container
-    }
 }

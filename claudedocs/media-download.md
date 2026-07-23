@@ -129,6 +129,10 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   changes and the one-hour deadline delete an uncommitted file.
 - **Share and action extensions** — `SavedNonTextualViewController` retains its inline
   preview state machine (`pending`, `downloading`, `ready`, `alreadyDownloaded`, `failed`).
+  Video/social links arrive through the same shared `IngestPipeline` outcomes and media
+  resolver as every other ingestion context; YouTube has no extension-only embed or
+  URL-derived poster path. Once resolved, media renders only in the extension preview
+  area with the extension's Download, Share, Save to Photos, and Delete controls.
   Before deciding to auto-download or wait for a tap, it checks
   `SavedMediaStore.existingDownloadedItem(forURLString:)`; a duplicate link renders
   directly from the existing local file or Photos asset (`alreadyDownloaded`) with no

@@ -65,8 +65,8 @@ public struct PlatformRule {
 /// surface (ingest, paste, share/action extensions, intents, friend receive).
 /// Pure: no network, no UIKit — compiles in extensions. This is the ONE place
 /// URL → platform rules live; every caller (`PlatformRegistry.detect`,
-/// `NonTextualContent.detect`, `BypassGate`, the media-download path,
-/// `PasteboardSuggester`) recognizes through this single table.
+/// `BypassGate`, the media-download path, `PasteboardSuggester`) recognizes
+/// through this single table.
 public enum PlatformRecognizer {
 
     /// EXTEND HERE: add a platform by appending one rule. Order matters only when

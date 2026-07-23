@@ -143,6 +143,31 @@ final class ShareSurfaceDriverTests: XCTestCase {
         XCTAssertNil(host.autoDownloadedURL)
     }
 
+    /// YouTube is not a special extension embed/poster case. It follows the same
+    /// shared video outcome into the extension's normal media playback controls.
+    func testBothExtensionsPresentStandardDownloadUIForYouTubeVideo() {
+        let urlString = "https://youtu.be/dQw4w9WgXcQ?t=30"
+
+        for isActionExtension in [false, true] {
+            if let existing = store.item(forURLString: urlString) {
+                store.delete(existing)
+            }
+            _ = store.add(urlString: urlString)
+            let (driver, host) = makeDriver(isActionExtension: isActionExtension)
+
+            driver.present(
+                .video(.youtube, itemID: "dQw4w9WgXcQ"),
+                url: url(urlString))
+
+            let saved = store.item(forURLString: urlString)
+            XCTAssertEqual(saved?.contentPlatform, .youtube)
+            XCTAssertEqual(saved?.platformItemID, "dQw4w9WgXcQ")
+            XCTAssertTrue(host.presented.first is SavedNonTextualViewController)
+            XCTAssertFalse(host.presented.contains { $0 is ShareReaderViewController })
+            XCTAssertNil(host.autoDownloadedURL)
+        }
+    }
+
     /// The action extension shows the saved-non-textual screen for a video (the reader
     /// VC must never see a video) AND persists the classification.
     func testActionExtensionVideoShowsSavedNonTextualAndPersists() {

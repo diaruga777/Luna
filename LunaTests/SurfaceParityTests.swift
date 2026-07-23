@@ -155,6 +155,11 @@ final class SurfaceParityTests: XCTestCase {
             Link(name: "tiktok",
                  url: "https://www.tiktok.com/@u/video/7212345678901234567",
                  fixtures: [:], expectedExtensionActionIntent: .nonTextual),
+            // YouTube uses the same shared `.video` outcome and the same extension
+            // non-textual playback surface as every other downloadable video.
+            Link(name: "youtube",
+                 url: "https://youtu.be/dQw4w9WgXcQ?t=30",
+                 fixtures: [:], expectedExtensionActionIntent: .nonTextual),
             Link(name: "instagram",
                  url: "https://www.instagram.com/reel/Cx/",
                  fixtures: [:],

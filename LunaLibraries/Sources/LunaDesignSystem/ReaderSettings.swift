@@ -5,7 +5,7 @@
 
 import LunaAppConfig
 import LunaModels
-import Foundation
+import UIKit
 
 /// RSVP speed-reader display granularity: one word at a time, or whole phrases.
 public enum RSVPDisplayMode: String {
@@ -22,6 +22,7 @@ public enum ReaderSettings {
     private static let wpmKey = "rsvpBaseWPM"
     private static let fontScaleKey = "readerFontScale"
     private static let serifKey = "readerSerifFont"
+    private static let fontKey = "readerFont"
     private static let readingTimeKey = "showReadingTime"
     private static let progressKey = "showReadingProgress"
     private static let lastReaderModeKey = "lastReaderMode"
@@ -102,10 +103,39 @@ public enum ReaderSettings {
         set { defaults.set(newValue, forKey: fontScaleKey) }
     }
 
-    /// Serif (New York-style) vs sans-serif reader type.
+    /// The system Dynamic Type scale (1.0 at the default Large category),
+    /// clamped so the largest accessibility sizes still fit the reader layout —
+    /// the card column is narrow, and an unclamped 3× body size would leave
+    /// only a couple of words per line.
+    public static var systemTypeScale: Double {
+        let scaled = UIFontMetrics(forTextStyle: .body).scaledValue(for: 100)
+        return min(max(Double(scaled) / 100, 0.85), 1.6)
+    }
+
+    /// The scale reader text actually renders at: the manual size choice
+    /// multiplied by the clamped system accessibility scale.
+    public static var effectiveFontScale: Double {
+        fontScale * systemTypeScale
+    }
+
+    /// Legacy serif (New York) vs sans toggle — superseded by `font`, kept
+    /// only so `font` can honor a choice made before the typeface list existed.
     public static var useSerifFont: Bool {
         get { (defaults.object(forKey: serifKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: serifKey) }
+    }
+
+    /// The reader typeface. Readers who set the old serif toggle keep their
+    /// look until they pick from the new list.
+    public static var font: ReaderFont {
+        get {
+            if let stored = defaults.string(forKey: fontKey),
+               let font = ReaderFont(rawValue: stored) {
+                return font
+            }
+            return useSerifFont ? .newYork : .system
+        }
+        set { defaults.set(newValue.rawValue, forKey: fontKey) }
     }
 
     /// Show estimated reading time in the list (Pocket-style).

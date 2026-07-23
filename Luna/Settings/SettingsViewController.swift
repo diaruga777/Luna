@@ -151,9 +151,9 @@ final class SettingsViewController: NavHeaderTableController {
 
 // MARK: - Reader
 
-/// RSVP speed, serif toggle, and text size.
+/// RSVP speed, typeface, text size, and highlight color.
 final class ReaderSettingsScreen: NavHeaderTableController {
-    private enum Row: Int, CaseIterable { case speed, serif, textSize, accentColor }
+    private enum Row: Int, CaseIterable { case speed, font, textSize, accentColor }
     private let wpmLabel = UILabel()
 
     init() { super.init(style: .insetGrouped) }
@@ -204,10 +204,9 @@ final class ReaderSettingsScreen: NavHeaderTableController {
                 cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
             ])
             return cell
-        case .serif:
-            content.text = "Serif Font"
-            cell.accessoryView = makeToggle(
-                isOn: ReaderSettings.useSerifFont, action: #selector(serifToggled(_:)))
+        case .font:
+            content.text = "Font"
+            cell.accessoryView = makeFontButton()
         case .textSize:
             content.text = "Text Size"
             let control = UISegmentedControl(items: ["S", "M", "L", "XL"])
@@ -221,6 +220,34 @@ final class ReaderSettingsScreen: NavHeaderTableController {
         }
         cell.contentConfiguration = content
         return cell
+    }
+
+    /// A pull-down button choosing the reader typeface. The button title
+    /// renders in the selected font, as a small live preview.
+    private func makeFontButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.showsMenuAsPrimaryAction = true
+        updateFontButton(button)
+        button.sizeToFit()
+        return button
+    }
+
+    private func updateFontButton(_ button: UIButton) {
+        let current = ReaderSettings.font
+        button.setTitle(current.displayName, for: .normal)
+        button.titleLabel?.font = current.font(size: 17, weight: .regular)
+        button.menu = UIMenu(children: ReaderFont.allCases.map { font in
+            UIAction(
+                title: font.displayName,
+                state: font == current ? .on : .off
+            ) { [weak self, weak button] _ in
+                ReaderSettings.font = font
+                if let button {
+                    self?.updateFontButton(button)
+                    button.sizeToFit()
+                }
+            }
+        })
     }
 
     /// A pull-down button choosing the reader highlight color, with a swatch.
@@ -260,10 +287,6 @@ final class ReaderSettingsScreen: NavHeaderTableController {
         let rounded = Double((Int(slider.value) / 10) * 10)
         ReaderSettings.baseWPM = rounded
         wpmLabel.text = "\(Int(rounded)) wpm"
-    }
-
-    @objc private func serifToggled(_ toggle: UISwitch) {
-        ReaderSettings.useSerifFont = toggle.isOn
     }
 
     @objc private func textSizeChanged(_ control: UISegmentedControl) {

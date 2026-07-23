@@ -1690,12 +1690,9 @@ private final class ReaderCardTitleHeaderView: UIView {
     }
 
     private static var readerTitleFont: UIFont {
-        let scaled = 30 * ReaderSettings.fontScale
-        let base = UIFont.systemFont(ofSize: scaled, weight: .bold)
-        guard ReaderSettings.useSerifFont,
-              let descriptor = base.fontDescriptor.withDesign(.serif)
-        else { return base }
-        return UIFont(descriptor: descriptor, size: scaled)
+        // Mirrors the article title in ArticleTextRenderer: same typeface,
+        // size, and (clamped) accessibility scaling.
+        ReaderSettings.font.font(size: 30 * ReaderSettings.effectiveFontScale, weight: .bold)
     }
 }
 

@@ -328,7 +328,7 @@ A **second, real-Safari path** for paywalled articles (the LunaSafari "Read in L
 
 ## Reader appearance (Settings)
 
-`ReaderSettings`: fontScale (S/M/L/XL segmented), useSerifFont, showReadingTime, showReadingProgress — renderer reads font settings at render time; readers persist `readingProgress` (max of scroll depth / RSVP fraction).
+`ReaderSettings`: fontScale (S/M/L/XL segmented), font (`ReaderFont` — System/New York/Charter/STIX Two, all iOS-resident, the named families openly licensed; legacy `useSerifFont` maps to New York/System until the user picks), showReadingTime, showReadingProgress — renderer reads font settings at render time and multiplies fontScale by the CLAMPED system Dynamic Type scale (`ReaderSettings.systemTypeScale`, 0.85…1.6, so accessibility sizes are honored without breaking the card column); readers persist `readingProgress` (max of scroll depth / RSVP fraction).
 
 ## Read-aloud (Luna/Reader/SpeechController.swift)
 

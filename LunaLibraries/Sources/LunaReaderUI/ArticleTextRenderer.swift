@@ -82,7 +82,7 @@ public enum ArticleTextRenderer {
             result.append(NSAttributedString(
                 string: content.title + "\n",
                 attributes: [
-                    .font: serifFont(size: 30, weight: .bold),
+                    .font: bodyFont(size: 30, weight: .bold),
                     .foregroundColor: LunaColors.primaryText,
                     .paragraphStyle: titleParagraph,
                 ]))
@@ -274,17 +274,17 @@ public enum ArticleTextRenderer {
         switch block.kind {
         case .paragraph, .image:
             // .image is handled by the caller; treat as paragraph defensively.
-            attributes[.font] = serifFont(size: 19, weight: .regular)
+            attributes[.font] = bodyFont(size: 19, weight: .regular)
         case .heading:
-            attributes[.font] = serifFont(size: 24, weight: .semibold)
+            attributes[.font] = bodyFont(size: 24, weight: .semibold)
             paragraph.paragraphSpacingBefore = 12
         case .quote:
-            attributes[.font] = italicSerifFont(size: 19)
+            attributes[.font] = italicBodyFont(size: 19)
             attributes[.foregroundColor] = LunaColors.secondaryText
             paragraph.firstLineHeadIndent = 16
             paragraph.headIndent = 16
         case .listItem:
-            attributes[.font] = serifFont(size: 19, weight: .regular)
+            attributes[.font] = bodyFont(size: 19, weight: .regular)
             paragraph.headIndent = 18
             prefix = "•  "
         }
@@ -300,21 +300,15 @@ public enum ArticleTextRenderer {
         return (text, prefixLength)
     }
 
-    /// Reader type respects the user's font (serif/sans) and size settings.
-    private static func serifFont(size: CGFloat, weight: UIFont.Weight) -> UIFont {
-        let scaled = size * ReaderSettings.fontScale
-        let base = UIFont.systemFont(ofSize: scaled, weight: weight)
-        guard ReaderSettings.useSerifFont,
-              let descriptor = base.fontDescriptor.withDesign(.serif) else { return base }
-        return UIFont(descriptor: descriptor, size: scaled)
+    /// Reader type respects the user's typeface and size settings; the size
+    /// also follows the system accessibility text size (clamped — see
+    /// `ReaderSettings.systemTypeScale`).
+    private static func bodyFont(size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        ReaderSettings.font.font(
+            size: size * ReaderSettings.effectiveFontScale, weight: weight)
     }
 
-    private static func italicSerifFont(size: CGFloat) -> UIFont {
-        let scaled = size * ReaderSettings.fontScale
-        let base = UIFont.italicSystemFont(ofSize: scaled)
-        guard ReaderSettings.useSerifFont,
-              let descriptor = UIFont.systemFont(ofSize: scaled).fontDescriptor
-                  .withDesign(.serif)?.withSymbolicTraits(.traitItalic) else { return base }
-        return UIFont(descriptor: descriptor, size: scaled)
+    private static func italicBodyFont(size: CGFloat) -> UIFont {
+        ReaderSettings.font.italicFont(size: size * ReaderSettings.effectiveFontScale)
     }
 }

@@ -174,7 +174,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private var linkPillHideTimer: Timer?
     private var linkPreviewInteraction: LinkRSVPPreviewInteraction?
     private var wasPlayingBeforeLinkPreview = false
-    private let playPauseTap = UITapGestureRecognizer()
+    /// Tapping anywhere pauses playback; starting again requires the explicit
+    /// play button, so a stray tap can't kick the reader into motion.
+    private let pauseTap = UITapGestureRecognizer()
     /// Press-and-hold on the display area halves playback speed until release;
     /// applies only to the silent WPM/chunk timer — read-aloud paces itself via TTS.
     private let pressAndHoldGesture = UILongPressGestureRecognizer()
@@ -772,11 +774,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         ])
     }
 
-    /// The full-screen play/pause tap plus the slow-motion press-and-hold.
+    /// The full-screen pause tap plus the slow-motion press-and-hold.
     private func configureGestures() {
-        playPauseTap.addTarget(self, action: #selector(togglePlayPause))
-        playPauseTap.delegate = self
-        view.addGestureRecognizer(playPauseTap)
+        pauseTap.addTarget(self, action: #selector(surfaceTapped))
+        pauseTap.delegate = self
+        view.addGestureRecognizer(pauseTap)
 
         pressAndHoldGesture.addTarget(self, action: #selector(handlePressAndHold))
         pressAndHoldGesture.delegate = self
@@ -786,7 +788,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // not after this duration elapses.
         pressAndHoldGesture.minimumPressDuration = 0.35
         view.addGestureRecognizer(pressAndHoldGesture)
-        playPauseTap.require(toFail: pressAndHoldGesture)
+        pauseTap.require(toFail: pressAndHoldGesture)
     }
 
     // MARK: - Sub-mode
@@ -1075,6 +1077,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             return
         }
         isPlaying ? pause() : play()
+    }
+
+    /// The full-screen tap: pause-only, never a toggle.
+    @objc private func surfaceTapped() {
+        if let center = speechCenter {
+            if centerOwnsItem, center.currentSnapshot.isAudiblyPlaying { center.pause() }
+            return
+        }
+        if isPlaying { pause() }
     }
 
     // MARK: - Press-and-hold slow-motion

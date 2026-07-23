@@ -13,7 +13,7 @@ import Foundation
 ///   • TikTok — the page's `__UNIVERSAL_DATA_FOR_REHYDRATION__` JSON
 ///              (`playAddr` video, or `imagePost` photo carousel).
 ///   • Instagram — the post/embed HTML (`video_url` / `display_url` / og tags).
-///   • YouTube — public watch/embed player JSON (progressive MP4 with audio).
+///   • YouTube — guest-bound Android VR player JSON (progressive MP4 with audio).
 /// Network fetching is injectable so the per-platform PARSERS can be unit-tested
 /// against fixtures without hitting the network.
 public struct SocialMediaResolver: SocialMediaResolving {

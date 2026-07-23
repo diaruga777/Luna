@@ -256,9 +256,67 @@ enum YouTubePlayerResponseParser {
     }
 }
 
+struct YouTubePlaybackBootstrap: Equatable {
+    let visitorData: String
+    let playerJavaScriptURL: URL
+}
+
+/// The normal mobile watch-page response currently advertises an `MWEB`
+/// progressive MP4, but YouTube's Google Video servers reject that URL without
+/// a GVS Proof-of-Origin token. The maintained yt-dlp fallback for clients
+/// without a JS/PO-token provider is an ANDROID_VR player request. That request
+/// still needs the guest visitor session established by the watch page and the
+/// signature timestamp from its active player JavaScript.
+enum YouTubePlaybackBootstrapParser {
+    static func bootstrap(fromWatchData data: Data) -> YouTubePlaybackBootstrap? {
+        guard let html = String(data: data, encoding: .utf8),
+              let visitorLiteral = firstGroup(
+                in: html,
+                pattern: #"\"VISITOR_DATA\"\s*:\s*(\"(?:\\.|[^\"\\])*\")"#),
+              let rawVisitor = decodeJSONString(visitorLiteral),
+              let playerLiteral = firstGroup(
+                in: html,
+                pattern: #"\"(?:jsUrl|PLAYER_JS_URL)\"\s*:\s*(\"(?:\\.|[^\"\\])*\")"#),
+              let playerPath = decodeJSONString(playerLiteral),
+              let playerURL = URL(string: playerPath, relativeTo: URL(
+                string: "https://www.youtube.com")!)?.absoluteURL
+        else { return nil }
+        return YouTubePlaybackBootstrap(
+            visitorData: rawVisitor.removingPercentEncoding ?? rawVisitor,
+            playerJavaScriptURL: playerURL)
+    }
+
+    static func signatureTimestamp(fromPlayerJavaScript data: Data) -> Int? {
+        guard let source = String(data: data, encoding: .utf8),
+              let raw = firstGroup(
+                in: source,
+                pattern: #"(?:signatureTimestamp|sts)\s*:\s*([0-9]{5})"#)
+        else { return nil }
+        return Int(raw)
+    }
+
+    private static func decodeJSONString(_ literal: String) -> String? {
+        guard let data = literal.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]) as? String
+        else { return nil }
+        return value
+    }
+}
+
 struct YouTubeMediaResolver {
     typealias Fetch = SocialMediaResolver.Fetch
     let fetch: Fetch
+
+    /// yt-dlp's current no-token player fallback. Versions newer than 1.65 can
+    /// return SABR-only responses, so keep this exact client/version pairing.
+    static let androidVRClientVersion = "1.65.10"
+    static let androidVRUserAgent =
+        "com.google.android.apps.youtube.vr.oculus/1.65.10 " +
+        "(Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+    static let webSafariUserAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)"
 
     init(fetch: @escaping Fetch = SocialMediaResolver.defaultFetch) {
         self.fetch = fetch
@@ -280,7 +338,32 @@ struct YouTubeMediaResolver {
         guard let videoID else { return [] }
 
         guard let watchURL = YouTubeLink.watchURL(videoID: videoID) else { return [] }
-        let watchData = await fetch(Self.htmlRequest(watchURL))
+        let watchData = await fetch(Self.watchRequest(watchURL))
+
+        // The live path: establish a guest session from the watch page, read the
+        // active player's signature timestamp, then ask the no-token Android VR
+        // client for direct HTTPS formats. Keep all requests in the injected
+        // fetcher's URLSession so its cookie store binds the guest session.
+        if let watchData,
+           let bootstrap = YouTubePlaybackBootstrapParser.bootstrap(
+            fromWatchData: watchData),
+           let playerJavaScript = await fetch(
+            Self.playerJavaScriptRequest(bootstrap.playerJavaScriptURL)),
+           let signatureTimestamp =
+            YouTubePlaybackBootstrapParser.signatureTimestamp(
+                fromPlayerJavaScript: playerJavaScript),
+           let playerData = await fetch(Self.androidVRPlayerRequest(
+            videoID: videoID,
+            visitorData: bootstrap.visitorData,
+            signatureTimestamp: signatureTimestamp)),
+           let asset = YouTubePlayerResponseParser.asset(
+            from: playerData, videoID: videoID, timeRange: range) {
+            return [asset]
+        }
+
+        // Fixture/legacy fallback. Real MWEB Google Video URLs increasingly 403,
+        // so this is deliberately reached only after the working player-client
+        // handshake above has been attempted.
         if let watchData,
            let asset = YouTubePlayerResponseParser.asset(
             from: watchData, videoID: videoID, timeRange: range) {
@@ -308,14 +391,86 @@ struct YouTubeMediaResolver {
         return [asset]
     }
 
+    static func watchRequest(_ url: URL) -> URLRequest {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        var query = components?.queryItems ?? []
+        if !query.contains(where: { $0.name == "bpctr" }) {
+            query.append(URLQueryItem(name: "bpctr", value: "9999999999"))
+        }
+        if !query.contains(where: { $0.name == "has_verified" }) {
+            query.append(URLQueryItem(name: "has_verified", value: "1"))
+        }
+        components?.queryItems = query
+        return htmlRequest(components?.url ?? url)
+    }
+
     static func htmlRequest(_ url: URL) -> URLRequest {
         var request = URLRequest(
             url: url, cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: 30)
-        request.httpShouldHandleCookies = false
-        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.httpShouldHandleCookies = true
+        request.setValue(webSafariUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            forHTTPHeaderField: "Accept")
+        request.setValue("en-us,en;q=0.5", forHTTPHeaderField: "Accept-Language")
+        // Avoid the consent interstitial while still allowing URLSession to
+        // retain the guest VISITOR/YSC cookies returned by this request.
+        request.setValue("PREF=hl=en&tz=UTC; SOCS=CAI", forHTTPHeaderField: "Cookie")
+        return request
+    }
+
+    static func playerJavaScriptRequest(_ url: URL) -> URLRequest {
+        var request = URLRequest(
+            url: url, cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: 30)
+        request.httpShouldHandleCookies = true
+        request.setValue(webSafariUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
+        return request
+    }
+
+    static func androidVRPlayerRequest(
+        videoID: String,
+        visitorData: String,
+        signatureTimestamp: Int
+    ) -> URLRequest {
+        let endpoint = URL(
+            string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false")!
+        var request = URLRequest(url: endpoint, timeoutInterval: 30)
+        request.httpMethod = "POST"
+        request.httpShouldHandleCookies = true
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(androidVRUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("28", forHTTPHeaderField: "X-YouTube-Client-Name")
+        request.setValue(
+            androidVRClientVersion,
+            forHTTPHeaderField: "X-YouTube-Client-Version")
+        request.setValue(visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
+        request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "context": ["client": [
+                "clientName": "ANDROID_VR",
+                "clientVersion": androidVRClientVersion,
+                "deviceMake": "Oculus",
+                "deviceModel": "Quest 3",
+                "androidSdkVersion": 32,
+                "userAgent": androidVRUserAgent,
+                "osName": "Android",
+                "osVersion": "12L",
+                "hl": "en",
+                "timeZone": "UTC",
+                "utcOffsetMinutes": 0,
+            ]],
+            "videoId": videoID,
+            "playbackContext": ["contentPlaybackContext": [
+                "html5Preference": "HTML5_PREF_WANTS",
+                "signatureTimestamp": signatureTimestamp,
+            ]],
+            "contentCheckOk": true,
+            "racyCheckOk": true,
+        ])
         return request
     }
 

@@ -4,6 +4,7 @@
 //
 
 @testable import LunaMediaDownload
+import AVFoundation
 import LunaModels
 import LunaURLClassification
 import XCTest
@@ -321,6 +322,95 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertEqual(ranged.timeRange, MediaTimeRange(startSeconds: 5, endSeconds: 15))
     }
 
+    func testReportedYouTubeURLsNormalizeToTheirVideoIDs() throws {
+        let short = try XCTUnwrap(YouTubeLink(url: URL(string:
+            "https://youtube.com/shorts/bcHXFQIZ4lY?si=5yVkolWnfCb8U4N9")!))
+        XCTAssertEqual(short.videoID, "bcHXFQIZ4lY")
+
+        let full = try XCTUnwrap(YouTubeLink(url: URL(string:
+            "https://youtu.be/JFryZD88SBo?si=mIacqZSqFo_TXiYk")!))
+        XCTAssertEqual(full.videoID, "JFryZD88SBo")
+    }
+
+    func testYouTubePlaybackBootstrapParsesVisitorAndPlayerJavaScript() throws {
+        let page = #"""
+        <script>
+        ytcfg.set({"VISITOR_DATA":"CgtVisitor%3D%3D","WEB_PLAYER_CONTEXT_CONFIGS":{
+          "WEB_PLAYER_CONTEXT_CONFIG_ID_KEVLAR_WATCH":{"jsUrl":"\/s\/player\/c80bf7e2\/player_es6.vflset\/en_US\/base.js"}
+        }});
+        </script>
+        """#
+        let bootstrap = try XCTUnwrap(
+            YouTubePlaybackBootstrapParser.bootstrap(fromWatchData: Data(page.utf8)))
+
+        XCTAssertEqual(bootstrap.visitorData, "CgtVisitor==")
+        XCTAssertEqual(
+            bootstrap.playerJavaScriptURL.absoluteString,
+            "https://www.youtube.com/s/player/c80bf7e2/player_es6.vflset/en_US/base.js")
+        XCTAssertEqual(
+            YouTubePlaybackBootstrapParser.signatureTimestamp(
+                fromPlayerJavaScript: Data("const x={signatureTimestamp:20654};".utf8)),
+            20_654)
+    }
+
+    func testYouTubeResolverUsesGuestBoundAndroidVRPlayerClient() async throws {
+        let source = URL(string:
+            "https://youtube.com/shorts/bcHXFQIZ4lY?si=reported")!
+        var requests: [URLRequest] = []
+        let resolver = SocialMediaResolver { request in
+            requests.append(request)
+            switch request.url?.path {
+            case "/watch":
+                return Data(#"""
+                <script>
+                ytcfg.set({"VISITOR_DATA":"CgtVisitor%3D%3D","WEB_PLAYER_CONTEXT_CONFIGS":{
+                  "WEB_PLAYER_CONTEXT_CONFIG_ID_KEVLAR_WATCH":{"jsUrl":"\/s\/player\/hash\/player_es6.vflset\/en_US\/base.js"}
+                }});
+                </script>
+                """#.utf8)
+            case "/s/player/hash/player_es6.vflset/en_US/base.js":
+                return Data("const config={sts:20654};".utf8)
+            case "/youtubei/v1/player":
+                return Data(#"""
+                {"streamingData":{"formats":[{
+                  "itag":18,
+                  "mimeType":"video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"",
+                  "url":"https://video.example.com/youtube.mp4",
+                  "audioQuality":"AUDIO_QUALITY_LOW",
+                  "height":640,
+                  "contentLength":"123456"
+                }]}}
+                """#.utf8)
+            default:
+                return nil
+            }
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(assets.first?.url.absoluteString,
+                       "https://video.example.com/youtube.mp4")
+        XCTAssertEqual(requests.count, 3)
+        let playerRequest = try XCTUnwrap(requests.last)
+        XCTAssertEqual(playerRequest.httpMethod, "POST")
+        XCTAssertEqual(
+            playerRequest.value(forHTTPHeaderField: "User-Agent"),
+            YouTubeMediaResolver.androidVRUserAgent)
+        XCTAssertEqual(
+            playerRequest.value(forHTTPHeaderField: "X-YouTube-Client-Name"), "28")
+        XCTAssertEqual(
+            playerRequest.value(forHTTPHeaderField: "X-Goog-Visitor-Id"),
+            "CgtVisitor==")
+        let body = try XCTUnwrap(playerRequest.httpBody)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["videoId"] as? String, "bcHXFQIZ4lY")
+        let playback = try XCTUnwrap(object["playbackContext"] as? [String: Any])
+        let content = try XCTUnwrap(
+            playback["contentPlaybackContext"] as? [String: Any])
+        XCTAssertEqual(content["signatureTimestamp"] as? Int, 20_654)
+    }
+
     func testYouTubePlayerResponseSelectsProgressiveMP4WithAudioAndPoster() throws {
         let response = #"""
         {"streamingData":{"formats":[
@@ -358,5 +448,103 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertEqual(descriptor.videoID, "dQw4w9WgXcQ")
         XCTAssertEqual(descriptor.timeRange,
                        MediaTimeRange(startSeconds: 12.5, endSeconds: 28.75))
+    }
+
+    func testLiveReportedYouTubeDownloads() async throws {
+        guard ProcessInfo.processInfo.environment["RUN_LIVE_YOUTUBE_TESTS"] == "1"
+        else {
+            throw XCTSkip("Set RUN_LIVE_YOUTUBE_TESTS=1 for real YouTube transfers")
+        }
+        let reportedURLs = [
+            "https://youtube.com/shorts/bcHXFQIZ4lY?si=5yVkolWnfCb8U4N9",
+            "https://youtu.be/JFryZD88SBo?si=mIacqZSqFo_TXiYk",
+        ]
+
+        for rawURL in reportedURLs {
+            let source = try XCTUnwrap(URL(string: rawURL))
+            let resolved = await SocialMediaResolver().resolveAssets(for: source)
+            let media = try XCTUnwrap(resolved.first, rawURL)
+            let fileURL = try await MediaFileDownloader.download(
+                media,
+                referer: "https://www.youtube.com/",
+                onProgress: { _ in })
+            defer { try? FileManager.default.removeItem(at: fileURL) }
+
+            let size = try XCTUnwrap(
+                try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            XCTAssertGreaterThan(size, 500_000, rawURL)
+            let movie = AVURLAsset(url: fileURL)
+            let videoTracks = try await movie.loadTracks(withMediaType: .video)
+            let audioTracks = try await movie.loadTracks(withMediaType: .audio)
+            XCTAssertFalse(videoTracks.isEmpty, rawURL)
+            XCTAssertFalse(audioTracks.isEmpty, rawURL)
+        }
+    }
+
+    func testLiveBackgroundManagerDownloadsReportedYouTubeShort() async throws {
+        guard ProcessInfo.processInfo.environment[
+            "RUN_LIVE_YOUTUBE_BACKGROUND_TESTS"] == "1"
+        else {
+            throw XCTSkip(
+                "Set RUN_LIVE_YOUTUBE_BACKGROUND_TESTS=1 for the background transfer")
+        }
+        let rawURL =
+            "https://youtube.com/shorts/bcHXFQIZ4lY?si=5yVkolWnfCb8U4N9"
+        guard SavedMediaStore.shared.matchingItem(forURLString: rawURL) == nil
+        else {
+            throw XCTSkip("The exact live-test video is already in the Downloader library")
+        }
+
+        let originalPhotosSetting = AutoDownloadSettings.autoSaveDownloadsToPhotos
+        let wasMarkedDownloaded = AutoDownloadSettings.wasDownloaded(rawURL)
+        AutoDownloadSettings.autoSaveDownloadsToPhotos = false
+        AutoDownloadSettings.unmarkDownloaded(rawURL)
+        defer {
+            if let created = SavedMediaStore.shared.matchingItem(forURLString: rawURL) {
+                SavedMediaStore.shared.delete(created)
+            }
+            AutoDownloadSettings.autoSaveDownloadsToPhotos = originalPhotosSetting
+            if wasMarkedDownloaded {
+                AutoDownloadSettings.markDownloaded(rawURL)
+            } else {
+                AutoDownloadSettings.unmarkDownloaded(rawURL)
+            }
+        }
+
+        // The app owns exactly one delegate for its named background session.
+        // Exercise that singleton here as production does; creating a second
+        // delegate with the same identifier causes nsurlsessiond to deliver
+        // completion to whichever session registered first.
+        let manager = LiveMediaDownloadManager.shared
+        let started = await manager.start(
+            urlString: rawURL,
+            title: "Live YouTube background download",
+            ownership: .downloader,
+            manual: true)
+        XCTAssertTrue(started)
+
+        let result = await withTaskGroup(of: SavedMediaItem?.self) { group in
+            group.addTask {
+                await manager.waitForDownloaderResult(forSourceURLString: rawURL)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        let downloaded = try XCTUnwrap(result)
+        let fileURL = try XCTUnwrap(downloaded.fileURL)
+        let size = try XCTUnwrap(
+            try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        XCTAssertGreaterThan(size, 500_000)
+
+        let movie = AVURLAsset(url: fileURL)
+        let videoTracks = try await movie.loadTracks(withMediaType: .video)
+        let audioTracks = try await movie.loadTracks(withMediaType: .audio)
+        XCTAssertFalse(videoTracks.isEmpty)
+        XCTAssertFalse(audioTracks.isEmpty)
     }
 }

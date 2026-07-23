@@ -146,6 +146,12 @@ public final class LiveMediaDownloadManager: NSObject {
         configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
+        // YouTube's working no-token player client is bound to the guest
+        // VISITOR/YSC session established by the preceding watch-page request.
+        // Use the shared persistent cookie jar so that binding survives every
+        // background resolve stage and an app relaunch.
+        configuration.httpCookieStorage = .shared
+        configuration.httpShouldSetCookies = true
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
 
@@ -315,6 +321,7 @@ public final class LiveMediaDownloadManager: NSObject {
             rangeStartSeconds: nil,
             rangeEndSeconds: nil,
             resolvedVideoID: nil,
+            youtubeVisitorData: nil,
             errorMessage: nil,
             errorKind: nil,
             resolveAttempts: 0,
@@ -827,6 +834,8 @@ public final class LiveMediaDownloadManager: NSObject {
         case reddit
         case youtubeClip
         case youtubeWatch
+        case youtubePlayerJavaScript
+        case youtubeAndroidVR
         case youtubePlayer
         case youtubeEmbed
     }
@@ -897,7 +906,9 @@ public final class LiveMediaDownloadManager: NSObject {
             request = SocialMediaResolver.facebookPageRequest(
                 resolveURL, userAgent: MediaDownloadHTTP.desktopBrowserUserAgent,
                 timeoutInterval: 60)
-        } else if kind == .youtubeClip || kind == .youtubeWatch || kind == .youtubeEmbed {
+        } else if kind == .youtubeWatch {
+            request = YouTubeMediaResolver.watchRequest(resolveURL)
+        } else if kind == .youtubeClip || kind == .youtubeEmbed {
             request = YouTubeMediaResolver.htmlRequest(resolveURL)
         } else {
             request = URLRequest(url: resolveURL, timeoutInterval: 60)
@@ -925,7 +936,7 @@ public final class LiveMediaDownloadManager: NSObject {
             return FacebookMediaParser.assets(fromHTML: html).first
         case .reddit:
             return RedditMediaParser.asset(fromListingJSON: data)
-        case .youtubeWatch, .youtubePlayer, .youtubeEmbed:
+        case .youtubeAndroidVR, .youtubePlayer, .youtubeEmbed:
             guard let videoID = job.resolvedVideoID
                 ?? URL(string: job.sourceURLString).flatMap(YouTubeLink.init(url:))?.videoID
             else { return nil }
@@ -936,7 +947,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 from: data,
                 videoID: videoID,
                 timeRange: range.isEffective ? range : nil)
-        case .youtubeClip:
+        case .youtubeClip, .youtubeWatch, .youtubePlayerJavaScript:
             return nil
         case nil:
             return nil
@@ -1181,7 +1192,7 @@ public final class LiveMediaDownloadManager: NSObject {
             job.resolveKind = ResolveKind.youtubeWatch.rawValue
             store.upsert(job)
             startTask(
-                YouTubeMediaResolver.htmlRequest(watchURL),
+                YouTubeMediaResolver.watchRequest(watchURL),
                 jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
             if let thumbnail = YouTubeLink.thumbnailURL(videoID: clip.videoID) {
                 Task { await self.fetchAndPublishThumbnail(from: thumbnail, jobID: job.id) }
@@ -1210,14 +1221,44 @@ public final class LiveMediaDownloadManager: NSObject {
         switch persistedJob.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
         case .youtubeWatch:
             if let data,
-               let playerRequest = YouTubeMediaResolver.playerRequest(
-                fromWatchData: data, videoID: videoID) {
+               let bootstrap = YouTubePlaybackBootstrapParser.bootstrap(
+                fromWatchData: data) {
+                var job = persistedJob
+                job.youtubeVisitorData = bootstrap.visitorData
+                job.resolveKind = ResolveKind.youtubePlayerJavaScript.rawValue
+                store.upsert(job)
+                startTask(
+                    YouTubeMediaResolver.playerJavaScriptRequest(
+                        bootstrap.playerJavaScriptURL),
+                    jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+                return true
+            } else if let data,
+                      let playerRequest = YouTubeMediaResolver.playerRequest(
+                        fromWatchData: data, videoID: videoID) {
                 request = playerRequest
                 kind = .youtubePlayer
             } else if let embedURL = YouTubeLink.embedURL(videoID: videoID) {
                 request = YouTubeMediaResolver.htmlRequest(embedURL)
                 kind = .youtubeEmbed
             } else { return false }
+        case .youtubePlayerJavaScript:
+            guard let data,
+                  let visitorData = persistedJob.youtubeVisitorData,
+                  let signatureTimestamp =
+                    YouTubePlaybackBootstrapParser.signatureTimestamp(
+                        fromPlayerJavaScript: data)
+            else { return false }
+            request = YouTubeMediaResolver.androidVRPlayerRequest(
+                videoID: videoID,
+                visitorData: visitorData,
+                signatureTimestamp: signatureTimestamp)
+            kind = .youtubeAndroidVR
+        case .youtubeAndroidVR:
+            guard let embedURL = YouTubeLink.embedURL(videoID: videoID) else {
+                return false
+            }
+            request = YouTubeMediaResolver.htmlRequest(embedURL)
+            kind = .youtubeEmbed
         case .youtubePlayer:
             guard let embedURL = YouTubeLink.embedURL(videoID: videoID) else { return false }
             request = YouTubeMediaResolver.htmlRequest(embedURL)

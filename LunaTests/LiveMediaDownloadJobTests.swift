@@ -27,9 +27,28 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             "https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=90s"))
         let resolve = try XCTUnwrap(LiveMediaDownloadManager.resolveRequest(for: mobile))
         XCTAssertEqual(resolve.kind, "youtubeWatch")
-        XCTAssertEqual(resolve.request.url?.absoluteString,
-                       "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        XCTAssertEqual(resolve.request.httpShouldHandleCookies, false)
+        let components = try XCTUnwrap(resolve.request.url.flatMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)
+        })
+        XCTAssertEqual(components.scheme, "https")
+        XCTAssertEqual(components.host, "www.youtube.com")
+        XCTAssertEqual(components.path, "/watch")
+        XCTAssertEqual(
+            components.queryItems?.first(where: { $0.name == "v" })?.value,
+            "dQw4w9WgXcQ")
+        XCTAssertEqual(
+            components.queryItems?.first(where: { $0.name == "bpctr" })?.value,
+            "9999999999")
+        XCTAssertEqual(
+            components.queryItems?.first(where: { $0.name == "has_verified" })?.value,
+            "1")
+        XCTAssertEqual(resolve.request.httpShouldHandleCookies, true)
+        XCTAssertEqual(
+            resolve.request.value(forHTTPHeaderField: "User-Agent"),
+            YouTubeMediaResolver.webSafariUserAgent)
+        XCTAssertEqual(
+            resolve.request.value(forHTTPHeaderField: "Cookie"),
+            "PREF=hl=en&tz=UTC; SOCS=CAI")
 
         let clip = try XCTUnwrap(URL(string:
             "https://www.youtube.com/clip/UgkxOpaqueClipToken"))
@@ -67,7 +86,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,
             resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
-            resolvedVideoID: nil, errorMessage: nil,
+            resolvedVideoID: nil, youtubeVisitorData: nil, errorMessage: nil,
             errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
             suspendDeadline: nil, ownership: .downloader)
         let decoded = try JSONDecoder().decode(
@@ -115,7 +134,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,
             resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
-            resolvedVideoID: nil, errorMessage: nil,
+            resolvedVideoID: nil, youtubeVisitorData: nil, errorMessage: nil,
             errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
             suspendDeadline: nil, ownership: .downloader)
         DispatchQueue.global(qos: .userInitiated).async {

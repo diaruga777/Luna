@@ -45,6 +45,10 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     /// The underlying YouTube video id after a `/clip/` URL has been expanded.
     /// Persisting it lets a later resolver stage survive a process relaunch.
     var resolvedVideoID: String?
+    /// Guest-session identity extracted from YouTube's watch page and forwarded
+    /// to the Android VR player request. Optional for jobs from older builds and
+    /// for every non-YouTube platform.
+    var youtubeVisitorData: String?
     var errorMessage: String?
     var errorKind: ErrorKind?
     var resolveAttempts: Int

@@ -88,6 +88,7 @@ extension LiveMediaDownloadManager {
             rangeStartSeconds: nil,
             rangeEndSeconds: nil,
             resolvedVideoID: nil,
+            youtubeVisitorData: nil,
             errorMessage: message,
             errorKind: errorKind,
             resolveAttempts: 0,

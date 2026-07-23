@@ -210,17 +210,31 @@ and `/clip/`. `YouTubeLink` normalizes these to a canonical video id and preserv
 and millisecond range. The downloaded progressive MP4 is trimmed locally for a requested start/end
 range before it is committed.
 
-`YouTubeMediaResolver` reads the public watch/embed player response and selects the best direct
-progressive MP4 that includes audio; it intentionally never returns an adaptive video-only stream.
-The durable resolver can also use the watch page's exposed Innertube embedded-player configuration.
-Posters come from `i.ytimg.com` immediately, and an expired signed CDN URL (HTTP 403 after a later
-resume) causes the source page to be resolved again rather than retrying stale bytes.
+YouTube's mobile-web player currently exposes a progressive MP4 whose Google Video request returns
+HTTP 403 without a GVS Proof-of-Origin token. Luna therefore follows the current keyless/no-token
+fallback used by [`yt-dlp`](https://github.com/yt-dlp/yt-dlp): it opens the watch page to establish
+the guest `VISITOR`/`YSC` session, reads `VISITOR_DATA` and the active player-JavaScript URL, extracts
+the numeric `signatureTimestamp` from that JavaScript, and sends a guest-bound `ANDROID_VR` 1.65.10
+Innertube player request. That response contains a direct progressive MP4 with both H.264 video and
+AAC audio for ordinary public videos. The exact client identity and version intentionally match
+the maintained [yt-dlp YouTube client
+configuration](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py);
+newer Android VR versions can return SABR-only media.
 
-This deliberately does not embed `yt-dlp`, execute downloaded code, decipher player JavaScript,
-or bypass login/DRM/age/region/private-video controls. YouTube increasingly requires PO tokens or
-player challenges for some formats, so those videos fail explicitly when no direct public
-progressive stream is present. YouTube's developer policies also restrict downloading/offline
-playback without authorization; shipping this feature requires a separate product/legal review.
+The foreground resolver and durable background resolver use the same sequence. The background job
+persists guest visitor data and each resolver stage, while its named URLSession uses the shared
+cookie jar so a relaunch or overnight repair can continue the bound session. It still selects only
+progressive MP4 formats containing audio—never an adaptive video-only stream. Posters come from
+`i.ytimg.com` immediately, and an expired signed CDN URL (HTTP 403 after a later resume) restarts the
+source handshake rather than retrying stale bytes.
+
+This deliberately does not embed `yt-dlp`, execute or decipher player JavaScript, supply external
+PO tokens, or bypass login/DRM/age/region/private-video controls. The JavaScript fetch is data-only
+and reads the published five-digit signature timestamp. Videos whose available formats still
+require a player challenge or [PO token](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide)
+fail explicitly when no public progressive stream is present. YouTube's developer policies also
+restrict downloading/offline playback without authorization; shipping this feature requires a
+separate product/legal review.
 
 ## Clipboard completion action
 
@@ -264,8 +278,9 @@ their legacy per-platform Photos auto-save controls.
   Its final crawler response is parsed for both inline `browser_native_*_url` JSON and Open
   Graph video rather than assuming crawler pages contain `og:video`. TikTok media requests
   set its required Referer.
-- `YouTubeMediaResolver.swift` normalizes the YouTube URL family, expands clips, parses player
-  responses, and selects direct progressive MP4 media.
+- `YouTubeMediaResolver.swift` normalizes the YouTube URL family, expands clips, establishes the
+  guest watch-page session, performs the Android VR player handshake, parses player responses, and
+  selects direct progressive MP4 media.
 - `MediaDownloadPreflight.swift` owns size, 100 MiB intent, and storage-reserve policy;
   `MediaVideoTrimmer.swift` applies source-requested video ranges.
 - `MediaDownloadService.swift` resolves and streams remote media to a temporary file,
@@ -301,8 +316,12 @@ share-extension Info plists. The share plist needs both because downloadable med
 Undocumented media endpoints can change, rate-limit, or return only a poster. Twitter
 “GIFs” are MP4 videos; TikTok CDN URLs may reject requests without expected cookies;
 YouTube may require a PO token/player challenge and expose no usable progressive stream.
+The exact user-reported Shorts and `youtu.be` links have opt-in live coverage in
+`SocialMediaResolverTests`: `RUN_LIVE_YOUTUBE_TESTS=1` validates full foreground transfers and
+audio/video tracks, while `RUN_LIVE_YOUTUBE_BACKGROUND_TESTS=1` validates the named background
+session through durable Downloader storage. Keep both gated because they access live YouTube.
 
 Parser and extension mapping are covered by `SocialMediaResolverTests`; three-state
 storage, migration, settings defaults, retention, and transition recovery are covered by
-the SavedMedia/AutoDownload tests. End-to-end live extraction and real PhotoKit library
-mutation still require device/simulator integration testing.
+the SavedMedia/AutoDownload tests. Real PhotoKit library mutation still requires
+device/simulator integration testing.

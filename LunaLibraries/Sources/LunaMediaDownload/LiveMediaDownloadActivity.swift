@@ -74,6 +74,7 @@ public extension MediaAsset.Kind {
         case .image: return "image"
         case .gif: return "animatedImage"
         case .video: return "video"
+        case .audio: return "audio"
         }
     }
 }

@@ -1,12 +1,14 @@
 # Content Platforms
 
-Luna accepts articles, documents, products, and supported social/video links.
+Luna accepts articles, documents, products, supported social/video links, and
+direct HTTP(S) media-file URLs.
 Recognized platform URLs are saved as ready items and open through the platform's
 native deep link, embed, or in-app browser fallback.
 
 ## Supported platforms
 
-`ContentPlatform` contains X, Bluesky, Reddit, TikTok, Instagram, and Facebook.
+`ContentPlatform` contains X, Bluesky, Reddit, TikTok, Instagram, Facebook,
+YouTube, and the synthetic `web` value used for directly hosted media.
 `PlatformRecognizer` is the single URL-classification table; `PlatformRegistry`
 owns each platform module's presentation and optional metadata fetcher.
 
@@ -25,6 +27,13 @@ outcomes, so they never enter article extraction. `ReadingListIngestor` persists
 the platform, item identifier, available title/creator, and thumbnail, then marks
 the item ready. Platform items do not become failed articles when metadata is
 unavailable.
+
+`DirectMediaURL` is the shared URL-only detector for direct image, animated GIF,
+video, and audio assets. It recognizes the file extension in the URL path
+(including signed CDN URLs with query strings), and `Classifier` routes a match
+to `.video(.web, itemID: nil)` before any HTML fetch. The synthetic platform
+keeps the existing Downloader-owned outcome/persistence path while the media
+download layer uses the source URL itself as the already-resolved `MediaAsset`.
 
 The reading list renders cached art when present, otherwise the platform logo.
 Tapping uses the module's native-app link first, then an embed, then the in-app

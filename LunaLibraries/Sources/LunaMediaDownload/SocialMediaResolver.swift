@@ -25,6 +25,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
     }
 
     public func resolveAssets(for url: URL) async -> [MediaAsset] {
+        if let direct = MediaAsset.direct(url: url) { return [direct] }
         guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return [] }
         switch recognized.platform {
         case .x:

@@ -285,7 +285,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             startDownload(item)
         case .localFile:
             guard let url = item.fileURL else { startDownload(item); return }
-            if item.kind == .video {
+            if item.kind == .video || item.kind == .audio {
                 presentPlayer(item: AVPlayerItem(url: url))
             } else {
                 presentArchiveImage { completion in
@@ -295,7 +295,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 }
             }
         case .photosReference(let identifier, _, _):
-            if item.kind == .video {
+            if item.kind == .video || item.kind == .audio {
                 Self.loadPhotosVideoItem(identifier: identifier) { [weak self] playerItem in
                     DispatchQueue.main.async {
                         guard let playerItem else {
@@ -513,7 +513,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             }
 
             var photosFailure = false
-            if await self.photoSaver.requestReadAuthorization() {
+            if media.kind.canSaveToPhotos,
+               await self.photoSaver.requestReadAuthorization() {
                 do {
                     let identifier = try await self.photoSaver.save(
                         fileURL: media.fileURL, kind: media.kind, shouldMoveFile: false)
@@ -522,7 +523,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 } catch {
                     photosFailure = true
                 }
-            } else {
+            } else if media.kind.canSaveToPhotos {
                 photosFailure = true
             }
             AutoDownloadSettings.markDownloaded(url.absoluteString)
@@ -851,6 +852,10 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
                     DispatchQueue.main.async { content?.setPosterImage(image) }
                 }
                 return content
+            case .audio:
+                let content = VideoCardContentViewController(fileURL: fileURL)
+                content.setPosterImage(UIImage(systemName: "waveform.circle.fill"))
+                return content
             case .gif:
                 return AnimatedImageCardContentViewController(fileURL: fileURL)
             default:
@@ -864,7 +869,7 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
                 })
             }
         case .photosReference(let identifier, _, _):
-            if item.kind == .video {
+            if item.kind == .video || item.kind == .audio {
                 let content = VideoCardContentViewController(itemProvider: { completion in
                     Self.loadPhotosVideoItem(identifier: identifier, completion: completion)
                 })
@@ -1092,9 +1097,11 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
             actions.append(UIAction(
                 title: "Share", image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.share(item, sourceIndex: index) })
-            actions.append(UIAction(
-                title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")
-            ) { [weak self] _ in self?.saveToPhotos(item) })
+            if item.kind?.canSaveToPhotos == true {
+                actions.append(UIAction(
+                    title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")
+                ) { [weak self] _ in self?.saveToPhotos(item) })
+            }
         case .photosReference:
             actions.append(UIAction(
                 title: "Share", image: UIImage(systemName: "square.and.arrow.up")
@@ -1197,6 +1204,10 @@ final class TemporaryPasteboardMediaCardContentViewController: CardContentViewCo
         switch media.kind {
         case .video:
             self.content = VideoCardContentViewController(fileURL: media.fileURL)
+        case .audio:
+            let content = VideoCardContentViewController(fileURL: media.fileURL)
+            content.setPosterImage(UIImage(systemName: "waveform.circle.fill"))
+            self.content = content
         case .gif:
             self.content = AnimatedImageCardContentViewController(fileURL: media.fileURL)
         case .image:

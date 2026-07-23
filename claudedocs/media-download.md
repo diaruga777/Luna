@@ -1,8 +1,18 @@
 # Social Media Download
 
 Luna downloads the first still image, GIF, or video from supported X, Instagram,
-TikTok, Facebook, Reddit, and YouTube links. Resolution is keyless/client-side and
-therefore best effort.
+TikTok, Facebook, Reddit, and YouTube links. It also downloads directly hosted
+image, GIF, video, and audio file URLs without a platform-resolution request.
+Platform resolution is keyless/client-side and therefore best effort.
+
+`DirectMediaURL` recognizes common image (`jpg/jpeg/png/webp/heic/heif/avif`),
+GIF, video (`mp4/m4v/mov`), and audio
+(`mp3/m4a/aac/wav/caf/aif/aiff/flac`) path extensions. Query strings and
+fragments do not interfere, so signed CDN URLs such as `clip.mp4?token=…` work.
+`MediaAsset.direct(url:)` maps that shared classification into the download
+model. Foreground downloads return it immediately from `SocialMediaResolver`;
+durable background jobs skip the resolve transfer entirely and start the media
+transfer with the original URL.
 
 ## Downloader storage model
 
@@ -58,6 +68,8 @@ UI surface uses instead of ever showing the URL when metadata was fetched.
 - Off: the download is moved into App Group storage as `.localFile`.
 - If automatic Photos authorization/save fails, Luna preserves the completed bytes as a
   local file rather than discarding the download.
+- Direct audio is always preserved as a local file because PhotoKit does not
+  accept standalone audio assets.
 
 All Downloader completion paths use this policy: foreground ingest/App Intents
 (`MediaDownloadService`), background URLSession/Live Activity
@@ -106,7 +118,8 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
 - **Main Downloader carousel** — `SavedMediaCardsViewController` (the root screen)
   displays all three states newest-first from left to right as full-content cards; there is no
   separate pushed viewer (see `claudedocs/card-carousel.md` for the carousel's
-  interaction model). Local media plays from its App Group file; Photos-backed images
+  interaction model). Local video and audio play from their App Group files;
+  Photos-backed images
   load with PhotoKit image APIs and Photos-backed videos load through
   `PHImageManager.requestAVAsset`. Long-press menus offer **Save to Photos** on local
   rows (Photos-backed rows do not offer a redundant save action), Share, Archive, and Delete.

@@ -29,6 +29,12 @@ public enum Classifier {
     /// heuristic phase.
     public static func classify(url: URL, html: String? = nil, documentType: String? = nil) -> ContentKind {
         if let documentType, !documentType.isEmpty { return .document(type: documentType) }
+        // A URL that names the media asset itself belongs to Downloader without
+        // fetching it as HTML first. The download layer repeats this same shared
+        // recognition before treating the source URL as the resolved asset.
+        if DirectMediaURL.kind(for: url) != nil {
+            return .video(.web, itemID: nil)
+        }
         // Google Shopping pages are distinguished by query params (`ibp=oshop`,
         // `prds`, `tbm=shop`, …), which the host+path `KnownSite` table can't express.
         // Route them straight to product extraction — deterministically, before the

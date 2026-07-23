@@ -63,6 +63,7 @@ public enum MediaItemProviderFactory {
     private static func contentType(for kind: MediaAsset.Kind) -> UTType {
         switch kind {
         case .video: return .mpeg4Movie
+        case .audio: return .audio
         case .gif: return .gif
         case .image: return .jpeg
         }
@@ -71,6 +72,7 @@ public enum MediaItemProviderFactory {
     private static func fileExtension(for kind: MediaAsset.Kind) -> String {
         switch kind {
         case .video: return "mp4"
+        case .audio: return "m4a"
         case .gif: return "gif"
         case .image: return "jpg"
         }

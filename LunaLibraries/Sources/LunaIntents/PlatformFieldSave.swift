@@ -78,9 +78,10 @@ public enum PlatformFieldSave {
                 content: phrase, timestamp: fields.dropFirst(2).first)
             else { throw SaveError.notFound }
             return await saveResolvedURL(url, doubleSaveActionSurface: doubleSaveActionSurface)
-        case .youtube:
+        case .youtube, .web:
             // YouTube saves arrive as URLs (Safari/on-screen URL extraction); the
             // screenshot search path has no stable keyless video search contract.
+            // Direct web media likewise already arrives as its URL.
             throw SaveError.notFound
         }
     }

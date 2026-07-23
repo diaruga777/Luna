@@ -452,7 +452,8 @@ public final class SavedNonTextualViewController: UIViewController {
                     creator: creator)
                 let saved: SavedMediaItem
                 let photoSaver = PhotoLibrarySaver()
-                if AutoDownloadSettings.autoSaveDownloadsToPhotos,
+                if kind.canSaveToPhotos,
+                   AutoDownloadSettings.autoSaveDownloadsToPhotos,
                    await photoSaver.requestReadAuthorization() {
                     do {
                         let identifier = try await photoSaver.save(
@@ -507,6 +508,7 @@ public final class SavedNonTextualViewController: UIViewController {
     /// the still into the shared store so the app's platform card has a thumbnail.
     private func showReadyPreview(_ media: DownloadedMedia) {
         previewImageView.isHidden = false
+        saveButton.isHidden = media.kind == .audio
         switch media.kind {
         case .image, .gif:
             playOverlay.isHidden = true
@@ -521,8 +523,15 @@ public final class SavedNonTextualViewController: UIViewController {
                 previewImageView.isHidden = true
                 previewPlaceholder.isHidden = false
             }
-        case .video:
+        case .video, .audio:
             playOverlay.isHidden = false
+            guard media.kind == .video else {
+                previewImageView.image = UIImage(systemName: "waveform")
+                previewImageView.tintColor = LunaColors.secondaryText
+                previewImageView.contentMode = .center
+                previewPlaceholder.isHidden = true
+                return
+            }
             Task { [weak self] in
                 let poster = await Self.videoPoster(for: media.fileURL)
                 await MainActor.run {
@@ -577,9 +586,9 @@ public final class SavedNonTextualViewController: UIViewController {
     /// local file / Photos asset (`.alreadyDownloaded`).
     @objc private func previewTapped() {
         switch mediaState {
-        case .ready(let media) where media.kind == .video:
+        case .ready(let media) where media.kind == .video || media.kind == .audio:
             playVideo(url: media.fileURL)
-        case .alreadyDownloaded(let item) where item.kind == .video:
+        case .alreadyDownloaded(let item) where item.kind == .video || item.kind == .audio:
             if let fileURL = item.fileURL {
                 playVideo(url: fileURL)
             } else if let identifier = item.photosLocalIdentifier {

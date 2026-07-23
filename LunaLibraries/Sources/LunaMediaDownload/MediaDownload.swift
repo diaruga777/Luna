@@ -15,6 +15,7 @@ public struct MediaAsset: Equatable {
         case image   // still photo (jpg/png)
         case gif     // animated GIF
         case video   // mp4 (Twitter "GIFs" are mp4s and resolve as .video)
+        case audio   // directly hosted audio (mp3/m4a/etc.)
     }
     public let url: URL
     public let kind: Kind
@@ -105,14 +106,36 @@ public enum MediaDownloadError: Error {
 public enum MediaDownloadablePlatform {
     /// The platforms whose posts expose downloadable still/gif/video media.
     public static let supported: Set<ContentPlatform> = [
-        .x, .instagram, .tiktok, .facebook, .reddit, .youtube,
+        .x, .instagram, .tiktok, .facebook, .reddit, .youtube, .web,
     ]
 
     /// Whether `urlString` is a post on a platform we can pull media from.
     public static func supports(_ urlString: String) -> Bool {
+        if DirectMediaURL.kind(for: urlString) != nil { return true }
         guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         return supported.contains(platform)
     }
+}
+
+public extension MediaAsset {
+    /// Treats a directly hosted media URL as its own resolved asset.
+    static func direct(url: URL) -> MediaAsset? {
+        guard let directKind = DirectMediaURL.kind(for: url) else { return nil }
+        let kind: Kind
+        switch directKind {
+        case .image: kind = .image
+        case .gif: kind = .gif
+        case .video: kind = .video
+        case .audio: kind = .audio
+        }
+        return MediaAsset(url: url, kind: kind)
+    }
+}
+
+public extension MediaAsset.Kind {
+    /// PhotoKit accepts still/animated images and video, but not standalone
+    /// audio files. Callers use this before requesting Photos authorization.
+    var canSaveToPhotos: Bool { self != .audio }
 }
 
 /// Resolves the direct, downloadable media asset(s) for a social post URL.

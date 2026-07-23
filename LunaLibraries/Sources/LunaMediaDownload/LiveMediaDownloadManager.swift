@@ -334,6 +334,16 @@ public final class LiveMediaDownloadManager: NSObject {
             job.rangeStartSeconds = youtube.timeRange?.startSeconds
             job.rangeEndSeconds = youtube.timeRange?.endSeconds
         }
+        if let directAsset = MediaAsset.direct(url: gated.sourceURL) {
+            job.resolveKind = "direct"
+            store.upsert(job)
+            if job.isDownloaderOwned {
+                postDownloaderJobProgress(job: job, progress: 0)
+            }
+            await startActivity(for: job)
+            startMediaDownload(for: job, asset: directAsset)
+            return true
+        }
         guard let resolve = Self.resolveRequest(for: gated.sourceURL) else {
             store.upsert(job)
             await failJob(job, message: MediaDownloadError.unsupported.message)
@@ -370,7 +380,13 @@ public final class LiveMediaDownloadManager: NSObject {
               var job = store.job(id: persistedJob.id), !job.isTerminal
         else { return }
 
-        let thumbnailURL = asset.thumbnailURL ?? (asset.kind == .video ? nil : asset.url)
+        let thumbnailURL: URL?
+        switch asset.kind {
+        case .image, .gif:
+            thumbnailURL = asset.thumbnailURL ?? asset.url
+        case .video, .audio:
+            thumbnailURL = asset.thumbnailURL
+        }
         if let thumbnailURL, job.thumbnailFileName == nil {
             Task { await self.fetchAndPublishThumbnail(from: thumbnailURL, jobID: job.id) }
         }
@@ -488,9 +504,16 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = persistedJob
         switch job.phase {
         case .resolving:
-            guard let sourceURL = URL(string: job.sourceURLString),
-                  let resolve = Self.resolveRequest(for: sourceURL)
+            guard let sourceURL = URL(string: job.sourceURLString)
             else {
+                await failJob(job, message: MediaDownloadError.unsupported.message)
+                return
+            }
+            if let directAsset = MediaAsset.direct(url: sourceURL) {
+                startMediaDownload(for: job, asset: directAsset)
+                return
+            }
+            guard let resolve = Self.resolveRequest(for: sourceURL) else {
                 await failJob(job, message: MediaDownloadError.unsupported.message)
                 return
             }
@@ -1370,7 +1393,8 @@ public final class LiveMediaDownloadManager: NSObject {
         guard let pending = SavedMediaStore.shared.matchingItem(
             forURLString: job.sourceURLString)
         else { throw CancellationError() }
-        if AutoDownloadSettings.autoSaveDownloadsToPhotos,
+        if kind.canSaveToPhotos,
+           AutoDownloadSettings.autoSaveDownloadsToPhotos,
            await saver.requestReadAuthorization() {
             do {
                 let identifier = try await saver.save(

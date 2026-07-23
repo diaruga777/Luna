@@ -68,6 +68,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     var mediaAssetKind: MediaAsset.Kind {
         switch mediaKind {
         case "video": return .video
+        case "audio": return .audio
         case "animatedImage": return .gif
         default: return .image
         }

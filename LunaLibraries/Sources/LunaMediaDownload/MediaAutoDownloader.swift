@@ -17,6 +17,7 @@ public enum MediaAutoDownloader {
     /// Whether a saved URL is a platform whose media should auto-download (enabled +
     /// supported). Used by the share extension to decide whether to stay alive.
     public static func isEnabled(forURLString urlString: String) -> Bool {
+        if DirectMediaURL.kind(for: urlString) != nil { return isRunningInDownloader }
         guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         return MediaDownloadablePlatform.supported.contains(platform)
             && (isRunningInDownloader || AutoDownloadSettings.isEnabled(for: platform))
@@ -67,8 +68,10 @@ public enum MediaAutoDownloader {
         downloaderWasInstalled: Bool = LunaInstallationMarkers.downloaderWasInstalled
     ) -> Bool {
         guard downloaderWasInstalled,
-              let platform = PlatformRecognizer.recognize(urlString)?.platform
+              MediaDownloadablePlatform.supports(urlString)
         else { return false }
+        if DirectMediaURL.kind(for: urlString) != nil { return true }
+        guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         return MediaDownloadablePlatform.supported.contains(platform)
     }
 
@@ -205,6 +208,11 @@ public enum MediaAutoDownloader {
             switch kind {
             case .video:
                 return "mp4"
+            case .audio:
+                let ext = sourceExtension?.lowercased() ?? ""
+                return ["aac", "aif", "aiff", "caf", "flac", "m4a", "mp3", "wav"].contains(ext)
+                    ? ext
+                    : "m4a"
             case .gif:
                 return "gif"
             case .image:

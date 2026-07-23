@@ -1,11 +1,11 @@
 import Foundation
 
 public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
-    case x, bluesky, reddit, tiktok, instagram, facebook, youtube
+    case x, bluesky, reddit, tiktok, instagram, facebook, youtube, web
 
     public var kind: PlatformKind {
         switch self {
-        case .tiktok, .facebook, .youtube: .video
+        case .tiktok, .facebook, .youtube, .web: .video
         case .x, .bluesky, .reddit, .instagram: .social
         }
     }
@@ -19,6 +19,7 @@ public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
         case .instagram: return "Instagram"
         case .facebook: return "Facebook"
         case .youtube: return "YouTube"
+        case .web: return "Web"
         }
     }
 
@@ -30,7 +31,7 @@ public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
         case .tiktok: return "logo-tiktok"
         case .instagram: return "logo-instagram"
         case .facebook: return "logo-facebook"
-        case .youtube: return nil
+        case .youtube, .web: return nil
         }
     }
 
@@ -43,6 +44,7 @@ public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
         case .instagram: return "camera.fill"
         case .facebook: return "play.tv.fill"
         case .youtube: return "play.rectangle.fill"
+        case .web: return "arrow.down.circle.fill"
         }
     }
 }

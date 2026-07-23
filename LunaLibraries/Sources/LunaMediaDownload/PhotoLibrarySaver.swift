@@ -117,6 +117,7 @@ public struct PhotoLibrarySaver: PhotoLibrarySaving {
     public func save(
         fileURL: URL, kind: MediaAsset.Kind, shouldMoveFile: Bool
     ) async throws -> String {
+        guard kind != .audio else { throw MediaDownloadError.unsupported }
         // GIFs and stills are photo resources; mp4s are video resources.
         let resourceType: PHAssetResourceType = kind == .video ? .video : .photo
         return try await withCheckedThrowingContinuation { continuation in
@@ -149,6 +150,8 @@ public struct PhotoLibrarySaver: PhotoLibrarySaving {
             return resources.first(where: { $0.type == .fullSizeVideo })
                 ?? resources.first(where: { $0.type == .video })
                 ?? resources.first(where: { $0.type == .pairedVideo })
+        case .audio:
+            return nil
         case .gif, .image:
             return resources.first(where: { $0.type == .fullSizePhoto })
                 ?? resources.first(where: { $0.type == .photo })

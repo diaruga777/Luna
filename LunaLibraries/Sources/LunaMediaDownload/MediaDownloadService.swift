@@ -28,6 +28,9 @@ public struct MediaDownloadService: MediaDownloading {
         guard MediaDownloadablePlatform.supports(url.absoluteString) else {
             throw MediaDownloadError.unsupported
         }
+        if MediaAsset.direct(url: url)?.kind == .audio {
+            throw MediaDownloadError.unsupported
+        }
         // Permission first (so the prompt appears before any work), then resolve.
         guard await saver.requestAddAuthorization() else { throw MediaDownloadError.permissionDenied }
 
@@ -88,7 +91,8 @@ public struct MediaDownloadService: MediaDownloading {
             throw MediaDownloadError.downloadFailed
         }
 
-        if AutoDownloadSettings.autoSaveDownloadsToPhotos,
+        if asset.kind.canSaveToPhotos,
+           AutoDownloadSettings.autoSaveDownloadsToPhotos,
            await saver.requestReadAuthorization() {
             do {
                 let identifier = try await saver.save(
@@ -313,7 +317,20 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
     public static func fileExtension(for asset: MediaAsset, mimeType: String?) -> String {
         switch asset.kind {
         case .video:
-            return "mp4"
+            let pathExt = asset.url.pathExtension.lowercased()
+            return ["m4v", "mov", "mp4"].contains(pathExt) ? pathExt : "mp4"
+        case .audio:
+            let pathExt = asset.url.pathExtension.lowercased()
+            if ["aac", "aif", "aiff", "caf", "flac", "m4a", "mp3", "wav"].contains(pathExt) {
+                return pathExt
+            }
+            switch mimeType?.lowercased() {
+            case "audio/aac": return "aac"
+            case "audio/mp4", "audio/x-m4a": return "m4a"
+            case "audio/wav", "audio/x-wav": return "wav"
+            case "audio/flac": return "flac"
+            default: return "mp3"
+            }
         case .gif:
             return "gif"
         case .image:

@@ -766,11 +766,13 @@ public final class SavedMediaStore {
         let destination = thumbnailDirectory.appendingPathComponent(name)
         let image: UIImage?
         switch kind {
-        case .video:
+        case .video, .audio:
             let asset = AVURLAsset(url: fileURL)
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
-            image = (try? generator.copyCGImage(at: .zero, actualTime: nil)).map(UIImage.init(cgImage:))
+            image = kind == .video
+                ? (try? generator.copyCGImage(at: .zero, actualTime: nil)).map(UIImage.init(cgImage:))
+                : nil
         case .gif, .image:
             guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
                   let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
@@ -791,6 +793,7 @@ public final class SavedMediaStore {
         if !cleaned.isEmpty { return String(cleaned.prefix(8)) }
         switch kind {
         case .video: return "mp4"
+        case .audio: return "m4a"
         case .gif: return "gif"
         case .image: return "jpg"
         }

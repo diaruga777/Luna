@@ -74,7 +74,7 @@ enum URLRescueWiring {
 
     static func defaultHint(for surface: AppSurface) -> RescueHint {
         switch surface {
-        case .reader: return .article
+        case .all, .reader: return .article
         case .downloader: return .media
         case .priceTracker: return .product
         }

@@ -179,6 +179,8 @@ public enum ReadingListSectioning {
 /// `ReadingListViewController(surface:)` takes `AppSurface?`; `nil` means the legacy
 /// combined list (all categories, with the filter segments) used by tests and dev tools.
 public enum AppSurface {
+    /// The central Luna app — every content category in one list.
+    case all
     /// Luna Reader — articles, paywalled articles, documents (anything that opens in
     /// the text reader).
     case reader
@@ -190,6 +192,7 @@ public enum AppSurface {
     /// The single content category this surface shows.
     public var baseFilter: ReadingListSectioning.ListFilter {
         switch self {
+        case .all: return .all
         case .reader: return .articles
         case .downloader: return .mediaAndLinks
         case .priceTracker: return .priceTrackers

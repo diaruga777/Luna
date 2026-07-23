@@ -11,6 +11,8 @@ import UIKit
 /// each app's Share, Action, and Safari extensions inherit their host's colour.
 public enum LunaSurfacePalette {
     public enum Surface: Equatable {
+        /// The central Luna app (bare bundle id — no content suffix).
+        case luna
         case reader
         case downloader
         case priceTracker
@@ -24,7 +26,8 @@ public enum LunaSurfacePalette {
         let components = Set((bundleIdentifier ?? "").lowercased().split(separator: "."))
         if components.contains("downloader") { return .downloader }
         if components.contains("pricetracker") { return .priceTracker }
-        return .reader
+        if components.contains("reader") { return .reader }
+        return .luna
     }
 
     /// The supplied, unmodified identity colour for the current app surface.
@@ -32,6 +35,8 @@ public enum LunaSurfacePalette {
 
     public static func baseColor(for surface: Surface) -> UIColor {
         switch surface {
+        case .luna:
+            return UIColor(red: 88 / 255, green: 86 / 255, blue: 214 / 255, alpha: 1)
         case .reader:
             return UIColor(red: 173 / 255, green: 181 / 255, blue: 246 / 255, alpha: 1)
         case .downloader:

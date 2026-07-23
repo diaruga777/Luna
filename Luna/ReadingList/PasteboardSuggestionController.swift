@@ -104,6 +104,7 @@ final class PasteboardSuggestionController: NSObject {
     private func surfaceAllows(_ candidate: PasteboardCandidate) -> Bool {
         guard let surface else { return true }
         switch surface {
+        case .all: return true
         case .reader: return candidate.platform == nil
         case .downloader: return candidate.platform != nil
         case .priceTracker: return false // the suggester never detects products

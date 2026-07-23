@@ -221,6 +221,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             forName: NetworkReachability.wifiAvailableNotification, object: nil, queue: nil
         ) { _ in
             switch AppSurfaceConfig.current {
+            case .all:
+                Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
+                PreloadCoordinator.shared.resumeIncomplete()
             case .downloader:
                 Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
             case .reader:

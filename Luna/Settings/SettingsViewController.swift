@@ -407,6 +407,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     private var safariStatusText = ""
     private var safariButtonName: String {
         switch AppSurfaceConfig.current {
+        case .all: return "Luna"
         case .reader: return "Read in Luna"
         case .downloader: return "Download"
         case .priceTracker: return "Track in Luna"

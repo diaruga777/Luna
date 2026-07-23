@@ -396,6 +396,8 @@ final class ReadingListViewController: UITableViewController {
 
         let message: String
         switch surface {
+        case .all:
+            message = "Save articles, media, and products to see them here."
         case .reader:
             message = "Save articles, documents, and links to read them here."
         case .priceTracker:

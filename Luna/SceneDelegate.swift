@@ -74,12 +74,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let surface = AppSurfaceConfig.current
         let root: UIViewController
         switch surface {
+        case .all: root = ArticleCardsViewController()
         case .downloader: root = SavedMediaCardsViewController()
         case .reader: root = ArticleCardsViewController()
         case .priceTracker: root = ReadingListViewController(surface: surface)
         }
         let nav = UINavigationController(rootViewController: root)
-        guard surface == .reader else { return nav }
+        guard surface == .reader || surface == .all else { return nav }
         return MiniPlayerHostViewController(content: nav)
     }
 

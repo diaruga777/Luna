@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaModels
 import LunaURLClassification
 import LunaStorage
 import Foundation
@@ -235,12 +236,15 @@ public enum MediaAutoDownloader {
             dateSaved: item.dateAdded)
     }
 
-    /// Whether the running process belongs to Luna Downloader (the app OR one of its
-    /// extensions — bundle ids are all `…downloader[.share|.action2|.safari]`). Public
-    /// so the share surface can route saves into the app-owned `SavedMediaStore`
-    /// (the Downloader grid's data source) rather than Photos.
+    /// Whether the running process belongs to an app that OWNS media handling —
+    /// Luna Downloader or the central Luna app (either the app itself or one of
+    /// its extensions; `LunaApp` resolves both). Public so the share surface can
+    /// route saves into the app-owned `SavedMediaStore` (the media grid's data
+    /// source) rather than Photos.
     public static var isRunningInDownloader: Bool {
-        guard let identifier = Bundle.main.bundleIdentifier?.lowercased() else { return false }
-        return identifier.contains(".downloader")
+        switch LunaApp.current {
+        case .luna, .downloader: return true
+        case .reader, .priceTracker: return false
+        }
     }
 }

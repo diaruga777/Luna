@@ -16,6 +16,7 @@ public final class OnboardingAnimationView: UIView {
     /// derives this from the host app by default; the guide-video recorder passes
     /// each case explicitly so every standalone app gets a matching PiP clip.
     public enum AppIcon: CaseIterable {
+        case luna
         case reader
         case downloader
         case priceTracker
@@ -24,11 +25,13 @@ public final class OnboardingAnimationView: UIView {
             let identifier = Bundle.main.bundleIdentifier ?? ""
             if identifier.contains(".downloader") { return .downloader }
             if identifier.contains(".pricetracker") { return .priceTracker }
-            return .reader
+            if identifier.contains(".reader") { return .reader }
+            return .luna
         }
 
         fileprivate var assetName: String {
             switch self {
+            case .luna: return "AppIconImageLuna"
             case .reader: return "AppIconImageReader"
             case .downloader: return "AppIconImageDownloader"
             case .priceTracker: return "AppIconImagePriceTracker"
@@ -39,6 +42,7 @@ public final class OnboardingAnimationView: UIView {
         /// filenames (for example, `SafariExtensionGuideDownloader.mp4`).
         public var guideVideoSuffix: String {
             switch self {
+            case .luna: return "Luna"
             case .reader: return "Reader"
             case .downloader: return "Downloader"
             case .priceTracker: return "PriceTracker"

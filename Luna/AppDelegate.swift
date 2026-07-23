@@ -73,6 +73,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
 
+        // Card-deck routing for non-article cards (the central Luna app's
+        // all-kinds deck): tracker cards open the price editor, platform cards
+        // the native-app/embed/browser ladder.
+        NonArticleCardOpening.install()
+
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaReadingList can't present UI, so the app shell installs the
         // presenter (same injected-closure pattern as defaultSaveAsArticle

@@ -37,6 +37,17 @@ import UIKit
 
 final class ArticleCardsViewController: CardCarouselHostViewController {
 
+    /// The central Luna app's card deck shows EVERY content kind, not just
+    /// reader articles: media and price-tracker items get title/badge cards
+    /// whose taps route through `nonArticleOpener` below.
+    private let includesAllKinds = AppSurfaceConfig.current == .all
+
+    /// Opens a non-article item (price tracker / platform post) from its card,
+    /// mirroring the list rows' tap routing. Installed at launch by the app
+    /// shell's kind wiring — only apps that surface those kinds install it, so
+    /// the card deck stays article-only elsewhere (`includesAllKinds`).
+    static var nonArticleOpener: ((ReadingListItem, UIViewController) -> Void)?
+
     private enum PasteboardCardState {
         case placeholder(changeCount: Int)
         case loading(changeCount: Int, urlString: String, likelyPrompted: Bool)
@@ -560,8 +571,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     @objc private func reload() {
-        let allReaderItems = store.items().filter { ReadingListSectioning.rendersAsReader($0) }
-        var updated = Self.orderedReaderItems(allReaderItems)
+        let allReaderItems = store.items().filter {
+            includesAllKinds || ReadingListSectioning.rendersAsReader($0)
+        }
+        var updated = Self.orderedReaderItems(allReaderItems, includesAllKinds: includesAllKinds)
         if isCommittingPasteboardCandidate,
            case .candidate(_, let candidate, _) = renderedPasteboardState {
             updated.removeAll { $0.urlString == candidate.urlString }
@@ -615,9 +628,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// Keeps finished articles available as ordinary reader cards for now, but
     /// groups them after every unopened/in-progress article. Each group retains
     /// the carousel's newest/bumped-first ordering.
-    static func orderedReaderItems(_ candidates: [ReadingListItem]) -> [ReadingListItem] {
+    static func orderedReaderItems(
+        _ candidates: [ReadingListItem], includesAllKinds: Bool = false
+    ) -> [ReadingListItem] {
         candidates
-            .filter { ReadingListSectioning.rendersAsReader($0) && !$0.isArchived }
+            .filter { (includesAllKinds || ReadingListSectioning.rendersAsReader($0)) && !$0.isArchived }
             .sorted { lhs, rhs in
                 // A just-finished card remains in its current foreground-session
                 // position until the pending archive is committed on background.
@@ -1119,6 +1134,16 @@ extension ArticleCardsViewController: CardCarouselDelegate {
             }
             return
         }
+        // A non-article card (central Luna app only) routes to its own screen
+        // — the price editor or the platform open ladder — never the reader.
+        if let itemIndex = articleIndex(forCarouselIndex: index),
+           items.indices.contains(itemIndex) {
+            let item = items[itemIndex]
+            if item.isPriceTracker || item.contentPlatform != nil {
+                Self.nonArticleOpener?(item, self)
+                return
+            }
+        }
         guard let card = carousel.contentController(at: index) as? ReaderCardContentViewController,
               card.rabbitHoleReader != nil
         else {
@@ -1281,11 +1306,17 @@ private final class ReaderCardContentViewController: CardContentViewController,
             statusLabel.textColor = LunaColors.secondaryText
             statusLabel.textAlignment = .center
             statusLabel.numberOfLines = 0
-            switch item.state {
-            case .pending: statusLabel.text = "Fetching…"
-            case .failed: statusLabel.text = "Couldn't fetch this article"
-            case .needsCaptcha: statusLabel.text = "Locked — tap to unlock"
-            case .ready: statusLabel.text = nil
+            if item.isPriceTracker {
+                statusLabel.text = "Tap to see price history"
+            } else if item.contentPlatform != nil {
+                statusLabel.text = "Tap to open"
+            } else {
+                switch item.state {
+                case .pending: statusLabel.text = "Fetching…"
+                case .failed: statusLabel.text = "Couldn't fetch this article"
+                case .needsCaptcha: statusLabel.text = "Locked — tap to unlock"
+                case .ready: statusLabel.text = nil
+                }
             }
             statusLabel.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(statusLabel)

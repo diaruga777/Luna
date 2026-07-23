@@ -300,6 +300,26 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(indicator.alpha, 0, accuracy: 0.001)
     }
 
+    func testArchiveArcFadesWithCardChromeDuringImmersion() throws {
+        let controller = makeArticleController(seed: "archive-arc-chrome", title: "Arc Chrome")
+        let tray = try XCTUnwrap(controller.archiveTray)
+        XCTAssertEqual(tray.trayAlphaForTesting, 1, accuracy: 0.001)
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+        XCTAssertTrue(controller.carousel.isImmersed)
+        XCTAssertEqual(tray.trayAlphaForTesting, 0, accuracy: 0.001)
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(tray.trayAlphaForTesting, 1, accuracy: 0.001)
+    }
+
     func testReaderCardContextMenuOffersArchiveAndDestructiveDelete() throws {
         let controller = makeArticleController(seed: "reader-card-menu", title: "Reader menu")
         let item = try XCTUnwrap(ReadingListStore.shared.items().first)

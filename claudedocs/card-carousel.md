@@ -52,6 +52,9 @@ own adapters later). The Downloader-specific adapters live in
   edge (radius ≈ 1.4× drawer height), so the column bows left. Vertical scrolling
   reinterprets as rotation: each item's position/tilt derives from its arc-length
   distance to the viewport midline, cells fanning spoke-like toward the pivot.
+  The peek is card chrome: dismissing the chrome (reader immersion) fades the
+  closed arc out with the side-card peeks/scrub strip (same 0.32s ease-in-out,
+  pull disabled while hidden) and it fades back when the chrome returns.
   Long-pressing an item cell offers Unarchive and Share; both Reader
   and Downloader also offer a destructive Delete that removes the complete save
   through the surface's normal cleanup path. Reader unarchive writes immediately,

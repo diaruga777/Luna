@@ -135,6 +135,10 @@ final class ArchiveTrayController: NSObject {
     /// The closed arc is wholly offscreen until its host reaches the rightmost
     /// card. Changing this state slides the apex cells' peek into view.
     private var pullAvailable = false
+    /// Mirrors the card chrome: while the reader is immersed the peek fades
+    /// out with the side-card peeks (and the pull is disabled), fading back
+    /// when the chrome returns.
+    private var chromeHidden = false
 
     /// How far the apex cells poke past the screen edge while closed-but-
     /// available. Wider than the old pull tab's 13pt because what peeks now is
@@ -228,6 +232,25 @@ final class ArchiveTrayController: NSObject {
         }
     }
 
+    /// Fades the arc in lockstep with the card chrome — the same 0.32s
+    /// ease-in-out the carousel uses for its side-card peeks and scrub strip.
+    /// Hiding an open arc closes it first so the shifted card is never left
+    /// stranded behind an invisible drawer.
+    func setChromeHidden(_ hidden: Bool, animated: Bool) {
+        guard hidden != chromeHidden else { return }
+        chromeHidden = hidden
+        if hidden, progress > 0.001 { setOpen(false, animated: animated) }
+        let changes = { self.tray.alpha = hidden ? 0 : 1 }
+        if animated {
+            UIView.animate(
+                withDuration: 0.32, delay: 0,
+                options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
+                animations: changes)
+        } else {
+            changes()
+        }
+    }
+
     func layout(in bounds: CGRect, safeAreaInsets: UIEdgeInsets) {
         guard bounds.size.width > 0 else { return }
         let isFirstLayout = laidOutSize == .zero
@@ -304,6 +327,7 @@ final class ArchiveTrayController: NSObject {
     #if DEBUG
     var isPullAvailableForTesting: Bool { pullAvailable }
     var trayFrameForTesting: CGRect { tray.frame }
+    var trayAlphaForTesting: CGFloat { tray.alpha }
     var itemSizeForTesting: CGSize { arcLayout.itemSize }
     var arcLayoutForTesting: ArchiveArcLayout { arcLayout }
     var headerTitleForTesting: String { ArchiveArcHeaderCell.title }
@@ -317,6 +341,8 @@ final class ArchiveTrayController: NSObject {
 extension ArchiveTrayController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === pan else { return true }
+        // An invisible (chrome-hidden) arc must not be pullable.
+        guard !chromeHidden else { return false }
         let velocity = pan.velocity(in: host?.view)
         guard abs(velocity.x) > abs(velocity.y) else { return false }
         return progress > 0 || (velocity.x < 0 && canPull())

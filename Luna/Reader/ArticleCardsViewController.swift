@@ -1059,6 +1059,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         footerContentFade.alpha = 0
         (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
             .setCardChromeVisible(true, animated: false)
+        archiveTray?.setChromeHidden(false, animated: false)
         updateBottomModeSwitcher(immersed: false, animated: false)
         layoutCardScrollIndicator(animated: false)
     }
@@ -1145,6 +1146,9 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         }
         card.setCardChromeVisible(!immersed, animated: true)
         carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
+        // The archive peek is card chrome too: it fades away with the
+        // side-card peeks and returns with them.
+        archiveTray?.setChromeHidden(immersed, animated: true)
         updateBottomModeSwitcher(immersed: immersed, animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,

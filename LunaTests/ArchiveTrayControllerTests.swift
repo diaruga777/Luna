@@ -182,6 +182,45 @@ final class ArchiveTrayControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testChromeHiddenFadesTheClosedArcAndRestores() {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [] }, canPull: { true })
+        tray.setItems([makeItem()])
+        tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
+        XCTAssertEqual(tray.trayAlphaForTesting, 1, accuracy: 0.001)
+
+        tray.setChromeHidden(true, animated: false)
+        XCTAssertEqual(tray.trayAlphaForTesting, 0, accuracy: 0.001)
+
+        tray.setChromeHidden(false, animated: false)
+        XCTAssertEqual(tray.trayAlphaForTesting, 1, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testChromeHiddenClosesAnOpenArcBeforeFading() {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let shifted = UIView()
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [shifted] }, canPull: { true })
+        tray.setItems([makeItem()])
+        tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
+        tray.setOpenForTesting(true)
+
+        tray.setChromeHidden(true, animated: false)
+
+        // The shifted card must never be left stranded behind an invisible
+        // drawer: hiding closes the arc and undoes the 2/3 shift.
+        XCTAssertEqual(tray.trayAlphaForTesting, 0, accuracy: 0.001)
+        XCTAssertEqual(shifted.transform.tx, 0, accuracy: 0.5)
+        XCTAssertEqual(tray.trayFrameForTesting.minX, 364, accuracy: 0.5)
+    }
+
+    @MainActor
     func testOpeningShiftsTheCardByTwoThirdsOfTheScreen() {
         let host = UIViewController()
         host.loadViewIfNeeded()

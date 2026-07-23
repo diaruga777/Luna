@@ -16,20 +16,24 @@ import Foundation
 enum SharedOnboardingStatus {
     static let appGroupID = SafariAppGroup.id
 
-    /// The three Luna URL schemes, matching `LunaDeepLink`'s literals (mirrored
+    /// The four Luna URL schemes, matching `LunaDeepLink`'s literals (mirrored
     /// here for the same reason — this target has no shared framework).
+    private static let lunaScheme = "luna"
     private static let readerScheme = "lunareader"
     private static let downloaderScheme = "lunadownloader"
     private static let priceTrackerScheme = "lunapricetracker"
 
     /// This extension's own surface + URL scheme, derived from its own bundle id
     /// suffix (`<hostAppBundleId>.safari` — see `SafariWebExtensionHandler`'s
-    /// existing `isHost(appSuffix:)` helper, which this mirrors).
+    /// existing `isHost(appSuffix:)` helper, which this mirrors). The central
+    /// Luna app's extension has the bare `<prefix>.safari` bundle id (no
+    /// content suffix) and maps to the "luna" surface.
     static var currentSurfaceAndScheme: (surface: String, scheme: String) {
         let identifier = Bundle.main.bundleIdentifier ?? ""
         if identifier.hasSuffix(".downloader.safari") { return ("downloader", downloaderScheme) }
         if identifier.hasSuffix(".pricetracker.safari") { return ("pricetracker", priceTrackerScheme) }
-        return ("reader", readerScheme)
+        if identifier.hasSuffix(".reader.safari") { return ("reader", readerScheme) }
+        return ("luna", lunaScheme)
     }
 
     private static func enabledKey(forSurface surface: String) -> String {

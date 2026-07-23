@@ -1,7 +1,8 @@
 // Luna Safari content script. Injects a Luna button on article pages (per the
 // app's visibility setting), known Downloader-platform pages, or recognized
-// product pages. Article taps deep-link into the reader; platform taps open the
-// Downloader app/clip; product taps open Price Tracker (or its App Store page).
+// product pages — but ONLY for the page kinds this extension's containing app
+// handles (the native handler's supportsArticles/Media/Products flags). A tap
+// always deep-links into the containing app via its own scheme.
 
 (function () {
     "use strict";
@@ -81,12 +82,13 @@
             if (target) { injectLunaButton(target); }
         }).catch(function () {});
 
-        // When the "Unlock Paywalls On-Device" toggle is on, reveal the body in Safari
-        // (the Referer rewrite that unlocks the server response is applied declaratively
-        // by the background ruleset; this strips the leftover overlay/clamp so the reader
-        // — and the user, right here in Safari — sees the full article). The native
-        // handler answers `enabled` only when Luna Reader is installed — unlocking is
-        // a Reader feature, so without Reader nothing is revealed.
+        // Reveal the article body in Safari (the Referer rewrite that unlocks the
+        // server response is applied declaratively by the background ruleset; this
+        // strips the leftover overlay/clamp so the reader — and the user, right
+        // here in Safari — sees the full article). The native handler answers
+        // `enabled` only for article-handling hosts (Reader and the central Luna
+        // app) — unlocking is article handling, so the Downloader and Price
+        // Tracker extensions never reveal.
         browser.runtime.sendMessage({ type: "bypassEnabled" }).then(function (resp) {
             if (resp && resp.enabled) { revealArticle(); }
         }).catch(function () {});
@@ -807,86 +809,45 @@
         (document.body || document.documentElement).appendChild(btn);
     }
 
-    // Each app registers ONLY its own scheme (lunareader / lunadownloader /
-    // lunapricetracker), so a deep link opens exactly the app it names — but
-    // also does nothing when that app isn't installed, hence the installed
-    // checks / App Clip and App Store fallbacks below.
+    // A pill deep-links ONLY into this extension's OWN containing app (which is
+    // installed by definition): the native handler supplies the host's scheme
+    // (`luna` / `lunareader` / `lunadownloader` / `lunapricetracker`) plus its
+    // per-kind support flags. A page kind the host app doesn't handle shows no
+    // pill at all — the central Luna app is the only host that shows all three.
+    function ownSchemeTarget(context, sourceURL) {
+        var scheme = context && context.scheme;
+        if (!scheme) { return null; }
+        return scheme + "://read?url=" + encodeURIComponent(sourceURL);
+    }
+
     function readTarget(context) {
-        var appClipBaseURL = context && (context.readerAppClipURL || "");
-        if (appClipBaseURL) {
-            return {
-                label: "📖  Read in Luna",
-                captureContent: true,
-                url: function () { return urlWithSource(appClipBaseURL, location.href); }
-            };
-        }
-        // Pre-submission fallback: a tap is a user gesture, so Safari allows the
-        // custom-scheme launch — but only Reader registers lunareader://, so
-        // without it (and with no App Clip URL yet) there's nothing to open.
-        if (!(context && context.readerInstalled)) { return null; }
+        if (!(context && context.supportsArticles)) { return null; }
         return {
             label: "📖  Read in Luna",
             captureContent: true,
-            url: function () {
-                return "lunareader://read?url=" + encodeURIComponent(location.href);
-            }
+            url: function () { return ownSchemeTarget(context, location.href); }
         };
     }
 
     function downloadTargetFor(context) {
-        if (context && context.downloaderInstalled) {
-            return {
-                label: "Download in Luna",
-                captureContent: false,
-                url: function () {
-                    return "lunadownloader://read?url=" + encodeURIComponent(location.href);
-                }
-            };
-        }
-        var appClipBaseURL = context && (context.downloaderAppClipURL || "");
-        if (!appClipBaseURL) { return null; }
+        if (!(context && context.supportsMedia)) { return null; }
         return {
             label: "Download in Luna",
             captureContent: false,
-            url: function () { return urlWithSource(appClipBaseURL, location.href); }
+            url: function () { return ownSchemeTarget(context, location.href); }
         };
     }
 
-    // The "Track in Luna" button target for a recognized product page. With Price
-    // Tracker installed (its own extension host, or the launch marker any Luna app
-    // wrote to the App Group), a tap deep-links the product URL; otherwise it opens
-    // Price Tracker's App Store page (`LunaPriceTrackerAppStoreURL` in the
-    // extension's Info.plist) — and with no App Store URL set, no button at all.
+    // The "Track in Luna" button target for a recognized product page.
     function trackTargetFor(context) {
-        if (context && context.priceTrackerInstalled) {
-            return {
-                label: "Track in Luna",
-                captureContent: false,
-                url: function () {
-                    return "lunapricetracker://read?url=" + encodeURIComponent(location.href);
-                }
-            };
-        }
-        var appStoreURL = context && (context.priceTrackerAppStoreURL || "");
-        if (!appStoreURL) { return null; }
+        if (!(context && context.supportsProducts)) { return null; }
         return {
             label: "Track in Luna",
-            pressedLabel: "Opening App Store…",
             captureContent: false,
-            url: function () { return appStoreURL; }
+            url: function () { return ownSchemeTarget(context, location.href); }
         };
     }
 
-    function urlWithSource(baseURL, sourceURL) {
-        try {
-            var url = new URL(baseURL);
-            url.searchParams.set("url", sourceURL);
-            return url.toString();
-        } catch (e) {
-            var join = baseURL.indexOf("?") >= 0 ? "&" : "?";
-            return baseURL + join + "url=" + encodeURIComponent(sourceURL);
-        }
-    }
 
     // The app's canonical platform table (PlatformRecognizer.rules, LunaURLClassification)
     // shared through the generated platform_hosts.generated.js (self.__LUNA_PLATFORM_HOSTS),

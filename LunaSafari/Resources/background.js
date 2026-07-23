@@ -163,25 +163,19 @@ browser.runtime.onMessage.addListener(function (message) {
             .then(function (resp) {
                 return {
                     mode: (resp && resp.mode) || "all",
-                    isDownloaderHost: !!(resp && resp.isDownloaderHost),
-                    readerInstalled: !!(resp && resp.readerInstalled),
-                    downloaderInstalled: !!(resp && resp.downloaderInstalled),
-                    priceTrackerInstalled: !!(resp && resp.priceTrackerInstalled),
-                    readerAppClipURL: (resp && resp.readerAppClipURL) || "",
-                    downloaderAppClipURL: (resp && resp.downloaderAppClipURL) || "",
-                    priceTrackerAppStoreURL: (resp && resp.priceTrackerAppStoreURL) || ""
+                    scheme: (resp && resp.scheme) || "",
+                    supportsArticles: !!(resp && resp.supportsArticles),
+                    supportsMedia: !!(resp && resp.supportsMedia),
+                    supportsProducts: !!(resp && resp.supportsProducts)
                 };
             })
             .catch(function () {
                 return {
                     mode: "all",
-                    isDownloaderHost: false,
-                    readerInstalled: false,
-                    downloaderInstalled: false,
-                    priceTrackerInstalled: false,
-                    readerAppClipURL: "",
-                    downloaderAppClipURL: "",
-                    priceTrackerAppStoreURL: ""
+                    scheme: "",
+                    supportsArticles: false,
+                    supportsMedia: false,
+                    supportsProducts: false
                 };
             });
     }

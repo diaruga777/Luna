@@ -13,14 +13,6 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static let appGroupID = SafariAppGroup.id
     private static let suggestionModeKey = "safariSuggestionMode"
-    private static let readerAppClipURLKey = "LunaReaderAppClipURL"
-    private static let downloaderAppClipURLKey = "LunaDownloaderAppClipURL"
-    private static let priceTrackerAppStoreURLKey = "LunaPriceTrackerAppStoreURL"
-    // Written by each app at launch (`InstalledAppMarkers` in the app shell) so any
-    // host's extension knows which sibling Luna apps exist on this device.
-    private static let readerInstalledKey = "lunaInstalled.reader"
-    private static let downloaderInstalledKey = "lunaInstalled.downloader"
-    private static let priceTrackerInstalledKey = "lunaInstalled.pricetracker"
 
     func beginRequest(with context: NSExtensionContext) {
         let item = context.inputItems.first as? NSExtensionItem
@@ -33,17 +25,20 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // The app stores SafariSuggestionMode's rawValue here (default "all").
             payload["mode"] = UserDefaults(suiteName: Self.appGroupID)?
                 .string(forKey: Self.suggestionModeKey) ?? "all"
-            payload["isDownloaderHost"] = Self.isDownloaderHost
-            payload["readerAppClipURL"] = Self.readerAppClipURL
-            payload["downloaderAppClipURL"] = Self.downloaderAppClipURL
-            payload["readerInstalled"] = Self.isReaderInstalled
-            payload["downloaderInstalled"] = Self.isDownloaderInstalled
-            payload["priceTrackerInstalled"] = Self.isPriceTrackerInstalled
-            payload["priceTrackerAppStoreURL"] = Self.priceTrackerAppStoreURL
+            // The pill deep-links ONLY into this extension's own containing app,
+            // and only for the content kinds that app handles: the central Luna
+            // app handles everything; each single-content app handles one kind.
+            let (_, scheme) = SharedOnboardingStatus.currentSurfaceAndScheme
+            payload["scheme"] = scheme
+            payload["supportsArticles"] = Self.hostHandlesArticles
+            payload["supportsMedia"] = Self.hostHandlesMedia
+            payload["supportsProducts"] = Self.hostHandlesProducts
         case "bypassEnabled":
-            // On-device unlocking is always enabled; the receiving Luna surface
-            // decides how to present the captured article.
-            payload["enabled"] = true
+            // On-device unlocking is article handling, so only article-capable
+            // hosts (Reader and the central Luna app) enable the Referer
+            // ruleset + in-page reveal; the receiving Luna surface decides how
+            // to present the captured article.
+            payload["enabled"] = Self.hostHandlesArticles
         case "saveContent":
             // The content script hands over the already-unlocked article HTML so the
             // app can render it as prefetched content (never re-fetching a page that
@@ -71,51 +66,27 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         context.completeRequest(returningItems: [response], completionHandler: nil)
     }
 
-    private static var isDownloaderHost: Bool {
-        isHost(appSuffix: ".downloader")
+    /// Per-kind capability of this extension's containing app, from the bundle
+    /// id suffix. The central Luna app's extension has the bare
+    /// `<prefix>.safari` id (no content suffix) and handles every kind.
+    private static var isCentralLunaHost: Bool {
+        !isHost(appSuffix: ".reader") && !isHost(appSuffix: ".downloader")
+            && !isHost(appSuffix: ".pricetracker")
     }
 
-    /// The extension's own host app is installed by definition; sibling apps are
-    /// known from the launch markers each app writes into the App Group. A marker
-    /// can go stale after an uninstall (App Group data outlives the app), in which
-    /// case the deep link still lands in a remaining Luna app and the shared store
-    /// surfaces the item on its proper surface.
-    private static var isReaderInstalled: Bool {
-        isHost(appSuffix: ".reader") || installedMarker(readerInstalledKey)
+    private static var hostHandlesArticles: Bool {
+        isCentralLunaHost || isHost(appSuffix: ".reader")
     }
 
-    private static var isDownloaderInstalled: Bool {
-        isHost(appSuffix: ".downloader") || installedMarker(downloaderInstalledKey)
+    private static var hostHandlesMedia: Bool {
+        isCentralLunaHost || isHost(appSuffix: ".downloader")
     }
 
-    private static var isPriceTrackerInstalled: Bool {
-        isHost(appSuffix: ".pricetracker") || installedMarker(priceTrackerInstalledKey)
+    private static var hostHandlesProducts: Bool {
+        isCentralLunaHost || isHost(appSuffix: ".pricetracker")
     }
 
     private static func isHost(appSuffix: String) -> Bool {
         (Bundle.main.bundleIdentifier ?? "").hasSuffix(appSuffix + ".safari")
-    }
-
-    private static func installedMarker(_ key: String) -> Bool {
-        UserDefaults(suiteName: appGroupID)?.bool(forKey: key) ?? false
-    }
-
-    private static var downloaderAppClipURL: String {
-        infoPlistURL(forKey: downloaderAppClipURLKey)
-    }
-
-    private static var readerAppClipURL: String {
-        infoPlistURL(forKey: readerAppClipURLKey)
-    }
-
-    private static var priceTrackerAppStoreURL: String {
-        infoPlistURL(forKey: priceTrackerAppStoreURLKey)
-    }
-
-    private static func infoPlistURL(forKey key: String) -> String {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
-            return ""
-        }
-        return raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

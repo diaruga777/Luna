@@ -304,11 +304,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
         let width = HorizonScrollIndicator.bloomDiameter
         let immersed = carousel.isImmersed
-        // Trailing edge: the card's at rest, the screen's while immersed. Only
-        // the card's BOTTOM extends on immersion — its top and sides hold.
+        // Trailing edge: the card's at rest, the screen's while immersed. The
+        // bar keeps its card-mode height and vertical position in both modes —
+        // immersion only slides it horizontally to the screen edge.
         let rightEdge = immersed ? view.bounds.maxX : resting.maxX
         let top = resting.minY
-        let bottom = immersed ? view.bounds.maxY : resting.maxY
+        let bottom = resting.maxY
         let frame = CGRect(
             x: rightEdge - width, y: top, width: width, height: max(bottom - top, 0))
         // Keep the dot inside the card's top/bottom edge dissolves.

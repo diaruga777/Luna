@@ -1,0 +1,115 @@
+//
+//  URLRescueTestFakes.swift
+//  LunaTests
+//
+
+import Foundation
+import LunaFetch
+import LunaIngest
+import LunaMediaDownload
+import LunaModels
+@testable import LunaURLRescue
+
+/// An HTML fetcher that returns a canned string for any URL (nil ⇒ throws).
+final class FakeRescueHTMLFetcher: HTMLFetching {
+    var html: String?
+    init(html: String? = nil) { self.html = html }
+    private func result() throws -> String {
+        guard let html else { throw CocoaError(.fileNoSuchFile) }
+        return html
+    }
+    func fetchHTML(from url: URL) async throws -> String { try result() }
+    func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String { try result() }
+    func fetchHTML(from url: URL, referer: String) async throws -> String { try result() }
+    func fetchHTMLWithoutCookies(from url: URL) async throws -> String { try result() }
+    func fetchWaybackRawHTML(for url: URL) async throws -> String { try result() }
+    func fetchJinaReader(for url: URL) async throws -> String { try result() }
+}
+
+/// A scripted model session — returns the next queued response per call, records
+/// what it was asked. Mirrors `FakeTrimModelSession`'s style.
+final class FakeRescueModelSession: RescueModelSession {
+    enum Response {
+        case plan(RescuePlanResponse)
+        case article(RescueArticleResponse)
+        case failure(RescueModelError)
+    }
+
+    var available: Bool
+    var articleSupported: Bool
+    private var responses: [Response]
+    private(set) var prewarmCount = 0
+    private(set) var planPrompts: [String] = []
+    private(set) var planInstructions: [String] = []
+    private(set) var articlePrompts: [String] = []
+
+    init(available: Bool = true, supportsArticlePayload: Bool = false, responses: [Response] = []) {
+        self.available = available
+        self.articleSupported = supportsArticlePayload
+        self.responses = responses
+    }
+
+    var isAvailable: Bool { available }
+    var supportsArticlePayload: Bool { articleSupported }
+    func prewarm() { prewarmCount += 1 }
+
+    func requestPlan(instructions: String, prompt: String) async throws -> RescuePlanResponse {
+        planInstructions.append(instructions)
+        planPrompts.append(prompt)
+        return try nextPlan()
+    }
+
+    func requestArticlePayload(instructions: String, prompt: String) async throws -> RescueArticleResponse {
+        articlePrompts.append(prompt)
+        guard !responses.isEmpty else { throw RescueModelError.modelUnavailable }
+        switch responses.removeFirst() {
+        case .article(let a): return a
+        case .failure(let e): throw e
+        case .plan: throw RescueModelError.modelUnavailable
+        }
+    }
+
+    private func nextPlan() throws -> RescuePlanResponse {
+        guard !responses.isEmpty else { throw RescueModelError.modelUnavailable }
+        switch responses.removeFirst() {
+        case .plan(let p): return p
+        case .failure(let e): throw e
+        case .article: throw RescueModelError.modelUnavailable
+        }
+    }
+}
+
+/// A JS runner returning a canned string, recording what it ran.
+final class FakeRescueScriptRunner: RescueScriptRunning {
+    var result: String?
+    private(set) var ranScripts: [RescueScript] = []
+    init(result: String? = nil) { self.result = result }
+    func run(_ script: RescueScript) async -> String? {
+        ranScripts.append(script)
+        return result
+    }
+}
+
+/// Records every re-entered IngestInput and returns scripted results in order
+/// (last result repeats).
+final class RecordingPipeline {
+    private(set) var inputs: [IngestInput] = []
+    private var results: [IngestResult]
+    init(results: [IngestResult]) { self.results = results }
+    func run(_ input: IngestInput) async -> IngestResult {
+        inputs.append(input)
+        if results.count > 1 { return results.removeFirst() }
+        return results.first ?? IngestResult(url: input.url, outcome: .failed)
+    }
+}
+
+/// A media resolver returning canned assets.
+final class FakeMediaResolver: SocialMediaResolving {
+    var assets: [MediaAsset]
+    private(set) var resolvedURLs: [URL] = []
+    init(assets: [MediaAsset] = []) { self.assets = assets }
+    func resolveAssets(for url: URL) async -> [MediaAsset] {
+        resolvedURLs.append(url)
+        return assets
+    }
+}

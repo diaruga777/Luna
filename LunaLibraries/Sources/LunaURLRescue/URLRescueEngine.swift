@@ -79,7 +79,7 @@ public final class URLRescueEngine {
                 if outcome.succeeded {
                     ruleStore.recordSuccess(cached)
                     log("cachedRule success host=\(host)")
-                    return outcome
+                    return Self.relabel(outcome, as: .cachedRule)
                 }
                 ruleStore.recordFailure(forHost: host, hint: request.hint)
                 log("cachedRule fail host=\(host)")
@@ -308,6 +308,16 @@ public final class URLRescueEngine {
 
     private func log(_ message: String) {
         SharedDiagnosticLog.record(message, category: "rescue")
+    }
+
+    /// Re-tag a successful outcome's method (used to mark a cache-hit rescue
+    /// `.cachedRule` even though the applier labeled it by directive kind).
+    static func relabel(_ outcome: RescueOutcome, as method: RescueMethod) -> RescueOutcome {
+        switch outcome {
+        case .rescued(let result, _): return .rescued(result, method: method)
+        case .rescuedMedia(let assets, _): return .rescuedMedia(assets, method: method)
+        default: return outcome
+        }
     }
 
     private func outcomeLabel(_ outcome: RescueOutcome) -> String {

@@ -20,15 +20,18 @@ public enum ArticleResolution: Equatable {
     /// Only a paywall stub was reachable, but it carried a real title. The item
     /// can be parked for a user-solved archive CAPTCHA under this title.
     case paywalled(title: String)
-    /// Nothing usable — not even a title.
-    case unreadable
+    /// Nothing usable — not even a title. Carries WHY when the direct fetch's
+    /// error was captured (403 / offline / timeout / not-HTML), so the failed
+    /// card can say more than "couldn't fetch"; nil when the page came back
+    /// fine and simply had no article and no title in it.
+    case unreadable(SaveFailureReason?)
 
     public static func == (lhs: ArticleResolution, rhs: ArticleResolution) -> Bool {
         switch (lhs, rhs) {
         case let (.readable(lc, lh), .readable(rc, rh)):
             return lc.title == rc.title && lc.bodyTextLength == rc.bodyTextLength && lh == rh
         case let (.paywalled(lt), .paywalled(rt)): return lt == rt
-        case (.unreadable, .unreadable): return true
+        case let (.unreadable(l), .unreadable(r)): return l == r
         default: return false
         }
     }
@@ -57,10 +60,16 @@ public enum ArticleResolver {
         let siteRule = SiteUnlockRules.rule(for: url)
         // Reuse the caller's already-fetched direct HTML when supplied (the shared
         // decider fetches it once for product detection), else fetch it now.
-        let direct = await extraction.fetchAndExtract(baseURL: url) {
-            if let prefetchedHTML { return prefetchedHTML }
-            return try await fetcher.fetchHTML(from: url)
-        }
+        // The direct read's error is the ONE that explains a total failure, so it
+        // is captured here and carried into `.unreadable` at the bottom.
+        var directFailure: SaveFailureReason?
+        let direct = await extraction.fetchAndExtract(
+            baseURL: url,
+            fetch: {
+                if let prefetchedHTML { return prefetchedHTML }
+                return try await fetcher.fetchHTML(from: url)
+            },
+            onFetchError: { directFailure = SaveFailureReason(fetchError: $0) })
         // Skip everything else when the direct read already succeeded. A TRUSTED
         // prefetch (the Safari "Read in Luna" hand-off, which captured the already-
         // unlocked on-screen article) is accepted on body length alone: the page's
@@ -145,7 +154,7 @@ public enum ArticleResolver {
         // rule, and `archive.ph/newest` belongs to the bounded WKWebView terminal flow,
         // not a silent fetch — removing the duplicate Wayback hit + near-always-failing
         // archive.ph GET is the NYT/WSJ "no silent strategy worked" speed fix.)
-        return resolution(direct: direct, archived: nil)
+        return resolution(direct: direct, archived: nil, directFailure: directFailure)
     }
 
     /// The page's advertised AMP URL (`<link rel="amphtml" href="…">`), absolute,
@@ -165,8 +174,12 @@ public enum ArticleResolver {
     /// (direct page first — it's canonical — then the archive snapshot), else
     /// `.unreadable`. Judged by the shared `ArticleExtraction.isReadableArticle`
     /// predicate (the only place the readable/locked decision lives).
+    /// - Parameter directFailure: why the direct fetch threw, when it did. Only
+    ///   reaches the result in the `.unreadable` case — a page that yielded a
+    ///   title or a body wasn't a failure at all.
     public static func resolution(
-        direct: ExtractedArticle?, archived: ExtractedArticle?
+        direct: ExtractedArticle?, archived: ExtractedArticle?,
+        directFailure: SaveFailureReason? = nil
     ) -> ArticleResolution {
         if let direct, ArticleExtraction.isReadableArticle(direct) {
             return .readable(direct.content, html: direct.sourceHTML)
@@ -177,6 +190,9 @@ public enum ArticleResolver {
         let title = [direct?.content.title, archived?.content.title]
             .compactMap { $0 }
             .first { !$0.isEmpty && $0 != "Untitled" }
-        return title.map { .paywalled(title: $0) } ?? .unreadable
+        if let title { return .paywalled(title: title) }
+        // Reached the page but found no article and no title: that's a readable-
+        // content failure, not a transport one, whatever the fetch reported.
+        return .unreadable(direct == nil ? directFailure : .notReadable)
     }
 }

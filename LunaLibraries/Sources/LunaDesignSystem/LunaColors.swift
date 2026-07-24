@@ -32,6 +32,15 @@ public enum LunaColors {
         light: UIColor(white: 0, alpha: 0.28))
     public static let opaqueSeparator = dynamic(darkWhite: 0.22, lightWhite: 0.30)
 
+    /// The failure accent: a failed card's rim glow, its detail line, and its
+    /// destructive affordances. `.systemRed` is tuned for white surfaces and
+    /// reads muddy on Luna's true-black and 46%-gray bases, so both ends are
+    /// pinned by hand — bright enough on black to read as a glow, saturated
+    /// enough on gray to read as a warning.
+    public static let errorAccent = dynamic(
+        dark: UIColor(red: 1.00, green: 0.36, blue: 0.33, alpha: 1),
+        light: UIColor(red: 0.78, green: 0.09, blue: 0.07, alpha: 1))
+
     public static let fill = dynamic(
         dark: UIColor(white: 1, alpha: 0.20),
         light: UIColor(white: 0, alpha: 0.20))

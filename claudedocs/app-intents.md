@@ -32,25 +32,43 @@ is `.done`, `.unhandled`, or `.requiresScreenshot`; transient entities are resul
 values only and are not queryable.
 
 Outside Safari, the optional **OnScreenURLs** input is checked first, before the
-normal decision table **and before the onboarding interception**, so a valid supplied
-URL is saved even when the current app would otherwise be unsupported. It is
+normal decision table **and before the onboarding interception**, so a supplied
+URL this app can handle is saved even when the current app would otherwise be
+unsupported. It is
 deliberately a scalar String configured with
 `.connectToPreviousIntentResult`, so Shortcuts can put the Get On-Screen URLs
 magic variable in one text field instead of rendering a hand-authored collection
 editor. Luna extracts every embedded HTTP(S) URL from bare, newline-delimited,
 comma-delimited, or descriptive/JSON-like text before collapsing the candidates.
-Empty input, divergent values, non-HTTP(S) or
+Empty input, non-HTTP(S) or
 hostless URLs, whitespace-containing URLs, and values ending in `...`, `…`, or
 `⋯` (including percent-encoded ellipsis) are ignored. Otherwise every element
 must be a substring of the longest element; that longest complete URL is
 chosen after ignoring an `http` versus `https` scheme difference (on-screen
-detection commonly returns both forms for the same page), then sent through the
-same immediate-URL save function used by the Safari-extension
-fast path. A persisted save returns `.done` (with synchronous media when
-applicable). An explicit unsupported-kind rejection (`SurfaceSupport`) is swallowed and
-falls through to the same screenshot or unhandled outcome that would have
-occurred without OnScreenURLs. A save timeout or network enrichment failure remains handled
-because the normal ingest task continues and persists pending work for retry.
+detection commonly returns both forms for the same page).
+
+`ProvideContextOnScreenURL.plan(text:isSafari:)` then turns the extraction into
+one of three plans, and **pre-validation is what decides whether a later failure
+is reported or ignored**:
+
+| extraction | pre-check (`IntentURLPrecheck`) | plan |
+|---|---|---|
+| one candidate | predicted kind is handled by THIS app | **save** — and throw on any failure |
+| one candidate | predicted kind belongs to a sibling app, or unusable URL | **skip** — silent fall-through |
+| ≥2 distinct valid, non-collapsing URLs | at least one is handleable | **divergent** — throws `multipleURLs` (after the onboarding hijack: an in-flight setup run must still advance) |
+| ≥2 distinct valid URLs | none handleable | **skip** |
+| nothing usable | — | **skip** |
+
+`IntentURLPrecheck.verdict(for:current:)` classifies URL-ONLY
+(`Classifier.classify(url:)`, no fetch) and maps the predicted `ContentKind` to
+its owning app (`.undetermined` → article, matching where the pipeline sends a
+plain page), then runs `SurfaceSupport.evaluate`. A `.save` plan goes through the
+same immediate-URL save function used by the Safari-extension fast path and
+returns `.done` (with synchronous media when applicable). Because the pre-check
+already said this app handles the kind, a foreign-kind rejection from the REAL
+classification (an undetermined page that turned out to be a product) throws
+instead of being swallowed. A save timeout remains handled because the normal
+ingest task continues and persists pending work for retry.
 
 The shared **Settings → Shortcut & Safari → Handle On-Screen URLs** toggle is on
 by default. Turning it off makes `ProvideContextIntent` ignore the `OnScreenURLs`
@@ -124,8 +142,8 @@ Non-media saves and background-download mode return `media = nil`.
    handle+phrase+date? via `SocialPostFinder`). Both are double-save-aware and
    return `IntentIngestHelper.ActionButtonSaveOutcome`, whose cases carry the
    saved URL string.
-4. On success the reading-list row is persisted immediately and ingestion continues
-   best-effort, so metadata work cannot consume the intent's 12-second budget. If the
+4. The save awaits its classified outcome (bounded by the 12-second race) so a
+   failure can be reported, then the row is verified against the store. If the
    RUNNING app handles media (Downloader / central Luna) and the URL is downloadable,
    the intent performs exactly one media handoff regardless of per-platform toggles.
    `AppIntentSettings.returnsMediaToShortcuts` is App-Group-backed and defaults on (its
@@ -149,7 +167,43 @@ Non-media saves and background-download mode return `media = nil`.
 5. Errors are thrown as `SaveError: CustomLocalizedStringResourceConvertible`
    (`unsupportedApp`, `unsupportedKind`, `modelUnavailable`, `networkUnavailable`,
    `quotaLimitReached`, `serviceUnavailable`, `nothingIdentifiable`,
-   `notFound`). The happy path returns `SaveResultEntity`.
+   `notFound`, `saveFailed`, `contentUnavailable`). Both save legs — the
+   screenshot route and the double-press re-save — go through one
+   `savedURLString(from:)` mapping, so neither can report success over a
+   vanished or failed item. The happy path returns `SaveResultEntity`.
+
+## Error reporting (the no-silent-failure invariant)
+
+**An intent must never report success while the app holds nothing, or holds only
+a failure.** A Shortcut that exits cleanly with an empty list (the classic case:
+no download and nothing saved) is a bug, not a degraded success. So every save an
+intent *believed in* is verified, and every way it can end empty throws:
+
+- **What "believed in" means.** Safari's fresh tracked URL always counts. An
+  on-screen URL counts when `IntentURLPrecheck` predicts a kind this app
+  handles (above). A screenshot save counts when the current app is one we have
+  a screen prompt for and the model returned parseable fields. Anything else is
+  not a save attempt at all and stays silent.
+- **Verification** (`IntentSaveVerification`, run inside
+  `IntentIngestHelper.handleSavePress`): after the press, the store is re-read by
+  ITEM ID — the id survives an unwrap repoint, the URL doesn't — and the item's
+  state decides. `.ready`/`.pending` pass; `.failed` → `contentUnavailable`; a
+  missing item → `nothingSaved`. **`.needsCaptcha` PASSES**: a hard-paywalled
+  article is saved, titled, behind the tap-to-unlock affordance — a successful
+  save, not a failure. A placeholder that is gone because it DEDUPED into an
+  existing item (wrapper resolved to an article already in the list, store URL
+  merged into an existing tracker) also passes; the content is in the app under
+  the surviving item. `handleSavePress` reports the outcome as
+  `.saveFailed(_)`, and `.completed`'s URL is the item's CURRENT one, so media
+  handoff uses the resolved URL rather than the wrapper.
+- **Timeouts stay successes.** The 12-second race expiring means the ingest is
+  still running and its item is in the store as `.pending`; it finishes or is
+  retried on the next launch. There is nothing to verify and nothing to report.
+- **Media** (`media-download.md`): the handoff throws when the transfer engine
+  reports that nothing is downloading and nothing will be. Already-downloaded
+  and Wi-Fi-deferred are no-file successes.
+- **`ProvideContextError`**: `noTrackedPage`, `unsupportedKind`, `multipleURLs`,
+  `saveFailed`, `contentUnavailable`.
 
 ## The vision seam (compiler + availability double gate)
 

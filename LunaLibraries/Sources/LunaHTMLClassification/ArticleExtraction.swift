@@ -68,12 +68,23 @@ public struct ArticleExtraction {
     /// Runs an HTML fetch and extracts it, pairing the parsed content with its source
     /// HTML. Returns nil if the fetch or parse fails (so a dead source falls through
     /// gracefully). The ONE shared fetch-then-extract helper for the whole pipeline.
+    ///
+    /// `onFetchError` observes the swallowed error WITHOUT changing the
+    /// fall-through contract: a failed save needs to explain WHY the page was
+    /// unreachable (403 vs offline vs timeout), and this is the only place that
+    /// error still exists. Defaulted, so every existing call site is unchanged.
     public func fetchAndExtract(
-        baseURL: URL, fetch: () async throws -> String
+        baseURL: URL, fetch: () async throws -> String,
+        onFetchError: ((Error) -> Void)? = nil
     ) async -> ExtractedArticle? {
-        guard let html = try? await fetch(),
-              let content = try? extract(html: html, baseURL: baseURL)
-        else { return nil }
+        let html: String
+        do {
+            html = try await fetch()
+        } catch {
+            onFetchError?(error)
+            return nil
+        }
+        guard let content = try? extract(html: html, baseURL: baseURL) else { return nil }
         return ExtractedArticle(content: content, sourceHTML: html)
     }
 }

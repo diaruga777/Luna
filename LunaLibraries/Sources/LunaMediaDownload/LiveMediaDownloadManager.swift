@@ -174,16 +174,39 @@ public final class LiveMediaDownloadManager: NSObject {
         ownership: LiveMediaDownloadOwnership? = nil,
         manual: Bool = false
     ) async -> Bool {
-        guard let gated = await gateAndPrepare(
-            urlString: urlString, title: title, ownership: ownership, manual: manual)
-        else { return false }
+        if case .started = await startReportingResult(
+            urlString: urlString, title: title, ownership: ownership, manual: manual) {
+            return true
+        }
+        return false
+    }
+
+    /// `start` with the REASON a start didn't happen preserved. The Bool form
+    /// above collapses "already in the library", "deferred until Wi-Fi", and a
+    /// genuine failure into one `false`, which is exactly the ambiguity that let
+    /// the App Intent media handoff report silent success with nothing
+    /// downloaded (see `MediaIntentHandoff`). Only this method can tell them
+    /// apart, because only the gate below knows which guard ended the start.
+    public func startReportingResult(
+        urlString: String,
+        title: String? = nil,
+        ownership: LiveMediaDownloadOwnership? = nil,
+        manual: Bool = false
+    ) async -> LiveMediaDownloadStartResult {
+        let gated: GateResult
+        switch await gateAndPrepare(
+            urlString: urlString, title: title, ownership: ownership, manual: manual) {
+        case let .rejected(result): return result
+        case let .proceed(result): gated = result
+        }
 
         switch await attachToExistingJobIfPresent(gated) {
-        case .attached(let succeeded): return succeeded
+        case .attached(let succeeded):
+            return succeeded ? .started : .failed(message: nil)
         case .notFound: break
         }
 
-        return await createAndStartJob(gated, title: title)
+        return await createAndStartJob(gated, title: title) ? .started : .failed(message: nil)
     }
 
     /// The state a resolved, gate-passed start carries into the two phases
@@ -195,21 +218,27 @@ public final class LiveMediaDownloadManager: NSObject {
         let readingItem: ReadingListItem?
     }
 
+    /// Either the gate-passed state or the reason the start ended in the gate.
+    private enum GateOutcome {
+        case proceed(GateResult)
+        case rejected(LiveMediaDownloadStartResult)
+    }
+
     /// Canonicalizes the URL, checks platform support, resolves ownership, and
     /// runs every guard that can end the start before a job is ever touched:
     /// the already-downloaded check, the Downloader Wi-Fi-only defer, and the
-    /// Photos add-authorization prompt. Returns `nil` for every early-return
-    /// case in the original single method.
+    /// Photos add-authorization prompt. Each early return names WHY it ended, so
+    /// `startReportingResult` can distinguish "nothing to do" from "this failed".
     private func gateAndPrepare(
         urlString: String, title: String?, ownership: LiveMediaDownloadOwnership?, manual: Bool
-    ) async -> GateResult? {
+    ) async -> GateOutcome {
         await reapExpiredSuspensions()
 
         let urlString = await Self.canonicalRedditURLStringIfNeeded(urlString)
 
         guard MediaDownloadablePlatform.supports(urlString),
               let sourceURL = URL(string: urlString)
-        else { return nil }
+        else { return .rejected(.unsupported) }
 
         let ownership = ownership ?? (MediaAutoDownloader.isRunningInDownloader
             ? .downloader : .invokingApp)
@@ -219,7 +248,7 @@ public final class LiveMediaDownloadManager: NSObject {
         ) {
             await startFailedActivity(
                 urlString: urlString, title: title, message: storageError.message)
-            return nil
+            return .rejected(.failed(message: storageError.message))
         }
         let readingItem = ReadingListStore.shared.item(forURLString: urlString)
         if ownership == .downloader {
@@ -235,7 +264,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 // The durable Downloader library, not the legacy URL marker, is
                 // authoritative for Downloader-owned completion.
                 AutoDownloadSettings.markDownloaded(urlString)
-                return nil
+                return .rejected(.alreadyDownloaded)
             } else {
                 // Repair state left by an interrupted/crashed inline download or
                 // by an older sibling-app Photos save. Such a marker must not
@@ -248,10 +277,10 @@ public final class LiveMediaDownloadManager: NSObject {
                 isOnWiFi: NetworkReachability.shared.isOnWiFi
             ) {
                 AutoDownloadSettings.markPendingWiFiDownload(urlString)
-                return nil
+                return .rejected(.deferredUntilWiFi)
             }
         } else if AutoDownloadSettings.wasDownloaded(urlString) {
-            return nil
+            return .rejected(.alreadyDownloaded)
         }
 
         let canSave = ownership == .downloader
@@ -263,11 +292,12 @@ public final class LiveMediaDownloadManager: NSObject {
                 title: title,
                 message: MediaDownloadError.permissionDenied.message,
                 errorKind: .photosPermission)
-            return nil
+            return .rejected(.notAuthorized)
         }
 
-        return GateResult(
-            urlString: urlString, sourceURL: sourceURL, ownership: ownership, readingItem: readingItem)
+        return .proceed(GateResult(
+            urlString: urlString, sourceURL: sourceURL, ownership: ownership,
+            readingItem: readingItem))
     }
 
     private enum ExistingJobOutcome {

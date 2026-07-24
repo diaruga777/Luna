@@ -53,7 +53,7 @@ final class ShareSurfaceDriverRescueTests: XCTestCase {
         let url = URL(string: "https://example.com/broken")!
         let item = store.add(urlString: url.absoluteString)
 
-        driver.present(.failed, url: url)
+        driver.present(.failed(nil), url: url)
 
         XCTAssertTrue(host.presented.contains { $0 is RescueFailureViewController },
                       "action extension should present the rescue card")
@@ -66,7 +66,7 @@ final class ShareSurfaceDriverRescueTests: XCTestCase {
         let url = URL(string: "https://example.com/broken")!
         let item = store.add(urlString: url.absoluteString)
 
-        driver.present(.failed, url: url)
+        driver.present(.failed(nil), url: url)
 
         XCTAssertFalse(host.presented.contains { $0 is RescueFailureViewController })
         XCTAssertEqual(host.completedSilently, 1)

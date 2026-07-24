@@ -62,6 +62,13 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView?
+    /// Optional tint for this card's edge glow — how a card whose save FAILED
+    /// is marked out from its healthy neighbors. Asked at mount, because a
+    /// `CardContentViewController` has no back-reference to its card view.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        edgeGlowColorForCardAt index: Int
+    ) -> UIColor?
 }
 
 public extension CardCarouselDataSource {
@@ -85,6 +92,11 @@ public extension CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView? { nil }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        edgeGlowColorForCardAt index: Int
+    ) -> UIColor? { nil }
 }
 
 /// Per-surface tuning, set BEFORE the carousel's view loads.
@@ -580,6 +592,7 @@ public final class CardCarouselViewController: UIViewController {
         let card = CarouselCardView()
         card.setBorderEnabled(style.showsCardBorder)
         card.setContentEdgeFadeHeight(style.contentEdgeFadeHeight)
+        card.setEdgeGlow(dataSource?.carousel(self, edgeGlowColorForCardAt: index))
         card.installContentView(content.view)
         content.setMuted(audioSession.isMuted)
         content.audioAvailabilityChanged = { [weak self] in self?.updateMuteUI() }

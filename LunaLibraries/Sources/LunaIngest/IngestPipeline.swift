@@ -74,8 +74,12 @@ public enum Outcome: Equatable {
     /// interactive archive-CAPTCHA reader.
     case needsArchive(title: String)
     /// A genuine failure (unreachable ordinary page) OR the overall-timeout fired —
-    /// the surface shows an error, never an infinite spinner.
-    case failed
+    /// the surface shows an error, never an infinite spinner. Carries the coarse
+    /// reason when one was captured (HTTP status / offline / timeout / nothing
+    /// readable) so the failed card can explain itself; nil when unclassifiable.
+    /// `case .failed` still matches without binding, so pattern-matching call
+    /// sites are unaffected.
+    case failed(SaveFailureReason?)
     /// The classifier demanded a kind whose processor ISN'T LINKED into this
     /// app (the compile-time surface split): an article/product URL saved in
     /// an app that doesn't handle that kind. Surfaces drop it with the
@@ -92,7 +96,7 @@ public enum Outcome: Equatable {
         case let (.video(lp, lid), .video(rp, rid)): return lp == rp && lid == rid
         case let (.document(lt), .document(rt)): return lt == rt
         case let (.needsArchive(lt), .needsArchive(rt)): return lt == rt
-        case (.failed, .failed): return true
+        case let (.failed(l), .failed(r)): return l == r
         case let (.unsupported(lo), .unsupported(ro)): return lo == ro
         default: return false
         }
@@ -192,12 +196,12 @@ public enum IngestPipeline {
                 let url = URLUnwrapper.unwrapOffline(input.url).url
                 let outcome = ArticleFetcher.isHardPaywallHost(url)
                     ? Outcome.needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
-                    : .failed
+                    : .failed(.timedOut)
                 return IngestResult(url: url, outcome: outcome)
             }
-            let first = await group.next() ?? IngestResult(url: input.url, outcome: .failed)
+            let first = await group.next() ?? IngestResult(url: input.url, outcome: .failed(.timedOut))
             group.cancelAll()
-            return first ?? IngestResult(url: input.url, outcome: .failed)
+            return first ?? IngestResult(url: input.url, outcome: .failed(.timedOut))
         }
     }
 

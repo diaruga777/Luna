@@ -99,7 +99,7 @@ final class RecordingPipeline {
     func run(_ input: IngestInput) async -> IngestResult {
         inputs.append(input)
         if results.count > 1 { return results.removeFirst() }
-        return results.first ?? IngestResult(url: input.url, outcome: .failed)
+        return results.first ?? IngestResult(url: input.url, outcome: .failed(nil))
     }
 }
 

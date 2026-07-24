@@ -22,7 +22,7 @@ final class URLRescueEngineTests: XCTestCase {
         scriptRunner: RescueScriptRunning = FakeRescueScriptRunner(),
         ruleStore: RescueRuleStoring = InMemoryRescueRuleStore(),
         media: FakeMediaResolver = FakeMediaResolver(),
-        pipeline: RecordingPipeline = RecordingPipeline(results: [IngestResult(url: URL(string: "https://www.example.com/story")!, outcome: .failed)])
+        pipeline: RecordingPipeline = RecordingPipeline(results: [IngestResult(url: URL(string: "https://www.example.com/story")!, outcome: .failed(nil))])
     ) -> (URLRescueEngine, RecordingPipeline) {
         let engine = URLRescueEngine(
             session: session, scriptRunner: scriptRunner, ruleStore: ruleStore,

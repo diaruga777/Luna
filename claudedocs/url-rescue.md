@@ -85,7 +85,9 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   the budget — that tap IS its own consent.
 - **In-app** — a failed reading-list row tap opens a hint-picker rescue sheet; the
   long-press menu gains a "Try with Apple Intelligence" submenu; the row subtitle
-  reads "trying harder…" while a rescue is in flight.
+  reads "trying harder…" while a rescue is in flight. On the Reader and Downloader
+  CARD roots the rescue button lives on the failed-save error card — see
+  `claudedocs/failed-saves.md`.
 - **Extension handoff** — the action extension's `.failed` presents
   `RescueFailureViewController` (hint segmented control + "Finish in Luna"), which
   writes a `PendingRescueRequest` and best-effort opens the containing app via

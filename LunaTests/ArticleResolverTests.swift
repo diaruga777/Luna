@@ -64,12 +64,32 @@ final class ArticleResolverTests: XCTestCase {
     func testPlaceholderTitleIsNotTreatedAsReal() {
         let directStub = extracted(title: "Untitled", bodyLength: 40, html: "<stub>")
         let result = ArticleResolver.resolution(direct: directStub, archived: nil)
-        XCTAssertEqual(result, .unreadable)
+        // The page WAS reached — it just held nothing usable — so the reason is a
+        // content failure, never whatever the transport reported.
+        XCTAssertEqual(result, .unreadable(.notReadable))
+    }
+
+    /// A page that never came back carries the fetch's own reason forward, so the
+    /// failed card can say "403" instead of "couldn't fetch".
+    func testUnreachablePageCarriesTheFetchReason() {
+        let result = ArticleResolver.resolution(
+            direct: nil, archived: nil, directFailure: .httpStatus(403))
+        XCTAssertEqual(result, .unreadable(.httpStatus(403)))
+    }
+
+    /// A reached-but-empty page must NOT inherit the direct fetch's reason: the
+    /// direct read here succeeded, and any captured error belongs to an earlier
+    /// attempt.
+    func testReachedPageIgnoresAStaleFetchReason() {
+        let directStub = extracted(title: "", bodyLength: 10, html: "<stub>")
+        let result = ArticleResolver.resolution(
+            direct: directStub, archived: nil, directFailure: .offline)
+        XCTAssertEqual(result, .unreadable(.notReadable))
     }
 
     func testNothingReachableIsUnreadable() {
         let result = ArticleResolver.resolution(direct: nil, archived: nil)
-        XCTAssertEqual(result, .unreadable)
+        XCTAssertEqual(result, .unreadable(nil))
     }
 
     // MARK: - silent-strategy loop: advance-on-failure (GOAL 2 routing reliability)

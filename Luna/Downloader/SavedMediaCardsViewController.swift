@@ -15,8 +15,10 @@ import AVFoundation
 import AVKit
 import LunaDesignSystem
 import LunaMediaDownload
+import LunaModels
 import LunaReadingList
 import LunaReadingListUI
+import LunaSocialUI
 import LunaStorage
 import LunaURLClassification
 import Photos
@@ -77,6 +79,13 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private weak var activePlayer: AVPlayer?
     private var items: [SavedMediaItem] = []
     private var archivedItems: [SavedMediaItem] = []
+    /// Saves whose ingestion FAILED. They carry no kind (the classifier never
+    /// got one), so the surface gate keeps them and every app shows them — this
+    /// app included: a Downloader link that broke belongs on the Downloader's
+    /// screen, not silently in the shared store. They sit after the media cards
+    /// as error cards, and vanish from here the moment a rescue gives them a
+    /// kind (media resolves into `items`; anything else surfaces in its own app).
+    private var failedSaves: [ReadingListItem] = []
     private var isReconcilingPhotos = false
     private var pasteboardState: PasteboardCardState?
     private var renderedPasteboardState: PasteboardCardState?
@@ -225,11 +234,17 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         let updatedArchive = allItems.filter(\.isArchived).sorted {
             ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
+        let updatedFailed = ReadingListStore.shared.items()
+            .filter { ReadingListSectioning.isFailedSave($0) && !$0.isArchived }
+            .sorted { ($0.bumpDate ?? $0.dateAdded) > ($1.bumpDate ?? $1.dateAdded) }
         var fingerprint = updated.map { item in
             "active|\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
         }
         fingerprint.append(contentsOf: updatedArchive.map { item in
             "archive|\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
+        })
+        fingerprint.append(contentsOf: updatedFailed.map { item in
+            "failed|\(item.id)|\(URLRescueCoordinator.shared.isRescuing(item.id))"
         })
         fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
         defer { reconcilePhotosReferencesIfAuthorized() }
@@ -241,6 +256,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
         items = updated
         archivedItems = updatedArchive
+        failedSaves = updatedFailed
         renderedPasteboardState = pasteboardState
         let pendingIndex = pendingPasteboardDownloadURLString.flatMap { pending in
             items.firstIndex { $0.sourceURLString == pending }
@@ -251,8 +267,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             ?? (items.isEmpty ? 0 : cardOffset)
         if pendingIndex != nil { pendingPasteboardDownloadURLString = nil }
         carousel.reloadData(centeringAt: centeredIndex)
-        emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
-        carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
+        let hasAnyCard = !items.isEmpty || !failedSaves.isEmpty
+        emptyView.isHidden = hasAnyCard || renderedPasteboardState != nil
+        carousel.view.isHidden = !hasAnyCard && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())
         refreshArchivePullAvailability(animated: false)
         updateShareButton()
@@ -358,6 +375,17 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     private func mediaIndex(forCarouselIndex index: Int) -> Int? {
         itemIndex(forCarouselIndex: index, itemCount: items.count)
+    }
+
+    /// Failed-save cards occupy the slots after the media cards, so one shared
+    /// offset keeps both index maps honest.
+    private func failedIndex(forCarouselIndex index: Int) -> Int? {
+        let failedIndex = index - cardOffset - items.count
+        return (0..<failedSaves.count).contains(failedIndex) ? failedIndex : nil
+    }
+
+    private func failedSave(atCarouselIndex index: Int) -> ReadingListItem? {
+        failedIndex(forCarouselIndex: index).map { failedSaves[$0] }
     }
 
     private func currentMediaItem() -> (item: SavedMediaItem, carouselIndex: Int)? {
@@ -819,7 +847,7 @@ private final class ArchivedImageViewController: UIViewController {
 extension SavedMediaCardsViewController: CardCarouselDataSource {
 
     func numberOfCards(in carousel: CardCarouselViewController) -> Int {
-        items.count + cardOffset
+        items.count + failedSaves.count + cardOffset
     }
 
     func carousel(
@@ -841,6 +869,10 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
                     media: media,
                     onFirstPlay: { [weak self] in self?.commitTemporaryPasteboardMedia() })
             }
+        }
+        if let failed = failedSave(atCarouselIndex: index) {
+            return FailedSaveCardFactory.makeCard(
+                for: failed, host: self, onChanged: { [weak self] in self?.reload() })
         }
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
             return CardContentViewController()
@@ -921,11 +953,29 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
             }
             return
         }
+        if failedSave(atCarouselIndex: index) != nil {
+            completion(UIImage(systemName: "exclamationmark.triangle"))
+            return
+        }
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
             completion(nil)
             return
         }
         loadThumbnail(for: items[mediaIndex], completion: completion)
+    }
+
+    /// A failed save's card carries a soft red rim — the only card chrome that
+    /// says "this one is broken" without a badge or a banner.
+    func carousel(
+        _ carousel: CardCarouselViewController, edgeGlowColorForCardAt index: Int
+    ) -> UIColor? {
+        failedSave(atCarouselIndex: index) != nil ? LunaColors.errorAccent : nil
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController, titleForCardAt index: Int
+    ) -> String? {
+        failedSave(atCarouselIndex: index).map { FailedSaveCardFactory.makeModel(for: $0).title }
     }
 
     func carousel(
@@ -1057,7 +1107,7 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
     ) {
         updateArchivePullAvailability(
             forTargetIndex: index,
-            cardCount: items.count + cardOffset,
+            cardCount: items.count + failedSaves.count + cardOffset,
             animated: true)
     }
 
@@ -1099,6 +1149,26 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         menuForCardAt index: Int
     ) -> UIMenu? {
+        // A failed save has nothing to download, nothing to put in Photos, and
+        // no reason to be archived — sharing the link and deleting it are the
+        // only honest verbs.
+        if let failed = failedSave(atCarouselIndex: index) {
+            return UIMenu(children: [
+                UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) {
+                    [weak self] _ in
+                    guard let self else { return }
+                    SendToFriendSheet.shareLink(
+                        urlString: failed.urlString, from: self, sourceView: self.view)
+                },
+                UIAction(
+                    title: "Delete", image: UIImage(systemName: "trash"),
+                    attributes: .destructive
+                ) { [weak self] _ in
+                    ReadingListStore.shared.delete(failed)
+                    self?.reload()
+                },
+            ])
+        }
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
         let item = items[mediaIndex]
         var actions: [UIMenuElement] = []

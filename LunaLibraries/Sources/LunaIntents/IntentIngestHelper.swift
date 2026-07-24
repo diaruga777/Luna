@@ -4,22 +4,29 @@
 //
 
 import LunaReadingList
+import LunaStorage
 import LunaIngest
 import LunaModels
 import LunaURLClassification
 import Foundation
 
-/// Shared best-effort inline save handling for background intents. The App Intent
-/// structs live in the app target (for discovery); this is the business logic they
-/// call into.
+/// Shared inline save handling for background intents. The App Intent structs
+/// live in the app target (for discovery); this is the business logic they call
+/// into.
+///
+/// Every save press routed through here is VERIFIED against the store before it
+/// is reported as done: an intent may not tell Shortcuts "saved" while the app
+/// holds nothing, or holds only a failure (`IntentSaveVerification`).
 public enum IntentIngestHelper {
 
     /// What an Action Button save press produced, for the Provide Context /
     /// Save App Intents.
     public enum ActionButtonSaveOutcome {
-        /// Save/send handled (or duplicate). `savedURLString` is the URL that
-        /// ended up saved, nil when the outcome couldn't be determined before
-        /// the timeout.
+        /// Save/send handled (or duplicate) AND verified present in the store.
+        /// `savedURLString` is the URL that ended up saved — the item's CURRENT
+        /// URL, so a wrapper resolved during ingest (apple.news → publisher) is
+        /// already applied. Nil only when the outcome couldn't be determined
+        /// before the timeout.
         case completed(savedURLString: String?)
         /// Double save with "ask every time" — the pending friend prompt is
         /// recorded; the intent should foreground the app so the friend
@@ -29,6 +36,9 @@ public enum IntentIngestHelper {
         /// Foreign-kind save (`SurfaceSupport`) — the item was DISCARDED. The
         /// intent throws an error dialog with the generic explanation.
         case unsupportedKind(owner: LunaApp)
+        /// The press finished but left nothing usable behind. The intent throws;
+        /// it must never report success over an empty or failed list.
+        case saveFailed(IntentSaveVerification.Failure)
     }
 
     /// The user-facing dialog for an `unsupportedKind` save — used verbatim by
@@ -38,72 +48,76 @@ public enum IntentIngestHelper {
     }
 
     /// Handles a save press (save+ingest, double-press send, or ignore), giving
-    /// up after 12 s so the intent finishes promptly in the background. Work cut
-    /// off by the timeout is persisted as pending/queued and retried later.
-    /// Returns the URL that ended up saved (also for duplicates, which are
-    /// already in the list), or nil when the outcome couldn't be determined
-    /// before the timeout. Surface-dropped saves surface through the
-    /// `ActionButtonSaveOutcome` variant; this URL-only convenience reports
-    /// them as "nothing saved".
-    public static func handleSavePressWithTimeout(urlString: String) async -> String? {
-        switch await savePressRacingTimeout(urlString: urlString, doubleSaveActionSurface: nil) {
-        case .some(.saved(let item)),
-             .some(.sentToEreaders(let item)),
-             .some(.sentToFriends(let item)), .some(.friendPromptRequested(let item)):
-            return item.urlString
-        case .some(.ignored):
-            return urlString
-        case .some(.unsupportedKind), nil:
-            return nil
-        }
-    }
-
-    /// The Action Button (Save App Intent) variant: same timeout-raced save, but
-    /// with the configured double-save action armed for `surface`, and a result
-    /// that distinguishes the "open the friend selector" hand-off.
-    public static func handleActionButtonSavePress(
-        urlString: String, doubleSaveActionSurface surface: String
-    ) async -> ActionButtonSaveOutcome {
-        actionButtonOutcome(from: await savePressRacingTimeout(
-            urlString: urlString, doubleSaveActionSurface: surface),
-            ignoredURLString: urlString)
-    }
-
-    /// Converts the full ingest result into the intent-facing result without
-    /// erasing surface decisions. Kept internal so unit tests can lock the
-    /// important `.unsupportedKind` mapping without running a live ingest.
-    static func actionButtonOutcome(
-        from result: ReadingListIngestor.SavePressResult?,
-        ignoredURLString: String = ""
-    ) -> ActionButtonSaveOutcome {
-        switch result {
-        case .some(.friendPromptRequested(let item)):
-            return .friendPromptRequested(savedURLString: item.urlString)
-        case .some(.saved(let item)), .some(.sentToEreaders(let item)), .some(.sentToFriends(let item)):
-            return .completed(savedURLString: item.urlString)
-        case let .some(.unsupportedKind(owner)):
-            return .unsupportedKind(owner: owner)
-        case .some(.ignored):
-            return .completed(savedURLString: ignoredURLString)
-        case nil:
-            return .completed(savedURLString: nil)
-        }
-    }
-
-    /// Convenience for callers with an optional double-save surface: routes
-    /// through `handleActionButtonSavePress` when a surface is armed, else
-    /// `handleSavePressWithTimeout` — mirroring the decision the Provide
-    /// Context / Save intents make (double-save only armed for eligible
-    /// surfaces).
+    /// up after 12 s so the intent finishes promptly in the background, then
+    /// verifies what the press left in the store. Work cut off by the timeout is
+    /// persisted as pending/queued and retried later, and stays reported as
+    /// handled — it IS in the app.
+    ///
+    /// `doubleSaveActionSurface` is non-nil only where the configured
+    /// double-save action is armed (today: Reader), mirroring the decision the
+    /// Provide Context / Save intents make.
     public static func handleSavePress(
         urlString: String, doubleSaveActionSurface surface: String?
     ) async -> ActionButtonSaveOutcome {
-        // Even when double-save is not armed, retain the full result. The old
-        // URL-only convenience mapped a surface-dropped save to nil and then
-        // incorrectly reported `.completed(nil)` to Shortcuts.
-        actionButtonOutcome(from: await savePressRacingTimeout(
-            urlString: urlString, doubleSaveActionSurface: surface),
-            ignoredURLString: urlString)
+        let pressedURLString = URLUnwrapper.ingestURL(from: urlString)?.absoluteString
+            ?? urlString
+        let result = await savePressRacingTimeout(
+            urlString: urlString, doubleSaveActionSurface: surface)
+        return verifiedOutcome(
+            from: result, pressedURLString: pressedURLString,
+            storedItem: currentStoreItem(for: result, pressedURLString: pressedURLString))
+    }
+
+    /// Re-reads the store for what the press actually left behind: by item id
+    /// when the press produced one (the id survives an unwrap repoint, the URL
+    /// doesn't), else by the pressed URL for a duplicate/ignored press.
+    private static func currentStoreItem(
+        for result: ReadingListIngestor.SavePressResult?, pressedURLString: String
+    ) -> ReadingListItem? {
+        guard let result else { return nil }
+        if let item = result.item { return ReadingListStore.shared.item(withID: item.id) }
+        return ReadingListStore.shared.item(forURLString: pressedURLString)
+    }
+
+    /// Turns the ingest result plus the item now IN THE STORE into the
+    /// intent-facing outcome. Kept internal and store-free so unit tests can
+    /// lock the mappings — most importantly that `.unsupportedKind` survives and
+    /// that a missing or `.failed` item becomes `.saveFailed` instead of a
+    /// success with nothing behind it.
+    static func verifiedOutcome(
+        from result: ReadingListIngestor.SavePressResult?,
+        pressedURLString: String,
+        storedItem: ReadingListItem?
+    ) -> ActionButtonSaveOutcome {
+        switch result {
+        case nil:
+            // The 12 s race expired: the ingest task continues and persists its
+            // pending work, so there is nothing to verify and nothing wrong.
+            return .completed(savedURLString: nil)
+        case let .some(.unsupportedKind(owner)):
+            return .unsupportedKind(owner: owner)
+        case let .some(settled):
+            guard let storedItem else {
+                // The press produced an item that is no longer in the store: it
+                // was DEDUPED into an existing save (a wrapper URL resolved to an
+                // article already in the list, a store URL merged into an
+                // existing price tracker), so the content IS in the app under
+                // the surviving item. A gate-dropped save reports
+                // `.unsupportedKind` above and never reaches here. A press that
+                // produced no item at all (`.ignored` — an unusable URL, or a
+                // duplicate whose item has since vanished) genuinely saved
+                // nothing.
+                guard settled.item != nil else { return .saveFailed(.nothingSaved) }
+                return .completed(savedURLString: pressedURLString)
+            }
+            if let failure = IntentSaveVerification.failure(forState: storedItem.state) {
+                return .saveFailed(failure)
+            }
+            if case .friendPromptRequested = settled {
+                return .friendPromptRequested(savedURLString: storedItem.urlString)
+            }
+            return .completed(savedURLString: storedItem.urlString)
+        }
     }
 
     /// Runs `handleSavePress` raced against a 12 s timeout; nil ⇒ timed out.

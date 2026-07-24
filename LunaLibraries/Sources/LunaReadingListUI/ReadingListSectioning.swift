@@ -70,6 +70,13 @@ public enum ReadingListSectioning {
         }
 
         public func includes(_ item: ReadingListItem) -> Bool {
+            // A failed save has NO kind — the classifier never got far enough to
+            // give it one (`Outcome.failed.owningApp == nil`, which is also why
+            // the surface gate never drops it). It is therefore shown by every
+            // surface: the app that saved the link is where the user expects to
+            // see it break, and any app can offer the rescue that gives it a
+            // kind. Once rescued it classifies and settles into its own app.
+            if ReadingListSectioning.isFailedSave(item) { return true }
             switch self {
             case .all: return true
             case .articles: return ReadingListSectioning.rendersAsReader(item)
@@ -78,6 +85,13 @@ public enum ReadingListSectioning {
             case .priceTrackers: return item.isPriceTracker
             }
         }
+    }
+
+    /// Whether `item` is a kind-less failed save (the error-card state). Price
+    /// trackers and platform items that merely failed a LATER step keep their own
+    /// kind and their own UI, so they're excluded.
+    public static func isFailedSave(_ item: ReadingListItem) -> Bool {
+        item.state == .failed && !item.isPriceTracker && item.contentPlatform == nil
     }
 
     /// Whether the item opens in the text reader (articles, documents, emails),

@@ -28,7 +28,7 @@ Every Downloader save has one durable `SavedMediaItem` row and exactly one visib
    `SavedMedia/Files`; an optional generated thumbnail lives in `SavedMedia/Thumbnails`.
 3. **`photosReference(localIdentifier:…)`** — the manifest keeps PhotoKit's durable
    `PHAsset.localIdentifier`, not a duplicate media file. Card content, scrub-strip
-   thumbnails, sharing, and clipboard exports resolve the asset through PhotoKit each
+   thumbnails, and pasteboard exports resolve the asset through PhotoKit each
    time. A small multicolor Photos rosette appears in the card's top-leading corner
    so this backing is visible at a glance; tapping it opens that asset in Photos.
 
@@ -170,14 +170,23 @@ Photos references remain governed by the user's Photos library.
   Live Activity/background URLSession engine and are awaited so the intent can return an optional
   `IntentFile`. Larger or indeterminate files are handed to that engine and the intent returns
   immediately with no file. Existing local files are reused and Photos-backed rows are copied to
-  a transient file. Turning **Download in Background** on always uses the immediate background
-  handoff.
+  a transient file. Turning **Download in Background** on always uses the immediate
+  background handoff.
+  **A handoff that downloads nothing is an ERROR, not a quiet nil.**
+  `LiveMediaDownloadManager.startReportingResult` names why a start didn't happen
+  (`LiveMediaDownloadStartResult`: `started` / `alreadyDownloaded` / `deferredUntilWiFi` /
+  `notAuthorized` / `unsupported` / `failed(message:)`) — the plain `start(…) -> Bool`
+  collapses all of those into one `false`, which is what let a Shortcut exit reporting
+  success with an empty library. The awaited path likewise returns
+  `MediaAutoDownloader.AwaitedIntentDownload` (`completed` / `handledWithoutFile` /
+  `failed`). `MediaIntentHandoff` throws `downloadFailed`/`notAuthorized` for anything that
+  isn't `isDownloadHandled`; already-downloaded and Wi-Fi-deferred remain legitimate
+  no-file returns (see `app-intents.md`, "Error reporting").
   Intent exports use a sanitized item title or platform base name (for example
   `tiktok.mp4`) as the actual temporary URL filename and declare its concrete file type,
   rather than leaking the durable UUID-backed library filename to Shortcuts.
   When Downloader has ever launched, both modes carry Downloader ownership, create/maintain
-  `SavedMediaStore` state, honor Downloader's shared Photos and clipboard settings in every
-  host, and fall back to shared local storage when Photos permission is denied. Reader and
+  `SavedMediaStore` state, honor Downloader's shared Storage setting in every host, and fall back to shared local storage when Photos permission is denied. Reader and
   Price Tracker embed host-prefixed copies of the same Live Activity widget configuration.
   Downloader-owned dedup is based on the durable `SavedMediaStore` state: a stale
   `autoDownloadedURLs` marker never suppresses a missing or `.undownloaded` row, so an
@@ -310,7 +319,7 @@ their legacy per-platform Photos auto-save controls.
 - `MediaDownloadPreflight.swift` owns size, 100 MiB intent, and storage-reserve policy;
   `MediaVideoTrimmer.swift` applies source-requested video ranges.
 - `MediaDownloadService.swift` resolves and streams remote media to a temporary file,
-  then applies Downloader destination and clipboard policy. Downloads never hold a full
+  then applies Downloader's destination policy. Downloads never hold a full
   video in memory.
 - `LiveMediaDownloadManager.swift` implements the equivalent background-transfer path.
   Its Facebook resolver follows the extension resolver's plugin-embed-first sequence,

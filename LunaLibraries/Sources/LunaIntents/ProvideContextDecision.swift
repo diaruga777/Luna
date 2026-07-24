@@ -17,6 +17,19 @@ public enum ProvideContextOnScreenURL {
     private static let embeddedWebURL = try? NSRegularExpression(
         pattern: #"(?i)https?://[^\s<>\"'\[\]{}]*?(?=(?:,\s*https?://)|[\s<>\"'\[\]{}]|$)"#)
 
+    /// What the extracted on-screen values amount to.
+    public enum Resolution: Equatable {
+        /// Nothing usable — no values, or none that survive validation.
+        case none
+        /// One trustworthy save candidate.
+        case single(String)
+        /// Several DIFFERENT valid URLs that don't collapse into one page. The
+        /// intent can't guess between them, and guessing wrong saves the wrong
+        /// thing, so this is reported (not swallowed) when any candidate is one
+        /// this app could have saved.
+        case divergent([String])
+    }
+
     /// Extract every embedded HTTP(S) URL from Shortcuts' scalar text
     /// representation before applying the ordinary collapse rules. The system
     /// may supply bare newline-delimited values, a comma-delimited list, or
@@ -26,19 +39,41 @@ public enum ProvideContextOnScreenURL {
         isSafari: Bool,
         isEnabled: Bool = true
     ) -> String? {
-        guard isEnabled, !isSafari, let value, !value.isEmpty, let embeddedWebURL else {
+        guard case let .single(urlString) = resolveText(
+            value, isSafari: isSafari, isEnabled: isEnabled)
+        else { return nil }
+        return urlString
+    }
+
+    public static func collapse(_ values: [String]?, isSafari: Bool) -> String? {
+        guard case let .single(urlString) = resolve(values, isSafari: isSafari) else {
             return nil
+        }
+        return urlString
+    }
+
+    /// `collapseText`, keeping the reason a collapse failed.
+    public static func resolveText(
+        _ value: String?,
+        isSafari: Bool,
+        isEnabled: Bool = true
+    ) -> Resolution {
+        guard isEnabled, !isSafari, let value, !value.isEmpty, let embeddedWebURL else {
+            return .none
         }
         let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
         let values: [String] = embeddedWebURL.matches(in: value, range: fullRange).compactMap { match -> String? in
             guard let range = Range(match.range, in: value) else { return nil }
             return trimTransportPunctuation(String(value[range]))
         }
-        return collapse(values, isSafari: isSafari)
+        return resolve(values, isSafari: isSafari)
     }
 
-    public static func collapse(_ values: [String]?, isSafari: Bool) -> String? {
-        guard !isSafari, let values, !values.isEmpty else { return nil }
+    /// `collapse`, keeping the reason a collapse failed: divergent values are
+    /// reported as such (deduplicated, and only the ones that are valid URLs on
+    /// their own) instead of collapsing into an indistinguishable `nil`.
+    public static func resolve(_ values: [String]?, isSafari: Bool) -> Resolution {
+        guard !isSafari, let values, !values.isEmpty else { return .none }
         let candidates = values.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
         }
@@ -53,18 +88,76 @@ public enum ProvideContextOnScreenURL {
                   // Prefer the explicit HTTPS form when the scheme is the only
                   // difference; it is one character longer than HTTP.
                   return $0.original.count < $1.original.count
-              }),
-              comparableCandidates.allSatisfy(
-                  { longest.comparison.contains($0.comparison) })
-        else { return nil }
+              })
+        else { return .none }
 
-        let decoded = longest.original.removingPercentEncoding ?? longest.original
+        guard comparableCandidates.allSatisfy(
+            { longest.comparison.contains($0.comparison) })
+        else { return divergentResolution(from: candidates) }
+
+        guard let urlString = validatedURLString(longest.original) else { return .none }
+        return .single(urlString)
+    }
+
+    /// Distinct, individually valid URLs among values that refused to collapse.
+    /// Fewer than two leaves nothing to disambiguate (the surviving one still
+    /// isn't trustworthy on its own — the others contradict it), so that stays
+    /// `.none` and the intent falls through in silence.
+    private static func divergentResolution(from candidates: [String]) -> Resolution {
+        var seen = Set<String>()
+        let valid = candidates.compactMap(validatedURLString).filter { seen.insert($0).inserted }
+        return valid.count > 1 ? .divergent(valid) : .none
+    }
+
+    /// The shared validity rules for ONE candidate: a real http(s) ingest URL
+    /// with a host, no OCR truncation marker, no embedded whitespace.
+    private static func validatedURLString(_ candidate: String) -> String? {
+        let decoded = candidate.removingPercentEncoding ?? candidate
         guard !hasTruncationSuffix(decoded),
               decoded.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
-              let url = URLUnwrapper.ingestURL(from: longest.original),
+              let url = URLUnwrapper.ingestURL(from: candidate),
               url.host?.isEmpty == false
         else { return nil }
         return url.absoluteString
+    }
+
+    /// What `ProvideContextIntent` should do with the supplied on-screen URLs.
+    public enum Plan: Equatable {
+        /// Nothing this app could have saved was on screen: continue with the
+        /// ordinary onboarding/app/screenshot decision, silently.
+        case skip
+        /// Save this URL now, and REPORT any failure — pre-validation says this
+        /// app handles the kind, so a failed save is a real error.
+        case save(String)
+        /// Several different saveable URLs are on screen; the intent throws
+        /// rather than guessing which one the user meant.
+        case divergent
+    }
+
+    /// Combines extraction (`resolveText`) with per-app pre-validation
+    /// (`IntentURLPrecheck`) into the one decision the intent acts on. `verdict`
+    /// is injectable so tests can pin the running app's handled kinds.
+    public static func plan(
+        text: String?,
+        isSafari: Bool,
+        isEnabled: Bool = true,
+        verdict: (String) -> IntentURLPrecheck.Verdict = { IntentURLPrecheck.verdict(for: $0) }
+    ) -> Plan {
+        switch resolveText(text, isSafari: isSafari, isEnabled: isEnabled) {
+        case .none:
+            return .skip
+        case let .single(urlString):
+            guard case let .handleable(handleable) = verdict(urlString) else { return .skip }
+            return .save(handleable)
+        case let .divergent(urlStrings):
+            // Only ambiguity we could otherwise have acted on is worth an error:
+            // several links none of which is ours is the same non-event as none.
+            let anyHandleable = urlStrings.contains {
+                if case .handleable = verdict($0) { return true }
+                return false
+            }
+            return anyHandleable ? .divergent : .skip
+        }
     }
 
     private static func hasTruncationSuffix(_ value: String) -> Bool {

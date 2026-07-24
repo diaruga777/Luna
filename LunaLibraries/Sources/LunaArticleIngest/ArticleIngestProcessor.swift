@@ -40,7 +40,7 @@ public final class ArticleIngestProcessor: ArticleIngestProcessing {
             return .article(content, html: html)
         case let .paywalled(title):
             return .needsArchive(title: title)
-        case .unreadable:
+        case let .unreadable(reason):
             // A browser-only site rule means the background fetch is not the final
             // authority. Anti-bot front doors such as Reuters/DataDome can reject
             // URLSession before yielding even a title, while the rule's direct-unlock
@@ -57,7 +57,7 @@ public final class ArticleIngestProcessor: ArticleIngestProcessing {
                 || ArticleFetcher.isArchiveTodayURL(url) {
                 return .needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
             }
-            return .failed
+            return .failed(reason)
         }
     }
 }

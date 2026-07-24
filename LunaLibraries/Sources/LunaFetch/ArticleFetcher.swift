@@ -48,7 +48,10 @@ public struct ArticleFetcher: HTMLFetching {
     public static let maxBytes = WebFetchConstants.maxBytes
 
     public enum FetchError: Error {
-        case badResponse
+        /// A non-2xx answer. The status code is carried so a failed save can say
+        /// WHICH refusal it was (403 blocked vs 404 gone vs 429 rate-limited);
+        /// nil when the response wasn't even an HTTP response.
+        case badResponse(status: Int?)
         case notHTML
         case tooLarge
     }
@@ -178,7 +181,7 @@ public struct ArticleFetcher: HTMLFetching {
         components?.queryItems = [
             URLQueryItem(name: "url", value: Self.canonicalForArchiving(url).absoluteString),
         ]
-        guard let apiURL = components?.url else { throw FetchError.badResponse }
+        guard let apiURL = components?.url else { throw FetchError.badResponse(status: nil) }
         let (data, _) = try await URLSession.shared.data(for: URLRequest(url: apiURL, timeoutInterval: 15))
         guard data.count <= Self.maxBytes,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -189,7 +192,7 @@ public struct ArticleFetcher: HTMLFetching {
               // The API returns http://; https avoids an ATS upgrade round-trip.
               let snapshotURL = URL(string: snapshotString.replacingOccurrences(
                 of: "http://web.archive.org", with: "https://web.archive.org"))
-        else { throw FetchError.badResponse }
+        else { throw FetchError.badResponse(status: nil) }
         return try await fetch(url: snapshotURL, userAgent: Self.safariUserAgent, timeout: 30)
     }
 
@@ -222,7 +225,7 @@ public struct ArticleFetcher: HTMLFetching {
 
     public func fetchJinaReader(for url: URL) async throws -> String {
         let target = Self.canonicalForArchiving(url).absoluteString
-        guard let jinaURL = URL(string: "https://r.jina.ai/" + target) else { throw FetchError.badResponse }
+        guard let jinaURL = URL(string: "https://r.jina.ai/" + target) else { throw FetchError.badResponse(status: nil) }
         return try await fetch(url: jinaURL, userAgent: Self.safariUserAgent, timeout: 20)
     }
 
@@ -310,7 +313,7 @@ public struct ArticleFetcher: HTMLFetching {
         }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw FetchError.badResponse
+            throw FetchError.badResponse(status: (response as? HTTPURLResponse)?.statusCode)
         }
         // A server that declares an oversized body (a mis-served large file) is
         // rejected outright. For everything else, bound the page we parse so the

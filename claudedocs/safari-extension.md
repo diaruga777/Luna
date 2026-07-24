@@ -286,8 +286,13 @@ Paywall unlock + toast:
 - `revealArticle`'s cleanup is structure/attribute-driven, not a site list: besides the
   named overlay selectors it removes generic component-driven walls (`[data-component-type*=paywall]`,
   `pw-modal`/`paywall-backdrop`/`registration-wall`-style containers, `[id*=paywall]`) and
-  un-clamps any element that STILL holds substantial prose but is inline-clamped
-  (`max-height`/`mask-image`/`overflow:hidden`/`filter:blur`). Every removal is
+  un-clamps any element that STILL holds substantial prose but is inline-clamped with a
+  genuine "faded teaser" signature — a `max-height` limit AND a visual fade
+  (`mask-image`/`linear-gradient`/`filter:blur`); bare `overflow:hidden` or a bare
+  `max-height` is ubiquitous layout styling and is deliberately NOT matched (force-
+  revealing those rewrote a complex SPA's own layout containers and blanked NYT — the
+  un-clamp now clears only the clamp/fade properties, never height/display/visibility).
+  Every removal is
   `articleChars`-guarded, AND removal is further limited to positioned overlays
   (fixed/absolute/sticky) or small/near-empty nodes — a large in-flow region is REVEALED,
   never deleted (`isDeletableOverlay`), so the cleanup can never blank a page even if a

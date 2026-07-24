@@ -47,6 +47,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AAE000000000000000000000"
             BuildableName = "LunaReader.app"
+            BlueprintName = "LunaReader"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

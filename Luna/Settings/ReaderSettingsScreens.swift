@@ -19,7 +19,7 @@ import UIKit
 
 /// RSVP speed, typeface, text size, and highlight color.
 final class ReaderSettingsScreen: NavHeaderTableController {
-    private enum Row: Int, CaseIterable { case speed, font, textSize, accentColor }
+    private enum Row: Int, CaseIterable { case speed, rsvpMode, font, textSize, accentColor }
     private let wpmLabel = UILabel()
 
     init() { super.init(style: .insetGrouped) }
@@ -70,6 +70,15 @@ final class ReaderSettingsScreen: NavHeaderTableController {
                 cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
             ])
             return cell
+        case .rsvpMode:
+            // Words vs Phrases for the RSVP speed reader — moved here out of the
+            // reader itself (`RSVPViewController` reads `ReaderSettings.rsvpMode`
+            // when it opens). Default is Words.
+            content.text = "Speed Reader"
+            let control = UISegmentedControl(items: ["Words", "Phrases"])
+            control.selectedSegmentIndex = ReaderSettings.rsvpMode == .phrases ? 1 : 0
+            control.addTarget(self, action: #selector(rsvpModeChanged(_:)), for: .valueChanged)
+            cell.accessoryView = control
         case .font:
             content.text = "Font"
             cell.accessoryView = makeFontButton()
@@ -153,6 +162,10 @@ final class ReaderSettingsScreen: NavHeaderTableController {
         let rounded = Double((Int(slider.value) / 10) * 10)
         ReaderSettings.baseWPM = rounded
         wpmLabel.text = "\(Int(rounded)) wpm"
+    }
+
+    @objc private func rsvpModeChanged(_ control: UISegmentedControl) {
+        ReaderSettings.rsvpMode = control.selectedSegmentIndex == 1 ? .phrases : .words
     }
 
     @objc private func textSizeChanged(_ control: UISegmentedControl) {

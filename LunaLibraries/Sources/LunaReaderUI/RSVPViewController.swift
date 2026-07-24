@@ -119,20 +119,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// UTF-16 offset of each word within the current utterance string.
     private var speechWordOffsets: [Int] = []
 
-    /// Switches between the Words and Phrases sub-modes.
-    private let subModeControl = UISegmentedControl(items: ["Words", "Phrases"])
-    private var subModeTopConstraint: NSLayoutConstraint?
-
-    /// Extra clearance below the view's top for the sub-mode switcher, supplied
-    /// by hosts whose chrome floats outside this reader (the Reader card
-    /// carousel reserves its card-top edge fade here, so the switcher isn't
-    /// dissolved by the fade run).
-    public var topContentInset: CGFloat = 0 {
-        didSet {
-            guard ChromeInsetDebounce.changed(from: oldValue, to: topContentInset) else { return }
-            subModeTopConstraint?.constant = topContentInset + 8
-        }
-    }
+    /// Set by hosts whose chrome floats outside this reader. RSVP intentionally
+    /// IGNORES it for layout: unlike the scroll reader (which scrolls content
+    /// behind the floating header), the speed reader centers a single word and
+    /// makes no use of the extra top space, so its layout must be identical with
+    /// or without the card chrome. Kept only so the shared host wiring can set it.
+    public var topContentInset: CGFloat = 0
 
     private let wordLabel = UILabel()
     /// Multi-line phrase text shown in the focus panel in Phrases mode.
@@ -187,12 +179,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Target characters visible on one line — the font is sized so a word this
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
-    private static let contextWordCount = 20
+    private static let contextWordCount = 55
     /// Vertical center of the focal word / phrase. It is derived from the actual
     /// space between the title-aware mode switcher and the playback controls so a
     /// tall title header can never push the reading display over the controls.
     private var focalCenterY: CGFloat {
-        let top = max(view.safeAreaInsets.top, subModeControl.frame.maxY) + 18
+        let top = view.safeAreaInsets.top + 18
         let controlsTop = controlsStack.frame.minY > 0
             ? controlsStack.frame.minY
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
@@ -309,7 +301,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
         guard isViewLoaded else { return }
         updateMeldAnchor()
-        subModeControl.selectedSegmentIndex = displayMode == .phrases ? 1 : 0
         scrubber.maximumValue = Float(max(engine.words.count - 1, 1))
         scrubber.value = Float(currentIndex)
         // The share view bakes in the previous item's friend suggestion —
@@ -391,7 +382,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
 
-        configureSubModeControl()
         configureWordLabel()
         configurePhraseLabel()
         configureContext()
@@ -471,21 +461,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     // MARK: - Setup
 
-    private func configureSubModeControl() {
-        subModeControl.selectedSegmentIndex = displayMode == .phrases ? 1 : 0
-        subModeControl.addTarget(self, action: #selector(subModeChanged), for: .valueChanged)
-        subModeControl.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(subModeControl)
-        let top = subModeControl.topAnchor.constraint(
-            equalTo: view.safeAreaLayoutGuide.topAnchor, constant: topContentInset + 8)
-        subModeTopConstraint = top
-        NSLayoutConstraint.activate([
-            top,
-            subModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            subModeControl.widthAnchor.constraint(equalToConstant: 220),
-        ])
-    }
-
     private func configureWordLabel() {
         wordLabel.font = wordFont
         wordLabel.textColor = LunaColors.primaryText
@@ -527,13 +502,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         for label in [previousContextLabel, nextContextLabel] {
             label.font = .systemFont(ofSize: 15, weight: .regular)
             label.textColor = LunaColors.tertiaryText
-            label.numberOfLines = 3
+            // As many lines as the (frame-clamped) height allows, so the taller
+            // preceding-context lane fills with real surrounding prose.
+            label.numberOfLines = 0
             label.lineBreakMode = .byTruncatingTail
             label.alpha = 1 // The reader starts paused.
             view.addSubview(label)
         }
         previousContextLabel.textAlignment = .natural
         nextContextLabel.textAlignment = .natural
+        // Preceding context should keep the words closest to the focal word: when
+        // it overflows the (now taller) lane, drop the oldest text off the top.
+        previousContextLabel.lineBreakMode = .byTruncatingHead
     }
 
     /// Lays out the surrounding-prose labels above and below the focal band. In
@@ -543,11 +523,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let centerY = focalCenterY
         let horizontalMargin: CGFloat = 28
         let width = max(0, view.bounds.width - horizontalMargin * 2)
-        let topLimit = max(view.safeAreaInsets.top + 20, subModeControl.frame.maxY + 16)
+        let topLimit = view.safeAreaInsets.top + 20
 
         let bandHalf: CGFloat = displayMode == .phrases
             ? phrasePanel.bounds.height / 2 + 14 : 84
-        let upperHeight: CGFloat = displayMode == .phrases ? 120 : 104
+        // Words mode: the removed sub-mode switcher freed the top of the screen,
+        // so the preceding-context label grows upward into it (its bottom stays
+        // anchored to the focal band — the word and everything below don't move).
+        let upperHeight: CGFloat = displayMode == .phrases ? 120 : 220
         let upperBottom = centerY - bandHalf
         previousContextLabel.frame = CGRect(
             x: horizontalMargin,
@@ -691,6 +674,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 28)
         playPauseButton.configuration = playConfig
         playPauseButton.accessibilityLabel = "Play"
+        // Pin a true circle for the fixed 60×60 button: the glass/filled capsule
+        // background otherwise hugs the play glyph's content width and reads as
+        // an egg rather than a round button.
+        playPauseButton.clipsToBounds = true
+        playPauseButton.layer.cornerRadius = 30
         playPauseButton.addTarget(self, action: #selector(togglePlayPause), for: .touchUpInside)
 
         scrubber.minimumValue = 0
@@ -792,27 +780,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     // MARK: - Sub-mode
-
-    @objc private func subModeChanged() {
-        let newMode: RSVPDisplayMode = subModeControl.selectedSegmentIndex == 1 ? .phrases : .words
-        guard newMode != displayMode else { return }
-        let wasPlaying = isPlaying
-        pause()
-        displayMode = newMode
-        ReaderSettings.rsvpMode = newMode
-        if newMode == .phrases {
-            // Snap to the phrase containing the current focal word.
-            currentChunkIndex = chunkIndex(forWord: currentIndex)
-            currentIndex = chunks.indices.contains(currentChunkIndex)
-                ? chunks[currentChunkIndex].wordRange.lowerBound : currentIndex
-        }
-        applyDisplayMode()
-        view.setNeedsLayout()
-        view.layoutIfNeeded()
-        refreshDisplay()
-        updateStatus()
-        if wasPlaying { play() }
-    }
 
     /// Shows the view set for the active sub-mode and hides the other's.
     private func applyDisplayMode() {

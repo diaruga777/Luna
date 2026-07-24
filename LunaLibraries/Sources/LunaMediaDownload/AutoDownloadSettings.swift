@@ -15,29 +15,14 @@ public enum AutoDownloadSettings {
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     private static let autoSaveDownloadsToPhotosKey = "autoSaveDownloadsToPhotos"
-    private static let autoCopyDownloadsToClipboardKey = "autoCopyDownloadsToClipboard"
-    private static let returnMediaFromAppIntentsKey = "returnMediaFromAppIntents"
 
     /// Whether completed Downloader downloads should be saved into Photos.
     /// Defaults to ON so new installs use Photos-backed storage automatically.
+    /// Surfaced to the user as `MediaStorageOption.photos` (see
+    /// `MediaStorageSettings`), which is mutually exclusive with local retention.
     public static var autoSaveDownloadsToPhotos: Bool {
         get { (defaults.object(forKey: autoSaveDownloadsToPhotosKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: autoSaveDownloadsToPhotosKey) }
-    }
-
-    /// Whether a completed download should also be copied to the system clipboard.
-    /// Defaults to OFF; completion code places a file-backed item provider there.
-    public static var autoCopyDownloadsToClipboard: Bool {
-        get { (defaults.object(forKey: autoCopyDownloadsToClipboardKey) as? Bool) ?? false }
-        set { defaults.set(newValue, forKey: autoCopyDownloadsToClipboardKey) }
-    }
-
-    /// Whether Action Button App Intents await media downloads and return the
-    /// completed image/video file to Shortcuts. Defaults to ON. When disabled,
-    /// intents retain the Live Activity-backed background handoff.
-    public static var returnMediaFromAppIntents: Bool {
-        get { (defaults.object(forKey: returnMediaFromAppIntentsKey) as? Bool) ?? true }
-        set { defaults.set(newValue, forKey: returnMediaFromAppIntentsKey) }
     }
 
     private static let wifiOnlyDownloadsKey = "wifiOnlyDownloads"
@@ -94,6 +79,21 @@ public enum AutoDownloadSettings {
         set { defaults.set(newValue, forKey: autoDownloadMediaKey) }
     }
 
+    /// The single "Download automatically" choice Downloader Settings shows, over
+    /// the two prefs that back it (`autoDownloadMediaInPreview` +
+    /// `wifiOnlyDownloads`). Never means nothing downloads on its own; the two
+    /// on-values differ only in whether cellular downloads wait for Wi-Fi.
+    public static var policy: AutoDownloadPolicy {
+        get {
+            guard autoDownloadMediaInPreview else { return .never }
+            return wifiOnlyDownloads ? .wifiOnly : .always
+        }
+        set {
+            autoDownloadMediaInPreview = newValue != .never
+            wifiOnlyDownloads = newValue == .wifiOnly
+        }
+    }
+
     private static func key(for platform: ContentPlatform) -> String {
         "autoDownloadMedia.\(platform.rawValue)"
     }
@@ -128,5 +128,21 @@ public enum AutoDownloadSettings {
         var list = (defaults.array(forKey: downloadedKey) as? [String]) ?? []
         list.removeAll { $0 == urlString }
         defaults.set(list, forKey: downloadedKey)
+    }
+}
+
+/// The "Download automatically" choices: whether saved media downloads on its
+/// own, and on which networks.
+public enum AutoDownloadPolicy: CaseIterable, Sendable {
+    case never
+    case always
+    case wifiOnly
+
+    public var displayName: String {
+        switch self {
+        case .never: return "Never"
+        case .always: return "Always"
+        case .wifiOnly: return "On Wi-Fi Only"
+        }
     }
 }

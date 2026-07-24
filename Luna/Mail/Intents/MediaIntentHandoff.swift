@@ -79,13 +79,13 @@ enum MediaIntentHandoff {
             await foreground()
         }
         let photosAuthorized = await DownloaderIntentPhotoPermission.requestIfNeeded()
-        if AutoDownloadSettings.returnMediaFromAppIntents,
+        if AppIntentSettings.returnsMediaToShortcuts,
            let existing = SavedMediaStore.shared.existingDownloadedItem(
                forURLString: urlString) {
             let media = await MediaAutoDownloader.exportFile(from: existing)
             return media.map { intentFile(for: $0) }
         }
-        if AutoDownloadSettings.returnMediaFromAppIntents,
+        if AppIntentSettings.returnsMediaToShortcuts,
            let sourceURL = URL(string: urlString),
            let inspection = await MediaDownloadPreflight.inspect(sourceURL: sourceURL) {
             if let error = MediaDownloadPreflight.storageError(for: inspection) {

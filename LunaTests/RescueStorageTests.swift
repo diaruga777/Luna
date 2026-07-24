@@ -105,15 +105,3 @@ final class PendingRescueRequestStoreTests: XCTestCase {
         XCTAssertTrue(store.takeAll().isEmpty, "stale requests should be dropped")
     }
 }
-
-final class RescueSettingsTests: XCTestCase {
-    func testDefaultsOn() {
-        // The App-Group default is ON; we only assert the getter reads a bool.
-        let value = RescueSettings.isAutoRescueEnabled
-        RescueSettings.isAutoRescueEnabled = false
-        XCTAssertFalse(RescueSettings.isAutoRescueEnabled)
-        RescueSettings.isAutoRescueEnabled = true
-        XCTAssertTrue(RescueSettings.isAutoRescueEnabled)
-        RescueSettings.isAutoRescueEnabled = value // restore
-    }
-}

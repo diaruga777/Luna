@@ -11,7 +11,7 @@ import XCTest
 @testable import LunaShareSurface
 
 /// The per-app content gate inside `ShareSurfaceDriver.present`
-/// (`SurfaceSupport`, replacing the old cross-app-purchase `InteropGate`): an
+/// (`SurfaceSupport`): an
 /// unsupported cross-app save deletes the pending row (and any copied document
 /// file) and presents `UnsupportedSaveViewController`; a same-app outcome and
 /// `.failed` are byte-identical to today. Uses a fake host + scratch store —

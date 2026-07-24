@@ -53,7 +53,6 @@ final class SettingsViewController: NavHeaderTableController {
         // Kind rows first (Reader/Audio/Reading List/Email for article apps,
         // Auto-Download for media apps), then the universal tail.
         KindWiring.settingsCategories() + [
-            SettingsCategory(title: "Failed Saves", symbol: "wand.and.stars") { RescueSettingsScreen() },
             SettingsCategory(title: "Contacts", symbol: "person.2") { FriendsViewController() },
             SettingsCategory(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
             SettingsCategory(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
@@ -133,8 +132,11 @@ final class SettingsViewController: NavHeaderTableController {
 
 final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Section 0: the Safari extension's surface-specific button visibility.
-    /// Sections 1-2: the Action-Button shortcut's URL preference and actions.
-    private enum Section: Int, CaseIterable { case suggestionButton, onScreenURLs, shortcut }
+    /// Then the media apps' background-download preference, and the Action-Button
+    /// shortcut's URL preference and actions.
+    private enum Section: Int, CaseIterable {
+        case suggestionButton, backgroundDownload, onScreenURLs, shortcut
+    }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
     private var safariButtonName: String {
@@ -145,9 +147,20 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         case .priceTracker: return "Track in Luna"
         }
     }
+    /// Only the media-handling apps' intents download media, so only they show the
+    /// background-download row (the pref itself lives in `AppIntentSettings`, which
+    /// every app links — `LunaMediaDownload` is not universal).
+    private var handlesMedia: Bool {
+        switch AppSurfaceConfig.current {
+        case .all, .downloader: return true
+        case .reader, .priceTracker: return false
+        }
+    }
     private var visibleSections: [Section] {
-        if #available(iOS 27.0, *) { return Section.allCases }
-        return [.suggestionButton]
+        var sections: [Section] = [.suggestionButton]
+        if handlesMedia { sections.append(.backgroundDownload) }
+        if #available(iOS 27.0, *) { sections += [.onScreenURLs, .shortcut] }
+        return sections
     }
 
     init() { super.init(style: .insetGrouped) }
@@ -164,6 +177,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch visibleSections[section] {
         case .suggestionButton: return 1
+        case .backgroundDownload: return 1
         case .onScreenURLs: return 1
         case .shortcut: return Row.allCases.count
         }
@@ -172,6 +186,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .suggestionButton: return "\(safariButtonName) Button"
+        case .backgroundDownload: return "Media"
         case .onScreenURLs: return "On-Screen URLs"
         case .shortcut: return "Action Button Shortcut"
         }
@@ -182,6 +197,8 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         case .suggestionButton:
             return "When browsing in Safari (with the Luna extension enabled), show the "
                 + "\"\(safariButtonName)\" button when it applies. Choose when it appears."
+        case .backgroundDownload:
+            return "When on, Save and Provide Context return right away and the media keeps downloading in the background with a Live Activity. When off, they wait for the download to finish and return the image or video to your shortcut."
         case .onScreenURLs:
             return "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling."
         case .shortcut:
@@ -212,6 +229,19 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
                 control.topAnchor.constraint(greaterThanOrEqualTo: cell.contentView.topAnchor, constant: 8),
                 control.bottomAnchor.constraint(lessThanOrEqualTo: cell.contentView.bottomAnchor, constant: -8),
             ])
+            return cell
+        }
+
+        if visibleSections[indexPath.section] == .backgroundDownload {
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.selectionStyle = .none
+            var content = cell.defaultContentConfiguration()
+            content.text = "Download in Background"
+            content.image = UIImage(systemName: "arrow.down.doc")
+            cell.contentConfiguration = content
+            cell.accessoryView = makeToggle(
+                isOn: AppIntentSettings.downloadMediaInBackground,
+                action: #selector(backgroundDownloadToggled(_:)))
             return cell
         }
 
@@ -253,6 +283,10 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
 
     @objc private func handleOnScreenURLsToggled(_ sender: UISwitch) {
         AppIntentSettings.handleOnScreenURLs = sender.isOn
+    }
+
+    @objc private func backgroundDownloadToggled(_ sender: UISwitch) {
+        AppIntentSettings.downloadMediaInBackground = sender.isOn
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

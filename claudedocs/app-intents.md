@@ -145,8 +145,10 @@ Non-media saves and background-download mode return `media = nil`.
 4. The save awaits its classified outcome (bounded by the 12-second race) so a
    failure can be reported, then the row is verified against the store. If the
    RUNNING app handles media (Downloader / central Luna) and the URL is downloadable,
-   the intent performs exactly one media handoff regardless of per-platform toggles. `AutoDownloadSettings.returnMediaFromAppIntents`
-   is App-Group-backed and defaults on: it reuses an already-downloaded local/Photos-backed
+   the intent performs exactly one media handoff regardless of per-platform toggles.
+   `AppIntentSettings.returnsMediaToShortcuts` is App-Group-backed and defaults on (its
+   user-facing inverse is **Download in Background** under Settings ▸ Shortcut & Safari):
+   it reuses an already-downloaded local/Photos-backed
    item when present, otherwise resolves the content length and checks available storage.
    A known file at or below 100 MiB is awaited through `LiveMediaDownloadManager` and
    returned as an `IntentFile`; larger/unknown files and all setting-off invocations call

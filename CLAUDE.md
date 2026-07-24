@@ -22,8 +22,7 @@ Every app classifies ANY incoming URL through the one shared pipeline; a
 single-content app then DROPS foreign kinds with a generic error (nothing is
 stored), while the central Luna app processes everything — behavior is fixed at
 compile time by each target's link set + per-target composition files. See
-`claudedocs/surface-support.md` (this replaced the old Luna Interoperability
-purchase entirely).
+`claudedocs/surface-support.md`.
 
 **`luna` is a placeholder namespace** — rename it by editing the two top lines of
 `Config/Luna.xcconfig` (`LUNA_NAMESPACE`, `COMPANY_PREFIX`). Everything derives from

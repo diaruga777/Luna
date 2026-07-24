@@ -102,7 +102,6 @@ public struct MediaDownloadService: MediaDownloading {
                     pending.id, localIdentifier: identifier, kind: asset.kind)
                 else { throw MediaDownloadError.saveFailed }
                 try? FileManager.default.removeItem(at: fileURL)
-                await copyToClipboardIfEnabled(item)
                 return item
             } catch {
                 // The completed file remains available because PhotoKit was told not
@@ -118,7 +117,6 @@ public struct MediaDownloadService: MediaDownloading {
                 title: title,
                 fileExtension: fileURL.pathExtension,
                 requiringItemID: pending.id)
-            await copyToClipboardIfEnabled(item)
             return item
         } catch {
             try? FileManager.default.removeItem(at: fileURL)

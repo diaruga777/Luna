@@ -154,7 +154,7 @@ enum KindWiring {
             SettingsCategory(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
             SettingsCategory(title: "Email & Sending", symbol: "envelope") { EmailAndKindleSettingsScreen() },
             SettingsCategory(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") {
-                AutoDownloadSettingsScreen()
+                DownloadsSettingsScreen()
             },
         ]
     }

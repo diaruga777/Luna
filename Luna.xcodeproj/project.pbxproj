@@ -662,8 +662,8 @@
 				ReadingList/ArticleListSupport.swift,
 				ReadingList/MediaListSupport.swift,
 				Settings/AudioSettingsScreen.swift,
-				Settings/AutoDownloadSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
+				Settings/DownloadsSettingsScreen.swift,
 				Settings/EmailAndKindleSettingsScreen.swift,
 				Settings/ReaderSettingsScreens.swift,
 				Settings/VoiceInstallLink.swift,
@@ -719,7 +719,7 @@
 				Reader/NonArticleCardOpening.swift,
 				ReadingList/MediaListSupport.swift,
 				ReadingList/ProductListSupport.swift,
-				Settings/AutoDownloadSettingsScreen.swift,
+				Settings/DownloadsSettingsScreen.swift,
 				UITestScreen.swift,
 			);
 			target = AAE000000000000000000000 /* LunaReader */;

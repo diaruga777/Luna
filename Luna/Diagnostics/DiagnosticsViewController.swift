@@ -19,6 +19,8 @@ final class DiagnosticsViewController: UIViewController {
     let textView = UITextView()
     /// In-content header in place of the nav bar.
     private let header = NavHeaderBar()
+    /// Keeps left-edge swipe-back alive while the real nav bar is hidden.
+    private let popGestureClaim = InteractivePopGestureClaim()
 
     init(log: DiagnosticLogging = DiagnosticLog.shared) {
         self.log = log
@@ -76,6 +78,16 @@ final class DiagnosticsViewController: UIViewController {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
         reload()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        popGestureClaim.claim(in: navigationController)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        popGestureClaim.release()
     }
 
     private func reload() {

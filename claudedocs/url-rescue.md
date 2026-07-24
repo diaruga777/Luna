@@ -78,10 +78,11 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   (`rescueLedger.json`, 2 auto-attempts / 24h + success provenance) and
   `PendingRescueRequestStore` (App-Group queue, dedupe-by-URL, take-once, 3-day
   expiry).
-- **Consent** — one App-Group toggle `RescueSettings.isAutoRescueEnabled` (ON by
-  default; `RescueSettingsScreen` under Settings ▸ "Failed Saves"). Gates only
-  AUTOMATIC rescue — every failed item also offers a one-shot opt-in (the tap IS
-  consent) regardless of the toggle.
+- **Consent** — automatic rescue is always on (there is no setting; the former
+  Settings ▸ "Failed Saves" toggle and `RescueSettings` store are gone). Its real
+  gates are an available engine, an interactive failure, and the 2-attempts/24h
+  ledger budget. Every failed item also offers a one-shot rescue, which bypasses
+  the budget — that tap IS its own consent.
 - **In-app** — a failed reading-list row tap opens a hint-picker rescue sheet; the
   long-press menu gains a "Try with Apple Intelligence" submenu; the row subtitle
   reads "trying harder…" while a rescue is in flight. On the Reader and Downloader

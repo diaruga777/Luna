@@ -52,8 +52,8 @@ enum KindWiring {
 
     static func settingsCategories() -> [SettingsCategory] {
         [
-            SettingsCategory(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") {
-                AutoDownloadSettingsScreen()
+            SettingsCategory(title: "Downloads", symbol: "arrow.down.circle") {
+                DownloadsSettingsScreen()
             },
         ]
     }

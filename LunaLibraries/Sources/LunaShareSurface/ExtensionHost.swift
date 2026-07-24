@@ -53,7 +53,7 @@ public protocol ExtensionHost: AnyObject {
 
     /// Best-effort deep link into the containing app (`extensionContext.open`
     /// on the real host — extensions have no `UIApplication.shared`). Used by
-    /// the interop prompt's "unlock in <app>" step; a silent failure is fine
-    /// because the prompt always shows manual fallback instructions too.
+    /// the rescue-failure card's "Finish in Luna" step; a silent failure is fine
+    /// because the card always shows manual fallback instructions too.
     func openURL(_ url: URL)
 }

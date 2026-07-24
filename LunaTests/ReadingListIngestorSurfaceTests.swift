@@ -10,11 +10,9 @@ import XCTest
 @testable import LunaReadingList
 
 /// The per-app content gate inside `ReadingListIngestor.ingest`
-/// (`SurfaceSupport`, replacing the old cross-app-purchase `InteropGate`):
-/// a foreign-kind save is discarded (nothing remains in the store) for EVERY
-/// source — including `.email`/`.friendShare`, which were exempt under the old
-/// interop gate but are not anymore — and the background sweep discards
-/// silently.
+/// (`SurfaceSupport`): a foreign-kind save is discarded (nothing remains in the
+/// store) for EVERY source, `.email`/`.friendShare` included, and the background
+/// sweep discards silently.
 ///
 /// Outcomes are produced by the REAL pipeline but restricted to offline-
 /// deterministic classifications: a bsky.app URL classifies `.social` before

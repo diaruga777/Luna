@@ -28,8 +28,8 @@ public final class URLRescueCoordinator {
     public struct Engine {
         /// Cheap "is a model usable" gate; drives whether affordances appear.
         public var isAvailable: () -> Bool
-        /// Runs a rescue for `item` with `hint`; `interactive` picks the budget
-        /// and interop policy. Returns true when the item advanced (ready /
+        /// Runs a rescue for `item` with `hint`; `interactive` picks the budget.
+        /// Returns true when the item advanced (ready /
         /// tracker / media). The closure itself records the ledger + persists.
         public var perform: (ReadingListItem, RescueHint?, _ interactive: Bool) async -> Bool
 
@@ -114,7 +114,7 @@ public final class URLRescueCoordinator {
     /// it for the background sweep. Never blocks the caller.
     public func itemJustFailed(_ itemID: UUID, source: CaptureSource, interactive: Bool) {
         guard let engine = Self.engine, engine.isAvailable() else { return }
-        guard interactive, RescueSettings.isAutoRescueEnabled, ledger.shouldAutoRescue(itemID) else {
+        guard interactive, ledger.shouldAutoRescue(itemID) else {
             // Non-interactive failures (background sweeps, extension saves) are
             // picked up by the debounced sweep, not rescued inline.
             return
@@ -123,7 +123,7 @@ public final class URLRescueCoordinator {
     }
 
     /// A user-consented one-shot rescue (failed-row tap, extension hand-off).
-    /// Bypasses the toggle AND the auto-attempt budget — the tap IS consent.
+    /// Bypasses the auto-attempt budget — the tap IS consent.
     public func requestManualRescue(itemID: UUID, hint: RescueHint?) {
         guard let engine = Self.engine, engine.isAvailable() else { return }
         Task { [weak self] in await self?.runRescue(itemID: itemID, hint: hint, interactive: true, countsAgainstBudget: false) }
@@ -167,7 +167,7 @@ public final class URLRescueCoordinator {
 
     private func runSweep() {
         guard let engine = Self.engine, engine.isAvailable() else { return }
-        guard RescueSettings.isAutoRescueEnabled, isForeground, !isSweeping else { return }
+        guard isForeground, !isSweeping else { return }
         isSweeping = true
         defer { isSweeping = false }
 

@@ -9,9 +9,8 @@ import XCTest
 @testable import LunaIngest
 
 /// Covers `SurfaceSupport` — the pure per-app content gate every classified
-/// outcome is checked against, replacing the old cross-app-purchase
-/// `InteropGate`. Deliberately network/UIKit/UserDefaults-free: every input is
-/// passed in.
+/// outcome is checked against. Deliberately network/UIKit/UserDefaults-free:
+/// every input is passed in.
 final class SurfaceSupportTests: XCTestCase {
 
     // MARK: - Decision matrix

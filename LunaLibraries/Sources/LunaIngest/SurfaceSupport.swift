@@ -33,9 +33,8 @@ public extension Outcome {
 ///
 /// - the central **Luna** app processes every kind;
 /// - a single-content app (Reader / Downloader / Price Tracker) processes its
-///   own kind and DROPS the rest with a generic error (nothing remains in the
-///   store — the same "blocked means nothing remains" invariant the old
-///   interoperability purchase gate kept).
+///   own kind and DROPS the rest with a generic error (blocked means nothing
+///   remains in the store).
 ///
 /// Which kinds an app handles is fixed at build time by which per-kind
 /// packages its target links; this type is the runtime mirror of that static

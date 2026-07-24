@@ -1423,9 +1423,8 @@ public final class LiveMediaDownloadManager: NSObject {
         guard job.phase != .suspended else { return }
         do {
             if job.isDownloaderOwned {
-                let item = try await finishDownloaderStorage(
+                _ = try await finishDownloaderStorage(
                     job: job, fileURL: fileURL, kind: kind)
-                await copyToClipboardIfEnabled(item)
             } else {
                 _ = try await saver.save(fileURL: fileURL, kind: kind)
             }

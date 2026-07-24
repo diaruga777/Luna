@@ -10,9 +10,9 @@ import XCTest
 
 final class AutoDownloadSettingsTests: XCTestCase {
     private let photosKey = "autoSaveDownloadsToPhotos"
-    private let clipboardKey = "autoCopyDownloadsToClipboard"
     private let intentMediaKey = "returnMediaFromAppIntents"
     private let wifiOnlyKey = "wifiOnlyDownloads"
+    private let autoDownloadKey = "autoDownloadMediaInPreview"
     private let pendingWiFiKey = "pendingWiFiDownloads"
     private let retentionDisabledKey = "savedMediaRetention.disabled"
     private let retentionDaysKey = "savedMediaRetention.days"
@@ -23,16 +23,18 @@ final class AutoDownloadSettingsTests: XCTestCase {
 
     private func preservingSettings(_ body: () -> Void) {
         let previousPhotos = defaults.object(forKey: photosKey)
-        let previousClipboard = defaults.object(forKey: clipboardKey)
         let previousIntentMedia = defaults.object(forKey: intentMediaKey)
         let previousRetentionDisabled = defaults.object(forKey: retentionDisabledKey)
         let previousRetentionDays = defaults.object(forKey: retentionDaysKey)
+        let previousAutoDownload = defaults.object(forKey: autoDownloadKey)
+        let previousWiFiOnly = defaults.object(forKey: wifiOnlyKey)
         defer {
             restore(previousPhotos, forKey: photosKey)
-            restore(previousClipboard, forKey: clipboardKey)
             restore(previousIntentMedia, forKey: intentMediaKey)
             restore(previousRetentionDisabled, forKey: retentionDisabledKey)
             restore(previousRetentionDays, forKey: retentionDaysKey)
+            restore(previousAutoDownload, forKey: autoDownloadKey)
+            restore(previousWiFiOnly, forKey: wifiOnlyKey)
         }
         body()
     }
@@ -48,25 +50,107 @@ final class AutoDownloadSettingsTests: XCTestCase {
     func testDownloadActionDefaults() {
         preservingSettings {
             defaults.removeObject(forKey: photosKey)
-            defaults.removeObject(forKey: clipboardKey)
             defaults.removeObject(forKey: intentMediaKey)
 
             XCTAssertTrue(AutoDownloadSettings.autoSaveDownloadsToPhotos)
-            XCTAssertFalse(AutoDownloadSettings.autoCopyDownloadsToClipboard)
-            XCTAssertTrue(AutoDownloadSettings.returnMediaFromAppIntents)
+            // "Download in Background" is the user-facing inverse of the stored
+            // "return the file to Shortcuts" behaviour, which stays the default.
+            XCTAssertTrue(AppIntentSettings.returnsMediaToShortcuts)
+            XCTAssertFalse(AppIntentSettings.downloadMediaInBackground)
         }
     }
 
     func testDownloadActionSettingsRoundTrip() {
         preservingSettings {
             AutoDownloadSettings.autoSaveDownloadsToPhotos = false
-            AutoDownloadSettings.autoCopyDownloadsToClipboard = true
-            AutoDownloadSettings.returnMediaFromAppIntents = false
+            AppIntentSettings.downloadMediaInBackground = true
 
             XCTAssertFalse(AutoDownloadSettings.autoSaveDownloadsToPhotos)
-            XCTAssertTrue(AutoDownloadSettings.autoCopyDownloadsToClipboard)
-            XCTAssertFalse(AutoDownloadSettings.returnMediaFromAppIntents)
+            XCTAssertFalse(AppIntentSettings.returnsMediaToShortcuts)
+
+            AppIntentSettings.downloadMediaInBackground = false
+            XCTAssertTrue(AppIntentSettings.returnsMediaToShortcuts)
         }
+    }
+
+    // MARK: - "Download Automatically" (Never / Always / On Wi-Fi Only)
+
+    func testAutoDownloadPolicyDefaultsToAlways() {
+        preservingSettings {
+            defaults.removeObject(forKey: autoDownloadKey)
+            defaults.removeObject(forKey: wifiOnlyKey)
+
+            XCTAssertEqual(AutoDownloadSettings.policy, .always)
+        }
+    }
+
+    func testAutoDownloadPolicyRoundTripsThroughBothPrefs() {
+        preservingSettings {
+            AutoDownloadSettings.policy = .never
+            XCTAssertEqual(AutoDownloadSettings.policy, .never)
+            XCTAssertFalse(AutoDownloadSettings.autoDownloadMediaInPreview)
+            XCTAssertFalse(AutoDownloadSettings.wifiOnlyDownloads)
+
+            AutoDownloadSettings.policy = .wifiOnly
+            XCTAssertEqual(AutoDownloadSettings.policy, .wifiOnly)
+            XCTAssertTrue(AutoDownloadSettings.autoDownloadMediaInPreview)
+            XCTAssertTrue(AutoDownloadSettings.wifiOnlyDownloads)
+
+            AutoDownloadSettings.policy = .always
+            XCTAssertEqual(AutoDownloadSettings.policy, .always)
+            XCTAssertTrue(AutoDownloadSettings.autoDownloadMediaInPreview)
+            XCTAssertFalse(AutoDownloadSettings.wifiOnlyDownloads)
+        }
+    }
+
+    // MARK: - "Storage" (Photos vs. a deletion age — mutually exclusive)
+
+    func testStorageDefaultsToPhotos() {
+        preservingSettings {
+            defaults.removeObject(forKey: photosKey)
+            defaults.removeObject(forKey: retentionDisabledKey)
+            defaults.removeObject(forKey: retentionDaysKey)
+
+            XCTAssertEqual(MediaStorageSettings.option, .photos)
+        }
+    }
+
+    func testStorageOptionsAreMutuallyExclusive() {
+        preservingSettings {
+            for retention in MediaRetentionOption.deletionOptions {
+                MediaStorageSettings.option = .deleteAfter(retention)
+                XCTAssertEqual(MediaStorageSettings.option, .deleteAfter(retention))
+                XCTAssertFalse(AutoDownloadSettings.autoSaveDownloadsToPhotos)
+                XCTAssertEqual(MediaRetentionSettings.retentionDays, retention.days)
+            }
+
+            MediaStorageSettings.option = .photos
+            XCTAssertEqual(MediaStorageSettings.option, .photos)
+            XCTAssertTrue(AutoDownloadSettings.autoSaveDownloadsToPhotos)
+            XCTAssertNil(MediaRetentionSettings.retentionDays)
+        }
+    }
+
+    /// The old settings allowed "Photos off, no retention"; the collapsed row has no
+    /// such choice, so it reads as the default deletion age.
+    func testStorageFallsBackToDefaultRetentionWhenNeitherWasChosen() {
+        preservingSettings {
+            AutoDownloadSettings.autoSaveDownloadsToPhotos = false
+            MediaRetentionSettings.option = .never
+
+            XCTAssertEqual(
+                MediaStorageSettings.option,
+                .deleteAfter(MediaStorageSettings.defaultRetention))
+        }
+    }
+
+    func testStorageOptionsListOffersPhotosFirstThenEveryDeletionAge() {
+        XCTAssertEqual(MediaStorageOption.allCases.first, .photos)
+        XCTAssertEqual(
+            MediaStorageOption.allCases.count, MediaRetentionOption.deletionOptions.count + 1)
+        XCTAssertFalse(MediaRetentionOption.deletionOptions.contains(.never))
+        XCTAssertEqual(
+            MediaStorageOption.deleteAfter(.oneDay).displayName, "Delete after 1 day")
     }
 
     func testRetentionDefaultsToNever() {

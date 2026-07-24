@@ -801,11 +801,13 @@ public final class SavedMediaStore {
 }
 
 /// The supported ages for automatically removing locally downloaded media.
+///
+/// `.never` is not offered as a user choice — it is what retention reads as while
+/// the user stores downloads in Photos instead (see `MediaStorageOption`).
 public enum MediaRetentionOption: Int, CaseIterable, Sendable {
     case never = 0
     case oneDay = 1
-    case twoDays = 2
-    case oneWeek = 7
+    case threeDays = 3
     case twoWeeks = 14
     case oneMonth = 30
 
@@ -813,18 +815,25 @@ public enum MediaRetentionOption: Int, CaseIterable, Sendable {
         self == .never ? nil : rawValue
     }
 
+    /// The deletion ages the Storage picker offers, in display order.
+    public static var deletionOptions: [MediaRetentionOption] {
+        allCases.filter { $0 != .never }
+    }
+
+    /// The age alone ("1 day"), composed into a full row title by
+    /// `MediaStorageOption.displayName`.
     public var displayName: String {
         switch self {
         case .never: return "Never"
-        case .oneDay: return "After 1 day"
-        case .twoDays: return "After 2 days"
-        case .oneWeek: return "After 1 week"
-        case .twoWeeks: return "After 2 weeks"
-        case .oneMonth: return "After 1 month"
+        case .oneDay: return "1 day"
+        case .threeDays: return "3 days"
+        case .twoWeeks: return "2 weeks"
+        case .oneMonth: return "1 month"
         }
     }
 
-    /// Maps the old free-form 1–30 day setting to the closest supported choice.
+    /// Maps a free-form (or since-removed) day count to the closest supported
+    /// choice, so an existing installation keeps roughly its previous retention.
     public static func closest(to days: Int) -> MediaRetentionOption {
         allCases.min {
             abs($0.rawValue - days) < abs($1.rawValue - days)

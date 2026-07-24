@@ -477,19 +477,6 @@ public final class SavedNonTextualViewController: UIViewController {
                         creator: creator, requiringItemID: pending.id)
                 }
                 AutoDownloadSettings.markDownloaded(sourceURLString)
-                if AutoDownloadSettings.autoCopyDownloadsToClipboard {
-                    await MainActor.run {
-                        switch saved.storageState {
-                        case .localFile:
-                            if let url = saved.fileURL { _ = MediaPasteboard.copy(.localFile(url)) }
-                        case .photosReference(let identifier, _, _):
-                            _ = MediaPasteboard.copy(.photo(
-                                localIdentifier: identifier, kind: kind))
-                        case .undownloaded:
-                            break
-                        }
-                    }
-                }
                 return saved.photosLocalIdentifier
             } catch {
                 try? FileManager.default.removeItem(at: copy)

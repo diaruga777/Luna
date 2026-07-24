@@ -10,9 +10,13 @@ LunaLibraries/.build/
 DerivedData/
 .build-dd/
 .build-dd*/
+build/
 
 # Xcode and SwiftPM generated state
 **/-Xcc/
 **/.swiftpm/
+# Per-user scheme visibility/ordering and breakpoints — never shared.
+*.xcodeproj/xcuserdata/
 
 *.DS_Store
+.DS_Store

@@ -10,6 +10,7 @@
 //
 
 import AppIntents
+import LunaIntents
 import Foundation
 
 /// The default runtime: run the body inline under the ordinary background budget
@@ -35,6 +36,11 @@ extension CaptureIntentRuntime {
     ) async throws -> T {
         try await operation()
     }
+
+    /// How long a save press inside this intent may wait for its classified
+    /// outcome. Short by default: the save is one leg of a ~30 s total budget it
+    /// must not consume (see `IntentSaveTimeout`).
+    var captureSaveTimeout: TimeInterval { IntentSaveTimeout.standard }
 }
 
 extension ProvideContextIntent: CaptureIntentRuntime {}

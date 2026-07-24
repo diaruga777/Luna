@@ -13,17 +13,28 @@
 //
 
 import AppIntents
+import LunaIntents
+import LunaStorage
 import Foundation
 
-/// Whether this app+OS hands progress to the SYSTEM's own intent progress UI.
-/// `MediaIntentHandoff` consults it to stand Luna's download Live Activity down
-/// for the leg the system already covers — "prefer the system UI".
-enum CaptureIntentSystemProgress {
+/// Whether this app+OS actually grants the extended runtime — and with it the
+/// SYSTEM's own intent progress UI. One condition, two consequences:
+///
+/// - `MediaIntentHandoff` stands Luna's download Live Activity down for the leg
+///   the system already covers ("prefer the system UI");
+/// - the save press may wait `IntentSaveTimeout.extendedRuntime` instead of
+///   racing the ordinary budget.
+enum CaptureIntentExtendedRuntime {
     static var isAvailable: Bool {
         #if compiler(>=6.4)
         if #available(iOS 27.0, *) { return true }
         #endif
         return false
+    }
+
+    /// The save-press budget for whichever runtime this run got.
+    static var saveTimeout: TimeInterval {
+        isAvailable ? IntentSaveTimeout.extendedRuntime : IntentSaveTimeout.standard
     }
 }
 
@@ -62,18 +73,30 @@ extension SaveIntent: LiveActivityIntent {}
 //   extension methods exist only on iOS 27+.
 
 @available(iOS 27.0, *)
-extension ProvideContextIntent: LongRunningIntent {}
+extension ProvideContextIntent: LongRunningIntent, CancellableIntent {}
 
 @available(iOS 27.0, *)
-extension SaveIntent: LongRunningIntent {}
+extension SaveIntent: LongRunningIntent, CancellableIntent {}
 
 @available(iOS 27.0, *)
-extension LongRunningIntent {
+extension LongRunningIntent where Self: CancellableIntent {
 
     /// Runs `operation` with the extended background runtime, pumping `progress`
     /// from `reporter` once a second for as long as it runs. The heartbeat is not
     /// decoration: a stalled `progress` is grounds for the system to cancel the
     /// extension (see `IntentProgressReporter`).
+    ///
+    /// `CancellableIntent` is what unlocks the `onCancel:` overload, so the two
+    /// ways this run can end early are distinguishable and recorded:
+    /// `.userCancelled` (someone dismissed it from the system's progress UI) and
+    /// `.timeout` (the system took the runtime back). The handler is SYNCHRONOUS
+    /// and fires exactly when our runtime is being revoked, so it only does
+    /// bookkeeping — the durable transfer keeps running, and the awaited media
+    /// leg hands the progress UI back to Luna's own Live Activity on the way out
+    /// (`MediaIntentHandoff`) so a continuing download never goes invisible.
+    /// Stopping the transfer is deliberately NOT done here: it is a durable
+    /// Downloader job that also feeds the library, and the activity we hand back
+    /// carries an explicit Suspend control.
     func performTracked<T>(
         reporter: IntentProgressReporter,
         operation: @escaping () async throws -> T
@@ -92,6 +115,10 @@ extension LongRunningIntent {
             let value = try await operation()
             progress.completedUnitCount = progress.totalUnitCount
             return value
+        } onCancel: { reason in
+            SharedDiagnosticLog.record(
+                "capture intent runtime ended early: \(reason.debugDescription)",
+                category: "intents")
         }
     }
 }
@@ -117,6 +144,8 @@ extension ProvideContextIntent {
         #endif
         return try await operation()
     }
+
+    var captureSaveTimeout: TimeInterval { CaptureIntentExtendedRuntime.saveTimeout }
 }
 
 extension SaveIntent {
@@ -131,4 +160,6 @@ extension SaveIntent {
         #endif
         return try await operation()
     }
+
+    var captureSaveTimeout: TimeInterval { CaptureIntentExtendedRuntime.saveTimeout }
 }

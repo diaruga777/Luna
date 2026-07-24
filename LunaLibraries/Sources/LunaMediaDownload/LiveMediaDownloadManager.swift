@@ -701,6 +701,18 @@ public final class LiveMediaDownloadManager: NSObject {
         return job.downloaderSnapshot
     }
 
+    /// A still-running Downloader job for this URL, for
+    /// `resumeOwnProgressUI(forSourceURLString:)` — a terminal job has nothing
+    /// left to show progress for. `store` is file-private, hence this accessor.
+    func jobAwaitingProgressUI(
+        forSourceURLString urlString: String
+    ) -> LiveMediaDownloadJob? {
+        guard let job = store.job(forSourceURLString: urlString),
+              job.isDownloaderOwned, !job.isTerminal
+        else { return nil }
+        return job
+    }
+
     /// Waits for a Downloader-owned background/Live Activity job to materialize
     /// its durable file. Used only for App Intent downloads below the inline size
     /// threshold; the transfer itself still runs through the same background

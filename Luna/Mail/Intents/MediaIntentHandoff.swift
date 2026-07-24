@@ -106,21 +106,29 @@ enum MediaIntentHandoff {
             // The background leg below keeps ours, because the system's UI ends
             // when the intent returns and that transfer outlives it.
             let result = await LiveMediaDownloadManager.$systemProvidesProgressUI.withValue(
-                CaptureIntentSystemProgress.isAvailable
+                CaptureIntentExtendedRuntime.isAvailable
             ) {
                 await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
                     forURLString: urlString)
             }
             SharedDiagnosticLog.record(
-                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), systemProgressUI=\(CaptureIntentSystemProgress.isAvailable), photosAuthorized=\(photosAuthorized)",
+                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), systemProgressUI=\(CaptureIntentExtendedRuntime.isAvailable), photosAuthorized=\(photosAuthorized)",
                 category: "media-download")
             switch result {
             case let .completed(media): return intentFile(for: media)
             case .handledWithoutFile: return nil
             case let .failed(message):
-                // A user cancelling from the system's progress UI cancels this
-                // task — that's a dismissal, not a failure worth an error dialog.
-                if Task.isCancelled { return nil }
+                // A user cancelling from the system's progress UI (or the system
+                // reclaiming the runtime) cancels this task — a dismissal, not a
+                // failure worth an error dialog. The transfer itself is durable
+                // and keeps going, so hand the progress UI back to Luna's own
+                // Live Activity on the way out: we suppressed it above precisely
+                // because the system's was showing, and that one is now gone.
+                if Task.isCancelled {
+                    await LiveMediaDownloadManager.shared.resumeOwnProgressUI(
+                        forSourceURLString: urlString)
+                    return nil
+                }
                 throw MediaHandoffError.downloadFailed(message: message)
             }
         } else {

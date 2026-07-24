@@ -160,7 +160,8 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         ) {
             let outcome = await IntentIngestHelper.handleSavePress(
                 urlString: savedURLString,
-                doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+                doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
+                timeout: captureSaveTimeout)
             // Verify the re-press before recording it or downloading anything:
             // re-running a save whose item is gone or failed is a failure too.
             _ = try self.savedURLString(from: outcome)
@@ -207,11 +208,13 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                 outcome = try await SafariPageSave.save(
                     title: fields[0],
                     site: fields.count > 1 ? fields[1] : nil,
-                    doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+                    doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
+                    saveTimeout: captureSaveTimeout)
             } else if let platform = AppNamePlatform.platform(forAppName: app) {
                 let result = try await PlatformFieldSave.save(
                     platform: platform, fields: fields,
-                    doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+                    doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
+                    saveTimeout: captureSaveTimeout)
                 outcome = result.outcome
                 resolvedPlatformURLString = result.resolvedURLString
             } else {

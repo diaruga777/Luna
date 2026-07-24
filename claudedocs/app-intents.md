@@ -142,7 +142,8 @@ Non-media saves and background-download mode return `media = nil`.
    handle+phrase+date? via `SocialPostFinder`). Both are double-save-aware and
    return `IntentIngestHelper.ActionButtonSaveOutcome`, whose cases carry the
    saved URL string.
-4. The save awaits its classified outcome (bounded by the 12-second race) so a
+4. The save awaits its classified outcome (bounded by `captureSaveTimeout` — see
+   "Runtime + progress UI") so a
    failure can be reported, then the row is verified against the store. If the
    RUNNING app handles media (Downloader / central Luna) and the URL is downloadable,
    the intent performs exactly one media handoff regardless of per-platform toggles.
@@ -197,7 +198,7 @@ intent *believed in* is verified, and every way it can end empty throws:
   the surviving item. `handleSavePress` reports the outcome as
   `.saveFailed(_)`, and `.completed`'s URL is the item's CURRENT one, so media
   handoff uses the resolved URL rather than the wrapper.
-- **Timeouts stay successes.** The 12-second race expiring means the ingest is
+- **Timeouts stay successes.** The save race expiring means the ingest is
   still running and its item is in the store as `.pending`; it finishes or is
   retried on the next launch. There is nothing to verify and nothing to report.
 - **Media** (`media-download.md`): the handoff throws when the transfer engine
@@ -212,10 +213,10 @@ intent *believed in* is verified, and every way it can end empty throws:
 intent gets is decided by synchronized-group membership, like every other
 kind-specific seam in the shell:
 
-| file | targets | runtime |
-|---|---|---|
-| `CaptureIntentRuntime.swift` | all four | inline — the ordinary ~30 s budget |
-| `CaptureIntentRuntime+LongRunning.swift` | **Luna**, **Luna Downloader** | `LiveActivityIntent` + `LongRunningIntent` |
+| file | targets | runtime | save-press wait |
+|---|---|---|---|
+| `CaptureIntentRuntime.swift` | all four | inline — the ordinary ~30 s budget | `IntentSaveTimeout.standard` (12 s) |
+| `CaptureIntentRuntime+LongRunning.swift` | **Luna**, **Luna Downloader** | `LiveActivityIntent` + `LongRunningIntent` + `CancellableIntent` | `.extendedRuntime` (`IngestPipeline.processTimeout + 2` = 30 s) |
 
 Reader and Price Tracker stay on the plain budget **by design**: their captures
 end at the save (an article fetch or a price fetch, bounded by the pipeline
@@ -269,6 +270,29 @@ remaining distance to the current band's ceiling. Deliberately an estimate: an
 indeterminate `Progress` that never moves is what gets cancelled. Never let a tick
 cross into the next band — a save still running must not read as a download.
 
+**The save-press budget follows the runtime.** `IntentIngestHelper.handleSavePress`
+takes a `timeout`, and the intents pass `captureSaveTimeout` — the seam's other
+per-target member. Under the ordinary budget it stays **12 s**, because the save
+is only the first leg (the media handoff's preflight HEAD and transfer still have
+to fit inside ~30 s). Under the extended runtime there is no ceiling to race, so
+it becomes `IngestPipeline.processTimeout + 2`: the pipeline ALWAYS resolves
+within its own hard timeout, so the race stops being the normal exit and becomes
+a backstop — which is what turns "timed out, reported as handled" into a real
+`saveFailed`/`contentUnavailable` error. `SafariPageSave.save` and
+`PlatformFieldSave.save` take the budget through as `saveTimeout`.
+
+**`CancellableIntent`** (iOS 26.4 — also absent from the 26.2 SDK, so it shares the
+`#if compiler(>=6.4)` gate) unlocks `performBackgroundTask`'s `onCancel:`
+overload, so the two ways a run ends early are distinguishable and logged:
+`.userCancelled` (dismissed from the system's progress UI) and `.timeout` (the
+system reclaimed the runtime). The handler is SYNCHRONOUS and fires while the
+runtime is being revoked, so it only records; it deliberately does NOT stop the
+transfer, which is a durable Downloader job that also feeds the library. Instead
+the awaited media leg notices `Task.isCancelled` and calls
+`LiveMediaDownloadManager.resumeOwnProgressUI(forSourceURLString:)` on the way
+out — handing the progress UI back to Luna's own Live Activity (which carries an
+explicit Suspend control), so a download that keeps running never goes invisible.
+
 **Which Live Activity shows.** Prefer the system's:
 
 | leg | iOS 27 + Xcode 27 build | otherwise |
@@ -283,10 +307,8 @@ concurrent in-app save keeps its own activity and there's no global flag to leav
 set. It is deliberately NOT bound around the background leg: that transfer
 outlives the intent, and the system's progress UI does not.
 
-Not adopted: `CancellableIntent` (iOS 26.4, also absent from the 26.2 SDK), needed
-for `performBackgroundTask`'s `onCancel:` overload. Until then a cancel from the
-system UI cancels the task, and the media handoff checks `Task.isCancelled` so a
-dismissal doesn't surface as a download failure.
+`LongRunningTaskOptions` is left empty — `requiresGPU` is the only option and
+none of this work touches the GPU.
 
 ## The vision seam (compiler + availability double gate)
 

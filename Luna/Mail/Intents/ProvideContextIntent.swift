@@ -180,7 +180,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         reporter.enter(.saving)
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString,
-            doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+            doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
+            timeout: captureSaveTimeout)
 
         let savedURLString: String
         switch outcome {
@@ -188,7 +189,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             try? await requestToContinueInForeground()
             savedURLString = savedURL
         case let .completed(savedURL):
-            // Nil means only that the 12-second race expired. The ingest task
+            // Nil means only that the save race expired. The ingest task
             // continues, exactly as it does for a Safari-extension URL.
             savedURLString = savedURL ?? urlString
         case let .unsupportedKind(owner):

@@ -22,4 +22,19 @@ extension LiveMediaDownloadManager {
     /// there is no global state to forget to clear.
     @TaskLocal
     public static var systemProvidesProgressUI: Bool = false
+
+    /// The system's intent progress UI has gone away while a transfer is still
+    /// running — the intent was cancelled from that UI, or the system reclaimed
+    /// its runtime. Start Luna's own Live Activity for the job so a download that
+    /// keeps going doesn't keep going invisibly.
+    ///
+    /// Silent (no start alert): the download isn't new, it's changing hands. Must
+    /// be called OUTSIDE the `systemProvidesProgressUI` binding, or the
+    /// suppression it exists to undo swallows it.
+    public func resumeOwnProgressUI(forSourceURLString urlString: String) async {
+        guard !Self.systemProvidesProgressUI,
+              let job = jobAwaitingProgressUI(forSourceURLString: urlString)
+        else { return }
+        await startActivity(for: job, announce: false)
+    }
 }

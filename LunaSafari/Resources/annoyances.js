@@ -132,8 +132,28 @@
         return null;
     }
 
+    // An annoyance is something ON TOP OF the page, never the page itself. This is the
+    // one hard invariant of the whole suppressor, enforced at the single sink (`hide`)
+    // rather than at each caller, because every identity signal we use is a substring
+    // match and publishers routinely put transient MODAL/OVERLAY STATE classes on the
+    // document itself: NYT's consent vendor adds `fides-overlay-modal-link-shown` to
+    // <body>, Bootstrap adds `modal-open`. Such a class makes <body> match the
+    // `[class*="overlay" i]` / `[class*="modal" i]` overlay probes, and a publisher
+    // page always carries cookie wording plus a reject button somewhere inside it — so
+    // without this guard the whole document reads as a consent root and gets
+    // `display:none`, blanking the page after first paint.
+    //
+    // The same reasoning covers a WRAPPER of the page: nothing that contains the
+    // document's main content is an annoyance, whatever it is named.
+    function holdsPageContent(element) {
+        if (element === document.body || element === document.documentElement) { return true; }
+        if (!element || !element.querySelector) { return false; }
+        return !!element.querySelector('main, article, [role="main"]');
+    }
+
     function hide(element, kind) {
         if (!element || !element.classList || element.classList.contains(HIDDEN_CLASS)) { return false; }
+        if (holdsPageContent(element)) { return false; }
         element.classList.add(HIDDEN_CLASS);
         element.setAttribute("data-luna-suppressed", kind);
         return true;
@@ -169,7 +189,7 @@
         var known = element.matches(CONSENT_ROOT_SELECTOR)
             ? element
             : element.querySelector(CONSENT_ROOT_SELECTOR);
-        if (known) { return known; }
+        if (known && !holdsPageContent(known)) { return known; }
 
         var overlaySelector = [
             '[role="dialog"]', '[role="alertdialog"]', '[aria-modal="true"]', "dialog",
@@ -184,6 +204,12 @@
 
         for (var j = 0; j < candidates.length; j++) {
             var candidate = candidates[j];
+            // Skip the document / a content wrapper up front: it would otherwise
+            // "win" as the consent root (its text mentions cookies and some reject
+            // button lives inside it), and `processConsent` returning true also
+            // suppresses the popover scan of everything below it — so the REAL
+            // banner further down would never be considered.
+            if (holdsPageContent(candidate)) { continue; }
             var identity = normalizeLabel((candidate.id || "") + " " + (candidate.className || ""));
             var text = normalizeLabel((candidate.textContent || "").slice(0, 5000));
             var mentionsConsent = /(?:cookie|consent|privacy preference)/.test(identity + " " + text);

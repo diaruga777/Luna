@@ -177,4 +177,54 @@ final class SafariAnnoyanceSuppressionTests: XCTestCase {
         """
         XCTAssertEqual(evaluate(expression, html: html), "visible")
     }
+
+    /// The document itself is never an annoyance. Consent vendors put transient
+    /// modal/overlay STATE classes on <body> (this fixture mirrors NYT, whose Ethyca
+    /// Fides integration adds `fides-overlay-modal-link-shown`), which makes <body>
+    /// match the substring `[class*="overlay" i]` overlay probe — and a publisher page
+    /// always carries cookie wording plus a reject button somewhere inside it. Hiding
+    /// that "consent root" blanked the whole page after first paint. The real banner
+    /// must be the one that gets hidden.
+    func testDocumentBodyIsNeverTreatedAsTheConsentRoot() {
+        let html = """
+        <html><body class="gps-show fides-overlay-modal-link-shown fides-no-scroll">
+        <div id="fides-overlay" class="fides-overlay">
+          <div class="fides-banner">
+            <p>We and our vendors use cookies and similar methods to recognize visitors.</p>
+            <button class="fides-accept-all-button">Accept all</button>
+            <button class="fides-reject-all-button"
+                    onclick="document.documentElement.dataset.choice='rejected'">Reject all</button>
+          </div>
+        </div>
+        <main id="site-content">
+          <article><p>The full article body must survive annoyance suppression.</p></article>
+        </main>
+        </body></html>
+        """
+        let expression = """
+        (function () {
+          return [document.body.dataset.lunaSuppressed || 'visible',
+                  document.querySelector('#fides-overlay').dataset.lunaSuppressed || 'visible',
+                  document.querySelector('#site-content') ? 'content' : 'gone',
+                  document.documentElement.dataset.choice || 'none'].join('|');
+        }())
+        """
+        XCTAssertEqual(evaluate(expression, html: html), "visible|consent|content|rejected")
+    }
+
+    /// The same invariant one level down: a wrapper is not an annoyance just because
+    /// its name reads like one, when it holds the page's main content.
+    func testContentWrapperNamedLikeAnOverlayIsPreserved() {
+        let html = """
+        <html><body>
+        <div id="shell" class="page-overlay" style="position:fixed;inset:0">
+          <p>Subscribe to our newsletter for cookie-free updates.</p>
+          <main><article><p>The article body lives inside the wrapper.</p></article></main>
+        </div>
+        </body></html>
+        """
+        XCTAssertEqual(
+            evaluate("document.querySelector('#shell').dataset.lunaSuppressed || 'visible'", html: html),
+            "visible")
+    }
 }

@@ -54,6 +54,19 @@ injection used by the Luna action pill.
   catches newsletter/email modals whose copy matches none of the text patterns (or is
   in an unmatched language); it stays safe because the protected-dialog guard has
   already excluded anything with a password/OTP or login/checkout/billing wording.
+- **Never the page itself:** every identity signal above is a SUBSTRING match, and
+  publishers put transient modal/overlay STATE classes on the document — NYT's consent
+  vendor (Ethyca Fides) adds `fides-overlay-modal-link-shown` to `<body>`, Bootstrap adds
+  `modal-open` — so `<body>` starts matching the `[class*="overlay" i]` /
+  `[class*="modal" i]` overlay probes. A publisher page also always carries cookie wording
+  and a reject button *somewhere* inside it, so the whole document then reads as a valid
+  consent root. That is what blanked NYT in Safari (correct page painted, then
+  `display:none` landed on `<body>`). `holdsPageContent` therefore rejects
+  `<body>`/`<html>` and anything containing `main`/`article`/`[role=main]`, enforced at the
+  single `hide()` sink AND in `semanticConsentRoot`'s candidate loop — the latter matters
+  because a consent root short-circuits the popover scan of everything below it, so
+  claiming the document would also hide the real banner from consideration. Regression:
+  `testDocumentBodyIsNeverTreatedAsTheConsentRoot`.
 - **Safety boundary:** no network rule or cosmetic selector targets ad slots, ad iframes,
   sponsored cards, or generic `ad` classes. Inline ads therefore remain visible. Login,
   one-time-code, checkout, billing, and payment dialogs are protected. A generic popover

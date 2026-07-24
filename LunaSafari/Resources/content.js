@@ -210,18 +210,27 @@
                         el.style.webkitMaskImage = "none";
                     });
                 });
-                // Un-clamp any element that STILL holds substantial article prose but is
-                // being height-limited / masked / blurred inline — the teaser clamp a
-                // metered wall applies to its content container when it doesn't use one of
-                // the UNHIDE class names above. Prose-guarded (>= 2 real paragraphs), so
-                // ordinary UI clamps ("show more" teasers, cards) are left alone; it does
-                // NOT announce an unlock on its own, since a benign clamp is not a paywall.
+                // Un-clamp the genuine "faded teaser" a metered wall applies to its
+                // content container: a HEIGHT limit COMBINED WITH a visual fade
+                // (mask-image / linear-gradient / blur). Requiring BOTH is deliberate —
+                // a bare `overflow:hidden` or a bare `max-height` is ubiquitous layout
+                // styling, and force-revealing those (especially the repeated pass below,
+                // on a complex SPA) rewrites the site's own layout/scroll containers and
+                // can collapse the page to blank. Only the clamp/fade properties are
+                // cleared — never height/display/visibility/opacity — so revealing the
+                // hidden body can't disturb the layout engine. Prose-guarded (>= 2 real
+                // paragraphs); does NOT announce an unlock (a benign clamp isn't a wall).
                 document.querySelectorAll("[style]").forEach(function (el) {
                     var s = (el.getAttribute("style") || "").toLowerCase();
-                    var clamped = s.indexOf("max-height") >= 0 || s.indexOf("mask-image") >= 0
-                        || s.indexOf("-webkit-mask") >= 0
-                        || /overflow\s*:\s*hidden/.test(s) || /filter\s*:\s*blur/.test(s);
-                    if (clamped && articleChars(el) > 400) { reveal(el); }
+                    var heightClamped = /max-height\s*:/.test(s);
+                    var faded = s.indexOf("mask-image") >= 0 || s.indexOf("-webkit-mask") >= 0
+                        || s.indexOf("linear-gradient") >= 0 || /filter\s*:\s*blur/.test(s);
+                    if (heightClamped && faded && articleChars(el) > 400) {
+                        el.style.maxHeight = "none";
+                        el.style.webkitMaskImage = "none"; el.style.maskImage = "none";
+                        el.style.filter = "none"; el.style.webkitFilter = "none";
+                        if (/overflow\s*:\s*hidden/.test(s)) { el.style.overflow = "visible"; }
+                    }
                 });
             } catch (e) {}
         }

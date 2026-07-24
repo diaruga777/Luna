@@ -288,15 +288,28 @@ Paywall unlock + toast:
   `pw-modal`/`paywall-backdrop`/`registration-wall`-style containers, `[id*=paywall]`) and
   un-clamps any element that STILL holds substantial prose but is inline-clamped
   (`max-height`/`mask-image`/`overflow:hidden`/`filter:blur`). Every removal is
-  `articleChars`-guarded — a node holding the real story is REVEALED, never deleted —
-  so this dismantles a metered wall that overlays/clamps the body (e.g. Business
-  Insider's `pw-modal-backdrop` + `inline-backup-paywall` + clamped
-  `[data-content-container]`) in Safari itself. It cannot restore body text a site
-  DELETES client-side; that case still relies on the pill → in-app reader (which
-  re-extracts the body from the server HTML). Note the network `blockers` ruleset only
-  helps when the wall's metering script sits at a URL the rule matches — sites that
-  bundle metering into their main app JS (BI now does) can't be blocked without
-  breaking hydration, so the DOM cleanup is the durable path there.
+  `articleChars`-guarded, AND removal is further limited to positioned overlays
+  (fixed/absolute/sticky) or small/near-empty nodes — a large in-flow region is REVEALED,
+  never deleted (`isDeletableOverlay`), so the cleanup can never blank a page even if a
+  broad selector matches a structural shell. This dismantles a metered wall that
+  overlays/clamps the body (e.g. Business Insider's `pw-modal-backdrop` +
+  `inline-backup-paywall` + clamped `[data-content-container]`) in Safari itself. It
+  cannot restore body text a site DELETES client-side; that case still relies on the
+  pill → in-app reader (which re-extracts the body from the server HTML). Note the
+  network `blockers` ruleset only helps when the wall's metering script sits at a URL the
+  rule matches — sites that bundle metering into their main app JS (BI now does) can't be
+  blocked without breaking hydration, so the DOM cleanup is the durable path there.
+- **UA-spoof-dependent sites are NOT script-blocked in Safari.** A site whose in-app
+  unlock relies on a spoofed request User-Agent (`site_unlock_rules.json`
+  `useragentCustom` — nytimes.com, economist.com serve the full article to Google's
+  crawler UA) can't be unlocked that way in Safari (no per-site request-UA control), so
+  `scripts/generate_safari_blocker_rules.js` **skips** their block rules. Emitting the
+  blocks WITHOUT the UA doesn't unlock and actively breaks the site: blocking NYT's own
+  `svc/onsite-messaging/query` entitlement XHR made its SPA fail a fetch and blank after
+  the server-rendered content briefly rendered (the "NYT renders then goes blank" bug).
+  Those sites now render normally in Safari; their real unlock comes from the pill →
+  in-app reader, whose WKWebView can set the crawler UA. The `referer`-strategy sites
+  (WSJ/FT/MarketWatch, no UA spoof) are unaffected.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
   content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered

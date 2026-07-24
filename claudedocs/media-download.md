@@ -179,6 +179,17 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   `failed`). `MediaIntentHandoff` throws `downloadFailed`/`notAuthorized` for anything that
   isn't `isDownloadHandled`; already-downloaded and Wi-Fi-deferred remain legitimate
   no-file returns (see `app-intents.md`, "Error reporting").
+  **Who shows progress:** the capture intents conform to `LiveActivityIntent`, which is
+  what lets `Activity.request` succeed from a background Action Button run at all — before
+  that it threw and the transfer ran invisibly. On iOS 27 builds compiled with Xcode 27 the
+  intents also run under `LongRunningIntent`, whose own system progress UI covers the
+  AWAITED leg; `LiveMediaDownloadManager.systemProvidesProgressUI` (a task local bound by
+  `MediaIntentHandoff`) suppresses Luna's activity for exactly that leg so the two don't
+  stack. The background leg always keeps Luna's activity — the system's ends when the
+  intent returns. Note also that `isDiscretionary` is IGNORED for a transfer started while
+  the app is in the background ("the system assumes this property is `true`"), so an
+  intent-started download may sit queued until the system finds a good moment; "started"
+  is not "downloading now".
   Intent exports use a sanitized item title or platform base name (for example
   `tiktok.mp4`) as the actual temporary URL filename and declare its concrete file type,
   rather than leaking the durable UUID-backed library filename to Shortcuts.

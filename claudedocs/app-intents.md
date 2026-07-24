@@ -151,7 +151,8 @@ Non-media saves and background-download mode return `media = nil`.
    A known file at or below 100 MiB is awaited through `LiveMediaDownloadManager` and
    returned as an `IntentFile`; larger/unknown files and all setting-off invocations call
    `MediaAutoDownloader.startDownloaderIntentDownload` and return nil while the Live
-   Activity/background transfer continues. Reader, Downloader, and Price Tracker each embed
+   Activity/background transfer continues (which activity shows depends on the runtime —
+   see "Runtime + progress UI"). Reader, Downloader, and Price Tracker each embed
    the shared Live Activity widget source. Synchronous results are materialized at a
    temporary URL whose last path component is a sanitized saved-item title (or platform
    base name such as `tiktok.mp4`) and use the concrete file UTI, so downstream Share
@@ -202,6 +203,67 @@ intent *believed in* is verified, and every way it can end empty throws:
   and Wi-Fi-deferred are no-file successes.
 - **`ProvideContextError`**: `noTrackedPage`, `unsupportedKind`, `multipleURLs`,
   `saveFailed`, `contentUnavailable`.
+
+## Runtime + progress UI (`IntentExtendedRuntime.swift`)
+
+Both capture intents conform to **`LiveActivityIntent`** and, behind a gate, to
+**`LongRunningIntent`**. They are orthogonal refinements of `AppIntent` (verified
+in the SDK headers: `LiveActivityIntent : SystemIntent`,
+`LongRunningIntent : ProgressReportingIntent`, both empty), so one type can adopt
+both.
+
+**`LiveActivityIntent` (iOS 17+, unconditional — below the iOS 18 target).** This
+is what PERMITS a Live Activity to start from a background Action Button run at
+all: *"In general, your app needs to be in the foreground to start a Live
+Activity. However, you can use a `LiveActivityIntent` and start the Live Activity
+in its `perform()` method."* Before adopting it, `Activity.request` threw for
+every background capture and `startActivity` swallowed it into the diagnostic log
+(`"live activity request failed"`) — the download ran with no UI, which is what a
+Shortcut exiting over an invisible download looked like. Verify with the extracted
+metadata: `systemProtocols` for both intents must list
+`com.apple.link.systemProtocol.SessionStarting` next to `…ForegroundContinuable`.
+
+**`LongRunningIntent` (iOS 27, double-gated).** Without an extension an app intent
+gets **~30 s** in the background (Apple's figure, stated in `LongRunningIntent`);
+a media capture can spend 12 s on the save race, then a 20 s preflight HEAD, then
+an awaited transfer — i.e. be killed mid-download having reported nothing. Gates:
+
+- `#if compiler(>=6.4)` — the protocol is **absent from iPhoneOS26.2.sdk** (0
+  occurrences in its `AppIntents` swiftinterface vs 2 in the iOS 27 SDK), so a
+  stable-Xcode archive must not name it. Same seam shape as
+  `FoundationModelsScreenCaptureSession`. **Release builds archived with Xcode
+  26.2 therefore run the fallback path**, exactly as they compile the vision stub.
+- `@available(iOS 27, *)` on the conformance and on every `performBackgroundTask`
+  call site.
+
+Apple documents **no ceiling** for the extended runtime — it lasts as long as you
+keep reporting progress and the system tolerates it, and the user can cancel it.
+So progress is mandatory, not decoration: *"If you don't update this property
+regularly, the system can cancel the background runtime extension and end your
+task prematurely."* `IntentProgressReporter` supplies it — three stages
+(`saving` 0–0.50, `downloading` 0.50–0.95, `finishing` 0.95–1.0); real transitions
+snap the value to the next band's floor, a 1 s heartbeat closes 12 % of the
+remaining distance to the current band's ceiling. Deliberately an estimate: an
+indeterminate `Progress` that never moves is what gets cancelled. Never let a tick
+cross into the next band — a save still running must not read as a download.
+
+**Which Live Activity shows.** Prefer the system's:
+
+| leg | iOS 27 + Xcode 27 build | otherwise |
+|---|---|---|
+| awaited download (file returned) | system intent progress UI; Luna's suppressed | Luna's own Live Activity |
+| background/deferred transfer | Luna's own (the system's ends with the intent) | Luna's own |
+
+Suppression is `LiveMediaDownloadManager.systemProvidesProgressUI`, a **task
+local** bound by `MediaIntentHandoff` around the awaited call only — so a
+concurrent in-app save keeps its own activity and there's no global flag to leave
+set. It is deliberately NOT bound around the background leg: that transfer
+outlives the intent, and the system's progress UI does not.
+
+Not adopted: `CancellableIntent` (iOS 26.4, also absent from the 26.2 SDK), needed
+for `performBackgroundTask`'s `onCancel:` overload. Until then a cancel from the
+system UI cancels the task, and the media handoff checks `Task.isCancelled` so a
+dismissal doesn't surface as a download failure.
 
 ## The vision seam (compiler + availability double gate)
 

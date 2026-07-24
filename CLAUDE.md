@@ -44,7 +44,15 @@ their own app. Feature docs live in `claudedocs/` — keep them current when cha
 group. Each app bundles its OWN copies of the universal share / action / safari extensions
 (`<Target>Share/Action/Safari`, bundle ids `<app>.share|.action2|.safari`, all on the shared
 App Group) — an app-extension bundle id must be prefixed by its host app, so the same
-extension SOURCE is built once per host. Per-target COMPOSITION uses synchronized-group
+extension SOURCE is built once per host. **Two extensions are NOT universal**: an App
+Clip (`LunaReaderClip`, `LunaDownloaderClip` — the "Share Link…" recipient flow, see
+`claudedocs/readers.md`) and the Live Activity widget (`LunaLiveActivity`,
+`LunaDownloaderLiveActivity`). The Live Activity renders the ONE activity in the
+codebase, `LiveMediaDownloadAttributes` from LunaMediaDownload, and ActivityKit only
+lets the app whose process called `Activity.request` show it — so only the two
+media-handling hosts embed it. Reader and Price Tracker link no media module, so their
+copies could never fire and were removed; do not re-add one to an app that does not
+link `LunaMediaDownload`. Per-target COMPOSITION uses synchronized-group
 membership exceptions (exactly one `KindWiring+*.swift` / `ShareEntry+*.swift` /
 `ActionEntry+*.swift` variant compiles per target — `#if canImport` is NOT target-reliable
 here, never use it for gating). `LunaTests` (unit tests) hosts on the central Luna app, so
@@ -148,6 +156,21 @@ every kind processor is registered at launch). The `LunaReader` /
 `LunaDownloader` / `LunaPriceTracker` schemes build their apps (`xcodebuild build
 -scheme …`) but carry no test bundle of their own. Recipe:
 
+> **Schemes: five, and only five.** `Luna`, `LunaReader`, `LunaDownloader`,
+> `LunaPriceTracker`, and `All Luna Apps`. Each app scheme's build action lists
+> **only its app** — every extension, clip and live activity is already a target
+> dependency and gets embedded and signed with the host, so per-extension schemes
+> are pure duplication and were deleted. `All Luna Apps` builds all four in one
+> press (Luna is its runnable). Xcode's Run only *installs* a scheme's runnable, so
+> to get all four onto a device or simulator in one go use
+> `scripts/install_all_luna_apps.sh [<device-or-simulator>]` — it builds the
+> aggregate scheme, then installs each app. The ~38 schemes Xcode synthesizes for
+> `LunaLibraries` package targets and for extension targets are hidden via
+> `xcuserdata/*/xcschemes/xcschememanagement.plist` (`isShown` false plus
+> `SuppressBuildableAutocreation` for every non-app native target — without the
+> latter, opening the project regrows a scheme per extension). That file is
+> per-user and gitignored; regenerate it after adding a target.
+
 ```sh
 DD=<a derivedDataPath>
 SIM=<a booted iOS 26.x simulator UDID>   # e.g. xcrun simctl list devices | grep -A8 'iOS 26'
@@ -186,13 +209,26 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.
-- **The full suite is green on the iOS 26.x sim: 1393 tests, 14 skipped, 0 failures**
-  (measured after the 2026-07-21 structural refactor, which also restored the seven
-  test files deleted by commit `97833a34` and added coverage for the newly extracted
-  types — see `refactor-plans/`). The 14 skips are intentional `XCTSkip`s —
-  `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot` and the twelve
+- **Every app target gets its OWN entitlements file** — `Luna/{Luna,LunaReader,
+  LunaDownloader,LunaPriceTracker}.entitlements`. Never point two apps at one file even
+  when the contents look identical today: `Luna` and `LunaReader` shared
+  `Luna/Luna.entitlements`, so the central app inherited the Reader's
+  `com.apple.developer.associated-appclip-app-identifiers` and every device build died
+  with `Entitlement … not found and could not be included in profile` plus a misleading
+  `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
+  account session to go edit the `com.hsanabria.luna` App ID it should never have been
+  touching). Only the two apps that actually have a clip may declare that key.
+- **Current suite state on the iOS 26.x sim: 1681 tests, 16 skipped, 3 failures**
+  (measured 2026-07-25). The 3 failures are the long-standing
+  `AudioMiniPlayerTests.testMiniPlayer{Playing,Paused,Slim}Snapshot` reference-image
+  drifts (2.2–3.9% pixel diff against a 2% tolerance) — they fail on an untouched
+  main too, so treat them as the baseline, not a regression, and re-record with
+  `RECORD_SNAPSHOTS=1` if the mini-player design is settled. The 16 skips are
+  intentional `XCTSkip`s —
+  `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot`, the twelve
   `GuideVideoRecorderTests.testRecord*` methods (gated behind
-  `RECORD_GUIDE_VIDEOS=1`). One class,
+  `RECORD_GUIDE_VIDEOS=1`), and two `SocialMediaResolverTests` live-YouTube transfers
+  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`). One class,
   `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
   rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
   test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a

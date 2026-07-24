@@ -6,7 +6,6 @@
 import Foundation
 import LunaFetch
 import LunaIngest
-import LunaMediaDownload
 import LunaModels
 
 /// Executes a validated `RescueDirective`. Re-entry into the pipeline uses the

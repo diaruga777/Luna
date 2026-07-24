@@ -7,7 +7,6 @@ import Foundation
 import LunaFetch
 import LunaHTMLClassification
 import LunaIngest
-import LunaMediaDownload
 import LunaModels
 import LunaStorage
 import LunaURLClassification
@@ -39,7 +38,7 @@ public final class URLRescueEngine {
         scriptRunner: RescueScriptRunning = RescueWebScriptRunner(),
         ruleStore: RescueRuleStoring = RescueRuleStore.shared,
         fetcher: HTMLFetching = ArticleFetcher(),
-        mediaResolver: SocialMediaResolving = SocialMediaResolver(),
+        mediaResolver: SocialMediaResolving = NoMediaResolver(),
         runPipeline: @escaping (IngestInput) async -> IngestResult
             = { await IngestPipeline.processResolved($0) },
         now: @escaping () -> Date = Date.init
@@ -356,4 +355,14 @@ public final class URLRescueEngine {
             return result
         }
     }
+}
+
+/// The media-less default resolver: apps that don't handle media (Reader,
+/// Price Tracker) build the rescue engine without a real resolver, so a media
+/// directive resolves no assets and the rescue stays unrescuable — matching
+/// the surface split. Media apps inject `LunaMediaDownload.SocialMediaResolver`
+/// through `URLRescueWiring.mediaResolverFactory`.
+public struct NoMediaResolver: SocialMediaResolving {
+    public init() {}
+    public func resolveAssets(for url: URL) async -> [MediaAsset] { [] }
 }

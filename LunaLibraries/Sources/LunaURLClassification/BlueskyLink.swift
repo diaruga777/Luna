@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaURLClassification
 import Foundation
 
 /// Recognizes Bluesky post links and converts between web URLs and AT-protocol

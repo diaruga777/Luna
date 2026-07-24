@@ -129,13 +129,16 @@ ReadingListUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own 
 | `LunaDownloader` | LunaMediaDownload, LunaPlatforms |
 | `LunaPriceTracker` | LunaPriceIngest, LunaPriceUI |
 
-`LunaTests` keeps everything (it hosts on the central app). **Known follow-ups (deferred):**
-a few transitive package edges still carry foreign-kind code into single-kind apps —
-`LunaURLRescue → LunaMediaDownload` (the rescue engine resolves media directives through
-`SocialMediaResolving`, a behavioral dep; the payload type `MediaAsset` now lives in
-LunaModels), `LunaReaderUI → LunaPlatforms → LunaMediaDownload` (Reader), and
-`LunaIntents → LunaPlatforms` (universal). Correctness never depended on the link graph —
-it comes from the surface filter + registry gating.
+`LunaTests` keeps everything (it hosts on the central app). No foreign-kind
+transitive edges remain: `SocialMediaResolving` lives with `MediaAsset` in
+LunaModels and the rescue engine takes an injected resolver
+(`URLRescueWiring.mediaResolverFactory`, installed by media KindWirings; the
+`NoMediaResolver` default keeps media rescues unrescuable elsewhere); the
+intent post-search machinery (`SocialPostFinder`/`DuckDuckGoSearch`/
+`Bluesky|RedditSearchClient`) moved into LunaIntents (URL search is
+kind-neutral); `BlueskyLink` moved to LunaURLClassification. Correctness never
+depended on the link graph — it comes from the surface filter + registry
+gating — but the graph now matches it.
 
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 
@@ -206,15 +209,17 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   re-record there rather than treating it as a regression.
 - For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Luna
   -destination 'generic/platform=iOS Simulator' DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO`.
-- **The central Luna app's Live Activity widget (`LunaLiveActivity`) is built but NOT
-  embedded.** Embedding it breaks `xcodebuild test`'s build graph: in the test variant
-  the widget target loses its compile/link tasks entirely (only packaging tasks run,
-  the appex binary is "Removed stale file"d) and the test host can't install. The
-  sibling apps' widgets are unaffected (their schemes carry no tests). Do NOT work
-  around with `test-without-building` from the products dir — its DYLD_FRAMEWORK_PATH
+- **A target with an EMPTY Sources phase breaks `xcodebuild test` while plain builds
+  "succeed".** The widget targets do NOT use synchronized groups — their sources are
+  explicit per-target build files — so a scripted target clone must copy the source
+  build files too. An empty appex target still links a phantom executor binary under
+  the debug-dylib arrangement (plain build looks fine!), but the test-variant graph
+  plans no link task, "Removed stale file"s the binary, and the test host can't
+  install ("missing its bundle executable"). If that ever resurfaces, check the
+  target's Sources phase FIRST. Also: never run the suite via
+  `test-without-building` pointed at the products dir — its DYLD_FRAMEWORK_PATH
   loads second copies of the package frameworks and `as?` casts on app-created views
-  fail spuriously (class-identity split). Re-embed + investigate before shipping the
-  central app if its media Live Activities matter; downloads themselves still run.
+  fail spuriously (class-identity split).
 
 # Swift Project — Blitz AI Agent Guide
 

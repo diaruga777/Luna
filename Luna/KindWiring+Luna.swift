@@ -103,6 +103,7 @@ enum KindWiring {
         // Action Button intents hand recognized posts to the media downloader.
         MediaIntentHandoff.install()
         // URL Rescue's media leg: download engine-resolved assets directly.
+        URLRescueWiring.mediaResolverFactory = { SocialMediaResolver() }
         URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in
             await LiveMediaDownloadManager.shared.startWithResolvedAssets(
                 sourceURLString: sourceURLString, title: title, assets: assets)

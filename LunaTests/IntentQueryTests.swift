@@ -4,7 +4,7 @@
 //
 
 import LunaIntents
-import LunaPlatforms
+import LunaIntents
 import XCTest
 @testable import Luna
 

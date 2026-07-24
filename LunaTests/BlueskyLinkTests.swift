@@ -4,6 +4,7 @@
 //
 
 import LunaPlatforms
+import LunaURLClassification
 import XCTest
 @testable import Luna
 

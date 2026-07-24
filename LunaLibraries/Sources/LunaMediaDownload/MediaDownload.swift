@@ -75,13 +75,6 @@ public extension MediaAsset.Kind {
     var canSaveToPhotos: Bool { self != .audio }
 }
 
-/// Resolves the direct, downloadable media asset(s) for a social post URL.
-public protocol SocialMediaResolving {
-    /// Returns the post's media assets in display order, or an empty array when the
-    /// URL is unsupported or no media could be resolved.
-    func resolveAssets(for url: URL) async -> [MediaAsset]
-}
-
 /// Saves a downloaded media file to the user's photo library.
 public protocol PhotoLibrarySaving {
     /// Requests add-only Photos authorization, returning whether it's granted.

@@ -3,7 +3,7 @@
 //  LunaTests
 //
 
-import LunaPlatforms
+import LunaIntents
 import XCTest
 @testable import Luna
 

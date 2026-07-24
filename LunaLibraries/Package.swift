@@ -120,7 +120,7 @@ let package = Package(
         // readers hand read-aloud to the app-wide `AudioPlaybackCenter` when the app shell
         // installs it, and keep the legacy self-contained SpeechController path when it's
         // absent (the share/action extensions never install it).
-        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaPriceMetadata", "LunaAudioPlayback", "LunaDocuments", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPriceMetadata", "LunaAudioPlayback", "LunaDocuments", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // LunaSocial: `PriceRefreshCoordinator` posts price-drop local
         // notifications through LunaSocial's `NotificationManager`. No reader
         // modules: product-kind UI stands alone so the Price Tracker
@@ -148,11 +148,11 @@ let package = Package(
         // module through this edge.
         .target(name: "LunaURLRescue", dependencies: [
             "LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaHTMLClassification",
-            "LunaFetch", "LunaPaywallBypass", "LunaIngest", "LunaStorage", "LunaMediaDownload",
+            "LunaFetch", "LunaPaywallBypass", "LunaIngest", "LunaStorage",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReadingList", "LunaSocial"]),
-        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaIngest", "LunaPlatforms", "LunaReadingList", "LunaSocial"]),
+        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaIngest", "LunaFetch", "LunaReadingList", "LunaSocial"]),
         // Kind-neutral list UI (cells, sectioning, diff, subtitle assembly,
         // status pill): no per-kind modules — the kind-specific list behavior
         // lives behind the app shells' `ListKindSupport` seams.

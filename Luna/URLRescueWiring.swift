@@ -24,6 +24,12 @@ enum URLRescueWiring {
     /// without re-running platform resolution. Installed by media apps'
     /// `KindWiring` (Downloader + central Luna); nil ⇒ a `.rescuedMedia`
     /// outcome stays unrescued (false).
+    /// The engine's social-media asset resolver, installed by media-handling
+    /// apps' KindWiring (`LunaMediaDownload.SocialMediaResolver`); nil (Reader,
+    /// Price Tracker) leaves the engine's media directives asset-less, so a
+    /// media rescue stays unrescuable there.
+    static var mediaResolverFactory: (() -> SocialMediaResolving)?
+
     static var mediaRescueStarter: ((
         _ sourceURLString: String, _ title: String?, _ assets: [MediaAsset]
     ) async -> Bool)?
@@ -34,7 +40,12 @@ enum URLRescueWiring {
     private static var engine: URLRescueEngine?
 
     static func install() {
-        let engine = URLRescueEngine()
+        let engine: URLRescueEngine
+        if let resolver = mediaResolverFactory?() {
+            engine = URLRescueEngine(mediaResolver: resolver)
+        } else {
+            engine = URLRescueEngine()
+        }
         Self.engine = engine
 
         URLRescueCoordinator.engine = URLRescueCoordinator.Engine(

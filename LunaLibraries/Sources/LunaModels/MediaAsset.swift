@@ -77,3 +77,14 @@ public struct MediaTimeRange: Codable, Equatable, Sendable {
 
     public var isEffective: Bool { startSeconds > 0 || endSeconds != nil }
 }
+
+/// Resolves the direct, downloadable media asset(s) for a social post URL.
+/// Lives with the neutral `MediaAsset` payload so kind-neutral modules (URL
+/// Rescue) can hold a resolver without depending on the media-download
+/// machinery; `LunaMediaDownload.SocialMediaResolver` is the implementation,
+/// injected by media-handling apps' composition roots.
+public protocol SocialMediaResolving {
+    /// Returns the post's media assets in display order, or an empty array when the
+    /// URL is unsupported or no media could be resolved.
+    func resolveAssets(for url: URL) async -> [MediaAsset]
+}

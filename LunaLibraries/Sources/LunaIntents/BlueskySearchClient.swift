@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaURLClassification
 import Foundation
 
 /// Searches Bluesky posts (keyless public API) and returns the top match's web

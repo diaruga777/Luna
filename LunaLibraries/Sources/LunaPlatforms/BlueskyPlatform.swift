@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaURLClassification
 import Foundation
 
 /// Bluesky posts. No reliable app-open deep link (the `bluesky://` scheme is

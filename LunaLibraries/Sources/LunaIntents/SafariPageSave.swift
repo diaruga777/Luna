@@ -56,13 +56,15 @@ public enum SafariPageSave {
     /// Searches for and saves the article matching `title`/`site`, throwing
     /// `.notFound` when nothing survives the host filter.
     public static func save(
-        title: String, site: String?, doubleSaveActionSurface: String?
+        title: String, site: String?, doubleSaveActionSurface: String?,
+        saveTimeout: TimeInterval = IntentSaveTimeout.standard
     ) async throws -> IntentIngestHelper.ActionButtonSaveOutcome {
         let query = searchQuery(title: title, site: site)
         guard !query.isEmpty, let results = await DuckDuckGoSearch.results(forQuery: query)
         else { throw SaveError.notFound }
         guard let match = filterArticleCandidates(results).first else { throw SaveError.notFound }
         return await IntentIngestHelper.handleSavePress(
-            urlString: match.absoluteString, doubleSaveActionSurface: doubleSaveActionSurface)
+            urlString: match.absoluteString, doubleSaveActionSurface: doubleSaveActionSurface,
+            timeout: saveTimeout)
     }
 }

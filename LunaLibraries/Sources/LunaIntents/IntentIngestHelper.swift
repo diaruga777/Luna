@@ -10,6 +10,27 @@ import LunaModels
 import LunaURLClassification
 import Foundation
 
+/// How long an App-Intent save press may wait for its classified outcome before
+/// the intent gives up and lets the work finish in the background.
+///
+/// The wait is what makes a real failure reportable (`IntentSaveVerification`),
+/// so longer is BETTER — it is bounded only by what the intent's runtime allows.
+public enum IntentSaveTimeout {
+
+    /// The ordinary background budget. An app intent gets ~30 s in total, and the
+    /// save is only the first leg — the media handoff (preflight HEAD + transfer)
+    /// and the return trip come after it — so the save may not eat the budget.
+    public static let standard: TimeInterval = 12
+
+    /// Under the system's extended runtime (`LongRunningIntent`, media apps only)
+    /// there is no 30 s ceiling to race, so wait past the ingest pipeline's OWN
+    /// hard timeout. Derived from it deliberately: the pipeline always resolves
+    /// within `processTimeout`, so this makes the race a backstop rather than the
+    /// normal exit, and a failed fetch is reported instead of being reported as a
+    /// success that left a `.failed` item behind.
+    public static let extendedRuntime: TimeInterval = IngestPipeline.processTimeout + 2
+}
+
 /// Shared inline save handling for background intents. The App Intent structs
 /// live in the app target (for discovery); this is the business logic they call
 /// into.
@@ -48,21 +69,28 @@ public enum IntentIngestHelper {
     }
 
     /// Handles a save press (save+ingest, double-press send, or ignore), giving
-    /// up after 12 s so the intent finishes promptly in the background, then
+    /// up after `timeout` so the intent finishes promptly in the background, then
     /// verifies what the press left in the store. Work cut off by the timeout is
     /// persisted as pending/queued and retried later, and stays reported as
     /// handled — it IS in the app.
+    ///
+    /// `timeout` is the caller's runtime budget (`IntentSaveTimeout`): the intents
+    /// pass the longer extended-runtime value where the system granted one, which
+    /// is what lets a slow fetch failure be REPORTED rather than time out into a
+    /// success.
     ///
     /// `doubleSaveActionSurface` is non-nil only where the configured
     /// double-save action is armed (today: Reader), mirroring the decision the
     /// Provide Context / Save intents make.
     public static func handleSavePress(
-        urlString: String, doubleSaveActionSurface surface: String?
+        urlString: String,
+        doubleSaveActionSurface surface: String?,
+        timeout: TimeInterval = IntentSaveTimeout.standard
     ) async -> ActionButtonSaveOutcome {
         let pressedURLString = URLUnwrapper.ingestURL(from: urlString)?.absoluteString
             ?? urlString
         let result = await savePressRacingTimeout(
-            urlString: urlString, doubleSaveActionSurface: surface)
+            urlString: urlString, doubleSaveActionSurface: surface, timeout: timeout)
         return verifiedOutcome(
             from: result, pressedURLString: pressedURLString,
             storedItem: currentStoreItem(for: result, pressedURLString: pressedURLString))
@@ -91,7 +119,7 @@ public enum IntentIngestHelper {
     ) -> ActionButtonSaveOutcome {
         switch result {
         case nil:
-            // The 12 s race expired: the ingest task continues and persists its
+            // The race expired: the ingest task continues and persists its
             // pending work, so there is nothing to verify and nothing wrong.
             return .completed(savedURLString: nil)
         case let .some(.unsupportedKind(owner)):
@@ -120,15 +148,15 @@ public enum IntentIngestHelper {
         }
     }
 
-    /// Runs `handleSavePress` raced against a 12 s timeout; nil ⇒ timed out.
+    /// Runs `handleSavePress` raced against `timeout`; nil ⇒ timed out.
     private static func savePressRacingTimeout(
-        urlString: String, doubleSaveActionSurface: String?
+        urlString: String, doubleSaveActionSurface: String?, timeout: TimeInterval
     ) async -> ReadingListIngestor.SavePressResult? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
         // NOT a task group: `withTaskGroup` awaits ALL children before returning,
         // and the save leg isn't reliably cancellation-responsive (web-archive
-        // capture, image downloads), so a group blows through the 12 s budget.
+        // capture, image downloads), so a group blows through the budget.
         // Race unstructured tasks instead and resume on whichever finishes first;
         // a timed-out save keeps running and persists its item as pending/queued
         // for a later retry, exactly as documented above.
@@ -149,7 +177,8 @@ public enum IntentIngestHelper {
                 finish(result)
             }
             Task {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                try? await Task.sleep(
+                    nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
                 finish(nil)
             }
         }

@@ -41,7 +41,8 @@ public enum PlatformFieldSave {
     }
 
     public static func save(
-        platform: ContentPlatform, fields: [String], doubleSaveActionSurface: String?
+        platform: ContentPlatform, fields: [String], doubleSaveActionSurface: String?,
+        saveTimeout: TimeInterval = IntentSaveTimeout.standard
     ) async throws -> Result {
         switch platform {
         case .bluesky:
@@ -53,7 +54,9 @@ public enum PlatformFieldSave {
             guard !query.isEmpty else { throw SaveError.missingValues }
             guard let url = try? await BlueskySearchClient().topPostURL(query: query)
             else { throw SaveError.notFound }
-            return await saveResolvedURL(url, doubleSaveActionSurface: doubleSaveActionSurface)
+            return await saveResolvedURL(
+                url, doubleSaveActionSurface: doubleSaveActionSurface,
+                saveTimeout: saveTimeout)
 
         case .reddit:
             // subreddit + title, optional author.
@@ -65,7 +68,9 @@ public enum PlatformFieldSave {
             guard !query.isEmpty else { throw SaveError.missingValues }
             guard let url = try? await RedditSearchClient().topPostURL(query: query)
             else { throw SaveError.notFound }
-            return await saveResolvedURL(url, doubleSaveActionSurface: doubleSaveActionSurface)
+            return await saveResolvedURL(
+                url, doubleSaveActionSurface: doubleSaveActionSurface,
+                saveTimeout: saveTimeout)
 
         case .x, .tiktok, .instagram, .facebook:
             // handle + phrase, optional date.
@@ -77,7 +82,9 @@ public enum PlatformFieldSave {
                 platform: finderPlatform, handle: handle,
                 content: phrase, timestamp: fields.dropFirst(2).first)
             else { throw SaveError.notFound }
-            return await saveResolvedURL(url, doubleSaveActionSurface: doubleSaveActionSurface)
+            return await saveResolvedURL(
+                url, doubleSaveActionSurface: doubleSaveActionSurface,
+                saveTimeout: saveTimeout)
         case .youtube, .web:
             // YouTube saves arrive as URLs (Safari/on-screen URL extraction); the
             // screenshot search path has no stable keyless video search contract.
@@ -87,11 +94,12 @@ public enum PlatformFieldSave {
     }
 
     private static func saveResolvedURL(
-        _ url: URL, doubleSaveActionSurface: String?
+        _ url: URL, doubleSaveActionSurface: String?, saveTimeout: TimeInterval
     ) async -> Result {
         let urlString = url.absoluteString
         let outcome = await IntentIngestHelper.handleSavePress(
-            urlString: urlString, doubleSaveActionSurface: doubleSaveActionSurface)
+            urlString: urlString, doubleSaveActionSurface: doubleSaveActionSurface,
+            timeout: saveTimeout)
         return Result(resolvedURLString: urlString, outcome: outcome)
     }
 

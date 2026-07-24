@@ -40,7 +40,11 @@ picks the same message up when it's installed).
 Drop presentation: in-app interactive saves show a generic alert
 (`ReadingListIngestor.unsupportedSavePresenter`, installed by AppDelegate);
 extensions present `UnsupportedSaveViewController` (never a "Saved" checkmark);
-App Intents throw an error dialog (`IntentIngestHelper.unsupportedDialogText`).
+App Intents throw an error dialog (`IntentIngestHelper.unsupportedDialogText`) —
+including the on-screen-URL path, whose pre-check (`IntentURLPrecheck`) skips
+links this app doesn't own BEFORE saving, so a drop that still happens is a
+mis-prediction worth reporting rather than a fall-through (see
+`app-intents.md`, "Error reporting").
 The copy is generic for now — the owning app's App Store upsell slots into
 `SurfaceSupport.unsupportedMessage` once those store pages exist.
 
@@ -104,6 +108,7 @@ Tests register production-shaped presenters explicitly in `setUp`
 (bundle-id derivation), `ReadingListIngestorSurfaceTests` (dropped-save
 invariants incl. email/friend-share), `ShareSurfaceDriverSurfaceTests`
 (extension drop UI + wrapper-dedup edge), `IntentIngestSurfaceTests` (intent
-error mapping), and `SurfaceParityTests` (presentation parity across surfaces).
+error mapping + save verification), `IntentURLPrecheckTests` (per-app kind
+prediction), and `SurfaceParityTests` (presentation parity across surfaces).
 Keep the "dropped means nothing remains" invariant explicit when adding a
 capture source or a new direct-write path.

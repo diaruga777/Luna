@@ -79,10 +79,29 @@ public enum MediaAutoDownloader {
         return MediaDownloadablePlatform.supported.contains(platform)
     }
 
-    public static func startDownloaderIntentDownload(forURLString urlString: String) async -> Bool {
-        guard shouldStartDownloaderIntentDownload(forURLString: urlString) else { return false }
-        return await LiveMediaDownloadManager.shared.start(
+    /// Starts the background transfer for an App Intent save, reporting WHY it
+    /// didn't start when it didn't (see `LiveMediaDownloadStartResult`) so the
+    /// intent can throw instead of exiting with silent success.
+    public static func startDownloaderIntentDownload(
+        forURLString urlString: String
+    ) async -> LiveMediaDownloadStartResult {
+        guard shouldStartDownloaderIntentDownload(forURLString: urlString) else {
+            return .unsupported
+        }
+        return await LiveMediaDownloadManager.shared.startReportingResult(
             urlString: urlString, ownership: .downloader)
+    }
+
+    /// The result of an awaited App Intent download: the bytes, or the reason
+    /// there are none. `.failed` is the case that must reach the user — the
+    /// transfer ended with nothing in the library.
+    public enum AwaitedIntentDownload: Equatable {
+        case completed(DownloadedMedia)
+        /// No transfer was needed or one is legitimately still queued — nothing
+        /// to hand back now, and nothing wrong (`isDownloadHandled` reasons).
+        case handledWithoutFile(LiveMediaDownloadStartResult)
+        /// Nothing was downloaded and nothing will be.
+        case failed(message: String?)
     }
 
     /// Completes a Downloader-owned App Intent download before returning and
@@ -92,31 +111,44 @@ public enum MediaAutoDownloader {
     /// needs an on-disk resource it can hand to Shortcuts.
     public static func downloadForDownloaderIntentAwaiting(
         forURLString urlString: String
-    ) async -> DownloadedMedia? {
+    ) async -> AwaitedIntentDownload {
         guard shouldStartDownloaderIntentDownload(forURLString: urlString),
               let url = URL(string: urlString)
-        else { return nil }
+        else { return .failed(message: nil) }
 
         if let existing = SavedMediaStore.shared.existingDownloadedItem(
             forURLString: urlString
         ) {
-            return await exportFile(from: existing)
+            guard let media = await exportFile(from: existing) else {
+                return .failed(message: nil)
+            }
+            return .completed(media)
         }
 
-        let started = await LiveMediaDownloadManager.shared.start(
+        let start = await LiveMediaDownloadManager.shared.startReportingResult(
             urlString: url.absoluteString,
             title: ReadingListStore.shared.item(forURLString: urlString)?.title,
             ownership: .downloader)
-        guard started || LiveMediaDownloadManager.shared.currentDownloadSnapshot(
-            forSourceURLString: urlString) != nil
-        else {
-            AutoDownloadSettings.unmarkDownloaded(urlString)
-            return nil
+        switch start {
+        case .started: break
+        case .deferredUntilWiFi, .alreadyDownloaded:
+            // Nothing to await: the transfer is the user's Wi-Fi setting's to
+            // run, or the library already holds it (a race with another save).
+            return .handledWithoutFile(start)
+        case .notAuthorized, .unsupported, .failed:
+            guard LiveMediaDownloadManager.shared.currentDownloadSnapshot(
+                forSourceURLString: urlString) != nil
+            else {
+                AutoDownloadSettings.unmarkDownloaded(urlString)
+                if case let .failed(message) = start { return .failed(message: message) }
+                return .failed(message: nil)
+            }
         }
         guard let item = await LiveMediaDownloadManager.shared.waitForDownloaderResult(
-            forSourceURLString: urlString)
-        else { return nil }
-        return await exportFile(from: item)
+            forSourceURLString: urlString),
+            let media = await exportFile(from: item)
+        else { return .failed(message: nil) }
+        return .completed(media)
     }
 
     /// Materializes one saved item as a concrete, shareable file URL with a

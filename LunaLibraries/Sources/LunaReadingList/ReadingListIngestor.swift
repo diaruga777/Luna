@@ -373,6 +373,21 @@ public final class ReadingListIngestor {
         case friendPromptRequested(ReadingListItem)
         /// Duplicate press — nothing happened.
         case ignored
+
+        /// The item this press acted on, when it produced one. Callers that need
+        /// the item's CURRENT state (the App Intents verify a save actually
+        /// landed) must re-read the store by this id: the copy carried here is
+        /// the pre-ingest placeholder, and its URL may still be an unresolved
+        /// wrapper.
+        public var item: ReadingListItem? {
+            switch self {
+            case let .saved(item), let .sentToEreaders(item),
+                 let .sentToFriends(item), let .friendPromptRequested(item):
+                return item
+            case .unsupportedKind, .ignored:
+                return nil
+            }
+        }
     }
 
     /// The save-press entry point shared by the intents and the in-app add:
@@ -406,20 +421,14 @@ public final class ReadingListIngestor {
         switch decision {
         case .saveNew:
             let item = store.add(urlString: urlString, source: source)
-            if source == .appIntent && !surfaceGateCanFire() {
-                // Persist and return the URL promptly. Extraction/classification is
-                // best-effort background work and must not consume the intent budget.
-                // Only when the surface gate can't possibly fire (the central Luna
-                // app handles every kind): otherwise the intent must WAIT for the
-                // classified outcome so a dropped save can surface an error dialog
-                // instead of silently discarding — the intent layer's own 12 s
-                // race still bounds the wait (a timed-out dropped save is then
-                // discarded by the gate in the background, dialog-less but
-                // store-consistent).
-                Task { await self.ingest(item, prefetchedHTML: prefetchedHTML,
-                                         trustsPrefetchedHTML: trustsPrefetchedHTML) }
-                return .saved(item)
-            }
+            // App-Intent saves WAIT for the classified outcome (bounded by the
+            // intent layer's own 12 s race, after which the ingest continues in
+            // the background and persists pending work). Waiting is what lets an
+            // intent report a real failure — a surface-dropped kind, an
+            // unreachable page — instead of exiting with silent success over an
+            // empty or `.failed` item. The central Luna app used to skip the wait
+            // because its gate can never drop a kind, but it can still fail to
+            // fetch, and that has to reach the user too.
             let decision = await ingest(item, prefetchedHTML: prefetchedHTML,
                                         trustsPrefetchedHTML: trustsPrefetchedHTML)
             switch decision {
@@ -458,13 +467,6 @@ public final class ReadingListIngestor {
             return .ignored
         }
     }
-
-    /// True when the surface gate might drop a classified outcome in this
-    /// process — any single-content app. The central Luna app handles every
-    /// kind, so its App-Intent saves keep the fast persist-and-return path.
-    /// Injectable for tests; kept separate from the injected `surfaceDecision`
-    /// because this is a pre-classification shortcut, not a decision.
-    var surfaceGateCanFire: () -> Bool = { LunaApp.current != .luna }
 
     /// Resolves the configured double-save action into the policy's pure input,
     /// applying the configuration checks the policy itself can't know about.

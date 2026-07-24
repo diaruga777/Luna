@@ -152,7 +152,7 @@ let package = Package(
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReadingList", "LunaSocial"]),
-        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaIngest", "LunaFetch", "LunaReadingList", "LunaSocial"]),
+        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaHTMLClassification", "LunaIngest", "LunaFetch", "LunaReadingList", "LunaSocial"]),
         // Kind-neutral list UI (cells, sectioning, diff, subtitle assembly,
         // status pill): no per-kind modules — the kind-specific list behavior
         // lives behind the app shells' `ListKindSupport` seams.

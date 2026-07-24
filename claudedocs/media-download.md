@@ -169,6 +169,16 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   `IntentFile`. Larger or indeterminate files are handed to that engine and the intent returns
   immediately with no file. Existing local files are reused and Photos-backed rows are copied to
   a transient file. Turning the setting off always uses the immediate background handoff.
+  **A handoff that downloads nothing is an ERROR, not a quiet nil.**
+  `LiveMediaDownloadManager.startReportingResult` names why a start didn't happen
+  (`LiveMediaDownloadStartResult`: `started` / `alreadyDownloaded` / `deferredUntilWiFi` /
+  `notAuthorized` / `unsupported` / `failed(message:)`) — the plain `start(…) -> Bool`
+  collapses all of those into one `false`, which is what let a Shortcut exit reporting
+  success with an empty library. The awaited path likewise returns
+  `MediaAutoDownloader.AwaitedIntentDownload` (`completed` / `handledWithoutFile` /
+  `failed`). `MediaIntentHandoff` throws `downloadFailed`/`notAuthorized` for anything that
+  isn't `isDownloadHandled`; already-downloaded and Wi-Fi-deferred remain legitimate
+  no-file returns (see `app-intents.md`, "Error reporting").
   Intent exports use a sanitized item title or platform base name (for example
   `tiktok.mp4`) as the actual temporary URL filename and declare its concrete file type,
   rather than leaking the durable UUID-backed library filename to Shortcuts.

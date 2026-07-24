@@ -149,4 +149,80 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
                 "https://example.com/post", isSafari: true))
     }
 
+    // MARK: - Divergent values
+
+    func testDivergentValidURLsAreReportedNotSwallowed() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.resolveText(
+                "https://example.com/one\r\nhttps://example.com/two", isSafari: false),
+            .divergent(["https://example.com/one", "https://example.com/two"]))
+    }
+
+    func testDivergentValuesDedupeToOneCandidateAreNotAmbiguous() {
+        // The same page in both schemes collapses; only genuinely different
+        // pages count as ambiguity.
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.resolve(
+                ["https://example.com/one", "http://example.com/one"], isSafari: false),
+            .single("https://example.com/one"))
+    }
+
+    func testDivergentValuesWithOnlyOneValidURLStayQuiet() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.resolve(
+                ["https://example.com/one", "https://example.com/two..."], isSafari: false),
+            .none)
+    }
+
+    // MARK: - Plans (extraction + per-app pre-validation)
+
+    private func plan(
+        _ text: String?, handleable: Set<String>
+    ) -> ProvideContextOnScreenURL.Plan {
+        ProvideContextOnScreenURL.plan(text: text, isSafari: false) { urlString in
+            handleable.contains(urlString)
+                ? .handleable(urlString: urlString)
+                : .foreignKind(owner: .downloader)
+        }
+    }
+
+    func testHandleableSingleURLIsPlannedAsASave() {
+        XCTAssertEqual(
+            plan("https://example.com/post", handleable: ["https://example.com/post"]),
+            .save("https://example.com/post"))
+    }
+
+    func testForeignKindURLFallsThroughSilently() {
+        // Nothing this app could have saved: the screenshot/unhandled decision
+        // continues, with no error dialog.
+        XCTAssertEqual(plan("https://example.com/post", handleable: []), .skip)
+    }
+
+    func testDivergentURLsAreOnlyAnErrorWhenOneOfThemIsOurs() {
+        let text = "https://example.com/one https://example.com/two"
+        XCTAssertEqual(
+            plan(text, handleable: ["https://example.com/two"]), .divergent)
+        XCTAssertEqual(plan(text, handleable: []), .skip)
+    }
+
+    func testNoUsableURLIsSkipped() {
+        XCTAssertEqual(plan("nothing here", handleable: []), .skip)
+        XCTAssertEqual(plan(nil, handleable: []), .skip)
+    }
+
+    func testDisabledSettingSkipsEvenAHandleableURL() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.plan(
+                text: "https://example.com/post", isSafari: false, isEnabled: false,
+                verdict: { .handleable(urlString: $0) }),
+            .skip)
+    }
+
+    func testSafariSkipsEvenAHandleableURL() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.plan(
+                text: "https://example.com/post", isSafari: true,
+                verdict: { .handleable(urlString: $0) }),
+            .skip)
+    }
 }

@@ -127,6 +127,41 @@ final class SafariAnnoyanceSuppressionTests: XCTestCase {
             "visible")
     }
 
+    /// An email-capture overlay with NO recognizable newsletter phrasing (just an
+    /// email field + a generic CTA) is still suppressed — the email input with no
+    /// password/OTP is the general signal. This is the Business Insider case: an
+    /// email-capture modal whose copy matched none of the text patterns.
+    func testEmailCaptureOverlayWithoutNewsletterCopyIsHidden() {
+        let html = """
+        <html><body>
+        <article><p>Publisher content remains readable.</p></article>
+        <div id="capture" class="modal" role="dialog" style="position:fixed;inset:0">
+          <p>Get the inside scoop.</p>
+          <input type="email" placeholder="you@example.com"><button>Continue</button>
+        </div>
+        </body></html>
+        """
+        XCTAssertEqual(
+            evaluate("document.querySelector('#capture').dataset.lunaSuppressed || 'visible'", html: html),
+            "popover")
+    }
+
+    /// The email heuristic must not fire on a login/checkout dialog that happens to
+    /// carry an email field alongside a password — that is a protected dialog.
+    func testLoginDialogWithEmailAndPasswordIsPreserved() {
+        let html = """
+        <html><body>
+        <div id="signin" class="modal" role="dialog" style="position:fixed;inset:0">
+          <p>Welcome back.</p>
+          <input type="email"><input type="password"><button>Log in</button>
+        </div>
+        </body></html>
+        """
+        XCTAssertEqual(
+            evaluate("document.querySelector('#signin').dataset.lunaSuppressed || 'visible'", html: html),
+            "visible")
+    }
+
     func testPopoverOpenedByImmediateUserActionIsPreserved() {
         let html = "<html><body><button id='open'>Open preferences</button></body></html>"
         let expression = """

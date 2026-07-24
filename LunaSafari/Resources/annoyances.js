@@ -69,6 +69,19 @@
         /get (?:our|the) newsletter/,
         /join (?:our|the) mailing list/,
         /never miss (?:a|another) story/,
+        // Broader newsletter / email-capture marketing copy. These stay safe because a
+        // popover must ALSO be an overlay, not a protected login/checkout dialog, and
+        // not appear right after the user tapped something (see `processPopover`).
+        /free newsletter/,
+        /in your inbox/,
+        /straight to your inbox/,
+        /sign up (?:for free|today|now)/,
+        /sign up to (?:get|receive)/,
+        /enter your email/,
+        /your email address/,
+        /create (?:a )?free account/,
+        /register for free/,
+        /get (?:unlimited|full|instant) access/,
         /enable (?:browser |push )?notifications/,
         /turn on (?:browser |push )?notifications/,
         /allow notifications to/,
@@ -197,6 +210,19 @@
         return false;
     }
 
+    // A newsletter / email-capture overlay carries an email field but no password or
+    // one-time-code field. The caller has already excluded protected dialogs (login,
+    // checkout, verification), so an email input remaining here is a marketing capture
+    // whatever its copy — this catches email/newsletter modals that use no recognizable
+    // annoyance phrasing (or none in a language we match) at all.
+    function isEmailCaptureOverlay(element) {
+        if (!element.querySelector) { return false; }
+        var hasEmail = element.querySelector(
+            'input[type="email"], input[autocomplete="email"], input[name*="email" i]');
+        if (!hasEmail) { return false; }
+        return !element.querySelector('input[type="password"], input[autocomplete="one-time-code"]');
+    }
+
     function isProtectedDialog(element) {
         if (element.querySelector('input[type="password"], input[autocomplete="one-time-code"]')) { return true; }
         var identity = normalizeLabel((element.id || "") + " " + (element.className || ""));
@@ -231,7 +257,8 @@
     function processPopover(element) {
         if (!element || element.nodeType !== 1) { return false; }
         if (Date.now() - lastInteraction < 1500) { return false; }
-        if (!isOverlay(element) || isProtectedDialog(element) || !hasAnnoyanceLanguage(element)) { return false; }
+        if (!isOverlay(element) || isProtectedDialog(element)) { return false; }
+        if (!hasAnnoyanceLanguage(element) && !isEmailCaptureOverlay(element)) { return false; }
         if (hide(element, "popover")) {
             stats.popoversHidden++;
             unlockPage();

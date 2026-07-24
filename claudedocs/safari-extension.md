@@ -45,10 +45,15 @@ injection used by the Luna action pill.
   cookies.
 - **Late and unfamiliar UI:** a MutationObserver begins at `document_start`, before the
   first page paint, and handles DOM-hydrated CMPs plus open shadow roots. Its generic
-  popover fallback requires BOTH overlay structure (`dialog`/`aria-modal`, an overlay
-  name plus fixed positioning, or substantial fixed viewport coverage) and narrow
-  annoyance language for newsletter capture, push notifications, app-install prompts,
-  surveys, ad-block nags, or ad interstitials.
+  popover fallback requires overlay structure (`dialog`/`aria-modal`, an overlay
+  name plus fixed positioning, or substantial fixed viewport coverage) AND either
+  annoyance language (newsletter/subscribe/register/email-capture copy, push
+  notifications, app-install prompts, surveys, ad-block nags, ad interstitials) OR the
+  general email-capture signal — an `input[type=email]` (or `autocomplete=email`/
+  `name*=email`) with no password or one-time-code field. The email-field signal
+  catches newsletter/email modals whose copy matches none of the text patterns (or is
+  in an unmatched language); it stays safe because the protected-dialog guard has
+  already excluded anything with a password/OTP or login/checkout/billing wording.
 - **Safety boundary:** no network rule or cosmetic selector targets ad slots, ad iframes,
   sponsored cards, or generic `ad` classes. Inline ads therefore remain visible. Login,
   one-time-code, checkout, billing, and payment dialogs are protected. A generic popover

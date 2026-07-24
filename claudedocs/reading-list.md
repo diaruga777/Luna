@@ -57,6 +57,14 @@ Archive section keeps its header and controls.
 
 `LunaTests/ArticleExtractorTests.swift`, `LunaTests/ReadingListStoreTests.swift`, `LunaTests/PasteboardSuggesterTests.swift`.
 
+## Failed saves
+
+A `.failed` save shows a real error card on the Reader and Downloader card roots —
+favicon + recovered title, the URL that failed, why it failed, a red rim, and
+buttons for the LLM rescue / an in-app browser / sharing the link. It has no kind,
+so it surfaces in EVERY app, and its menu offers Share Link + Delete only (no
+Archive). Full design: `claudedocs/failed-saves.md`.
+
 ## Failed-save rescue (Apple Intelligence)
 
 A `.failed` row is no longer a dead end: tapping it offers a one-shot LLM rescue

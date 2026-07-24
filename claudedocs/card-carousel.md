@@ -304,6 +304,14 @@ Differences from the Downloader, via `CardCarouselStyle`:
   the persistent Settings/Share buttons so content never bleeds into their
   footer safe area. In **RSVP**, playing fades it away and pausing
   brings it back (`RSVPViewController.onPlaybackStateChanged`).
+- A card whose save **FAILED** is replaced wholesale by the shared error card
+  (`claudedocs/failed-saves.md`) and carries a subtle red rim
+  (`CardSurfaceView.setEdgeGlow`, supplied per card by the
+  `edgeGlowColorForCardAt` data-source hook — the surface clips, so the glow is
+  stroked just inside the edge and blooms inward). Its long-press menu drops
+  Archive: Share Link and destructive Delete only. Failed saves appear on the
+  Downloader root too (in the slots after the media cards) — they belong to no
+  app, so every app shows them.
 - **Long-press** on the centered Reader card offers Archive and destructive Delete.
   Archive persists immediately, then the old card drifts slightly upward while
   fading out before its next neighbor springs into the centered position. Archived

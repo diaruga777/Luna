@@ -22,10 +22,34 @@ enum MediaIntentHandoff {
 
     enum MediaHandoffError: Error, CustomLocalizedStringResourceConvertible {
         case insufficientStorage(String)
+        /// The save landed but its media didn't: nothing was downloaded and no
+        /// transfer is running. Reported so a Shortcut can never exit with
+        /// silent success and an empty library.
+        case downloadFailed(message: String?)
+        /// Photos add-authorization was refused for a sibling-app-owned save.
+        case notAuthorized
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .insufficientStorage(let message): return "\(message)"
+            case .downloadFailed(let message):
+                guard let message, !message.isEmpty else {
+                    return "Luna saved the link but couldn't download its media."
+                }
+                return "\(message)"
+            case .notAuthorized:
+                return "Luna needs permission to save media to your photo library."
+            }
+        }
+
+        /// Maps a start result that reported no running transfer into the error
+        /// the intent throws. `isDownloadHandled` results never reach this.
+        init(startResult: LiveMediaDownloadStartResult) {
+            switch startResult {
+            case .notAuthorized: self = .notAuthorized
+            case let .failed(message): self = .downloadFailed(message: message)
+            case .unsupported, .started, .alreadyDownloaded, .deferredUntilWiFi:
+                self = .downloadFailed(message: nil)
             }
         }
     }
@@ -70,26 +94,42 @@ enum MediaIntentHandoff {
             guard IntentMediaDownloadPolicy.shouldAwait(
                 expectedByteCount: inspection.expectedByteCount)
             else {
-                let started = await MediaAutoDownloader.startDownloaderIntentDownload(
-                    forURLString: urlString)
-                SharedDiagnosticLog.record(
-                    "intent media handoff: synchronous=false, reason=size, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), started=\(started), photosAuthorized=\(photosAuthorized)",
-                    category: "media-download")
+                try await startInBackground(
+                    for: urlString,
+                    reason: "size, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown")",
+                    photosAuthorized: photosAuthorized)
                 return nil
             }
-            let media = await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
+            let result = await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
                 forURLString: urlString)
             SharedDiagnosticLog.record(
-                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), completed=\(media != nil), photosAuthorized=\(photosAuthorized)",
+                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), photosAuthorized=\(photosAuthorized)",
                 category: "media-download")
-            return media.map { intentFile(for: $0) }
+            switch result {
+            case let .completed(media): return intentFile(for: media)
+            case .handledWithoutFile: return nil
+            case let .failed(message): throw MediaHandoffError.downloadFailed(message: message)
+            }
         } else {
-            let started = await MediaAutoDownloader.startDownloaderIntentDownload(
-                forURLString: urlString)
-            SharedDiagnosticLog.record(
-                "intent media handoff: synchronous=false, started=\(started), photosAuthorized=\(photosAuthorized)",
-                category: "media-download")
+            try await startInBackground(
+                for: urlString, reason: "setting", photosAuthorized: photosAuthorized)
             return nil
+        }
+    }
+
+    /// Hands the transfer to the durable background engine, throwing when it
+    /// reports that nothing is downloading and nothing will be. A deferred
+    /// (Wi-Fi-only) or already-downloaded result is a legitimate no-file return.
+    private static func startInBackground(
+        for urlString: String, reason: String, photosAuthorized: Bool
+    ) async throws {
+        let result = await MediaAutoDownloader.startDownloaderIntentDownload(
+            forURLString: urlString)
+        SharedDiagnosticLog.record(
+            "intent media handoff: synchronous=false, reason=\(reason), result=\(result), photosAuthorized=\(photosAuthorized)",
+            category: "media-download")
+        guard result.isDownloadHandled else {
+            throw MediaHandoffError(startResult: result)
         }
     }
 

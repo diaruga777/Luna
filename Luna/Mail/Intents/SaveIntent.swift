@@ -56,6 +56,11 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         /// Foreign-kind save (`SurfaceSupport`) — the item was discarded; the
         /// dialog carries the generic unsupported-kind explanation.
         case unsupportedKind(message: String)
+        /// The screen read identified something, but the save left nothing in
+        /// the app.
+        case saveFailed
+        /// Saved, but the page/post content couldn't be fetched.
+        case contentUnavailable
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
@@ -63,6 +68,10 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                 return "Luna can't save from this app."
             case .unsupportedKind(let message):
                 return "\(message)"
+            case .saveFailed:
+                return "Luna found this on screen but couldn't save it."
+            case .contentUnavailable:
+                return "Luna saved this but couldn't fetch its content. Try again from the app."
             case .modelUnavailable:
                 // ITMS-90626: never mention Apple/Siri in intent-visible strings.
                 return "Screen analysis isn't available on this device."
@@ -87,6 +96,35 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             case .serviceUnavailable, .other: self = .serviceUnavailable
             }
         }
+
+        init(saveFailure: IntentSaveVerification.Failure) {
+            switch saveFailure {
+            case .nothingSaved: self = .saveFailed
+            case .contentUnavailable: self = .contentUnavailable
+            }
+        }
+    }
+
+    /// The one place a save outcome becomes either the URL to hand onward or a
+    /// thrown error. A screen read that identified a post/page has already
+    /// passed this intent's pre-validation, so every non-success outcome is
+    /// reported — the extraction worked and the SAVE is what failed.
+    private func savedURLString(
+        from outcome: IntentIngestHelper.ActionButtonSaveOutcome
+    ) throws -> String? {
+        switch outcome {
+        case let .completed(saved):
+            return saved
+        case let .friendPromptRequested(saved):
+            return saved
+        case let .unsupportedKind(owner):
+            // Foreign-kind save: the item was discarded — the dialog carries
+            // the generic unsupported-kind explanation.
+            throw SaveError.unsupportedKind(
+                message: IntentIngestHelper.unsupportedDialogText(owner: owner))
+        case let .saveFailed(failure):
+            throw SaveError(saveFailure: failure)
+        }
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<SaveResultEntity> & ProvidesDialog {
@@ -105,6 +143,9 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             let outcome = await IntentIngestHelper.handleSavePress(
                 urlString: savedURLString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+            // Verify the re-press before recording it or downloading anything:
+            // re-running a save whose item is gone or failed is a failure too.
+            _ = try self.savedURLString(from: outcome)
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
             let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: savedURLString
@@ -167,18 +208,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             }
         }
 
-        let savedURLString: String?
-        switch outcome {
-        case let .completed(saved):
-            savedURLString = saved
-        case .friendPromptRequested(let saved):
-            savedURLString = saved
-        case let .unsupportedKind(owner):
-            // Foreign-kind save: the item was discarded — the dialog carries
-            // the generic unsupported-kind explanation.
-            throw SaveError.unsupportedKind(
-                message: IntentIngestHelper.unsupportedDialogText(owner: owner))
-        }
+        let savedURLString = try self.savedURLString(from: outcome)
         if let savedURLString {
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
         }

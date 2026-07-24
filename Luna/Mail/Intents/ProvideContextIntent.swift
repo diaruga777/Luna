@@ -45,6 +45,12 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         /// Foreign-kind save (`SurfaceSupport`) — the item was discarded; the
         /// dialog carries the generic unsupported-kind explanation.
         case unsupportedKind(message: String)
+        /// Several different saveable links were on screen at once.
+        case multipleURLs
+        /// The save press left nothing in the app.
+        case saveFailed
+        /// The link was saved but its content couldn't be fetched.
+        case contentUnavailable
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
@@ -52,6 +58,19 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 return "No Safari page tracked yet. Is the Luna extension enabled?"
             case .unsupportedKind(let message):
                 return "\(message)"
+            case .multipleURLs:
+                return "Several different links are on screen. Open the one you want and try again."
+            case .saveFailed:
+                return "Luna couldn't save this link."
+            case .contentUnavailable:
+                return "Luna saved this link but couldn't fetch the page. Try again from the app."
+            }
+        }
+
+        init(saveFailure: IntentSaveVerification.Failure) {
+            switch saveFailure {
+            case .nothingSaved: self = .saveFailed
+            case .contentUnavailable: self = .contentUnavailable
             }
         }
     }
@@ -59,19 +78,24 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
         let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
 
-        // A complete URL supplied by Shortcuts takes precedence over every
+        // A supplied URL this app can handle takes precedence over every
         // app-based decision, including onboarding interception and an
-        // otherwise unsupported current app. Safari deliberately ignores this
-        // input and continues to use its extension-backed URL store below.
-        if let urlString = ProvideContextOnScreenURL.collapseText(
-            onScreenURLs,
+        // otherwise unsupported current app — and, because pre-validation says
+        // the save SHOULD work, its failures are thrown rather than swallowed.
+        // A link owned by a sibling app (or no usable link at all) falls through
+        // in silence to the decision below. Safari deliberately ignores this
+        // input and continues to use its extension-backed URL store.
+        switch ProvideContextOnScreenURL.plan(
+            text: onScreenURLs,
             isSafari: isSafari,
             isEnabled: AppIntentSettings.handleOnScreenURLs
-        ), let result = try await saveURL(
-            urlString,
-            unsupportedKindHandling: .fallBack
         ) {
-            return .result(value: result)
+        case .divergent:
+            throw ProvideContextError.multipleURLs
+        case let .save(urlString):
+            return .result(value: try await saveURL(urlString))
+        case .skip:
+            break
         }
 
         // With no usable supplied URL, let the Action Button onboarding state
@@ -121,29 +145,17 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 // nothing silently.
                 throw ProvideContextError.noTrackedPage
             }
-            guard let result = try await saveURL(
-                urlString,
-                unsupportedKindHandling: .throwError
-            ) else {
-                preconditionFailure("Throwing unsupported-kind handling cannot fall back")
-            }
-            return .result(value: result)
+            return .result(value: try await saveURL(urlString))
         }
     }
 
-    private enum UnsupportedKindHandling: Equatable {
-        case throwError
-        case fallBack
-    }
-
     /// The one immediate-URL path for both Safari-extension URLs and URLs
-    /// extracted from Shortcuts input. A timeout still counts as handled: the
-    /// normal ingest task continues and persists its pending work in the
-    /// background. Only an explicit foreign-kind rejection can fall back.
-    private func saveURL(
-        _ urlString: String,
-        unsupportedKindHandling: UnsupportedKindHandling
-    ) async throws -> ProvideContextResultEntity? {
+    /// extracted from Shortcuts input. Every way it can end without content in
+    /// the app throws: a foreign kind, an empty store, a `.failed` item, or a
+    /// media download that never ran (thrown from the handoff). A timeout still
+    /// counts as handled — the ingest task continues and persists its pending
+    /// work in the background, so the item IS in the app.
+    private func saveURL(_ urlString: String) async throws -> ProvideContextResultEntity {
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString,
             doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
@@ -158,9 +170,10 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             // continues, exactly as it does for a Safari-extension URL.
             savedURLString = savedURL ?? urlString
         case let .unsupportedKind(owner):
-            guard unsupportedKindHandling == .throwError else { return nil }
             throw ProvideContextError.unsupportedKind(
                 message: IntentIngestHelper.unsupportedDialogText(owner: owner))
+        case let .saveFailed(failure):
+            throw ProvideContextError(saveFailure: failure)
         }
 
         let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(

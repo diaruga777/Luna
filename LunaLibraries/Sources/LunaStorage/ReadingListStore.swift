@@ -518,7 +518,7 @@ public final class ReadingListStore {
         platform: ContentPlatform, platformItemID: String?, title: String?,
         creator: String?, thumbnailFileName: String?, for itemID: UUID
     ) -> ReadingListItem? {
-        let result = coordinatedMutate { all in
+        let result: ReadingListItem? = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             all[index].platform = platform
             all[index].platformItemID = platformItemID
@@ -621,7 +621,7 @@ public final class ReadingListStore {
     /// has no article content to download). Returns the refreshed item.
     @discardableResult
     public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
-        let result = coordinatedMutate { all in
+        let result: ReadingListItem? = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             all[index].priceTracker = tracker
             all[index].title = tracker.productName

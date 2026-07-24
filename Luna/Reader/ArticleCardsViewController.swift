@@ -845,17 +845,33 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private func cardContextMenu(
         for item: ReadingListItem, carouselIndex: Int
     ) -> UIMenu {
-        UIMenu(children: [
+        let delete = UIAction(
+            title: "Delete", image: UIImage(systemName: "trash"),
+            attributes: .destructive
+        ) { [weak self] _ in
+            self?.deleteActive(item)
+        }
+        // Archiving a failed save would file an empty shell away where the user
+        // can't act on it — the only sensible verbs are share the link and get
+        // rid of it (matching the list row's failed-item menu).
+        if ReadingListSectioning.isFailedSave(item) {
+            return UIMenu(children: [
+                UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) {
+                    [weak self] _ in
+                    guard let self else { return }
+                    AppReaderShareProvider.shared.presentShareSheet(
+                        urlString: item.urlString, title: nil,
+                        from: self, sourceView: self.view)
+                },
+                delete,
+            ])
+        }
+        return UIMenu(children: [
             UIAction(title: "Archive", image: UIImage(systemName: "archivebox")) {
                 [weak self] _ in
                 self?.archive(item, fromCarouselIndex: carouselIndex)
             },
-            UIAction(
-                title: "Delete", image: UIImage(systemName: "trash"),
-                attributes: .destructive
-            ) { [weak self] _ in
-                self?.deleteActive(item)
-            },
+            delete,
         ])
     }
 
@@ -944,6 +960,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             return CardContentViewController()
         }
         let item = items[itemIndex]
+        // A save that FAILED gets the shared error card instead of an empty
+        // reader with a one-line apology: real title + favicon, the URL that
+        // broke, what went wrong, and the ways out (Apple Intelligence, the
+        // in-app browser, share, retry).
+        if ReadingListSectioning.isFailedSave(item) {
+            return FailedSaveCardFactory.makeCard(
+                for: item, host: self, onChanged: { [weak self] in self?.reload() })
+        }
         let content = ReaderCardContentViewController(item: item, senderName: senderName(for: item))
         // Apply the title clearance as part of construction, not only after a
         // card becomes centered. A scrubber jump can stage index ±2 immediately
@@ -952,6 +976,19 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         content.setTopContentInset(Self.contentEdgeFade)
         content.delegate = self
         return content
+    }
+
+    /// A failed save's card carries a soft red rim — the only card chrome that
+    /// says "this one is broken" without a badge or a banner.
+    func carousel(
+        _ carousel: CardCarouselViewController, edgeGlowColorForCardAt index: Int
+    ) -> UIColor? {
+        guard renderedPasteboardState == nil || index != 0,
+              let itemIndex = articleIndex(forCarouselIndex: index),
+              items.indices.contains(itemIndex),
+              ReadingListSectioning.isFailedSave(items[itemIndex])
+        else { return nil }
+        return LunaColors.errorAccent
     }
 
     /// Incoming-email cards follow the contact's current name, falling back to
@@ -1039,6 +1076,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
         let item = items[itemIndex]
+        // A failed save has no stored title; use the same fallback chain its
+        // card headline does so the scrub preview and the card agree.
+        if ReadingListSectioning.isFailedSave(item) {
+            return FailedSaveCardFactory.makeModel(for: item).title
+        }
         return item.title ?? item.url?.host ?? item.urlString
     }
 }

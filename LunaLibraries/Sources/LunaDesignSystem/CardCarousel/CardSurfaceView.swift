@@ -37,6 +37,13 @@ public class CardSurfaceView: UIView {
     /// rim, and corner buttons are unaffected.
     private var contentEdgeFadeHeight: CGFloat = 0
     private let contentFadeMask = VerticalEdgeFadeMaskView()
+    /// The failure glow: a tinted ring stroked just inside the card edge, with
+    /// its own shadow blooming INWARD over the content. `clipsToBounds` (which
+    /// the letterbox tone and corner radius both need) would swallow an outward
+    /// `layer.shadow`, so the glow is drawn on the inside of the border where it
+    /// reads as a lit rim rather than a drawn stroke.
+    private let glowLayer = CAShapeLayer()
+    private var glowColor: UIColor?
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -65,6 +72,12 @@ public class CardSurfaceView: UIView {
         borderView.contentView.layer.addSublayer(borderHighlight)
         borderView.isHidden = true
         addSubview(borderView)
+
+        glowLayer.fillColor = UIColor.clear.cgColor
+        glowLayer.shadowOffset = .zero
+        glowLayer.isHidden = true
+        layer.addSublayer(glowLayer)
+
         applyBorderColor()
         registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
             (card: CardSurfaceView, _: UITraitCollection) in
@@ -96,6 +109,14 @@ public class CardSurfaceView: UIView {
         borderHighlight.path = UIBezierPath(
             roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
             cornerRadius: Self.cornerRadius - 0.5).cgPath
+
+        let glowInset = Self.glowLineWidth / 2
+        let glowPath = UIBezierPath(
+            roundedRect: bounds.insetBy(dx: glowInset, dy: glowInset),
+            cornerRadius: max(0, Self.cornerRadius - glowInset)).cgPath
+        glowLayer.frame = bounds
+        glowLayer.path = glowPath
+        glowLayer.shadowPath = glowPath
     }
 
     /// Installs a content view controller's view, filling the card.
@@ -125,9 +146,36 @@ public class CardSurfaceView: UIView {
         set { borderView.alpha = newValue }
     }
 
+    /// Line width of the tinted rim; the shadow blooms `glowRadius` inward from it.
+    private static let glowLineWidth: CGFloat = 1.5
+    private static let glowRadius: CGFloat = 9
+
+    /// Tints the card's edge with a soft inward glow — how a card says "this
+    /// save failed" without a badge or a banner. `nil` removes it.
+    public func setEdgeGlow(_ color: UIColor?) {
+        glowColor = color
+        glowLayer.isHidden = color == nil
+        guard color != nil else { return }
+        glowLayer.lineWidth = Self.glowLineWidth
+        glowLayer.shadowRadius = Self.glowRadius
+        glowLayer.shadowOpacity = 1
+        applyGlowColor()
+        setNeedsLayout()
+    }
+
     private func applyBorderColor() {
         borderHighlight.strokeColor =
             GlassStyle.glassBorderColor.resolvedColor(with: traitCollection).cgColor
+        applyGlowColor()
+    }
+
+    private func applyGlowColor() {
+        guard let glowColor else { return }
+        let resolved = glowColor.resolvedColor(with: traitCollection)
+        // The rim reads as a lit edge, not a stroke: a mostly-transparent line
+        // carrying a wider, softer shadow of the same hue.
+        glowLayer.strokeColor = resolved.withAlphaComponent(0.55).cgColor
+        glowLayer.shadowColor = resolved.withAlphaComponent(0.75).cgColor
     }
 }
 

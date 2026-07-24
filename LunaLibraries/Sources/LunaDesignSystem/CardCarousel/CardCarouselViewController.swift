@@ -151,13 +151,6 @@ public protocol CardCarouselDelegate: AnyObject {
     /// content consumes the tap as pause/play). The tap does NOT cancel
     /// touches, so content-level taps (links) still land.
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int)
-    /// A long-press on the centered card, streamed for its whole lifetime
-    /// (.began/.changed/.ended/.cancelled) so hosts can drive press-and-drag
-    /// interactions. Fires alongside any context menu.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        longPress gesture: UILongPressGestureRecognizer,
-        onCenteredCardAt index: Int)
     /// An edge page pan began while the carousel was immersed. The carousel
     /// has already restored its own chrome synchronously; hosts use this to
     /// restore any matching screen-level chrome before the page moves.
@@ -174,10 +167,6 @@ public extension CardCarouselDelegate {
         menuForCardAt index: Int
     ) -> UIMenu? { nil }
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {}
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        longPress gesture: UILongPressGestureRecognizer,
-        onCenteredCardAt index: Int) {}
     func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {}
 }
 
@@ -274,10 +263,7 @@ public final class CardCarouselViewController: UIViewController {
 
     private var playbackPan: UIPanGestureRecognizer!
     private var pagePan: UIPanGestureRecognizer!
-    private var cardLongPress: UILongPressGestureRecognizer!
-    private lazy var editMenuInteraction = UIEditMenuInteraction(delegate: self)
-    private var pendingEditMenu: UIMenu?
-    private var pendingEditMenuPoint = CGPoint.zero
+    private lazy var cardContextMenuInteraction = UIContextMenuInteraction(delegate: self)
     /// The in-flight eclipse, and whether the inset pan is driving it
     /// interactively. The carousel must retain the transition for its whole
     /// run — its animator completion holds it only weakly, so an unretained
@@ -364,11 +350,7 @@ public final class CardCarouselViewController: UIViewController {
         pagePan.delegate = self
         cardArea.addGestureRecognizer(pagePan)
 
-        cardLongPress = UILongPressGestureRecognizer(
-            target: self, action: #selector(handleLongPress(_:)))
-        cardLongPress.delegate = self
-        cardArea.addGestureRecognizer(cardLongPress)
-        cardArea.addInteraction(editMenuInteraction)
+        cardArea.addInteraction(cardContextMenuInteraction)
     }
 
     public override func viewDidLayoutSubviews() {
@@ -1053,30 +1035,6 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
-    /// Whether a long-press that began on the centered card is being streamed.
-    private var isStreamingLongPress = false
-
-    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-        if gesture.state == .began {
-            guard count > 0, !isTransitioning,
-                  centeredCardFrame().contains(gesture.location(in: cardArea))
-            else { return }
-            isStreamingLongPress = true
-            let point = gesture.location(in: cardArea)
-            if let menu = delegate?.carousel(self, menuForCardAt: currentIndex) {
-                pendingEditMenu = menu
-                pendingEditMenuPoint = point
-                editMenuInteraction.presentEditMenu(
-                    with: UIEditMenuConfiguration(identifier: nil, sourcePoint: point))
-            }
-        }
-        guard isStreamingLongPress else { return }
-        delegate?.carousel(self, longPress: gesture, onCenteredCardAt: currentIndex)
-        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
-            isStreamingLongPress = false
-        }
-    }
-
     /// Interactive paging: a horizontal drag starting on the insets beside the
     /// card drives the eclipse with the finger — play it forward, pull it back,
     /// release to finish or cancel.
@@ -1227,13 +1185,12 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        // The in-card page pan and the additive tap/long-press must coexist
-        // with gestures inside the embedded content (scroll views, links).
+        // The in-card page pan and the additive tap must coexist with gestures
+        // inside the embedded content (scroll views, links).
         if gestureRecognizer === pagePan {
             return style.pagesOnInCardSwipes
         }
         return gestureRecognizer is UITapGestureRecognizer
-            || gestureRecognizer is UILongPressGestureRecognizer
     }
 }
 
@@ -1261,29 +1218,50 @@ extension CardCarouselViewController: CarouselScrubberViewDelegate {
 
 // MARK: - Card menus
 
-extension CardCarouselViewController: UIEditMenuInteractionDelegate {
-    public func editMenuInteraction(
-        _ interaction: UIEditMenuInteraction,
-        menuFor configuration: UIEditMenuConfiguration,
-        suggestedActions: [UIMenuElement]
-    ) -> UIMenu? {
-        pendingEditMenu
-    }
-
-    public func editMenuInteraction(
-        _ interaction: UIEditMenuInteraction,
-        targetRectFor configuration: UIEditMenuConfiguration
-    ) -> CGRect {
-        CGRect(x: pendingEditMenuPoint.x, y: pendingEditMenuPoint.y, width: 1, height: 1)
-    }
-
-    public func editMenuInteraction(
-        _ interaction: UIEditMenuInteraction,
-        willDismissMenuFor configuration: UIEditMenuConfiguration,
-        animator: any UIEditMenuInteractionAnimating
-    ) {
-        animator.addCompletion { [weak self] in
-            self?.pendingEditMenu = nil
+extension CardCarouselViewController: UIContextMenuInteractionDelegate {
+    public func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        configurationForMenuAtLocation location: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard count > 0, !isTransitioning,
+              // Only the resting card deck differentiates text vs whitespace;
+              // an immersed (chrome-hidden) card is pure reading — leave every
+              // press to the content's own selection and link menus.
+              !isImmersed,
+              centeredCardFrame().contains(location)
+        else { return nil }
+        // A press the content claims (real text, a link, an inline image) is not
+        // ours — decline so text selection or the content's own menu proceeds.
+        if let content = slots[currentIndex]?.content,
+           content.longPressSelectsContent(at: cardArea.convert(location, to: content.view)) {
+            return nil
         }
+        guard let menu = delegate?.carousel(self, menuForCardAt: currentIndex) else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in menu }
+    }
+
+    public func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        configuration: UIContextMenuConfiguration,
+        highlightPreviewForItemWithIdentifier identifier: any NSCopying
+    ) -> UITargetedPreview? {
+        cardHighlightPreview()
+    }
+
+    public func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        configuration: UIContextMenuConfiguration,
+        dismissalPreviewForItemWithIdentifier identifier: any NSCopying
+    ) -> UITargetedPreview? {
+        cardHighlightPreview()
+    }
+
+    /// Anchors the menu's lift to the centered card so the whole card-area view
+    /// (which fills the screen) isn't what gets highlighted.
+    private func cardHighlightPreview() -> UITargetedPreview? {
+        guard let card = slots[currentIndex]?.card else { return nil }
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = .clear
+        return UITargetedPreview(view: card, parameters: parameters)
     }
 }

@@ -1622,6 +1622,21 @@ private final class ReaderCardContentViewController: CardContentViewController,
         }
     }
 
+    override func longPressSelectsContent(at point: CGPoint) -> Bool {
+        Self.readerControllers(under: reader).contains { controller in
+            guard let scrollReader = controller as? ScrollReaderViewController,
+                  scrollReader.isViewLoaded,
+                  scrollReader.view.window != nil
+            else { return false }
+            let readerPoint = view.convert(point, to: scrollReader.view)
+            // A press on a glyph, a link, or an inline image is the reader's —
+            // it selects text or opens the link/image menu. Only bare whitespace
+            // falls through to the card's Archive/Delete context menu.
+            return scrollReader.pointIsOverText(at: readerPoint)
+                || scrollReader.hasInteractiveContent(at: readerPoint)
+        }
+    }
+
     private static func readerControllers(under root: UIViewController?) -> [UIViewController] {
         guard let root else { return [] }
         return [root] + root.children.flatMap { readerControllers(under: $0) }

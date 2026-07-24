@@ -1412,6 +1412,25 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return link(at: textPoint) != nil || imageEntry(at: textPoint) != nil
     }
 
+    /// Whether a point in this controller's view lands on a rendered glyph (as
+    /// opposed to the margins, inter-paragraph gaps, or the empty space past the
+    /// end of a line). The outer card uses this to let a long-press on real text
+    /// begin a selection while reserving whitespace for its own context menu.
+    /// `closestPosition(to:)`/`characterIndex(for:)` always snap to the nearest
+    /// glyph, so we must confirm the point is actually inside that glyph's box.
+    public func pointIsOverText(at point: CGPoint) -> Bool {
+        let layoutManager = textView.layoutManager
+        let container = textView.textContainer
+        let local = CGPoint(
+            x: point.x - textView.textContainerInset.left,
+            y: point.y - textView.textContainerInset.top)
+        guard layoutManager.numberOfGlyphs > 0 else { return false }
+        let glyphIndex = layoutManager.glyphIndex(for: local, in: container)
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1), in: container)
+        return glyphRect.contains(local)
+    }
+
     private func setLinkPreviewAudioSuspended(_ suspended: Bool) {
         if suspended {
             if let center = ReaderAudioLauncher.center,

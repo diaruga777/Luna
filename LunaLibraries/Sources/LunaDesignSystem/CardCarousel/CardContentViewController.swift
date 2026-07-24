@@ -54,6 +54,12 @@ open class CardContentViewController: UIViewController {
     /// reject the additive card tap without interfering with its own gesture.
     open func allowsCardTap(at point: CGPoint) -> Bool { true }
 
+    /// Whether a long-press at this content-local point belongs to the content
+    /// itself rather than the card. Text content returns true over glyphs and
+    /// links (so the press selects text or opens the link's own menu) and false
+    /// over whitespace, letting the card present its context menu there.
+    open func longPressSelectsContent(at point: CGPoint) -> Bool { false }
+
     /// The card became the centered card: playable content should (re)start,
     /// looping, honoring the mute state last applied via `setMuted`.
     open func cardDidBecomeCentered() {

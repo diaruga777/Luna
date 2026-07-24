@@ -80,19 +80,8 @@ function pushRule(pattern, condition) {
 // piano.io), so scoping by the request's own domain would never match — we want
 // "block piano.io requests made BY a newstatesman.com page". `initiatorDomains`
 // matches the domain and its subdomains (so www.newstatesman.com is covered).
-let skippedCustomUARules = 0;
 for (const rule of data.rules || []) {
     if (!rule.domain || !Array.isArray(rule.blockRegex)) { continue; }
-    // Some site rules are a compound unlock: block the meter AND present a custom
-    // crawler User-Agent. Safari declarativeNetRequest can reproduce the former but
-    // not the latter. Emitting only half of that recipe can break the publisher's
-    // hydration without yielding an unlocked response (NYT paints its server HTML,
-    // then blanks after its entitlement/messaging requests are blocked). Leave those
-    // sites untouched in Safari; the in-app resolver can apply the complete rule.
-    if (rule.useragentCustom) {
-        skippedCustomUARules++;
-        continue;
-    }
     for (const pattern of rule.blockRegex) {
         pushRule(pattern, { initiatorDomains: [rule.domain] });
     }
@@ -112,4 +101,3 @@ for (const blocker of data.generalBlockers || []) {
 fs.writeFileSync(OUT, JSON.stringify(rules, null, 0) + "\n");
 console.log(`wrote ${rules.length} block rules (${regexCount} regexFilter, `
     + `${rules.length - regexCount} urlFilter) to ${path.relative(ROOT, OUT)}`);
-console.log(`skipped ${skippedCustomUARules} custom-UA-dependent site rule(s)`);

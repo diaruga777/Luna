@@ -313,12 +313,21 @@ Paywall unlock + toast:
   re-extracts the body from the server HTML). Note the network `blockers` ruleset only
   helps when the wall's metering script sits at a URL the rule matches — sites that
   bundle metering into their main app JS (BI now does) can't be blocked without breaking
-  hydration, so the DOM cleanup is the durable path there. The generator also omits
-  any per-site block rule whose complete unlock recipe requires `useragentCustom`:
-  Safari's declarative rules can block requests but cannot reproduce that custom
-  request User-Agent. Applying only the block half broke NYT's client hydration
-  (server HTML painted briefly, then the page went blank), while the in-app resolver
-  can apply the complete custom-UA rule safely.
+  hydration, so the DOM cleanup is the durable path there.
+- **Do not blame the block rules for a blank page.** Twice now a blank NYT tab was
+  diagnosed as "the per-site block rules break hydration on a site whose unlock also
+  needs `useragentCustom`, so don't emit them" (45589c52, reverted; then 5b2085ec, also
+  reverted). Both were wrong: the blank was `annoyances.js` putting `display:none` on
+  `<body>` (see the annoyance section above), and neither `content.js` nor the `blockers`
+  ruleset was involved — bisected in a real WKWebView against the live article. The
+  rules earn their keep on exactly this site: NYT ships the FULL article body in its
+  embedded client state (verified — 16 `ParagraphBlock` nodes, ~4.6k chars) and its
+  metering JS truncates the RENDER to the first 7 paragraphs plus a subscribe pitch. So
+  blocking `nytimes.com/meter.js`, `svc/onsite-messaging/query` and `mwcm.nyt.com/*.js`
+  is what lets the rest render in Safari — and dropping those rules truncates what the
+  "Read in Luna" pill captures, which the app then accepts as a readable body (a trusted
+  prefetch clears the 1200-char threshold without the paywall re-check), i.e. a
+  truncated in-app article. Re-verify against the live site before touching them again.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
   content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered

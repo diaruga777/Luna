@@ -37,7 +37,11 @@ public extension NavHeaderBar {
             leadingAnchor.constraint(equalTo: tableView.frameLayoutGuide.leadingAnchor),
             trailingAnchor.constraint(equalTo: tableView.frameLayoutGuide.trailingAnchor),
         ])
-        // The header always floats above the rows it overlaps.
+        // The header always floats above the rows it overlaps. This is DRAW order
+        // only — hit-testing walks the subview array back-to-front, so the host
+        // must also keep the header last there (see
+        // `NavHeaderTableController.viewDidLayoutSubviews`) or scrolled-in cells
+        // swallow taps on the bar's controls.
         tableView.layer.zPosition = 0
         layer.zPosition = 1
     }

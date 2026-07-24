@@ -27,6 +27,9 @@ open class NavHeaderTableController: UITableViewController {
     /// The recreated header bar. Exposed so subclasses with custom needs can reach it.
     public let header = NavHeaderBar()
 
+    /// Keeps left-edge swipe-back alive while the real nav bar is hidden.
+    private let popGestureClaim = InteractivePopGestureClaim()
+
     open override func viewDidLoad() {
         super.viewDidLoad()
         header.title = headerTitle
@@ -42,6 +45,18 @@ open class NavHeaderTableController: UITableViewController {
         navigationController?.setNavigationBarHidden(true, animated: false)
     }
 
+    /// Hiding the nav bar takes UIKit's left-edge pop gesture with it, so a pushed
+    /// screen would otherwise only be dismissable by the back chevron.
+    open override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        popGestureClaim.claim(in: navigationController)
+    }
+
+    open override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        popGestureClaim.release()
+    }
+
     open override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
         updateHeaderMetrics()
@@ -50,6 +65,15 @@ open class NavHeaderTableController: UITableViewController {
     open override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateHeaderMetrics()
+        // The header is a subview of the scrolling table, and the table appends
+        // cell views as they come into view. `zPosition` fixes DRAW order but not
+        // hit-testing (which walks subviews back-to-front), so a scrolled-in cell
+        // overlapping the bar would swallow taps on the back button. Keeping the
+        // header last in the subview array keeps its controls tappable at any
+        // scroll offset.
+        if let tableView, tableView.subviews.last !== header {
+            tableView.bringSubviewToFront(header)
+        }
     }
 
     /// Keeps the header height (= safe-area top + bar) and the table's top insets in sync

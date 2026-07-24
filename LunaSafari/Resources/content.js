@@ -126,7 +126,20 @@
             "div.snippet-promotion", ".snippet-promotion", 'div[id*="-snippet-overlay"]',
             "div.modal-backdrop", 'div[class*="subscribe-wall"]', 'div[class*="regwall"]',
             "div.tp-modal", 'div[data-testid*="paywall"]', 'div[class*="PaywallOverlay"]',
-            "div.piano-template"
+            "div.piano-template",
+            // Generic, structure/attribute-driven paywall containers (no site names).
+            // A metering wall is commonly a component-declared node plus a backdrop and
+            // an "inline backup" wall, with the article gated behind them — Business
+            // Insider ships exactly this (`pw-modal-backdrop`, a `data-component-type`
+            // paywall component, an `inline-backup-paywall`), and it is a very common
+            // shape. The `articleChars` guard below reveals (never deletes) any of these
+            // that actually holds the story, so a broad match here is safe.
+            '[data-component-type*="paywall" i]',
+            'div[class*="pw-modal"]',
+            '[class*="paywall-backdrop"]', '[class*="paywall-overlay"]',
+            '[class*="paywall-modal"]', '[class*="paywall-container"]',
+            '[class*="registration-wall"]', '[class*="regi-wall"]', '[class*="reg-wall"]',
+            '[class*="metering-overlay"]', '[id*="paywall"]'
         ];
         var UNHIDE = ["blurred", "blur", "gradient", "fade", "faded-content", "clipped",
             "cropped", "truncated", "locked", "is-locked", "noscroll", "no-scroll",
@@ -178,6 +191,19 @@
                         el.style.maxHeight = "none"; el.style.overflow = "visible";
                         el.style.webkitMaskImage = "none";
                     });
+                });
+                // Un-clamp any element that STILL holds substantial article prose but is
+                // being height-limited / masked / blurred inline — the teaser clamp a
+                // metered wall applies to its content container when it doesn't use one of
+                // the UNHIDE class names above. Prose-guarded (>= 2 real paragraphs), so
+                // ordinary UI clamps ("show more" teasers, cards) are left alone; it does
+                // NOT announce an unlock on its own, since a benign clamp is not a paywall.
+                document.querySelectorAll("[style]").forEach(function (el) {
+                    var s = (el.getAttribute("style") || "").toLowerCase();
+                    var clamped = s.indexOf("max-height") >= 0 || s.indexOf("mask-image") >= 0
+                        || s.indexOf("-webkit-mask") >= 0
+                        || /overflow\s*:\s*hidden/.test(s) || /filter\s*:\s*blur/.test(s);
+                    if (clamped && articleChars(el) > 400) { reveal(el); }
                 });
             } catch (e) {}
         }

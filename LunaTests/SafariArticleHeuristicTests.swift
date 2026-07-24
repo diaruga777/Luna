@@ -503,4 +503,48 @@ final class SafariArticleHeuristicTests: XCTestCase {
             urlString: "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"
         ))
     }
+
+    /// A component-driven metering wall (Business Insider's shape, generalized): the
+    /// full body is present but its content container is clamped by an inline
+    /// max-height + mask, hidden behind a `pw-modal-backdrop` and a
+    /// `data-component-type="paywall"` component plus a display:none inline-backup wall.
+    /// The generic cleanup must delete the content-LESS overlays and un-clamp the
+    /// prose-bearing container without deleting the body. No site-specific selectors —
+    /// it keys on the paywall attribute/backdrop shape and the inline clamp.
+    func testRevealArticleDismantlesComponentDrivenWall() {
+        let html = """
+        <html><body>
+          <article>
+            <h1>A cyclospora outbreak has been linked to berries</h1>
+            <div data-content-container id="body"
+                 style="max-height:220px;overflow:hidden;-webkit-mask-image:linear-gradient(#000,transparent)">
+              <p>First full subscriber paragraph. \(prose(200))</p>
+              <p>Second full subscriber paragraph. \(prose(200))</p>
+              <p>Third full subscriber paragraph. \(prose(200))</p>
+            </div>
+          </article>
+          <div class="pw-modal-entry"></div>
+          <div class="pw-modal-backdrop"></div>
+          <div data-component-type="paywall" data-content-selector="[data-content-container]"></div>
+          <div class="inline-backup-paywall modal" data-component-type="inline-backup-paywall"
+               style="display:none"><span>This story is available exclusively to subscribers.</span></div>
+        </body></html>
+        """
+        let expression = """
+        (function () {
+          window.__lunaRevealArticle();
+          var body = document.getElementById('body');
+          return !!body
+            && document.querySelector('.pw-modal-backdrop') === null
+            && document.querySelector('[data-component-type="paywall"]') === null
+            && document.querySelector('.inline-backup-paywall') === null
+            && body.style.maxHeight === 'none'
+            && body.style.overflow === 'visible'
+            && body.textContent.indexOf('First full subscriber') >= 0;
+        })()
+        """
+        XCTAssertTrue(evaluate(
+            expression, html: html,
+            urlString: "https://www.businessinsider.com/cyclospora-outbreak-berries-safe-kids-toddlers-2026-7"))
+    }
 }

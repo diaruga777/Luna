@@ -275,6 +275,20 @@ Paywall unlock + toast:
   Downloader / Price Tracker extensions never enable the declarative Referer
   ruleset (background.js) or the in-page overlay cleanup (content.js
   `revealArticle`). No user preference.
+- `revealArticle`'s cleanup is structure/attribute-driven, not a site list: besides the
+  named overlay selectors it removes generic component-driven walls (`[data-component-type*=paywall]`,
+  `pw-modal`/`paywall-backdrop`/`registration-wall`-style containers, `[id*=paywall]`) and
+  un-clamps any element that STILL holds substantial prose but is inline-clamped
+  (`max-height`/`mask-image`/`overflow:hidden`/`filter:blur`). Every removal is
+  `articleChars`-guarded — a node holding the real story is REVEALED, never deleted —
+  so this dismantles a metered wall that overlays/clamps the body (e.g. Business
+  Insider's `pw-modal-backdrop` + `inline-backup-paywall` + clamped
+  `[data-content-container]`) in Safari itself. It cannot restore body text a site
+  DELETES client-side; that case still relies on the pill → in-app reader (which
+  re-extracts the body from the server HTML). Note the network `blockers` ruleset only
+  helps when the wall's metering script sits at a URL the rule matches — sites that
+  bundle metering into their main app JS (BI now does) can't be blocked without
+  breaking hydration, so the DOM cleanup is the durable path there.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
   content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered

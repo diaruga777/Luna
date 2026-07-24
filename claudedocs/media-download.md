@@ -199,8 +199,16 @@ Photos references remain governed by the user's Photos library.
   `tiktok.mp4`) as the actual temporary URL filename and declare its concrete file type,
   rather than leaking the durable UUID-backed library filename to Shortcuts.
   When Downloader has ever launched, both modes carry Downloader ownership, create/maintain
-  `SavedMediaStore` state, honor Downloader's shared Storage setting in every host, and fall back to shared local storage when Photos permission is denied. Reader and
-  Price Tracker embed host-prefixed copies of the same Live Activity widget configuration.
+  `SavedMediaStore` state, honor Downloader's shared Storage setting in every host, and fall back to shared local storage when Photos permission is denied. **Only the
+  media-handling hosts embed the Live Activity widget** — `LunaLiveActivity` (central
+  Luna) and `LunaDownloaderLiveActivity` (Downloader) build host-prefixed copies of the
+  same configuration out of `LunaDownloaderLiveActivity/`. Reader and Price Tracker used
+  to embed copies too, but the four-app compile-time split left them without
+  `LunaMediaDownload` in the app, the share/action/Safari extensions, or the App Clip,
+  and `MediaIntentHandoff.install()` runs only from `KindWiring+Luna.swift` /
+  `KindWiring+Downloader.swift`. An ActivityKit activity is owned by the process that
+  requests it and rendered only by a widget extension embedded in that same app, so
+  those two copies could never be reached; both targets were removed.
   Downloader-owned dedup is based on the durable `SavedMediaStore` state: a stale
   `autoDownloadedURLs` marker never suppresses a missing or `.undownloaded` row, so an
   interrupted/crashed save is restartable by pasting the URL again. Store-change notifications

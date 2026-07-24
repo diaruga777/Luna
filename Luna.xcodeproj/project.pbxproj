@@ -77,7 +77,6 @@
 		3906A8BF7D096C9BBFB51E92 /* LunaAudioPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = 2DCD27A395978060DB51497A /* LunaAudioPlayback */; };
 		39332DC0A0A05C76C05C149D /* LunaMailTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 7B33BAF00CD2BE5E49340839 /* LunaMailTransport */; };
 		3BF52B30E74A297E08A41982 /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
-		3C2ED37F87F22087762FF3D3 /* LunaReaderLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2B3EDF69B3B487369ABF233C /* LunaReaderLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3EB986A4B023ACBE9D376F7B /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
 		3EE5E285E488168AC19BECB2 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		3F984499DD8FB375FDE9BB96 /* LunaSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* LunaSend */; };
@@ -186,7 +185,6 @@
 		9DEC41B7E9628D78B4199B39 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		9EAEEFFE364822D5BD7E30AF /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
 		A3B17B01D056FAFF33FF8155 /* LunaMailTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 8909E25ED1F6D19133F69D41 /* LunaMailTransport */; };
-		A4AFE4A5F2C4B576CFCBD5E1 /* LunaPriceTrackerLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 149A853D4062D747D22F3ECF /* LunaPriceTrackerLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A5189E94CA8DCC97591BC9C9 /* LunaDownloaderShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B59B827071F5B3640BB31428 /* LunaDownloaderShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A5312797F4489FA1C2274433 /* LunaMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */; };
 		A6A1E5E7C77D91ED5C367FB7 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
@@ -402,13 +400,6 @@
 			remoteGlobalIDString = 5E393E646C6A24066F73EE08;
 			remoteInfo = LunaShare;
 		};
-		A21655A301F0632324742842 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AAA000000000000000000000 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E32765E83EF2B1B189D963D5;
-			remoteInfo = LunaReaderLiveActivity;
-		};
 		AA0400000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AAA000000000000000000000 /* Project object */;
@@ -422,13 +413,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = AAE300000000000000000000;
 			remoteInfo = LunaReaderShare;
-		};
-		AD93435CB32F7B554BB4D07E /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AAA000000000000000000000 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7E7C322A300F00EAE1EC6D80;
-			remoteInfo = LunaPriceTrackerLiveActivity;
 		};
 		BA4D3A0812293E358CADFA33 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -477,7 +461,6 @@
 				4F79C2BC707D182410347251 /* LunaPriceTrackerShare.appex in Embed Foundation Extensions */,
 				FDAADF201763CAFF39798A60 /* LunaPriceTrackerAction.appex in Embed Foundation Extensions */,
 				FE32AC608EC551DA7216DB1A /* LunaPriceTrackerSafari.appex in Embed Foundation Extensions */,
-				A4AFE4A5F2C4B576CFCBD5E1 /* LunaPriceTrackerLiveActivity.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -505,7 +488,6 @@
 				AA0100000000000000000001 /* LunaReaderSafari.appex in Embed Foundation Extensions */,
 				7958393C2FE0A62700C775CA /* LunaReaderShare.appex in Embed Foundation Extensions */,
 				79583E0B2FE0BAD200C775CA /* LunaReaderAction.appex in Embed Foundation Extensions */,
-				3C2ED37F87F22087762FF3D3 /* LunaReaderLiveActivity.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -549,10 +531,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		149A853D4062D747D22F3ECF /* LunaPriceTrackerLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		17C57D675E0712054ACE6584 /* LunaPriceTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaPriceTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		28A05766718F3AE456726816 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		2B3EDF69B3B487369ABF233C /* LunaReaderLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaReaderLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		2DCB0B589CD5F645564BBD14 /* LunaDownloaderLiveActivityWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LunaDownloaderLiveActivityWidget.swift; path = LunaDownloaderLiveActivity/LunaDownloaderLiveActivityWidget.swift; sourceTree = "<group>"; };
 		2F9497B9CCD94E28698A4E6B /* LunaAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		321A524CE357583A60D01100 /* LunaShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1015,26 +995,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7DBA36FA39F974442F3F5F77 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				F5F06918C93496A0F87444AE /* Foundation.framework in Frameworks */,
-				A5312797F4489FA1C2274433 /* LunaMediaDownload in Frameworks */,
-				6DB54C62E882943203C6DB3B /* LunaDesignSystem in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		935423F6DE0ECC1280275B61 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				51E24B71CD605909AC83F606 /* Foundation.framework in Frameworks */,
-				523DCFB279029F7AB11F2132 /* LunaMediaDownload in Frameworks */,
-				059965ED50F975842D339EC7 /* LunaDesignSystem in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		9B1EA67A7419D1BDFB75A992 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1413,8 +1373,6 @@
 				7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */,
 				17C57D675E0712054ACE6584 /* LunaPriceTracker.app */,
 				D90FE9B094CA527A09D21E73 /* LunaReaderClip.app */,
-				2B3EDF69B3B487369ABF233C /* LunaReaderLiveActivity.appex */,
-				149A853D4062D747D22F3ECF /* LunaPriceTrackerLiveActivity.appex */,
 				321A524CE357583A60D01100 /* LunaShare.appex */,
 				2F9497B9CCD94E28698A4E6B /* LunaAction.appex */,
 				70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */,
@@ -1575,7 +1533,6 @@
 				110F1850003FAD24F03CB81F /* PBXTargetDependency */,
 				0665879E5C0FDB9B54C481ED /* PBXTargetDependency */,
 				F6A0E89B7A606B31EE9AE1D6 /* PBXTargetDependency */,
-				C6082AE62AC9A508A8D6A8C1 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0700000000000000000001 /* Luna */,
@@ -1645,27 +1602,6 @@
 			);
 			productName = LunaReaderAction;
 			productReference = 79583DFC2FE0BAD100C775CA /* LunaReaderAction.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
-		7E7C322A300F00EAE1EC6D80 /* LunaPriceTrackerLiveActivity */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 1AFD50A52E0D17CA6AA712AC /* Build configuration list for PBXNativeTarget "LunaPriceTrackerLiveActivity" */;
-			buildPhases = (
-				A3C9A9AE14982127EFA0CF28 /* Sources */,
-				935423F6DE0ECC1280275B61 /* Frameworks */,
-				27A02FB7A7B2DE90C8EAFC3F /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = LunaPriceTrackerLiveActivity;
-			packageProductDependencies = (
-				4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */,
-				57FF3B9C9B72CD1D8FEF8E90 /* LunaDesignSystem */,
-			);
-			productName = LunaPriceTrackerLiveActivity;
-			productReference = 149A853D4062D747D22F3ECF /* LunaPriceTrackerLiveActivity.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		892513B3F00DED1B930AD2AE /* LunaAction */ = {
@@ -1841,7 +1777,6 @@
 				AA1200000000000000000003 /* PBXTargetDependency */,
 				79583E0A2FE0BAD200C775CA /* PBXTargetDependency */,
 				08A204774BAC2DF21D3674D8 /* PBXTargetDependency */,
-				EEED1AB161C61EA6C02B3BE0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0700000000000000000001 /* Luna */,
@@ -2102,27 +2037,6 @@
 			productReference = 86C669D3D9F162D390D90E7D /* LunaLiveActivity.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		E32765E83EF2B1B189D963D5 /* LunaReaderLiveActivity */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = F4EC551EFADDCCFC906B5526 /* Build configuration list for PBXNativeTarget "LunaReaderLiveActivity" */;
-			buildPhases = (
-				AD77FF69B54860097C621984 /* Sources */,
-				7DBA36FA39F974442F3F5F77 /* Frameworks */,
-				772B3B39998797E14C83A746 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = LunaReaderLiveActivity;
-			packageProductDependencies = (
-				4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */,
-				57FF3B9C9B72CD1D8FEF8E90 /* LunaDesignSystem */,
-			);
-			productName = LunaReaderLiveActivity;
-			productReference = 2B3EDF69B3B487369ABF233C /* LunaReaderLiveActivity.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 		F73C67777995F8F752A0056A /* Luna */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D9F8C46A18F8F845E04248C0 /* Build configuration list for PBXNativeTarget "Luna" */;
@@ -2312,8 +2226,6 @@
 				BE0F0A63AC930FAA7923DDFC /* LunaPriceTrackerAction */,
 				914B0BF1DD6F590D135488AC /* LunaPriceTrackerSafari */,
 				6C65D0274C393548D3654967 /* LunaPriceTracker */,
-				E32765E83EF2B1B189D963D5 /* LunaReaderLiveActivity */,
-				7E7C322A300F00EAE1EC6D80 /* LunaPriceTrackerLiveActivity */,
 				5E393E646C6A24066F73EE08 /* LunaShare */,
 				892513B3F00DED1B930AD2AE /* LunaAction */,
 				3FD5F33FCDC0F220DB5FE276 /* LunaSafari */,
@@ -2344,13 +2256,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				F70000000000000000000001 /* SharedIconAssets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		27A02FB7A7B2DE90C8EAFC3F /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2406,13 +2311,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				F70000000000000000000005 /* SharedIconAssets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		772B3B39998797E14C83A746 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2806,15 +2704,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A3C9A9AE14982127EFA0CF28 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E73F4AE160701E0DD33D5AF2 /* LunaDownloaderLiveActivityWidget.swift in Sources */,
-				37111F44C7115514A3B36323 /* LunaDownloaderLiveActivityBundle.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		AA1000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2840,15 +2729,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		AD77FF69B54860097C621984 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				DABB946341F22EC10512DAD6 /* LunaDownloaderLiveActivityWidget.swift in Sources */,
-				AC36C36613333305F1B9A0B4 /* LunaDownloaderLiveActivityBundle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2944,18 +2824,6 @@
 			isa = PBXTargetDependency;
 			target = AAE300000000000000000000 /* LunaReaderShare */;
 			targetProxy = AA0400000000000000000003 /* PBXContainerItemProxy */;
-		};
-		C6082AE62AC9A508A8D6A8C1 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = LunaPriceTrackerLiveActivity;
-			target = 7E7C322A300F00EAE1EC6D80 /* LunaPriceTrackerLiveActivity */;
-			targetProxy = AD93435CB32F7B554BB4D07E /* PBXContainerItemProxy */;
-		};
-		EEED1AB161C61EA6C02B3BE0 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = LunaReaderLiveActivity;
-			target = E32765E83EF2B1B189D963D5 /* LunaReaderLiveActivity */;
-			targetProxy = A21655A301F0632324742842 /* PBXContainerItemProxy */;
 		};
 		F3B3FB92BBADF3F76F91D2B4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -4651,15 +4519,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1AFD50A52E0D17CA6AA712AC /* Build configuration list for PBXNativeTarget "LunaPriceTrackerLiveActivity" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				D37F6423CFAA48A842E34EE0 /* Release */,
-				821C6366703CCAAC0592DDAA /* Debug */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		28B8F23400C4B2873A2D78EF /* Build configuration list for PBXNativeTarget "LunaShare" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -4836,15 +4695,6 @@
 			buildConfigurations = (
 				C5863E0B66F8E9D9132F65C0 /* Debug */,
 				65686C7A8A0FBCDB65DD7149 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		F4EC551EFADDCCFC906B5526 /* Build configuration list for PBXNativeTarget "LunaReaderLiveActivity" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C4EC9CA23D8FF0CC20B94900 /* Release */,
-				2DBF6BAD52BB417F98219C88 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

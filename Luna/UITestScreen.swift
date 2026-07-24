@@ -6,6 +6,7 @@
 import LunaReadingListUI
 import LunaSocialUI
 import LunaShareSurface
+import LunaMediaDownload
 import LunaPriceUI
 import LunaReaderUI
 import LunaStorage

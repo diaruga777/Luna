@@ -6,7 +6,9 @@
 import LunaArticleIngest
 import LunaPriceIngest
 import LunaShareSurface
+import LunaMediaDownload
 import LunaPriceUI
+import LunaReaderUI
 import LunaArchiveReader
 import LunaStorage
 import LunaIngest
@@ -59,7 +61,7 @@ final class SurfaceParityTests: XCTestCase {
     // MARK: - Fake extension host (records what the driver presented)
 
     private final class FakeExtensionHost: ExtensionHost {
-        var readerMode: ShareReaderViewController.Mode?
+        var readerMode: ExtensionReaderMode?
         private(set) var presented: [UIViewController] = []
         private(set) var confirmedSaved = false
         private(set) var completedSilently = false
@@ -100,6 +102,11 @@ final class SurfaceParityTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UIView.setAnimationsEnabled(false)
+        // Presenters registered EXPLICITLY, same reason the pipeline processors
+        // are passed explicitly below: the test bundle can hold its own copy of
+        // the frameworks, so the host app's launch registration isn't
+        // necessarily visible through the registry here.
+        ShareKindPresenterTestSupport.registerAll()
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("SurfaceParity-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)

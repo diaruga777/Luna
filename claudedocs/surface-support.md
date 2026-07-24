@@ -58,8 +58,24 @@ one variant, and the variants reference the kind modules' symbols directly
 - Share/action extensions: `LunaShare/ShareEntry+*.swift` and
   `Luna Action Extension/ActionEntry+*.swift` — the extension principal class
   (Info.plist names the stable @objc names `LunaShareEntry`/`LunaActionEntry`)
-  is a per-target `ShareViewController` subclass that registers processors in
-  `init` before any ingest can run.
+  is a per-target `ShareViewController` subclass that registers processors AND
+  extension presenters in `init` before any ingest can run.
+
+A third registry, **`ShareKindPresenters` (LunaShareSurface)**, mirrors
+`IngestKindProcessors`/`IngestorKindHandlers` for extension PRESENTATION:
+LunaShareSurface is kind-neutral (host chrome + `ShareSurfaceDriver` only), and
+the kind-specific UI lives in the kind modules — `ExtensionArticlePresenter`
+(LunaReaderUI, in-sheet reader / archive-CAPTCHA reader / article-save extras),
+`ExtensionMediaPresenter` (LunaMediaDownload, saved-non-textual screen +
+auto-download handoff), `ExtensionProductPresenter` (LunaPriceUI, price
+editor). The implementations are protocol-free; each entry class wires them up
+through small private adapters conforming to the `Share*Presenting` protocols,
+registering exactly its app's kinds (the driver's gate has already dropped
+foreign kinds before a presenter is consulted, so a missing presenter for an
+admitted kind is a composition-root bug and asserts). The apps' `KindWiring`
+variants do NOT register extension presenters — nothing in-app runs the driver.
+Tests register production-shaped presenters explicitly in `setUp`
+(`ShareKindPresenterTestSupport`), like the pipeline processors.
 - The Safari extensions link no packages; the native handler derives its host's
   kinds from its own bundle id (see `claudedocs/safari-extension.md`).
 

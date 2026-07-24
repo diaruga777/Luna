@@ -1,9 +1,9 @@
 //
 //  ExtensionReaderShareProvider.swift
-//  LunaShare
+//  LunaReaderUI
 //
 
-import LunaReaderUI
+import LunaStorage
 import UIKit
 
 /// The action extension's reader sharing: save the article to Luna or share the

@@ -4,7 +4,9 @@
 //
 
 import LunaShareSurface
+import LunaMediaDownload
 import LunaPriceUI
+import LunaReaderUI
 import LunaStorage
 import LunaIngest
 import LunaHTMLClassification
@@ -25,7 +27,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
     /// Records everything the driver asked the host to do, so the per-surface
     /// presentation can be asserted in isolation.
     final class FakeExtensionHost: ExtensionHost {
-        var readerMode: ShareReaderViewController.Mode?
+        var readerMode: ExtensionReaderMode?
 
         private(set) var presented: [UIViewController] = []
         private(set) var confirmedSaved = false
@@ -52,6 +54,11 @@ final class ShareSurfaceDriverTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // The driver reaches kind presentation through `ShareKindPresenters`;
+        // register the production-shaped presenters explicitly (the test bundle
+        // may hold its own framework copies, so no entry-class registration is
+        // visible here).
+        ShareKindPresenterTestSupport.registerAll()
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShareSurfaceDriver-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)

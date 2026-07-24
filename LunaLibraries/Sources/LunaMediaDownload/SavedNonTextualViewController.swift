@@ -1,9 +1,8 @@
 //
 //  SavedNonTextualViewController.swift
-//  LunaShare
+//  LunaMediaDownload
 //
 
-import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
 import AVKit

@@ -626,6 +626,19 @@ public final class ReadingListStore {
         }
     }
 
+    /// Attaches a price-tracker payload to the item saved for `urlString` (the
+    /// classified product page's row), returning its id — or nil when no row
+    /// exists. The shared store write for a product save from ANY surface: the
+    /// extension driver's product presenter and the extension reader's
+    /// defensive `.product` path both land here, so a product save is shaped
+    /// identically everywhere.
+    @discardableResult
+    public func savePriceTracker(_ tracker: PriceTracker, forURLString urlString: String) -> UUID? {
+        guard let saved = item(forURLString: urlString) else { return nil }
+        savePriceTracker(tracker, for: saved.id)
+        return saved.id
+    }
+
     /// Replaces the price-tracker payload of an existing tracker (add/remove store,
     /// change threshold, archive). Returns the refreshed item.
     @discardableResult

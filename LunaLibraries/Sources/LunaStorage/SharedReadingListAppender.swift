@@ -1,15 +1,17 @@
 //
 //  SharedReadingListAppender.swift
-//  LunaShare
+//  LunaStorage
 //
 
 import LunaAppConfig
 import LunaURLClassification
 import LunaModels
-import LunaStorage
 import Foundation
 
 /// Appends a pending item to the reading-list JSON in the App Group container.
+/// Kind-neutral extension plumbing (used by every share/action surface and the
+/// extension readers' "save this link" affordances), so it lives here in
+/// LunaStorage rather than in any one surface or kind module.
 ///
 /// The extension can't link the app's `ReadingListItem` type, so it writes raw
 /// JSON dictionaries via `JSONSerialization` and — crucially — preserves every

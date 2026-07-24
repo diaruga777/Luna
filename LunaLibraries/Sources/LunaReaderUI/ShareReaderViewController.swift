@@ -1,9 +1,8 @@
 //
 //  ShareReaderViewController.swift
-//  LunaShare
+//  LunaReaderUI
 //
 
-import LunaReaderUI
 import LunaArchiveReader
 import LunaDesignSystem
 import LunaStorage
@@ -45,15 +44,24 @@ public final class ShareReaderViewController: UIViewController {
     private let url: URL
     private let mode: Mode
     private let onDone: () -> Void
+    /// Persists the surface's last-used reader mode (the action extension's own
+    /// `ActionReaderMode`, injected by the composition root — this article-kind
+    /// module doesn't see the surface's preference store). Nil when the host
+    /// surface keeps no mode preference (e.g. the UI-test harness).
+    private let onModeChange: ((Mode) -> Void)?
     /// A pre-computed `Outcome` to present (the action extension already ran the
     /// shared `IngestPipeline`), or nil to run the pipeline itself on `viewDidLoad`.
     private let precomputedOutcome: Outcome?
     private let spinner = DotMatrixSpinnerView(side: 36)
 
-    public init(url: URL, mode: Mode, outcome: Outcome? = nil, onDone: @escaping () -> Void) {
+    public init(
+        url: URL, mode: Mode, outcome: Outcome? = nil,
+        onModeChange: ((Mode) -> Void)? = nil, onDone: @escaping () -> Void
+    ) {
         self.url = url
         self.mode = mode
         self.precomputedOutcome = outcome
+        self.onModeChange = onModeChange
         self.onDone = onDone
         super.init(nibName: nil, bundle: nil)
     }
@@ -108,7 +116,8 @@ public final class ShareReaderViewController: UIViewController {
         case let .product(product, _):
             // A product page: save it as a price tracker silently (the reader can't
             // present the main-app price UI) and confirm — never paywall-treated.
-            ShareSurfaceDriver.persistTracker(product, url: url, store: .shared)
+            ReadingListStore.shared.savePriceTracker(
+                product.makeTracker(fallbackURL: url), forURLString: url.absoluteString)
             presentSavedConfirmation(productName: product.name)
         case .needsArchive(let title):
             // A genuine paywall (WSJ/FT/…): resolve its archive.today CAPTCHA right
@@ -155,14 +164,15 @@ public final class ShareReaderViewController: UIViewController {
         // link share — no CloudKit in the extension) so the end-of-article share
         // affordance works. The reader marks the (real, shared) item opened/read
         // via ReadingListStore.
+        let onModeChange = self.onModeChange
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,
             shareProvider: ExtensionReaderShareProvider(),
             // The action extension keeps its OWN last-used mode, separate from
-            // the main app — persist switches locally, don't touch the shared
-            // ReaderSettings.
+            // the main app — persist switches locally (via the injected
+            // `onModeChange`), don't touch the shared ReaderSettings.
             persistsModePreference: false,
-            onModeChange: { ActionReaderMode.last = ShareReaderViewController.Mode(readerMode: $0) })
+            onModeChange: { onModeChange?(Mode(readerMode: $0)) })
         reader.navigationItem.leftBarButtonItem = doneButton()
         // Replace this loading screen with the reader as the sole VC (no back).
         navigationController?.setViewControllers([reader], animated: false)

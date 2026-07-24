@@ -18,7 +18,7 @@ import XCTest
 final class ShareSurfaceDriverRescueTests: XCTestCase {
 
     private final class FakeHost: ExtensionHost {
-        var readerMode: ShareReaderViewController.Mode?
+        var readerMode: ExtensionReaderMode?
         private(set) var presented: [UIViewController] = []
         private(set) var completedSilently = 0
         private(set) var openedURLs: [URL] = []

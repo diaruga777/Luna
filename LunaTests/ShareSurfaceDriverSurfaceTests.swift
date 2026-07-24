@@ -21,7 +21,7 @@ import XCTest
 final class ShareSurfaceDriverSurfaceTests: XCTestCase {
 
     private final class FakeExtensionHost: ExtensionHost {
-        var readerMode: ShareReaderViewController.Mode?
+        var readerMode: ExtensionReaderMode?
         var presented: [UIViewController] = []
         var confirmedSaved = 0
         var completedSilently = 0
@@ -43,6 +43,10 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // Supported outcomes route through `ShareKindPresenters`; register the
+        // production-shaped presenters explicitly (the test bundle may hold its
+        // own framework copies, so no entry-class registration is visible here).
+        ShareKindPresenterTestSupport.registerAll()
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShareSurfaceDriverSurfaceTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)

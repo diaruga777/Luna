@@ -24,8 +24,10 @@ import UIKit
 public protocol ExtensionHost: AnyObject {
     /// The reader mode the in-sheet reader should open in (action extension only);
     /// nil for the zero-UI share extension (no in-sheet UI at all). Drives the
-    /// reader-vs-save-silently fork in the unified presenter.
-    var readerMode: ShareReaderViewController.Mode? { get }
+    /// reader-vs-save-silently fork in the unified presenter. Kind-neutral
+    /// (`ExtensionReaderMode`) — the article presenter maps it onto the actual
+    /// reader's mode.
+    var readerMode: ExtensionReaderMode? { get }
 
     /// Presents `viewController` full-screen over the extension (wrapping it in a nav
     /// controller). Used for the in-sheet reader, the saved-non-textual screen, the

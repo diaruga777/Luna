@@ -3,11 +3,6 @@
 //  ShareKit
 //
 
-import LunaPriceUI
-import LunaReaderUI
-import LunaArchiveReader
-import LunaAudioPlayback
-import LunaMediaDownload
 import LunaStorage
 import LunaIngest
 import LunaModels
@@ -115,9 +110,10 @@ public final class ShareSurfaceDriver {
 
         switch outcome {
         case let .article(content, html):
-            persistArticle(content, html: html, url: url)
+            guard let article = Self.requireArticlePresenter(host: host) else { return }
+            persistArticle(content, html: html, url: url, presenter: article)
             if let mode = host.readerMode {
-                presentReader(url: url, mode: mode, outcome: outcome)
+                article.presentReader(url: url, mode: mode, outcome: outcome, host: host)
             } else {
                 host.completeSilently()
             }
@@ -125,15 +121,18 @@ public final class ShareSurfaceDriver {
         case let .product(product, _):
             // Persist the tracker, then present the SAME price-tracking editor the
             // main app shows (the extension host wraps it in Done chrome).
-            presentPriceEditor(product: product, url: url)
+            guard let productPresenter = Self.requireProductPresenter(host: host) else { return }
+            productPresenter.presentPriceEditor(product: product, url: url, store: store, host: host)
 
         case let .video(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(url: url)
+            guard let media = Self.requireMediaPresenter(host: host) else { return }
+            media.presentNonTextual(urlString: url.absoluteString, host: host)
 
         case let .social(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(url: url)
+            guard let media = Self.requireMediaPresenter(host: host) else { return }
+            media.presentNonTextual(urlString: url.absoluteString, host: host)
 
         case .document:
             if host.readerMode != nil {
@@ -143,7 +142,8 @@ public final class ShareSurfaceDriver {
             }
 
         case let .needsArchive(title):
-            presentArchive(url: url, title: title)
+            guard let article = Self.requireArticlePresenter(host: host) else { return }
+            presentArchive(url: url, title: title, presenter: article)
 
         case .failed:
             // NEVER a misleading "Saved". Mark the row failed so the main app's list
@@ -194,6 +194,40 @@ public final class ShareSurfaceDriver {
         }
     }
 
+    // MARK: - Per-kind presenter lookup
+
+    /// The per-kind presenters, required AFTER the surface gate has admitted the
+    /// outcome: an admitted kind whose presenter isn't registered is a
+    /// composition-root programming error (the entry class registers presenters
+    /// for exactly the kinds `SurfaceSupport` admits), so this asserts and
+    /// completes silently rather than presenting a wrong surface.
+    private static func requireArticlePresenter(host: ExtensionHost?) -> ShareArticlePresenting? {
+        guard let presenter = ShareKindPresenters.article else {
+            assertionFailure("article outcome admitted with no ShareKindPresenters.article")
+            host?.completeSilently()
+            return nil
+        }
+        return presenter
+    }
+
+    private static func requireMediaPresenter(host: ExtensionHost?) -> ShareMediaPresenting? {
+        guard let presenter = ShareKindPresenters.media else {
+            assertionFailure("media outcome admitted with no ShareKindPresenters.media")
+            host?.completeSilently()
+            return nil
+        }
+        return presenter
+    }
+
+    private static func requireProductPresenter(host: ExtensionHost?) -> ShareProductPresenting? {
+        guard let presenter = ShareKindPresenters.product else {
+            assertionFailure("product outcome admitted with no ShareKindPresenters.product")
+            host?.completeSilently()
+            return nil
+        }
+        return presenter
+    }
+
     // MARK: - Surface gate (per-app content kinds)
 
     /// Deletes the pending placeholder row appended before classification, so a
@@ -224,44 +258,17 @@ public final class ShareSurfaceDriver {
 
     // MARK: - Store writes (shared shape with the main app's IngestorOutcomePresenter)
 
-    private func persistArticle(_ content: ArticleContent, html: String, url: URL) {
+    private func persistArticle(
+        _ content: ArticleContent, html: String, url: URL, presenter: ShareArticlePresenting
+    ) {
         guard let saved = store.item(forURLString: url.absoluteString) else { return }
         let savedWithContent = store.saveContent(content, for: saved)
-        // Phase 6, product requirement B: write a heuristics-only audio
-        // script to the cache right away — cheap/synchronous, off the ingest
-        // critical path below (thumbnail fetch) — so the article is
-        // audio-ready before the main app's `AudioScriptPipeline` sweep gets
-        // to it. Reuses the exact same store/heuristics the main pipeline
-        // does; a no-op if a script is already cached.
-        ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded(
-            item: savedWithContent, content: content, articlesDirectory: store.articlesDirectory)
-        // Best-effort while the extension remains alive: archive the SAME unlocked
-        // HTML that produced the native reader, with the shared ad/paywall cleanup.
-        // If the process ends first, the main app's cleaned live backfill repairs it.
-        if !html.isEmpty {
-            let archiveStore = store
-            let itemID = saved.id
-            Task {
-                guard let archive = await WebArchiveCapturer.capture(html: html, baseURL: url),
-                      let current = archiveStore.item(withID: itemID) else { return }
-                archiveStore.saveWebArchive(archive, for: current)
-            }
-        }
-        // Give the row the SAME cover thumbnail an in-app save produces. Best-effort
-        // from the page HTML the pipeline already fetched (Safari's text-only action
-        // snapshot has no og:image, so it simply yields no cover here). The extension
-        // is short-lived, so if this doesn't finish the app backfills it on next launch
-        // (ReadingListIngestor.backfillMissingThumbnails) — this just avoids the wait
-        // in the common case. Skipped for the text-only snapshot, which has no <meta>.
-        guard !html.isEmpty else { return }
-        let store = store
-        let itemID = saved.id
-        Task {
-            guard store.item(withID: itemID)?.thumbnailFileName == nil,
-                  let data = await ArticleCoverThumbnail.coverImageData(html: html, baseURL: url)
-            else { return }
-            store.setThumbnail(data, for: itemID)
-        }
+        // The article-kind extras — heuristics-only audio script, best-effort web
+        // archive of the SAME unlocked HTML, and the cover thumbnail — live in the
+        // article presenter (LunaReaderUI/LunaArchiveReader/LunaAudioPlayback code
+        // this kind-neutral module no longer links).
+        presenter.persistArticleExtras(
+            item: savedWithContent, content: content, html: html, url: url, store: store)
     }
 
     /// Persists a recognized video/social item's classification.
@@ -274,104 +281,27 @@ public final class ShareSurfaceDriver {
             thumbnailFileName: nil, for: saved.id)
     }
 
-    private func persistTracker(_ product: ProductInfo, url: URL) -> UUID? {
-        Self.persistTracker(product, url: url, store: store)
-    }
-
-    /// Builds and saves the `PriceTracker` for a classified product page. Shared
-    /// with `ShareReaderViewController`, which reaches this same store write when
-    /// it's presenting a precomputed `Outcome` standalone rather than through
-    /// `present(_:url:blockedItemID:)`.
-    @discardableResult
-    static func persistTracker(_ product: ProductInfo, url: URL, store: ReadingListStore) -> UUID? {
-        guard let saved = store.item(forURLString: url.absoluteString) else { return nil }
-        let tracker = PriceTracker(
-            productName: product.name, stores: product.trackerStores(fallbackURL: url),
-            brand: product.brand, productID: product.productID)
-        store.savePriceTracker(tracker, for: saved.id)
-        return saved.id
-    }
+    // The product-kind store write lives in the kind-neutral
+    // `ReadingListStore.savePriceTracker(_:forURLString:)` (LunaStorage) +
+    // `ProductInfo.makeTracker(fallbackURL:)` (LunaHTMLClassification), shared
+    // by `ExtensionProductPresenter` (the editor flow) and
+    // `ShareReaderViewController` (which reaches the same write when it runs
+    // the pipeline standalone).
 
     // MARK: - Presentation
 
-    private func presentReader(
-        url: URL, mode: ShareReaderViewController.Mode, outcome: Outcome
-    ) {
-        guard let host else { return }
-        let reader = ShareReaderViewController(url: url, mode: mode, outcome: outcome) { [weak host] in
-            host?.confirmSavedThenComplete()
-        }
-        host.presentModally(reader)
-    }
-
-    /// Routes a non-textual outcome. Downloadable social media always opens the
-    /// saved-content screen on BOTH extension surfaces so the user can explicitly
-    /// choose the media download. Non-downloadable items retain the share
-    /// extension's silent-save behavior.
-    private func presentNonTextual(url: URL) {
-        guard let host else { return }
-        if host.readerMode != nil || MediaDownloadablePlatform.supports(url.absoluteString) {
-            let saved = SavedNonTextualViewController(
-                articleURLString: url.absoluteString) { [weak host] in
-                host?.confirmSavedThenComplete()
-            }
-            host.presentModally(saved)
-        } else {
-            host.autoDownloadThenComplete(urlString: url.absoluteString)
-        }
-    }
-
-    /// Presents the SAME price-tracking editor as the main app, in the extension's host
-    /// (Done chrome). The tracker is persisted first so the editor has an item. "Read
-    /// instead" re-appends the URL to the shared store (extension-safe: the main app
-    /// ingests it on next launch); the editor handles the tracker delete.
-    private func presentPriceEditor(product: ProductInfo, url: URL) {
-        guard let host else { return }
-        guard let itemID = persistTracker(product, url: url) else {
-            host.confirmSavedThenComplete()
-            return
-        }
-        let editor = PriceTrackingViewController(
-            mode: .creation(itemID: itemID, host: .extension),
-            onReadInstead: { urlString in SharedReadingListAppender.append(urlString: urlString) })
-        editor.onDone = { [weak host] in host?.confirmSavedThenComplete() }
-        host.presentModally(editor)
-    }
-
-    /// A paywalled article: EVERY surface opens the same `ArchiveWebReaderViewController`
-    /// (the archive-CAPTCHA reader, URL pre-filled), identically to the main app, so the
-    /// presentation intent matches across surfaces. On a successful extract the action
-    /// extension swaps in the in-sheet native reader showing the captured content; the
-    /// zero-UI share extension confirms the save.
-    private func presentArchive(url: URL, title: String) {
+    /// A paywalled article: EVERY surface opens the same archive-CAPTCHA reader
+    /// (URL pre-filled), identically to the main app, so the presentation intent
+    /// matches across surfaces. The store markings stay here; the reader UI (and
+    /// the on-extract swap to the in-sheet native reader) is the article
+    /// presenter's.
+    private func presentArchive(url: URL, title: String, presenter: ShareArticlePresenting) {
         guard let host else { return }
         guard let saved = store.item(forURLString: url.absoluteString) else {
             host.confirmSavedThenComplete()
             return
         }
         store.markNeedsCaptcha(saved.id, title: title)
-        let archiveStore = store
-        let archive = ArchiveWebReaderViewController(articleURL: url, itemID: saved.id)
-        archive.onClose = { [weak host] in host?.confirmSavedThenComplete() }
-        let mode = host.readerMode
-        archive.onExtracted = { [weak host] in
-            guard let host else { return }
-            if let mode,
-               let fresh = archiveStore.item(withID: saved.id),
-               let content = archiveStore.content(for: fresh) {
-                // `ShareSurfaceDriver` is intentionally short-lived. Archive
-                // extraction finishes later, so never depend on a weak driver here:
-                // create the action-extension reader directly in the host's existing
-                // navigation context instead of falling through to "Saved".
-                let reader = ShareReaderViewController(
-                    url: url, mode: mode, outcome: .article(content, html: "")) {
-                    host.confirmSavedThenComplete()
-                }
-                host.presentModally(reader)
-            } else {
-                host.confirmSavedThenComplete()
-            }
-        }
-        host.presentModally(archive)
+        presenter.presentArchive(url: url, itemID: saved.id, store: store, host: host)
     }
 }

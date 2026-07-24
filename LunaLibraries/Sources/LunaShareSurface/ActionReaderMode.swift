@@ -12,9 +12,9 @@ import Foundation
 public enum ActionReaderMode {
     private static let key = "actionReaderMode"
 
-    public static var last: ShareReaderViewController.Mode {
+    public static var last: ExtensionReaderMode {
         get {
-            ShareReaderViewController.Mode(
+            ExtensionReaderMode(
                 rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .reader
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }

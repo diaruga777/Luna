@@ -95,9 +95,12 @@ let package = Package(
         // LunaMediaDownload: the media ingest handler (`PlatformItemIngestor`)
         // hands recognized items to the auto-download pipeline.
         .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem", "LunaAppConfig", "LunaPriceMetadata", "LunaMediaDownload", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // LunaDesignSystem: the extension's saved-non-textual screen
+        // (`SavedNonTextualViewController`) + `ExtensionMediaPresenter` live
+        // here with the download machinery they present.
         .target(
             name: "LunaMediaDownload",
-            dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage"],
+            dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage", "LunaDesignSystem"],
             resources: [.process("Resources")]),
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
         .target(name: "LunaReaderEngine", dependencies: ["LunaModels"]),
@@ -119,12 +122,18 @@ let package = Package(
         // absent (the share/action extensions never install it).
         .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaPriceMetadata", "LunaAudioPlayback", "LunaDocuments", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // LunaSocial: `PriceRefreshCoordinator` posts price-drop local
-        // notifications through LunaSocial's `NotificationManager`.
-        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaPriceIngest", "LunaReaderUI", "LunaAppConfig", "LunaArchiveReader", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", "LunaSocial", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        // LunaAudioPlayback: Phase 6 — `ExtensionAudioScriptWriter` writes a heuristics-only
-        // audio script to the cache right after an extension-context article save (see
-        // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().
-        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms"]),
+        // notifications through LunaSocial's `NotificationManager`. No reader
+        // modules: product-kind UI stands alone so the Price Tracker
+        // extensions don't drag the whole reader stack in.
+        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaPriceIngest", "LunaAppConfig", "LunaPriceMetadata", "LunaSocial", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // KIND-NEUTRAL extension surface: the share/action host chrome, the
+        // `ShareSurfaceDriver` ingest+present flow, and the `ShareKindPresenters`
+        // registry. The kind-specific presentation (readers, saved-media screen,
+        // price editor) lives in LunaReaderUI / LunaMediaDownload / LunaPriceUI
+        // behind the registry, registered per target by the `ShareEntry+*` /
+        // `ActionEntry+*` composition roots — so a single-content app's
+        // extensions never link another kind's UI.
+        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaDesignSystem"]),
         // The LLM URL-rescue engine (see claudedocs/url-rescue.md): when primary
         // ingestion fails, an Apple FoundationModels pass (on-device iOS 26 baseline,
         // Private Cloud Compute opportunistically on iOS 27/Xcode 27 builds) proposes

@@ -3,7 +3,6 @@
 //  LunaShare
 //
 
-import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
 import LunaIngest
@@ -486,10 +485,13 @@ open class ShareViewController: UIViewController {
     /// When auto-download is on for the shared link's platform, hand the media
     /// download to the system background-transfer service and Live Activity before
     /// dismissing. The extension process is intentionally NOT the owner of the
-    /// transfer; it may be killed as soon as this request completes.
+    /// transfer; it may be killed as soon as this request completes. The handoff
+    /// itself comes from the registered media presenter (`ShareKindPresenters`,
+    /// kind-neutral here) — no presenter, or auto-download off, means there is
+    /// nothing to start, so just confirm the save (matching a non-media app).
     public func autoDownloadThenComplete(urlString: String) {
         cancelLoadWatchdog()
-        guard MediaAutoDownloader.isEnabled(forURLString: urlString) else {
+        guard let media = ShareKindPresenters.media, media.shouldAutoDownload(urlString: urlString) else {
             confirmSavedThenComplete()
             return
         }
@@ -497,7 +499,7 @@ open class ShareViewController: UIViewController {
             guard let self else { return }
             let downloading = self.showDownloadingBadge(text: "Starting download…")
             Task {
-                _ = await MediaAutoDownloader.startLiveActivityIfEnabled(forURLString: urlString)
+                await media.startAutoDownload(urlString: urlString)
                 await MainActor.run {
                     downloading.removeFromSuperview()
                     self.showSavedBadge()
@@ -616,7 +618,7 @@ extension ShareViewController: ExtensionHost {
     /// setting): the share extension always saves and dismisses; the "Read in Luna"
     /// action extension always opens the reader, in whichever mode it was last used in
     /// (state local to the extension).
-    public var readerMode: ShareReaderViewController.Mode? {
+    public var readerMode: ExtensionReaderMode? {
         isActionExtension ? ActionReaderMode.last : nil
     }
 

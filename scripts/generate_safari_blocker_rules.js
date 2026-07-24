@@ -80,21 +80,8 @@ function pushRule(pattern, condition) {
 // piano.io), so scoping by the request's own domain would never match — we want
 // "block piano.io requests made BY a newstatesman.com page". `initiatorDomains`
 // matches the domain and its subdomains (so www.newstatesman.com is covered).
-let skippedUARules = 0;
 for (const rule of data.rules || []) {
     if (!rule.domain || !Array.isArray(rule.blockRegex)) { continue; }
-    // A site whose in-app unlock depends on a spoofed request User-Agent
-    // (`useragentCustom` — e.g. nytimes.com / economist.com serve the full article to
-    // Google's crawler UA) CANNOT be unlocked the same way in Safari: the extension has
-    // no per-site request-UA control (declarativeNetRequest can't do it, and content
-    // scripts run after the request). Emitting only the script BLOCKS for such a site
-    // does not unlock it — worse, it blocks the site's own entitlement/messaging XHR
-    // without the UA that makes that safe, so the SPA gets a failed fetch and blanks
-    // after its server-rendered content briefly shows (the NYT "renders then goes
-    // blank" bug). Skip these entirely; the pill -> in-app reader still unlocks them
-    // (the in-app WKWebView CAN set the crawler UA). This keys on the rule shape, not a
-    // site name — any UA-dependent rule is excluded.
-    if (rule.useragentCustom) { skippedUARules++; continue; }
     for (const pattern of rule.blockRegex) {
         pushRule(pattern, { initiatorDomains: [rule.domain] });
     }
@@ -114,5 +101,3 @@ for (const blocker of data.generalBlockers || []) {
 fs.writeFileSync(OUT, JSON.stringify(rules, null, 0) + "\n");
 console.log(`wrote ${rules.length} block rules (${regexCount} regexFilter, `
     + `${rules.length - regexCount} urlFilter) to ${path.relative(ROOT, OUT)}`);
-console.log(`skipped ${skippedUARules} UA-spoof-dependent site rule(s) `
-    + `(not safely reproducible in Safari; handled by the in-app reader)`);

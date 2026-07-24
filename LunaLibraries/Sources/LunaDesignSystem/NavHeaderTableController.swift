@@ -65,12 +65,13 @@ open class NavHeaderTableController: UITableViewController {
     open override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateHeaderMetrics()
-        // The header is a subview of the scrolling table, and the table appends
-        // cell views as they come into view. `zPosition` fixes DRAW order but not
-        // hit-testing (which walks subviews back-to-front), so a scrolled-in cell
-        // overlapping the bar would swallow taps on the back button. Keeping the
-        // header last in the subview array keeps its controls tappable at any
-        // scroll offset.
+        // The header is a subview of the scrolling table, and the table adds its own
+        // section header/footer views as they scroll into range — i.e. AFTER the bar
+        // in `subviews`. `zPosition` fixes DRAW order but not hit-testing (which
+        // walks subviews back-to-front), so a section view under the bar swallowed
+        // taps on the back button; a settings page scrolled at all almost always has
+        // one there. Keeping the bar last in the subview array keeps its controls
+        // tappable at any scroll offset.
         if let tableView, tableView.subviews.last !== header {
             tableView.bringSubviewToFront(header)
         }

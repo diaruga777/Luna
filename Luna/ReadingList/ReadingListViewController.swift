@@ -253,10 +253,11 @@ final class ReadingListViewController: UITableViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateHeaderInsets()
-        // The header is a subview of the scrolling table and the table appends cell
-        // views as they scroll in. Its `zPosition` only fixes DRAW order, so keep it
-        // last in the subview array too or a scrolled-in row swallows taps on the
-        // bar's buttons (hit-testing walks subviews back-to-front).
+        // The header is a subview of the scrolling table, which adds its own section
+        // views as they scroll into range — after the bar in `subviews`. Its
+        // `zPosition` only fixes DRAW order, so keep the bar last in the subview
+        // array too or one of those swallows taps on the bar's buttons (hit-testing
+        // walks subviews back-to-front).
         if tableView.subviews.last !== header {
             tableView.bringSubviewToFront(header)
         }

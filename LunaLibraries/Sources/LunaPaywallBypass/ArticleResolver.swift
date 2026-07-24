@@ -54,6 +54,7 @@ public enum ArticleResolver {
         trustsPrefetchedHTML: Bool = false
     ) async -> ArticleResolution {
         let extraction = ArticleExtraction(extractor: extractor)
+        let siteRule = SiteUnlockRules.rule(for: url)
         // Reuse the caller's already-fetched direct HTML when supplied (the shared
         // decider fetches it once for product detection), else fetch it now.
         let direct = await extraction.fetchAndExtract(baseURL: url) {
@@ -65,11 +66,26 @@ public enum ArticleResolver {
         // unlocked on-screen article) is accepted on body length alone: the page's
         // stale schema.org lock would otherwise re-reject the very content the user is
         // looking at, sending them back through the whole archive dance.
+        //
+        // But a capture that STILL reads as locked is only a FLOOR, never the winner,
+        // when this host has a site-unlock rule: Safari can apply the rule's
+        // script-blocking half yet cannot spoof the request User-Agent, so a partially
+        // unlocked capture may be the publisher's TRUNCATED render (NYT sends the whole
+        // body and truncates the DOM client-side — a hand-off of that is 2k readable
+        // characters of a 5k article). The one silent rule fetch below can do what the
+        // browser could not; the capture stays as the fallback, so consulting it can
+        // only improve the result, and a host with no rule still returns immediately.
+        var trustedCapture: ExtractedArticle?
         if let direct {
-            let trustedUnlock = trustsPrefetchedHTML && prefetchedHTML != nil
-                && direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold
-            if trustedUnlock || ArticleExtraction.isReadableArticle(direct) {
+            if ArticleExtraction.isReadableArticle(direct) {
                 return .readable(direct.content, html: direct.sourceHTML)
+            }
+            if trustsPrefetchedHTML, prefetchedHTML != nil,
+               direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold {
+                guard siteRule != nil else {
+                    return .readable(direct.content, html: direct.sourceHTML)
+                }
+                trustedCapture = direct
             }
         }
 
@@ -83,19 +99,32 @@ public enum ArticleResolver {
         // (crawler/custom UA or spoofed Referer) and a forced JSON-LD reconstruction
         // before parking for the browser tier. Kept out of the strategy enum because
         // the rule carries arbitrary UA/referer strings the enum can't express.
-        if let rule = SiteUnlockRules.rule(for: url) {
+        if let rule = siteRule {
+            // Never trade a trusted capture DOWN: a rule fetch can come back readable
+            // (no lock declaration, over the threshold) and still be shorter than what
+            // the user already had on screen.
+            let floor = trustedCapture?.content.bodyTextLength ?? 0
             if let html = try? await SiteUnlockSilent.fetch(url: url, rule: rule, fetcher: fetcher),
                let candidate = await extraction.fetchAndExtract(baseURL: url, fetch: { html }),
-               ArticleExtraction.isReadableArticle(candidate) {
+               ArticleExtraction.isReadableArticle(candidate),
+               candidate.content.bodyTextLength >= floor {
                 return .readable(candidate.content, html: candidate.sourceHTML)
             }
             if let directHTML = direct?.sourceHTML,
                let content = extraction.extractFromJSONLD(html: directHTML, baseURL: url) {
                 let reconstructed = ExtractedArticle(content: content, sourceHTML: directHTML)
-                if ArticleExtraction.isReadableArticle(reconstructed) {
+                if ArticleExtraction.isReadableArticle(reconstructed),
+                   content.bodyTextLength >= floor {
                     return .readable(content, html: directHTML)
                 }
             }
+        }
+
+        // The rule couldn't beat the capture. Hand back what the user is already
+        // looking at rather than walking the generic bypass chain: a live browser
+        // capture beats anything a background fetch will find, and the user is waiting.
+        if let trustedCapture {
+            return .readable(trustedCapture.content, html: trustedCapture.sourceHTML)
         }
 
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)

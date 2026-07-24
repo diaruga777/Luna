@@ -161,6 +161,113 @@ final class ArticleResolverTests: XCTestCase {
         if case .readable = result {} else { XCTFail("trusted prefetch should be readable, got \(result)") }
     }
 
+    // MARK: - trusted Safari capture is a floor, not a winner
+
+    /// Readable prose of `paragraphs` × 30 sentences, with no lock declaration.
+    private func proseHTML(_ marker: String, paragraphs: Int) -> String {
+        let paragraph = "<p>" + String(repeating: "An ordinary readable sentence about \(marker). ", count: 30) + "</p>"
+        return "<html><head><title>Real \(marker)</title></head><body><article>"
+            + String(repeating: paragraph, count: paragraphs) + "</article></body></html>"
+    }
+
+    /// The NYT-shaped Safari capture: the publisher's TRUNCATED render. Over the
+    /// readable threshold (1200) so a trusted hand-off accepts it on length, but under
+    /// `PaywallDetector.shortBodyThreshold` (2500) so its schema.org lock still counts —
+    /// the live article measures ~2.2k rendered characters of a ~4.6k body.
+    private func truncatedLockedCaptureHTML() -> String {
+        let paragraph = "<p>" + String(repeating: "An ordinary sentence from the enzyme study. ", count: 24) + "</p>"
+        return "<html><head><title>NYT Enzyme Story</title>"
+            + #"<script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script>"#
+            + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
+    }
+
+    private func bodyLength(of resolution: ArticleResolution) -> Int? {
+        if case let .readable(content, _) = resolution { return content.bodyTextLength }
+        return nil
+    }
+
+    /// NYT-shaped: Safari can apply the site rule's script-block half but cannot spoof
+    /// the request UA, so the captured DOM is the publisher's TRUNCATED render and still
+    /// declares a lock. The resolver must spend the one silent custom-UA fetch the rule
+    /// describes and return that fuller body instead of the capture.
+    func testTrustedCaptureStillLockedIsUpgradedBySilentSiteUnlock() async {
+        let articleURL = URL(string: "https://www.nytimes.com/2026/07/24/science/enzymes.html")!
+        let capture = truncatedLockedCaptureHTML()                     // ~2.1k chars, locked
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[articleURL.absoluteString] = proseHTML("nyt-unlocked", paragraphs: 8)
+
+        let result = await ArticleResolver.resolve(
+            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+
+        // The same capture with no reachable unlock resolves to the capture itself,
+        // which gives the length to beat.
+        let fallback = await ArticleResolver.resolve(
+            url: articleURL, prefetchedHTML: capture, fetcher: MockArticleFetcher(),
+            trustsPrefetchedHTML: true)
+        guard let unlocked = bodyLength(of: result), let captured = bodyLength(of: fallback) else {
+            return XCTFail("expected readable results, got \(result) / \(fallback)")
+        }
+        XCTAssertGreaterThan(unlocked, captured, "the silent unlock must win over the truncated capture")
+        // It used NYT's rule: a custom crawler User-Agent, not a plain re-fetch.
+        let uaCall = fetcher.calls.first { $0.kind == .userAgent }
+        XCTAssertEqual(uaCall?.userAgent, "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)")
+    }
+
+    /// The capture is never LOST: when the rule's silent fetch fails outright, the
+    /// resolver hands back the page the user is looking at rather than parking it.
+    func testTrustedCaptureSurvivesAFailedSiteUnlock() async {
+        let articleURL = URL(string: "https://www.nytimes.com/2026/07/24/science/enzymes.html")!
+        let capture = truncatedLockedCaptureHTML()
+        let fetcher = MockArticleFetcher()          // every fetch throws (no stubs)
+
+        let result = await ArticleResolver.resolve(
+            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+
+        if case let .readable(_, html) = result {
+            XCTAssertEqual(html, capture)
+        } else {
+            XCTFail("a failed unlock must fall back to the capture, got \(result)")
+        }
+        XCTAssertTrue(fetcher.calls.contains { $0.kind == .userAgent }, "the rule leg should have been tried")
+    }
+
+    /// Never trade DOWN: a rule fetch can be readable (no lock, over the threshold) and
+    /// still be shorter than what the user already had on screen.
+    func testTrustedCaptureIsNotTradedDownForAShorterUnlock() async {
+        let articleURL = URL(string: "https://www.nytimes.com/2026/07/24/science/enzymes.html")!
+        let capture = truncatedLockedCaptureHTML()                     // ~2.1k chars, locked
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[articleURL.absoluteString] = proseHTML("nyt-teaser", paragraphs: 1)
+
+        let result = await ArticleResolver.resolve(
+            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+
+        if case let .readable(_, html) = result {
+            XCTAssertEqual(html, capture, "the longer capture must be kept")
+        } else {
+            XCTFail("expected readable, got \(result)")
+        }
+    }
+
+    /// A host with no site-unlock rule has nothing the app can do that the browser
+    /// couldn't: the capture is returned immediately, with no extra network at all.
+    func testTrustedCaptureOnRuleFreeHostCostsNoExtraFetch() async {
+        let articleURL = URL(string: "https://www.example-blog-host.com/2026/07/post")!
+        XCTAssertNil(SiteUnlockRules.rule(for: articleURL), "fixture host must carry no unlock rule")
+        let capture = truncatedLockedCaptureHTML()
+        let fetcher = MockArticleFetcher()
+
+        let result = await ArticleResolver.resolve(
+            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+
+        if case let .readable(_, html) = result {
+            XCTAssertEqual(html, capture)
+        } else {
+            XCTFail("expected readable, got \(result)")
+        }
+        XCTAssertTrue(fetcher.calls.isEmpty, "no rule → no extra fetch")
+    }
+
     /// When EVERY silent strategy fails (no readable result anywhere) on a host that
     /// carries a title, the resolver parks it as `.paywalled(title)` — it does NOT
     /// stop early or return readable. The archive fallback also fails here.

@@ -81,10 +81,18 @@ Clip/App Store fallback in the pills anymore — the target app is the host and 
 installed by definition. This is independent from the iOS 27+ Action Button
 shortcut setup; keep it available on earlier iOS versions.
 
-`LunaSafari/Resources/content.js` is injected **programmatically** by `background.js`
-(`scripting.executeScript` on every `tabs.onUpdated`/`status:complete` http(s) page),
-self-guarded with `window.__queueContentScriptRan`. (A declarative `content_scripts` block
-also validates fine — programmatic is just a smaller manifest footprint.) **ITMS-90849
+`LunaSafari/Resources/content.js` is loaded **both** ways: it is a **declared
+`content_scripts` entry** (`run_at: document_idle`, top frame, `js:
+[news_hosts.generated.js, platform_hosts.generated.js, product_rules.generated.js,
+content.js]` so the shared data globals load first in the same isolated world) AND it is
+still injected **programmatically** by `background.js` (`scripting.executeScript` on every
+`tabs.onUpdated`/`status:complete` http(s) page). The declared entry is the reliable path
+— on iOS a non-persistent background event page can miss/defer `scripting.executeScript`,
+which would drop BOTH the pill AND the in-page `revealArticle` unlock while leaving
+background native-messaging (URL tracking / manual share) working; the declared script
+runs like `annoyances.js` regardless. The programmatic call is a harmless fallback:
+`content.js` self-guards with `window.__queueContentScriptRan`, so whichever injection
+wins the race runs setup once and the other no-ops. **ITMS-90849
 gotcha**: the manifest `description` must stay **≤ ~112 chars** — a 127-char description
 failed App Store validation with the opaque code 90849 (NOT content_scripts/scripting, which
 were red herrings).

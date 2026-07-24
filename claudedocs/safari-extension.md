@@ -300,7 +300,12 @@ Paywall unlock + toast:
   re-extracts the body from the server HTML). Note the network `blockers` ruleset only
   helps when the wall's metering script sits at a URL the rule matches — sites that
   bundle metering into their main app JS (BI now does) can't be blocked without breaking
-  hydration, so the DOM cleanup is the durable path there.
+  hydration, so the DOM cleanup is the durable path there. The generator also omits
+  any per-site block rule whose complete unlock recipe requires `useragentCustom`:
+  Safari's declarative rules can block requests but cannot reproduce that custom
+  request User-Agent. Applying only the block half broke NYT's client hydration
+  (server HTML painted briefly, then the page went blank), while the in-app resolver
+  can apply the complete custom-UA rule safely.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
   content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered

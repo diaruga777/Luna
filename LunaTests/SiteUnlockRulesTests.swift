@@ -14,6 +14,13 @@ final class SiteUnlockRulesTests: XCTestCase {
 
     private func url(_ s: String) -> URL { URL(string: s)! }
 
+    private func repositoryJSON(_ relativePath: String) throws -> Any {
+        let thisFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = thisFile.deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: repositoryRoot.appendingPathComponent(relativePath))
+        return try JSONSerialization.jsonObject(with: data)
+    }
+
     func testTableLoaded() {
         XCTAssertGreaterThan(SiteUnlockRules.ruleCount, 500)
         XCTAssertGreaterThan(SiteUnlockRules.generalBlockers.count, 20)
@@ -38,6 +45,38 @@ final class SiteUnlockRulesTests: XCTestCase {
         let rule = try XCTUnwrap(SiteUnlockRules.rule(for: url("https://www.nytimes.com/2026/07/01/x.html")))
         XCTAssertEqual(rule.useragentCustom, "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)")
         XCTAssertFalse(rule.blockRegex?.isEmpty ?? true)
+    }
+
+    /// Safari can reproduce a site's script blocks but cannot reproduce its custom
+    /// request User-Agent. Emitting only the block half broke NYT hydration: the
+    /// server-rendered article painted, then the page blanked after its entitlement
+    /// requests were blocked. Guard the checked-in generated artifact for every rule
+    /// with that compound shape, not just NYT by name.
+    func testSafariBlockerArtifactOmitsCustomUADependentSiteRules() throws {
+        let source = try XCTUnwrap(
+            repositoryJSON(
+                "LunaLibraries/Sources/LunaPaywallBypass/Resources/site_unlock_rules.json")
+                as? [String: Any])
+        let sourceRules = try XCTUnwrap(source["rules"] as? [[String: Any]])
+        let customUADomains = Set(sourceRules.compactMap { rule -> String? in
+            guard rule["useragentCustom"] != nil,
+                  !(rule["blockRegex"] as? [String] ?? []).isEmpty
+            else { return nil }
+            return rule["domain"] as? String
+        })
+        XCTAssertFalse(customUADomains.isEmpty)
+
+        let generated = try XCTUnwrap(
+            repositoryJSON("LunaSafari/Resources/rules_blockers.json")
+                as? [[String: Any]])
+        let generatedInitiators = Set(generated.flatMap { rule -> [String] in
+            let condition = rule["condition"] as? [String: Any]
+            return condition?["initiatorDomains"] as? [String] ?? []
+        })
+
+        XCTAssertTrue(
+            customUADomains.isDisjoint(with: generatedInitiators),
+            "Safari blocker emitted only the block half of a custom-UA unlock rule")
     }
 
     func testGroupMemberResolvesToGroupConfig() throws {

@@ -183,7 +183,6 @@ public struct ArticleExtractor {
         for element in try document.select(strippedSelectors) where !isPageRoot(element) {
             try element.remove()
         }
-        try removeAdContainers(in: document)
         try removePaywallJunk(in: document)
         try removeVisuallyHiddenElements(in: document)
 
@@ -201,42 +200,6 @@ public struct ArticleExtractor {
     private func isPageRoot(_ element: Element) -> Bool {
         let tag = element.tagName().lowercased()
         return tag == "body" || tag == "html"
-    }
-
-    /// Inline ad slots / interstitial ad containers. These are structurally ads, never
-    /// article prose, and every publisher uses variations of the same class/id/attribute
-    /// vocabulary — so this is generic (no per-site rules). Token- and prefix-scoped on
-    /// purpose to avoid the classic false positives a bare `[class*=ad]` causes
-    /// (`read`, `thread`, `header`, `download`, `load-more`, `shadow`, `gradient`):
-    ///   • `.ad` / `.ads` / `#ad` / `#ads` match the WHOLE-token class/id `ad` (Business
-    ///     Insider's `class="ad ad-wrapper in-post"`), not the substring. NB: in SwiftSoup
-    ///     `[class~=ad]` is a REGEX match (mapped to `AttributeWithValueMatching`), NOT the
-    ///     CSS whitespace-token operator — it behaves like `[class*=ad]` and would eat
-    ///     `read`/`thread`/`download`. The `.class` selector is the real token match
-    ///     (via `Element.hasClass`), so it is used here instead.
-    ///   • compound `ad-*` fragments (`ad-unit`, `ad-slot`, `ad-wrapper`, `ad-container`,
-    ///     …) can't appear inside an unrelated word.
-    ///   • ad-tech vendor/framework markers (Google Ad Manager `div-gpt-ad`,
-    ///     `googlead`, `doubleclick`, DFP) and the standard `data-ad*` slot attributes.
-    /// Run before container scoring so an ad block can't inflate a container's score.
-    private static let adContainerSelector = """
-    .ad, .ads, #ad, #ads, \
-    [class*=ad-unit], [class*=ad-slot], [class*=ad-wrapper], [class*=ad-container], \
-    [class*=ad-label], [class*=ad-callout], [class*=ad-banner], [class*=ad-placeholder], \
-    [class*=advertisement], [class*=advertising], [class*=sponsored-content], \
-    [class*=gpt-ad], [class*=google-ad], [class*=googlead], [class*=doubleclick], \
-    [class*=interstitial], \
-    [id^=ad-], [id^=ad_], [id*=div-gpt-ad], [id*=google_ads], [id*=dfp-ad], \
-    [data-ad], [data-adunit], [data-ad-unit], [data-ad-slot], [data-ad-client], \
-    [data-google-query-id]
-    """
-
-    /// Applies `adContainerSelector`, never touching the page root (a layout class on
-    /// `<body>`/`<html>` must not delete the whole document — same guard as the main strip).
-    private func removeAdContainers(in document: Document) throws {
-        for element in try document.select(Self.adContainerSelector) where !isPageRoot(element) {
-            try element.remove()
-        }
     }
 
     /// Removes actual subscription walls while preserving unlocked article bodies
@@ -286,13 +249,6 @@ public struct ArticleExtractor {
         for element in try document.select(structuralTags) {
             try element.remove()
         }
-        // Inline ad slots are never article content, so strip them even in the
-        // conservative layer (which otherwise touches only structural tags). The
-        // refined layer can lose arbitration to this one when its aggressive
-        // class-strip ate too much; without this, in-body ads (Business Insider's
-        // `class="ad ad-wrapper in-post"`, DFP/GAM `data-adunit` slots) would survive
-        // into the reader as interstitial junk.
-        try removeAdContainers(in: document)
         let container = try bestContainer(in: document)
         var blocks = try extractBlocks(from: container, baseURL: baseURL)
         if totalTextLength(blocks) < 200, let body = document.body() {

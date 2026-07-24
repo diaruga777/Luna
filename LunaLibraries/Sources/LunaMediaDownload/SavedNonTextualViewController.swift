@@ -93,6 +93,9 @@ public final class SavedNonTextualViewController: UIViewController {
     private var didSaveToPhotos = false
     private var isDeleting = false
     private var libraryPersistenceTask: Task<String?, Never>?
+    /// The player behind the currently-presented full-screen video, held weakly
+    /// (the player VC owns it) so we can pause it while a share sheet is up.
+    private weak var activePlayer: AVPlayer?
 
     public init(articleURLString: String, onDone: @escaping () -> Void) {
         self.articleURLString = articleURLString
@@ -615,6 +618,7 @@ public final class SavedNonTextualViewController: UIViewController {
         try? session.setCategory(.playback, mode: .moviePlayback)
         try? session.setActive(true)
         let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+        activePlayer = player
         let playerVC = AVPlayerViewController()
         playerVC.player = player
         present(playerVC, animated: true) { player.play() }
@@ -649,6 +653,8 @@ public final class SavedNonTextualViewController: UIViewController {
             activityItems: [fileURL], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = shareButton
         activity.popoverPresentationController?.sourceRect = shareButton.bounds
+        // Don't let a playing video keep running behind the share sheet.
+        activePlayer?.pause()
         present(activity, animated: true)
     }
 

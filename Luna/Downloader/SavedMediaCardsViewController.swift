@@ -72,6 +72,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         subtitle: "Saved Downloader links appear here after Luna downloads the media.")
     private let settingsButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
+    /// The player behind the currently-presented full-screen video, held weakly
+    /// so we can pause it while a share sheet is up (the player VC owns it).
+    private weak var activePlayer: AVPlayer?
     private var items: [SavedMediaItem] = []
     private var archivedItems: [SavedMediaItem] = []
     private var isReconcilingPhotos = false
@@ -324,7 +327,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     private func presentPlayer(item: AVPlayerItem) {
         let controller = AVPlayerViewController()
-        controller.player = AVPlayer(playerItem: item)
+        let player = AVPlayer(playerItem: item)
+        controller.player = player
+        activePlayer = player
         controller.modalPresentationStyle = .fullScreen
         present(controller, animated: true) { controller.player?.play() }
     }
@@ -616,6 +621,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             }
             activity.popoverPresentationController?.sourceView = sourceView
             activity.popoverPresentationController?.sourceRect = sourceView.bounds
+            // Don't let a playing video keep running (and talking) behind the
+            // share sheet.
+            self.activePlayer?.pause()
             self.present(activity, animated: true)
         }
     }

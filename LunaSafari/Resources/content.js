@@ -159,6 +159,17 @@
             }
             return n >= 2 ? c : 0;
         }
+        // Safe to DELETE only if it can't be the article shell: a positioned layer
+        // (fixed/absolute/sticky overlay/backdrop) or a small, near-empty node. A large
+        // in-flow block is revealed, never removed, so cleanup can't blank the page.
+        function isDeletableOverlay(el) {
+            var text = ((el.innerText || "").trim()).length;
+            if (text < 400) { return true; }
+            try {
+                var pos = window.getComputedStyle(el).position;
+                return pos === "fixed" || pos === "absolute" || pos === "sticky";
+            } catch (e) { return false; }
+        }
         function reveal(el) {
             el.style.removeProperty("display");
             el.style.visibility = "visible"; el.style.opacity = "1";
@@ -173,8 +184,15 @@
                         // Some sites deliver the UNLOCKED article inside the same node
                         // the paywall class names (e.g. a `.paywall` content container).
                         // Deleting it would take the story with it — so reveal a node
-                        // holding real prose, and only remove a content-less overlay.
-                        if (articleChars(el) > 400) { reveal(el); } else { el.remove(); }
+                        // holding real prose, and only remove a content-LESS overlay.
+                        // Belt-and-braces: never DELETE a large in-flow region either
+                        // (a broad selector could match a structural shell the site
+                        // re-gates after load) — reveal it instead. Only a positioned
+                        // layer or a small/near-empty node is safe to remove. This is
+                        // what stops the cleanup from ever blanking a page.
+                        if (articleChars(el) > 400) { reveal(el); }
+                        else if (isDeletableOverlay(el)) { el.remove(); }
+                        else { reveal(el); }
                         announceUnlock();
                     });
                 });

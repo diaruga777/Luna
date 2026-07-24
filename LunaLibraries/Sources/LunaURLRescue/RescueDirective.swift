@@ -6,7 +6,6 @@
 import Foundation
 import LunaHTMLClassification
 import LunaIngest
-import LunaMediaDownload
 import LunaModels
 
 /// The CLOSED set of request modifiers a rescue directive may carry. `Cookie`,

@@ -75,14 +75,17 @@ enum UITestSeeder {
         #endif
     }
 
-    /// A specific screen the harness wants deep-linked as the window root, if
-    /// requested (and recognized). When present, `SceneDelegate` builds that screen
-    /// directly instead of the reading list, so the screenshot agent can capture any
-    /// screen on any device without coordinate-tapping. DEBUG-only.
+    /// The raw name of a specific screen the harness wants deep-linked as the
+    /// window root, if requested. When present, `SceneDelegate` asks
+    /// `KindWiring.uiTestRootViewController(named:)` to build that screen
+    /// directly instead of the reading list, so the screenshot agent can capture
+    /// any screen on any device without coordinate-tapping. A raw STRING here
+    /// (not `UITestScreen`) because the screen catalog compiles only into the
+    /// central Luna app — the kind-woven builder can't exist in the single-kind
+    /// apps. DEBUG-only.
     #if DEBUG
-    static var requestedScreen: UITestScreen? {
-        guard let raw = argumentValue(for: screenArg) else { return nil }
-        return UITestScreen(rawValue: raw)
+    static var requestedScreenName: String? {
+        argumentValue(for: screenArg)
     }
     #endif
 
@@ -93,7 +96,7 @@ enum UITestSeeder {
         #if DEBUG
         // A screen deep-link without an explicit state still wants a populated store
         // (price-editor, search read the shared store) — default to mixed.
-        let state = requestedState ?? (requestedScreen != nil ? .mixed : nil)
+        let state = requestedState ?? (requestedScreenName != nil ? .mixed : nil)
         guard let state else { return }
         UIView.setAnimationsEnabled(false)
         seedSharedStore(state)

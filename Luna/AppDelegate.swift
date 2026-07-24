@@ -5,14 +5,9 @@
 
 import LunaReadingList
 import LunaIngest
-import LunaPriceUI
-import LunaReaderUI
 import LunaSocial
 import LunaSocialUI
 import LunaMailAccount
-import LunaMailTransport
-import LunaSend
-import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
 import BackgroundTasks
@@ -37,19 +32,22 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private var readingListObserver: NSObjectProtocol?
     private var wifiAvailableObserver: NSObjectProtocol?
     /// Price trackers surface only in product-handling apps (Price Tracker and
-    /// the central Luna app), so only those register and schedule the
-    /// price-refresh job (mail fetch stays universal). Otherwise every app
-    /// redundantly refreshes the shared store's trackers.
-    private var schedulesPriceRefresh: Bool { AppSurfaceConfig.current.handlesProducts }
+    /// the central Luna app), so only those install a refresh runner — and only
+    /// a target with a runner registers and schedules the price-refresh job
+    /// (mail fetch stays universal). Otherwise every app redundantly refreshes
+    /// the shared store's trackers.
+    private var schedulesPriceRefresh: Bool { KindWiring.priceRefreshRunner != nil }
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         DiagnosticLog.shared.record("app launch", category: "lifecycle")
-        // Register this app's per-kind pipeline processors FIRST — everything
-        // below (launch re-ingest, intents, list UI) consults the registry.
-        // Exactly one KindWiring variant is compiled per app target.
+        // Register this app's per-kind pipeline processors, handlers, and UI
+        // seams FIRST — everything below (launch re-ingest, intents, list UI)
+        // consults the registries. Exactly one KindWiring variant is compiled
+        // per app target; kind-specific launch work (audio wiring, pending-
+        // completion promotion, transport injection) lives in its `install()`.
         KindWiring.install()
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
@@ -57,24 +55,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Mark this surface installed so any Safari extension host knows which
         // sibling Luna apps its page buttons can deep-link into.
         InstalledAppMarkers.recordCurrentApp()
-        // A completion written before a force-quit never received the normal
-        // background callback. Promote it before constructing the Reader UI.
-        if AppSurfaceConfig.current.handlesArticles {
-            ReadingListStore.shared.archivePendingFinishedItems()
-        }
         // Diagnostic-only: the account address just feeds a log line, so defer the
         // Keychain read off the launch frame (a just-rebooted device's Keychain
         // query can be slow).
         DispatchQueue.global(qos: .utility).async {
             let account = EmailAccountStore.shared.account?.address ?? "none"
             DiagnosticLog.shared.record("email account: \(account)", category: "mail")
-        }
-
-        // Install the in-app "Read instead" behavior for the price-tracking editor
-        // (now shared with the extensions in ShareKit, which can't reference the
-        // ingestor): a forced-article re-save, no re-detection back into a tracker.
-        PriceTrackingViewController.defaultSaveAsArticle = { urlString in
-            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
 
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
@@ -103,30 +89,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             EmailLoginFlow.present(from: presenter)
         }
 
-        // Send-to-Kindle emails go out through the connected email account.
-        // LunaSend sits below LunaMailTransport, so the transport factory is
-        // injected here (extensions leave it nil → Kindle sends are no-ops there).
-        ArticleEmailTransportProvider.make = { MailTransportFactory.make() }
-
-
-        // New audio-playback stack (claudedocs/audio-playback-plan.md, Phase 2):
-        // install the autoplay queue provider and register the Now Playing /
-        // remote-command coordinator. Registration must happen at launch (not
-        // lazily) so a cold background relaunch from a lock-screen play command
-        // can restore the persisted session. READER SURFACE ONLY — read-aloud
-        // (the app-wide center, its background session, the window mini-player)
-        // belongs exclusively to article-handling apps (Reader and the central
-        // Luna app); leaving `ReaderAudioLauncher.center` nil in the Downloader /
-        // Price Tracker apps keeps the shared readers on their legacy
-        // self-contained `SpeechController` path and guarantees the audio
-        // controls never appear there.
-        if AppSurfaceConfig.current.handlesArticles {
-            AudioPlaybackWiring.install()
-            // Phase 4 (trimming): opportunistic script-cache builder, wired
-            // right after playback so its scriptProvider/scriptPrefetchHandler
-            // seams are set before anything could call into the center.
-            AudioScriptPipelineWiring.install()
-        }
         // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
         // reading list so saved articles are semantically discoverable and
         // Siri can resolve "my article about …"/"from …" without the app
@@ -139,28 +101,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // rescueTrigger is set before the launch re-ingest can surface failures.
         URLRescueWiring.install()
 
-        // Wire the read-aloud first-run prompt's "Open Settings" to push the
-        // Voice settings screen. Setting this hook is what enables the prompt in
-        // the main app (extensions leave it nil → the prompt is skipped).
-        VoiceFirstRunPrompt.openVoiceSettings = { presenter in
-            let voice = VoiceSettingsScreen()
-            if let nav = presenter.navigationController {
-                nav.pushViewController(voice, animated: true)
-            } else {
-                let nav = UINavigationController(rootViewController: voice)
-                presenter.present(nav, animated: true)
-            }
-        }
-
-        // Sweep any downloaded-but-never-saved media preview files orphaned by a
-        // previous run that was killed before its preview screen could clean up.
-        // Also apply Downloader's saved-media retention policy. Safe at launch
-        // (no preview is open yet); off the main thread to not block startup.
-        DispatchQueue.global(qos: .utility).async {
-            MediaDownloadStorage.purgeAll()
-            SavedMediaStore.shared.purgeExpired()
-        }
-
         // Warm the Wi-Fi reachability monitor (background preloads are Wi-Fi-gated) and
         // run the one-time image-ownership backfill so images shared with pre-existing
         // saves/preloads are reference-counted before any preload release could delete one.
@@ -172,8 +112,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()
-        ArticleSendCoordinator.shared.retryPendingSends()
-        LiveMediaDownloadManager.shared.resumeLiveActivities()
+        // Kind-specific launch resumption: orphaned-media sweep + Live Activity
+        // reattachment (media apps), pending ereader-send retry (article apps).
+        KindWiring.appDidLaunch()
 
         // Local notifications: show as banners while open (delegate below) and,
         // for already-onboarded users, ensure authorization (new users get the
@@ -206,31 +147,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             // (purge expired saved media) and "prices may be worth checking again soon"
             // (reschedule the price refresh) — not a sign this observer needs splitting.
             //
-            // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
-            // keep it off the main thread (the store already posts its own change
-            // notification back on main).
-            DispatchQueue.global(qos: .utility).async {
-                SavedMediaStore.shared.purgeExpired()
-            }
+            KindWiring.readingListDidChange()
             self?.schedulePriceRefresh(reason: "reading list changed")
         }
         // Resume whatever a Wi-Fi-only network policy deferred, the instant
         // Wi-Fi reconnects — the app-launch/foreground and background-refresh
-        // resumes below cover the other two triggers.
+        // resumes below cover the other two triggers. What resumes is a kind
+        // decision (media downloads / article link preloads).
         wifiAvailableObserver = NotificationCenter.default.addObserver(
             forName: NetworkReachability.wifiAvailableNotification, object: nil, queue: nil
         ) { _ in
-            switch AppSurfaceConfig.current {
-            case .all:
-                Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
-                PreloadCoordinator.shared.resumeIncomplete()
-            case .downloader:
-                Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
-            case .reader:
-                PreloadCoordinator.shared.resumeIncomplete()
-            case .priceTracker:
-                break
-            }
+            KindWiring.wifiBecameAvailable()
         }
 
         // Read incoming mail (Luna shares + newsletters) — all surfaces.
@@ -251,15 +178,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        if AppSurfaceConfig.current == .reader {
-            ReadingListStore.shared.archivePendingFinishedItems()
-        }
         // Action Button onboarding: only advances if we were backgrounded right
         // after "Install Shortcut" (the user is presumably in the Shortcuts app).
         ActionButtonOnboardingStore.shared.handleAppBackgrounded(
             forSurface: AppSurfaceConfig.current.storageIdentifier)
-        ArticleSendCoordinator.shared.retryPendingSends()
-        LiveMediaDownloadManager.shared.resumeLiveActivities()
+        // Kind-specific background work: pending-completion promotion + send
+        // retry (article apps), Live Activity reattachment (media apps).
+        KindWiring.appDidEnterBackground()
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
     }
@@ -269,7 +194,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        LiveMediaDownloadManager.shared.attachBackgroundCompletionHandler(completionHandler)
+        // Background URLSessions belong to the media download manager; apps
+        // without the media kind complete the callback immediately.
+        KindWiring.attachBackgroundURLSessionHandler(completionHandler)
     }
 
     private func scheduleMailFetch() {
@@ -298,13 +225,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
         work = Task {
             await IncomingMailImporter.shared.importNewMail()
-            ArticleSendCoordinator.shared.retryPendingSends()
+            KindWiring.retryPendingArticleSends()
             // Overnight backstop for every unfinished media job, including a
             // transfer whose server supplied resume data after an interruption.
-            // The background URLSession continues after this processing task exits.
-            if AppSurfaceConfig.current == .downloader {
-                await LiveMediaDownloadManager.shared.resumeUnfinishedDownloads()
-            }
+            // The background URLSession continues after this processing task
+            // exits. (No-op outside the Downloader app.)
+            await KindWiring.resumeUnfinishedMediaDownloads()
             task.setTaskCompleted(success: !Task.isCancelled)
         }
     }
@@ -358,6 +284,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// tracker, make that missed background work up immediately rather than
     /// leaving the displayed price stale until the OS grants another launch.
     private func refreshOverduePriceTrackersOnLaunch() {
+        guard let runner = KindWiring.priceRefreshRunner else { return }
         let trackers = ReadingListStore.shared.priceTrackersStalestFirst()
         guard let oldest = trackers
             .map({ ReadingListStore.stalestRefresh($0.priceTracker) })
@@ -369,9 +296,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             "price refresh: launch fallback started for \(trackers.count) overdue active tracker(s)",
             category: "price")
         Task { [weak self] in
-            let outcomes = await PriceRefreshCoordinator.shared.refreshAndNotify()
+            let processed = await runner()
             DiagnosticLog.shared.record(
-                "price refresh: launch fallback completed, processed=\(outcomes.count)",
+                "price refresh: launch fallback completed, processed=\(processed)",
                 category: "price")
             self?.schedulePriceRefresh(reason: "launch fallback completion")
         }
@@ -395,12 +322,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             self.schedulePriceRefresh(reason: "background expiration")
         }
         work = Task { [weak self] in
-            let outcomes = await PriceRefreshCoordinator.shared.refreshAndNotify()
-            ArticleSendCoordinator.shared.retryPendingSends()
+            // The handler is only registered when a runner exists (see
+            // schedulesPriceRefresh), so the fallback 0 is unreachable.
+            let processed = await KindWiring.priceRefreshRunner?() ?? 0
+            KindWiring.retryPendingArticleSends()
             let completed = !Task.isCancelled
             task.setTaskCompleted(success: completed)
             DiagnosticLog.shared.record(
-                "price refresh: background task completed success=\(completed), processed=\(outcomes.count)",
+                "price refresh: background task completed success=\(completed), processed=\(processed)",
                 category: "price")
             self?.schedulePriceRefresh(reason: "background completion")
         }

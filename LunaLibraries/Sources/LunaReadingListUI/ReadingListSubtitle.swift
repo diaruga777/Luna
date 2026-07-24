@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaPlatforms
 import LunaDesignSystem
 import LunaModels
 import Foundation

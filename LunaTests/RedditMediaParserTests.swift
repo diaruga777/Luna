@@ -4,6 +4,7 @@
 //
 
 import LunaMediaDownload
+import LunaModels
 import XCTest
 
 final class RedditMediaParserTests: XCTestCase {

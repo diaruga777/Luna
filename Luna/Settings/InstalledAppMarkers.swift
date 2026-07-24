@@ -4,7 +4,7 @@
 //
 
 import LunaReadingListUI
-import LunaMediaDownload
+import LunaStorage
 import Foundation
 
 /// App-Group markers recording which Luna apps exist on this device. Each app

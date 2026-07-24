@@ -9,14 +9,13 @@
 //  background audio without foregrounding — no extra protocol requirements
 //  beyond `AppIntent` itself. Selection logic (the nil-entity "latest unread"
 //  fallback) lives in LunaIntents.ArticleMatcher; playback itself goes
-//  through the same `AudioPlaybackCenter` the in-app mini-player uses (see
-//  `Luna/AudioPlaybackWiring.swift`, installed at launch before any intent
-//  could plausibly run).
+//  through the `playArticle` seam — the same `AudioPlaybackCenter` the in-app
+//  mini-player uses, installed by the article apps' `KindWiring` variants at
+//  launch, before any intent could plausibly run.
 //
 
 import AppIntents
 import LunaIntents
-import LunaAudioPlayback
 import LunaModels
 import LunaStorage
 import Foundation
@@ -31,6 +30,12 @@ struct ReadArticleIntent: AudioPlaybackIntent {
         "Starts reading a saved article out loud in the background.")
     static let openAppWhenRun: Bool = false
 
+    /// Article-audio playback, installed by the article apps' `KindWiring`
+    /// variants (`AudioPlaybackCenter.play`). The intent TYPE must exist in
+    /// every app (the shared `LunaShortcuts` metadata lists it), so apps
+    /// without read-aloud leave this nil and the intent throws `.notSupported`.
+    static var playArticle: (@MainActor (ReadingListItem, ArticleContent) -> Void)?
+
     @Parameter(
         title: "Article",
         description: "The article to read. Leave blank for your latest unread article.")
@@ -39,17 +44,20 @@ struct ReadArticleIntent: AudioPlaybackIntent {
     enum ReadArticleError: Error, CustomLocalizedStringResourceConvertible {
         case noArticles
         case contentMissing
+        case notSupported
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .noArticles: return "You don't have any unread articles to read."
             case .contentMissing: return "That article isn't ready to read yet."
+            case .notSupported: return "Reading articles aloud isn't available in this app."
             }
         }
     }
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let playArticle = Self.playArticle else { throw ReadArticleError.notSupported }
         let store = ReadingListStore.shared
         let resolvedItem: ReadingListItem
         if let article, let item = store.item(withID: article.id), ArticleReadability.isReadableArticle(item) {
@@ -62,7 +70,7 @@ struct ReadArticleIntent: AudioPlaybackIntent {
         guard let content = store.content(for: resolvedItem) else {
             throw ReadArticleError.contentMissing
         }
-        AudioPlaybackCenter.shared.play(item: resolvedItem, content: content)
+        playArticle(resolvedItem, content)
         let title = resolvedItem.title ?? resolvedItem.urlString
         return .result(dialog: "Reading \(title).")
     }

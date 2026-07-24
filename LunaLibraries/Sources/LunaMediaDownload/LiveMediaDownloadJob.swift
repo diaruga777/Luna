@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaModels
 import Foundation
 
 struct LiveMediaDownloadJob: Codable, Equatable {

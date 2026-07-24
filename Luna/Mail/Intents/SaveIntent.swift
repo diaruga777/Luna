@@ -14,7 +14,6 @@ import AppIntents
 import LunaIntents
 import LunaModels
 import LunaStorage
-import LunaMediaDownload
 import Foundation
 
 /// Second step of the Action Button capture flow: given the current app and a

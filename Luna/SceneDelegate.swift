@@ -11,13 +11,9 @@
 import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
-import LunaReaderUI
-import LunaArchiveReader
 import LunaDesignSystem
 import LunaStorage
 import LunaURLClassification
-import LunaSend
-import LunaMediaDownload
 import LunaTransitions
 import UIKit
 
@@ -48,37 +44,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first
     }
 
-    /// The main navigation controller, whichever shape the root takes: wrapped
-    /// in the audio mini-player host (the normal main UI) or bare (UI-test and
-    /// debug roots). Nil during onboarding.
+    /// The main navigation controller, whichever shape this app's root takes:
+    /// wrapped in the audio mini-player host (article apps' normal main UI) or
+    /// bare (the other apps, UI-test and debug roots). The shape is a kind
+    /// decision, so `KindWiring` resolves it. Nil during onboarding.
     private var mainNavigationController: UINavigationController? {
-        if let host = window?.rootViewController as? MiniPlayerHostViewController {
-            return host.contentNavigationController
-        }
-        return window?.rootViewController as? UINavigationController
-    }
-
-    /// Wraps the main nav controller in the window-level audio mini-player
-    /// host (claudedocs/audio-playback-plan.md, Phase 3): the bar floats above
-    /// the bottom safe area, survives every push/pop, and hides while idle.
-    ///
-    /// READER SURFACE ONLY. Read-aloud is a Luna Reader feature, so only Reader
-    /// wraps its nav controller in the mini-player host — the Downloader and
-    /// Price Tracker apps install a bare nav controller and never carry the
-    /// audio-playback bar or its interactions. (`mainNavigationController`
-    /// already resolves either shape.)
-    private func makeMainRootViewController() -> UIViewController {
-        let surface = AppSurfaceConfig.current
-        let root: UIViewController
-        switch surface {
-        case .all: root = ArticleCardsViewController()
-        case .downloader: root = SavedMediaCardsViewController()
-        case .reader: root = ArticleCardsViewController()
-        case .priceTracker: root = ReadingListViewController(surface: surface)
-        }
-        let nav = UINavigationController(rootViewController: root)
-        guard surface == .reader || surface == .all else { return nav }
-        return MiniPlayerHostViewController(content: nav)
+        guard let root = window?.rootViewController else { return nil }
+        return KindWiring.mainNavigationController(of: root)
     }
 
     /// Pushes the Pending Requests screen onto the reading-list nav once the main
@@ -112,11 +84,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         #if DEBUG
         if let archiveArg = debugLaunchArgValue(after: "-openArchive"),
-           let archiveURL = URL(string: archiveArg) {
-            let item = ReadingListStore.shared.addIfAbsent(urlString: archiveURL.absoluteString)
-                ?? ReadingListStore.shared.add(urlString: archiveURL.absoluteString)
-            let reader = ArchiveWebReaderViewController(articleURL: archiveURL, itemID: item.id)
-            window.rootViewController = UINavigationController(rootViewController: reader)
+           let archiveURL = URL(string: archiveArg),
+           let archiveRoot = KindWiring.debugArchiveReaderRoot(articleURL: archiveURL) {
+            window.rootViewController = archiveRoot
             self.window = window
             window.makeKeyAndVisible()
             return
@@ -137,7 +107,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             window.rootViewController = OnboardingFlow.make(onFinished: finish)
         } else {
-            window.rootViewController = makeMainRootViewController()
+            window.rootViewController = KindWiring.makeRootViewController()
         }
         self.window = window
         window.makeKeyAndVisible()
@@ -219,11 +189,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             nav.popToRootViewController(animated: false)
             guard let itemID, let item = ReadingListStore.shared.item(withID: itemID)
             else { return }
-            if let list = nav.viewControllers.first as? ReadingListViewController {
-                list.open(item, presenter: list)
-            } else if let cards = nav.viewControllers.first as? ArticleCardsViewController {
-                cards.openExternally(item)
-            }
+            // Both root shapes (list / article cards) conform to
+            // `ExternalItemOpening`, so no kind-specific downcast is needed.
+            (nav.viewControllers.first as? ExternalItemOpening)?.openExternally(item)
         }
     }
 
@@ -235,22 +203,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             forSurface: AppSurfaceConfig.current.storageIdentifier)
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
-        // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
-        // keep it off the main thread (the store already posts its own change
-        // notification back on main).
-        DispatchQueue.global(qos: .utility).async {
-            SavedMediaStore.shared.purgeExpired()
-        }
         ReadingListIngestor.shared.ingestAllPending()
-        ArticleSendCoordinator.shared.retryPendingSends()
         Task { await IncomingMailImporter.shared.importNewMail() }
-        // Resume any link preloading left incomplete (interrupted save / new depth).
-        PreloadCoordinator.shared.resumeIncomplete()
-        // Resume any downloads a Wi-Fi-only policy deferred, now that we're
-        // foregrounding (possibly on Wi-Fi for the first time since they queued).
-        if AppSurfaceConfig.current == .downloader {
-            Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
-        }
+        // Kind-specific foreground work: saved-media purge + deferred Wi-Fi
+        // download resume (media apps), pending-send retry + link-preload
+        // resume (article apps).
+        KindWiring.sceneDidForeground()
         // A notification tapped while the app was backgrounded.
         applyPendingNotificationRoute()
         // A double save with "ask every time" bounced the user into Luna: present
@@ -281,8 +239,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if UITestSeeder.requestsOnboarding {
             return OnboardingFlow.make { [weak self] in self?.showMainUI() }
         }
-        if let screen = UITestSeeder.requestedScreen {
-            return UITestScreenBuilder.rootViewController(for: screen)
+        // The deep-linked screen catalog is kind-woven (readers, price editor,
+        // saved-media screen), so only the central Luna app — the UI-test /
+        // screenshot host — can build it; the single-kind apps return nil here.
+        if let name = UITestSeeder.requestedScreenName,
+           let root = KindWiring.uiTestRootViewController(named: name) {
+            return root
         }
         if UITestSeeder.isActive {
             return UINavigationController(rootViewController: ReadingListViewController())
@@ -293,7 +255,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func showMainUI() {
         guard let window else { return }
-        window.rootViewController = makeMainRootViewController()
+        window.rootViewController = KindWiring.makeRootViewController()
         mainNavigationController?.installLunarEclipseTransition()
         window.layoutIfNeeded()
     }

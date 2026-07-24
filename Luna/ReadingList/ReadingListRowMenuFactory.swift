@@ -3,9 +3,7 @@
 //  Luna
 //
 
-import LunaMediaDownload
 import LunaModels
-import LunaURLClassification
 import UIKit
 
 /// The handler closures (and the couple of environment facts the item alone
@@ -18,6 +16,10 @@ struct RowMenuActions {
     /// Gates the "Send to Kindle" row — the long-press menu only offers a
     /// destination when it's configured.
     let isKindleConfigured: Bool
+    /// Gates the "Save to Photos" row — true when the item is a post whose
+    /// media this app can download (resolved by the media-kind seam; always
+    /// false in apps that don't handle media).
+    var canSaveMediaToPhotos: Bool = false
     let sendToFriend: () -> Void
     let sendToKindle: () -> Void
     let shareEbook: () -> Void
@@ -108,8 +110,7 @@ enum ReadingListRowMenuFactory {
             children.append(copyLink)
         }
         // X / Instagram / TikTok posts: download the post's media.
-        if MediaDownloadablePlatform.supports(item.urlString),
-           DirectMediaURL.kind(for: item.urlString) != .audio {
+        if actions.canSaveMediaToPhotos {
             children.append(UIAction(
                 title: "Save to Photos", image: UIImage(systemName: "photo.badge.arrow.down")
             ) { _ in actions.saveMediaToPhotos() })

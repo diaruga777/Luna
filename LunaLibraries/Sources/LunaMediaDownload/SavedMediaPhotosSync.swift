@@ -3,6 +3,7 @@
 //  LunaMediaDownload
 //
 
+import LunaModels
 import Foundation
 
 /// The Photos-save and Photos-delete calls shared by every screen that

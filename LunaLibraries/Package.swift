@@ -141,14 +141,22 @@ let package = Package(
         // applied by re-entering the raw IngestPipeline exactly once. MAIN-APP ONLY —
         // never link this into the share/action extensions (WKWebView runner, long
         // budgets, FoundationModels). Same tier as LunaPriceUI.
+        // LunaMediaDownload: the engine's media-directive application resolves
+        // assets through `SocialMediaResolving` — a behavioral dependency, not
+        // just a payload type (the payload, `MediaAsset`, lives in LunaModels).
+        // Known follow-up: article/product-only apps still BUILD the media
+        // module through this edge.
         .target(name: "LunaURLRescue", dependencies: [
             "LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaHTMLClassification",
             "LunaFetch", "LunaPaywallBypass", "LunaIngest", "LunaStorage", "LunaMediaDownload",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
-        .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial"]),
+        .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReadingList", "LunaSocial"]),
         .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaIngest", "LunaPlatforms", "LunaReadingList", "LunaSocial"]),
-        .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI"]),
+        // Kind-neutral list UI (cells, sectioning, diff, subtitle assembly,
+        // status pill): no per-kind modules — the kind-specific list behavior
+        // lives behind the app shells' `ListKindSupport` seams.
+        .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaDesignSystem"]),
         // Universal ingest orchestration linked by EVERY app: no kind-specific
         // modules here. Per-kind persistence lives behind `IngestorKindHandlers`
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),

@@ -3,6 +3,7 @@
 //  LunaMediaDownload
 //
 
+import LunaModels
 import LunaDesignSystem
 import LunaStorage
 import AVKit

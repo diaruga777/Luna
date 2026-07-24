@@ -21,11 +21,13 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
 
     private func actions(
         isInReadingSection: Bool = false,
-        isKindleConfigured: Bool = false
+        isKindleConfigured: Bool = false,
+        canSaveMediaToPhotos: Bool = false
     ) -> RowMenuActions {
         RowMenuActions(
             isInReadingSection: isInReadingSection,
             isKindleConfigured: isKindleConfigured,
+            canSaveMediaToPhotos: canSaveMediaToPhotos,
             sendToFriend: {}, sendToKindle: {}, shareEbook: {}, shareLink: {}, copyLink: {},
             saveMediaToPhotos: {}, bumpToTop: {}, toggleTrackerArchived: {}, unarchive: {},
             delete: {}, editList: {})
@@ -158,7 +160,10 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
     func testDownloadablePlatformOffersSaveToPhotos() {
         var item = article(urlString: "https://x.com/x/status/1")
         item.platform = .x
-        let menu = ReadingListRowMenuFactory.menu(for: item, actions: actions())
+        // Downloadability is an environment fact now (the media-kind seam
+        // resolves it); the factory just renders the row when it's true.
+        let menu = ReadingListRowMenuFactory.menu(
+            for: item, actions: actions(canSaveMediaToPhotos: true))
         XCTAssertTrue(titles(menu).contains("Save to Photos"))
     }
 

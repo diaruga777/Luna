@@ -1,28 +1,9 @@
-import LunaAppConfig
+import LunaStorage
 import Foundation
 import Photos
 
-/// App-Group installation evidence used for cross-app Downloader behavior.
-/// Markers intentionally survive uninstall: "was installed" is sufficient.
-public enum LunaInstallationMarkers {
-    public static let downloaderKey = "lunaInstalled.downloader"
-
-    private static var defaults: UserDefaults {
-        UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
-    }
-
-    public static var downloaderWasInstalled: Bool {
-        defaults.bool(forKey: downloaderKey)
-    }
-
-    public static func recordInstalled(surfaceIdentifier: String) {
-        defaults.set(true, forKey: "lunaInstalled.\(surfaceIdentifier)")
-    }
-
-    public static func wasInstalled(surfaceIdentifier: String) -> Bool {
-        defaults.bool(forKey: "lunaInstalled.\(surfaceIdentifier)")
-    }
-}
+// `LunaInstallationMarkers` moved to LunaStorage (kind-neutral App-Group
+// bookkeeping shared by every app's launch path).
 
 /// Photos authorization boundary for media-owned App Intent downloads. Only a
 /// media-handling process (Downloader, the central Luna app) ever starts one.

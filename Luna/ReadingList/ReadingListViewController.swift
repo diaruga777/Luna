@@ -6,16 +6,8 @@
 import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
-import LunaMailAccount
-import LunaPriceUI
-import LunaReaderUI
-import LunaArchiveReader
 import LunaSocial
-import LunaMediaDownload
-import LunaPlatforms
 import LunaDesignSystem
-import LunaTransitions
-import LunaSend
 import LunaStorage
 import LunaURLClassification
 import LunaModels
@@ -156,7 +148,6 @@ final class ReadingListViewController: UITableViewController {
 
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
-    private let photoSaver = PhotoLibrarySaver()
     private var isPresentingSendFailureNotice = false
 
     /// Non-empty groups in display order; rebuilt on every `reload`.
@@ -471,14 +462,9 @@ final class ReadingListViewController: UITableViewController {
               navigationController?.topViewController === self else { return }
         let isMerge = (note.userInfo?["isMerge"] as? Bool) ?? false
         let highlightedURL = note.userInfo?["highlightedURL"] as? String
-        let mode: PriceTrackingViewController.Mode
-        if isMerge, let highlightedURL {
-            mode = .merge(itemID: itemID, addedStoreURLString: highlightedURL, host: .inApp)
-        } else {
-            mode = .creation(itemID: itemID, host: .inApp)
-        }
-        let viewController = PriceTrackingViewController(mode: mode)
-        navigationController?.pushViewController(viewController, animated: true)
+        ListKindSupport.product?.presentInteractiveSaveEditor(
+            itemID: itemID, isMerge: isMerge, highlightedURL: highlightedURL,
+            on: navigationController)
     }
 
     @objc private func filterChanged(_ control: LunaSegmentedControl) {
@@ -601,7 +587,7 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func pulledToRefresh() {
         ReadingListIngestor.shared.ingestAllPending()
-        ArticleSendCoordinator.shared.retryPendingSends()
+        ListKindSupport.article?.retryPendingSends()
         Task { await IncomingMailImporter.shared.importNewMail() }
         reload()
         refreshControl?.endRefreshing()
@@ -958,8 +944,8 @@ final class ReadingListViewController: UITableViewController {
                 } else if let image = candidate.thumbnail {
                     thumbnail = .image(image)
                 } else if let platform = candidate.platform,
-                        let module = PlatformRegistry.shared.module(for: platform) {
-                    thumbnail = .logo(assetName: platform.logoAssetName, glyph: module.glyphSymbolName)
+                        let logo = ListKindSupport.media?.logoThumbnail(for: platform) {
+                    thumbnail = logo
                 } else { thumbnail = .none }
             } else {
                 thumbnail = .loading
@@ -1055,9 +1041,9 @@ final class ReadingListViewController: UITableViewController {
         let host = item.url?.host ?? ""
         // Platform items show a logical container, never the bare host.
         let leadingLabel: String
-        if let platform = item.contentPlatform,
-           let module = PlatformRegistry.shared.module(for: platform) {
-            leadingLabel = module.subtitle(for: item) ?? platform.displayName
+        if let platform = item.contentPlatform {
+            leadingLabel = ListKindSupport.media?.subtitleLeadingLabel(for: item)
+                ?? platform.displayName
         } else if item.isDocument {
             leadingLabel = item.documentType?.uppercased() ?? "Document"
         } else {
@@ -1067,8 +1053,8 @@ final class ReadingListViewController: UITableViewController {
             for: item,
             leadingLabel: leadingLabel,
             formattedDate: dateFormatter.string(from: item.dateAdded),
-            showReadingTime: ReaderSettings.showReadingTime,
-            showReadingProgress: ReaderSettings.showReadingProgress,
+            showReadingTime: ListKindSupport.article?.showsReadingTime ?? false,
+            showReadingProgress: ListKindSupport.article?.showsReadingProgress ?? false,
             isRescuing: URLRescueCoordinator.shared.isRescuing(item.id))
 
         let result = NSMutableAttributedString(
@@ -1138,8 +1124,7 @@ final class ReadingListViewController: UITableViewController {
                 tracker.markAlertViewed()
                 store.updatePriceTracker(tracker, for: item.id)
             }
-            let viewController = PriceTrackingViewController(itemID: item.id)
-            presenter.navigationController?.pushViewController(viewController, animated: true)
+            ListKindSupport.product?.openTracker(itemID: item.id, on: presenter.navigationController)
             return
         }
         if openItem(item, presentingFrom: presenter) { return }
@@ -1150,8 +1135,13 @@ final class ReadingListViewController: UITableViewController {
         // SFSafariViewController can't do: the host app can't read its content).
         // Real Safari is kept as an escape-hatch button for the rare case the
         // embedded web view can't clear the gate.
-        if item.state == .needsCaptcha, let url = item.url {
-            presentArchiveReader(for: item, articleURL: url, presenter: presenter)
+        if item.state == .needsCaptcha, let url = item.url,
+           let article = ListKindSupport.article {
+            article.presentArchiveUnlock(
+                item: item, articleURL: url, presenter: presenter
+            ) { [weak self] fresh, presenter in
+                self?.open(fresh, presenter: presenter)   // now .ready → native reader
+            }
             store.markReadState(.opened, for: item.id)
             return
         }
@@ -1163,37 +1153,14 @@ final class ReadingListViewController: UITableViewController {
             presentRescueSheet(for: item, presenter: presenter)
             return
         }
-        guard item.state == .ready, let content = store.content(for: item) else { return }
-        let reader = ReaderHostFactory.make(
-            item: item, content: content,
-            shareProvider: AppReaderShareProvider.shared)
-        // This alternate transition is intentionally available only from a real Reader
+        guard item.state == .ready, let content = store.content(for: item),
+              let article = ListKindSupport.article else { return }
+        // The eclipse transition is intentionally available only from a real Reader
         // list-row tap. Other readers (deep links, the two sibling apps) retain their
         // existing navigation treatment.
-        if surface == .reader, let transitionSourceView {
-            LunarEclipseTransitionCenter.prepare(reader: reader, sourceView: transitionSourceView)
-        }
-        presenter.navigationController?.pushViewController(reader, animated: true)
-    }
-
-    /// Presents the interactive WKWebView archive reader for a `.needsCaptcha` item.
-    /// On a successful extraction it dismisses and reopens the now-`.ready` item in
-    /// the native reader; an "Open in Safari" button hands off to real Safari when
-    /// the embedded web view can't clear archive.today's Cloudflare gate.
-    private func presentArchiveReader(
-        for item: ReadingListItem, articleURL: URL, presenter: UIViewController
-    ) {
-        ArchiveUnlockFlow.present(
-            item: item, articleURL: articleURL, store: store, from: presenter
-        ) { [weak self, weak presenter] fresh in
-            guard let self, let presenter else { return }
-            // Archive/direct-unlock extraction happens in LunaArchiveReader, below
-            // the thumbnail helper's module, so it saves text first and lets the app
-            // process backfill the row cover. Without this nudge, the cover appears
-            // only on the next launch/foreground backfill pass.
-            ReadingListIngestor.shared.backfillMissingThumbnails()
-            self.open(fresh, presenter: presenter)   // now .ready → native reader
-        }
+        article.openArticle(
+            item, content: content, presenter: presenter,
+            transitionSourceView: surface == .reader ? transitionSourceView : nil)
     }
 
     /// Opens a non-article item (video / platform post) the way
@@ -1202,31 +1169,10 @@ final class ReadingListViewController: UITableViewController {
     @discardableResult
     func openItem(_ item: ReadingListItem, presentingFrom presenter: UIViewController) -> Bool {
         if let platform = item.contentPlatform {
-            openPlatformItem(item, platform: platform, from: presenter)
+            ListKindSupport.media?.openPlatformItem(item, platform: platform, from: presenter)
             return true
         }
         return false
-    }
-
-    // MARK: - Platform item playback / open
-
-    /// The launch ladder for a platform item: native app → in-app embed → in-app browser.
-    private func openPlatformItem(
-        _ item: ReadingListItem, platform: ContentPlatform, from presenter: UIViewController
-    ) {
-        guard let module = PlatformRegistry.shared.module(for: platform) else { return }
-
-        if let appURL = module.appDeepLink(for: item), UIApplication.shared.canOpenURL(appURL) {
-            UIApplication.shared.open(appURL) { [weak self] success in
-                if success { self?.store.markReadState(.read, for: item.id) }
-            }
-            return
-        }
-        if let embed = module.embed(for: item) {
-            presenter.present(PlatformEmbedViewController(embed: embed, itemID: item.id), animated: true)
-            return
-        }
-        InAppBrowser.present(urlString: item.urlString, from: presenter)
     }
 
     /// Sends any reading-list item (article, media, or price tracker) to chosen
@@ -1256,10 +1202,8 @@ final class ReadingListViewController: UITableViewController {
         let fetchFinished = isPasteboard || item.state == .ready || item.state == .failed
 
         if let platform = item.contentPlatform,
-           let module = PlatformRegistry.shared.module(for: platform) {
-            return fetchFinished
-                ? .logo(assetName: platform.logoAssetName, glyph: module.glyphSymbolName)
-                : .loading
+           let logo = ListKindSupport.media?.logoThumbnail(for: platform) {
+            return fetchFinished ? logo : .loading
         }
         // Plain article/document: a cover image may still be downloading. Spin
         // while pending; show nothing once finished without one.
@@ -1333,16 +1277,15 @@ final class ReadingListViewController: UITableViewController {
     private func rowMenu(for item: ReadingListItem, at indexPath: IndexPath) -> UIMenu {
         let actions = RowMenuActions(
             isInReadingSection: section(at: indexPath.section) == .reading,
-            isKindleConfigured: ArticleSendCoordinator.shared.isConfigured(
-                destinationID: ArticleDestinationID.kindle),
+            isKindleConfigured: ListKindSupport.article?.isKindleConfigured ?? false,
+            canSaveMediaToPhotos: ListKindSupport.media?
+                .canSaveMediaToPhotos(urlString: item.urlString) ?? false,
             sendToFriend: { [weak self] in self?.presentSend(item) },
-            sendToKindle: { [weak self] in
-                self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
-            },
+            sendToKindle: { ListKindSupport.article?.sendToKindle(item) },
             shareEbook: { [weak self] in
                 guard let self else { return }
                 let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-                self.shareEbook(item, from: sourceView)
+                ListKindSupport.article?.shareEbook(item, from: self, sourceView: sourceView)
             },
             shareLink: { [weak self] in
                 guard let self else { return }
@@ -1386,73 +1329,13 @@ final class ReadingListViewController: UITableViewController {
         )?.absoluteString
     }
 
-    /// Hands the first media item of an X/Instagram/TikTok/Facebook post to the
-    /// background media downloader. The Live Activity/background URLSession own
-    /// the durable transfer; this pill is only immediate in-app feedback.
+    /// Hands the post's media to the media-kind save-to-Photos flow (background
+    /// live download, or the local saved-media copy on the Downloader surface),
+    /// reporting through the bottom status pill.
     private func saveMediaToPhotos(_ item: ReadingListItem) {
-        if surface == .downloader {
-            saveLocalDownloaderMediaToPhotos(item)
-            return
-        }
-        let status = mediaDownloadStatusView()
-        status.startProgress()
-        Task { [weak self] in
-            let started = await LiveMediaDownloadManager.shared.start(
-                urlString: item.urlString, title: item.title)
-            await MainActor.run {
-                if started {
-                    self?.mediaDownloadStatus?.update(progress: 0.05)
-                    self?.mediaDownloadStatus?.showResult(message: "Download started", success: true)
-                } else {
-                    self?.mediaDownloadStatus?.showResult(
-                        message: "Couldn't start the media download.", success: false)
-                }
-            }
-        }
-    }
-
-    private func saveLocalDownloaderMediaToPhotos(_ item: ReadingListItem) {
-        let status = mediaDownloadStatusView()
-        guard let media = SavedMediaStore.shared.item(forURLString: item.urlString) else {
-            status.showResult(message: "Media is still downloading.", success: false)
-            return
-        }
-        status.startProgress()
-        Task { [weak self] in
-            do {
-                guard let self else { return }
-                guard let fileURL = media.fileURL, let kind = media.kind else {
-                    await MainActor.run {
-                        self.mediaDownloadStatus?.showResult(
-                            message: "Media is no longer available locally.", success: false)
-                    }
-                    return
-                }
-                guard await self.photoSaver.requestReadAuthorization() else {
-                    await MainActor.run {
-                        self.mediaDownloadStatus?.showResult(
-                            message: MediaDownloadError.permissionDenied.message,
-                            success: false)
-                    }
-                    return
-                }
-                let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
-                try FileManager.default.copyItem(at: fileURL, to: tempURL)
-                defer { try? FileManager.default.removeItem(at: tempURL) }
-                let identifier = try await self.photoSaver.save(fileURL: tempURL, kind: kind)
-                _ = try SavedMediaStore.shared.transitionToPhotosReference(
-                    media.id, localIdentifier: identifier, kind: kind)
-                await MainActor.run {
-                    self.mediaDownloadStatus?.showResult(message: "Saved to Photos", success: true)
-                }
-            } catch {
-                await MainActor.run {
-                    self?.mediaDownloadStatus?.showResult(
-                        message: "Couldn't save to your photo library.",
-                        success: false)
-                }
-            }
-        }
+        ListKindSupport.media?.saveMediaToPhotos(
+            item, isDownloaderSurface: surface == .downloader,
+            status: mediaDownloadStatusView())
     }
 
     /// Lazily creates the bottom status pill, pinned above the safe area.
@@ -1497,16 +1380,13 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
-    /// Explicit send of one article to one ereader destination (the long-press
-    /// menu only offers a destination when it's configured).
-    private func sendToEreader(_ item: ReadingListItem, destinationID: String) {
-        Task { await ArticleSendCoordinator.shared.send(item, toDestinationID: destinationID) }
-    }
+}
 
-    /// Builds the article's EPUB off-main and presents the system share sheet so
-    /// the user can send it to another app or save it to Files.
-    private func shareEbook(_ item: ReadingListItem, from sourceView: UIView) {
-        ArticleExportService().presentShareSheet(for: item, from: self, sourceView: sourceView)
+// MARK: - External open (deep link / notification route)
+
+extension ReadingListViewController: ExternalItemOpening {
+    func openExternally(_ item: ReadingListItem) {
+        open(item, presenter: self)
     }
 }
 
@@ -1523,12 +1403,10 @@ extension ReadingListViewController: PasteboardSuggestionControllerDelegate {
         openTransient item: ReadingListItem, for candidate: PasteboardCandidate
     ) {
         if let platform = candidate.platform {
-            openPlatformItem(item, platform: platform, from: self)
+            ListKindSupport.media?.openPlatformItem(item, platform: platform, from: self)
         } else if let content = candidate.content {
-            let reader = ReaderHostFactory.make(
-                item: item, content: content,
-                shareProvider: AppReaderShareProvider.shared)
-            navigationController?.pushViewController(reader, animated: true)
+            ListKindSupport.article?.openTransientArticle(
+                item: item, content: content, on: navigationController)
         }
     }
 

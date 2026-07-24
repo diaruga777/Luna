@@ -1,4 +1,5 @@
 import XCTest
+import LunaModels
 @testable import LunaHTMLClassification
 @testable import LunaMediaDownload
 @testable import LunaURLClassification

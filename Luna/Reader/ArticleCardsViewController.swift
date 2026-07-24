@@ -1770,3 +1770,9 @@ private final class ReaderFooterContentFadeView: UIView {
         ]
     }
 }
+
+// MARK: - External open (deep link / notification route)
+
+/// `openExternally(_:)` itself is defined above; this just marks the deck as a
+/// root `SceneDelegate` can hand items to without a kind-specific downcast.
+extension ArticleCardsViewController: ExternalItemOpening {}

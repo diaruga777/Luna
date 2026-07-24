@@ -4,6 +4,7 @@
 //
 
 import LunaAppConfig
+import LunaStorage
 @testable import LunaMediaDownload
 import XCTest
 

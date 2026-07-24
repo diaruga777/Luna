@@ -2,11 +2,11 @@
 //  KindWiring+PriceTracker.swift
 //  Luna
 //
-//  Per-app composition root: registers exactly the per-kind processors and
-//  ingestor handlers this app's target links. EXACTLY ONE KindWiring variant is
-//  compiled into each app target (the other variants are excluded via the
-//  synchronized group's per-target membership exceptions) — the registries
-//  mirror the link set.
+//  Per-app composition root: registers exactly the per-kind processors,
+//  ingestor handlers, and UI/lifecycle seams this app's target links. EXACTLY
+//  ONE KindWiring variant is compiled into each app target (the other variants
+//  are excluded via the synchronized group's per-target membership exceptions)
+//  — the registries and the static lifecycle API below mirror the link set.
 //
 
 import LunaHTMLClassification
@@ -15,15 +15,87 @@ import LunaModels
 import LunaPriceIngest
 import LunaPriceUI
 import LunaReadingList
+import LunaReadingListUI
 import LunaStorage
-import Foundation
+import UIKit
 
 enum KindWiring {
     static func install() {
         IngestKindProcessors.product = ProductIngestProcessor()
         IngestorKindHandlers.product = ProductKindHandler()
+        ListKindSupport.product = ProductListSupport()
         EmailShareCenter.priceGraphSnapshot = { PriceGraphEmailSnapshot.jpegData(for: $0) }
+
+        // Install the in-app "Read instead" behavior for the price-tracking editor
+        // (shared with the extensions, which can't reference the ingestor): a
+        // forced-article re-save, no re-detection back into a tracker.
+        PriceTrackingViewController.defaultSaveAsArticle = { urlString in
+            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
+        }
+        // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
+        // Rescue Phase 6 UI).
+        PriceTrackingViewController.intelligentPriceResolver = { urlString in
+            guard let info = await URLRescueWiring.rescueProductInfo(urlString: urlString)
+            else { return nil }
+            return PriceTrackingViewController.ResolvedPrice(
+                amount: info.priceAmount, currency: info.priceCurrency)
+        }
     }
+
+    // MARK: - Root UI shape
+
+    /// The tracker list in a bare nav controller — no audio mini-player host
+    /// (read-aloud is an article-app feature).
+    static func makeRootViewController() -> UIViewController {
+        UINavigationController(
+            rootViewController: ReadingListViewController(surface: .priceTracker))
+    }
+
+    static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
+        root as? UINavigationController
+    }
+
+    /// Price Tracker adds no kind rows — the universal tail is the whole menu.
+    static func settingsCategories() -> [SettingsCategory] { [] }
+
+    // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
+
+    static func appDidLaunch() {}
+
+    static func appDidEnterBackground() {}
+
+    static func sceneDidForeground() {}
+
+    static func readingListDidChange() {}
+
+    static func wifiBecameAvailable() {}
+
+    /// Price Tracker handles no articles — ereader sends are never pending here.
+    static func retryPendingArticleSends() {}
+
+    static func resumeUnfinishedMediaDownloads() async {}
+
+    static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
+        // No media kind → no background URLSession to reattach; complete the
+        // callback immediately so the system isn't left waiting.
+        completionHandler()
+    }
+
+    /// Runs one price-refresh pass and returns the processed-tracker count.
+    /// Non-nil only in product-handling apps; its presence is what arms the
+    /// price-refresh BGTask registration/scheduling in AppDelegate.
+    static let priceRefreshRunner: (() async -> Int)? = {
+        await PriceRefreshCoordinator.shared.refreshAndNotify().count
+    }
+
+    #if DEBUG
+    /// `-openArchive` is an article-app debug tool.
+    static func debugArchiveReaderRoot(articleURL: URL) -> UIViewController? { nil }
+
+    /// The kind-woven UI-test screen catalog compiles only into the central
+    /// Luna app (the UI-test/screenshot host).
+    static func uiTestRootViewController(named name: String) -> UIViewController? { nil }
+    #endif
 }
 
 /// Bridges `IngestorProductHandling` to LunaPriceUI's `ProductTrackerIngestor`.

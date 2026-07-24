@@ -89,12 +89,26 @@ truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared a
 OnboardingFlow/AppSurfaceConfig), the App Intent **definitions** (`Luna/Mail/Intents/*` —
 business logic is in the `LunaIntents` library) — and is shared by ALL
 FOUR app targets (each picks its surface from its bundle id; per-app kind wiring
-comes from the one `KindWiring+*.swift` variant each target compiles). The
-Share/Action extensions
+comes from the one `KindWiring+*.swift` variant each target compiles). `KindWiring` is
+also each app's static composition API: AppDelegate/SceneDelegate call
+`KindWiring.makeRootViewController()/mainNavigationController(of:)/settingsCategories()`
+plus fixed lifecycle points (`appDidLaunch/appDidEnterBackground/sceneDidForeground/
+readingListDidChange/wifiBecameAvailable/retryPendingArticleSends/
+resumeUnfinishedMediaDownloads/attachBackgroundURLSessionHandler/priceRefreshRunner`), so
+the universal shell never names a foreign kind's symbols. The shared list UI consults the
+`ListKindSupport` registry (`ArticleListSupport`/`MediaListSupport`/`ProductListSupport`,
+per-target-compiled like the wiring); the Action Button intents' media handoff goes through
+`ActionButtonIntentSupport.mediaHandoff` (installed by `MediaIntentHandoff`), read-aloud via
+`ReadArticleIntent.playArticle`, and URL Rescue's kind legs via
+`URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
+(article: card deck, mini-player, audio wiring, reader/email settings; media: saved-media
+deck, auto-download settings, intent handoff; `UITestScreen`/`NonArticleCardOpening`:
+central-app-only) are excluded from foreign targets via the same membership-exception
+mechanism. The Share/Action extensions
 link `LunaShareSurface` (+ transitive) plus their host's kind modules, `LunaSafari` links
 nothing (it reads the App
 Group id from its own Info.plist via `SafariAppGroup`). Cross-tier wiring uses injected
-closures/protocols installed at launch in AppDelegate (e.g.
+closures/protocols installed at launch in AppDelegate or KindWiring (e.g.
 `AudioPlaybackCenter.dataSource`, `ReadingListIngestor.unsupportedSavePresenter`,
 `DiagnosticLog.exportIdentityProvider`,
 `PriceTrackingViewController.defaultSaveAsArticle`). Component-boundary communication
@@ -102,6 +116,26 @@ inside the UI layers uses delegate protocols (e.g. `RabbitHoleLayerDelegate`,
 `ReaderCompletionDelegate`, `InlineReaderPresentationCoordinating`,
 `CarouselScrubberViewDelegate`), not stored closures. The package is pinned to Swift
 5 language mode. Reusable modules need `public` API + explicit `public init`s.
+
+**Per-app SwiftPM link groups.** Every app links the universal set — Models / Storage /
+DesignSystem / Transitions / Fetch / Ingest / URLClassification / HTMLClassification /
+PriceMetadata / Mail / MailAccount / MailTransport / Social / SocialUI / ReadingList /
+ReadingListUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own kind group(s):
+
+| App target | Kind group(s) linked on top of the universal set |
+| --- | --- |
+| `Luna` (central) | article + media + product (everything) |
+| `LunaReader` | LunaArticleIngest, LunaReaderUI, LunaArchiveReader, LunaPaywallBypass, LunaAudioPlayback, LunaReaderEngine, LunaEpub, LunaDocuments, LunaSend |
+| `LunaDownloader` | LunaMediaDownload, LunaPlatforms |
+| `LunaPriceTracker` | LunaPriceIngest, LunaPriceUI |
+
+`LunaTests` keeps everything (it hosts on the central app). **Known follow-ups (deferred):**
+a few transitive package edges still carry foreign-kind code into single-kind apps —
+`LunaURLRescue → LunaMediaDownload` (the rescue engine resolves media directives through
+`SocialMediaResolving`, a behavioral dep; the payload type `MediaAsset` now lives in
+LunaModels), `LunaReaderUI → LunaPlatforms → LunaMediaDownload` (Reader), and
+`LunaIntents → LunaPlatforms` (universal). Correctness never depended on the link graph —
+it comes from the surface filter + registry gating.
 
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 

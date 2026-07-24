@@ -518,7 +518,7 @@ public final class ReadingListStore {
         platform: ContentPlatform, platformItemID: String?, title: String?,
         creator: String?, thumbnailFileName: String?, for itemID: UUID
     ) -> ReadingListItem? {
-        coordinatedMutate { all in
+        let result = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             all[index].platform = platform
             all[index].platformItemID = platformItemID
@@ -528,6 +528,10 @@ public final class ReadingListStore {
             all[index].state = .ready
             return all[index]
         }
+        // No longer failed: drop the sidecar's failure detail so a LATER failure
+        // starts from a clean count and reason.
+        if result != nil { SaveFailureStore.shared.clear(itemID) }
+        return result
     }
 
     /// Raises the item's read state; never downgrades (read stays read).
@@ -617,13 +621,15 @@ public final class ReadingListStore {
     /// has no article content to download). Returns the refreshed item.
     @discardableResult
     public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
-        coordinatedMutate { all in
+        let result = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             all[index].priceTracker = tracker
             all[index].title = tracker.productName
             all[index].state = .ready
             return all[index]
         }
+        if result != nil { SaveFailureStore.shared.clear(itemID) }
+        return result
     }
 
     /// Attaches a price-tracker payload to the item saved for `urlString` (the
@@ -704,7 +710,7 @@ public final class ReadingListStore {
 
     public func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
         let fileName = "\(item.id.uuidString).json"
-        return coordinatedMutate { all in
+        let saved: ReadingListItem = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == item.id }) else { return item }
             // Both encode AND write must succeed before the item flips `.ready` —
             // a ready item whose content file doesn't exist is a blank reader.
@@ -730,6 +736,13 @@ public final class ReadingListStore {
             }
             return all[index]
         }
+        // Keep the failure sidecar in step with the state this write landed on.
+        if saved.state == .ready {
+            SaveFailureStore.shared.clear(item.id)
+        } else if saved.state == .failed {
+            SaveFailureStore.shared.recordFailure(item.id, reason: .couldNotSave)
+        }
+        return saved
     }
 
     /// Marks a hard-paywalled article as needing a user-solved archive CAPTCHA: it
@@ -747,6 +760,8 @@ public final class ReadingListStore {
             if let title, !title.isEmpty { all[index].title = title }
             return true
         }
+        // A locked-but-titled item is not a failed save; it has its own UX.
+        SaveFailureStore.shared.clear(itemID)
     }
 
     #if DEBUG

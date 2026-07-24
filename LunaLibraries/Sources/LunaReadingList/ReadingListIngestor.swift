@@ -241,9 +241,11 @@ public final class ReadingListIngestor {
         store.markNeedsCaptcha(item.id, title: title)
     }
 
-    /// Marks a genuine failure.
-    fileprivate func markFailed(for item: ReadingListItem) async {
+    /// Marks a genuine failure, and files WHY in the sidecar so the failed card
+    /// can explain itself instead of showing one generic sentence.
+    fileprivate func markFailed(for item: ReadingListItem, reason: SaveFailureReason? = nil) async {
         store.markFailed(item.id)
+        SaveFailureStore.shared.recordFailure(item.id, reason: reason)
     }
 
     /// Ingests a document outcome via the registered article handler (documents
@@ -305,6 +307,7 @@ public final class ReadingListIngestor {
             "ingest: no \(kind) handler registered — marking \(item.id) failed",
             category: "ingest")
         store.markFailed(item.id)
+        SaveFailureStore.shared.recordFailure(item.id, reason: .unknown)
     }
 
     /// Kicks off ingestion for everything not yet ready (app launch / foreground).
@@ -569,8 +572,8 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
             await ingestor.handleDocument(type: type, for: item)
         case let .needsArchive(title):
             await ingestor.parkNeedsArchive(title: title, for: item)
-        case .failed:
-            await ingestor.markFailed(for: item)
+        case let .failed(reason):
+            await ingestor.markFailed(for: item, reason: reason)
         case .unsupported:
             // Unreachable: the surface gate in `applyResult` discards an
             // unsupported outcome (and deletes the item) before presenting.

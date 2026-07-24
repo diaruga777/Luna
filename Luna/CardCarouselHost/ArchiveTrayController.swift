@@ -126,7 +126,6 @@ final class ArchiveTrayController: NSObject {
     private let dismissControl = UIControl()
     private let arcLayout = ArchiveArcLayout()
     private let collection: UICollectionView
-    private let emptyLabel = UILabel()
     private var pan: UIPanGestureRecognizer!
     private var items: [ArchiveTrayItem] = []
     private var progress: CGFloat = 0
@@ -181,12 +180,6 @@ final class ArchiveTrayController: NSObject {
             ArchiveArcHeaderCell.self, forCellWithReuseIdentifier: ArchiveArcHeaderCell.reuseID)
         tray.addSubview(collection)
 
-        emptyLabel.text = "No archived items"
-        emptyLabel.font = .preferredFont(forTextStyle: .subheadline)
-        emptyLabel.textColor = LunaColors.secondaryText
-        emptyLabel.textAlignment = .center
-        tray.addSubview(emptyLabel)
-
         pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.delegate = self
         view.addGestureRecognizer(pan)
@@ -194,7 +187,6 @@ final class ArchiveTrayController: NSObject {
 
     func setItems(_ items: [ArchiveTrayItem]) {
         self.items = items
-        emptyLabel.isHidden = !items.isEmpty
         collection.reloadData()
         // The closed peek exists only when there are cells to peek, so a
         // change in emptiness repositions the closed arc.
@@ -263,7 +255,6 @@ final class ArchiveTrayController: NSObject {
         tray.bounds = CGRect(x: 0, y: 0, width: width, height: max(0, bounds.height - top - bottom))
         tray.center.y = top + tray.bounds.height / 2
         collection.frame = tray.bounds
-        emptyLabel.frame = tray.bounds.insetBy(dx: 18, dy: 18)
         // Narrower than the old full-width rows: the trailing slack is what
         // lets off-apex cells drift rightward along the arc without leaving
         // the screen immediately.
@@ -345,7 +336,10 @@ extension ArchiveTrayController: UIGestureRecognizerDelegate {
         guard !chromeHidden else { return false }
         let velocity = pan.velocity(in: host?.view)
         guard abs(velocity.x) > abs(velocity.y) else { return false }
-        return progress > 0 || (velocity.x < 0 && canPull())
+        // An empty archive has nothing to reveal — never start a new pull for
+        // one (there's no empty state to show). An already-open arc can still
+        // finish its interaction defensively.
+        return progress > 0 || (velocity.x < 0 && !items.isEmpty && canPull())
     }
 
     func gestureRecognizer(

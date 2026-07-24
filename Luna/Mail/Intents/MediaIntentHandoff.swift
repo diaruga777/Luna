@@ -106,13 +106,13 @@ enum MediaIntentHandoff {
             // The background leg below keeps ours, because the system's UI ends
             // when the intent returns and that transfer outlives it.
             let result = await LiveMediaDownloadManager.$systemProvidesProgressUI.withValue(
-                IntentExtendedRuntime.providesSystemProgressUI
+                CaptureIntentSystemProgress.isAvailable
             ) {
                 await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
                     forURLString: urlString)
             }
             SharedDiagnosticLog.record(
-                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), systemProgressUI=\(IntentExtendedRuntime.providesSystemProgressUI), photosAuthorized=\(photosAuthorized)",
+                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), systemProgressUI=\(CaptureIntentSystemProgress.isAvailable), photosAuthorized=\(photosAuthorized)",
                 category: "media-download")
             switch result {
             case let .completed(media): return intentFile(for: media)

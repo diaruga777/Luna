@@ -25,11 +25,10 @@ import Foundation
 /// skips the model and re-runs the previous save so the configured double-save
 /// action fires. Returns a transient entity containing the downloaded image or
 /// video when synchronous intent media is enabled; throws descriptive errors.
-/// `LiveActivityIntent` is what PERMITS the media download's Live Activity to
-/// start from a background Action Button run at all (see `ProvideContextIntent`
-/// for the quoted rule); the iOS 27 extended runtime is conformed separately in
-/// `IntentExtendedRuntime.swift`.
-struct SaveIntent: AppIntent, ForegroundContinuableIntent, LiveActivityIntent {
+/// The background runtime and the Live-Activity permission this intent runs under
+/// are per-target composition: see `CaptureIntentRuntime.swift` (universal
+/// default) and `CaptureIntentRuntime+LongRunning.swift` (media apps only).
+struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Save"
     static let description = IntentDescription("""
@@ -133,20 +132,11 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent, LiveActivityIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<SaveResultEntity> & ProvidesDialog {
         let reporter = IntentProgressReporter()
-        let saved: (value: SaveResultEntity, dialog: IntentDialog)
-        #if compiler(>=6.4)
-        if #available(iOS 27.0, *) {
-            // Extended background runtime + the system's own progress UI, for as
-            // long as we keep reporting progress (`IntentExtendedRuntime`).
-            saved = try await performTracked(reporter: reporter) {
-                try await self.save(reporter: reporter)
-            }
-        } else {
-            saved = try await save(reporter: reporter)
+        // Which background runtime this is, and whether the system shows its own
+        // progress, is decided by target membership — see `CaptureIntentRuntime`.
+        let saved = try await withCaptureRuntime(reporter: reporter) {
+            try await self.save(reporter: reporter)
         }
-        #else
-        saved = try await save(reporter: reporter)
-        #endif
         return .result(value: saved.value, dialog: saved.dialog)
     }
 

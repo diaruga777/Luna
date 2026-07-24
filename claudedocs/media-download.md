@@ -182,7 +182,9 @@ Photos references remain governed by the user's Photos library.
   `failed`). `MediaIntentHandoff` throws `downloadFailed`/`notAuthorized` for anything that
   isn't `isDownloadHandled`; already-downloaded and Wi-Fi-deferred remain legitimate
   no-file returns (see `app-intents.md`, "Error reporting").
-  **Who shows progress:** the capture intents conform to `LiveActivityIntent`, which is
+  **Who shows progress:** in the media-handling apps (Downloader + central Luna — the only
+  targets that compile `CaptureIntentRuntime+LongRunning.swift`) the capture intents conform
+  to `LiveActivityIntent`, which is
   what lets `Activity.request` succeed from a background Action Button run at all — before
   that it threw and the transfer ran invisibly. On iOS 27 builds compiled with Xcode 27 the
   intents also run under `LongRunningIntent`, whose own system progress UI covers the

@@ -206,15 +206,34 @@ intent *believed in* is verified, and every way it can end empty throws:
 - **`ProvideContextError`**: `noTrackedPage`, `unsupportedKind`, `multipleURLs`,
   `saveFailed`, `contentUnavailable`.
 
-## Runtime + progress UI (`IntentExtendedRuntime.swift`)
+## Runtime + progress UI (`CaptureIntentRuntime*.swift`)
 
-Both capture intents conform to **`LiveActivityIntent`** and, behind a gate, to
-**`LongRunningIntent`**. They are orthogonal refinements of `AppIntent` (verified
-in the SDK headers: `LiveActivityIntent : SystemIntent`,
-`LongRunningIntent : ProgressReportingIntent`, both empty), so one type can adopt
-both.
+**Per-target composition, not a universal adoption.** Which runtime a capture
+intent gets is decided by synchronized-group membership, like every other
+kind-specific seam in the shell:
 
-**`LiveActivityIntent` (iOS 17+, unconditional — below the iOS 18 target).** This
+| file | targets | runtime |
+|---|---|---|
+| `CaptureIntentRuntime.swift` | all four | inline — the ordinary ~30 s budget |
+| `CaptureIntentRuntime+LongRunning.swift` | **Luna**, **Luna Downloader** | `LiveActivityIntent` + `LongRunningIntent` |
+
+Reader and Price Tracker stay on the plain budget **by design**: their captures
+end at the save (an article fetch or a price fetch, bounded by the pipeline
+timeout and the 12 s race). Only the media apps can exceed 30 s, because their
+handoff adds a preflight HEAD and an awaited transfer on top of the save. The
+override is a shadowing `withCaptureRuntime` on the concrete intent type, so the
+call in `perform()` is identical in every app and the choice is made at compile
+time. Verify the split in the built metadata — `systemProtocols` must be
+`[ForegroundContinuable, SessionStarting]` for Luna/Downloader and
+`[ForegroundContinuable]` for Reader/Price Tracker, with 3 actions everywhere.
+
+Both protocols are orthogonal refinements of `AppIntent` (SDK headers:
+`LiveActivityIntent : SystemIntent`, `LongRunningIntent : ProgressReportingIntent`,
+both empty), so one type adopts both, and extension-declared conformances DO
+survive metadata extraction (that's what the `SessionStarting` check above
+confirms).
+
+**`LiveActivityIntent` (iOS 17+, no gate — below the iOS 18 target).** This
 is what PERMITS a Live Activity to start from a background Action Button run at
 all: *"In general, your app needs to be in the foreground to start a Live
 Activity. However, you can use a `LiveActivityIntent` and start the Live Activity
@@ -225,10 +244,11 @@ Shortcut exiting over an invisible download looked like. Verify with the extract
 metadata: `systemProtocols` for both intents must list
 `com.apple.link.systemProtocol.SessionStarting` next to `…ForegroundContinuable`.
 
-**`LongRunningIntent` (iOS 27, double-gated).** Without an extension an app intent
-gets **~30 s** in the background (Apple's figure, stated in `LongRunningIntent`);
-a media capture can spend 12 s on the save race, then a 20 s preflight HEAD, then
-an awaited transfer — i.e. be killed mid-download having reported nothing. Gates:
+**`LongRunningIntent` (iOS 27, double-gated, media apps only).** Without an
+extension an app intent gets **~30 s** in the background (Apple's figure, stated
+in `LongRunningIntent`); a media capture can spend 12 s on the save race, then a
+20 s preflight HEAD, then an awaited transfer — i.e. be killed mid-download having
+reported nothing. Gates:
 
 - `#if compiler(>=6.4)` — the protocol is **absent from iPhoneOS26.2.sdk** (0
   occurrences in its `AppIntents` swiftinterface vs 2 in the iOS 27 SDK), so a
@@ -257,7 +277,8 @@ cross into the next band — a save still running must not read as a download.
 | background/deferred transfer | Luna's own (the system's ends with the intent) | Luna's own |
 
 Suppression is `LiveMediaDownloadManager.systemProvidesProgressUI`, a **task
-local** bound by `MediaIntentHandoff` around the awaited call only — so a
+local** bound by `MediaIntentHandoff` (media apps only, so it can read
+`CaptureIntentSystemProgress.isAvailable`) around the awaited call only — so a
 concurrent in-app save keeps its own activity and there's no global flag to leave
 set. It is deliberately NOT bound around the background leg: that transfer
 outlives the intent, and the system's progress UI does not.

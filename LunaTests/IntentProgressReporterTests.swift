@@ -87,12 +87,12 @@ final class IntentProgressReporterTests: XCTestCase {
         if #available(iOS 27.0, *) {
             // Xcode 26.2 archives compile the fallback even on iOS 27.
             #if compiler(>=6.4)
-            XCTAssertTrue(IntentExtendedRuntime.providesSystemProgressUI)
+            XCTAssertTrue(CaptureIntentSystemProgress.isAvailable)
             #else
-            XCTAssertFalse(IntentExtendedRuntime.providesSystemProgressUI)
+            XCTAssertFalse(CaptureIntentSystemProgress.isAvailable)
             #endif
         } else {
-            XCTAssertFalse(IntentExtendedRuntime.providesSystemProgressUI)
+            XCTAssertFalse(CaptureIntentSystemProgress.isAvailable)
         }
     }
 }

@@ -21,15 +21,10 @@ import Foundation
 /// compatible complete URLs supplied by the Shortcut are saved directly before
 /// screenshot analysis is considered.
 ///
-/// `LiveActivityIntent` is what PERMITS the media download's Live Activity to
-/// start at all: "In general, your app needs to be in the foreground to start a
-/// Live Activity. However, you can use a `LiveActivityIntent` and start the Live
-/// Activity in its `perform()` method." Without it, `Activity.request` throws for
-/// a background Action Button run and the download proceeds invisibly. iOS 17+,
-/// below the iOS 18 deployment target, so it needs no gate. The extended runtime
-/// (iOS 27 `LongRunningIntent`) is conformed separately in
-/// `IntentExtendedRuntime.swift`, which must stay compiler-gated.
-struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent, LiveActivityIntent {
+/// The background runtime and the Live-Activity permission this intent runs under
+/// are per-target composition: see `CaptureIntentRuntime.swift` (universal
+/// default) and `CaptureIntentRuntime+LongRunning.swift` (media apps only).
+struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Provide Context"
     static let description = IntentDescription("""
@@ -86,20 +81,11 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent, LiveActivit
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
         let reporter = IntentProgressReporter()
-        let value: ProvideContextResultEntity
-        #if compiler(>=6.4)
-        if #available(iOS 27.0, *) {
-            // Extended background runtime + the system's own progress UI, for as
-            // long as we keep reporting progress (`IntentExtendedRuntime`).
-            value = try await performTracked(reporter: reporter) {
-                try await self.provideContext(reporter: reporter)
-            }
-        } else {
-            value = try await provideContext(reporter: reporter)
+        // Which background runtime this is, and whether the system shows its own
+        // progress, is decided by target membership — see `CaptureIntentRuntime`.
+        let value = try await withCaptureRuntime(reporter: reporter) {
+            try await self.provideContext(reporter: reporter)
         }
-        #else
-        value = try await provideContext(reporter: reporter)
-        #endif
         return .result(value: value)
     }
 

@@ -44,6 +44,15 @@ extension LiveMediaDownloadManager {
     func startActivity(for job: LiveMediaDownloadJob, announce: Bool = true) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        // The system is already showing progress for this work (an App Intent
+        // running under `LongRunningIntent`) — prefer it and don't stack a second
+        // activity on top. Scoped to the intent's awaited leg only.
+        guard !Self.systemProvidesProgressUI else {
+            SharedDiagnosticLog.record(
+                "live activity suppressed: system intent progress UI owns \(job.sourceURLString)",
+                category: "media-download")
+            return
+        }
         let attributes = LiveMediaDownloadAttributes(
             jobID: job.id,
             sourceURLString: job.sourceURLString,

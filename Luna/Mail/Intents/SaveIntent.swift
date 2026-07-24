@@ -25,7 +25,11 @@ import Foundation
 /// skips the model and re-runs the previous save so the configured double-save
 /// action fires. Returns a transient entity containing the downloaded image or
 /// video when synchronous intent media is enabled; throws descriptive errors.
-struct SaveIntent: AppIntent, ForegroundContinuableIntent {
+/// `LiveActivityIntent` is what PERMITS the media download's Live Activity to
+/// start from a background Action Button run at all (see `ProvideContextIntent`
+/// for the quoted rule); the iOS 27 extended runtime is conformed separately in
+/// `IntentExtendedRuntime.swift`.
+struct SaveIntent: AppIntent, ForegroundContinuableIntent, LiveActivityIntent {
     init() {}
     static let title: LocalizedStringResource = "Save"
     static let description = IntentDescription("""
@@ -128,6 +132,30 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<SaveResultEntity> & ProvidesDialog {
+        let reporter = IntentProgressReporter()
+        let saved: (value: SaveResultEntity, dialog: IntentDialog)
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *) {
+            // Extended background runtime + the system's own progress UI, for as
+            // long as we keep reporting progress (`IntentExtendedRuntime`).
+            saved = try await performTracked(reporter: reporter) {
+                try await self.save(reporter: reporter)
+            }
+        } else {
+            saved = try await save(reporter: reporter)
+        }
+        #else
+        saved = try await save(reporter: reporter)
+        #endif
+        return .result(value: saved.value, dialog: saved.dialog)
+    }
+
+    /// The intent body, independent of whether an extended runtime is wrapping
+    /// it. Returns the value + dialog; `perform` packages the result.
+    private func save(
+        reporter: IntentProgressReporter
+    ) async throws -> (value: SaveResultEntity, dialog: IntentDialog) {
+        reporter.enter(.saving)
         let imageData = screenshot.data
         guard let digest = ScreenshotDigest.digest(forImageData: imageData) else {
             // Undecodable image data — the model couldn't read it either.
@@ -147,15 +175,17 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             // re-running a save whose item is gone or failed is a failure too.
             _ = try self.savedURLString(from: outcome)
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+            reporter.enter(.downloading)
             let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: savedURLString
             ) {
                 try? await requestToContinueInForeground()
             }
+            reporter.enter(.finishing)
             if case .friendPromptRequested = outcome {
                 try? await requestToContinueInForeground()
             }
-            return .result(value: SaveResultEntity(media: media), dialog: "Done.")
+            return (SaveResultEntity(media: media), "Done.")
         }
 
         let isSafari = AppNamePlatform.isSafari(forAppName: app)
@@ -215,6 +245,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         // Use the platform finder's resolved URL even when duplicate/double-save
         // handling times out and reports no saved URL. Download handoff is an
         // independent consequence of resolving downloadable media.
+        reporter.enter(.downloading)
         let media: IntentFile?
         if let downloadURLString = resolvedPlatformURLString ?? savedURLString {
             media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
@@ -230,7 +261,8 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             // recorded) can appear.
             try? await requestToContinueInForeground()
         }
-        return .result(value: SaveResultEntity(media: media), dialog: "Saved to Luna.")
+        reporter.enter(.finishing)
+        return (SaveResultEntity(media: media), "Saved to Luna.")
     }
 
 }

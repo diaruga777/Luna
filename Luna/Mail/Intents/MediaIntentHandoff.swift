@@ -100,15 +100,28 @@ enum MediaIntentHandoff {
                     photosAuthorized: photosAuthorized)
                 return nil
             }
-            let result = await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
-                forURLString: urlString)
+            // The AWAITED leg is the one the system's intent progress UI covers
+            // end to end (the intent stays alive for the whole transfer), so
+            // prefer it and suppress Luna's own Live Activity for its duration.
+            // The background leg below keeps ours, because the system's UI ends
+            // when the intent returns and that transfer outlives it.
+            let result = await LiveMediaDownloadManager.$systemProvidesProgressUI.withValue(
+                IntentExtendedRuntime.providesSystemProgressUI
+            ) {
+                await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
+                    forURLString: urlString)
+            }
             SharedDiagnosticLog.record(
-                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), photosAuthorized=\(photosAuthorized)",
+                "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), systemProgressUI=\(IntentExtendedRuntime.providesSystemProgressUI), photosAuthorized=\(photosAuthorized)",
                 category: "media-download")
             switch result {
             case let .completed(media): return intentFile(for: media)
             case .handledWithoutFile: return nil
-            case let .failed(message): throw MediaHandoffError.downloadFailed(message: message)
+            case let .failed(message):
+                // A user cancelling from the system's progress UI cancels this
+                // task — that's a dismissal, not a failure worth an error dialog.
+                if Task.isCancelled { return nil }
+                throw MediaHandoffError.downloadFailed(message: message)
             }
         } else {
             try await startInBackground(

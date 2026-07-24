@@ -20,7 +20,16 @@ import Foundation
 /// to the entity for the Shortcut to display or pass onward. Outside Safari,
 /// compatible complete URLs supplied by the Shortcut are saved directly before
 /// screenshot analysis is considered.
-struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
+///
+/// `LiveActivityIntent` is what PERMITS the media download's Live Activity to
+/// start at all: "In general, your app needs to be in the foreground to start a
+/// Live Activity. However, you can use a `LiveActivityIntent` and start the Live
+/// Activity in its `perform()` method." Without it, `Activity.request` throws for
+/// a background Action Button run and the download proceeds invisibly. iOS 17+,
+/// below the iOS 18 deployment target, so it needs no gate. The extended runtime
+/// (iOS 27 `LongRunningIntent`) is conformed separately in
+/// `IntentExtendedRuntime.swift`, which must stay compiler-gated.
+struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent, LiveActivityIntent {
     init() {}
     static let title: LocalizedStringResource = "Provide Context"
     static let description = IntentDescription("""
@@ -76,6 +85,29 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
+        let reporter = IntentProgressReporter()
+        let value: ProvideContextResultEntity
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *) {
+            // Extended background runtime + the system's own progress UI, for as
+            // long as we keep reporting progress (`IntentExtendedRuntime`).
+            value = try await performTracked(reporter: reporter) {
+                try await self.provideContext(reporter: reporter)
+            }
+        } else {
+            value = try await provideContext(reporter: reporter)
+        }
+        #else
+        value = try await provideContext(reporter: reporter)
+        #endif
+        return .result(value: value)
+    }
+
+    /// The intent body, independent of whether an extended runtime is wrapping
+    /// it. Returns the entity; `perform` packages the result.
+    private func provideContext(
+        reporter: IntentProgressReporter
+    ) async throws -> ProvideContextResultEntity {
         let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
 
         // A supplied URL this app can handle takes precedence over every
@@ -90,7 +122,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             isSafari: isSafari,
             isEnabled: AppIntentSettings.handleOnScreenURLs)
         if case let .save(urlString) = plan {
-            return .result(value: try await saveURL(urlString))
+            return try await saveURL(urlString, reporter: reporter)
         }
 
         // With no single usable supplied URL, let the Action Button onboarding state
@@ -109,9 +141,9 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 // Bounce the user back into Luna (in-app onboarding reacts to
                 // the state change). A declined prompt remains unhandled.
                 try? await requestToContinueInForeground()
-                return .result(value: ProvideContextResultEntity(outcome: .unhandled))
+                return ProvideContextResultEntity(outcome: .unhandled)
             case .unsupported:
-                return .result(value: ProvideContextResultEntity(outcome: .unhandled))
+                return ProvideContextResultEntity(outcome: .unhandled)
             case .none:
                 break
             }
@@ -137,16 +169,16 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
         switch decision {
         case .unsupported:
-            return .result(value: ProvideContextResultEntity(outcome: .unhandled))
+            return ProvideContextResultEntity(outcome: .unhandled)
         case .screenshotNeeded:
-            return .result(value: ProvideContextResultEntity(outcome: .requiresScreenshot))
+            return ProvideContextResultEntity(outcome: .requiresScreenshot)
         case .saveImmediately:
             guard let urlString = SafariURLStore.lastURL, !urlString.isEmpty else {
                 // Shouldn't happen (freshness implies a URL) — but never save
                 // nothing silently.
                 throw ProvideContextError.noTrackedPage
             }
-            return .result(value: try await saveURL(urlString))
+            return try await saveURL(urlString, reporter: reporter)
         }
     }
 
@@ -156,7 +188,10 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     /// media download that never ran (thrown from the handoff). A timeout still
     /// counts as handled — the ingest task continues and persists its pending
     /// work in the background, so the item IS in the app.
-    private func saveURL(_ urlString: String) async throws -> ProvideContextResultEntity {
+    private func saveURL(
+        _ urlString: String, reporter: IntentProgressReporter
+    ) async throws -> ProvideContextResultEntity {
+        reporter.enter(.saving)
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString,
             doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
@@ -177,11 +212,13 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             throw ProvideContextError(saveFailure: failure)
         }
 
+        reporter.enter(.downloading)
         let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
             for: savedURLString
         ) {
             try? await requestToContinueInForeground()
         }
+        reporter.enter(.finishing)
         return ProvideContextResultEntity(outcome: .done, media: media)
     }
 }

@@ -369,8 +369,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     /// The frontmost view controller of the key window — where globally-injected
-    /// prompts (the interop prompt) present from, since their trigger (an async
-    /// ingest) has no view-controller context of its own.
+    /// prompts (the unsupported-kind alert) present from, since their trigger (an
+    /// async ingest) has no view-controller context of its own.
     static func frontmostViewController() -> UIViewController? {
         let window = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }

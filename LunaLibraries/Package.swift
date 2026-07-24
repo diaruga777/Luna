@@ -50,11 +50,6 @@ let package = Package(
         .target(name: "LunaAppConfig"),
         .target(name: "LunaModels"),
         .target(name: "LunaURLClassification", dependencies: ["LunaModels"]),
-        // Cross-app-interop purchase gate: the App Group "unlocked" flag, the
-        // per-surface owner/installed-marker lookups, and the pure gate decision.
-        // Deliberately kept in the SAME low tier as LunaAppConfig/LunaModels/
-        // LunaURLClassification (no fetch/HTML/UIKit) so it's cheap to link into
-        // the share/action extensions and any future StoreKit-only context. The
         .target(name: "LunaHTMLClassification", dependencies: [
             "LunaModels", "LunaURLClassification", "LunaPriceMetadata",
             .product(name: "SwiftSoup", package: "SwiftSoup"),

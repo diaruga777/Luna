@@ -109,9 +109,10 @@ reading-list records. If Photos access is denied, or limited access cannot resol
 asset, the Luna records are retained until the user grants sufficient access. A Photos
 asset that was already deleted is treated as an idempotent successful deletion.
 
-Local retention (default **Never**, with choices of 1 day, 2 days, 1 week, 2 weeks, or
-1 month) applies only to `.localFile` rows. Expiry deletes local files and returns the
-row to `.undownloaded`; Photos references remain governed by the user's Photos library.
+Local retention applies only to `.localFile` rows, and only when the user stores
+downloads in Luna rather than Photos (the two are one exclusive **Storage** choice —
+see Settings below). Expiry deletes local files and returns the row to `.undownloaded`;
+Photos references remain governed by the user's Photos library.
 
 ## Entry points and UI
 
@@ -162,13 +163,15 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
 - **Ingest, App Intents, and short-lived extensions** — normal ingestion calls
   `MediaAutoDownloader`, while `.appIntent` ingestion deliberately skips the awaited inline
   downloader and any automatic Downloader-host Live Activity; the Save/Provide Context intent
-  owns the single handoff after the reading-list result is known. **Return Downloaded Media**
-  (`AutoDownloadSettings.returnMediaFromAppIntents`, App-Group-backed, default on) first resolves
+  owns the single handoff after the reading-list result is known. Returning media to Shortcuts
+  (`AppIntentSettings.returnsMediaToShortcuts`, App-Group-backed, default on — the inverse of the
+  **Download in Background** row under Settings → Shortcut & Safari) first resolves
   the asset and its advertised/HEAD content length. Known files up to **100 MiB** run through the
   Live Activity/background URLSession engine and are awaited so the intent can return an optional
   `IntentFile`. Larger or indeterminate files are handed to that engine and the intent returns
   immediately with no file. Existing local files are reused and Photos-backed rows are copied to
-  a transient file. Turning the setting off always uses the immediate background handoff.
+  a transient file. Turning **Download in Background** on always uses the immediate background
+  handoff.
   Intent exports use a sanitized item title or platform base name (for example
   `tiktok.mp4`) as the actual temporary URL filename and declare its concrete file type,
   rather than leaking the durable UUID-backed library filename to Shortcuts.
@@ -253,31 +256,37 @@ fail explicitly when no public progressive stream is present. YouTube's develope
 restrict downloading/offline playback without authorization; shipping this feature requires a
 separate product/legal review.
 
-## Clipboard completion action
+## Pasteboard providers
 
-`AutoDownloadSettings.autoCopyDownloadsToClipboard` defaults to **off**. When enabled,
-every successful Downloader completion places one `NSItemProvider` on
-`UIPasteboard.general.itemProviders` after the final durable storage state is known:
-
-- local state uses `NSItemProvider(contentsOf: fileURL)`;
-- Photos state registers a lazy file representation which resolves the durable asset ID
-  and streams the selected `PHAssetResource` to a temporary file on demand.
-
-This includes videos. Luna never assigns video `Data` to the pasteboard, so copying does
-not eagerly materialize a large movie in memory. `MediaItemProviderFactory` and
-`MediaPasteboard` contain the common implementation.
+`MediaItemProviderFactory` and `MediaPasteboard` build a lazy, file-backed
+`NSItemProvider` for either storage state: local state uses
+`NSItemProvider(contentsOf: fileURL)`; Photos state registers a file representation which
+resolves the durable asset ID and streams the selected `PHAssetResource` to a temporary
+file on demand. Luna never assigns video `Data` to the pasteboard, so copying does not
+eagerly materialize a large movie in memory. (The automatic
+"copy every completed download" setting these backed was removed; the providers remain
+the way to put media on the pasteboard.)
 
 ## Settings
 
-Downloader's `Settings → Auto-Download Media` screen has four groups:
+Downloader's `Settings → Downloads` screen has two picker rows:
 
-1. **Local Files** — one **Delete After** picker: **Never** (the default), **After 1
-   day**, **After 2 days**, **After 1 week**, **After 2 weeks**, or **After 1 month**.
-2. **Network** — **Wi-Fi Only** (default off).
-3. **After Downloading** — **Auto-Save to Photos** (default on) and **Copy Downloads to
-   Clipboard** (default off).
-4. **Auto-download media** — whether the extension preview starts downloading
-   automatically (default on).
+1. **Download Automatically** — **Never**, **Always** (the default), or **On Wi-Fi Only**.
+   `AutoDownloadSettings.policy` reads and writes the two prefs behind it
+   (`autoDownloadMediaInPreview` + `wifiOnlyDownloads`): Never means nothing downloads on
+   its own, and the two on-values differ only in whether a download that starts on cellular
+   waits for Wi-Fi. Manual per-item downloads always start immediately.
+2. **Storage** — **Save to Photos** (the default) or **Delete after 1 day / 3 days /
+   2 weeks / 1 month**. `MediaStorageSettings.option` maps this one choice onto
+   `autoSaveDownloadsToPhotos` + `MediaRetentionSettings.option`, which makes the two
+   mutually exclusive: choosing Photos clears the deletion clock, choosing an age turns
+   Photos off. An installation that had Photos off with no retention choice reads as the
+   default age (1 month); a since-removed age (2 days, 1 week) maps to the closest
+   surviving one.
+
+**Download in Background** (whether the Action Button intents wait for the download and
+hand the file back to Shortcuts) lives under `Settings → Shortcut & Safari`, and only on
+the media-handling surfaces.
 
 All values live in the App Group so the app, App Intents, share/action extensions, and
 background completion code make the same decision. Reader/Price Tracker continue to show

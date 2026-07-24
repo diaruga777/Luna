@@ -466,10 +466,10 @@ open class ShareViewController: UIViewController {
         complete()
     }
 
-    /// Best-effort deep link into the containing app (the interop prompt's
-    /// "unlock in <app>" step). Extensions have no `UIApplication.shared`;
+    /// Best-effort deep link into the containing app (the rescue-failure card's
+    /// "Finish in Luna" step). Extensions have no `UIApplication.shared`;
     /// `extensionContext.open` is the sanctioned (if not universally honored)
-    /// route, and the prompt always shows manual fallback instructions too.
+    /// route, and the card always shows manual fallback instructions too.
     public func openURL(_ url: URL) {
         extensionContext?.open(url, completionHandler: nil)
     }

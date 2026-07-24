@@ -16,9 +16,9 @@ including the page fetch and HTML heuristics) on any incoming URL from any surfa
 (paste, share/action extension, app intent, Safari extension, email, friend share).
 What differs per app is HANDLING, and that difference is fixed at build time by
 which per-kind packages the target links. There is no purchase, no runtime
-entitlement, and no per-source exemption (the old Luna Interoperability purchase
-and its `.email`/`.friendShare` exemptions are gone — the owning app's own import
-picks the same message up when it's installed).
+entitlement, and no per-source exemption — email and friend-share ingestion drop
+foreign kinds too, and the owning app's own import picks the same link up when
+it's installed.
 
 ## The two gates (both compile-time-shaped)
 

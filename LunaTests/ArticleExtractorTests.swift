@@ -203,6 +203,47 @@ final class ArticleExtractorTests: XCTestCase {
         XCTAssertTrue(content.wholeText.contains("Another real paragraph"))
     }
 
+    /// Business Insider regression: in-body ad slots were surviving into the reader as
+    /// interstitial junk. They use the industry-standard ad vocabulary — a whole-token
+    /// `ad` class, `ad-wrapper`/`ad-container`, DFP/Google Ad Manager `data-adunit` and
+    /// `div-gpt-ad` ids — none of which the old blocklist matched (it had `advert`,
+    /// `taboola`, `sponsor`, but not bare `ad`). The strip is generic, not BI-specific.
+    func testStripsInlineAdSlots() throws {
+        let html = """
+        <html><body><article>
+        <p>Real article paragraph with plenty of words so the container scoring stays dominant here.</p>
+        <div class="ad ad-wrapper fluid in-post only-mobile"><p>Sponsored ad creative headline you should click right now to buy!</p></div>
+        <p>Padding body paragraph with a generous amount of additional words so that the refined extraction layer comfortably clears its minimum substance threshold and the junk stripping behavior under test is actually exercised in full.</p>
+        <div class="post-bottom-ad-container" data-adunit="site/post/in-content"><p>Another advertisement block that pretends to be an interesting related product story.</p></div>
+        <div id="div-gpt-ad-12345"><p>Google Ad Manager slot creative text that must never reach the reader body.</p></div>
+        <p>Another real paragraph of body text that the reader actually cares about reading today.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertFalse(content.wholeText.contains("Sponsored ad creative"))
+        XCTAssertFalse(content.wholeText.contains("advertisement block"))
+        XCTAssertFalse(content.wholeText.contains("Google Ad Manager slot"))
+        XCTAssertTrue(content.wholeText.contains("Real article paragraph"))
+        XCTAssertTrue(content.wholeText.contains("Another real paragraph"))
+    }
+
+    /// Guard against the classic over-match: a naive `[class*=ad]` would eat all of
+    /// these "ad"-substring names, but the token-scoped selector (`[class~=ad]` plus
+    /// compound `ad-*`) must leave "headline", "download", "gradient", "shadow",
+    /// "thread" alone. (Class names chosen to collide with no other strip selector.)
+    func testAdStripDoesNotEatAdLikeWords() throws {
+        let html = """
+        <html><body><article class="article-body">
+        <div class="headline-wrap download-box"><p>This lead reading paragraph has real substance and must be kept in full for the person here.</p></div>
+        <div class="gradient-fill shadow-panel thread-summary"><p>Another genuine body paragraph with enough words to matter to the person actually reading this story today.</p></div>
+        <p>A third solid paragraph so the container has plenty of dominant real text to score against here.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("lead reading paragraph"))
+        XCTAssertTrue(content.wholeText.contains("Another genuine body paragraph"))
+    }
+
     /// Real-page smoke test: parses saved copies of actual news pages when the
     /// fixtures are present on the host (skipped otherwise, e.g. in CI).
     func testExtractsRealWorldFixtures() throws {

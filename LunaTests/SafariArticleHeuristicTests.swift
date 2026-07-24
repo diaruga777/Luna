@@ -326,6 +326,48 @@ final class SafariArticleHeuristicTests: XCTestCase {
             "window.__lunaIsArticlePage()", html: html, urlString: "https://edition.cnn.com/"))
     }
 
+    /// (A2) The Business Insider bug: a real article on a known FREE/metered news host
+    /// that embeds a "read next" rail of related-story `<article>` cards. BI ships six
+    /// `<article>` elements (the story plus its rail), which trips the `>= 4 <article>`
+    /// structural index veto -- previously killing the "Read in Luna" pill even though
+    /// the host is known and the page declares a `NewsArticle`. Positive article
+    /// metadata on a known host must win, exactly as the native free-host fast-path
+    /// classifies it `.article` outright. No BI-specific code: businessinsider.com is
+    /// just one of the entries in the shared `NewsSites.free` list.
+    func testKnownNewsArticleWithRelatedArticleCardsIsArticle() {
+        var relatedCards = ""
+        for index in 0..<5 {
+            relatedCards += """
+            <article class="river-item"><a href="/story-\(index)"><h3>
+              Another developing story number \(index) worth reading next
+            </h3></a><p>\(prose(120))</p></article>
+            """
+        }
+        let html = """
+        <html><head>
+          <meta property="og:type" content="article">
+          <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"NewsArticle",
+             "headline":"A cyclospora outbreak has been linked to berries"}
+          </script>
+        </head><body>
+          <article class="post-content">
+            <h1>A cyclospora outbreak has been linked to berries</h1>
+            <p>\(prose(160))</p><p>\(prose(160))</p>
+            <div class="ad ad-wrapper fluid in-post">Advertisement</div>
+          </article>
+          \(relatedCards)
+        </body></html>
+        """
+        let biURL = "https://www.businessinsider.com/cyclospora-outbreak-berries-safe-kids-toddlers-2026-7"
+        // Six <article> elements would trip the raw index veto (proving the repro)...
+        XCTAssertTrue(evaluate(
+            "document.querySelectorAll('article').length >= 4", html: html, urlString: biURL))
+        // ...but a known news host declaring an article still shows the Read in Luna pill.
+        XCTAssertTrue(evaluate(
+            "window.__lunaIsArticlePage()", html: html, urlString: biURL))
+    }
+
     /// (B) Control: the identical thin teaser on a host NOT in the shared list gets no
     /// host rescue and correctly fails the DOM scorer -- proving the fix keys on the
     /// shared host data, not blanket acceptance of thin pages.

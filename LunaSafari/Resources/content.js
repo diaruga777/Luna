@@ -326,14 +326,42 @@
         return isKnownHardPaywallHost() || looksPaywalled();
     }
 
-    // Combined article verdict, exposed for the bare-WKWebView test harness. An obvious
-    // index/listing page vetoes BOTH paths. Otherwise a known news host rescues a thin
-    // paywall teaser, while unknown hosts still need the prose scorer to pass.
+    // Combined article verdict, exposed for the bare-WKWebView test harness.
+    //
+    // A known news host mirrors the app's `NewsSites.free`/`.hardPaywall` fast-path,
+    // which classifies the host as `.article` OUTRIGHT with zero DOM inspection. The
+    // Safari side must not be strictly weaker: a real article routinely embeds a
+    // "read next" rail of related-story `<article>` cards (Business Insider ships six
+    // `<article>` elements) and becomes link-dense once its body is metered, which
+    // trips the structural index heuristics (`>= 4 <article>`, whole-page link
+    // density). Those were meant to reject a publisher FRONT/section page, not to
+    // override a known host — so on a known host, POSITIVE article metadata
+    // (og:type=article, or an Article/NewsArticle/BlogPosting JSON-LD node) decides
+    // "article" and the structural veto no longer applies. Only a page that carries
+    // NO article declaration at all falls back to the full index veto, so a
+    // publisher homepage on the same host still gets no pill.
+    //
+    // Unknown hosts are unchanged: an obvious index vetoes, then the prose scorer
+    // decides. On save the app re-classifies properly via LunaIngest either way.
     function isArticlePage() {
+        if (isKnownArticleHost()) {
+            if (pageDeclaresArticle()) { return true; }
+            return !looksLikeNonArticleIndex();
+        }
         if (looksLikeNonArticleIndex()) { return false; }
-        return isKnownArticleHost() || looksLikeArticle();
+        return looksLikeArticle();
+    }
+
+    // Explicit "this is an article" markup, independent of how much prose has
+    // rendered (so a thin metered teaser on a known host still qualifies). Reuses
+    // the same signals the prose scorer treats as strong evidence.
+    function pageDeclaresArticle() {
+        var ogType = document.querySelector('meta[property="og:type"]');
+        if (ogType && /article/i.test(ogType.getAttribute("content") || "")) { return true; }
+        return hasArticleJSONLD();
     }
     window.__lunaIsArticlePage = isArticlePage;
+    window.__lunaPageDeclaresArticle = pageDeclaresArticle;
     window.__lunaIsKnownHardPaywallHost = isKnownHardPaywallHost;
 
     // An index is not something Luna can read as one article, even when its publisher

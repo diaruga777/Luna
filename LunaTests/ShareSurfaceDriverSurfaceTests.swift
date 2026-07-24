@@ -192,7 +192,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         let item = store.add(urlString: url.absoluteString, source: .shareSheet)
         let driver = makeDriver(current: .reader)
 
-        driver.present(.failed, url: url)
+        driver.present(.failed(nil), url: url)
 
         XCTAssertEqual(store.item(withID: item.id)?.state, .failed, "marked failed as today")
         XCTAssertEqual(host.completedSilently, 1)

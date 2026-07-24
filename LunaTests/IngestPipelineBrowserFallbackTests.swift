@@ -123,6 +123,11 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
             productProcessor: ProductIngestProcessor()
         )
 
-        XCTAssertEqual(outcome, .failed)
+        // Match the case, not its reason: which reason the mock's refusal maps to
+        // is that mock's business, and pinning it here would make an unrelated
+        // fetcher change look like a routing regression.
+        guard case .failed = outcome else {
+            return XCTFail("expected a genuine failure, got \(outcome)")
+        }
     }
 }

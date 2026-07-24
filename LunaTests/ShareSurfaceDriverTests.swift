@@ -289,7 +289,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
 
         _ = store.add(urlString: urlString)
         let (actionDriver, actionHost) = makeDriver(isActionExtension: true)
-        actionDriver.present(.failed, url: url(urlString))
+        actionDriver.present(.failed(nil), url: url(urlString))
         XCTAssertTrue(actionHost.presented.contains { $0 is RescueFailureViewController },
                       "action ext presents the rescue hand-off card on failure")
         XCTAssertFalse(actionHost.confirmedSaved, "never a misleading Saved on failure")
@@ -298,7 +298,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
         store.delete(store.item(forURLString: urlString)!)
         _ = store.add(urlString: urlString)
         let (shareDriver, shareHost) = makeDriver(isActionExtension: false)
-        shareDriver.present(.failed, url: url(urlString))
+        shareDriver.present(.failed(nil), url: url(urlString))
         XCTAssertTrue(shareHost.completedSilently)
         XCTAssertFalse(shareHost.confirmedSaved)
         XCTAssertEqual(store.item(forURLString: urlString)?.state, .failed)

@@ -89,7 +89,7 @@ final class SurfaceSupportTests: XCTestCase {
         XCTAssertEqual(Outcome.social(.bluesky, itemID: "1").owningApp, .downloader)
         XCTAssertEqual(Outcome.video(.youtube, itemID: "1").owningApp, .downloader)
         XCTAssertEqual(Outcome.product(product, html: "").owningApp, .priceTracker)
-        XCTAssertNil(Outcome.failed.owningApp, "a genuine failure belongs to nobody")
+        XCTAssertNil(Outcome.failed(nil).owningApp, "a genuine failure belongs to nobody")
     }
 
     // MARK: - unsupportedMessage

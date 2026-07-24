@@ -55,7 +55,7 @@ is reported or ignored**:
 |---|---|---|
 | one candidate | predicted kind is handled by THIS app | **save** — and throw on any failure |
 | one candidate | predicted kind belongs to a sibling app, or unusable URL | **skip** — silent fall-through |
-| ≥2 distinct valid, non-collapsing URLs | at least one is handleable | **divergent** — throws `multipleURLs` |
+| ≥2 distinct valid, non-collapsing URLs | at least one is handleable | **divergent** — throws `multipleURLs` (after the onboarding hijack: an in-flight setup run must still advance) |
 | ≥2 distinct valid URLs | none handleable | **skip** |
 | nothing usable | — | **skip** |
 

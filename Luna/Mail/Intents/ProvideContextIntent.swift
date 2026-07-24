@@ -85,20 +85,15 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         // A link owned by a sibling app (or no usable link at all) falls through
         // in silence to the decision below. Safari deliberately ignores this
         // input and continues to use its extension-backed URL store.
-        switch ProvideContextOnScreenURL.plan(
+        let plan = ProvideContextOnScreenURL.plan(
             text: onScreenURLs,
             isSafari: isSafari,
-            isEnabled: AppIntentSettings.handleOnScreenURLs
-        ) {
-        case .divergent:
-            throw ProvideContextError.multipleURLs
-        case let .save(urlString):
+            isEnabled: AppIntentSettings.handleOnScreenURLs)
+        if case let .save(urlString) = plan {
             return .result(value: try await saveURL(urlString))
-        case .skip:
-            break
         }
 
-        // With no usable supplied URL, let the Action Button onboarding state
+        // With no single usable supplied URL, let the Action Button onboarding state
         // machine hijack this invocation if it's mid-flight for this surface.
         // Its first interception fires from the Shortcuts app (the freshly
         // imported shortcut's own first run); its second fires from wherever
@@ -121,6 +116,12 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 break
             }
         }
+
+        // Ambiguity is reported only AFTER onboarding has had its say: an
+        // in-flight setup run must still be able to advance its state machine,
+        // and it can be pressed from any app that happens to have several links
+        // on screen.
+        if case .divergent = plan { throw ProvideContextError.multipleURLs }
 
         let decision = ProvideContextDecision.decide(
             appName: app,

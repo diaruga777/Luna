@@ -315,7 +315,6 @@
 		F7000000000000000000000A /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		F7000000000000000000000B /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		F7000000000000000000000C /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
-		F95ED74F68751840FEA2E566 /* LunaLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 86C669D3D9F162D390D90E7D /* LunaLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F9EE5F8EFCB17C42CF162DC7 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
 		FC3B05B51F7C576146ECF6CD /* LunaSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LunaSocial */; };
 		FC97FE4E8E8CC2C0B46CE853 /* LunaPriceIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 0A5E4DC54DD727092F10D7B7 /* LunaPriceIngest */; };
@@ -386,13 +385,6 @@
 			remoteGlobalIDString = 914B0BF1DD6F590D135488AC;
 			remoteInfo = LunaPriceTrackerSafari;
 		};
-		8D919652745C4B81F7D2B2C9 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AAA000000000000000000000 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = BE85547299B2176E2FF13621;
-			remoteInfo = LunaLiveActivity;
-		};
 		985592FB2E4C0DFD1F2F4A5C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AAA000000000000000000000 /* Project object */;
@@ -448,6 +440,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 892513B3F00DED1B930AD2AE;
 			remoteInfo = LunaAction;
+		};
+		E9DFE6EB16B01DD1BA0CAF29 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BE85547299B2176E2FF13621;
+			remoteInfo = LunaLiveActivity;
 		};
 		LDCL00000000000000000005 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -517,7 +516,6 @@
 				9C0AD7B1DFE88BA25DED0548 /* LunaShare.appex in Embed Foundation Extensions */,
 				D3376DB5E6C495F7AC1CD855 /* LunaAction.appex in Embed Foundation Extensions */,
 				2D98AFF43DA1A898FDBA3325 /* LunaSafari.appex in Embed Foundation Extensions */,
-				F95ED74F68751840FEA2E566 /* LunaLiveActivity.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2136,7 +2134,6 @@
 				F3B3FB92BBADF3F76F91D2B4 /* PBXTargetDependency */,
 				FC2720226A8905F04D7EEEAB /* PBXTargetDependency */,
 				8574EA801ADDEA224D75DACD /* PBXTargetDependency */,
-				80BE0A20D0B078E415CA8D8C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0700000000000000000001 /* Luna */,
@@ -2910,12 +2907,6 @@
 			isa = PBXTargetDependency;
 			target = 79583DFB2FE0BAD100C775CA /* LunaReaderAction */;
 			targetProxy = 79583E092FE0BAD200C775CA /* PBXContainerItemProxy */;
-		};
-		80BE0A20D0B078E415CA8D8C /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = LunaLiveActivity;
-			target = BE85547299B2176E2FF13621 /* LunaLiveActivity */;
-			targetProxy = 8D919652745C4B81F7D2B2C9 /* PBXContainerItemProxy */;
 		};
 		8574EA801ADDEA224D75DACD /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;

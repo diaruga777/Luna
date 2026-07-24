@@ -87,11 +87,10 @@ final class LunaDeepLinkTests: XCTestCase {
              LunaDeepLink.priceTrackerScheme])
     }
 
-    func testOwnSchemeFallsBackToReaderWithoutURLTypes() {
-        // The unit-test host is the central Luna app; bundles without
-        // CFBundleURLTypes (extensions, and this test host) fall back to Reader's
-        // scheme.
-        XCTAssertEqual(LunaDeepLink.ownScheme, "lunareader")
+    func testOwnSchemeIsTheCentralLunaSchemeInTheTestHost() {
+        // The unit-test host is the central Luna app, which registers luna://
+        // (LUNA_URL_SCHEME). ownScheme reads the host bundle's CFBundleURLTypes.
+        XCTAssertEqual(LunaDeepLink.ownScheme, "luna")
     }
 
     func testArticleURLParsesTheCentralLunaScheme() {
@@ -102,7 +101,7 @@ final class LunaDeepLinkTests: XCTestCase {
     // MARK: - Rescue
 
     func testRescueLinkTargetsOwnSchemeByDefault() {
-        XCTAssertEqual(LunaDeepLink.rescueLink()?.absoluteString, "lunareader://rescue")
+        XCTAssertEqual(LunaDeepLink.rescueLink()?.absoluteString, "luna://rescue")
     }
 
     func testRescueLinkForEachScheme() {

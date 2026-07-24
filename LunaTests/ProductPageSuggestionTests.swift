@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaArticleIngest
 import LunaPriceIngest
 import LunaPriceUI
 import LunaIngest
@@ -15,6 +16,15 @@ import XCTest
 /// search overlay. A suggestion exists only when `IngestPipeline` produces a priced
 /// product — the same eligibility rule every capture surface uses.
 final class ProductPageSuggestionTests: XCTestCase {
+
+    override func setUp() {
+        super.setUp()
+        // ProductPageSuggestion.resolve consults the processor registry; the
+        // test bundle can hold its own copy of the LunaIngest framework, so the
+        // host app's launch registration isn't necessarily visible here.
+        IngestKindProcessors.article = ArticleIngestProcessor()
+        IngestKindProcessors.product = ProductIngestProcessor()
+    }
 
     private func url(_ string: String) -> URL {
         guard let url = URL(string: string) else { fatalError("bad test URL: \(string)") }

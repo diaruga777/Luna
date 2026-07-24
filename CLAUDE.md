@@ -206,6 +206,15 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   re-record there rather than treating it as a regression.
 - For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Luna
   -destination 'generic/platform=iOS Simulator' DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO`.
+- **The central Luna app's Live Activity widget (`LunaLiveActivity`) is built but NOT
+  embedded.** Embedding it breaks `xcodebuild test`'s build graph: in the test variant
+  the widget target loses its compile/link tasks entirely (only packaging tasks run,
+  the appex binary is "Removed stale file"d) and the test host can't install. The
+  sibling apps' widgets are unaffected (their schemes carry no tests). Do NOT work
+  around with `test-without-building` from the products dir — its DYLD_FRAMEWORK_PATH
+  loads second copies of the package frameworks and `as?` casts on app-created views
+  fail spuriously (class-identity split). Re-embed + investigate before shipping the
+  central app if its media Live Activities matter; downloads themselves still run.
 
 # Swift Project — Blitz AI Agent Guide
 

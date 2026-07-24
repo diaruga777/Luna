@@ -4,6 +4,7 @@
 //
 
 import LunaArticleIngest
+import LunaPriceIngest
 import LunaIngest
 import LunaHTMLClassification
 import LunaPaywallBypass
@@ -24,7 +25,9 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
         let outcome = await IngestPipeline.process(
             IngestInput(url: url, source: .paste, prefetchedHTML: html),
             timeout: 1,
-            fetcher: MockArticleFetcher()
+            fetcher: MockArticleFetcher(),
+            articleProcessor: ArticleIngestProcessor(),
+            productProcessor: ProductIngestProcessor()
         )
 
         guard case let .product(product, _) = outcome else {
@@ -65,7 +68,9 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
         let outcome = await IngestPipeline.process(
             IngestInput(url: url, source: .paste, prefetchedHTML: html),
             timeout: 1,
-            fetcher: MockArticleFetcher()
+            fetcher: MockArticleFetcher(),
+            articleProcessor: ArticleIngestProcessor(),
+            productProcessor: ProductIngestProcessor()
         )
 
         XCTAssertEqual(outcome, .needsArchive(title: "The Voice of Google | The New Yorker"))
@@ -113,7 +118,9 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
         let outcome = await IngestPipeline.process(
             IngestInput(url: url, source: .paste),
             timeout: 1,
-            fetcher: MockArticleFetcher()
+            fetcher: MockArticleFetcher(),
+            articleProcessor: ArticleIngestProcessor(),
+            productProcessor: ProductIngestProcessor()
         )
 
         XCTAssertEqual(outcome, .failed)

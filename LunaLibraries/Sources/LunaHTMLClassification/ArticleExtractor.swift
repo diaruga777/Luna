@@ -208,15 +208,19 @@ public struct ArticleExtractor {
     /// vocabulary — so this is generic (no per-site rules). Token- and prefix-scoped on
     /// purpose to avoid the classic false positives a bare `[class*=ad]` causes
     /// (`read`, `thread`, `header`, `download`, `load-more`, `shadow`, `gradient`):
-    ///   • `[class~=ad]` / `[id~=ad]` match the WHOLE-token class `ad` (Business
-    ///     Insider's `class="ad ad-wrapper in-post"`), not the substring.
+    ///   • `.ad` / `.ads` / `#ad` / `#ads` match the WHOLE-token class/id `ad` (Business
+    ///     Insider's `class="ad ad-wrapper in-post"`), not the substring. NB: in SwiftSoup
+    ///     `[class~=ad]` is a REGEX match (mapped to `AttributeWithValueMatching`), NOT the
+    ///     CSS whitespace-token operator — it behaves like `[class*=ad]` and would eat
+    ///     `read`/`thread`/`download`. The `.class` selector is the real token match
+    ///     (via `Element.hasClass`), so it is used here instead.
     ///   • compound `ad-*` fragments (`ad-unit`, `ad-slot`, `ad-wrapper`, `ad-container`,
     ///     …) can't appear inside an unrelated word.
     ///   • ad-tech vendor/framework markers (Google Ad Manager `div-gpt-ad`,
     ///     `googlead`, `doubleclick`, DFP) and the standard `data-ad*` slot attributes.
     /// Run before container scoring so an ad block can't inflate a container's score.
     private static let adContainerSelector = """
-    [class~=ad], [class~=ads], [id~=ad], [id~=ads], \
+    .ad, .ads, #ad, #ads, \
     [class*=ad-unit], [class*=ad-slot], [class*=ad-wrapper], [class*=ad-container], \
     [class*=ad-label], [class*=ad-callout], [class*=ad-banner], [class*=ad-placeholder], \
     [class*=advertisement], [class*=advertising], [class*=sponsored-content], \

@@ -53,7 +53,6 @@ final class SettingsViewController: NavHeaderTableController {
         // Kind rows first (Reader/Audio/Reading List/Email for article apps,
         // Auto-Download for media apps), then the universal tail.
         KindWiring.settingsCategories() + [
-            SettingsCategory(title: "Failed Saves", symbol: "wand.and.stars") { RescueSettingsScreen() },
             SettingsCategory(title: "Contacts", symbol: "person.2") { FriendsViewController() },
             SettingsCategory(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
             SettingsCategory(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },

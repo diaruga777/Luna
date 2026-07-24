@@ -14,7 +14,6 @@ final class URLRescueCoordinatorTests: XCTestCase {
     private var ledger: RescueLedgerStore!
     private var pending: PendingRescueRequestStore!
     private var savedEngine: URLRescueCoordinator.Engine?
-    private var savedToggle: Bool!
 
     override func setUp() {
         super.setUp()
@@ -24,12 +23,10 @@ final class URLRescueCoordinatorTests: XCTestCase {
         ledger = RescueLedgerStore(containerURL: tempDir)
         pending = PendingRescueRequestStore(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
         savedEngine = URLRescueCoordinator.engine
-        savedToggle = RescueSettings.isAutoRescueEnabled
     }
 
     override func tearDown() {
         URLRescueCoordinator.engine = savedEngine
-        RescueSettings.isAutoRescueEnabled = savedToggle
         try? FileManager.default.removeItem(at: tempDir)
         super.tearDown()
     }
@@ -68,8 +65,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         return store.item(withID: item.id)!
     }
 
-    func testManualRescueRunsEvenWithToggleOff() {
-        RescueSettings.isAutoRescueEnabled = false
+    func testManualRescueRunsForATappedItem() {
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: true, expectation: exp)
         URLRescueCoordinator.engine = fake.engine()
@@ -83,8 +79,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         XCTAssertTrueEventually { self.ledger.wasRescued(item.id) }
     }
 
-    func testInlineFailureWithToggleOnTriggersOneAttempt() {
-        RescueSettings.isAutoRescueEnabled = true
+    func testInlineFailureTriggersOneAttempt() {
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: false, expectation: exp)
         URLRescueCoordinator.engine = fake.engine()
@@ -97,19 +92,20 @@ final class URLRescueCoordinatorTests: XCTestCase {
         XCTAssertEqual(fake.performedInteractive, [true])
     }
 
-    func testInlineFailureWithToggleOffDoesNotTrigger() {
-        RescueSettings.isAutoRescueEnabled = false
+    /// Non-interactive failures (extension saves, background sweeps) are left for
+    /// the debounced sweep rather than rescued inline.
+    func testNonInteractiveInlineFailureDoesNotTrigger() {
         let fake = RecordingEngine(succeed: false)
         URLRescueCoordinator.engine = fake.engine()
         let coordinator = makeCoordinator()
         let item = failedItem()
 
-        coordinator.itemJustFailed(item.id, source: .manual, interactive: true)
+        coordinator.itemJustFailed(item.id, source: .shareSheet, interactive: false)
         // Give any errant task a moment.
         let waited = expectation(description: "settle")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { waited.fulfill() }
         wait(for: [waited], timeout: 2)
-        XCTAssertTrue(fake.performedIDs.isEmpty, "toggle off must not auto-rescue")
+        XCTAssertTrue(fake.performedIDs.isEmpty, "a non-interactive failure must not rescue inline")
     }
 
     func testEngineUnavailableSkips() {

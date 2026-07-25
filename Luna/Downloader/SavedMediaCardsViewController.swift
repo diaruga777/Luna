@@ -117,6 +117,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
+        StarfieldView.install(behindContentsOf: view)
 
         var style = CardCarouselStyle()
         style.pageSwipeMovementMultiplier = 1.5

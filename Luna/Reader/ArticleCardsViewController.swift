@@ -117,6 +117,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
+        StarfieldView.install(behindContentsOf: view)
 
         var style = CardCarouselStyle()
         style.edgeGap = 10

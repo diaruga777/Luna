@@ -181,6 +181,9 @@ final class ReadingListViewController: UITableViewController {
         tableView.register(
             ReadingListItemCell.self, forCellReuseIdentifier: ReadingListItemCell.reuseID)
 
+        // The same faint sky the card decks show, behind the rows.
+        tableView.backgroundView = StarfieldView()
+
         // The pinned header bar (replaces the nav bar) + its default buttons.
         header.mount(in: self)
         setDefaultHeaderControls()

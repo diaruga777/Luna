@@ -57,16 +57,14 @@ public enum SendToFriendSheet {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
-    /// Presents the transient "Copied Link" confirmation. Kept separate so a caller
-    /// inside a context menu can defer JUST this present until the menu has finished
-    /// dismissing — presenting during the dismissal makes the wipe animations overlap.
+    /// Shows the transient "Copied" confirmation: a toast near the bottom of the
+    /// screen. It used to be a modal alert, which could only be presented AFTER
+    /// whatever menu or sheet spawned it had finished dismissing — hence the
+    /// noticeable lag between picking Copy link and being told about it. A toast is
+    /// an ordinary non-interactive subview, so it can go up immediately, even while
+    /// a menu is still wiping away.
     public static func presentCopiedConfirmation(from presenter: UIViewController) {
-        let alert = UIAlertController(title: "Copied Link", message: nil, preferredStyle: .alert)
-        presenter.present(alert, animated: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak alert] in
-            guard let alert, alert.presentingViewController != nil else { return }
-            alert.dismiss(animated: true)
-        }
+        LunaToast.show("Copied", from: presenter)
     }
 
     private static func presentFriendPicker(

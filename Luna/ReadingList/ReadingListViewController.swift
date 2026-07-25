@@ -161,13 +161,6 @@ final class ReadingListViewController: UITableViewController {
     /// notification doesn't full-reload mid-animation (which kills the fade).
     private var isAnimatingRowChange = false
 
-    /// A row-menu action deferred until the context menu has finished dismissing.
-    /// Presenting a modal from a `UIAction` handler fires WHILE the menu is still
-    /// collapsing, so presenting immediately would overlap the two animations. Actions that
-    /// present UI stash their work here instead; `willEndContextMenuInteraction`
-    /// runs it from the dismissal animator's completion, over a settled list.
-    private var pendingContextMenuAction: (() -> Void)?
-
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -1258,41 +1251,10 @@ final class ReadingListViewController: UITableViewController {
     ) -> UIContextMenuConfiguration? {
         // The pasteboard suggestion isn't saved yet — no row actions apply.
         guard section(at: indexPath.section) != .pasteboard else { return nil }
-        // Drop any action stranded by a menu that didn't route through this table's
-        // dismissal (the simulator-only button menu), so it can't drain out of turn.
-        pendingContextMenuAction = nil
         let item = item(at: indexPath)
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
             self?.rowMenu(for: item, at: indexPath)
         })
-    }
-
-    override func tableView(
-        _ tableView: UITableView,
-        willEndContextMenuInteraction configuration: UIContextMenuConfiguration,
-        animator: (any UIContextMenuInteractionAnimating)?
-    ) {
-        // Drain any presenting action AFTER the menu's dismissal animation finishes,
-        // so its transition never overlaps the collapsing menu. Read the closure at
-        // completion time (not now): the selected action's handler may run either side
-        // of this call, but always before the animator completes. A dismissal with no
-        // selection leaves `pendingContextMenuAction` nil, so this is a no-op.
-        let drain = { [weak self] in
-            guard let action = self?.pendingContextMenuAction else { return }
-            self?.pendingContextMenuAction = nil
-            action()
-        }
-        if let animator {
-            animator.addCompletion(drain)
-        } else {
-            DispatchQueue.main.async(execute: drain)
-        }
-    }
-
-    /// Defer a row-menu action that presents UI until the menu has fully dismissed.
-    /// See `pendingContextMenuAction`.
-    private func afterRowMenuDismissal(_ action: @escaping () -> Void) {
-        pendingContextMenuAction = action
     }
 
     /// Builds the long-press row menu. Also driven by a simulator-only tap button on
@@ -1322,13 +1284,10 @@ final class ReadingListViewController: UITableViewController {
             },
             copyLink: { [weak self] in
                 guard let self else { return }
-                // Copy immediately (works on every menu path); defer the confirmation modal
-                // until the context menu has dismissed.
-                SendToFriendSheet.copyToPasteboard(urlString: item.urlString)
-                self.afterRowMenuDismissal { [weak self] in
-                    guard let self else { return }
-                    SendToFriendSheet.presentCopiedConfirmation(from: self)
-                }
+                // Both halves are synchronous: the confirmation is a toast, not a
+                // modal, so it no longer has to wait for the context menu to finish
+                // dismissing before it can appear.
+                SendToFriendSheet.copyLink(urlString: item.urlString, from: self)
             },
             saveMediaToPhotos: { [weak self] in self?.saveMediaToPhotos(item) },
             bumpToTop: { [weak self] in self?.store.bump(item.id) },

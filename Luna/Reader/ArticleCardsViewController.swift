@@ -92,14 +92,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     private enum PasteboardCardState {
         case placeholder(changeCount: Int)
-        case loading(changeCount: Int, urlString: String, likelyPrompted: Bool)
+        case loading(changeCount: Int, urlString: String)
         case candidate(changeCount: Int, candidate: PasteboardCandidate, item: ReadingListItem)
-        case invalid(changeCount: Int, showsSettingsGuidance: Bool)
+        case invalid(changeCount: Int)
 
         var changeCount: Int {
             switch self {
-            case .placeholder(let count), .loading(let count, _, _),
-                 .candidate(let count, _, _), .invalid(let count, _):
+            case .placeholder(let count), .loading(let count, _),
+                 .candidate(let count, _, _), .invalid(let count):
                 return count
             }
         }
@@ -107,10 +107,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         var fingerprint: String {
             switch self {
             case .placeholder(let count): return "placeholder|\(count)"
-            case .loading(let count, let url, _): return "loading|\(count)|\(url)"
+            case .loading(let count, let url): return "loading|\(count)|\(url)"
             case .candidate(let count, let candidate, _):
                 return "candidate|\(count)|\(candidate.urlString)|\(candidate.title)"
-            case .invalid(let count, let guidance): return "invalid|\(count)|\(guidance)"
+            case .invalid(let count): return "invalid|\(count)"
             }
         }
     }
@@ -523,40 +523,33 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         reload()
     }
 
-    private func readPasteboardPlaceholder() {
+    /// The value the card's `UIPasteControl` handed over — an implicitly
+    /// authorized read, so nothing here touches `UIPasteboard` for content.
+    private func handlePastedValue(_ value: String) {
         guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        let result = PasteboardReadTiming.readGeneralPasteboard()
-        guard result.changeCount == expectedChangeCount,
-              UIPasteboard.general.changeCount == expectedChangeCount,
-              let value = result.value,
+        guard UIPasteboard.general.changeCount == expectedChangeCount,
               let url = URLUnwrapper.ingestURL(from: value)
         else {
-            setPasteboardState(.invalid(
-                changeCount: expectedChangeCount,
-                showsSettingsGuidance: result.likelyPresentedPermissionPrompt))
+            setPasteboardState(.invalid(changeCount: expectedChangeCount))
             return
         }
 
         let urlString = url.absoluteString
-        setPasteboardState(.loading(
-            changeCount: expectedChangeCount, urlString: urlString,
-            likelyPrompted: result.likelyPresentedPermissionPrompt))
+        setPasteboardState(.loading(changeCount: expectedChangeCount, urlString: urlString))
         pasteboardEvaluationTask?.cancel()
         pasteboardEvaluationTask = Task { [weak self] in
             let candidate = await PasteboardSuggester.shared.evaluate(urlString: urlString)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self,
-                      case .loading(let count, let currentURL, let likelyPrompted) = self.pasteboardState,
+                      case .loading(let count, let currentURL) = self.pasteboardState,
                       count == expectedChangeCount, currentURL == urlString,
                       UIPasteboard.general.changeCount == expectedChangeCount
                 else { return }
                 guard let candidate, candidate.platform == nil,
                       candidate.content != nil || candidate.requiresUnlock
                 else {
-                    self.setPasteboardState(.invalid(
-                        changeCount: expectedChangeCount,
-                        showsSettingsGuidance: likelyPrompted))
+                    self.setPasteboardState(.invalid(changeCount: expectedChangeCount))
                     return
                 }
                 var item = ReadingListItem(urlString: candidate.urlString)
@@ -1034,12 +1027,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             switch state {
             case .placeholder:
                 return PasteboardPlaceholderCardContentViewController(
-                    title: "Paste Link", detail: "Swipe here to preview the pasted URL.")
+                    title: "Paste Link",
+                    detail: "Paste the copied link to preview it here.",
+                    onPaste: { [weak self] value in self?.handlePastedValue(value) })
             case .loading:
                 return PasteboardPlaceholderCardContentViewController(
                     title: "Loading Paste", detail: "Preparing a temporary reader card…")
-            case .invalid(_, let guidance):
-                return InvalidPasteCardContentViewController(showsSettingsGuidance: guidance)
+            case .invalid:
+                return InvalidPasteCardContentViewController()
             case .candidate(_, let candidate, let item):
                 let content = ReaderCardContentViewController(
                     item: item, senderName: nil, knownContent: candidate.content)
@@ -1254,12 +1249,11 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:
+                // Nothing reads the pasteboard on arrival — the card's paste
+                // control is the only way in, and its tap IS the authorization.
                 readerForChrome = nil
                 updateReaderChrome()
                 layoutCardScrollIndicator(animated: false)
-                // When no normal cards exist, initial layout centers the
-                // placeholder without user intent; a tap performs the read.
-                if !items.isEmpty { readPasteboardPlaceholder() }
             case .loading, .invalid:
                 readerForChrome = nil
                 updateReaderChrome()
@@ -1288,7 +1282,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:
-                readPasteboardPlaceholder()
+                break // The card's paste control owns this interaction.
             case .candidate(_, let candidate, _):
                 if candidate.requiresUnlock {
                     commitPasteboardCandidate(openLockedAfterSave: true)

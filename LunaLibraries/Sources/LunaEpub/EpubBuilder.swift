@@ -153,15 +153,27 @@ public struct EpubBuilder {
                 openList = false
             }
 
+            // The whole article is one xhtml document, so a block the page's own
+            // chapter marks point at keeps its id and the rows stay live
+            // navigation inside the book.
+            let id = block.anchorID.map { " id=\"\(Self.escapeXML($0))\"" } ?? ""
             switch block.kind {
             case .paragraph:
-                bodyParts.append("<p>\(Self.escapeXML(block.text))</p>")
+                bodyParts.append("<p\(id)>\(Self.escapeXML(block.text))</p>")
             case .heading:
-                bodyParts.append("<h2>\(Self.escapeXML(block.text))</h2>")
+                bodyParts.append("<h2\(id)>\(Self.escapeXML(block.text))</h2>")
             case .quote:
-                bodyParts.append("<blockquote><p>\(Self.escapeXML(block.text))</p></blockquote>")
+                bodyParts.append("<blockquote\(id)><p>\(Self.escapeXML(block.text))</p></blockquote>")
             case .listItem:
-                bodyParts.append("<li>\(Self.escapeXML(block.text))</li>")
+                bodyParts.append("<li\(id)>\(Self.escapeXML(block.text))</li>")
+            case .tableOfContents:
+                let text = Self.escapeXML(block.text)
+                if let anchorID = block.links.first?.anchorID {
+                    bodyParts.append(
+                        "<p><a href=\"#\(Self.escapeXML(anchorID))\">\(text)</a></p>")
+                } else {
+                    bodyParts.append("<p>\(text)</p>")
+                }
             case .image:
                 guard let fileName = block.imageFileName,
                       embeddedImageFileNames.contains(fileName) else { break }

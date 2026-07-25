@@ -36,6 +36,14 @@ public struct RenderedArticle {
     }
 }
 
+public extension NSAttributedString.Key {
+    /// Carried by an in-page jump — a table-of-contents row, a footnote marker —
+    /// alongside `.link`: the `anchorID` of the block it targets. The scroll
+    /// reader scrolls to that block instead of opening the link, which for a
+    /// same-page href would only reopen the article the reader is already in.
+    static let lunaInPageAnchor = NSAttributedString.Key("LunaInPageAnchor")
+}
+
 /// Builds the attributed string for the scrolling reader from extracted blocks,
 /// styling headings/quotes/lists, attaching tappable link attributes, and
 /// inlining downloaded article images as text attachments.
@@ -106,7 +114,7 @@ public enum ArticleTextRenderer {
         var includedTextCount = 0
         var truncated = false
 
-        for block in content.blocks {
+        for (index, block) in content.blocks.enumerated() {
             // Stop once the budget is exceeded — but only AFTER at least one body
             // block is in (so the prefix is never empty / shorter than a screen).
             if let budget = characterBudget, includedTextCount > budget {
@@ -127,7 +135,12 @@ public enum ArticleTextRenderer {
                 blockTextRanges.append(nil)
                 continue
             }
-            let (blockString, textOffsetInBlock) = attributedString(for: block)
+            // The gap that lets the article resume after the chapter marks is
+            // owed by the LAST row of the run, which only its neighbour reveals.
+            let closesTableOfContents = block.kind == .tableOfContents
+                && content.blocks[safe: index + 1]?.kind != .tableOfContents
+            let (blockString, textOffsetInBlock) = attributedString(
+                for: block, closesTableOfContents: closesTableOfContents)
             blockTextRanges.append(NSRange(
                 location: result.length + textOffsetInBlock,
                 length: (block.text as NSString).length))
@@ -261,7 +274,9 @@ public enum ArticleTextRenderer {
 
     /// Returns the styled block string plus the offset of the block's text
     /// within it (after any bullet prefix).
-    private static func attributedString(for block: ArticleContent.Block) -> (NSAttributedString, Int) {
+    private static func attributedString(
+        for block: ArticleContent.Block, closesTableOfContents: Bool = false
+    ) -> (NSAttributedString, Int) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = 14
         paragraph.lineSpacing = 5
@@ -287,6 +302,22 @@ public enum ArticleTextRenderer {
             attributes[.font] = bodyFont(size: 19, weight: .regular)
             paragraph.headIndent = 18
             prefix = "•  "
+        case .tableOfContents:
+            // The page's own chapter marks read as navigation, not prose: a
+            // compact indented list, smaller than the body it introduces. Its
+            // label (the one row with no jump) sits above the list, unindented.
+            let isLabel = block.links.isEmpty
+            attributes[.font] = bodyFont(size: 16, weight: isLabel ? .semibold : .regular)
+            paragraph.lineSpacing = 3
+            paragraph.paragraphSpacing = closesTableOfContents ? 20 : 3
+            if isLabel {
+                attributes[.foregroundColor] = LunaColors.secondaryText
+                paragraph.paragraphSpacingBefore = 14
+                paragraph.paragraphSpacing = closesTableOfContents ? 20 : 6
+            } else {
+                paragraph.firstLineHeadIndent = 18
+                paragraph.headIndent = 18
+            }
         }
 
         let text = NSMutableAttributedString(string: prefix + block.text + "\n", attributes: attributes)
@@ -296,6 +327,10 @@ public enum ArticleTextRenderer {
             let range = NSRange(location: link.start + prefixLength, length: link.length)
             guard range.location + range.length <= text.length else { continue }
             text.addAttribute(.link, value: url, range: range)
+            // A same-page jump is resolved by the reader, not by opening the URL.
+            if let anchorID = link.anchorID {
+                text.addAttribute(.lunaInPageAnchor, value: anchorID, range: range)
+            }
         }
         return (text, prefixLength)
     }

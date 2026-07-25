@@ -59,6 +59,10 @@ public enum EmailContentRenderer {
                     + "border-left:3px solid #ccc;color:#555;font-style:italic\">\(inlineHTML(block))</blockquote>"
             case .listItem:
                 bodyHTML += "<p style=\"margin:4px 0 4px 18px\">&bull; \(inlineHTML(block))</p>"
+            case .tableOfContents:
+                // The page's own chapter marks. In mail they keep their absolute
+                // hrefs, so a row opens the live article at that section.
+                bodyHTML += "<p style=\"margin:3px 0 3px 18px;font-size:15px\">\(inlineHTML(block))</p>"
             case .image:
                 if let fileName = block.imageFileName {
                     let cid = "img-\(refs.count)"

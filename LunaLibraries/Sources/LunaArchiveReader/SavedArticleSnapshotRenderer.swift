@@ -43,15 +43,19 @@ enum SavedArticleSnapshotRenderer {
             }
 
             let linkedText = inlineHTML(for: block)
+            // Destinations of the page's own chapter marks keep their id.
+            let id = block.anchorID.map { " id=\"\(escapeAttribute($0))\"" } ?? ""
             switch block.kind {
             case .paragraph:
-                body.append("<p>\(linkedText)</p>")
+                body.append("<p\(id)>\(linkedText)</p>")
             case .heading:
-                body.append("<h2>\(linkedText)</h2>")
+                body.append("<h2\(id)>\(linkedText)</h2>")
             case .quote:
-                body.append("<blockquote>\(linkedText)</blockquote>")
+                body.append("<blockquote\(id)>\(linkedText)</blockquote>")
             case .listItem:
-                body.append("<li>\(linkedText)</li>")
+                body.append("<li\(id)>\(linkedText)</li>")
+            case .tableOfContents:
+                body.append("<p class=\"toc-row\">\(linkedText)</p>")
             case .image:
                 body.append(imageHTML(for: block, imagesDirectory: imagesDirectory))
             }
@@ -136,6 +140,7 @@ enum SavedArticleSnapshotRenderer {
             figure { margin: 1.7em 0; }
             img { display: block; width: 100%; height: auto; border-radius: 8px; }
             figcaption { margin-top: 0.55em; color: var(--secondary); font-size: 0.78em; }
+            .toc-row { margin: 0.28em 0 0.28em 1.1em; font-size: 0.88em; }
           </style>
         </head>
         <body>
@@ -148,7 +153,10 @@ enum SavedArticleSnapshotRenderer {
     private static func inlineHTML(for block: ArticleContent.Block) -> String {
         let source = block.text as NSString
         let validLinks = block.links
-            .map { (range: NSRange(location: $0.start, length: $0.length), url: $0.urlString) }
+            // A jump within this same page stays a jump: the snapshot is one
+            // document, so the page's own chapter marks keep working offline.
+            .map { (range: NSRange(location: $0.start, length: $0.length),
+                    url: $0.anchorID.map { "#\($0)" } ?? $0.urlString) }
             .filter {
                 $0.range.location >= 0 && $0.range.length > 0
                     && NSMaxRange($0.range) <= source.length

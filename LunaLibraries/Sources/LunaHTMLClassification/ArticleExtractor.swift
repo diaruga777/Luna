@@ -79,6 +79,10 @@ public struct ArticleExtractor {
         // appears directly under the title instead of being silently limited to
         // the reading-list thumbnail.
         prependLeadImage(from: document, to: &chosen, baseURL: baseURL)
+        // Last, on the blocks that actually survived every trimming pass: a table
+        // of contents whose destinations were trimmed away must not keep offering
+        // jumps to them.
+        chosen = InPageAnchors.resolvingAnchors(chosen)
         return ArticleContent(title: title, author: author, blocks: chosen)
     }
 
@@ -149,6 +153,10 @@ public struct ArticleExtractor {
     /// Layer 1: junk-stripped extraction (parses its own copy of the document).
     private func refinedBlocks(html: String, baseURL: URL) throws -> [ArticleContent.Block] {
         let document = try SwiftSoup.parse(html, baseURL.absoluteString)
+        // Before anything is stripped: the page's own chapter marks are a
+        // link-dense list inside (often) a `<nav>` — i.e. exactly the shape both
+        // the selector strip below and `cleanConditionally` delete.
+        let anchors = InPageAnchors.prepare(document: document, baseURL: baseURL)
 
         // Page chrome by tag/role, plus the usual junk-by-class suspects:
         // footers, social/share bars, related-article rails, comments,
@@ -180,7 +188,8 @@ public struct ArticleExtractor {
         // and a substring match there would `remove()` the ENTIRE document — zeroing
         // this refined layer and forcing the untrimmed `basic` layer (which keeps the
         // page's related/tag/footer rails) to win. New Statesman hit exactly this.
-        for element in try document.select(strippedSelectors) where !isPageRoot(element) {
+        for element in try document.select(strippedSelectors)
+        where !isPageRoot(element) && !InPageAnchors.isProtected(element) {
             try element.remove()
         }
         try removePaywallJunk(in: document)
@@ -188,9 +197,9 @@ public struct ArticleExtractor {
 
         let container = try bestContainer(in: document)
         try cleanConditionally(in: container)
-        var blocks = try extractBlocks(from: container, baseURL: baseURL)
+        var blocks = try extractBlocks(from: container, baseURL: baseURL, anchors: anchors)
         if totalTextLength(blocks) < 200, let body = document.body() {
-            blocks = try extractBlocks(from: body, baseURL: baseURL)
+            blocks = try extractBlocks(from: body, baseURL: baseURL, anchors: anchors)
         }
         return trimTrailingJunk(blocks)
     }
@@ -245,14 +254,16 @@ public struct ArticleExtractor {
     /// Layer 2: the original conservative extraction — structural tags only.
     private func basicBlocks(html: String, baseURL: URL) throws -> [ArticleContent.Block] {
         let document = try SwiftSoup.parse(html, baseURL.absoluteString)
+        let anchors = InPageAnchors.prepare(document: document, baseURL: baseURL)
         let structuralTags = "script, style, noscript, nav, header, footer, aside, form, iframe, svg, button"
-        for element in try document.select(structuralTags) {
+        for element in try document.select(structuralTags)
+        where !InPageAnchors.isProtected(element) {
             try element.remove()
         }
         let container = try bestContainer(in: document)
-        var blocks = try extractBlocks(from: container, baseURL: baseURL)
+        var blocks = try extractBlocks(from: container, baseURL: baseURL, anchors: anchors)
         if totalTextLength(blocks) < 200, let body = document.body() {
-            blocks = try extractBlocks(from: body, baseURL: baseURL)
+            blocks = try extractBlocks(from: body, baseURL: baseURL, anchors: anchors)
         }
         return blocks
     }
@@ -305,7 +316,11 @@ public struct ArticleExtractor {
     }
 
     private func isMidArticleRecircLine(_ block: ArticleContent.Block) -> Bool {
-        guard block.kind != .image, block.text.count < 200, linkDensity(of: block) > 0.6 else {
+        // A ToC row is short and 100% link by construction; it has already been
+        // positively identified, so none of the junk heuristics apply to it.
+        guard block.kind != .image, block.kind != .tableOfContents,
+              block.text.count < 200, linkDensity(of: block) > 0.6
+        else {
             return false
         }
         let normalized = block.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -353,6 +368,9 @@ public struct ArticleExtractor {
         var cumulativeWords = 0
         for index in blocks.indices {
             let block = blocks[index]
+            // A ToC row naming a section ("More on this") must never truncate the
+            // article, and its words aren't body text that arms the terminator.
+            if block.kind == .tableOfContents { continue }
             let words = wordCount(block.text)
             if cumulativeWords >= 60, words < 15 {
                 if matchesCommentTerminator(block.text) {
@@ -448,6 +466,9 @@ public struct ArticleExtractor {
     /// (a lone trailing image, or one preceded by a strong paragraph), so it's kept.
     private func isReverseTrimPoppable(_ block: ArticleContent.Block) -> Bool {
         if block.kind == .image { return false }
+        // Some blogs close with their chapter marks; the link-density rules below
+        // would pop an identified ToC off row by row.
+        if block.kind == .tableOfContents { return false }
         let trimmedText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedText.isEmpty { return true }
         if block.kind == .heading { return true } // trailing headings are junk (trafilatura)
@@ -586,6 +607,11 @@ public struct ArticleExtractor {
     private func cleanConditionally(in container: Element) throws {
         for list in try container.select("ul, ol") {
             if isInsideFigure(list) { continue }
+            // A table of contents IS a link-dense short list — the one such list
+            // that is content rather than a link farm.
+            if InPageAnchors.isProtected(list) || InPageAnchors.isInsideTableOfContents(list) {
+                continue
+            }
             let text = (try? list.text()) ?? ""
             guard !text.isEmpty, text.count < 500 else { continue }
             guard listLinkDensity(of: list, text: text) > 0.8 else { continue }
@@ -664,9 +690,25 @@ public struct ArticleExtractor {
         "figure", "figcaption", "form", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
     ]
 
-    private func extractBlocks(from container: Element, baseURL: URL) throws -> [ArticleContent.Block] {
+    private func extractBlocks(
+        from container: Element, baseURL: URL, anchors: Set<String> = []
+    ) throws -> [ArticleContent.Block] {
         var blocks: [ArticleContent.Block] = []
-        for element in try container.select(blockTags.joined(separator: ", ") + ", div, section, img") {
+        /// Destination ids are handed out once, so a `<section id="intro">`'s
+        /// anchor lands on its heading instead of on every paragraph inside it.
+        var claimedAnchors = Set<String>()
+        let selector = blockTags.joined(separator: ", ")
+            + ", div, section, img, [\(InPageAnchors.marker)]"
+        for element in try container.select(selector) {
+            // The page's own chapter marks, emitted one row per jump straight from
+            // the anchors — the generic walk below would collapse a two-level ToC
+            // into a single bullet, because a nested <li> has a block ancestor.
+            if InPageAnchors.isTableOfContentsRoot(element) {
+                blocks.append(contentsOf: InPageAnchors.blocks(
+                    forTableOfContentsRoot: element, baseURL: baseURL, resolvable: anchors))
+                continue
+            }
+            if InPageAnchors.isInsideTableOfContents(element) { continue }
             if element.tagName() == "img" {
                 // Standalone images (inside divs/figures); images nested in a
                 // paragraph are collected by that paragraph's walk below.
@@ -690,7 +732,12 @@ public struct ArticleExtractor {
             // Skip elements nested inside another matched block (e.g. p inside
             // blockquote) so the same text isn't emitted twice.
             if hasBlockAncestor(element, within: container) { continue }
-            let (block, nestedImages) = makeBlock(from: element, baseURL: baseURL)
+            var (block, nestedImages) = makeBlock(from: element, baseURL: baseURL, anchors: anchors)
+            if block != nil {
+                block?.anchorID = InPageAnchors.anchorID(
+                    for: element, within: container,
+                    resolvable: anchors, claimed: &claimedAnchors)
+            }
             if let block {
                 blocks.append(block)
             }
@@ -929,11 +976,15 @@ public struct ArticleExtractor {
     /// whitespace incrementally so the recorded UTF-16 link ranges stay valid.
     /// Images found inside the block are returned separately, in order.
     private func makeBlock(
-        from element: Element, baseURL: URL
+        from element: Element, baseURL: URL, anchors: Set<String> = []
     ) -> (ArticleContent.Block?, [ArticleContent.Block]) {
         var text = ""
         var links: [ArticleContent.Link] = []
         var nestedImages: [ArticleContent.Block] = []
+        /// In-page destination per link URL, for the anchors this block links to.
+        /// A footnote marker in prose is the same mechanism as a ToC row, and gets
+        /// the same treatment: a jump, not a navigation back to the live page.
+        var anchorIDsByURL: [String: String] = [:]
 
         func appendCollapsed(_ raw: String) -> (start: Int, length: Int) {
             var addition = ""
@@ -981,6 +1032,10 @@ public struct ArticleExtractor {
             if child.tagName() == "a",
                let href = try? child.attr("abs:href"), href.hasPrefix("http") {
                 childLink = href
+                if let fragment = InPageAnchors.fragment(ofLink: child, baseURL: baseURL),
+                   anchors.contains(fragment) {
+                    anchorIDsByURL[href] = fragment
+                }
             }
             for grandchild in child.getChildNodes() {
                 walk(grandchild, linkURL: childLink)
@@ -1000,6 +1055,7 @@ public struct ArticleExtractor {
             guard link.start < limit else { return nil }
             var clamped = link
             clamped.length = min(link.length, limit - link.start)
+            clamped.anchorID = anchorIDsByURL[link.urlString]
             return clamped.length > 0 ? clamped : nil
         }
 

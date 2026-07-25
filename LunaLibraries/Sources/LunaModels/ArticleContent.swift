@@ -26,11 +26,21 @@ public struct ArticleContent: Codable, Equatable {
             case quote
             case listItem
             case image
+            /// One row of an in-page table of contents (the page's own
+            /// chapter-mark list). Renders in the scroll reader as a tappable
+            /// jump, and is skipped by every word-stream consumer — see
+            /// `isReadableProse`.
+            case tableOfContents
         }
 
         public var kind: Kind
         public var text: String
         public var links: [Link]
+        /// The HTML `id`/`name` this block's element carried, when some in-page
+        /// link on the page pointed at it — i.e. the block is a jump destination.
+        /// Nil for the overwhelming majority of blocks; only referenced anchors
+        /// are recorded (see `InPageAnchors`).
+        public var anchorID: String?
         /// Remote source for `.image` blocks (set at extraction).
         public var imageURLString: String?
         /// Local file (inside the Articles directory) for `.image` blocks,
@@ -43,7 +53,8 @@ public struct ArticleContent: Codable, Equatable {
 
         public init(kind: Kind, text: String, links: [Link],
                     imageURLString: String? = nil, imageFileName: String? = nil,
-                    imageWidth: Int? = nil, imageHeight: Int? = nil) {
+                    imageWidth: Int? = nil, imageHeight: Int? = nil,
+                    anchorID: String? = nil) {
             self.kind = kind
             self.text = text
             self.links = links
@@ -51,7 +62,15 @@ public struct ArticleContent: Codable, Equatable {
             self.imageFileName = imageFileName
             self.imageWidth = imageWidth
             self.imageHeight = imageHeight
+            self.anchorID = anchorID
         }
+
+        /// Whether this block belongs to the article's word stream — the ONE
+        /// index space `RSVPEngine`, `WordMap`, `SpeechController` and the audio
+        /// script all share. A table of contents is navigation furniture: it is
+        /// rendered but never read, and every one of those consumers must agree
+        /// to skip it or their word indices drift apart.
+        public var isReadableProse: Bool { kind != .tableOfContents }
     }
 
     /// An inline link inside a block. `start`/`length` are UTF-16 offsets into `text`.
@@ -59,12 +78,29 @@ public struct ArticleContent: Codable, Equatable {
         public var start: Int
         public var length: Int
         public var urlString: String
+        /// Set when the link is a jump WITHIN this page (a `#chapter` href) rather
+        /// than a navigation: the `anchorID` of the block it targets. Decided at
+        /// extraction, where the document's own base URL is authoritative — the
+        /// reader must never re-derive "is this the same page?" from the absolute
+        /// URL, which a redirect or an archive capture makes unreliable.
+        public var anchorID: String?
 
-        public init(start: Int, length: Int, urlString: String) {
+        public init(start: Int, length: Int, urlString: String, anchorID: String? = nil) {
             self.start = start
             self.length = length
             self.urlString = urlString
+            self.anchorID = anchorID
         }
+
+        /// True for a `#chapter` jump inside this same article.
+        public var isInPageAnchor: Bool { anchorID != nil }
+    }
+
+    /// The block an in-page link targets, or nil when the destination didn't
+    /// survive extraction. Anchors are compared exactly: they are copied
+    /// verbatim from the same document's markup, so no normalization applies.
+    public func blockIndex(forAnchorID anchorID: String) -> Int? {
+        blocks.firstIndex { $0.anchorID == anchorID }
     }
 
     public var wholeText: String {
@@ -93,12 +129,14 @@ public struct ArticleContent: Codable, Equatable {
 
     /// De-duplicated absolute http(s) outbound links on this page, in document order
     /// (the set the preloader crawls and the link viewer keys its cache by).
+    /// In-page jumps are not outbound — crawling them would refetch this article.
     public var outboundURLs: [URL] {
         var seen = Set<String>()
         var result: [URL] = []
         for block in blocks {
             for link in block.links {
-                guard seen.insert(link.urlString).inserted,
+                guard !link.isInPageAnchor,
+                      seen.insert(link.urlString).inserted,
                       let url = URL(string: link.urlString),
                       let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
                 else { continue }

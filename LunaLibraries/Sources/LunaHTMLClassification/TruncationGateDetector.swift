@@ -78,6 +78,13 @@ public enum TruncationGateDetector {
     /// out of `<div>`s simply isn't detected here (the length- and metadata-based signals
     /// still apply).
     public static func showsTruncationGate(in html: String) -> Bool {
+        // Parsing is not free (a publisher page runs to hundreds of KB) and this signal
+        // cannot fire without a wall-named container somewhere in the markup, so a plain
+        // substring scan rules most pages out before SwiftSoup runs. Implied by the real
+        // check below, so it can only skip work, never change the answer.
+        let lowered = html.lowercased()
+        guard containerTokens.contains(where: lowered.contains) else { return false }
+
         guard let body = try? SwiftSoup.parse(html).body(),
               let elements = try? body.getAllElements().array()
         else { return false }

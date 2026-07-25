@@ -354,3 +354,17 @@ Differences from the Downloader, via `CardCarouselStyle`:
   roots (deep-link `openReader` → `openExternally(_:)`; friend prompt presents
   from whatever the root is). needsCaptcha cards route through the same
   archive.today modal flow as the old list.
+- **An external open CENTERS the card; it does not push a reader.** In this deck a
+  card already IS the reader, so the deep-link / Safari "Read in Luna" hand-off
+  pushing a fullscreen reader buried the deck under a second copy of the same
+  article and left a back button where the hand-off should simply have landed the
+  user on the card. `ArticleCardsViewController.openExternally` therefore routes
+  through `centerCard(forItemID:)`, which reuses the archive-tray transition's
+  `pendingTransitionCenteredID` seam to pick up a just-saved item — but `reload()`
+  early-returns on an unchanged fingerprint (the common case, since the save that
+  preceded the open already reloaded the deck), so the target index is re-checked
+  and centered directly afterwards. A `needsCaptcha` item centers FIRST and then
+  presents its unlock flow, so the deck behind (and left by a cancel) already shows
+  the right article. The fullscreen push survives only as the fallback for an item
+  with no card here — an archived item, which is also how the archive tray's own
+  `tap` opens. `LunaTests/ArticleCardsExternalOpenTests` (3).

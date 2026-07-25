@@ -376,3 +376,56 @@ A classified kind with no registered processor returns
 `Outcome.unsupported(owner:)`, dropped by every surface via `SurfaceSupport`
 (see `claudedocs/surface-support.md`, incl. the per-target composition files
 that do the registering — `#if canImport` is NOT target-reliable here).
+
+## Publisher subscribe interstitials (`WrapperHandler.interstitial`)
+
+A paywalled article on several publishers does not serve a paywall stub at its own
+URL — it **redirects to the publisher's own subscribe page**, carrying the real URL
+in a query param:
+
+```
+https://www.theaustralian.com.au/subscribe/news/1/?sourceCode=TAWEB_MRE170_a_TWT
+    &dest=https://www.theaustralian.com.au/wealth/…/news-story/<id>
+    &memtype=anonymous&mode=premium&v21=GROUPA-Segment-1-NOSCORE
+```
+
+That interstitial is therefore what Safari's address bar shows and what a share, a
+copy, or the Safari extension's `location.href` hands us — News Corp Australia
+(`theaustralian.com.au`, `heraldsun.com.au`, `dailytelegraph.com.au`,
+`couriermail.com.au`, `news.com.au`, …) is the live case, and the same sites serve a
+second shape, the `/remote/check_cookie.html?url=…` bounce. Left wrapped it poisons
+everything downstream: extraction reads the subscription pitch as the body, dedupe
+keys every locked article on the same interstitial path, and the archive reader asks
+archive.today for a URL it never snapshots (the article itself is snapshotted fine).
+
+`NewsAggregatorUnwrapper.interstitialTarget` resolves it offline (`.immediate`), and
+it is the one handler that **cannot key on host** — the interstitial lives on the
+publisher's own host. So the gating moved into the parser:
+
+- the **path** must prove it: a whole lowercased segment in
+  `subscribe`/`subscription(s)`/`paywall`/`signin`/`login`/`register`/`checkout`, or
+  the `check_cookie.html` leaf. Whole segments only, so an article whose *slug*
+  contains "subscribe" is untouched;
+- the target must be an **absolute http(s) URL on the SAME site** (`www.` ↔ bare and
+  login-subdomain ↔ site both count). That same-site rule is what stops this from
+  becoming a general open-redirect follower: an attacker-supplied `?dest=` can only
+  ever point back into the publisher's own domain;
+- a target that is itself an interstitial returns nil, so a self-referential `dest=`
+  can't loop.
+
+**`.interstitial` MUST stay LAST in `URLUnwrapper.handlers`.** Its matcher accepts
+every http(s) URL, and the dispatch loop `break`s after the first matcher that fires
+— anywhere earlier it would shadow every host-keyed handler below it
+(`testInterstitialIsLastAndShadowsNoOtherHandler` guards this).
+
+### The captured HTML must not follow an unwrapped URL
+
+Two surfaces snapshot the page the user was looking at: the Safari "Read in Luna"
+hand-off (`SafariContentStore`, consumed in `SceneDelegate.openReader`) and the
+action extension's `ArticleText` snapshot (`ShareViewController`). When that URL
+unwraps to a *different* page the capture is the wrapper's bytes — the subscription
+pitch — and `trustsPrefetchedHTML` would have stored the pitch as the article body.
+Both now drop the capture when `URLUnwrapper.unwrapsToDifferentPage` is true
+(SceneDelegate still CONSUMES it, so a stale capture can't leak onto a later open).
+Tracking-param stripping alone is NOT a different page, so a `?utm_…` article keeps
+its capture. Covered by `URLUnwrapperTests` (+10).

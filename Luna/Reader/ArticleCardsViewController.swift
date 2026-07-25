@@ -906,16 +906,41 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             shareProvider: AppReaderShareProvider.shared)
     }
 
-    /// Deep-link / external open (SceneDelegate): plain fullscreen push, no
-    /// card choreography.
+    /// Deep-link / external open (SceneDelegate): CENTER the item's card. A card
+    /// in this deck already IS the reader, so pushing a fullscreen reader on top
+    /// would bury the deck under a second copy of the same article and leave the
+    /// user with a back button where the Safari hand-off should simply have landed
+    /// them on the card. Falls back to a push only when the item has no card here
+    /// (archived, or filtered off this surface).
     func openExternally(_ item: ReadingListItem) {
+        let centered = centerCard(forItemID: item.id)
+        // A locked save still needs its unlock flow, but center first so the deck
+        // behind the modal — and the deck left behind if the user cancels — is
+        // already showing the article they asked for.
         if item.state == .needsCaptcha, let url = item.url {
             presentArchiveReader(for: item, articleURL: url)
             store.markReadState(.opened, for: item.id)
             return
         }
+        if centered { return }
         guard let reader = makeReader(for: item) else { return }
         navigationController?.pushViewController(reader, animated: true)
+    }
+
+    /// Brings the card for `id` to the center of the deck, returning false when the
+    /// item has no card here to center on. Picks up a just-saved item through the
+    /// same `pendingTransitionCenteredID` seam the archive-tray transition uses; but
+    /// `reload()` early-returns on an unchanged fingerprint — the common case, since
+    /// the save that preceded this open already reloaded us — so the target is
+    /// re-checked and centered directly afterwards.
+    private func centerCard(forItemID id: UUID) -> Bool {
+        pendingTransitionCenteredID = id
+        reload()
+        pendingTransitionCenteredID = nil
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return false }
+        let target = index + cardOffset
+        if carousel.currentIndex != target { carousel.reloadData(centeringAt: target) }
+        return true
     }
 
     /// Same archive.today CAPTCHA flow as the old list root (see

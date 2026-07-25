@@ -22,12 +22,14 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
     private func actions(
         isInReadingSection: Bool = false,
         isKindleConfigured: Bool = false,
-        canSaveMediaToPhotos: Bool = false
+        canSaveMediaToPhotos: Bool = false,
+        sharesByEmail: Bool = true
     ) -> RowMenuActions {
         RowMenuActions(
             isInReadingSection: isInReadingSection,
             isKindleConfigured: isKindleConfigured,
             canSaveMediaToPhotos: canSaveMediaToPhotos,
+            sharesByEmail: sharesByEmail,
             sendToFriend: {}, sendToKindle: {}, shareEbook: {}, shareLink: {}, copyLink: {},
             saveMediaToPhotos: {}, bumpToTop: {}, toggleTrackerArchived: {}, unarchive: {},
             delete: {}, editList: {})
@@ -61,7 +63,9 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
         tracker.isArchived = false
         item.priceTracker = tracker
         let menu = ReadingListRowMenuFactory.menu(for: item, actions: actions())
-        XCTAssertEqual(titles(menu), ["Send to Contact…", "Archive Tracker", "Delete"])
+        XCTAssertEqual(
+            titles(menu),
+            ["Send to Contact…", "Share Link…", "Copy Link", "Archive Tracker", "Delete"])
     }
 
     func testArchivedTrackerOffersUnarchive() {
@@ -71,7 +75,30 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
         tracker.isArchived = true
         item.priceTracker = tracker
         let menu = ReadingListRowMenuFactory.menu(for: item, actions: actions())
-        XCTAssertEqual(titles(menu), ["Send to Contact…", "Unarchive Tracker", "Delete"])
+        XCTAssertEqual(
+            titles(menu),
+            ["Send to Contact…", "Share Link…", "Copy Link", "Unarchive Tracker", "Delete"])
+    }
+
+    /// In an app that does no email (Downloader, Price Tracker) a tracker is
+    /// shared as its product link — the only affordance left.
+    func testTrackerWithoutEmailOffersOnlyLinkSharing() {
+        var item = article(urlString: "https://shop.example/widget")
+        item.priceTracker = PriceTracker(
+            productName: "Widget", firstStoreURL: item.urlString, price: 10, currency: "USD")
+        let menu = ReadingListRowMenuFactory.menu(
+            for: item, actions: actions(sharesByEmail: false))
+        XCTAssertEqual(
+            titles(menu), ["Share Link…", "Copy Link", "Archive Tracker", "Delete"])
+    }
+
+    func testArticleWithoutEmailDropsSendToContact() {
+        let menu = ReadingListRowMenuFactory.menu(
+            for: article(), actions: actions(sharesByEmail: false))
+        let result = titles(menu)
+        XCTAssertFalse(result.contains("Send to Contact…"))
+        XCTAssertTrue(result.contains("Share Link…"), "URL sharing is what's left")
+        XCTAssertTrue(result.contains("Copy Link"))
     }
 
     // MARK: - A shareable article (real web URL)

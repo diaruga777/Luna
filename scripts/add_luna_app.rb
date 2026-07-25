@@ -124,19 +124,6 @@ app = make_target(proj, NAME, 'com.apple.product-type.application', app_settings
 attach_sync_group(proj, app, sync['Luna'])
 link_same_packages(proj, app, clip)
 
-# Keep future standalone apps in sync with the three existing ones: before Copy
-# Bundle Resources, ensure each app has current PiP clips recorded from the shared
-# UIKit onboarding illustration. The script itself hashes that one isolated source
-# file, so this phase is normally a fast no-op.
-guide_src = clip.build_phases.find { |p| p.respond_to?(:shell_script) && p.display_name == 'Record onboarding PiP guides' }
-guide = proj.new(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
-guide.name = 'Record onboarding PiP guides'
-guide.shell_path = '/bin/sh'
-guide.shell_script = guide_src.shell_script
-guide.always_out_of_date = '1'
-resources_index = app.build_phases.index { |phase| phase.isa == 'PBXResourcesBuildPhase' }
-app.build_phases.insert(resources_index, guide)
-
 # Target dependencies on the three extensions (so they build before embedding).
 ext_targets.each { |et| app.add_dependency(et) }
 

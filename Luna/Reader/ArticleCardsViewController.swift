@@ -48,6 +48,11 @@ protocol AllKindsCardProviding: AnyObject {
     func sourceBadge(for item: ReadingListItem) -> CarouselSourceBadge?
     /// A card-sized still for the scrub preview; nil leaves the card's title.
     func thumbnail(for item: ReadingListItem, completion: @escaping (UIImage?) -> Void)
+    /// Whether this save's strip chip should be that still rather than a mini
+    /// card with a source badge — true for a save whose card IS a picture (a
+    /// Downloader video or image), so the strip shows it the way the
+    /// Downloader's own strip does instead of its host's favicon.
+    func prefersThumbnailChip(for item: ReadingListItem) -> Bool
     /// Whether the scrub strip may build this card's real content ahead of the
     /// finger. A card backed by a video player answers false — sweeping the
     /// strip must not spin up one player per chip — and previews as its poster
@@ -1113,8 +1118,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         return item.channelName
     }
 
-    /// The mini-card STRIP has no image chips, but its big scrub preview does:
-    /// a media save previews as its poster rather than as its title.
+    /// Feeds both the big scrub preview and — for the media saves that ask for
+    /// one (see `prefersThumbnailChipForCardAt`) — the strip chip itself: a
+    /// media save shows as its poster rather than as its title.
     func carousel(
         _ carousel: CardCarouselViewController,
         loadThumbnailForCardAt index: Int,
@@ -1125,6 +1131,17 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             return
         }
         provider.thumbnail(for: item, completion: completion)
+    }
+
+    /// A media save's chip is its own still; articles — and the synthetic paste
+    /// card, which has no item — keep the mini card and its source badge.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersThumbnailChipForCardAt index: Int
+    ) -> Bool {
+        guard let provider = cardProvider, let item = item(atCarouselIndex: index)
+        else { return false }
+        return provider.prefersThumbnailChip(for: item)
     }
 
     func carousel(

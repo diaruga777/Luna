@@ -71,6 +71,14 @@ final class AllKindsCardProvider: AllKindsCardProviding {
             for: media, scale: UIScreen.main.scale, completion: completion)
     }
 
+    /// A media save's card is a picture, so its strip chip is that picture too —
+    /// the same still the Downloader's own strip shows. An unarchived save with
+    /// no still yet falls back to a badge chip inside the carousel.
+    func prefersThumbnailChip(for item: ReadingListItem) -> Bool {
+        guard let media = media(for: item) else { return false }
+        return !media.isArchived
+    }
+
     /// Only media cards are expensive to build — each one is an AVPlayer, and
     /// the mini-card strip prepares its whole visible window at once.
     func allowsPreparedPreviewContent(for item: ReadingListItem) -> Bool {

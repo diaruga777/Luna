@@ -57,6 +57,16 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void)
+    /// Whether this card's `.miniCards` chip should be its full-bleed still
+    /// (`loadThumbnailForCardAt`) rather than a mini card with a source badge.
+    /// True for a save whose card IS a picture — a media download in the
+    /// all-kinds deck — so the chip mirrors the card above it instead of
+    /// reducing a video to its host's favicon. A card that answers true but has
+    /// no still yet falls back to its badge.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersThumbnailChipForCardAt index: Int
+    ) -> Bool
     /// Optional small accessory pinned to the card's top-leading corner.
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -87,6 +97,11 @@ public extension CardCarouselDataSource {
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void
     ) { completion(nil) }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersThumbnailChipForCardAt index: Int
+    ) -> Bool { false }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -1054,12 +1069,36 @@ public final class CardCarouselViewController: UIViewController {
                     }
                 }
             case .miniCards:
-                dataSource.carousel(self, loadSourceBadgeForCardAt: index) { [weak self] badge in
-                    DispatchQueue.main.async {
-                        guard let self, self.stripLoadGeneration == generation else { return }
-                        self.scrubber.setBadge(badge, at: index)
-                    }
+                if dataSource.carousel(self, prefersThumbnailChipForCardAt: index) {
+                    loadThumbnailChip(at: index, generation: generation)
+                } else {
+                    loadBadgeChip(at: index, generation: generation)
                 }
+            }
+        }
+    }
+
+    /// A picture chip for a `.miniCards` strip. A save that wants one but has
+    /// no still yet (an undownloaded video, say) keeps the mini card and its
+    /// badge rather than showing an empty well.
+    private func loadThumbnailChip(at index: Int, generation: Int) {
+        dataSource?.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
+            DispatchQueue.main.async {
+                guard let self, self.stripLoadGeneration == generation else { return }
+                guard let image else {
+                    self.loadBadgeChip(at: index, generation: generation)
+                    return
+                }
+                self.scrubber.setThumbnail(image, at: index)
+            }
+        }
+    }
+
+    private func loadBadgeChip(at index: Int, generation: Int) {
+        dataSource?.carousel(self, loadSourceBadgeForCardAt: index) { [weak self] badge in
+            DispatchQueue.main.async {
+                guard let self, self.stripLoadGeneration == generation else { return }
+                self.scrubber.setBadge(badge, at: index)
             }
         }
     }

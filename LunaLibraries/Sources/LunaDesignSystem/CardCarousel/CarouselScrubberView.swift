@@ -18,7 +18,10 @@
 //  Two styles: `.thumbnails` (small 9:16 image chips — Downloader) and
 //  `.miniCards` (miniature article cards — Reader): each chip is a tiny card
 //  surface with the save's source badge (favicon / sender initials / symbol)
-//  as a mini masthead over skeleton text lines.
+//  as a mini masthead over skeleton text lines. A `.miniCards` chip whose save
+//  is a PICTURE rather than text — a Downloader video or image in the central
+//  app's all-kinds deck — shows that still full-bleed instead, so the chip
+//  keeps reading as a shrunken copy of the card above it.
 //
 
 import UIKit
@@ -213,14 +216,20 @@ public final class CarouselScrubberView: UIView {
         reportVisibleIndicesIfNeeded()
     }
 
+    /// The chip's picture. In `.thumbnails` it IS the chip; in `.miniCards` a
+    /// non-nil image takes the whole chip, covering the mini card's badge and
+    /// skeleton text, and nil restores them.
     public func setThumbnail(_ image: UIImage?, at index: Int) {
         guard itemViews.indices.contains(index) else { return }
-        itemViews[index].imageView.image = image
+        itemViews[index].setImage(image)
     }
 
     /// Source badge for a `.miniCards` chip. nil shows the neutral placeholder.
+    /// Setting a badge also clears any full-bleed image the chip carried, so a
+    /// recycled chip reverts from a media still to a mini card.
     public func setBadge(_ badge: CarouselSourceBadge?, at index: Int) {
         guard itemViews.indices.contains(index) else { return }
+        itemViews[index].setImage(nil)
         itemViews[index].setBadge(badge)
     }
 
@@ -400,6 +409,9 @@ private final class ScrubberItemView: UIView {
     let imageView = UIImageView()
     private let badgeView = CarouselSourceBadgeView()
     private let style: CarouselScrubberView.Style
+    /// The mini card's own furniture (badge + skeleton bars), hidden while the
+    /// chip shows a full-bleed still instead. Empty in `.thumbnails`.
+    private var miniCardFurniture: [UIView] = []
 
     init(style: CarouselScrubberView.Style, size: CGSize) {
         self.style = style
@@ -417,22 +429,30 @@ private final class ScrubberItemView: UIView {
         ])
         switch style {
         case .thumbnails:
-            imageView.contentMode = .scaleAspectFill
-            imageView.clipsToBounds = true
-            imageView.layer.cornerRadius = 6
-            imageView.layer.cornerCurve = .continuous
-            imageView.backgroundColor = LunaColors.tertiaryFill
-            // This view is created before Auto Layout gives its parent `size`.
-            // Starting at `size` and also using flexible width/height doubles
-            // the image when the parent grows from zero to its constrained
-            // bounds, making thumbnails overlap and clip below the strip.
-            imageView.frame = bounds
-            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            addSubview(imageView)
+            installImageView(cornerRadius: 6)
         case .miniCards:
             buildMiniCard(size: size)
+            // Added over the mini card, not instead of it: a save with a still
+            // covers the furniture, one without keeps showing it.
+            installImageView(cornerRadius: 9)
+            imageView.isHidden = true
         }
         setSelected(false)
+    }
+
+    private func installImageView(cornerRadius: CGFloat) {
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = cornerRadius
+        imageView.layer.cornerCurve = .continuous
+        imageView.backgroundColor = LunaColors.tertiaryFill
+        // This view is created before Auto Layout gives its parent `size`.
+        // Starting at `size` and also using flexible width/height doubles
+        // the image when the parent grows from zero to its constrained
+        // bounds, making thumbnails overlap and clip below the strip.
+        imageView.frame = bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(imageView)
     }
 
     /// The mini-card layout mirrors a reader card in miniature: source badge
@@ -448,6 +468,7 @@ private final class ScrubberItemView: UIView {
 
         badgeView.frame = CGRect(x: inset, y: inset, width: 16, height: 16)
         addSubview(badgeView)
+        miniCardFurniture.append(badgeView)
 
         addBar(x: inset, y: 28, width: contentWidth, height: 4, color: LunaColors.fill)
         addBar(x: inset, y: 35, width: contentWidth * 0.72, height: 4, color: LunaColors.fill)
@@ -462,10 +483,20 @@ private final class ScrubberItemView: UIView {
         bar.layer.cornerRadius = height / 2
         bar.isUserInteractionEnabled = false
         addSubview(bar)
+        miniCardFurniture.append(bar)
     }
 
     func setBadge(_ badge: CarouselSourceBadge?) {
         badgeView.setBadge(badge)
+    }
+
+    /// The chip's picture. In `.miniCards` an image swaps the mini card's
+    /// furniture out for a full-bleed still; nil brings the furniture back.
+    func setImage(_ image: UIImage?) {
+        imageView.image = image
+        guard style == .miniCards else { return }
+        imageView.isHidden = image == nil
+        for view in miniCardFurniture { view.isHidden = image != nil }
     }
 
     func setSelected(_ selected: Bool) {

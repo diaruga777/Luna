@@ -20,6 +20,9 @@ struct RowMenuActions {
     /// media this app can download (resolved by the media-kind seam; always
     /// false in apps that don't handle media).
     var canSaveMediaToPhotos: Bool = false
+    /// Gates "Send to Contact…" — false in the apps that share by plain URL only
+    /// (Downloader, Price Tracker), which have no email account at all.
+    var sharesByEmail: Bool = true
     let sendToFriend: () -> Void
     let sendToKindle: () -> Void
     let shareEbook: () -> Void
@@ -66,11 +69,16 @@ enum ReadingListRowMenuFactory {
         // delete. Articles: everything. Each ereader row shows only when
         // that destination is set up.
 
-        // Price trackers get a focused menu: share the tracker to a friend,
-        // archive/unarchive it (archived = hidden + excluded from refresh), delete.
+        // Price trackers get a focused menu: share the tracker (to a contact where
+        // email exists, and always as its product link), archive/unarchive it
+        // (archived = hidden + excluded from refresh), delete.
         if let tracker = item.priceTracker {
             var trackerChildren: [UIAction] = []
-            trackerChildren.append(sendToFriend)
+            if actions.sharesByEmail { trackerChildren.append(sendToFriend) }
+            if item.isShareable {
+                trackerChildren.append(shareLink)
+                trackerChildren.append(copyLink)
+            }
             let archiveTitle = tracker.isArchived ? "Unarchive Tracker" : "Archive Tracker"
             let archiveIcon = tracker.isArchived ? "tray.and.arrow.up" : "archivebox"
             trackerChildren.append(UIAction(
@@ -100,7 +108,7 @@ enum ReadingListRowMenuFactory {
                 title: "Bump to Top", image: UIImage(systemName: "arrow.up.to.line")
             ) { _ in actions.bumpToTop() })
         }
-        if item.canShareToFriends {
+        if item.canShareToFriends, actions.sharesByEmail {
             children.append(sendToFriend)
         }
         // Any item that kept a real web URL (articles and platform items) can

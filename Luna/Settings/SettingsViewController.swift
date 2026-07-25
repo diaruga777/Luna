@@ -51,9 +51,13 @@ final class SettingsViewController: NavHeaderTableController {
 
     private let categories: [SettingsCategory] =
         // Kind rows first (Reader/Audio/Reading List/Email for article apps,
-        // Auto-Download for media apps), then the universal tail.
-        KindWiring.settingsCategories() + [
-            SettingsCategory(title: "Contacts", symbol: "person.2") { FriendsViewController() },
+        // Auto-Download for media apps), then the universal tail. Contacts is
+        // email sharing's address book, so it appears only where email exists.
+        KindWiring.settingsCategories()
+        + (AppSurfaceConfig.current.sharesByEmail
+            ? [SettingsCategory(title: "Contacts", symbol: "person.2") { FriendsViewController() }]
+            : [])
+        + [
             SettingsCategory(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
             SettingsCategory(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
             SettingsCategory(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },

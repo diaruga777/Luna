@@ -33,10 +33,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private var wifiAvailableObserver: NSObjectProtocol?
     /// Price trackers surface only in product-handling apps (Price Tracker and
     /// the central Luna app), so only those install a refresh runner — and only
-    /// a target with a runner registers and schedules the price-refresh job
-    /// (mail fetch stays universal). Otherwise every app redundantly refreshes
-    /// the shared store's trackers.
+    /// a target with a runner registers and schedules the price-refresh job.
+    /// Otherwise every app redundantly refreshes the shared store's trackers.
     private var schedulesPriceRefresh: Bool { KindWiring.priceRefreshRunner != nil }
+    /// Whether this app does email at all — gates the mail-fetch background task
+    /// (and its scheduling) the same way `schedulesPriceRefresh` gates the price
+    /// job. Downloader and Price Tracker connect no account, so there is nothing
+    /// for a mail fetch to read.
+    private var sharesByEmail: Bool { AppSurfaceConfig.current.sharesByEmail }
 
     func application(
         _ application: UIApplication,
@@ -117,11 +121,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.requestAuthorization()
 
-        // Mail fetch is universal — every surface receives shares + newsletters.
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: Self.mailFetchTaskID, using: nil
-        ) { [weak self] task in
-            self?.handleMailFetch(task as? BGProcessingTask)
+        // Mail fetch only where there's a mailbox to read: Downloader and Price
+        // Tracker share by plain URL and connect no account (see `sharesByEmail`).
+        if sharesByEmail {
+            BGTaskScheduler.shared.register(
+                forTaskWithIdentifier: Self.mailFetchTaskID, using: nil
+            ) { [weak self] task in
+                self?.handleMailFetch(task as? BGProcessingTask)
+            }
         }
         // Price refresh only on the Price Tracker surface (see schedulesPriceRefresh).
         if schedulesPriceRefresh {
@@ -153,9 +160,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             KindWiring.wifiBecameAvailable()
         }
 
-        // Read incoming mail (Luna shares + newsletters) — all surfaces.
-        Task { await IncomingMailImporter.shared.importNewMail() }
-        scheduleMailFetch()
+        // Read incoming mail (Luna shares + newsletters).
+        if sharesByEmail {
+            Task { await IncomingMailImporter.shared.importNewMail() }
+            scheduleMailFetch()
+        }
         // Both calls start with a full readingList.json decode
         // (priceTrackersStalestFirst() -> items()); defer that store read off the
         // launch frame. BGTaskScheduler and DiagnosticLog are thread-safe, and
@@ -189,6 +198,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     private func scheduleMailFetch() {
+        // Reached from the background handlers too, so guard here rather than at
+        // every call site (see `sharesByEmail`).
+        guard sharesByEmail else { return }
         let request = BGProcessingTaskRequest(identifier: Self.mailFetchTaskID)
         request.earliestBeginDate = Date(timeIntervalSinceNow: Self.mailFetchInterval)
         request.requiresNetworkConnectivity = true

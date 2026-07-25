@@ -223,4 +223,11 @@ public enum AppSurface {
     public var handlesArticles: Bool { self == .all || self == .reader }
     public var handlesMedia: Bool { self == .all || self == .downloader }
     public var handlesProducts: Bool { self == .all || self == .priceTracker }
+
+    /// Whether this app does email at all: connecting an account, sending saves to
+    /// contacts, and importing shares/newsletters from a mailbox. Downloader and
+    /// Price Tracker share by plain URL through the system share sheet instead, so
+    /// they have no account to connect, no Contacts screen, and no mail import —
+    /// see `claudedocs/social-sharing.md`.
+    public var sharesByEmail: Bool { self == .all || self == .reader }
 }

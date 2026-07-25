@@ -599,10 +599,16 @@ final class ReadingListViewController: UITableViewController {
     @objc private func pulledToRefresh() {
         ReadingListIngestor.shared.ingestAllPending()
         ListKindSupport.article?.retryPendingSends()
-        Task { await IncomingMailImporter.shared.importNewMail() }
+        if sharesByEmail {
+            Task { await IncomingMailImporter.shared.importNewMail() }
+        }
         reload()
         refreshControl?.endRefreshing()
     }
+
+    /// Whether this app does email at all (Downloader and Price Tracker share by
+    /// plain URL) — gates the Contacts button, mail import, and Send to Contact.
+    private var sharesByEmail: Bool { AppSurfaceConfig.current.sharesByEmail }
 
     @objc func friendsTapped() {
         navigationController?.pushViewController(FriendsViewController(), animated: true)
@@ -625,10 +631,13 @@ final class ReadingListViewController: UITableViewController {
                 systemName: "gearshape", target: self, action: #selector(settingsTapped),
                 accessibilityLabel: "Settings"),
         ]
-        // Friends / email sharing is available in all three apps.
-        leading.append(NavHeaderBar.imageButton(
-            systemName: "person.2", target: self, action: #selector(friendsTapped),
-            accessibilityLabel: "Contacts"))
+        // Contacts is email sharing's address book, so only the apps that send
+        // email show it.
+        if sharesByEmail {
+            leading.append(NavHeaderBar.imageButton(
+                systemName: "person.2", target: self, action: #selector(friendsTapped),
+                accessibilityLabel: "Contacts"))
+        }
         header.setLeadingControls(leading)
         header.setTrailingControls([
             NavHeaderBar.imageButton(
@@ -1295,6 +1304,7 @@ final class ReadingListViewController: UITableViewController {
             isKindleConfigured: ListKindSupport.article?.isKindleConfigured ?? false,
             canSaveMediaToPhotos: ListKindSupport.media?
                 .canSaveMediaToPhotos(urlString: item.urlString) ?? false,
+            sharesByEmail: sharesByEmail,
             sendToFriend: { [weak self] in self?.presentSend(item) },
             sendToKindle: { ListKindSupport.article?.sendToKindle(item) },
             shareEbook: { [weak self] in

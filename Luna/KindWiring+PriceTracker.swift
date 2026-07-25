@@ -24,7 +24,8 @@ enum KindWiring {
         IngestKindProcessors.product = ProductIngestProcessor()
         IngestorKindHandlers.product = ProductKindHandler()
         ListKindSupport.product = ProductListSupport()
-        EmailShareCenter.priceGraphSnapshot = { PriceGraphEmailSnapshot.jpegData(for: $0) }
+        // No price-graph email snapshot: Price Tracker shares a tracker as its
+        // product link, never as a Luna email (see `AppSurface.sharesByEmail`).
 
         // Install the in-app "Read instead" behavior for the price-tracking editor
         // (shared with the extensions, which can't reference the ingestor): a

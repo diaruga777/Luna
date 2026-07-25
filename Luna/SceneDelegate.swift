@@ -48,9 +48,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     /// Pushes the Pending Requests screen onto the reading-list nav once the main
-    /// UI exists.
+    /// UI exists. Pending contact requests arrive by email, so only the apps that
+    /// do email have this screen to route to.
     private func applyPendingNotificationRoute() {
-        guard Self.pendingRequestsRoute,
+        guard Self.pendingRequestsRoute, AppSurfaceConfig.current.sharesByEmail,
               let nav = mainNavigationController else { return }
         Self.pendingRequestsRoute = false
         nav.dismiss(animated: false)
@@ -175,7 +176,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()
-        Task { await IncomingMailImporter.shared.importNewMail() }
+        if AppSurfaceConfig.current.sharesByEmail {
+            Task { await IncomingMailImporter.shared.importNewMail() }
+        }
         // Kind-specific foreground work: saved-media purge + deferred Wi-Fi
         // download resume (media apps), pending-send retry + link-preload
         // resume (article apps).
@@ -192,7 +195,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// the Shortcut opened Luna). One-shot; consumed only once the main UI is
     /// actually up so a debug or UI-test root doesn't swallow it.
     private func applyPendingFriendPrompt() {
-        guard let nav = mainNavigationController,
+        guard AppSurfaceConfig.current.sharesByEmail,
+              let nav = mainNavigationController,
               let root = nav.viewControllers.first
         else { return }
         let surface = AppSurfaceConfig.current.storageIdentifier

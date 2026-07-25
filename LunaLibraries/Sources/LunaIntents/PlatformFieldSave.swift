@@ -4,7 +4,6 @@
 //
 
 import LunaModels
-import LunaPlatforms
 import Foundation
 
 /// The Save intent's per-platform save routing: given a platform and the
@@ -13,7 +12,7 @@ import Foundation
 /// count for that platform, runs the platform's search (Bluesky/Reddit's own
 /// search APIs; X/TikTok/Instagram/Facebook via keyless `SocialPostFinder`), and
 /// saves the result — double-save-aware via `doubleSaveActionSurface`.
-/// `LunaPlatforms.ContentPlatform` has no music/podcast case.
+/// `LunaModels.ContentPlatform` has no music/podcast case.
 public enum PlatformFieldSave {
 
     /// Keeps the URL resolved by the platform search independent from the save

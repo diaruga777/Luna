@@ -3,7 +3,6 @@
 //  LunaIntents
 //
 
-import LunaPlatforms
 import Foundation
 
 /// Safari has no post-search API to fall back on the way X/TikTok/Reddit do — when

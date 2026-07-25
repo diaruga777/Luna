@@ -265,6 +265,95 @@ All three reader modes, audio (foreground only), and the inline split-web link v
 
 Extractor emits `.image` blocks (`imageURLString`) for article `<img>`s — token-exact junk filter (ad/tracking/logo/etc; substring matching would reject WordPress `/uploads/` URLs) and skips declared-tiny (<140 px) raster art plus SVG, while retaining GIFs. Open Graph/Twitter/JSON-LD lead art is deduplicated against body images and moved to block zero, so an animated GIF can be the reader's lead/header image. `ArticleImageDownloader` downloads up to 30 images (≤12 MB raw each, ≤40 MB stored per article) into the Articles dir (`imageFileName`). Static images are downsampled and transcoded for fast decoding; animated GIF/APNG files retain every frame. `.gif` URLs use an animation-safe `Accept` header because WordPress image CDNs otherwise negotiate animated WebP, which the old static transcode flattened to frame zero; if a CDN still returns animated WebP, ImageIO converts the sequence to GIF. Reopening an older save automatically unlinks/refetches a legacy frame-zero JPEG for a `.gif` source. `ArticleTextRenderer` keeps a downsampled first-frame `NSTextAttachment` for stable TextKit layout and snapshots; `ScrollReaderViewController` overlays an `AnimatedArticleImageView` driven one frame at a time by ImageIO, enabling playback only near the visible viewport to bound memory/CPU. RSVP ignores image blocks (no tokens). Tests: `AnimatedArticleImageTests`, `ArticleExtractorTests.testRetainsGIFBodyImageAndCanPromoteGIFToLeadImage`.
 
+## Chapter marks (the page's own table of contents)
+
+A long blog entry often opens with a table of contents: a list of `#fragment`
+links into headings further down the SAME page. Luna preserves those and makes a
+row scroll the reader; everything lives in
+`LunaHTMLClassification/InPageAnchors.swift` plus a new block kind,
+`ArticleContent.Block.Kind.tableOfContents`.
+
+**Why it needs its own pass.** Nothing else would have kept it: both extraction
+layers strip `<nav>` outright, and `cleanConditionally` deletes exactly a ToC's
+shape (a `<ul>`/`<ol>` under 500 chars that's >80% link text). So
+`InPageAnchors.prepare(document:baseURL:)` runs on the freshly parsed document
+BEFORE any stripping: it collects the fragments the page references, normalizes
+the `<a name="x"></a>`-before-the-heading idiom by hoisting the id onto the
+element it labels, and marks every qualifying container with `data-luna-toc`.
+That marker is what the strip loop and `cleanConditionally` skip. It is set on
+EVERY qualifying element in a nesting chain (a `<nav class="toc">` AND the `<ul>`
+inside it) because each must survive on its own account; rows are emitted from
+the OUTERMOST one, so the list's label ("Contents", "In this article") comes
+along as an unlinked row. A non-qualifying ancestor is deliberately still
+strippable — a ToC parked in a sidebar `<aside>` is GIVEN UP rather than dragging
+the newsletter box and popular-posts rail into the article.
+
+**Detection errs toward omission** (a missed ToC reads as an ordinary article; a
+false positive turns prose into furniture that RSVP and read-aloud skip): ≥3
+distinct fragments that resolve to a real element, ≥80% of the container's links
+in-page, >55% of its text inside those links, ≤3000 chars total. That rejects a
+related-articles rail (outbound hrefs), a two-link "jump to recipe" bar (too
+few), prose peppered with footnote markers and a footnote list with `↩` back-links
+(link TEXT too small a share), and site navigation carrying one anchor.
+
+**Rows are built from the anchors, not the `<li>` walk** — a nested `<li>` has a
+block ancestor, so the generic walk would fold a two-level ToC's sub-entries into
+their parent's bullet. Each row is one `.tableOfContents` block whose single
+`ArticleContent.Link` carries `anchorID`; the destination block carries the same
+string in `Block.anchorID`. Lookup is by id (`ArticleContent.blockIndex(forAnchorID:)`),
+never by index, so moving the lead image to block zero can't misdirect a jump.
+`InPageAnchors.resolvingAnchors` runs LAST in `extract()`, after every trimming
+pass, on the blocks that actually survived: a row whose destination was trimmed
+loses its link (plain text beats a tap that reopens the live page), and a ToC left
+with fewer than 2 working rows is dropped whole. The junk heuristics are also
+taught to leave an identified ToC alone — it can't be popped by `reverseTrim`,
+can't be read as a mid-article recirc line, and a row reading "More on this" can't
+fire the recirc terminator and truncate the article.
+
+**In-page links in PROSE get the same treatment** (a footnote marker jumps to the
+footnote), and `ArticleContent.outboundURLs` excludes them — crawling one would
+refetch this very article. An unresolvable prose anchor just loses its `anchorID`
+and behaves like any other link.
+
+**The reader side.** `ArticleTextRenderer` styles a ToC as a compact indented
+16pt list (its label semibold/secondary, unindented) and attaches
+`.lunaInPageAnchor` — the destination's `anchorID` — alongside `.link`.
+`ScrollReaderViewController.textView(_:primaryActionFor:defaultAction:)` checks
+that attribute FIRST and calls `scrollToInPageAnchor` instead of opening
+anything, at every reader depth (the check precedes `onLinkActivatedWithRange`,
+so inline/RabbitHole hosts never see an in-page tap). The jump lands 8% from the
+top via the shared `scrollRange(_:toFractionFromTop:animated:)` primitive
+factored out of `scrollWord`, clamped so the last section can't overscroll.
+**A tap during Phase 1 is the COMMON case** — a ToC sits at the very top and its
+destinations are past the 700-char prefix — so the jump is parked in
+`pendingAnchorBlockIndex`, `prepareFullContent()` is kicked, and the Phase-2 swap
+honours it in place of the offset it just restored (cleared by
+`resetTransientState` so it can't survive into a recycled reader). Link HOLDS
+don't offer the mini RSVP preview for an in-page jump (`previewableLinkURL`),
+which would load this same article; `link(at:)` itself still reports the hit so
+the card keeps treating a row as interactive content.
+
+**Never read aloud, never in the word stream.** `Block.isReadableProse`
+(`kind != .tableOfContents`) is the single predicate four consumers share:
+`RSVPEngine` and `WordMap` both skip those blocks — they must do it TOGETHER or
+every index past the ToC would mean a different word in each reader (the ToC does
+render, so it HAS a `blockTextRanges` entry; the skip is on kind, not on a
+missing range) — `SpeechController.speakableBlocks` filters them, and
+`AudioTrimHeuristics.signal` drops them at `.high` precision so the global
+50%-cap degradation can't reinstate them. `RSVPEngine` also drops the URL of an
+in-page link so no link pill offers to reopen the current article.
+Note that image CAPTIONS are ordinary `.paragraph` blocks and ARE still in the
+RSVP stream — only the audio script drops them (`captionCreditReason`).
+
+Other renderers: the offline snapshot (`SavedArticleSnapshotRenderer`) and the
+EPUB (`EpubBuilder`) are each ONE document, so both emit `id=` on anchored blocks
+and rewrite a row's href to `#anchor` — chapter marks keep working offline and on
+a Kindle. Mail keeps the absolute href, so a row opens the live article at that
+section. Fixture: `UITestState.tableOfContents`. Tests:
+`InPageAnchorTests` (18 — detection, the shapes that must NOT match, omission,
+markup idioms, legacy decoding), `TableOfContentsWordStreamTests` (7 — the
+four-consumer skip + index-space alignment + id lookup).
+
 ## Article extraction (`ReaderKit/ArticleExtraction.swift` + `ArticleExtractor.swift`)
 
 **Stage-2 component (`ArticleExtraction`).** The ONE place HTML becomes content AND is judged readable. Wraps the pure `ArticleExtractor` parser and exposes: `extract(html:baseURL:)`, `extractFromJSONLD(html:baseURL:)`, the shared `fetchAndExtract(baseURL:fetch:) -> ExtractedArticle?` helper (one fetch-then-extract for the whole pipeline — the byte-identical `ArticleResolver.extractedContent` / `BypassRunner.extracted` duplicates were deleted), and the SINGLE predicate `static isReadableArticle(_:html:)`. That predicate (`bodyTextLength >= ArticleContent.readableBodyThreshold && !PaywallDetector.looksPaywalled(content:html:)`) consolidated the three former duplicate readable/locked checks — `ArticleResolver.isReadable`, `BypassGate` step 3, and the implicit `!looksPaywalled` inside `ArticleContent.hasReadableBody`. It is HTML-aware (folds in the schema.org lock), so the lock can't be skipped via a text-only path. `ExtractedArticle { content, sourceHTML }` replaces the old `(ArticleContent, String)` tuple. `ArticleContent.hasReadableBody` is now a thin text-only (`html: nil`) call into the predicate. Tests: `ArticleExtractionTests` (per-site readable + paywalled-stub table for nytimes/washingtonpost/wsj/smh.com.au; the HTML-lock false-negative guard; long-article-quoting-a-gate-phrase policy locked).

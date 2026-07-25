@@ -24,6 +24,10 @@ enum UITestState: String, CaseIterable {
     case mixed
     /// Several price trackers, one of them alerting (a price drop past threshold).
     case priceTracking
+    /// One long article carrying the page's own chapter marks — a table of
+    /// contents whose rows jump to headings far past the progressive load's
+    /// Phase-1 prefix.
+    case tableOfContents
 
     /// The fixture data (items + content) for this state.
     var fixture: UITestFixtures.Fixture { UITestFixtures.fixture(for: self) }
@@ -70,7 +74,48 @@ enum UITestFixtures {
         case .empty: return Fixture(items: [], contents: [:])
         case .mixed: return mixedFixture()
         case .priceTracking: return priceTrackingFixture()
+        case .tableOfContents: return tableOfContentsFixture()
         }
+    }
+
+    // MARK: - Table of contents (the page's own chapter marks)
+
+    /// One article whose body opens with a labelled table of contents, each row
+    /// jumping to a heading far enough down that the destination is past the scroll
+    /// reader's Phase-1 prefix — so a tap exercises the parked-jump path too.
+    static func tableOfContentsFixture() -> Fixture {
+        let sections = ["Beginnings", "The Middle", "A Digression", "Ending"]
+        let body = String(repeating:
+            "This deterministic section text exists so each chapter sits a full screen "
+            + "apart from its neighbours, which is what makes a jump visible. ", count: 5)
+
+        var blocks: [ArticleContent.Block] = [
+            .init(kind: .tableOfContents, text: "Contents", links: []),
+        ]
+        for section in sections {
+            let anchorID = section.lowercased().replacingOccurrences(of: " ", with: "-")
+            blocks.append(.init(
+                kind: .tableOfContents, text: section,
+                links: [.init(
+                    start: 0, length: (section as NSString).length,
+                    urlString: "https://example.com/long-entry#\(anchorID)",
+                    anchorID: anchorID)]))
+        }
+        for section in sections {
+            let anchorID = section.lowercased().replacingOccurrences(of: " ", with: "-")
+            blocks.append(.init(kind: .heading, text: section, links: [], anchorID: anchorID))
+            blocks.append(.init(kind: .paragraph, text: body, links: []))
+        }
+
+        let item = ReadingListItem(
+            seed: "toc-article", urlString: "https://example.com/long-entry",
+            title: "A Long Entry With Chapter Marks", dateAdded: ago(hours: 2),
+            state: .ready, readState: .unopened, wordCount: 620,
+            captureSource: .manual)
+        return Fixture(
+            items: [item],
+            contents: [item.id: ArticleContent(
+                title: "A Long Entry With Chapter Marks", author: "Jane Doe", blocks: blocks)])
     }
 
     // MARK: - Article content

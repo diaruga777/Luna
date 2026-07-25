@@ -44,6 +44,10 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
   needsCaptcha (locked) article, failed article, friend-shared article, PDF
   platform posts, a normal price tracker, and an **alerting** price tracker.
 - **`priceTracking`** — 3 trackers (steady, dropped/alerting, never-refreshed).
+- **`tableOfContents`** — one long article carrying the page's own chapter marks
+  (a labelled `.tableOfContents` run whose rows jump to headings well past the
+  scroll reader's Phase-1 prefix). The only fixture where tapping a row must
+  SCROLL the reader rather than open anything; see `readers.md`.
 
 ### In-app seeding (screenshot agent)
 

@@ -411,10 +411,20 @@
     function looksLikeArticle() {
         var body = document.body;
         if (!body) { return false; }
-        if (document.querySelectorAll("article").length >= 4) { return false; }
-        if (wholePageLinkDensity(body) > 0.5) { return false; }
+        if (hasStructuralListingShape()) { return false; }
         if (isDocPathURL()) { return false; }
-        if (document.querySelector('input[type="password"]')) { return false; }
+        // A page whose content IS a sign-in form isn't an article — but a document-wide
+        // `input[type=password]` is not that test. Publishers ship an inline sign-in
+        // form in the site header (theparisreview.org carries two, one per breakpoint)
+        // and a metered page routinely puts one under the teaser, so this rejected real
+        // articles on sight: together with the structural shapes above it was the
+        // second reason a Paris Review interview never got the pill, and removing the
+        // two fields from that DOM flips this function to true on its own. A page that
+        // declares itself an article is therefore exempt here too; a genuine login or
+        // subscribe page declares no article and still fails.
+        if (!pageDeclaresArticle() && document.querySelector('input[type="password"]')) {
+            return false;
+        }
 
         var candidates = collectArticleCandidates();
         var score = 0;
@@ -504,19 +514,18 @@
     //
     // A known news host mirrors the app's `NewsSites.free`/`.hardPaywall` fast-path,
     // which classifies the host as `.article` OUTRIGHT with zero DOM inspection. The
-    // Safari side must not be strictly weaker: a real article routinely embeds a
-    // "read next" rail of related-story `<article>` cards (Business Insider ships six
-    // `<article>` elements) and becomes link-dense once its body is metered, which
-    // trips the structural index heuristics (`>= 4 <article>`, whole-page link
-    // density). Those were meant to reject a publisher FRONT/section page, not to
-    // override a known host — so on a known host, POSITIVE article metadata
+    // Safari side must not be strictly weaker: POSITIVE article metadata
     // (og:type=article, or an Article/NewsArticle/BlogPosting JSON-LD node) decides
-    // "article" and the structural veto no longer applies. Only a page that carries
-    // NO article declaration at all falls back to the full index veto, so a
-    // publisher homepage on the same host still gets no pill.
+    // "article" there, and only a page carrying NO article declaration at all falls
+    // back to the full index veto — so a publisher homepage on the same host still
+    // gets no pill.
     //
-    // Unknown hosts are unchanged: an obvious index vetoes, then the prose scorer
-    // decides. On save the app re-classifies properly via LunaIngest either way.
+    // Unknown hosts: an index vetoes, then the prose scorer decides. The veto's
+    // STRUCTURAL half no longer applies to a page that declares itself an article
+    // (see `looksLikeNonArticleIndex`) — that was what silenced the pill on
+    // theparisreview.org — but the scorer still has to find real prose, so a thin
+    // metered teaser on an unknown host stays pill-less. On save the app
+    // re-classifies properly via LunaIngest either way.
     function isArticlePage() {
         if (isKnownArticleHost()) {
             if (pageDeclaresArticle()) { return true; }
@@ -538,6 +547,28 @@
     window.__lunaPageDeclaresArticle = pageDeclaresArticle;
     window.__lunaIsKnownHardPaywallHost = isKnownHardPaywallHost;
 
+    // The two purely STRUCTURAL listing shapes: a cluster of sibling `<article>`
+    // elements, and a page that is mostly links. Neither says anything about a page's
+    // kind on its own, because both are routine on real articles — a "read next" rail
+    // of related-story `<article>` cards (Business Insider ships six; a Paris Review
+    // interview ships thirteen "more from this issue" cards), and the link density a
+    // metered body leaves behind once the prose is cut. So a page that DECLARES itself
+    // an article is exempt, on every host: a rail of cards is not a property of the
+    // HOST, and while the known-news list had an exemption, a declared article
+    // anywhere off that list was rejected by markup that carried no such meaning.
+    //
+    // Shared by the index veto and the prose scorer, which each carried their OWN copy
+    // of these two lines — the scorer's copy is why theparisreview.org stayed
+    // pill-less even after the veto learned to stand down, and why they must not drift
+    // apart again.
+    function hasStructuralListingShape() {
+        var body = document.body;
+        if (!body) { return false; }
+        if (pageDeclaresArticle()) { return false; }
+        if (document.querySelectorAll("article").length >= 4) { return true; }
+        return wholePageLinkDensity(body) > 0.5;
+    }
+
     // An index is not something Luna can read as one article, even when its publisher
     // is in the known-news host list. These are intentionally structural signals rather
     // than site names:
@@ -546,11 +577,11 @@
     //     exposing a cluster of headline-sized links is a publisher front/section page.
     // Requiring both metadata and the visible link cluster for the latter avoids
     // rejecting a genuine article merely because it also declares generic WebPage data.
+    // A page's own LISTING declaration vetoes even when it also claims to be an
+    // article, so a front page can't slip through on that claim alone.
     function looksLikeNonArticleIndex() {
-        var body = document.body;
-        if (!body) { return false; }
-        if (document.querySelectorAll("article").length >= 4) { return true; }
-        if (wholePageLinkDensity(body) > 0.5) { return true; }
+        if (!document.body) { return false; }
+        if (hasStructuralListingShape()) { return true; }
         return declaresListingPage() && headlineLinkCount() >= 5;
     }
 

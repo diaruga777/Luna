@@ -368,6 +368,94 @@ final class SafariArticleHeuristicTests: XCTestCase {
             "window.__lunaIsArticlePage()", html: html, urlString: biURL))
     }
 
+    /// A declared article on an UNKNOWN host, shaped like theparisreview.org: an
+    /// "Article" JSON-LD node and `og:type=article`, real prose, thirteen
+    /// "more from this issue" `<article>` cards, and a sign-in form in the site header.
+    /// Both of the veto's structural halves fired (`>= 4 <article>`, and the
+    /// document-wide `input[type=password]` inside the scorer), so the "Read in Luna"
+    /// pill never appeared on any Paris Review interview. Neither shape says anything
+    /// about the page's kind, and a rail of cards is not a property of the HOST — so
+    /// declared article metadata must clear both, on the known-news list or not.
+    func testUnknownHostArticleWithCardRailAndHeaderSignInIsArticle() {
+        var issueCards = ""
+        for index in 0..<13 {
+            issueCards += """
+            <article class="issue-card"><a href="/issue/48/piece-\(index)"><h3>
+              Another piece from this issue, number \(index), also worth reading
+            </h3></a></article>
+            """
+        }
+        let html = """
+        <html><head>
+          <meta property="og:type" content="article">
+          <script type="application/ld+json">
+            {"@context":"https://schema.org/","@type":"Article",
+             "name":"John Steinbeck, The Art of Fiction No. 45"}
+          </script>
+        </head><body>
+          <nav>
+            <div id="modal_login" class="modal-fade-screen"><form>
+              <input type="email" name="login-email"><input type="password" name="login-pass">
+            </form></div>
+          </nav>
+          <article class="interview"><h1>John Steinbeck, The Art of Fiction No. 45</h1>
+            <main class="article-body">\(paragraphs(6, length: 420))</main>
+          </article>
+          \(issueCards)
+        </body></html>
+        """
+        let url = "https://www.theparisreview.org/interviews/3810/the-art-of-fiction-no-45-john-steinbeck"
+
+        // Both blockers are present in the fixture (proving the repro)...
+        XCTAssertTrue(evaluate(
+            "document.querySelectorAll('article').length >= 4", html: html, urlString: url))
+        XCTAssertTrue(evaluate(
+            "!!document.querySelector('input[type=\"password\"]')", html: html, urlString: url))
+        // ...and the declared article still scores, and still gets the pill.
+        XCTAssertTrue(evaluate("window.__lunaLooksLikeArticle()", html: html, urlString: url))
+        XCTAssertTrue(evaluate("window.__lunaIsArticlePage()", html: html, urlString: url))
+    }
+
+    /// The exemption is only for a page that DECLARES an article: strip the metadata
+    /// from the same markup and the structural shapes veto exactly as before, so this
+    /// didn't become blanket acceptance of card grids and login pages.
+    func testUndeclaredPageWithCardRailAndSignInIsNotArticle() {
+        var issueCards = ""
+        for index in 0..<13 {
+            issueCards += """
+            <article class="issue-card"><a href="/issue/48/piece-\(index)"><h3>
+              Another piece from this issue, number \(index), also worth reading
+            </h3></a></article>
+            """
+        }
+        let html = """
+        <html><head></head><body>
+          <nav><form><input type="password" name="login-pass"></form></nav>
+          <div class="interview">\(paragraphs(6, length: 420))</div>
+          \(issueCards)
+        </body></html>
+        """
+        let url = "https://randomblog.example/whatever"
+
+        XCTAssertFalse(evaluate("window.__lunaLooksLikeArticle()", html: html, urlString: url))
+        XCTAssertFalse(evaluate("window.__lunaIsArticlePage()", html: html, urlString: url))
+    }
+
+    /// A real sign-in page is still rejected — it carries the password field and no
+    /// article declaration, which is what the check was always for.
+    func testSignInPageIsNotArticle() {
+        let html = """
+        <html><head><meta property="og:type" content="website"></head><body>
+          <main><h1>Sign in to your account</h1>
+          <form><input type="email"><input type="password"><button>Sign in</button></form>
+          \(paragraphs(4, length: 400))
+          </main>
+        </body></html>
+        """
+        XCTAssertFalse(evaluate(
+            "window.__lunaIsArticlePage()", html: html, urlString: "https://example.com/account/login"))
+    }
+
     /// (B) Control: the identical thin teaser on a host NOT in the shared list gets no
     /// host rescue and correctly fails the DOM scorer -- proving the fix keys on the
     /// shared host data, not blanket acceptance of thin pages.

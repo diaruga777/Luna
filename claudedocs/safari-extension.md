@@ -124,11 +124,29 @@ Article flow:
    gets no pill). On an **unknown** host the index veto runs first and the DOM scorer
    (`looksLikeArticle`) decides. The index veto is: 4+ `<article>` elements, a whole-page
    link density above 0.5, or explicit landing/collection/search/site JSON-LD paired
-   with at least five distinct headline-sized destination links. **The `>= 4 <article>`
-   / link-density signals no longer override a known host that declares an article** —
-   real articles routinely embed related-story `<article>` cards (Business Insider ships
-   six `<article>` elements) and go link-dense once metered, which used to veto the pill
-   on a known host even though the app classifies the same URL `.article` outright.
+   with at least five distinct headline-sized destination links.
+
+   **A page that declares an article is exempt from every purely STRUCTURAL veto, on
+   every host.** The two shapes live in one shared `hasStructuralListingShape()` (4+
+   `<article>`, link density > 0.5) which returns false outright for a declaring page,
+   because neither shape says anything about a page's kind: real articles routinely embed
+   a related-story `<article>` rail (Business Insider ships six; a Paris Review interview
+   ships thirteen "more from this issue" cards) and go link-dense once metered. The
+   exemption used to be gated on the known-news list, which left every declared article
+   OFF that list vetoed by markup carrying no such meaning — a rail of cards is not a
+   property of the host. `looksLikeArticle` carried its OWN copy of those two lines
+   (which is why fixing the veto alone changed nothing on theparisreview.org) and now
+   calls the shared helper, so they can't drift apart again. The same exemption covers
+   the scorer's `input[type=password]` disqualifier: a document-wide password test is not
+   "this page is a login form" — publishers ship an inline sign-in form in the site
+   header (Paris Review carries two, one per breakpoint) and a metered page puts one
+   under the teaser. A page's own LISTING declaration still vetoes even when it also
+   claims to be an article, and on an unknown host the prose scorer still has to find
+   real prose afterwards, so a thin metered teaser off the host list stays pill-less
+   (`SafariArticleHeuristicTests.testUnknownHostWithThinTeaserIsNotArticle`,
+   `testUnknownHostArticleWithCardRailAndHeaderSignInIsArticle`,
+   `testUndeclaredPageWithCardRailAndSignInIsNotArticle`, `testSignInPageIsNotArticle`).
+
    A page is "locked" for `onlyLocked` when its host is a known
    hard-paywall site (`isKnownHardPaywallHost`) OR it shows paywall markers (`looksPaywalled`
    — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` + `content_tier`).
@@ -146,11 +164,14 @@ that exact data through the generated `LunaSafari/Resources/news_hosts.generated
 `NewsSitesJSParityTests` regenerates it (`TEST_RUNNER_RECORD_NEWS_HOSTS=1`) from the Swift
 arrays and, without that flag, fails the suite if the committed file drifts — so the two
 sides can never disagree on which hosts are article/news sites. A known article host that
-declares an article (`pageDeclaresArticle`) is an article regardless of related-story
-furniture; a known host with no article declaration falls back to the structural index
-veto, so a publisher's root or section page still does not get a reader pill. A known
-hard-paywall host also counts as "locked" for the `onlyLocked` mode. This is the single
-generalized rule — no site is hardcoded in the extension; `afr.com` and
+declares an article (`pageDeclaresArticle`) is an article outright — no prose score needed,
+matching the app's fast path; a known host with no article declaration falls back to the
+structural index veto, so a publisher's root or section page still does not get a reader
+pill. What the list does NOT decide is whether publisher furniture can veto a declared
+article: that exemption is host-independent (see the article flow above), so the list is
+purely additive — it rescues thin teasers, it is not a prerequisite for being read as an
+article. A known hard-paywall host also counts as "locked" for the `onlyLocked` mode. This
+is the single generalized rule — no site is hardcoded in the extension; `afr.com` and
 `businessinsider.com` are simply entries in the shared list.
 
 **Shared platform-host list (`recognizedPlatformPage`).** `PlatformRecognizer`
@@ -177,11 +198,15 @@ three independently, which showed a "Download in Luna" pill the app could never 
 rescued by the shared host list — a lightweight Readability-style scorer, JS-only, since it
 only decides button visibility; the app re-classifies properly on save via `LunaIngest`. The
 index/listing veto above runs before both the host fallback and this scorer.
-- Hard negatives (any one disqualifies the page): 4+ `<article>` elements (a teaser
-  feed); whole-page link density (all `<a>` text ÷ `document.body.innerText`) above 0.5;
-  a `docs`/`documentation`/`api`/`reference`/`sdk`/`changelog` first-or-second URL path
+- Hard negatives (any one disqualifies the page): `hasStructuralListingShape()` — 4+
+  `<article>` elements (a teaser feed) or whole-page link density (all `<a>` text ÷
+  `document.body.innerText`) above 0.5; a
+  `docs`/`documentation`/`api`/`reference`/`sdk`/`changelog` first-or-second URL path
   segment, OR `<pre>`/`<code>` text outweighing the qualifying candidate text (see
-  below); an `input[type=password]` (login/signup gates).
+  below); an `input[type=password]` (login/signup gates). **The structural pair and the
+  password gate are skipped for a page that declares an article** — see the exemption
+  under the article flow above; without it, publisher furniture (a card rail, a header
+  sign-in form) disqualified real articles outright.
 - Candidates: every `<p>`, plus the deduped parent of each `div > br` pattern
   (old-school/book-style pages with no `<p>` at all) — never a `<pre>`. Each is dropped
   if it's nested in an `<li>`, cheaply hidden (inline `display:none`/`visibility:hidden`,

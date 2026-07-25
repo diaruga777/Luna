@@ -53,13 +53,19 @@ public enum PaywallDetector {
     /// signal, but only for short/teaser-shaped bodies: some publishers mark subscriber
     /// pieces with `isAccessibleForFree:false` while still serving the complete article
     /// body in the initial HTML.
+    ///
+    /// It also adds the STRUCTURAL signal — a subscribe gate that cut the body off
+    /// (`TruncationGateDetector`) — and that one applies at ANY body length, because it
+    /// is the only wall shape a length test cannot see: a generous-preview publisher
+    /// serves thousands of readable characters and then stops mid-article.
     public static func looksPaywalled(content: ArticleContent, html: String? = nil) -> Bool {
         let textPaywalled = textLooksPaywalled(content.wholeText, bodyLength: content.bodyTextLength)
         if textPaywalled { return true }
-        if let html, htmlDeclaresLocked(html), content.bodyTextLength < shortBodyThreshold {
+        guard let html else { return false }
+        if htmlDeclaresLocked(html), content.bodyTextLength < shortBodyThreshold {
             return true
         }
-        return false
+        return htmlShowsTruncationGate(html)
     }
 
     /// Text-only check (for callers without the source HTML): a gate marker at any
@@ -79,5 +85,13 @@ public enum PaywallDetector {
     /// collapsed so attribute spacing/quoting doesn't matter.
     public static func htmlDeclaresLocked(_ html: String) -> Bool {
         HTMLClassification.declaresPaywall(in: html)
+    }
+
+    /// The structural paywall signal: a subscribe gate standing where the rest of the
+    /// article should be (`TruncationGateDetector`). Unlike every other signal this one
+    /// survives a LONG body, which is the whole point — see that type for why a
+    /// generous free preview is invisible to the length and metadata checks.
+    public static func htmlShowsTruncationGate(_ html: String) -> Bool {
+        TruncationGateDetector.showsTruncationGate(in: html)
     }
 }

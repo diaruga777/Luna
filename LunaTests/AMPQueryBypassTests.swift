@@ -67,20 +67,21 @@ final class AMPQueryBypassTests: XCTestCase {
         let locked = "<html><body>subscribe to continue reading</body></html>"
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: url(article), directHTML: locked),
-            [.ampQuery, .directUnlock, .archiveToday])
+            [.ampQuery, .waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
         let plan = BypassPlan.make(for: url(article), directHTML: locked)
-        XCTAssertEqual(plan.silent, [.ampQuery])
+        XCTAssertEqual(plan.silent, [.ampQuery, .waybackRaw, .waybackPrePaywall])
         XCTAssertEqual(plan.webPreStages, [.directUnlock])
         XCTAssertTrue(plan.allowsArchiveToday)
     }
 
-    /// A host with a rule but no AMP-by-query rendering keeps the plan it had.
+    /// A host with a rule but no AMP-by-query rendering keeps the plan it had: the silent
+    /// archive pair, then the browser tier.
     func testOtherRuleHostsAreUnchanged() {
         let locked = "<html><body>subscribe to continue reading</body></html>"
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: url("https://www.wsj.com/articles/x"),
                                               directHTML: locked),
-            [.directUnlock, .archiveToday])
+            [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
     }
 
     // MARK: - The live pages

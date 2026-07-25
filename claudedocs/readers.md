@@ -379,10 +379,34 @@ Regression tests: `ArticleExtractorTests.testArchivedArticleBeatsSubscriptionGat
 
 **A trusted Safari capture is a FLOOR, not a winner.** `trustsPrefetchedHTML` (the "Read in Luna" hand-off) accepts the capture on body length alone, because the already-unlocked page the user is looking at usually still carries a stale `isAccessibleForFree:false`. But when such a capture ALSO still reads as locked AND the host has a `SiteUnlockRules` rule, the resolver keeps it as a fallback and first spends that rule's ONE silent request fetch: Safari can apply a rule's script-blocking half but cannot spoof the request User-Agent, so a partially-unlocked capture may be the publisher's TRUNCATED render (NYT sends a ~4.6k-char body and truncates the DOM to ~2.2k client-side — under `PaywallDetector.shortBodyThreshold`, so the lock still counts). Rules: the rule fetch must be readable AND no shorter than the capture (never trade down to a shorter "readable" crawler page); a host with NO rule returns the capture immediately with zero extra network; a failed/losing rule fetch returns the capture rather than walking the generic bypass chain (a live browser capture beats anything a background fetch finds, and the user is waiting). This is what makes a Safari-side unlock failure self-healing instead of silently truncating the in-app article. Tests: `ArticleResolverTests.testTrustedCapture*`.
 
+**A wall that REDIRECTS instead of gating: the `?amp` unlock (`AMPQueryBypass`).** News
+Corp Australia (`theaustralian.com.au` + 13 sibling mastheads) doesn't serve a teaser
+at the article URL — it 302s the request onto `…/subscribe/news/1/?dest=<article>`
+(see `claudedocs/url-pipeline.md`, incl. the `FetchError.subscribeRedirect` guard that
+stops the subscription pitch from being saved as the body). That leaves **every other
+strategy with nothing to work on**: no body to un-clamp, no `rel=amphtml` to discover
+(`.amp` reads that off the article page), no JSON-LD `articleBody`. But the same URL
+with a bare **`?amp`** flag is NOT redirected, and the AMP document carries the whole
+story server-rendered in `<section subscriptions-section="content">` blocks that only
+`amp-subscriptions-*.js` hides — client-side, after load — so a URLSession fetch gets
+the complete article. `.ampQuery` (silent) therefore LEADS the plan on those hosts:
+one request, no browser, no CAPTCHA. Verified live on the reported article (direct read
+= the pitch; `?amp` = ~4.4k characters of body).
+
+`AMPQueryBypass.unhidingAMPGate` is **load-bearing, not cosmetic**: AMP ships the pitch
+in the same document as the story, and its "Already a subscriber? Log in" copy is a
+`PaywallDetector.gateMarkers` phrase — which fires at ANY body length — so without
+stripping the machine-labeled gate (`[subscriptions-section]` ≠ `content` removed, the
+attribute dropped from the content blocks) the extractor would reject a document that
+holds the complete article. The browser tier already did the same thing in JS for this
+family (`site_cleanup_scripts.json`: the `/subscribe/` hop + the AMP unhide), and the
+Safari extension now does too (`claudedocs/safari-extension.md`). Tests:
+`AMPQueryBypassTests`, `ArticleResolverTests.testSubscribeRedirect*`.
+
 Pieces (all in `ReaderKit/`):
 - `BypassPlan` (`BypassPlan.swift`) — ONE typed `{ silent: [SilentStrategy], webPreStages: [WebStrategy], allowsArchiveToday: Bool }` built by a single factory `make(for:directHTML:)` that splits `BypassStrategySelector`'s ordered list into the typed legs. Both the resolver (silent) and the archive reader (web) consume it, so they can no longer derive divergent orderings (the former double-compute). `SilentStrategy`/`WebStrategy` make the silent/web split unrepresentable (no more "skip the non-silent cases" filter). Trailing-dot is the first silent strategy and `benefitsFromJSRetry == false`, so the factory NEVER repeats it as a ~9s WKWebView pre-stage (the NYT slowness). Tests: `BypassPlanTests`.
 - `BypassURLs` (`BypassPlan.swift`) — the ONE strategy→URL mapper (`requestURL(for:article:)` silent, `loadURL(for:article:)` web), replacing the duplicated `switch strategy → URL` in `BypassRunner.run` + `webPreStageURLs`.
-- `BypassStrategy` (`BypassStrategy.swift`) — the technique enum. Cases: `.jsonLDBody`, `.userAgent(CrawlerAgent)`, `.referer(RefererOrigin)`, `.trailingDotHost`, `.freshSession`, `.amp`, `.waybackRaw`, `.jinaReader`, `.ladderProxy(LadderProxy)`, `.thirdPartyWeb(ThirdPartyWebService)`, `.archiveToday`. `runsSilently` is false only for `.thirdPartyWeb` + `.archiveToday` (WKWebView-only). `CrawlerAgent` (googlebotDesktop/Mobile + Googlebot XFF `66.249.66.1`; bingbot, no XFF), `RefererOrigin` (google/facebook/twitter), `LadderProxy.oneFt` (silent server-render proxy), `ThirdPartyWebService` (.smry/.removePaywalls/.removePaywall) carry the verified service URL builders.
+- `BypassStrategy` (`BypassStrategy.swift`) — the technique enum. Cases: `.jsonLDBody`, `.userAgent(CrawlerAgent)`, `.referer(RefererOrigin)`, `.trailingDotHost`, `.freshSession`, `.amp`, `.ampQuery` (the `?amp` variant, derived from the article URL alone — see the News Corp AU section above), `.waybackRaw`, `.jinaReader`, `.ladderProxy(LadderProxy)`, `.thirdPartyWeb(ThirdPartyWebService)`, `.archiveToday`. `runsSilently` is false only for `.thirdPartyWeb` + `.archiveToday` (WKWebView-only). `CrawlerAgent` (googlebotDesktop/Mobile + Googlebot XFF `66.249.66.1`; bingbot, no XFF), `RefererOrigin` (google/facebook/twitter), `LadderProxy.oneFt` (silent server-render proxy), `ThirdPartyWebService` (.smry/.removePaywalls/.removePaywall) carry the verified service URL builders.
 - `BypassRuleTable` (`BypassRuleTable.swift`) — static per-host literal (`rule(for:)`, apex+subdomain+trailing-dot match). Seeds ~21 hosts (WSJ/FT/NYT/Economist/Bloomberg/…); every rule ends in `.archiveToday`.
 - `BypassStrategySelector.strategies(for:directHTML:)` (`BypassStrategySelector.swift`) — PURE. `[]` when `BypassGate.decision(for:html:extracted:nil)` blocks a bypass (product/platform/readable/not-paywalled). A supported site rule always uses its direct-unlock pre-stage before archive.today; other eligible pages use archive.today (NYT retains its trailing-dot pre-stage). There is no user gate for on-device paywall unlocking.
   - **OFF (default)** → `[.archiveToday]` (+ `.trailingDotHost` first for NYT-family). A detected paywall goes STRAIGHT to the archive reader — the long-standing behavior, no silent fetches, no pre-archive hang.

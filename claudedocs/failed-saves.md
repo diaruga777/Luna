@@ -65,8 +65,12 @@ so no surface could say anything specific. Now:
 - **`SaveFailureReason`** (`LunaModels`) — coarse and actionable, one case per
   sentence a reader can do something about: `offline`, `timedOut`,
   `httpStatus(Int)`, `network(String)`, `notReadable`, `notHTML`, `tooLarge`,
-  `unsupportedDocument(String)`, `noMediaFound`, `couldNotSave`, `unknown`. Each
-  owns its `headline`, `suggestion`, and `isWorthRetrying`.
+  `unsupportedDocument(String)`, `noMediaFound`, `couldNotSave`,
+  `subscribeRedirect`, `unknown`. Each owns its `headline`, `suggestion`, and
+  `isWorthRetrying`. `subscribeRedirect` is the site answering an article request
+  with its own subscribe page (`ArticleFetcher.FetchError.subscribeRedirect` — see
+  `claudedocs/url-pipeline.md`); it is not worth retrying, and a hard-paywall host
+  parks for the archive tier rather than failing at all.
 - **The plumbing.** `ArticleFetcher.FetchError.badResponse` carries the status
   code; `ArticleExtraction.fetchAndExtract` gained a defaulted `onFetchError`
   hook (the only place the swallowed fetch error still exists);

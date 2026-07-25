@@ -429,3 +429,28 @@ Both now drop the capture when `URLUnwrapper.unwrapsToDifferentPage` is true
 (SceneDelegate still CONSUMES it, so a stale capture can't leak onto a later open).
 Tracking-param stripping alone is NOT a different page, so a `?utm_…` article keeps
 its capture. Covered by `URLUnwrapperTests` (+10).
+
+### Unwrapping isn't enough — the FETCH lands on the interstitial too
+
+Unwrapping only fixes the URL a surface hands us. Fetching the *article* URL on those
+sites redirects into the same interstitial, so the bytes are the subscription pitch
+either way — and that pitch reads as a perfectly good article: ~2.8k characters, no
+gate marker in `PaywallDetector`'s list ("Unlock this story and more with your
+subscription"), no `isAccessibleForFree`. It cleared the readable threshold,
+`BypassGate` blocked with `.readableArticle`, and the pitch became the saved body with
+no bypass attempted at all (the reported `theaustralian.com.au` regression).
+
+So the fetch layer checks it: `ArticleFetcher` compares the response's final URL
+against the requested one and throws `FetchError.subscribeRedirect(landedOn:)` when
+the site substituted its own interstitial (`NewsAggregatorUnwrapper.isInterstitialURL`
+— the same path test, now public). Pure policy in
+`ArticleFetcher.subscribeRedirectLanding(requested:finalURL:)`, so it's unit-tested
+without the network. It fires only on a genuine substitution: a canonicalizing
+redirect between articles passes, and asking FOR a subscribe page (a deliberate save,
+an archive replay) still fetches. Every `HTMLFetching` caller inherits it, so a bypass
+strategy that lands on the wall now fails instead of "succeeding" with pitch copy, and
+product detection never runs over subscription prices. `SaveFailureReason
+.subscribeRedirect` gives the failed card an honest line; a hard-paywall host or a
+host with browser recovery still parks for the archive/browser tier instead of
+failing. The way IN on those sites is the `?amp` rendering — see the `.ampQuery`
+strategy in `claudedocs/readers.md`.

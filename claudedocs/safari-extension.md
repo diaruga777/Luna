@@ -328,6 +328,31 @@ Paywall unlock + toast:
   "Read in Luna" pill captures, which the app then accepts as a readable body (a trusted
   prefetch clears the 1200-char threshold without the paywall re-check), i.e. a
   truncated in-app article. Re-verify against the live site before touching them again.
+- **A wall that redirects has nothing to reveal — so leave the page.** Some publishers
+  don't overlay a wall on the article; they server-side redirect to their own subscribe
+  page (News Corp Australia: `…/subscribe/news/1/?dest=<article>`), so Safari's address
+  bar shows the interstitial and the article is not in the DOM at all. Before the
+  cleanup runs, `escapeSubscribeInterstitial` navigates to the article the interstitial
+  itself names, with an `?amp` flag (`withAMPFlag`, the same transform as Swift's
+  `AMPQueryBypass.ampQueryURL` — those sites serve the AMP rendering un-metered, and
+  the `blockers` ruleset already kills `amp-subscriptions-*.js` on them). It is
+  deliberately narrow, because it MOVES the user: only on a known news host (the shared
+  `__LUNA_NEWS_HOSTS` list — no new site table), only on a SUBSCRIBE-family path (never
+  sign-in / register / checkout, where hopping to a `?next=` target would abandon
+  something the user started), only to a same-site absolute http(s) target that isn't
+  itself an interstitial (the open-redirect guard, mirroring
+  `NewsAggregatorUnwrapper.interstitialTarget`), and once per destination per tab via
+  `sessionStorage` so a site that bounces straight back can't ping-pong.
+  `location.replace`, so Back returns where the user came from. Target sources: a
+  `dest=`-style param, else `og:url` with `og:type=article`. Test hooks:
+  `window.__lunaSubscribeInterstitialTarget` / `__lunaWithAMPFlag`
+  (`SafariSubscribeInterstitialTests`, in a bare WKWebView).
+- **AMP subscriber gating.** `revealArticle` also unhides `amp-subscriptions` content:
+  such a document ships the story AND the pitch and lets the runtime pick after load,
+  so `[subscriptions-section="content"]` has the attribute removed in place while the
+  gate nodes (any other `subscriptions-section` value, `[amp-access-hide]`) are
+  removed. Mirrors `AMPQueryBypass.unhidingAMPGate` (Swift, silent tier) and upstream's
+  `amp_unhide_subscr_section`; removing a real gate counts as an unlock for the toast.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
   content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered

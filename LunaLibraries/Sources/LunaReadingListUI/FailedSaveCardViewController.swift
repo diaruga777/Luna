@@ -114,12 +114,15 @@ public final class FailedSaveCardViewController: CardContentViewController {
     private let suggestionLabel = UILabel()
     private let footerLabel = UILabel()
     private let spinner = DotMatrixSpinnerView(dimension: 3, side: 18)
-    private let hintControl = UISegmentedControl()
+    private let hintControl = LunaSegmentedControl()
     private let rescueButton = UIButton(type: .system)
     private let browserButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
     private let retryButton = UIButton(type: .system)
     private let buttonStack = UIStackView()
+    /// The three lesser actions share one line as compact pills, so the card
+    /// reads as "one thing to try, plus the usual escapes" rather than a list.
+    private let secondaryButtonRow = UIStackView()
     private let contentStack = UIStackView()
 
     public init(
@@ -199,9 +202,12 @@ public final class FailedSaveCardViewController: CardContentViewController {
         urlLabel.numberOfLines = 3
         urlLabel.lineBreakMode = .byCharWrapping
 
+        // What went wrong is stated, not shouted: the card's red lives entirely
+        // in the rim glow the carousel draws around it (`setEdgeGlow`), so the
+        // content stays in the app's ordinary text hierarchy.
         detailLabel.font = .preferredFont(forTextStyle: .subheadline)
         detailLabel.adjustsFontForContentSizeCategory = true
-        detailLabel.textColor = LunaColors.errorAccent
+        detailLabel.textColor = LunaColors.primaryText
         detailLabel.numberOfLines = 0
 
         suggestionLabel.font = .preferredFont(forTextStyle: .footnote)
@@ -214,18 +220,17 @@ public final class FailedSaveCardViewController: CardContentViewController {
         footerLabel.textColor = LunaColors.quaternaryText
         footerLabel.numberOfLines = 1
 
-        spinner.color = LunaColors.errorAccent
+        spinner.color = LunaColors.secondaryText
         spinner.hidesWhenStopped = true
 
         hintControl.addAction(UIAction { [weak self] _ in
             self?.updateRescueTitle()
         }, for: .valueChanged)
 
-        configure(rescueButton, title: "Try with Apple Intelligence",
-                  symbol: "wand.and.stars", prominent: true)
-        configure(browserButton, title: "Open in Browser", symbol: "globe")
-        configure(shareButton, title: "Share Link", symbol: "square.and.arrow.up")
-        configure(retryButton, title: "Try Again", symbol: "arrow.clockwise")
+        applyRescueTitle()
+        configure(browserButton, title: "Browser", symbol: "globe")
+        configure(shareButton, title: "Share", symbol: "square.and.arrow.up")
+        configure(retryButton, title: "Retry", symbol: "arrow.clockwise")
 
         rescueButton.addAction(UIAction { [weak self] _ in
             guard let self else { return }
@@ -242,11 +247,16 @@ public final class FailedSaveCardViewController: CardContentViewController {
             self?.actions.retry?()
         }, for: .touchUpInside)
 
-        buttonStack.axis = .vertical
-        buttonStack.spacing = 8
-        for button in [rescueButton, browserButton, shareButton, retryButton] {
-            buttonStack.addArrangedSubview(button)
+        secondaryButtonRow.axis = .horizontal
+        secondaryButtonRow.spacing = 8
+        secondaryButtonRow.distribution = .fillEqually
+        for button in [browserButton, shareButton, retryButton] {
+            secondaryButtonRow.addArrangedSubview(button)
         }
+        buttonStack.axis = .vertical
+        buttonStack.spacing = 10
+        buttonStack.addArrangedSubview(rescueButton)
+        buttonStack.addArrangedSubview(secondaryButtonRow)
 
         let header = UIStackView(arrangedSubviews: [iconContainer, headerTextStack()])
         header.axis = .horizontal
@@ -303,24 +313,11 @@ public final class FailedSaveCardViewController: CardContentViewController {
         return stack
     }
 
-    private func configure(
-        _ button: UIButton, title: String, symbol: String, prominent: Bool = false
-    ) {
-        var configuration = prominent
-            ? UIButton.Configuration.borderedProminent()
-            : UIButton.Configuration.bordered()
-        configuration.title = title
-        configuration.image = UIImage(systemName: symbol)
-        configuration.imagePadding = 8
-        configuration.cornerStyle = .large
-        configuration.baseForegroundColor = prominent
-            ? LunaColors.primaryText
-            : LunaColors.secondaryText
-        configuration.baseBackgroundColor = prominent
-            ? LunaColors.errorAccent.withAlphaComponent(0.28)
-            : LunaColors.tertiaryFill
-        button.configuration = configuration
-        button.contentHorizontalAlignment = .leading
+    /// One of the compact glass pills sharing the secondary row.
+    private func configure(_ button: UIButton, title: String, symbol: String) {
+        button.configuration = GlassStyle.actionButtonConfiguration(
+            title: title, symbol: symbol, compact: true)
+        button.contentHorizontalAlignment = .center
     }
 
     // MARK: - Rendering
@@ -345,15 +342,15 @@ public final class FailedSaveCardViewController: CardContentViewController {
         if model.isRescuing {
             spinner.startAnimating()
             detailLabel.text = "Trying harder with Apple Intelligence…"
-            detailLabel.textColor = LunaColors.secondaryText
             suggestionLabel.isHidden = true
             hintControl.isHidden = true
             rescueButton.isHidden = true
         } else {
             spinner.stopAnimating()
-            detailLabel.textColor = LunaColors.errorAccent
         }
         spinner.isHidden = !model.isRescuing
+        // An empty secondary row would still claim its stack spacing.
+        secondaryButtonRow.isHidden = secondaryButtonRow.arrangedSubviews.allSatisfy(\.isHidden)
         updateRescueTitle()
     }
 
@@ -383,12 +380,15 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// controls read as one sentence ("Price Tracker" → "Extract as Price Tracker").
     private func updateRescueTitle() {
         guard !rescueButton.isHidden else { return }
-        var configuration = rescueButton.configuration
-        if model.hintChoices.count > 1, let hint = selectedHint() {
-            configuration?.title = "Extract as \(hint.displayName)"
-        } else {
-            configuration?.title = "Try with Apple Intelligence"
-        }
-        rescueButton.configuration = configuration
+        applyRescueTitle()
+    }
+
+    private func applyRescueTitle() {
+        let title = model.hintChoices.count > 1
+            ? selectedHint().map { "Extract as \($0.displayName)" } ?? "Try with Apple Intelligence"
+            : "Try with Apple Intelligence"
+        rescueButton.configuration = GlassStyle.actionButtonConfiguration(
+            title: title, symbol: "wand.and.stars", prominent: true)
+        rescueButton.contentHorizontalAlignment = .center
     }
 }

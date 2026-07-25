@@ -92,14 +92,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     private enum PasteboardCardState {
         case placeholder(changeCount: Int)
-        case loading(changeCount: Int, urlString: String, likelyPrompted: Bool)
+        case loading(changeCount: Int, urlString: String)
         case candidate(changeCount: Int, candidate: PasteboardCandidate, item: ReadingListItem)
-        case invalid(changeCount: Int, showsSettingsGuidance: Bool)
+        case invalid(changeCount: Int)
 
         var changeCount: Int {
             switch self {
-            case .placeholder(let count), .loading(let count, _, _),
-                 .candidate(let count, _, _), .invalid(let count, _):
+            case .placeholder(let count), .loading(let count, _),
+                 .candidate(let count, _, _), .invalid(let count):
                 return count
             }
         }
@@ -107,10 +107,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         var fingerprint: String {
             switch self {
             case .placeholder(let count): return "placeholder|\(count)"
-            case .loading(let count, let url, _): return "loading|\(count)|\(url)"
+            case .loading(let count, let url): return "loading|\(count)|\(url)"
             case .candidate(let count, let candidate, _):
                 return "candidate|\(count)|\(candidate.urlString)|\(candidate.title)"
-            case .invalid(let count, let guidance): return "invalid|\(count)|\(guidance)"
+            case .invalid(let count): return "invalid|\(count)"
             }
         }
     }
@@ -523,40 +523,33 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         reload()
     }
 
-    private func readPasteboardPlaceholder() {
+    /// The value the card's `UIPasteControl` handed over — an implicitly
+    /// authorized read, so nothing here touches `UIPasteboard` for content.
+    private func handlePastedValue(_ value: String) {
         guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        let result = PasteboardReadTiming.readGeneralPasteboard()
-        guard result.changeCount == expectedChangeCount,
-              UIPasteboard.general.changeCount == expectedChangeCount,
-              let value = result.value,
+        guard UIPasteboard.general.changeCount == expectedChangeCount,
               let url = URLUnwrapper.ingestURL(from: value)
         else {
-            setPasteboardState(.invalid(
-                changeCount: expectedChangeCount,
-                showsSettingsGuidance: result.likelyPresentedPermissionPrompt))
+            setPasteboardState(.invalid(changeCount: expectedChangeCount))
             return
         }
 
         let urlString = url.absoluteString
-        setPasteboardState(.loading(
-            changeCount: expectedChangeCount, urlString: urlString,
-            likelyPrompted: result.likelyPresentedPermissionPrompt))
+        setPasteboardState(.loading(changeCount: expectedChangeCount, urlString: urlString))
         pasteboardEvaluationTask?.cancel()
         pasteboardEvaluationTask = Task { [weak self] in
             let candidate = await PasteboardSuggester.shared.evaluate(urlString: urlString)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self,
-                      case .loading(let count, let currentURL, let likelyPrompted) = self.pasteboardState,
+                      case .loading(let count, let currentURL) = self.pasteboardState,
                       count == expectedChangeCount, currentURL == urlString,
                       UIPasteboard.general.changeCount == expectedChangeCount
                 else { return }
                 guard let candidate, candidate.platform == nil,
                       candidate.content != nil || candidate.requiresUnlock
                 else {
-                    self.setPasteboardState(.invalid(
-                        changeCount: expectedChangeCount,
-                        showsSettingsGuidance: likelyPrompted))
+                    self.setPasteboardState(.invalid(changeCount: expectedChangeCount))
                     return
                 }
                 var item = ReadingListItem(urlString: candidate.urlString)
@@ -1034,12 +1027,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             switch state {
             case .placeholder:
                 return PasteboardPlaceholderCardContentViewController(
-                    title: "Paste Link", detail: "Swipe here to preview the pasted URL.")
+                    title: "Paste Link",
+                    detail: "Paste the copied link to preview it here.",
+                    onPaste: { [weak self] value in self?.handlePastedValue(value) })
             case .loading:
                 return PasteboardPlaceholderCardContentViewController(
                     title: "Loading Paste", detail: "Preparing a temporary reader card…")
-            case .invalid(_, let guidance):
-                return InvalidPasteCardContentViewController(showsSettingsGuidance: guidance)
+            case .invalid:
+                return InvalidPasteCardContentViewController()
             case .candidate(_, let candidate, let item):
                 let content = ReaderCardContentViewController(
                     item: item, senderName: nil, knownContent: candidate.content)
@@ -1254,12 +1249,11 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:
+                // Nothing reads the pasteboard on arrival — the card's paste
+                // control is the only way in, and its tap IS the authorization.
                 readerForChrome = nil
                 updateReaderChrome()
                 layoutCardScrollIndicator(animated: false)
-                // When no normal cards exist, initial layout centers the
-                // placeholder without user intent; a tap performs the read.
-                if !items.isEmpty { readPasteboardPlaceholder() }
             case .loading, .invalid:
                 readerForChrome = nil
                 updateReaderChrome()
@@ -1288,7 +1282,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:
-                readPasteboardPlaceholder()
+                break // The card's paste control owns this interaction.
             case .candidate(_, let candidate, _):
                 if candidate.requiresUnlock {
                     commitPasteboardCandidate(openLockedAfterSave: true)
@@ -1366,6 +1360,25 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         layoutCardScrollIndicator(animated: true)
     }
 
+    /// A mode switch under a dismissed chrome swaps the reader's content without
+    /// touching the immersion state, so the card would keep whichever extension
+    /// the PREVIOUS mode asked for — RSVP inheriting the scroll reader's
+    /// bottom-extended card lays its fixed column out over the mode switcher.
+    /// Re-apply the extension for the mode that is now live.
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController, didChangeCardExtension extendsCard: Bool
+    ) {
+        guard card.isCentered, carousel.isImmersed else { return }
+        carousel.setImmersed(true, extendsCard: extendsCard, animated: true)
+        UIView.animate(
+            withDuration: 0.32, delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction]
+        ) {
+            self.footerContentFade.alpha = extendsCard ? 1 : 0
+        }
+        layoutCardScrollIndicator(animated: true)
+    }
+
     fileprivate func readerCard(
         _ card: ReaderCardContentViewController, didBecomeReady reader: RabbitHoleReaderViewController
     ) {
@@ -1409,6 +1422,12 @@ private protocol ReaderCardContentDelegate: AnyObject {
     /// fades.
     func readerCard(
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool)
+    /// The card's live content changed what an immersed layout should do with
+    /// the room the faded strip frees — a scroll→RSVP switch trades a scrolling
+    /// surface for a fixed one. Applied only while ALREADY immersed; it never
+    /// changes the immersion state itself.
+    func readerCard(
+        _ card: ReaderCardContentViewController, didChangeCardExtension extendsCard: Bool)
     func readerCard(
         _ card: ReaderCardContentViewController, didBecomeReady reader: RabbitHoleReaderViewController)
     func readerCard(
@@ -1465,14 +1484,69 @@ private final class ReaderCardContentViewController: CardContentViewController,
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
+            // Sampled before the card resizes: only a restore triggered by
+            // reaching the article's end owes the content a compensating slide.
+            let restoringAtArticleEnd = !immersed && extendsCard && self.isFocusedContentAtEnd
+            let extensionBeforeRestore = self.immersionBottomExtension
             self.delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
+            if restoringAtArticleEnd {
+                self.keepArticleEndAtReturningCardEdge(by: extensionBeforeRestore)
+            }
         }
-        immersionTracker.bottomRevealDistance = { [weak self] in
-            guard let self,
-                  let resting = self.delegate?.readerCardInlineFrameInWindow(self)
-            else { return 0 }
-            return max(0, self.view.bounds.height - resting.height)
+        immersionTracker.immersionBottomExtension = { [weak self] in
+            self?.immersionBottomExtension ?? 0
         }
+    }
+
+    // MARK: - Immersion geometry
+
+    /// How much taller the live card is than its resting footprint — the
+    /// distance the card's bottom edge travels back UP when the chrome returns.
+    /// Zero whenever the card is already resting.
+    private var immersionBottomExtension: CGFloat {
+        guard isViewLoaded, let resting = delegate?.readerCardInlineFrameInWindow(self)
+        else { return 0 }
+        return max(0, view.bounds.height - resting.height)
+    }
+
+    /// Whether the focused reader is sitting on the last of its content. The
+    /// tolerance matches the tracker's: a settling scroll stops a point or two
+    /// short of the exact maximum.
+    private var isFocusedContentAtEnd: Bool {
+        guard let scrollView = rabbitHoleReader?.focusedContentScrollView else { return false }
+        let maximum = scrollView.contentSize.height + scrollView.adjustedContentInset.bottom
+            - scrollView.bounds.height
+        let position = scrollView.contentOffset.y
+        return maximum > 0 && maximum - position <= 12
+    }
+
+    /// The chrome returns by pulling the card's bottom edge back up, which would
+    /// otherwise drag the article's end down out of sight behind it. The scroll
+    /// range grows by exactly that extension as the card shrinks, so sliding the
+    /// content up by the same amount — on the same curve — leaves the end of the
+    /// article exactly where the reader last saw it, now resting on the restored
+    /// card's bottom edge.
+    private func keepArticleEndAtReturningCardEdge(by extensionHeight: CGFloat) {
+        guard extensionHeight > 0.5,
+              let scrollView = rabbitHoleReader?.focusedContentScrollView
+        else { return }
+        let target = CGPoint(
+            x: scrollView.contentOffset.x, y: scrollView.contentOffset.y + extensionHeight)
+        UIView.animate(
+            withDuration: 0.32, delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
+            animations: { scrollView.contentOffset = target },
+            completion: { _ in
+                // The restored card sheds the bottom safe area the immersed one
+                // reached into, so the reader's own bottom inset can shrink under
+                // the slide. Settle any resulting overshoot rather than leaving a
+                // gap below the last line.
+                let maximum = scrollView.contentSize.height
+                    + scrollView.adjustedContentInset.bottom - scrollView.bounds.height
+                guard scrollView.contentOffset.y > maximum + 0.5 else { return }
+                scrollView.setContentOffset(
+                    CGPoint(x: scrollView.contentOffset.x, y: max(0, maximum)), animated: true)
+            })
     }
 
     override func viewDidLoad() {
@@ -1617,6 +1691,12 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // title synchronously as well; the async pass remains a backstop for a
         // late-loading web/article child.
         synchronizeScrollableTitleHeader()
+        // The new mode may want a different immersed card: a scrolling surface
+        // extends into the freed strip room, RSVP's fixed column must not.
+        if isCentered {
+            delegate?.readerCard(
+                self, didChangeCardExtension: rabbitHoleReader?.focusedContentScrollView != nil)
+        }
         DispatchQueue.main.async {
             if let root = self.reader { self.immersionTracker.observe(root) }
             self.synchronizeScrollableTitleHeader()

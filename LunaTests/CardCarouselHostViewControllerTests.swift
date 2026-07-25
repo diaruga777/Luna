@@ -124,11 +124,29 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
 
     // MARK: - Pasteboard privacy and temporary-media policy
 
-    func testPasteboardReadTimingUsesOnlyConspicuouslyLongReadsAsPromptHint() {
-        XCTAssertFalse(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 0))
-        XCTAssertFalse(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 0.249))
-        XCTAssertTrue(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 0.25))
-        XCTAssertTrue(PasteboardReadTiming.likelyPresentedPermissionPrompt(elapsed: 2))
+    /// The paste card reads nothing until the system paste button says so: no
+    /// control, no read path. (The prompt-timing heuristic that used to choose
+    /// failure copy is gone with the prompt it detected.)
+    func testPlaceholderCardWithoutAPasteHandlerStaysAPlainTappableCard() {
+        let withControl = PasteboardPlaceholderCardContentViewController(
+            title: "Paste Link", detail: "detail", onPaste: { _ in })
+        let withoutControl = PasteboardPlaceholderCardContentViewController(
+            title: "Loading Paste", detail: "detail")
+        withControl.loadViewIfNeeded()
+        withoutControl.loadViewIfNeeded()
+
+        XCTAssertFalse(withControl.allowsCardTap(at: .zero))
+        XCTAssertTrue(withoutControl.allowsCardTap(at: .zero))
+        XCTAssertNotNil(withControl.pasteConfiguration)
+        XCTAssertFalse(withControl.view.isAccessibilityElement)
+        XCTAssertTrue(withoutControl.view.isAccessibilityElement)
+        XCTAssertTrue(Self.containsPasteControl(withControl.view))
+        XCTAssertFalse(Self.containsPasteControl(withoutControl.view))
+    }
+
+    private static func containsPasteControl(_ view: UIView) -> Bool {
+        if view is UIPasteControl { return true }
+        return view.subviews.contains(where: containsPasteControl)
     }
 
     func testTemporaryPasteboardMediaExpiresAfterOneHour() {

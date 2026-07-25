@@ -135,6 +135,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// thread of the sentence.
     private let previousContextLabel = UILabel()
     private let nextContextLabel = UILabel()
+    /// Glass reticule marks above and below the ORP letter (Words mode) — the
+    /// focal column's sights, so the eye has something to rest on between words.
+    private let reticuleTop = GlassStyle.reticuleMark()
+    private let reticuleBottom = GlassStyle.reticuleMark()
     /// Glass panel behind the two-line phrase (Phrases mode).
     private let phrasePanel = GlassStyle.focusPanel()
     private let playPauseButton = UIButton(type: .system)
@@ -188,10 +192,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let controlsTop = controlsStack.frame.minY > 0
             ? controlsStack.frame.minY
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
-        // Keep the link/completion lane below the focused content. With the old
-        // focus marks removed, this is the only vertical clearance the word needs.
+        // Keep the link/completion lane below the focused content, and — in
+        // Words mode — the upper reticule mark (which reaches 60pt above the
+        // centre, see `layoutReticule`) clear of the title header above.
         let lowerClearance: CGFloat = displayMode == .phrases ? 104 : 106
-        let upperClearance: CGFloat = displayMode == .phrases ? 54 : 30
+        let upperClearance: CGFloat = displayMode == .phrases ? 54 : 66
         let minimumCenter = top + upperClearance
         let maximumCenter = controlsTop - 12 - lowerClearance
         guard maximumCenter >= minimumCenter else {
@@ -382,6 +387,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
 
+        configureReticule()
         configureWordLabel()
         configurePhraseLabel()
         configureContext()
@@ -415,6 +421,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        layoutReticule()
         layoutPhrasePanel()
         layoutContext()
         layoutLinkPill()
@@ -460,6 +467,35 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func deactivateAudioSession() { ReaderAudioSession.deactivate() }
 
     // MARK: - Setup
+
+    private func configureReticule() {
+        view.addSubview(reticuleTop)
+        view.addSubview(reticuleBottom)
+    }
+
+    /// Positions the two reticule marks as short vertical bars centered on the
+    /// focal column, just above and below the word band, pointing at the ORP
+    /// letter. Both stay inside the band the context labels already clear
+    /// (`layoutContext`'s Words-mode half-band of 84) and above the link pill's
+    /// lane, so restoring them moves nothing else.
+    private func layoutReticule() {
+        let focalX = view.bounds.width * Self.focalFraction
+        let centerY = focalCenterY
+        let wordHalfHeight: CGFloat = 30
+        let markWidth: CGFloat = 7
+        let markHeight: CGFloat = 20
+        let gap: CGFloat = 10
+        reticuleTop.frame = CGRect(
+            x: focalX - markWidth / 2, y: centerY - wordHalfHeight - gap - markHeight,
+            width: markWidth, height: markHeight)
+        reticuleBottom.frame = CGRect(
+            x: focalX - markWidth / 2, y: centerY + wordHalfHeight + gap,
+            width: markWidth, height: markHeight)
+        if #unavailable(iOS 26.0) {
+            reticuleTop.layer.cornerRadius = markWidth / 2
+            reticuleBottom.layer.cornerRadius = markWidth / 2
+        }
+    }
 
     private func configureWordLabel() {
         wordLabel.font = wordFont
@@ -785,6 +821,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func applyDisplayMode() {
         let phrases = displayMode == .phrases
         wordLabel.isHidden = phrases
+        reticuleTop.isHidden = phrases
+        reticuleBottom.isHidden = phrases
         phraseLabel.isHidden = !phrases
         phrasePanel.isHidden = !phrases
         // Context is always shown in Phrases; in Words it follows play/pause.

@@ -41,7 +41,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         container.view.addSubview(scrollView)
 
         tracker = ScrollDirectionImmersionTracker()
-        tracker.bottomRevealDistance = { 0 }
+        tracker.immersionBottomExtension = { 0 }
         events = []
         tracker.onImmersionChange = { [weak self] immersed, extendsCard in
             self?.events.append((immersed, extendsCard))
@@ -127,22 +127,23 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertEqual(events.first?.immersed, false)
     }
 
-    func testArticleBottomRestoresAtFutureRestingCardEdge() {
-        tracker.bottomRevealDistance = { 100 }
+    func testArticleBottomRestoresOnlyOnceTheEndOfTheContentArrives() {
+        tracker.immersionBottomExtension = { 100 }
         // Positioning/restoration itself is not user motion and must not count
-        // toward the directional threshold. Resume a real drag just outside
-        // the future resting edge; maximum position is 3200.
+        // toward the directional threshold. Maximum position is 3200.
         scrollView.fakeIsDragging = false
         scrollView.contentOffset = CGPoint(x: 0, y: 3000)
-        drag(to: 3099) // seeds at 101pt remaining
+        drag(to: 3100) // 100pt still to go — a whole card extension early
+        XCTAssertTrue(events.isEmpty, "the card extension is not the restore distance")
+        drag(to: 3150) // 50pt short of the end
         XCTAssertTrue(events.isEmpty)
-        drag(to: 3100) // 100pt remains: content bottom meets that edge
+        drag(to: 3190) // 10pt remains: the end of the content has arrived
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, false)
     }
 
     func testDownwardDismissalIsIgnoredWithinHalfAViewportOfBottomRestore() {
-        tracker.bottomRevealDistance = { 100 }
+        tracker.immersionBottomExtension = { 100 }
         // With an 800pt viewport, the directional dismissal dead zone begins
         // 400pt from the maximum position (half a viewport).
         scrollView.fakeIsDragging = false
@@ -154,7 +155,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     }
 
     func testDownwardDismissalStillAppliesJustOutsideBottomDeadZone() {
-        tracker.bottomRevealDistance = { 100 }
+        tracker.immersionBottomExtension = { 100 }
         scrollView.fakeIsDragging = false
         scrollView.contentOffset = CGPoint(x: 0, y: 2600)
         drag(to: 2680) // seed with 520pt remaining

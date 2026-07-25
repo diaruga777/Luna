@@ -21,10 +21,13 @@ final class ScrollDirectionImmersionTracker {
     /// the chrome fades.
     var onImmersionChange: ((_ immersed: Bool, _ extendsCard: Bool) -> Void)?
 
-    /// How much taller the live, immersed card is than its resting footprint.
-    /// When the article's bottom comes within this distance of the viewport,
-    /// restoring the chrome puts that bottom exactly at the restored card edge.
-    var bottomRevealDistance: (() -> CGFloat)?
+    /// How much taller the live, immersed card is than its resting footprint —
+    /// i.e. how far the card's bottom edge travels back UP when the chrome
+    /// returns. It does not gate the bottom restore (the article's end can never
+    /// reach the restored edge while the taller card still owns the scroll
+    /// range); it marks the card as currently immersed and floors the downward
+    /// dismissal dead zone.
+    var immersionBottomExtension: (() -> CGFloat)?
 
     /// Whether the tracker currently reports. Side cards' readers are live but
     /// inert, so the host sets this only while its card is centered; going
@@ -52,6 +55,11 @@ final class ScrollDirectionImmersionTracker {
     /// and letting the directional rule fire in the same region makes the two
     /// states fight while the scroll view is still decelerating.
     private static let bottomDismissalDeadZoneViewportFraction: CGFloat = 0.5
+    /// How near the very end of the article counts as "reached the end" for the
+    /// bottom restore. Small on purpose: the chrome returns as the last of the
+    /// content arrives at the viewport's bottom edge, not a card-height early.
+    /// (A settling scroll can stop a point or two short of the exact maximum.)
+    private static let bottomRestoreTolerance: CGFloat = 12
 
     /// Hooks the immersion triggers onto `root`'s live content (KVO on every
     /// scroll view, play-state callbacks on every RSVP controller). Idempotent
@@ -99,18 +107,20 @@ final class ScrollDirectionImmersionTracker {
             scrollView.contentSize.height + scrollView.adjustedContentInset.top
                 + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
         let remainingToBottom = max(0, maximumPosition - position)
-        let revealAtBottom = max(0, bottomRevealDistance?() ?? 0)
+        let bottomExtension = max(0, immersionBottomExtension?() ?? 0)
         let dismissalDeadZoneStart = max(
-            revealAtBottom,
+            bottomExtension,
             scrollView.bounds.height * Self.bottomDismissalDeadZoneViewportFraction)
+        let reachedArticleEnd = remainingToBottom <= Self.bottomRestoreTolerance
 
         // Position exceptions do not need a directional run. At the top the
-        // chrome always returns immediately; near the bottom it returns at the
-        // exact point where shrinking to the resting card will meet the
-        // article's bottom edge.
+        // chrome always returns immediately; at the bottom it returns as the end
+        // of the content lands on the viewport's bottom edge — the host then
+        // slides the content up by the extension so that end stays put under the
+        // returning card edge.
         let previous = scrollRuns[key]
-        if (previous != nil && (position <= 0 || remainingToBottom <= revealAtBottom))
-            || (revealAtBottom > 0 && remainingToBottom <= revealAtBottom) {
+        if (previous != nil && (position <= 0 || reachedArticleEnd))
+            || (bottomExtension > 0 && reachedArticleEnd) {
             scrollRuns = [:]
             onImmersionChange?(false, true)
             return

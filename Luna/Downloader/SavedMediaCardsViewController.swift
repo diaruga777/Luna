@@ -38,7 +38,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     private enum PasteboardCardState {
         case placeholder(changeCount: Int)
-        case invalid(changeCount: Int, showsSettingsGuidance: Bool)
+        case invalid(changeCount: Int)
         case downloading(
             changeCount: Int, url: URL, title: String, progress: Double)
         case ready(
@@ -47,7 +47,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
         var changeCount: Int {
             switch self {
-            case .placeholder(let count), .invalid(let count, _),
+            case .placeholder(let count), .invalid(let count),
                  .downloading(let count, _, _, _), .ready(let count, _, _, _, _):
                 return count
             }
@@ -56,7 +56,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         var fingerprint: String {
             switch self {
             case .placeholder(let count): return "placeholder|\(count)"
-            case .invalid(let count, let guidance): return "invalid|\(count)|\(guidance)"
+            case .invalid(let count): return "invalid|\(count)"
             case .downloading(let count, let url, _, _):
                 return "downloading|\(count)|\(url.absoluteString)"
             case .ready(let count, let url, _, let media, _):
@@ -456,19 +456,16 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    private func readPasteboardPlaceholder() {
+    /// The value the card's `UIPasteControl` handed over — an implicitly
+    /// authorized read, so nothing here touches `UIPasteboard` for content.
+    private func handlePastedValue(_ value: String) {
         guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        let result = PasteboardReadTiming.readGeneralPasteboard()
-        guard result.changeCount == expectedChangeCount,
-              UIPasteboard.general.changeCount == expectedChangeCount,
-              let value = result.value,
+        guard UIPasteboard.general.changeCount == expectedChangeCount,
               let url = URLUnwrapper.ingestURL(from: value, allowBareHost: true),
               MediaDownloadablePlatform.supports(url.absoluteString),
               store.matchingItem(forURLString: url.absoluteString) == nil
         else {
-            pasteboardState = .invalid(
-                changeCount: expectedChangeCount,
-                showsSettingsGuidance: result.likelyPresentedPermissionPrompt)
+            pasteboardState = .invalid(changeCount: expectedChangeCount)
             reload()
             return
         }
@@ -523,9 +520,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                     guard let self,
                           self.pasteboardState?.changeCount == expectedChangeCount
                     else { return }
-                    self.pasteboardState = .invalid(
-                        changeCount: expectedChangeCount,
-                        showsSettingsGuidance: result.likelyPresentedPermissionPrompt)
+                    self.pasteboardState = .invalid(changeCount: expectedChangeCount)
                     self.reload()
                 }
             }
@@ -878,9 +873,11 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
             switch state {
             case .placeholder:
                 return PasteboardPlaceholderCardContentViewController(
-                    title: "Paste Link", detail: "Swipe here to preview the pasted URL.")
-            case .invalid(_, let guidance):
-                return InvalidPasteCardContentViewController(showsSettingsGuidance: guidance)
+                    title: "Paste Link",
+                    detail: "Paste the copied link to preview it here.",
+                    onPaste: { [weak self] value in self?.handlePastedValue(value) })
+            case .invalid:
+                return InvalidPasteCardContentViewController()
             case .downloading(_, let url, let title, let progress):
                 return PasteboardMediaDownloadCardContentViewController(
                     url: url, title: title, progress: progress)
@@ -984,11 +981,10 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         refreshArchivePullAvailability(animated: true)
         updateShareButton()
-        if let state = renderedPasteboardState, index == 0 {
+        if renderedPasteboardState != nil, index == 0 {
+            // Nothing reads the pasteboard on arrival — the card's paste control
+            // is the only way in, and its tap IS the authorization.
             discardPreparedShareFile()
-            if case .placeholder = state, !items.isEmpty {
-                readPasteboardPlaceholder()
-            }
             return
         }
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
@@ -1004,7 +1000,7 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
         guard let state = renderedPasteboardState, index == 0 else { return }
         switch state {
         case .placeholder:
-            readPasteboardPlaceholder()
+            break // The card's paste control owns this interaction.
         case .ready(_, _, _, let media, _):
             // Still images are non-playable, so their card tap arrives here.
             // Video/GIF taps go through `setPlaying(true)` on the temporary

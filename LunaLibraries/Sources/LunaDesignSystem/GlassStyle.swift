@@ -77,6 +77,41 @@ public enum GlassStyle {
         return config
     }
 
+    /// A capsule glass pill for a LABELLED action (symbol + title) — the button
+    /// style for an action row. Exactly one button in a row should be
+    /// `prominent`: it takes a Luna-tinted glass fill and full-strength label,
+    /// the rest stay plain glass with a quieter label. `compact` is the smaller
+    /// metric for two or three pills sharing one line.
+    public static func actionButtonConfiguration(
+        title: String, symbol: String, prominent: Bool = false, compact: Bool = false
+    ) -> UIButton.Configuration {
+        var config: UIButton.Configuration
+        if #available(iOS 26.0, *) {
+            config = .glass()
+            config.baseBackgroundColor = prominent
+                ? lunaBrandAccent.withAlphaComponent(0.55) : LunaSurfacePalette.glassTint
+        } else {
+            config = .filled()
+            config.baseBackgroundColor = prominent
+                ? lunaBrandAccent.withAlphaComponent(0.55) : LunaColors.tertiaryFill
+        }
+        config.image = UIImage(systemName: symbol)
+        config.imagePadding = compact ? 5 : 8
+        config.cornerStyle = .capsule
+        config.baseForegroundColor = prominent
+            ? LunaColors.primaryText : LunaColors.secondaryText
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: compact ? 12 : 15, weight: .semibold)
+        config.contentInsets = compact
+            ? NSDirectionalEdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 8)
+            : NSDirectionalEdgeInsets(top: 13, leading: 18, bottom: 13, trailing: 18)
+        config.titleLineBreakMode = .byTruncatingTail
+        var attributes = AttributeContainer()
+        attributes.font = .systemFont(ofSize: compact ? 13 : 15, weight: .semibold)
+        config.attributedTitle = AttributedString(title, attributes: attributes)
+        return config
+    }
+
     /// A subtle trait-aware stroke approximating a liquid-glass rim light, for
     /// hairline borders on card edges sitting over the screen background.
     public static var glassBorderColor: UIColor {

@@ -57,6 +57,8 @@ struct ReadArticleIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        LunaSetupStatusStore.shared.recordShortcutRun(
+            isCentral: AppSurfaceConfig.current == .all)
         guard let playArticle = Self.playArticle else { throw ReadArticleError.notSupported }
         let store = ReadingListStore.shared
         let resolvedItem: ReadingListItem

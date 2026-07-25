@@ -147,7 +147,7 @@ final class RecentURLMatcher {
         defaults.set(data, forKey: cacheKey)
     }
 
-    private static func evaluate(
+    static func evaluate(
         urlString: String, surface: AppSurface
     ) async -> RecentURLPreview? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
@@ -181,7 +181,15 @@ final class RecentURLMatcher {
                 urlString: result.url.absoluteString,
                 title: product.name, subtitle: product.brand ?? result.url.host,
                 kind: .product, imageData: await imageData(at: product.imageURL))
-        case .document, .failed, .unsupported:
+        case let .document(type):
+            guard surface.handlesArticles else { return nil }
+            return RecentURLPreview(
+                urlString: result.url.absoluteString,
+                title: result.url.lastPathComponent.removingPercentEncoding
+                    ?? result.url.lastPathComponent,
+                subtitle: type.uppercased(),
+                kind: .article, imageData: nil)
+        case .failed, .unsupported:
             return nil
         }
     }

@@ -231,6 +231,24 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 self?.readerAudioButton.isHidden = open
                 self?.carousel.setMuteButtonOccluded(open)
             })
+        mountLeftTray(
+            shifting: { [weak self] in
+                guard let self else { return [] }
+                return [self.carousel.view, self.emptyView]
+            },
+            canPull: { [weak self] in
+                guard let self else { return false }
+                return self.items.isEmpty || self.carousel.currentIndex == 0
+            },
+            setupTapped: { [weak self] kind in self?.openLeftTraySetup(kind) },
+            savedURL: { [weak self] url, captureSource, sourceView in
+                self?.saveLeftTrayURL(
+                    url, captureSource: captureSource, sourceView: sourceView)
+            },
+            openStateChanged: { [weak self] open in
+                self?.readerAudioButton.isHidden = open
+                self?.carousel.setMuteButtonOccluded(open)
+            })
 
         NSLayoutConstraint.activate([
             emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -243,13 +261,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .friendsListChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(refreshPasteboardURL),
-            name: UIApplication.didBecomeActiveNotification,
-            object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(refreshPasteboardURL),
-            name: UIPasteboard.changedNotification, object: nil)
         // A media download finishing turns a placeholder card into a player,
         // and it lands in a store this file cannot name.
         for name in cardProvider?.changeNotificationNames ?? [] {
@@ -261,7 +272,53 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // immediately instead of waiting on the probe's round-trip (a `detectPatterns`
         // call).
         reload()
-        refreshPasteboardURL()
+    }
+
+    private func openLeftTraySetup(_ kind: LeftTraySetupKind) {
+        SetupOnboardingFlow.present(kind, from: self)
+    }
+
+    private func saveLeftTrayURL(
+        _ urlString: String,
+        captureSource: CaptureSource,
+        sourceView: UIView
+    ) {
+        let snapshot = sourceView.snapshotView(afterScreenUpdates: false)
+        let startFrame = sourceView.convert(sourceView.bounds, to: view)
+        Task { [weak self] in
+            let result = await ReadingListIngestor.shared.handleSavePress(
+                urlString: urlString, source: captureSource)
+            guard let self else { return }
+            let item: ReadingListItem?
+            switch result {
+            case .saved(let value), .sentToEreaders(let value),
+                 .sentToFriends(let value), .friendPromptRequested(let value):
+                item = value
+            case .ignored:
+                item = self.store.item(forURLString: urlString)
+            case .unsupportedKind:
+                item = nil
+            }
+            guard let item else { return }
+            self.pendingPasteboardSavedID = item.id
+            self.reload()
+            self.animateLeftTraySave(snapshot: snapshot, startFrame: startFrame)
+        }
+    }
+
+    private func animateLeftTraySave(snapshot: UIView?, startFrame: CGRect) {
+        guard let snapshot else { return }
+        snapshot.frame = startFrame
+        view.addSubview(snapshot)
+        let target = carousel.view.convert(carousel.view.bounds, to: view)
+        UIView.animate(
+            withDuration: 0.48, delay: 0,
+            usingSpringWithDamping: 0.84, initialSpringVelocity: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState]
+        ) {
+            snapshot.frame = target.insetBy(dx: 20, dy: 36)
+            snapshot.alpha = 0
+        } completion: { _ in snapshot.removeFromSuperview() }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -684,6 +741,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         if !isAnimatingFromArchiveTray {
             refreshArchivePullAvailability(animated: false)
         }
+        refreshLeftPullAvailability(animated: false)
         updateReaderChrome()
     }
 
@@ -1247,6 +1305,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         navigationTargetDidChangeTo index: Int
     ) {
+        if index != 0 { leftTray?.setPullAvailable(false, animated: true) }
         updateArchivePullAvailability(
             forTargetIndex: index,
             cardCount: items.count + cardOffset,
@@ -1269,11 +1328,13 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
             .setCardChromeVisible(true, animated: false)
         archiveTray?.setChromeHidden(false, animated: false)
+        leftTray?.setChromeHidden(false, animated: false)
         updateBottomModeSwitcher(immersed: false, animated: false)
         layoutCardScrollIndicator(animated: false)
     }
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
+        refreshLeftPullAvailability(animated: true)
         refreshArchivePullAvailability(animated: true)
         if let state = renderedPasteboardState, index == 0 {
             switch state {
@@ -1377,6 +1438,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // The archive peek is card chrome too: it fades away with the
         // side-card peeks and returns with them.
         archiveTray?.setChromeHidden(immersed, animated: true)
+        leftTray?.setChromeHidden(immersed, animated: true)
         updateBottomModeSwitcher(immersed: immersed, animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,

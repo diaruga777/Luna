@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaModels
 import UniformTypeIdentifiers
 import UIKit
 
@@ -32,17 +33,16 @@ enum PasteboardCommitPolicy {
 /// The shared skeleton behind Reader's and Downloader's root screens: both
 /// present one `CardCarouselViewController` full-screen, flank its scrub strip
 /// with two persistent Liquid Glass circles (Settings + a share/action button),
-/// and prepend a synthetic leading card for a not-yet-saved pasteboard URL —
-/// which shifts every real item's carousel index by one. This base owns the
-/// carousel instance and the chrome/index-math pieces that are byte-identical
-/// between the two hosts; each subclass keeps its own item model, data source/
-/// delegate conformance, and reload/pasteboard-polling orchestration (those
-/// diverge in real ways — what's fetched, what's deduped against, what runs on
-/// success — not just in naming).
+/// and attach mirrored edge trays (setup/paste/recent on the left, archive on
+/// the right). This base owns the carousel instance and the chrome/index-math
+/// pieces that are byte-identical between the two hosts; each subclass keeps
+/// its own item model, data source/delegate conformance, and store reload
+/// orchestration.
 class CardCarouselHostViewController: UIViewController {
 
     let carousel = CardCarouselViewController()
     private(set) var archiveTray: ArchiveTrayController?
+    private(set) var leftTray: LeftTrayController?
 
     /// Adds the already-configured `carousel` (style/dataSource/delegate are the
     /// subclass's business, set before calling this) as a full-screen child,
@@ -72,8 +72,25 @@ class CardCarouselHostViewController: UIViewController {
             openStateChanged: openStateChanged)
     }
 
+    final func mountLeftTray(
+        shifting views: @escaping () -> [UIView],
+        canPull: @escaping () -> Bool,
+        setupTapped: @escaping (LeftTraySetupKind) -> Void,
+        savedURL: @escaping (String, CaptureSource, UIView) -> Void,
+        openStateChanged: @escaping (Bool) -> Void = { _ in }
+    ) {
+        leftTray = LeftTrayController(
+            host: self, shiftedViews: views, canPull: canPull,
+            setupTapped: setupTapped, savedURL: savedURL,
+            openStateChanged: openStateChanged)
+    }
+
     final func refreshArchivePullAvailability(animated: Bool) {
         archiveTray?.refreshPullAvailability(animated: animated)
+    }
+
+    final func refreshLeftPullAvailability(animated: Bool) {
+        leftTray?.refreshPullAvailability(animated: animated)
     }
 
     /// Retracts the tray from the carousel's intended target rather than its
@@ -92,6 +109,7 @@ class CardCarouselHostViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         archiveTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
+        leftTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
     }
 
     /// Cards rest fully below the safe area; `inset` adds any extra chrome-row

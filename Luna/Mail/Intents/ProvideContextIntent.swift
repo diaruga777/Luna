@@ -80,6 +80,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
+        LunaSetupStatusStore.shared.recordShortcutRun(
+            isCentral: AppSurfaceConfig.current == .all)
         let reporter = IntentProgressReporter()
         // Which background runtime this is, and whether the system shows its own
         // progress, is decided by target membership — see `CaptureIntentRuntime`.

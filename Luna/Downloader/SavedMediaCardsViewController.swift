@@ -1385,7 +1385,7 @@ final class TemporaryPasteboardMediaCardContentViewController: CardContentViewCo
 /// backgrounding the app) tears the view down without touching the background
 /// URLSession; `viewDidLoad` re-reads `currentDownloadSnapshot` so a card that
 /// comes back mid-transfer picks the bar up where it is.
-private final class UndownloadedMediaCardContentViewController: CardContentViewController {
+final class UndownloadedMediaCardContentViewController: CardContentViewController {
 
     private let sourceURLString: String
     private let download: () -> Void
@@ -1575,4 +1575,15 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
             }
         }
     }
+
+    #if DEBUG
+    /// The embedded bar, exposed so a test can assert it is inside this card's
+    /// own view (never host chrome) and that it mirrors the job snapshot.
+    var downloadBarForTesting: UIView { statusBar }
+    var isDownloadBarVisibleForTesting: Bool { !statusBar.isHidden }
+    var statusTextForTesting: String? { statusLabel.text }
+    var percentTextForTesting: String? { percentLabel.text }
+    var progressForTesting: Float { progress.progress }
+    var isRetryGlyphVisibleForTesting: Bool { !button.isHidden }
+    #endif
 }

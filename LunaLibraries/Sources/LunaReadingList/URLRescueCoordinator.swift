@@ -197,14 +197,25 @@ public final class URLRescueCoordinator {
         guard beginInFlight(itemID) else { return }
         defer {
             endInFlight(itemID)
-            NotificationCenter.default.post(name: .readingListChanged, object: nil)
+            postReadingListChanged()
         }
 
         if countsAgainstBudget { ledger.recordAttempt(itemID, hint: hint) }
-        NotificationCenter.default.post(name: .readingListChanged, object: nil) // flip row to "trying harder…"
+        postReadingListChanged() // flip row to "trying harder…"
 
         let succeeded = await engine.perform(item, hint, interactive)
         if succeeded { ledger.recordSuccess(itemID, hint: hint) }
+    }
+
+    /// `.readingListChanged` is a UI-refresh notification, and its list/deck
+    /// observers are selector-based — so they run on whatever thread posted, and
+    /// then touch UIKit. `runRescue` runs on a task executor, not the main actor,
+    /// so hop first (the same thing `ReadingListStore.postChanged` does for every
+    /// store mutation; these two posts were the only ones that didn't).
+    private func postReadingListChanged() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        }
     }
 
     // MARK: - In-flight bookkeeping (process-local, never persisted)

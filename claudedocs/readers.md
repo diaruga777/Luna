@@ -2,7 +2,7 @@
 
 > **Location: `ReaderKit/`** — the entire reader stack lives in a `ReaderKit/`
 > synchronized folder that is a member of the `Luna` (main app), `LunaShare`
-> (share extension), and `Luna Action Extension` targets, so the share-sheet
+> (share extension), and `LunaAction` targets, so the share-sheet
 > reader is the EXACT same code. ReaderKit is free of CloudKit: the main-app
 > social/CloudKit share stack
 > (`AppReaderProviders`/`SendToFriendSheet`/`ReaderShareSheet`) stays main-app-only

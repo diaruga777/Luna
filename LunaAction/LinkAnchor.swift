@@ -1,6 +1,6 @@
 //
 //  LinkAnchor.swift
-//  Luna Action Extension
+//  LunaAction
 //
 //  This target's code lives entirely in linked libraries (principal class
 //  `LunaShareSurface.ShareViewController`), so it would otherwise have no compiled

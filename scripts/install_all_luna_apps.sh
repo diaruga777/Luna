@@ -2,7 +2,7 @@
 # Build all four Luna apps and install every one of them on a device or
 # simulator in a single command.
 #
-# The "All Luna Apps" scheme already builds all four in one press, but Xcode's
+# The "AllLunaApps" scheme already builds all four in one press, but Xcode's
 # Run action only ever *installs* the scheme's runnable (Luna). Installing the
 # other three is what this script adds.
 #
@@ -18,7 +18,7 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-SCHEME="All Luna Apps"
+SCHEME="AllLunaApps"
 CONFIGURATION="${CONFIGURATION:-Debug}"
 DERIVED_DATA="${DERIVED_DATA:-.build-dd-install}"
 APPS="Luna LunaReader LunaDownloader LunaPriceTracker"

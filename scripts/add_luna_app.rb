@@ -97,9 +97,9 @@ bundle = ->(suffix) { "$(PRODUCT_BUNDLE_PREFIX).#{suffix}" }
 
 # ---- Extensions ----------------------------------------------------------------
 ext_specs = [
-  { key: 'share',  src: share_src,  group: sync['LunaShare'],            name: "#{NAME}Share"  },
-  { key: 'action2', src: action_src, group: sync['Luna Action Extension'], name: "#{NAME}Action" },
-  { key: 'safari', src: safari_src, group: sync['LunaSafari'],           name: "#{NAME}Safari" },
+  { key: 'share',   src: share_src,  group: sync['LunaShare'],  name: "#{NAME}Share"  },
+  { key: 'action2', src: action_src, group: sync['LunaAction'], name: "#{NAME}Action" },
+  { key: 'safari',  src: safari_src, group: sync['LunaSafari'], name: "#{NAME}Safari" },
 ]
 
 ext_targets = ext_specs.map do |spec|

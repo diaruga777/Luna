@@ -79,7 +79,7 @@ one variant, and the variants reference the kind modules' symbols directly
   the AppShortcuts metadata is shared), and URL Rescue's
   `URLRescueWiring.mediaRescueStarter` / `rescueProductInfo` legs.
 - Share/action extensions: `LunaShare/ShareEntry+*.swift` and
-  `Luna Action Extension/ActionEntry+*.swift` — the extension principal class
+  `LunaAction/ActionEntry+*.swift` — the extension principal class
   (Info.plist names the stable @objc names `LunaShareEntry`/`LunaActionEntry`)
   is a per-target `ShareViewController` subclass that registers processors AND
   extension presenters in `init` before any ingest can run.

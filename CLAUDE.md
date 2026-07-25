@@ -157,19 +157,28 @@ every kind processor is registered at launch). The `LunaReader` /
 -scheme …`) but carry no test bundle of their own. Recipe:
 
 > **Schemes: five, and only five.** `Luna`, `LunaReader`, `LunaDownloader`,
-> `LunaPriceTracker`, and `All Luna Apps`. Each app scheme's build action lists
+> `LunaPriceTracker`, and `AllLunaApps`. Each app scheme's build action lists
 > **only its app** — every extension, clip and live activity is already a target
 > dependency and gets embedded and signed with the host, so per-extension schemes
-> are pure duplication and were deleted. `All Luna Apps` builds all four in one
+> are pure duplication and were deleted. `AllLunaApps` builds all four in one
 > press (Luna is its runnable). Xcode's Run only *installs* a scheme's runnable, so
 > to get all four onto a device or simulator in one go use
 > `scripts/install_all_luna_apps.sh [<device-or-simulator>]` — it builds the
-> aggregate scheme, then installs each app. The ~38 schemes Xcode synthesizes for
-> `LunaLibraries` package targets and for extension targets are hidden via
+> aggregate scheme, then installs each app. The ~34 schemes Xcode synthesizes for
+> `LunaLibraries` package targets are hidden via
 > `xcuserdata/*/xcschemes/xcschememanagement.plist` (`isShown` false plus
 > `SuppressBuildableAutocreation` for every non-app native target — without the
 > latter, opening the project regrows a scheme per extension). That file is
-> per-user and gitignored; regenerate it after adding a target.
+> per-user and gitignored, so **run `ruby scripts/hide_generated_schemes.rb`** after
+> adding a target, adding a package product, or on a fresh clone. It reads the app
+> list and the package schemes from the project, so it needs no editing.
+>
+> **No spaces in paths.** Build inputs are all space-free (`LunaAction/`, not the
+> old `Luna Action Extension/`; `AllLunaApps.xcscheme`, not `All Luna Apps`) —
+> quoting bugs in build scripts are otherwise silent. The one deliberate exception
+> is the bundled resource `Luna/Resources/Send To Luna.shortcut`, whose filename IS
+> the user-visible name in the Action Button picker (`BundledShortcut.displayName`
+> must keep matching it).
 
 ```sh
 DD=<a derivedDataPath>

@@ -64,7 +64,7 @@ unwrap aggregator                                                line ~262
 ArticleIngestDecider.decide(...)   ← article/product/paywall ONLY
 ```
 
-**Action extension entry** (`Luna Action Extension/`): contains **no Swift
+**Action extension entry** (`LunaAction/`): contains **no Swift
 classification** — only `GetURL.js` (a JS preprocessing file that hands Safari's page
 URL to `ShareViewController`). All its classification is inherited from
 `ShareViewController` / `ShareReaderViewController`.

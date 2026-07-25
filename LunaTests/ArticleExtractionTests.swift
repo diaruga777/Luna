@@ -43,6 +43,11 @@ final class ArticleExtractionTests: XCTestCase {
             ("washingtonpost", "https://www.washingtonpost.com/2026/06/20/story.html"),
             ("wsj", "https://www.wsj.com/articles/apple-prices"),
             ("smh", "https://www.smh.com.au/national/story-20260620.html"),
+            // The generous-preview shape, from the real pages: the live interview's
+            // ~5.7k-character preview (far over every length threshold, no metadata lock)
+            // cut off by the `.paywall` gate, against the pre-paywall Wayback capture of
+            // the same interview. Only `TruncationGateDetector` separates these two.
+            ("parisreview", "https://www.theparisreview.org/interviews/3810/the-art-of-fiction-no-45-john-steinbeck"),
         ]
         for c in cases {
             guard let (readable, readableHTML) = extract("\(c.site)-readable.html", c.host) else {

@@ -1565,7 +1565,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // they don't overlay the article text; interactive automation still gets them.
         // Suppressed during deterministic UI-test launches (matches UITestLaunch.isActive,
         // which lives in the app target — inlined here to avoid an upward dependency).
-        let uiTestArgs = ["-uiTestState", "-uiTestScreen", "-uiTestOnboardingStep"]
+        let uiTestArgs = ["-uiTestState", "-uiTestScreen"]
         if ProcessInfo.processInfo.arguments.contains(where: uiTestArgs.contains) { return }
         func hookButton(_ title: String, fraction: CGFloat) -> UIButton {
             var config = UIButton.Configuration.filled()

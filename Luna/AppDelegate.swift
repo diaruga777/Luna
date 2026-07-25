@@ -116,13 +116,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // reattachment (media apps), pending ereader-send retry (article apps).
         KindWiring.appDidLaunch()
 
-        // Local notifications: show as banners while open (delegate below) and,
-        // for already-onboarded users, ensure authorization (new users get the
-        // prompt from onboarding when they connect email or finish a second app).
+        // Local notifications: show as banners while open (delegate below) and
+        // ensure authorization. Share arrivals and price drops are the only
+        // notifications Luna posts, so asking at launch is the earliest honest
+        // moment — there is no setup flow left to defer it to.
         UNUserNotificationCenter.current().delegate = self
-        if UserDefaults.standard.bool(forKey: SceneDelegate.onboardingCompleteKey) {
-            NotificationManager.requestAuthorization()
-        }
+        NotificationManager.requestAuthorization()
 
         // Mail fetch is universal — every surface receives shares + newsletters.
         BGTaskScheduler.shared.register(

@@ -19,14 +19,8 @@ import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
-    /// Per-app (private defaults) flag: each Luna app shows onboarding once.
-    /// Shared with AppDelegate (notification-authorization gating).
-    static let onboardingCompleteKey = "hasCompletedOnboarding"
-
     var window: UIWindow?
 
-    /// A `lunareader://read` article URL that arrived before the main UI was up.
-    private var pendingReadURL: String?
     /// Set when a tapped pending-request notification asks to open that screen.
     /// Static because the tap is delivered to the AppDelegate before any scene
     /// may have connected.
@@ -47,7 +41,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// The main navigation controller, whichever shape this app's root takes:
     /// wrapped in the audio mini-player host (article apps' normal main UI) or
     /// bare (the other apps, UI-test and debug roots). The shape is a kind
-    /// decision, so `KindWiring` resolves it. Nil during onboarding.
+    /// decision, so `KindWiring` resolves it.
     private var mainNavigationController: UINavigationController? {
         guard let root = window?.rootViewController else { return nil }
         return KindWiring.mainNavigationController(of: root)
@@ -93,22 +87,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         #endif
 
-        // All three apps onboard once (per-app flag). Onboarding includes a
-        // skippable email-account step; email sharing is universal across apps.
-        if !UserDefaults.standard.bool(forKey: Self.onboardingCompleteKey) {
-            let finish: () -> Void = { [weak self] in
-                UserDefaults.standard.set(true, forKey: Self.onboardingCompleteKey)
-                self?.showMainUI()
-                if let articleURL = self?.pendingReadURL {
-                    self?.pendingReadURL = nil
-                    self?.openReader(articleURL: articleURL)
-                }
-                self?.applyPendingNotificationRoute()
-            }
-            window.rootViewController = OnboardingFlow.make(onFinished: finish)
-        } else {
-            window.rootViewController = KindWiring.makeRootViewController()
-        }
+        window.rootViewController = KindWiring.makeRootViewController()
         self.window = window
         window.makeKeyAndVisible()
         mainNavigationController?.installLunarEclipseTransition()
@@ -157,13 +136,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     /// Saves the article (if new), then opens it the way tapping its list row does.
-    /// Stashes the URL if the main UI isn't up yet (onboarding).
+    /// A UI-test or debug root has no main navigation controller — nothing to open into.
     private func openReader(articleURL: String) {
-        guard let nav = mainNavigationController else {
-            pendingReadURL = articleURL
-            return
-        }
-        guard let normalizedURL = URLUnwrapper.ingestURL(from: articleURL) else { return }
+        guard let nav = mainNavigationController,
+              let normalizedURL = URLUnwrapper.ingestURL(from: articleURL) else { return }
         let urlString = normalizedURL.absoluteString
         // If the Safari extension just handed over the already-unlocked page HTML for
         // this URL, render that instead of re-fetching (which could re-lock).
@@ -219,7 +195,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Presents the friend-selector share sheet for a pending double-save
     /// "ask every time" hand-off (recorded by the Save App Intent right before
     /// the Shortcut opened Luna). One-shot; consumed only once the main UI is
-    /// actually up so an onboarding-first launch doesn't swallow it.
+    /// actually up so a debug or UI-test root doesn't swallow it.
     private func applyPendingFriendPrompt() {
         guard let nav = mainNavigationController,
               let root = nav.viewControllers.first
@@ -236,9 +212,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func uiTestRootViewController() -> UIViewController? {
         #if DEBUG
-        if UITestSeeder.requestsOnboarding {
-            return OnboardingFlow.make { [weak self] in self?.showMainUI() }
-        }
         // The deep-linked screen catalog is kind-woven (readers, price editor,
         // saved-media screen), so only the central Luna app — the UI-test /
         // screenshot host — can build it; the single-kind apps return nil here.
@@ -251,12 +224,5 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         #endif
         return nil
-    }
-
-    private func showMainUI() {
-        guard let window else { return }
-        window.rootViewController = KindWiring.makeRootViewController()
-        mainNavigationController?.installLunarEclipseTransition()
-        window.layoutIfNeeded()
     }
 }

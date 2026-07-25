@@ -74,12 +74,8 @@ final class SettingsViewController: NavHeaderTableController {
         tableView.reloadData()
     }
 
-    /// Section 1 holds a single "Replay Setup" action (presented modally), kept
-    /// out of the pushed `categories` list.
-    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
-
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? categories.count : 1
+        categories.count
     }
 
     override func tableView(
@@ -87,42 +83,19 @@ final class SettingsViewController: NavHeaderTableController {
     ) -> UITableViewCell {
         let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
-        if indexPath.section == 0 {
-            let category = categories[indexPath.row]
-            content.text = category.title
-            content.secondaryText = category.detail?()
-            content.image = UIImage(systemName: category.symbol)
-            cell.accessoryType = .disclosureIndicator
-        } else {
-            content.text = "Replay Onboarding"
-            content.image = UIImage(systemName: "sparkles")
-        }
+        let category = categories[indexPath.row]
+        content.text = category.title
+        content.secondaryText = category.detail?()
+        content.image = UIImage(systemName: category.symbol)
+        cell.accessoryType = .disclosureIndicator
         cell.contentConfiguration = content
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        if indexPath.section == 0 {
-            guard categories.indices.contains(indexPath.row) else { return }
-            navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
-        } else {
-            // Replay runs mostly against a throwaway overlay (see
-            // `OnboardingStores`) so it behaves like a fresh install, including
-            // the email login flow, without persisting replay-only account or
-            // Safari state. Action Button setup temporarily re-arms the real
-            // shared state machine so lifecycle callbacks and App Intents can
-            // drive the replay; `tearDown()` restores the previous state before
-            // dismissal.
-            let stores = OnboardingStores.ephemeral()
-            let onboarding = OnboardingFlow.make(stores: stores) { [weak self] in
-                stores.tearDown()
-                guard let self else { return }
-                self.dismiss(animated: true)
-            }
-            onboarding.modalPresentationStyle = .fullScreen
-            present(onboarding, animated: true)
-        }
+        guard categories.indices.contains(indexPath.row) else { return }
+        navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
     }
 }
 

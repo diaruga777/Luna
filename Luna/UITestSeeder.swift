@@ -8,9 +8,8 @@ import Foundation
 import UIKit
 
 /// Launch-argument-driven, DEBUG-only seeding for UI tests and the screenshot
-/// harness. When the app is launched with `-uiTestState <name>` (and, optionally,
-/// `-uiTestOnboardingStep` to open the onboarding flow), this wipes the App Group
-/// reading-list store and
+/// harness. When the app is launched with `-uiTestState <name>`, this wipes the
+/// App Group reading-list store and
 /// seeds it with the named `UITestState` fixture, then forces deterministic
 /// conditions: animations off, no first-run prompts. Production code paths are
 /// unchanged when the argument is absent — `isActive` is false and every method
@@ -25,7 +24,6 @@ import UIKit
 enum UITestSeeder {
     /// Launch-argument keys.
     private static let stateArg = "-uiTestState"
-    private static let onboardingStepArg = "-uiTestOnboardingStep"
     private static let screenArg = "-uiTestScreen"
 
     /// Whether the app was launched into a UI-test seeded state.
@@ -61,19 +59,6 @@ enum UITestSeeder {
         return UITestState(rawValue: raw)
     }
     #endif
-
-    /// Whether the harness asked for the onboarding flow. When true, the app shows
-    /// onboarding from its first step (regardless of stored identity); false means
-    /// show the main reading list. (The launch arg still takes a value for
-    /// compatibility with existing harness invocations, but only its presence
-    /// matters — onboarding always starts at the first step.)
-    static var requestsOnboarding: Bool {
-        #if DEBUG
-        return argumentValue(for: onboardingStepArg) != nil
-        #else
-        return false
-        #endif
-    }
 
     /// The raw name of a specific screen the harness wants deep-linked as the
     /// window root, if requested. When present, `SceneDelegate` asks

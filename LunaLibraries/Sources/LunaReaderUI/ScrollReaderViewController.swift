@@ -267,6 +267,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         didBeginFullContentLoad = false
         didStartPlayback = false
         shareFooterVisible = false
+        // An unconsumed jump must never survive into the next article.
+        pendingAnchorBlockIndex = nil
         openContentOffsetY = nil
         committedWordIndex = nil
         committedOffsetY = 0
@@ -559,7 +561,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         linkPreviewInteraction = LinkRSVPPreviewInteraction(
             host: self,
             sourceView: textView,
-            resolveURL: { [weak self] point in self?.link(at: point)?.url },
+            resolveURL: { [weak self] point in self?.previewableLinkURL(at: point) },
             sourcePlaybackChanged: { [weak self] active in self?.setLinkPreviewAudioSuspended(active) })
     }
 
@@ -712,6 +714,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         installAnimatedImageViews()
 
         didLoadFullContent = true
+        // A jump tapped while only the prefix was laid out: its destination exists
+        // now, so honour it in place of the offset restored just above.
+        if let blockIndex = pendingAnchorBlockIndex {
+            pendingAnchorBlockIndex = nil
+            scrollToBlock(blockIndex)
+        }
         // Now that the full word map exists, wire up the position-dependent features
         // and finish the inline-image fetch + share footer against the real content.
         installPositionDependentFeatures()
@@ -1119,13 +1127,27 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// the top, clamped so it never overscrolls past either end.
     private func scrollWord(_ wordIndex: Int, toFractionFromTop fraction: CGFloat) {
         guard let range = wordMap.attributedRange(forWord: wordIndex) else { return }
+        scrollRange(range, toFractionFromTop: fraction, animated: false)
+    }
+
+    /// Scrolls so a character range sits `fraction` of the screen height down from
+    /// the top, clamped so it never overscrolls past either end.
+    private func scrollRange(
+        _ range: NSRange, toFractionFromTop fraction: CGFloat, animated: Bool
+    ) {
         let layoutManager = textView.layoutManager
         layoutManager.ensureLayout(for: textView.textContainer)
         let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
         var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer)
         rect.origin.y += textView.textContainerInset.top
-        let target = rect.minY - fraction * textView.bounds.height
-        textView.contentOffset.y = clampedContentOffsetY(target)
+        let target = clampedContentOffsetY(rect.minY - fraction * textView.bounds.height)
+        guard animated else {
+            textView.contentOffset.y = target
+            return
+        }
+        UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
+            self.textView.contentOffset.y = target
+        }
     }
 
     /// A target content offset clamped to the scrollable range, accounting for
@@ -1346,6 +1368,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         defaultAction: UIAction
     ) -> UIAction? {
         if case .link(let url) = textItem.content {
+            // A table-of-contents row (or a footnote marker) points inside THIS
+            // article: scroll to it rather than opening a reader on the page the
+            // reader is already in.
+            if let anchorID = inPageAnchorID(atCharacterRange: textItem.range) {
+                return UIAction { [weak self] _ in self?.scrollToInPageAnchor(anchorID) }
+            }
             return UIAction { [weak self] _ in
                 guard let self else { return }
                 if let onLinkActivatedWithRange = self.onLinkActivatedWithRange {
@@ -1356,6 +1384,49 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             }
         }
         return defaultAction
+    }
+
+    // MARK: - In-page jumps (the page's own chapter marks)
+
+    /// Where a jump lands: near the top, with a little air above it so the target
+    /// heading doesn't sit flush against the edge.
+    private static let anchorScrollFractionFromTop: CGFloat = 0.08
+
+    /// Set when a jump is requested before the whole article is laid out, and
+    /// consumed by the Phase-2 swap. A table of contents sits at the very top of
+    /// an article, so a tap arriving during Phase 1 is the COMMON case, not an
+    /// edge case — and its destination is essentially always past the prefix.
+    private var pendingAnchorBlockIndex: Int?
+
+    /// The in-page destination the rendered text carries at this range, if any.
+    private func inPageAnchorID(atCharacterRange range: NSRange) -> String? {
+        guard let text = textView.attributedText,
+              range.location >= 0, range.location < text.length
+        else { return nil }
+        return text.attribute(.lunaInPageAnchor, at: range.location, effectiveRange: nil) as? String
+    }
+
+    private func scrollToInPageAnchor(_ anchorID: String) {
+        guard let blockIndex = content.blockIndex(forAnchorID: anchorID) else { return }
+        guard didLoadFullContent else {
+            pendingAnchorBlockIndex = blockIndex
+            prepareFullContent()
+            return
+        }
+        scrollToBlock(blockIndex)
+    }
+
+    /// Scrolls a block into view by its rendered range. An image block has no text
+    /// range, so the nearest range after it (then before it) stands in — the jump
+    /// lands on the destination's neighbour rather than doing nothing.
+    private func scrollToBlock(_ blockIndex: Int) {
+        let ranges = rendered.blockTextRanges
+        guard !ranges.isEmpty else { return }
+        let forward = (blockIndex..<ranges.count).lazy.compactMap { ranges[$0] }.first
+        let backward = (0...min(blockIndex, ranges.count - 1)).reversed()
+            .lazy.compactMap { ranges[$0] }.first
+        guard let range = forward ?? backward else { return }
+        scrollRange(range, toFractionFromTop: Self.anchorScrollFractionFromTop, animated: true)
     }
 
     /// Inline-link holds are owned by `LinkRSVPPreviewInteraction`. Returning nil
@@ -1402,6 +1473,17 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             if hit { return (url, range) }
         }
         return nil
+    }
+
+    /// The URL a link hold should preview. An in-page jump has none: the mini RSVP
+    /// preview would load this same article, so the hold falls through to ordinary
+    /// text selection instead. (`link(at:)` itself still reports the hit, so the
+    /// card keeps treating a ToC row as interactive content.)
+    private func previewableLinkURL(at point: CGPoint) -> URL? {
+        guard let hit = link(at: point),
+              inPageAnchorID(atCharacterRange: hit.range) == nil
+        else { return nil }
+        return hit.url
     }
 
     /// Whether a point in this controller's view is already owned by normal

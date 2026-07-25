@@ -87,6 +87,9 @@ public final class SpeechController: NSObject {
     ) -> [(blockIndex: Int, text: String)] {
         content.blocks.enumerated()
             .filter { !$0.element.text.isEmpty }
+            // Navigation furniture is never spoken, whatever the script says — a
+            // read-aloud that recites a table of contents is just noise.
+            .filter(\.element.isReadableProse)
             .filter { spokenBlockIndices?.contains($0.offset) ?? true }
             .map { (blockIndex: $0.offset, text: $0.element.text) }
     }

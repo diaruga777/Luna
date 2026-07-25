@@ -17,6 +17,11 @@ public struct WordMap {
     public init(content: ArticleContent, rendered: RenderedArticle) {
         var ranges: [NSRange] = []
         for (blockIndex, block) in content.blocks.enumerated() {
+            // A table of contents IS rendered — it has a range — but it is not part
+            // of the word stream, and RSVPEngine skips it for the same reason. If
+            // only one of the two skipped it, every word index past the ToC would
+            // mean a different word in each reader.
+            guard block.isReadableProse else { continue }
             let blockText = block.text as NSString
             guard let blockRange = rendered.blockTextRanges[safe: blockIndex] ?? nil else {
                 // Image/skipped blocks contribute no words (matches RSVPEngine,

@@ -52,7 +52,9 @@ public struct RSVPEngine {
         var sourceTokenIndices: [Int] = []
         var firstFrameIndexByToken: [Int] = []
         var tokenCounter = 0
-        for block in content.blocks {
+        // A table of contents is rendered but never read. `WordMap` skips the same
+        // blocks, so both sides of the shared word-index space stay aligned.
+        for block in content.blocks where block.isReadableProse {
             let tokens = Self.tokensWithURLs(in: block)
             for (tokenIndex, token) in tokens.enumerated() {
                 let isLastToken = tokenIndex == tokens.count - 1
@@ -93,6 +95,9 @@ public struct RSVPEngine {
         func linkURL(start: Int, length: Int) -> URL? {
             for link in block.links
             where start < link.start + link.length && start + length > link.start {
+                // An in-page jump is meaningless here: RSVP's link pill would offer
+                // to open the article the reader is already inside.
+                guard !link.isInPageAnchor else { return nil }
                 return URL(string: link.urlString)
             }
             return nil

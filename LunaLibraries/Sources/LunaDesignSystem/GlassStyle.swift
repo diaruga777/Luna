@@ -83,7 +83,7 @@ public enum GlassStyle {
         UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(white: 1.0, alpha: 0.14)
-                : UIColor(white: 0.0, alpha: 0.07)
+                : UIColor(white: 1.0, alpha: 0.12)
         }
     }
 
@@ -111,7 +111,8 @@ public enum GlassStyle {
         UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(white: 0.16, alpha: 0.94)
-                : UIColor(white: 0.51, alpha: 0.94)
+                : LunaSurfacePalette.predawnSurface(level: 0.195)
+                    .withAlphaComponent(0.94)
         }
     }
 
@@ -137,7 +138,7 @@ public enum GlassStyle {
         UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(white: 1.0, alpha: 0.16)
-                : UIColor(white: 0.0, alpha: 0.07)
+                : UIColor(white: 1.0, alpha: 0.14)
         }
     }
 }

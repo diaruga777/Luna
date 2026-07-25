@@ -46,21 +46,75 @@ public enum LunaSurfacePalette {
         }
     }
 
-    /// A very low-opacity wash for Liquid Glass. The glass remains primarily
-    /// material/ambient; the app colour is only visible as a quiet cast.
-    public static var glassTint: UIColor { baseColor.withAlphaComponent(0.14) }
+    /// A low-opacity wash for Liquid Glass. The glass stays material/ambient
+    /// first, but the app colour now reads as a deliberate cast rather than a
+    /// barely-there hint.
+    public static var glassTint: UIColor { baseColor.withAlphaComponent(0.26) }
 
     /// Progress needs more contrast than glass, while still avoiding a neon or
-    /// solid-brand-colour treatment. Gently temper the base toward the foreground
-    /// appropriate for the current appearance.
+    /// solid-brand-colour treatment. Temper the base only slightly toward the
+    /// foreground appropriate for the current appearance — both appearances are
+    /// dark now, so the tempering is toward white in each, and light.
     public static let progressAccent = UIColor { traits in
         let base = baseColor.resolvedColor(with: traits)
-        let temperingColor: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
-        let amount: CGFloat = traits.userInterfaceStyle == .dark ? 0.18 : 0.22
-        return blended(base, toward: temperingColor, amount: amount)
+        let amount: CGFloat = traits.userInterfaceStyle == .dark ? 0.10 : 0.06
+        return blended(base, toward: .white, amount: amount)
     }
 
-    private static func blended(
+    // MARK: - Night sky
+
+    /// The colour the night sky leans toward: the starfield's cast, and the
+    /// chromatic lift of the light ("predawn") appearance.
+    ///
+    /// The central Luna app is deliberately achromatic — plain moonlight white —
+    /// so its sky reads as the neutral parent of the three coloured children.
+    public static var atmosphereTint: UIColor { atmosphereTint(for: currentSurface) }
+
+    public static func atmosphereTint(for surface: Surface) -> UIColor {
+        surface == .luna ? .white : baseColor(for: surface)
+    }
+
+    /// The deep blue of the sky at the very first hint of pre-sunrise light.
+    private static let predawnSky = UIColor(red: 0.09, green: 0.12, blue: 0.24, alpha: 1)
+
+    /// The app's own tint, cooled toward a pre-sunrise sky. Used as the hue of
+    /// every light-appearance surface and of the stars themselves.
+    public static var atmosphereCast: UIColor { atmosphereCast(for: currentSurface) }
+
+    public static func atmosphereCast(for surface: Surface) -> UIColor {
+        blended(atmosphereTint(for: surface), toward: predawnSky, amount: 0.6)
+    }
+
+    /// A near-black surface for the light ("predawn") appearance.
+    ///
+    /// `level` is the surface's mean channel value — the same 0…1 scale the dark
+    /// ramp uses — so a light surface can be specified as "one notch above its
+    /// dark twin" and still come out faintly coloured. The cast is normalised to
+    /// unit mean and partly neutralised first, so `level` controls brightness on
+    /// its own and no app's hue ever shouts.
+    public static func predawnSurface(level: CGFloat, for surface: Surface) -> UIColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard atmosphereCast(for: surface).getRed(&r, green: &g, blue: &b, alpha: &a) else {
+            return UIColor(white: level, alpha: 1)
+        }
+        let mean = max(0.0001, (r + g + b) / 3)
+        // Unit-mean hue, then pulled most of the way back toward neutral.
+        let neutralised: (CGFloat) -> CGFloat = { channel in
+            let unit = channel / mean
+            return unit + (1 - unit) * 0.55
+        }
+        return UIColor(
+            red: min(1, neutralised(r) * level),
+            green: min(1, neutralised(g) * level),
+            blue: min(1, neutralised(b) * level),
+            alpha: 1)
+    }
+
+    public static func predawnSurface(level: CGFloat) -> UIColor {
+        predawnSurface(level: level, for: currentSurface)
+    }
+
+    public static func blended(
         _ source: UIColor, toward target: UIColor, amount: CGFloat
     ) -> UIColor {
         var sr: CGFloat = 0

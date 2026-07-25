@@ -21,12 +21,12 @@ public enum MoonHorizonStyle {
     public static let sunCore = UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor.white
-            : UIColor(red: 0.98, green: 0.58, blue: 0.12, alpha: 1)
+            : UIColor(red: 1.00, green: 0.97, blue: 0.92, alpha: 1)
     }
 
     /// The unlit horizon ahead of the sun — barely-there in either appearance.
     public static func darkHorizon(for traits: UITraitCollection) -> UIColor {
-        let alpha: CGFloat = traits.userInterfaceStyle == .dark ? 0.30 : 0.18
+        let alpha: CGFloat = traits.userInterfaceStyle == .dark ? 0.30 : 0.28
         return LunaColors.primaryText.resolvedColor(with: traits).withAlphaComponent(alpha)
     }
 
@@ -477,7 +477,7 @@ public struct MoonHorizonProgressView: View {
     public var body: some View {
         let sunlight = Color(MoonHorizonStyle.sunlight)
         let sunCore = Color(MoonHorizonStyle.sunCore)
-        let darkHorizonOpacity = colorScheme == .dark ? 0.30 : 0.18
+        let darkHorizonOpacity = colorScheme == .dark ? 0.30 : 0.28
         GeometryReader { geometry in
             let rect = CGRect(origin: .zero, size: geometry.size)
             let head = MoonHorizonStyle.point(atFraction: progress, in: rect)

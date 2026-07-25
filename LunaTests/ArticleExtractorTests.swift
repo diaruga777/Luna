@@ -360,6 +360,84 @@ final class ArticleExtractorTests: XCTestCase {
         XCTAssertThrowsError(try extractor.extract(html: "<html><body></body></html>", baseURL: baseURL))
     }
 
+    // MARK: - Structural line breaks inside one block
+
+    /// Paris Review regression: the paragraphs of a quoted passage are separated by
+    /// `<br><br>` with NO whitespace character around them, and `<br>` contributed
+    /// nothing to the walk — so the quote read "…the best of his feeling.The
+    /// discipline of the written word…". A structural break must become a space.
+    func testBRBetweenSentencesBecomesASpace() throws {
+        let html = """
+        <html><body><article>
+        <p>Intro paragraph with plenty of words to give the article container a dominant score here.</p>
+        <blockquote>A man who writes a story is forced to put into it the best of his feeling.<br><br>The discipline of the written word punishes both stupidity and dishonesty.</blockquote>
+        <p>Closing paragraph with plenty of words to keep the article container scoring dominant.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let quote = try XCTUnwrap(content.blocks.first { $0.kind == .quote })
+        XCTAssertEqual(
+            quote.text,
+            "A man who writes a story is forced to put into it the best of his feeling. "
+            + "The discipline of the written word punishes both stupidity and dishonesty.")
+    }
+
+    /// The same loss through the other route: a `<p>` nested in a `<blockquote>` is
+    /// skipped as its own block (it has a block ancestor) and walked as part of the
+    /// one quote, so the two paragraphs' text nodes met with nothing between them.
+    func testNestedParagraphsInAQuoteAreSpaceSeparated() throws {
+        let html = """
+        <html><body><article>
+        <p>Intro paragraph with plenty of words to give the article container a dominant score here.</p>
+        <blockquote><p>First quoted sentence ends here.</p><p>Second quoted sentence starts here.</p></blockquote>
+        <p>Closing paragraph with plenty of words to keep the article container scoring dominant.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let quote = try XCTUnwrap(content.blocks.first { $0.kind == .quote })
+        XCTAssertEqual(
+            quote.text, "First quoted sentence ends here. Second quoted sentence starts here.")
+    }
+
+    /// The synthesized break collapses against real whitespace (never a double space,
+    /// never a leading one) and shifts the link ranges recorded after it, so a link's
+    /// offsets still name its own words.
+    func testLineBreakCollapsesAndKeepsLinkRangesAligned() throws {
+        let html = """
+        <html><body><article>
+        <p>Intro paragraph with plenty of words to give the article container a dominant score here.</p>
+        <p><br>Read <a href="https://example.com/a">the first source</a>.<br> <a href="https://example.com/b">the second source</a> continues here.</p>
+        <p>Closing paragraph with plenty of words to keep the article container scoring dominant.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let block = try XCTUnwrap(content.blocks.first { $0.text.hasPrefix("Read ") })
+        XCTAssertEqual(block.text, "Read the first source. the second source continues here.")
+        XCTAssertFalse(block.text.contains("  "))
+        let text = block.text as NSString
+        XCTAssertEqual(block.links.count, 2)
+        for link in block.links {
+            let slice = text.substring(with: NSRange(location: link.start, length: link.length))
+            XCTAssertEqual(slice, link.urlString.hasSuffix("/a") ? "the first source" : "the second source")
+        }
+    }
+
+    /// Inline markup must NOT gain a space — `<em>`/`<strong>`/`<a>` render on the
+    /// same line, and inserting a boundary there would split words mid-sentence.
+    func testInlineMarkupDoesNotGainASpace() throws {
+        let html = """
+        <html><body><article>
+        <p>Intro paragraph with plenty of words to give the article container a dominant score here.</p>
+        <p>The word <em>un</em><strong>believable</strong> stays one word in the extracted prose text.</p>
+        <p>Closing paragraph with plenty of words to keep the article container scoring dominant.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(
+            content.blocks.contains { $0.text == "The word unbelievable stays one word in the extracted prose text." },
+            "inline elements must not introduce a word boundary")
+    }
+
     func testListAndQuoteKinds() throws {
         let html = """
         <html><body><article>

@@ -690,6 +690,22 @@ public struct ArticleExtractor {
         "figure", "figcaption", "form", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
     ]
 
+    /// Tags that END the line they appear on, so the text on either side of them is
+    /// never visually adjacent. A block's walk concatenates the text nodes it finds,
+    /// and markup routinely puts no whitespace character around these — Paris Review
+    /// separates the paragraphs of a quoted passage with `…his feeling.<br><br>The
+    /// discipline…`, and a `<p>` nested in a `<blockquote>` is walked as part of that
+    /// one quote block — so without a synthesized boundary the reader showed
+    /// "feeling.The discipline". `img` is here because images are lifted out into
+    /// their own blocks, which leaves the text that surrounded them adjacent.
+    private static let lineBreakingTags: Set<String> = [
+        "br", "hr", "img", "p", "div", "section", "article", "aside", "header",
+        "footer", "nav", "main", "figure", "figcaption", "blockquote", "pre",
+        "ul", "ol", "li", "dl", "dt", "dd", "table", "thead", "tbody", "tfoot",
+        "tr", "td", "th", "caption", "h1", "h2", "h3", "h4", "h5", "h6",
+        "address", "fieldset", "form", "hgroup", "details", "summary",
+    ]
+
     private func extractBlocks(
         from container: Element, baseURL: URL, anchors: Set<String> = []
     ) throws -> [ArticleContent.Block] {
@@ -1026,6 +1042,16 @@ public struct ArticleExtractor {
             return (start, addition.utf16.count)
         }
 
+        /// Stands in for a line break the markup expressed structurally rather than
+        /// with a whitespace character. Collapses against what's already there, so
+        /// real whitespace on either side of the break still yields ONE space, and
+        /// it never leads the block. Appended between text nodes, so it shifts no
+        /// already-recorded link range.
+        func appendLineBreak() {
+            guard !text.isEmpty, !text.hasSuffix(" ") else { return }
+            text += " "
+        }
+
         func walk(_ node: Node, linkURL: String?) {
             if let textNode = node as? TextNode {
                 let range = appendCollapsed(textNode.getWholeText())
@@ -1043,6 +1069,8 @@ public struct ArticleExtractor {
                 return
             }
             guard let child = node as? Element else { return }
+            let breaksLine = Self.lineBreakingTags.contains(child.tagName())
+            if breaksLine { appendLineBreak() }
             if child.tagName() == "img" {
                 if let imageBlock = makeImageBlock(from: child, baseURL: baseURL) {
                     nestedImages.append(imageBlock)
@@ -1061,6 +1089,7 @@ public struct ArticleExtractor {
             for grandchild in child.getChildNodes() {
                 walk(grandchild, linkURL: childLink)
             }
+            if breaksLine { appendLineBreak() }
         }
 
         for node in element.getChildNodes() {

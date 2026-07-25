@@ -1478,6 +1478,9 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
 
         statusBar.isHidden = true
         statusBar.clipsToBounds = true
+        // Purely informational: the card's own tap/scrub handling must still see
+        // the points the bar covers. Cancel/retry live on the card's controls.
+        statusBar.isUserInteractionEnabled = false
         if #available(iOS 26.0, *) {
             statusBar.cornerConfiguration = .corners(radius: .fixed(18))
         } else {

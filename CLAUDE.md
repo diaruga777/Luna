@@ -227,7 +227,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 1681 tests, 16 skipped, 3 failures**
+- **Current suite state on the iOS 26.x sim: 1689 tests, 16 skipped, 3 failures**
   (measured 2026-07-25). The 3 failures are the long-standing
   `AudioMiniPlayerTests.testMiniPlayer{Playing,Paused,Slim}Snapshot` reference-image
   drifts (2.2–3.9% pixel diff against a 2% tolerance) — they fail on an untouched

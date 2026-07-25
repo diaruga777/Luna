@@ -7,8 +7,16 @@ final class SavedMediaStoreTests: XCTestCase {
     private var store: SavedMediaStore!
 
     override func setUpWithError() throws {
+        // The interpolation here was missing its backslash, so every test in this class
+        // — in every process — shared one directory literally named
+        // "SavedMediaStoreTests-(UUID().uuidString)". `tearDown` hid it while runs
+        // completed, but a process killed mid-suite (a WebKit jetsam `signal kill` is
+        // enough) leaves the manifest behind, and the next run's FIRST test inherits it:
+        // `testAddDownloadedFileDedupes…` then counted 2 items where it saved 1, while
+        // every later test in the class passed on the directory its own tearDown had
+        // just cleaned. Per-test isolation now actually happens.
         root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SavedMediaStoreTests-(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("SavedMediaStoreTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         store = SavedMediaStore(containerURL: root)
     }
@@ -183,6 +191,13 @@ final class SavedMediaStoreTests: XCTestCase {
 
     func testBackgroundMutationDeliversChangeNotificationOnMainThread() {
         let changed = expectation(description: "saved media changed on main thread")
+        // The observer is unscoped (`object: nil`), so it sees `.savedMediaChanged` from
+        // every store alive in this process, and one mutation can also post more than
+        // once. What's under test is the THREAD each delivery arrives on, not how many
+        // there are — and over-fulfilling raised `NSInternalInconsistencyException`,
+        // aborting the whole test process (reproducible when this class runs alone,
+        // where the run reported "12 tests, 0 failures" AND a failed process).
+        changed.assertForOverFulfill = false
         let token = NotificationCenter.default.addObserver(
             forName: .savedMediaChanged, object: nil, queue: nil
         ) { _ in

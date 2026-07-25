@@ -35,11 +35,45 @@ import LunaStorage
 import LunaURLClassification
 import UIKit
 
+/// The all-kinds deck's seam to the kinds a Reader build cannot even name.
+/// Only the central Luna app compiles an implementation (and installs it at
+/// launch through its kind wiring), so this file stays free of media and
+/// price symbols while its deck still renders those saves the way their own
+/// app does — a downloaded video as the Downloader's player, not as a link.
+protocol AllKindsCardProviding: AnyObject {
+    /// The real card for a non-article save. Nil when there is nothing of the
+    /// kind's own to show yet, leaving the deck's title-and-link card in place.
+    func cardContent(for item: ReadingListItem) -> CardContentViewController?
+    func topLeadingAccessory(for item: ReadingListItem) -> UIView?
+    func sourceBadge(for item: ReadingListItem) -> CarouselSourceBadge?
+    /// A card-sized still for the scrub preview; nil leaves the card's title.
+    func thumbnail(for item: ReadingListItem, completion: @escaping (UIImage?) -> Void)
+    /// Whether the scrub strip may build this card's real content ahead of the
+    /// finger. A card backed by a video player answers false — sweeping the
+    /// strip must not spin up one player per chip — and previews as its poster
+    /// until the scrub settles on it.
+    func allowsPreparedPreviewContent(for item: ReadingListItem) -> Bool
+    /// Kind-specific actions, offered above the deck's own Archive/Delete.
+    func menuActions(
+        for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
+    ) -> [UIMenuElement]
+    /// Companion storage (a downloaded file, a Photos asset) to release when
+    /// the deck deletes the reading-list item.
+    func deleteCompanionStorage(for item: ReadingListItem)
+    /// What this item's card is showing right now, so a download that finishes
+    /// in the background re-renders it instead of staying a placeholder.
+    func fingerprint(for item: ReadingListItem) -> String
+    /// Change notifications outside the reading list that this deck must
+    /// reload on (a media store write, say).
+    var changeNotificationNames: [Notification.Name] { get }
+}
+
 final class ArticleCardsViewController: CardCarouselHostViewController {
 
     /// The central Luna app's card deck shows EVERY content kind, not just
-    /// reader articles: media and price-tracker items get title/badge cards
-    /// whose taps route through `nonArticleOpener` below.
+    /// reader articles: media and price-tracker items get their own kind's
+    /// card through `cardProvider`, or a title/badge card whose tap routes
+    /// through `nonArticleOpener` when that kind has nothing to render yet.
     private let includesAllKinds = AppSurfaceConfig.current == .all
 
     /// Opens a non-article item (price tracker / platform post) from its card,
@@ -47,6 +81,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// shell's kind wiring — only apps that surface those kinds install it, so
     /// the card deck stays article-only elsewhere (`includesAllKinds`).
     static var nonArticleOpener: ((ReadingListItem, UIViewController) -> Void)?
+
+    /// Renders non-article kinds with their own app's card. Installed
+    /// alongside `nonArticleOpener`; nil everywhere but the central app.
+    static var cardProvider: AllKindsCardProviding?
+
+    private var cardProvider: AllKindsCardProviding? {
+        includesAllKinds ? Self.cardProvider : nil
+    }
 
     private enum PasteboardCardState {
         case placeholder(changeCount: Int)
@@ -203,6 +245,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(refreshPasteboardURL),
             name: UIPasteboard.changedNotification, object: nil)
+        // A media download finishing turns a placeholder card into a player,
+        // and it lands in a store this file cannot name.
+        for name in cardProvider?.changeNotificationNames ?? [] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(reload), name: name, object: nil)
+        }
         // `reload()` must run synchronously here, before the async pasteboard probe:
         // `store.items()` serves an in-memory cache, so this shows saved articles
         // immediately instead of waiting on the probe's round-trip (a `detectPatterns`
@@ -586,7 +634,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
         var fingerprint = updated.map {
-            "active|\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")"
+            let kind = cardProvider?.fingerprint(for: $0) ?? ""
+            return "active|\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")|\(kind)"
         }
         fingerprint.append(contentsOf: updatedArchive.map {
             "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
@@ -628,20 +677,27 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         updateReaderChrome()
     }
 
-    /// Keeps finished articles available as ordinary reader cards for now, but
-    /// groups them after every unopened/in-progress article. Each group retains
-    /// the carousel's newest/bumped-first ordering.
+    /// The reader deck keeps finished articles available as ordinary cards but
+    /// groups them after every unopened/in-progress one; each group retains the
+    /// carousel's newest/bumped-first ordering.
+    ///
+    /// The central app's ALL-KINDS deck drops that grouping: it is one deck over
+    /// four apps' saves, and read-vs-unread is an article-only notion that would
+    /// otherwise shuffle a just-watched video behind everything else. There, the
+    /// order is simply most recent first.
     static func orderedReaderItems(
         _ candidates: [ReadingListItem], includesAllKinds: Bool = false
     ) -> [ReadingListItem] {
         candidates
             .filter { (includesAllKinds || ReadingListSectioning.rendersAsReader($0)) && !$0.isArchived }
             .sorted { lhs, rhs in
-                // A just-finished card remains in its current foreground-session
-                // position until the pending archive is committed on background.
-                let lhsIsRead = lhs.readState == .read && lhs.pendingArchiveAt == nil
-                let rhsIsRead = rhs.readState == .read && rhs.pendingArchiveAt == nil
-                if lhsIsRead != rhsIsRead { return !lhsIsRead }
+                if !includesAllKinds {
+                    // A just-finished card remains in its current foreground-session
+                    // position until the pending archive is committed on background.
+                    let lhsIsRead = lhs.readState == .read && lhs.pendingArchiveAt == nil
+                    let rhsIsRead = rhs.readState == .read && rhs.pendingArchiveAt == nil
+                    if lhsIsRead != rhsIsRead { return !lhsIsRead }
+                }
                 let lhsDate = lhs.bumpDate ?? lhs.dateAdded
                 let rhsDate = rhs.bumpDate ?? rhs.dateAdded
                 if lhsDate != rhsDate { return lhsDate > rhsDate }
@@ -827,6 +883,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 : (index > 0 ? items[index - 1] : nil)
             pendingTransitionCenteredID = successor?.id
         }
+        // Deleting the card deletes the save WHOLE — a downloaded file and its
+        // Photos asset go with the reading-list entry, not on after it.
+        cardProvider?.deleteCompanionStorage(for: item)
         store.delete(item)
         reload()
     }
@@ -869,7 +928,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 delete,
             ])
         }
-        return UIMenu(children: [
+        // A media card offers the Downloader's own verbs (Share the file, Save
+        // to Photos) above the deck's Archive/Delete.
+        let kindActions = cardProvider?.menuActions(
+            for: item, presenter: self,
+            sourceView: carousel.cardView(at: carouselIndex) ?? view) ?? []
+        return UIMenu(children: kindActions + [
             UIAction(title: "Archive", image: UIImage(systemName: "archivebox")) {
                 [weak self] _ in
                 self?.archive(item, fromCarouselIndex: carouselIndex)
@@ -996,6 +1060,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             return FailedSaveCardFactory.makeCard(
                 for: item, host: self, onChanged: { [weak self] in self?.reload() })
         }
+        // A Downloader save is a Downloader card here too — the same player,
+        // GIF, image, or download-progress surface its own app shows.
+        if let card = cardProvider?.cardContent(for: item) { return card }
         let content = ReaderCardContentViewController(item: item, senderName: senderName(for: item))
         // Apply the title clearance as part of construction, not only after a
         // card becomes centered. A scrubber jump can stage index ±2 immediately
@@ -1039,19 +1106,37 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         return item.channelName
     }
 
+    /// The mini-card STRIP has no image chips, but its big scrub preview does:
+    /// a media save previews as its poster rather than as its title.
     func carousel(
         _ carousel: CardCarouselViewController,
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
-        completion(nil)   // mini-card strip; no image chips
+        guard let provider = cardProvider, let item = item(atCarouselIndex: index) else {
+            completion(nil)
+            return
+        }
+        provider.thumbnail(for: item, completion: completion)
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         previewContentControllerForCardAt index: Int
     ) -> CardContentViewController? {
-        self.carousel(carousel, contentControllerForCardAt: index)
+        if let provider = cardProvider, let item = item(atCarouselIndex: index),
+           !provider.allowsPreparedPreviewContent(for: item) {
+            return nil
+        }
+        return self.carousel(carousel, contentControllerForCardAt: index)
+    }
+
+    /// The saved item behind a carousel index, past the synthetic paste card.
+    private func item(atCarouselIndex index: Int) -> ReadingListItem? {
+        guard let itemIndex = articleIndex(forCarouselIndex: index),
+              items.indices.contains(itemIndex)
+        else { return nil }
+        return items[itemIndex]
     }
 
     /// Chip badge: an instant fallback (initials / mail / document / globe)
@@ -1083,11 +1168,26 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             return
         }
         let item = items[itemIndex]
+        // A platform save is marked by its platform, not by the host's favicon.
+        if let badge = cardProvider?.sourceBadge(for: item) {
+            completion(badge)
+            return
+        }
         completion(ArticleSourceBadge.fallback(for: item))
         guard ArticleSourceBadge.wantsFavicon(item), let url = item.url else { return }
         SourceIconCache.shared.icon(forPageURL: url) { image in
             if let image { completion(.icon(image)) }
         }
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        topLeadingAccessoryForCardAt index: Int
+    ) -> UIView? {
+        guard let itemIndex = articleIndex(forCarouselIndex: index),
+              items.indices.contains(itemIndex)
+        else { return nil }
+        return cardProvider?.topLeadingAccessory(for: items[itemIndex])
     }
 
     func carousel(
@@ -1206,11 +1306,21 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         }
         // A non-article card (central Luna app only) routes to its own screen
         // — the price editor or the platform open ladder — never the reader.
+        // A media save rendered as a REAL Downloader card is the exception: its
+        // own content owns the tap (play/pause, the download button), exactly
+        // as in the Downloader, so the ladder is only for the link-style card
+        // that stands in when there is nothing downloaded to show.
         if let itemIndex = articleIndex(forCarouselIndex: index),
            items.indices.contains(itemIndex) {
             let item = items[itemIndex]
-            if item.isPriceTracker || item.contentPlatform != nil {
+            if item.isPriceTracker {
                 Self.nonArticleOpener?(item, self)
+                return
+            }
+            if item.contentPlatform != nil {
+                if carousel.contentController(at: index) is ReaderCardContentViewController {
+                    Self.nonArticleOpener?(item, self)
+                }
                 return
             }
         }

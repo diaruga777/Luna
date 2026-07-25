@@ -336,7 +336,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             }
         case .photosReference(let identifier, _, _):
             if item.kind == .video || item.kind == .audio {
-                Self.loadPhotosVideoItem(identifier: identifier) { [weak self] playerItem in
+                MediaCardFactory.loadPhotosVideoItem(identifier: identifier) { [weak self] playerItem in
                     DispatchQueue.main.async {
                         guard let playerItem else {
                             if PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
@@ -354,7 +354,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 }
             } else {
                 presentArchiveImage { completion in
-                    Self.loadPhotosImage(
+                    MediaCardFactory.loadPhotosImage(
                         identifier: identifier, targetSize: PHImageManagerMaximumSize,
                         completion: completion)
                 }
@@ -898,56 +898,10 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
             return CardContentViewController()
         }
         let item = items[mediaIndex]
-        switch item.storageState {
-        case .undownloaded:
-            return UndownloadedMediaCardContentViewController(item: item, download: { [weak self] in
-                self?.startDownload(item)
-            }, rescue: URLRescueCoordinator.engine?.isAvailable() == true ? {
-                let itemID = ReadingListStore.shared.item(forURLString: item.sourceURLString)?.id
-                    ?? ReadingListStore.shared.addIfAbsent(urlString: item.sourceURLString, source: .manual)?.id
-                if let itemID {
-                    URLRescueCoordinator.shared.requestManualRescue(itemID: itemID, hint: .media)
-                }
-            } : nil)
-        case .localFile:
-            guard let fileURL = item.fileURL else { return CardContentViewController() }
-            switch item.kind {
-            case .video:
-                let content = VideoCardContentViewController(fileURL: fileURL)
-                loadThumbnail(for: item) { [weak content] image in
-                    DispatchQueue.main.async { content?.setPosterImage(image) }
-                }
-                return content
-            case .audio:
-                let content = VideoCardContentViewController(fileURL: fileURL)
-                content.setPosterImage(UIImage(systemName: "waveform.circle.fill"))
-                return content
-            case .gif:
-                return AnimatedImageCardContentViewController(fileURL: fileURL)
-            default:
-                return ImageCardContentViewController(loader: { completion in
-                    // Full resolution (aspect-fit to the card) — decode off-main
-                    // so a large photo doesn't hitch the carousel.
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        let raw = UIImage(contentsOfFile: fileURL.path)
-                        completion(raw?.preparingForDisplay() ?? raw)
-                    }
-                })
-            }
-        case .photosReference(let identifier, _, _):
-            if item.kind == .video || item.kind == .audio {
-                let content = VideoCardContentViewController(itemProvider: { completion in
-                    Self.loadPhotosVideoItem(identifier: identifier, completion: completion)
-                })
-                loadThumbnail(for: item) { [weak content] image in
-                    DispatchQueue.main.async { content?.setPosterImage(image) }
-                }
-                return content
-            }
-            return ImageCardContentViewController(loader: { completion in
-                Self.loadPhotosImage(identifier: identifier, targetSize: PHImageManagerMaximumSize, completion: completion)
-            })
-        }
+        return MediaCardFactory.makeCard(
+            for: item, scale: screenScale,
+            download: { [weak self] in self?.startDownload(item) },
+            rescue: MediaCardRescue.starter(forSourceURLString: item.sourceURLString))
     }
 
     func carousel(
@@ -969,7 +923,7 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
             case .invalid:
                 completion(UIImage(systemName: "exclamationmark.circle"))
             case .ready(_, _, _, let media, _):
-                Self.loadTemporaryThumbnail(for: media, completion: completion)
+                MediaCardFactory.loadTemporaryThumbnail(for: media, completion: completion)
             }
             return
         }
@@ -1002,119 +956,15 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView? {
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index),
-              let identifier = items[mediaIndex].photosLocalIdentifier
-        else { return nil }
-        return PhotosReferenceBadgeView { [weak self] in
-            self?.openInPhotos(localIdentifier: identifier)
-        }
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
+        return MediaCardFactory.photosBadge(for: items[mediaIndex])
     }
 
-    private func openInPhotos(localIdentifier: String) {
-        // Photos routes assets by the UUID component of PhotoKit's durable
-        // local identifier. Use its public redirect scheme and fall back to
-        // opening the library if this OS cannot resolve the asset route.
-        let uuid = localIdentifier.split(separator: "/", maxSplits: 1).first.map(String.init)
-        var components = URLComponents()
-        components.scheme = "photos-redirect"
-        components.host = "asset"
-        components.queryItems = uuid.map { [URLQueryItem(name: "uuid", value: $0)] }
-
-        guard let destination = components.url else { return }
-        UIApplication.shared.open(destination) { success in
-            guard !success, let library = URL(string: "photos-redirect://") else { return }
-            UIApplication.shared.open(library)
-        }
-    }
-
-    /// A mid-size decode shared by the scrub strip and its drag-preview overlay
-    /// (which is card-sized, so thumbnails are decoded larger than the strip
-    /// alone would need).
     private func loadThumbnail(for item: SavedMediaItem, completion: @escaping (UIImage?) -> Void) {
-        if let url = item.thumbnailURL {
-            DownsampledImageLoader.load(
-                path: url.path,
-                pointSize: CGSize(width: 300, height: 300),
-                scale: view.window?.screen.scale ?? UIScreen.main.scale,
-                isStale: { false }
-            ) { image in
-                completion(image)
-            }
-        } else if let identifier = item.photosLocalIdentifier {
-            Self.loadPhotosImage(
-                identifier: identifier,
-                targetSize: CGSize(width: 600, height: 600),
-                completion: completion)
-        } else {
-            completion(nil)
-        }
+        MediaCardFactory.loadThumbnail(for: item, scale: screenScale, completion: completion)
     }
 
-    private static func loadTemporaryThumbnail(
-        for media: DownloadedMedia, completion: @escaping (UIImage?) -> Void
-    ) {
-        if media.kind == .video {
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: media.fileURL))
-            generator.appliesPreferredTrackTransform = true
-            generator.generateCGImageAsynchronously(for: .zero) { image, _, _ in
-                completion(image.map(UIImage.init))
-            }
-        } else {
-            DispatchQueue.global(qos: .userInitiated).async {
-                completion(UIImage(contentsOfFile: media.fileURL.path))
-            }
-        }
-    }
-
-    private static func loadPhotosImage(
-        identifier: String,
-        targetSize: CGSize,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        Task { @MainActor in
-            guard await PhotoLibrarySaver().requestReadAuthorization(),
-                  let asset = PHAsset.fetchAssets(
-                    withLocalIdentifiers: [identifier], options: nil).firstObject
-            else {
-                completion(nil)
-                return
-            }
-            let options = PHImageRequestOptions()
-            options.deliveryMode = .highQualityFormat
-            options.resizeMode = .fast
-            options.isNetworkAccessAllowed = true
-            PHImageManager.default().requestImage(
-                for: asset,
-                targetSize: targetSize,
-                contentMode: .aspectFit,
-                options: options
-            ) { image, _ in
-                completion(image)
-            }
-        }
-    }
-
-    private static func loadPhotosVideoItem(
-        identifier: String,
-        completion: @escaping (AVPlayerItem?) -> Void
-    ) {
-        Task { @MainActor in
-            guard await PhotoLibrarySaver().requestReadAuthorization(),
-                  let asset = PHAsset.fetchAssets(
-                    withLocalIdentifiers: [identifier], options: nil).firstObject
-            else {
-                completion(nil)
-                return
-            }
-            let options = PHVideoRequestOptions()
-            options.deliveryMode = .automatic
-            options.isNetworkAccessAllowed = true
-            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) {
-                avAsset, _, _ in
-                completion(avAsset.map { AVPlayerItem(asset: $0) })
-            }
-        }
-    }
+    var screenScale: CGFloat { view.window?.screen.scale ?? UIScreen.main.scale }
 }
 
 // MARK: - Carousel delegate

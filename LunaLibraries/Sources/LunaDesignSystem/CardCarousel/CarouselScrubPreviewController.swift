@@ -99,60 +99,59 @@ final class CarouselScrubPreviewController {
         layout()
     }
 
+    /// Every preview carries the same three layers, whatever the strip style:
+    /// the card's thumbnail, its title, and — mounted over both when it exists
+    /// — the card's real content. Which one shows is decided per card by
+    /// `updateFill`, so a media save previews as its poster even in a mini-card
+    /// strip whose article neighbours preview as titles.
     private func makePreview(at index: Int) -> Preview {
         let card = carousel.makeScrubPreviewCard(at: index)
         let preview = Preview(card: card, index: index)
-        switch carousel.style.scrubberStyle {
-        case .thumbnails:
-            let imageView = UIImageView()
-            imageView.contentMode = .scaleAspectFit
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            card.contentContainer.addSubview(imageView)
-            pin(imageView, to: card.contentContainer)
-            preview.imageView = imageView
-        case .miniCards:
-            let label = UILabel()
-            label.font = .preferredFont(forTextStyle: .title2)
-            label.textColor = LunaColors.primaryText
-            label.textAlignment = .center
-            label.numberOfLines = 0
-            label.translatesAutoresizingMaskIntoConstraints = false
-            card.contentContainer.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(
-                    equalTo: card.contentContainer.leadingAnchor, constant: 24),
-                label.trailingAnchor.constraint(
-                    equalTo: card.contentContainer.trailingAnchor, constant: -24),
-                label.centerYAnchor.constraint(equalTo: card.contentContainer.centerYAnchor),
-            ])
-            preview.titleLabel = label
-        }
+
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.isHidden = true
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        card.contentContainer.addSubview(imageView)
+
+        let label = UILabel()
+        label.font = .preferredFont(forTextStyle: .title2)
+        label.textColor = LunaColors.primaryText
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        card.contentContainer.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: card.contentContainer.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: card.contentContainer.bottomAnchor),
+            imageView.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
+            label.leadingAnchor.constraint(
+                equalTo: card.contentContainer.leadingAnchor, constant: 24),
+            label.trailingAnchor.constraint(
+                equalTo: card.contentContainer.trailingAnchor, constant: -24),
+            label.centerYAnchor.constraint(equalTo: card.contentContainer.centerYAnchor),
+        ])
+        preview.imageView = imageView
+        preview.titleLabel = label
         cardArea.addSubview(card)
         return preview
-    }
-
-    private func pin(_ view: UIView, to container: UIView) {
-        NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: container.topAnchor),
-            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        ])
     }
 
     /// Fills a preview for the slot it now occupies. Peeks never play: only the
     /// center autoplays, and only where the host opted in.
     private func configure(_ preview: Preview, atSlotOffset offset: Int) {
         let isCenter = offset == 0
+        loadThumbnail(into: preview)
+        preview.titleLabel?.text = carousel.dataSource?.carousel(
+            carousel, titleForCardAt: preview.index)
         switch carousel.style.scrubberStyle {
         case .thumbnails:
-            loadThumbnail(into: preview)
             if isCenter, carousel.style.autoplaysScrubPreviewContent {
                 mountContent(into: preview, isCenter: true)
             }
         case .miniCards:
-            preview.titleLabel?.text = carousel.dataSource?.carousel(
-                carousel, titleForCardAt: preview.index)
             mountContent(into: preview, isCenter: isCenter)
         }
         if let content = preview.content {
@@ -167,9 +166,19 @@ final class CarouselScrubPreviewController {
                 content.setPlaying(false)
             }
         }
+        updateFill(preview)
         preview.card.setMuteButtonVisible(
             isCenter && carousel.showsMuteButton(for: preview.content))
         preview.card.updateMuteIcon(muted: carousel.isSoundMuted)
+    }
+
+    /// Mounted content owns the card outright; failing that a thumbnail beats a
+    /// title, and a title beats an empty card surface.
+    private func updateFill(_ preview: Preview) {
+        let hasContent = preview.content != nil
+        let hasImage = preview.imageView?.image != nil
+        preview.imageView?.isHidden = hasContent || !hasImage
+        preview.titleLabel?.isHidden = hasContent || hasImage
     }
 
     private func loadThumbnail(into preview: Preview) {
@@ -182,6 +191,7 @@ final class CarouselScrubPreviewController {
                       self.previews.values.contains(where: { $0 === preview })
                 else { return }
                 preview.imageView?.image = image
+                self.updateFill(preview)
             }
         }
     }
@@ -204,9 +214,7 @@ final class CarouselScrubPreviewController {
         content.setMuted(carousel.isSoundMuted)
         content.audioAvailabilityChanged = { [weak self] in self?.updateMuteButtons() }
         preview.content = content
-        // The mounted content owns the preview's complete visible presentation.
-        preview.titleLabel?.isHidden = true
-        preview.imageView?.isHidden = true
+        updateFill(preview)
     }
 
     private func unmountContent(from preview: Preview) {
@@ -217,8 +225,7 @@ final class CarouselScrubPreviewController {
         content.view.removeFromSuperview()
         content.removeFromParent()
         preview.content = nil
-        preview.titleLabel?.isHidden = false
-        preview.imageView?.isHidden = false
+        updateFill(preview)
     }
 
     private func discard(_ preview: Preview) {

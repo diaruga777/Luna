@@ -597,6 +597,7 @@
 				"KindWiring+Reader.swift",
 				MiniPlayer/AudioMiniPlayerView.swift,
 				MiniPlayer/MiniPlayerHostViewController.swift,
+				Reader/AllKindsCardProvider.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/NonArticleCardOpening.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
@@ -618,6 +619,7 @@
 			membershipExceptions = (
 				AudioPlaybackWiring.swift,
 				AudioScriptPipelineWiring.swift,
+				Downloader/MediaCardFactory.swift,
 				Downloader/SavedMediaCardsViewController.swift,
 				Info.plist,
 				"KindWiring+Downloader.swift",
@@ -627,6 +629,7 @@
 				Mail/Intents/MediaIntentHandoff.swift,
 				MiniPlayer/AudioMiniPlayerView.swift,
 				MiniPlayer/MiniPlayerHostViewController.swift,
+				Reader/AllKindsCardProvider.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/NonArticleCardOpening.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
@@ -681,6 +684,7 @@
 		AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Downloader/MediaCardFactory.swift,
 				Downloader/SavedMediaCardsViewController.swift,
 				Info.plist,
 				"KindWiring+Downloader.swift",
@@ -688,6 +692,7 @@
 				"KindWiring+PriceTracker.swift",
 				"Mail/Intents/CaptureIntentRuntime+LongRunning.swift",
 				Mail/Intents/MediaIntentHandoff.swift,
+				Reader/AllKindsCardProvider.swift,
 				Reader/NonArticleCardOpening.swift,
 				ReadingList/MediaListSupport.swift,
 				ReadingList/ProductListSupport.swift,

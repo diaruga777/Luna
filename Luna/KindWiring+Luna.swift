@@ -170,6 +170,11 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
+        // The all-kinds deck draws real media cards, so it needs the same
+        // cross-process bridge the Downloader has: a save or delete made by an
+        // extension is a different process, and only a Darwin notification
+        // brings its `.savedMediaChanged` post back here.
+        SavedMediaStore.startObservingCrossProcessChanges()
         // Sweep any downloaded-but-never-saved media preview files orphaned by a
         // previous run that was killed before its preview screen could clean up.
         // Also apply the saved-media retention policy. Safe at launch (no

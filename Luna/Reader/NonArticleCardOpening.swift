@@ -21,6 +21,9 @@ enum NonArticleCardOpening {
         ArticleCardsViewController.nonArticleOpener = { item, presenter in
             open(item, from: presenter)
         }
+        // …and the cards themselves: a downloaded media save renders here with
+        // the Downloader's own player, not as a link that has to be opened.
+        ArticleCardsViewController.cardProvider = AllKindsCardProvider()
     }
 
     private static func open(_ item: ReadingListItem, from presenter: UIViewController) {

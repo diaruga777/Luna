@@ -216,9 +216,6 @@ private enum CarouselAnimationTiming {
     /// `jump(to:)`'s crossfade between the current and target windows of
     /// mounted cards (Reduce Motion, scrub commits, multi-card jumps).
     static let crossfadeDuration: TimeInterval = 0.28
-    /// `promoteScrubPreview`'s chrome fade-in once a scrubbed preview becomes
-    /// the real centered slot.
-    static let chromeFadeDuration: TimeInterval = 0.22
 }
 
 public final class CardCarouselViewController: UIViewController {
@@ -269,6 +266,9 @@ public final class CardCarouselViewController: UIViewController {
     private var cardAreaTopConstraint: NSLayoutConstraint!
     private lazy var scrubber = CarouselScrubberView(style: style.scrubberStyle)
     private lazy var scrubPreview = CarouselScrubPreviewController(carousel: self, cardArea: cardArea)
+    /// True while the scrub strip's live preview is drawing the deck. The real
+    /// slots stay mounted (and keep their content alive) but hide underneath it.
+    private var isShowingScrubPreview = false
     /// Bumped on every reload so async thumbnail/badge completions from a
     /// superseded item set can't land on the wrong chip.
     private var stripLoadGeneration = 0
@@ -386,7 +386,7 @@ public final class CardCarouselViewController: UIViewController {
             tint: LunaSurfacePalette.atmosphereTint)
         guard !isTransitioning else { return }
         for slot in slots.values { applyRestingLayout(to: slot) }
-        scrubPreview.layout(centeredCardFrame: centeredCardFrame())
+        scrubPreview.layout()
         layoutPlaybackScrubProgress()
     }
 
@@ -421,7 +421,7 @@ public final class CardCarouselViewController: UIViewController {
             pendingReload = .pending(centerIndex: index ?? existingIndex)
             return
         }
-        scrubPreview.remove()
+        clearScrubPreview()
         setImmersed(false)
         count = dataSource?.numberOfCards(in: self) ?? 0
         let target = min(max(index ?? currentIndex, 0), max(0, count - 1))
@@ -603,22 +603,42 @@ public final class CardCarouselViewController: UIViewController {
     /// Wraps an already-created child content controller in normal card chrome.
     /// Scrub-preview promotion uses this to preserve the exact live player.
     private func mount(index: Int, existingContent content: CardContentViewController) -> Slot {
-        let dataSource = dataSource
+        let card = makeCardView(at: index)
+        card.installContentView(content.view)
+        content.setMuted(audioSession.isMuted)
+        content.audioAvailabilityChanged = { [weak self] in self?.updateMuteUI() }
+        cardArea.addSubview(card)
+        return Slot(index: index, card: card, content: content)
+    }
+
+    /// A bare card surface wearing card `index`'s chrome: the host's rim and
+    /// edge-fade style, this card's failure glow, its top-leading accessory,
+    /// and the shared mute toggle.
+    private func makeCardView(at index: Int) -> CarouselCardView {
         let card = CarouselCardView()
         card.setBorderEnabled(style.showsCardBorder)
         card.setContentEdgeFadeHeight(style.contentEdgeFadeHeight)
         card.setEdgeGlow(dataSource?.carousel(self, edgeGlowColorForCardAt: index))
-        card.installContentView(content.view)
-        content.setMuted(audioSession.isMuted)
-        content.audioAvailabilityChanged = { [weak self] in self?.updateMuteUI() }
         card.onMuteToggle = { [weak self] in
             guard let self else { return }
             self.setSoundMuted(!self.audioSession.isMuted)
         }
         card.setTopLeadingAccessory(dataSource?.carousel(
             self, topLeadingAccessoryForCardAt: index))
-        cardArea.addSubview(card)
-        return Slot(index: index, card: card, content: content)
+        return card
+    }
+
+    /// The scrub preview's cards are the real thing: same chrome, same
+    /// geometry, so nothing about the deck changes shape when the finger
+    /// touches the strip or lets go of it. The preview controller owns where
+    /// they are mounted.
+    func makeScrubPreviewCard(at index: Int) -> CarouselCardView {
+        makeCardView(at: index)
+    }
+
+    /// Whether the card showing `content` should offer the mute button.
+    func showsMuteButton(for content: CardContentViewController?) -> Bool {
+        !isMuteButtonOccluded && content?.supportsAudio == true
     }
 
     private func unmount(_ slot: Slot) {
@@ -630,26 +650,35 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     private func applyRestingLayout(to slot: Slot, atSlotOffset stagedOffset: Int? = nil) {
-        guard let metrics else { return }
+        guard metrics != nil else { return }
         if slot.index == currentIndex, isImmersed {
             applyImmersionLayout()
             return
         }
         let offset = stagedOffset ?? (slot.index - currentIndex)
-        slot.card.layer.cornerRadius = CarouselCardView.cornerRadius
-        slot.card.alpha = isImmersed ? 0 : 1
-        slot.card.borderAlpha = 1
-        slot.card.setSurfaceHidden(false)
-        slot.card.transform = .identity
-        slot.card.bounds = CGRect(origin: .zero, size: metrics.cardSize)
-        slot.card.center = CGPoint(
+        applyRestingLayout(to: slot.card, atSlotOffset: offset)
+        // A live scrub preview draws the whole deck itself; the real cards
+        // stand aside for it rather than showing the committed card's window.
+        slot.card.alpha = isImmersed || isShowingScrubPreview ? 0 : 1
+        updateMuteUI()
+    }
+
+    /// The resting geometry of the card `offset` slots from center — shared by
+    /// the mounted slots and the scrub preview's stand-in cards.
+    func applyRestingLayout(to card: CarouselCardView, atSlotOffset offset: Int) {
+        guard let metrics else { return }
+        card.layer.cornerRadius = CarouselCardView.cornerRadius
+        card.borderAlpha = 1
+        card.setSurfaceHidden(false)
+        card.transform = .identity
+        card.bounds = CGRect(origin: .zero, size: metrics.cardSize)
+        card.center = CGPoint(
             x: metrics.centerX(forSlotOffset: offset),
             y: metrics.centerY())
-        slot.card.transform = CGAffineTransform(
+        card.transform = CGAffineTransform(
             scaleX: metrics.scale(forSlotOffset: offset),
             y: metrics.scale(forSlotOffset: offset))
-        slot.card.dimAlpha = offset == 0 ? 0 : CarouselCardView.restingDimAlpha
-        updateMuteUI()
+        card.dimAlpha = offset == 0 ? 0 : CarouselCardView.restingDimAlpha
     }
 
     /// Removes any card view left in the hierarchy that no mounted slot owns —
@@ -657,6 +686,7 @@ public final class CardCarouselViewController: UIViewController {
     /// interleaving of reloads and transitions.
     private func removeOrphanCardViews() {
         let live = Set(slots.values.map { ObjectIdentifier($0.card) })
+            .union(scrubPreview.liveCardIdentifiers)
         for subview in cardArea.subviews
         where subview is CarouselCardView && !live.contains(ObjectIdentifier(subview)) {
             subview.removeFromSuperview()
@@ -918,7 +948,18 @@ public final class CardCarouselViewController: UIViewController {
         guard count > 0, !isTransitioning else { return }
         reportNavigationTarget(index)
         slots[currentIndex]?.content.setPlaying(false)
-        scrubPreview.show(at: index, cardCount: count, centeredCardFrame: centeredCardFrame())
+        isShowingScrubPreview = true
+        scrubPreview.show(at: index, cardCount: count)
+        // The preview owns the deck for the duration of the gesture.
+        for slot in slots.values { slot.card.alpha = 0 }
+    }
+
+    /// Tears the preview down and gives the real cards the deck back.
+    private func clearScrubPreview() {
+        scrubPreview.remove()
+        guard isShowingScrubPreview else { return }
+        isShowingScrubPreview = false
+        for slot in slots.values { applyRestingLayout(to: slot) }
     }
 
     private func commitScrub(to index: Int, isDirectTap: Bool = false) {
@@ -931,7 +972,7 @@ public final class CardCarouselViewController: UIViewController {
             promoteScrubPreview(content, to: target)
             return
         }
-        scrubPreview.remove()
+        clearScrubPreview()
         if target == currentIndex {
             if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
             scrubber.setSelectedIndex(currentIndex, animated: true)
@@ -966,9 +1007,10 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
-    /// Commits a scrubbed media preview with no player swap: the preview's
-    /// content controller becomes the real centered slot and keeps playing at
-    /// its current timestamp. Only mute/Photos chrome fades into view.
+    /// Commits a scrubbed preview with no content swap: the preview's content
+    /// controller becomes the real centered slot and keeps playing at its
+    /// current timestamp. The preview cards stay up until the real window is
+    /// mounted and laid out underneath them, so the handover is invisible.
     private func promoteScrubPreview(
         _ content: CardContentViewController,
         to target: Int
@@ -981,9 +1023,7 @@ public final class CardCarouselViewController: UIViewController {
         }
         currentIndex = target
 
-        let promoted = mount(index: target, existingContent: content)
-        promoted.card.chromeAlpha = 0
-        slots[target] = promoted
+        slots[target] = mount(index: target, existingContent: content)
 
         let keep = Set((target - 1)...(target + 1))
         for slot in Array(slots.values) where !keep.contains(slot.index) {
@@ -992,17 +1032,12 @@ public final class CardCarouselViewController: UIViewController {
         }
         mountWindow()
         applyMuteState()
+        isShowingScrubPreview = false
         for slot in slots.values { applyRestingLayout(to: slot) }
+        scrubPreview.remove()
         scrubber.setSelectedIndex(target, animated: true)
         if isViewVisible { content.cardDidBecomeCentered() }
         delegate?.carousel(self, didCenterCardAt: target)
-
-        UIView.animate(
-            withDuration: CarouselAnimationTiming.chromeFadeDuration, delay: 0,
-            options: [.curveEaseOut, .allowUserInteraction]
-        ) {
-            promoted.card.chromeAlpha = 1
-        }
     }
 
     private func loadAllThumbnails() {
@@ -1168,10 +1203,10 @@ public final class CardCarouselViewController: UIViewController {
     private func updateMuteUI() {
         for slot in slots.values {
             let isCenter = slot.index == currentIndex
-            slot.card.setMuteButtonVisible(
-                !isMuteButtonOccluded && isCenter && slot.content.supportsAudio)
+            slot.card.setMuteButtonVisible(isCenter && showsMuteButton(for: slot.content))
             slot.card.updateMuteIcon(muted: audioSession.isMuted)
         }
+        scrubPreview.updateMuteButtons()
     }
 }
 

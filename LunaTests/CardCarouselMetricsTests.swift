@@ -484,12 +484,11 @@ final class CarouselScrubPreviewRaceTests: XCTestCase {
         carousel.loadViewIfNeeded()
         let cardArea = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 560))
         let preview = CarouselScrubPreviewController(carousel: carousel, cardArea: cardArea)
-        let frame = CGRect(x: 10, y: 10, width: 300, height: 520)
         let oldImage = UIImage(systemName: "1.circle")
         let currentImage = UIImage(systemName: "2.circle")
 
-        preview.show(at: 0, cardCount: 2, centeredCardFrame: frame)
-        preview.show(at: 1, cardCount: 2, centeredCardFrame: frame)
+        preview.show(at: 0, cardCount: 2)
+        preview.show(at: 1, cardCount: 2)
         source.complete(index: 1, with: currentImage)
         source.complete(index: 0, with: oldImage)
 

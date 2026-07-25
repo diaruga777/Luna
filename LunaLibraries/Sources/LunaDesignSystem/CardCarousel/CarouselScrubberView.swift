@@ -57,13 +57,6 @@ public final class CarouselScrubberView: UIView {
         case thumbnails
         /// Miniature article cards: a source badge over skeleton text lines.
         case miniCards
-
-        var animateScrubTransitions: Bool {
-            switch self {
-            case .thumbnails: return false
-            case .miniCards: return true
-            }
-        }
     }
 
     public weak var delegate: CarouselScrubberViewDelegate?

@@ -981,34 +981,38 @@ public final class CardCarouselViewController: UIViewController {
         guard count > 0, !isTransitioning else { return }
         let target = min(max(index, 0), count - 1)
         reportNavigationTarget(target)
-        if !isDirectTap,
-           scrubPreview.previewContentIndex == target,
-           let content = scrubPreview.takeContent() {
-            promoteScrubPreview(content, to: target)
+        guard isDirectTap else {
+            settleScrub(to: target)
             return
         }
         clearScrubPreview()
         if target == currentIndex {
             if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
             scrubber.setSelectedIndex(currentIndex, animated: true)
-        } else if isDirectTap {
-            pageScrubberTap(to: target)
-        } else if style.scrubberStyle.animateScrubTransitions {
-            pageMiniCardScrubber(to: target)
         } else {
-            jump(to: target)
+            pageScrubberTap(to: target)
         }
     }
 
-    /// Mini-card chips can expose a target outside the carousel's mounted ±1
-    /// window. Stage that exact card and eclipse to it instead of revealing an
-    /// immediate crossfade/layout pass.
-    private func pageMiniCardScrubber(to target: Int) {
-        if !UIAccessibility.isReduceMotionEnabled, view.window != nil {
-            runEclipse(to: target)
-        } else {
-            jump(to: target)
+    /// Releasing the strip is not a page turn: the settled card is ALREADY on
+    /// screen as the live preview, so the commit hands the deck back
+    /// underneath it and lifts the preview off. Never the eclipse — that
+    /// belongs to the gestures that do travel between cards (a card swipe, a
+    /// direct chip tap). This holds for every card, whether or not the preview
+    /// managed to mount its real content: a media save, whose player the strip
+    /// deliberately does not build per chip, previewed as its poster and must
+    /// still settle as quietly as an article does.
+    private func settleScrub(to target: Int) {
+        guard target != currentIndex else {
+            clearScrubPreview()
+            if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
+            scrubber.setSelectedIndex(currentIndex, animated: true)
+            return
         }
+        let live = scrubPreview.previewContentIndex == target
+            ? scrubPreview.takeContent()
+            : nil
+        promoteScrubPreview(live, to: target)
     }
 
     /// A direct chip tap always pages through the eclipse, on both the Reader's
@@ -1022,23 +1026,30 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
-    /// Commits a scrubbed preview with no content swap: the preview's content
-    /// controller becomes the real centered slot and keeps playing at its
-    /// current timestamp. The preview cards stay up until the real window is
-    /// mounted and laid out underneath them, so the handover is invisible.
+    /// Commits a scrubbed preview with no content swap: the preview's live
+    /// content controller becomes the real centered slot and keeps playing at
+    /// its current timestamp. Passing nil — the preview never built this card's
+    /// content — mounts it fresh instead; either way the preview cards stay up
+    /// until the real window is mounted and laid out underneath them, so the
+    /// handover is invisible and needs no transition to cover it.
     private func promoteScrubPreview(
-        _ content: CardContentViewController,
+        _ content: CardContentViewController?,
         to target: Int
     ) {
         slots[currentIndex]?.content.cardDidLeaveCenter()
 
-        if let replaced = slots[target] {
+        // Only a live controller displaces an already-mounted target slot; a
+        // fresh settle keeps whatever real card is standing there behind the
+        // preview and lets `mountWindow` fill in what's missing.
+        if content != nil, let replaced = slots[target] {
             unmount(replaced)
             slots[target] = nil
         }
         currentIndex = target
 
-        slots[target] = mount(index: target, existingContent: content)
+        if let content {
+            slots[target] = mount(index: target, existingContent: content)
+        }
 
         let keep = Set((target - 1)...(target + 1))
         for slot in Array(slots.values) where !keep.contains(slot.index) {
@@ -1051,7 +1062,7 @@ public final class CardCarouselViewController: UIViewController {
         for slot in slots.values { applyRestingLayout(to: slot) }
         scrubPreview.remove()
         scrubber.setSelectedIndex(target, animated: true)
-        if isViewVisible { content.cardDidBecomeCentered() }
+        if isViewVisible { slots[target]?.content.cardDidBecomeCentered() }
         delegate?.carousel(self, didCenterCardAt: target)
     }
 

@@ -375,6 +375,46 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         XCTAssertLessThanOrEqual(source.previewRequestCounts[target] ?? 0, 2)
     }
 
+    /// Releasing a mini-card scrub must settle in place even when the preview
+    /// never mounted the card's real content — a media save, whose player the
+    /// strip deliberately doesn't build per chip, previewed as its poster. It
+    /// used to fall through to the eclipse, so letting go of a video chip in
+    /// the all-kinds deck played a page transition to a card already on screen.
+    func testScrubSettleOnAPosterOnlyCardHandsOverWithoutTheEclipse() throws {
+        let source = PosterOnlyScrubDataSource()
+        let carousel = CardCarouselViewController()
+        var style = CardCarouselStyle()
+        style.scrubberStyle = .miniCards
+        carousel.style = style
+        carousel.dataSource = source
+
+        // On-window, so the eclipse is available to be wrongly chosen.
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = carousel
+        window.isHidden = false
+        window.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 3)
+        carousel.beginAppearanceTransition(true, animated: false)
+        carousel.endAppearanceTransition()
+
+        let mounted = try XCTUnwrap(carousel.contentController(at: 4))
+        let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        scrubber.delegate?.scrubber(scrubber, didPreview: 4)
+        scrubber.delegate?.scrubber(scrubber, didCommit: 4)
+
+        XCTAssertEqual(
+            carousel.currentIndex, 4,
+            "The release settles at once; an eclipse would still be mid-flight")
+        XCTAssertTrue(
+            carousel.view.isUserInteractionEnabled,
+            "No transition runs on release, so input is never blocked")
+        XCTAssertTrue(
+            carousel.contentController(at: 4) === mounted,
+            "The card already standing behind the preview is the one handed over")
+        XCTAssertNotNil(carousel.contentController(at: 5), "The window follows the settle")
+        window.isHidden = true
+    }
+
     private func firstScrubber(in view: UIView) -> CarouselScrubberView? {
         if let scrubber = view as? CarouselScrubberView { return scrubber }
         return view.subviews.lazy.compactMap { self.firstScrubber(in: $0) }.first
@@ -410,6 +450,34 @@ private final class VisibleWindowScrubDataSource: @preconcurrency CardCarouselDa
         previewControllers[index] = content
         return content
     }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadThumbnailForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) { completion(nil) }
+}
+
+/// A deck whose cards have no preview content to prepare — the shape the
+/// all-kinds deck takes for a media save (`allowsPreparedPreviewContent`
+/// false), which previews as a poster and has nothing to promote on release.
+@MainActor
+private final class PosterOnlyScrubDataSource: @preconcurrency CardCarouselDataSource {
+    let cardCount = 7
+
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { cardCount }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contentControllerForCardAt index: Int
+    ) -> CardContentViewController {
+        CenteringSpyCardContentViewController()
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController? { nil }
 
     func carousel(
         _ carousel: CardCarouselViewController,

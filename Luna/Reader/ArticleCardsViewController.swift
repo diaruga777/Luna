@@ -1366,6 +1366,25 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         layoutCardScrollIndicator(animated: true)
     }
 
+    /// A mode switch under a dismissed chrome swaps the reader's content without
+    /// touching the immersion state, so the card would keep whichever extension
+    /// the PREVIOUS mode asked for — RSVP inheriting the scroll reader's
+    /// bottom-extended card lays its fixed column out over the mode switcher.
+    /// Re-apply the extension for the mode that is now live.
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController, didChangeCardExtension extendsCard: Bool
+    ) {
+        guard card.isCentered, carousel.isImmersed else { return }
+        carousel.setImmersed(true, extendsCard: extendsCard, animated: true)
+        UIView.animate(
+            withDuration: 0.32, delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction]
+        ) {
+            self.footerContentFade.alpha = extendsCard ? 1 : 0
+        }
+        layoutCardScrollIndicator(animated: true)
+    }
+
     fileprivate func readerCard(
         _ card: ReaderCardContentViewController, didBecomeReady reader: RabbitHoleReaderViewController
     ) {
@@ -1409,6 +1428,12 @@ private protocol ReaderCardContentDelegate: AnyObject {
     /// fades.
     func readerCard(
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool)
+    /// The card's live content changed what an immersed layout should do with
+    /// the room the faded strip frees — a scroll→RSVP switch trades a scrolling
+    /// surface for a fixed one. Applied only while ALREADY immersed; it never
+    /// changes the immersion state itself.
+    func readerCard(
+        _ card: ReaderCardContentViewController, didChangeCardExtension extendsCard: Bool)
     func readerCard(
         _ card: ReaderCardContentViewController, didBecomeReady reader: RabbitHoleReaderViewController)
     func readerCard(
@@ -1672,6 +1697,12 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // title synchronously as well; the async pass remains a backstop for a
         // late-loading web/article child.
         synchronizeScrollableTitleHeader()
+        // The new mode may want a different immersed card: a scrolling surface
+        // extends into the freed strip room, RSVP's fixed column must not.
+        if isCentered {
+            delegate?.readerCard(
+                self, didChangeCardExtension: rabbitHoleReader?.focusedContentScrollView != nil)
+        }
         DispatchQueue.main.async {
             if let root = self.reader { self.immersionTracker.observe(root) }
             self.synchronizeScrollableTitleHeader()

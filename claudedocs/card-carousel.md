@@ -103,15 +103,31 @@ own adapters later). The Downloader-specific adapters live in
   alpha-fade out near the strip's ends
   (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
   .edgeFadeWidth`: a non-scrolling transparent gradient mask, with no drawn veil).
+- **The scrub preview is the whole deck, in real card chrome**
+  (`CarouselScrubPreviewController`). It draws THREE cards — the previewed one
+  and both peeks — as genuine `CarouselCardView`s built by the same
+  `makeCardView(at:)` the mounted slots use and rested at the same geometry via
+  the shared `applyRestingLayout(to:atSlotOffset:)`, so the glass rim, the mute
+  button, and the Photos badge stay put and the peeks track the finger instead
+  of freezing on the committed card's neighbors. The real slots stay mounted
+  (their content stays alive) but hide underneath for the gesture. Each preview
+  shows, in order of preference: its mounted real content, its thumbnail, its
+  title. Previews are recycled by CARD, not by position — advancing one chip
+  slides the center out to a peek with its content and thumbnail intact.
+  Peeks only mount content that is ALREADY prepared for the strip's visible
+  window (sweeping the finger must never spin up a player or a reader per chip)
+  and never play.
   The Downloader opts into `autoplaysScrubPreviewContent`: as each thumbnail
-  reaches the strip's center, the large overlay mounts that card's real content
+  reaches the strip's center, the center preview mounts that card's real content
   immediately and autoplays it using the carousel's current mute state
   (including looping videos and GIFs). Moving
   to another thumbnail stops and replaces that temporary preview player. On
   release, the selected preview controller is promoted into the centered card
-  without replacing its player or timestamp, so playback continues smoothly;
-  only the centered card's mute and optional Photos controls fade in. The
-  Photos control opens that Photos-backed asset in the Photos app.
+  without replacing its player or timestamp, so playback continues smoothly —
+  and the preview cards stay up until the real window is mounted and laid out
+  beneath them, so nothing blinks (there is no chrome fade-in any more: the
+  chrome was never missing). The Photos control opens that Photos-backed asset
+  in the Photos app.
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing
@@ -368,3 +384,43 @@ Differences from the Downloader, via `CardCarouselStyle`:
   the right article. The fullscreen push survives only as the fallback for an item
   with no card here — an archived item, which is also how the archive tray's own
   `tap` opens. `LunaTests/ArticleCardsExternalOpenTests` (3).
+
+## The central app's all-kinds deck
+
+The same `ArticleCardsViewController` is the central Luna app's root, where
+`AppSurfaceConfig.current == .all` turns on `includesAllKinds`: one deck over
+every app's saves, **most recent first**. It deliberately drops the Reader's
+read-vs-unread grouping — "read" is an article-only notion, and it would file a
+just-watched video behind everything else.
+
+A Downloader save is rendered here by the **Downloader's own card**, not as a
+link: the looping player, the animated GIF, the full-resolution image, or the
+in-card download progress bar, plus its Photos badge, its platform logo in the
+scrub strip, and Share / Save to Photos in its long-press menu. Deleting the
+card deletes the whole save — the downloaded file and its Photos asset with it.
+Its tap belongs to the card content (play/pause, the download button); the
+native-app → embed → in-app-browser ladder (`nonArticleOpener`) is left to the
+link-style card that stands in when nothing has been downloaded yet, and to
+price trackers, which still open the price editor.
+
+`ArticleCardsViewController` is shared with **Luna Reader**, which links no
+media module and so cannot name any of that. The deck therefore talks to an
+`AllKindsCardProviding` seam (card content, top-leading accessory, source
+badge, thumbnail, menu actions, companion-storage delete, per-item fingerprint,
+change-notification names); only the central app compiles an implementation
+(`AllKindsCardProvider`, installed beside `nonArticleOpener` by
+`NonArticleCardOpening.install()`). The card construction itself lives in
+`MediaCardFactory` (compiled into Luna + LunaDownloader), which the Downloader's
+own deck uses too.
+
+Two consequences worth knowing:
+
+- The deck reloads on `.savedMediaChanged` (and `KindWiring+Luna.appDidLaunch`
+  starts `SavedMediaStore.startObservingCrossProcessChanges()`), so a download
+  that finishes in the background — or in an extension's process — turns a
+  placeholder card into a player. The reload fingerprint includes the provider's
+  per-item storage-state key, so that change actually re-renders.
+- Media cards decline PREPARED scrub previews
+  (`allowsPreparedPreviewContent`): the mini-card strip prepares content for its
+  whole visible chip window, which would be an AVPlayer per chip. They preview
+  as their poster thumbnail instead and build the real player on commit.

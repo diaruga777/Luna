@@ -301,7 +301,7 @@
                 // else (`content-not-granted`, its preview) is the gate. Dropping the
                 // gate and the attribute that hides the content reveals the body the
                 // page already contains. Mirrors Swift's `AMPQueryBypass
-                // .unhidingAMPGate` (the silent tier) and upstream's
+                // .extractableHTML` (the silent tier) and upstream's
                 // `amp_unhide_subscr_section`.
                 document.querySelectorAll("[subscriptions-section]").forEach(function (el) {
                     var role = (el.getAttribute("subscriptions-section") || "").toLowerCase();

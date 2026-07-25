@@ -81,25 +81,31 @@ public enum AMPQueryBypass {
         return components.url
     }
 
-    /// The same AMP document with its subscriber GATE removed: every
-    /// `[subscriptions-section="content-not-granted"]` node (the "Already a
-    /// subscriber? Log in / Get the full story" panel) is dropped, and the
-    /// `subscriptions-section` attribute is stripped from the content blocks.
+    /// The AMP document rewritten into something the ordinary extractor can read:
     ///
-    /// This is not cosmetic. AMP ships both the article and the pitch in the same
-    /// document and lets `amp-subscriptions` choose between them at runtime, so a
-    /// silent fetch sees BOTH — and the pitch carries gate wording
-    /// (`PaywallDetector.gateMarkers` matches "already a subscriber? log in" at any
-    /// body length), which would make the extractor reject a document that holds the
-    /// complete story. Removing the machine-labeled gate is what lets the real
-    /// paywall judgment run on the real body. The browser tier does exactly the same
-    /// thing in JS (`site_cleanup_scripts.json`, upstream's
-    /// `amp_unhide_subscr_section`).
+    /// 1. **The subscriber gate goes.** Every `[subscriptions-section]` node that isn't
+    ///    the `content` role — the "Already a subscriber? Log in / Get the full story"
+    ///    panel — is removed, and the attribute is stripped from the content blocks.
+    ///    This is not cosmetic: AMP ships the article and the pitch in the SAME
+    ///    document and lets `amp-subscriptions` choose between them at runtime, so a
+    ///    silent fetch sees both — and the pitch carries gate wording
+    ///    (`PaywallDetector.gateMarkers` matches "already a subscriber? log in" at ANY
+    ///    body length), which would make the extractor reject a document that holds
+    ///    the complete story. Removing the machine-labeled gate is what lets the real
+    ///    paywall judgment run on the real body.
+    /// 2. **`<amp-img>` becomes `<img>`.** AMP has no plain images, and the extractor
+    ///    only knows `img` — so without this the article arrives as text with every
+    ///    photo and chart silently dropped. `src`/`srcset`/`alt`/`width`/`height` are
+    ///    already the standard attributes, so the tag rename is the whole conversion.
+    ///
+    /// The browser tier does the same two jobs in JS (`site_cleanup_scripts.json` /
+    /// the Safari extension's `revealArticle`; upstream's
+    /// `amp_unhide_subscr_section`), where AMP's own runtime handles the images.
     ///
     /// Pure. Returns `html` unchanged when it can't be parsed or carries no AMP
-    /// subscription markup.
-    public static func unhidingAMPGate(in html: String) -> String {
-        guard html.contains("subscriptions-section"),
+    /// markup at all.
+    public static func extractableHTML(from html: String) -> String {
+        guard html.contains("subscriptions-section") || html.contains("<amp-img"),
               let document = try? SwiftSoup.parse(html)
         else { return html }
         do {
@@ -112,6 +118,9 @@ public enum AMPQueryBypass {
                     // pitch), `content-not-granted-preview`, and any future variant.
                     try gate.remove()
                 }
+            }
+            for image in try document.select("amp-img").array() {
+                _ = try image.tagName("img")
             }
             return try document.html()
         } catch {

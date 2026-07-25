@@ -393,7 +393,7 @@ the complete article. `.ampQuery` (silent) therefore LEADS the plan on those hos
 one request, no browser, no CAPTCHA. Verified live on the reported article (direct read
 = the pitch; `?amp` = ~4.4k characters of body).
 
-`AMPQueryBypass.unhidingAMPGate` is **load-bearing, not cosmetic**: AMP ships the pitch
+`AMPQueryBypass.extractableHTML` is **load-bearing, not cosmetic**: AMP ships the pitch
 in the same document as the story, and its "Already a subscriber? Log in" copy is a
 `PaywallDetector.gateMarkers` phrase — which fires at ANY body length — so without
 stripping the machine-labeled gate (`[subscriptions-section]` ≠ `content` removed, the

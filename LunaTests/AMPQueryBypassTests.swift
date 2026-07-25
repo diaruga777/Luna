@@ -90,8 +90,8 @@ final class AMPQueryBypassTests: XCTestCase {
     /// after load — so the bytes a URLSession gets ARE the article. It also declares
     /// `isAccessibleForFree:"False"`, which must not veto a body this long.
     func testAMPCaptureExtractsAsAReadableArticle() throws {
-        let html = AMPQueryBypass.unhidingAMPGate(
-            in: BypassFixtures.html("Readable/theaustralian-amp.html"))
+        let html = AMPQueryBypass.extractableHTML(
+            from: BypassFixtures.html("Readable/theaustralian-amp.html"))
         let content = try ArticleExtraction().extract(html: html, baseURL: url(article + "?amp"))
         XCTAssertGreaterThan(content.bodyTextLength, 2500)
         XCTAssertTrue(ArticleExtraction.isReadableArticle(content, html: html))
@@ -107,7 +107,7 @@ final class AMPQueryBypassTests: XCTestCase {
         XCTAssertTrue(raw.contains("content-not-granted"))
         XCTAssertTrue(raw.lowercased().contains("already a subscriber?"))
 
-        let stripped = AMPQueryBypass.unhidingAMPGate(in: raw)
+        let stripped = AMPQueryBypass.extractableHTML(from: raw)
         XCTAssertFalse(stripped.contains("content-not-granted"))
         XCTAssertFalse(stripped.lowercased().contains("already a subscriber?"))
         XCTAssertFalse(stripped.contains("Get the full story"))
@@ -119,7 +119,21 @@ final class AMPQueryBypassTests: XCTestCase {
     /// The transform is a no-op on markup that carries no AMP subscription furniture.
     func testAMPGateStripLeavesOrdinaryHTMLAlone() {
         let html = "<html><body><p>Ordinary page.</p></body></html>"
-        XCTAssertEqual(AMPQueryBypass.unhidingAMPGate(in: html), html)
+        XCTAssertEqual(AMPQueryBypass.extractableHTML(from: html), html)
+    }
+
+    /// AMP has no plain images, and the extractor only knows `img` — so an unrewritten
+    /// AMP document arrives as text with every photo and chart dropped.
+    func testAMPImagesBecomeExtractableImages() throws {
+        let html = AMPQueryBypass.extractableHTML(
+            from: BypassFixtures.html("Readable/theaustralian-amp.html"))
+        XCTAssertFalse(html.contains("<amp-img"))
+        let content = try ArticleExtraction().extract(html: html, baseURL: url(article + "?amp"))
+        let images = content.blocks.filter { $0.kind == .image }
+        XCTAssertFalse(images.isEmpty, "the AMP body's images must survive the rewrite")
+        XCTAssertTrue(
+            images.contains { ($0.imageURLString ?? "").contains("content.api.news") },
+            "expected the publisher's own image URLs, got \(images.map { $0.imageURLString ?? "-" })")
     }
 
     /// And the reason the redirect must be caught at the fetch layer: the subscribe

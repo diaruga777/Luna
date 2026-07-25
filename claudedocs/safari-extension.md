@@ -351,7 +351,7 @@ Paywall unlock + toast:
   such a document ships the story AND the pitch and lets the runtime pick after load,
   so `[subscriptions-section="content"]` has the attribute removed in place while the
   gate nodes (any other `subscriptions-section` value, `[amp-access-hide]`) are
-  removed. Mirrors `AMPQueryBypass.unhidingAMPGate` (Swift, silent tier) and upstream's
+  removed. Mirrors `AMPQueryBypass.extractableHTML` (Swift, silent tier) and upstream's
   `amp_unhide_subscr_section`; removing a real gate counts as an unlock for the toast.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),

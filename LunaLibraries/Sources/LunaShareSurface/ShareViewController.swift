@@ -21,10 +21,6 @@ import UniformTypeIdentifiers
 /// (the extension has no crypto/CloudKit access).
 open class ShareViewController: UIViewController {
 
-    /// Document file types accepted from the share sheet. `.text` (public.text)
-    /// covers .txt, .md/.markdown, and most source/plain formats.
-    private static let documentTypes: [UTType] = [.pdf, .rtf, .plainText, .text]
-
     /// True when hosted by the "Read in Luna" action extension
     /// (`com.apple.ui-services`) rather than the zero-UI share extension
     /// (`com.apple.share-services`). The action extension always opens the
@@ -76,10 +72,17 @@ open class ShareViewController: UIViewController {
             failOrComplete("Nothing to read was shared.")
             return
         }
+        // The route is decided from what the providers ADVERTISE, by the pure
+        // `ShareAttachmentRouter` (unit-tested; the real share sheet has no test
+        // seam). Logged next to the types so a misrouted share is diagnosable
+        // from the shared log alone.
+        let route = ShareAttachmentRouter.route(
+            providerTypes: providers.map { $0.registeredTypeIdentifiers })
         let types = providers.map { $0.registeredTypeIdentifiers.joined(separator: "|") }
             .joined(separator: ", ")
         SharedDiagnosticLog.record(
-            "\(host) extension: \(providers.count) attachment(s) types=[\(types)]", category: "share")
+            "\(host) extension: \(providers.count) attachment(s) types=[\(types)] "
+                + "route=\(route.diagnosticLabel)", category: "share")
 
         // Every path below loads an attachment asynchronously; guard against a
         // provider whose callback never fires.
@@ -98,44 +101,18 @@ open class ShareViewController: UIViewController {
             return
         }
 
-        // A genuine web link conforms to public.url but NOT to a document type.
-        // A shared file (e.g. a PDF) ALSO conforms to public.url (as a file-url),
-        // so it must be matched as a document first — otherwise the URL branch
-        // grabs it, sees a non-http file:// URL, and silently drops it.
-        func isDocument(_ provider: NSItemProvider) -> Bool {
-            Self.documentTypes.contains { provider.hasItemConformingToTypeIdentifier($0.identifier) }
+        switch route {
+        case let .webURL(index):
+            handleURL(providers[index])
+        case let .document(index, type):
+            handleDocument(providers[index], type: type)
+        case let .text(index):
+            // Some apps share the link as TEXT, not a URL — pull the first link
+            // out of it.
+            handleText(providers[index])
+        case .unsupported:
+            failOrComplete("This type of content can't be read in Luna.")
         }
-
-        if let webProvider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) && !isDocument($0)
-        }) {
-            handleURL(webProvider)
-            return
-        }
-        for provider in providers {
-            if let type = Self.documentTypes.first(where: {
-                provider.hasItemConformingToTypeIdentifier($0.identifier)
-            }) {
-                handleDocument(provider, type: type)
-                return
-            }
-        }
-        // Fallback: a plain URL we didn't classify as a web link above.
-        if let urlProvider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
-        }) {
-            handleURL(urlProvider)
-            return
-        }
-        // Some apps share the link as TEXT, not a URL —
-        // pull the first link out of it.
-        if let textProvider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(UTType.text.identifier)
-        }) {
-            handleText(textProvider)
-            return
-        }
-        failOrComplete("This type of content can't be read in Luna.")
     }
 
     // MARK: - Status / error UI (action extension)

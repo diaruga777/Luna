@@ -151,7 +151,7 @@ public final class HorizonScrollIndicator: UIView {
         layer.addSublayer(coreLayer)
 
         updateColors()
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+        registerForTraitChanges([LunaSkyTrait.self]) {
             (self: Self, _: UITraitCollection) in self.updateColors()
         }
     }

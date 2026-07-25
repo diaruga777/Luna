@@ -53,6 +53,9 @@ open class ShareViewController: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
+        // Extensions render in the host's window, so they pin their own root:
+        // dark UIKit materials, with the user's chosen sky on top.
+        AppearanceSettings.apply(to: self)
         // Build the loading UI FIRST, before any processing, so the action
         // extension always shows *something* and stays on screen — and so any
         // failure can surface as visible error text instead of a silent death.

@@ -1800,7 +1800,7 @@ private final class ReaderFooterContentFadeView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         updateColors()
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+        registerForTraitChanges([LunaSkyTrait.self]) {
             (view: ReaderFooterContentFadeView, _: UITraitCollection) in view.updateColors()
         }
     }

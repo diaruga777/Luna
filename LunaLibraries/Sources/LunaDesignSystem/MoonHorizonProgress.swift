@@ -19,14 +19,14 @@ public enum MoonHorizonStyle {
     public static let sunlight = LunaSurfacePalette.progressAccent
     /// The white-hot center of the sun point itself.
     public static let sunCore = UIColor { traits in
-        traits.userInterfaceStyle == .dark
+        traits.lunaSky == .night
             ? UIColor.white
             : UIColor(red: 1.00, green: 0.97, blue: 0.92, alpha: 1)
     }
 
     /// The unlit horizon ahead of the sun — barely-there in either appearance.
     public static func darkHorizon(for traits: UITraitCollection) -> UIColor {
-        let alpha: CGFloat = traits.userInterfaceStyle == .dark ? 0.30 : 0.28
+        let alpha: CGFloat = traits.lunaSky == .night ? 0.30 : 0.28
         return LunaColors.primaryText.resolvedColor(with: traits).withAlphaComponent(alpha)
     }
 
@@ -247,7 +247,7 @@ public final class MoonHorizonProgressBar: UIView {
         layer.addSublayer(flareLayer)
 
         updateAppearanceColors()
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+        registerForTraitChanges([LunaSkyTrait.self]) {
             (self: Self, _: UITraitCollection) in
             self.updateAppearanceColors()
         }

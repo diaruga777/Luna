@@ -64,7 +64,7 @@ public final class StarfieldView: UIView {
         backgroundColor = .clear
         isUserInteractionEnabled = false
         contentMode = .redraw
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+        registerForTraitChanges([LunaSkyTrait.self]) {
             (view: StarfieldView, _) in view.setNeedsDisplay()
         }
     }

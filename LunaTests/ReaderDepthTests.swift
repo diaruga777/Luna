@@ -10,8 +10,10 @@ import XCTest
 
 final class ReaderDepthTests: XCTestCase {
 
-    private let dark = UITraitCollection(userInterfaceStyle: .dark)
-    private let light = UITraitCollection(userInterfaceStyle: .light)
+    // The palette keys off `LunaSkyTrait`, not `userInterfaceStyle` — the style
+    // itself is pinned to `.dark` app-wide. See `LunaSky`.
+    private let dark = UITraitCollection { $0.lunaSky = .night }
+    private let light = UITraitCollection { $0.lunaSky = .predawn }
 
     private func white(_ color: UIColor, _ traits: UITraitCollection) -> CGFloat {
         var w: CGFloat = -1, a: CGFloat = 0

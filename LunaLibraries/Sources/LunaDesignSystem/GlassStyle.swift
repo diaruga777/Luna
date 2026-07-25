@@ -81,7 +81,7 @@ public enum GlassStyle {
     /// hairline borders on card edges sitting over the screen background.
     public static var glassBorderColor: UIColor {
         UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: 1.0, alpha: 0.14)
                 : UIColor(white: 1.0, alpha: 0.12)
         }
@@ -109,7 +109,7 @@ public enum GlassStyle {
     /// in light and dark mode.
     public static var solidBarColor: UIColor {
         UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: 0.16, alpha: 0.94)
                 : LunaSurfacePalette.predawnSurface(level: 0.195)
                     .withAlphaComponent(0.94)
@@ -136,7 +136,7 @@ public enum GlassStyle {
     /// read like the glass button material over the solid reader backgrounds.
     private static var solidButtonFill: UIColor {
         UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: 1.0, alpha: 0.16)
                 : UIColor(white: 1.0, alpha: 0.14)
         }

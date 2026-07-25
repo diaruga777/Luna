@@ -37,7 +37,7 @@ public enum CarouselSourceBadge: Equatable {
         }
         let hue = CGFloat(hash % 360) / 360
         return UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(hue: hue, saturation: 0.48, brightness: 0.72, alpha: 1)
                 : UIColor(hue: hue, saturation: 0.42, brightness: 0.78, alpha: 1)
         }

@@ -31,7 +31,10 @@ final class ClipDownloadViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Luna"
-        view.backgroundColor = .systemBackground
+        // Same appearance the host app pins: the clip pushes LunaReaderUI /
+        // LunaMediaDownload screens that are light-on-dark in both appearances.
+        AppearanceSettings.apply(to: self)
+        view.backgroundColor = LunaColors.background
         configureLayout()
         render()
     }
@@ -86,7 +89,7 @@ final class ClipDownloadViewController: UIViewController {
 
         detailLabel.font = .preferredFont(forTextStyle: .body)
         detailLabel.adjustsFontForContentSizeCategory = true
-        detailLabel.textColor = .secondaryLabel
+        detailLabel.textColor = LunaColors.secondaryText
         detailLabel.numberOfLines = 0
 
         var actionConfiguration = UIButton.Configuration.filled()

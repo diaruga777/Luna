@@ -79,7 +79,7 @@ public class CardSurfaceView: UIView {
         layer.addSublayer(glowLayer)
 
         applyBorderColor()
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+        registerForTraitChanges([LunaSkyTrait.self]) {
             (card: CardSurfaceView, _: UITraitCollection) in
             card.applyBorderColor()
         }

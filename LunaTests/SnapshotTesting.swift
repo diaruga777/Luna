@@ -13,6 +13,7 @@
 //  so a new snapshot test records its baseline, which you then commit.
 //
 
+import LunaDesignSystem
 import UIKit
 import XCTest
 
@@ -73,10 +74,12 @@ enum SnapshotTesting {
     // MARK: - Rendering
 
     /// Hosts `viewController` in a key window at a fixed size, runs a layout pass,
-    /// and rasterizes it. Uses a 1x scale + light interface style for determinism.
+    /// and rasterizes it. Uses a 1x scale for determinism, and pins the same
+    /// appearance the app does: `userInterfaceStyle` dark so UIKit's materials
+    /// render dark, with the predawn sky on top. See `LunaSky`.
     static func render(_ viewController: UIViewController, size: CGSize) -> UIImage {
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        window.overrideUserInterfaceStyle = .light
+        pinAppearance(of: window)
         window.rootViewController = viewController
         window.makeKeyAndVisible()
         viewController.view.frame = window.bounds
@@ -93,7 +96,7 @@ enum SnapshotTesting {
 
     static func render(_ view: UIView, size: CGSize) -> UIImage {
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        window.overrideUserInterfaceStyle = .light
+        pinAppearance(of: window)
         window.addSubview(view)
         window.makeKeyAndVisible()
         view.layoutIfNeeded()
@@ -102,6 +105,15 @@ enum SnapshotTesting {
         window.isHidden = true
         view.removeFromSuperview()
         return image
+    }
+
+    /// The app's real appearance, minus anything that could vary per device:
+    /// dark UIKit materials under the predawn sky, over the app's own background
+    /// so chrome is snapshotted against the sky it actually sits on.
+    private static func pinAppearance(of window: UIWindow) {
+        window.overrideUserInterfaceStyle = .dark
+        window.traitOverrides.lunaSky = .predawn
+        window.backgroundColor = LunaColors.background
     }
 
     private static func rasterize(_ view: UIView, size: CGSize) -> UIImage {

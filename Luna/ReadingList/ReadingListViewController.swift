@@ -895,7 +895,11 @@ final class ReadingListViewController: UITableViewController {
                 .withConfiguration(UIImage.SymbolConfiguration(textStyle: .caption1))
                 .withTintColor(headerColor, renderingMode: .alwaysOriginal)
             let title = NSMutableAttributedString(attachment: glyph)
-            title.append(NSAttributedString(string: "  \(kind.title) (\(group.items.count))"))
+            // Spell the colour out: an appended run with no foreground attribute
+            // takes NSAttributedString's own black default, not label.textColor.
+            title.append(NSAttributedString(
+                string: "  \(kind.title) (\(group.items.count))",
+                attributes: [.foregroundColor: headerColor]))
             label.attributedText = title
 
             let tap = UITapGestureRecognizer(target: self, action: #selector(headerTapped(_:)))

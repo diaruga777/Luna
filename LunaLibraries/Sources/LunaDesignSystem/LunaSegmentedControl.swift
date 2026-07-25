@@ -268,23 +268,23 @@ public final class LunaSegmentedControl: UIControl {
         // Both appearances are dark, so every layer lifts with white; predawn
         // sits a shade under dark mode to match its already-lifted sky.
         backgroundColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: 1.0, alpha: 0.08)
                 : UIColor(white: 1.0, alpha: 0.07)
         }
         selectedLayer.backgroundColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: 1.0, alpha: 0.18)
                 : UIColor(white: 1.0, alpha: 0.16)
         }.resolvedColor(with: traitCollection).cgColor
         layer.borderWidth = 1 / max(window?.screen.scale ?? UIScreen.main.scale, 1)
         layer.borderColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: 1.0, alpha: 0.12)
                 : UIColor(white: 1.0, alpha: 0.11)
         }.resolvedColor(with: traitCollection).cgColor
         let separatorColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: 1.0, alpha: 0.08)
                 : UIColor(white: 1.0, alpha: 0.07)
         }.resolvedColor(with: traitCollection).cgColor

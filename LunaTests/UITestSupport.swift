@@ -7,6 +7,7 @@
 //  real layout pass, and basic layout sanity assertions.
 //
 
+import LunaDesignSystem
 import LunaStorage
 import LunaModels
 import UIKit
@@ -41,7 +42,9 @@ enum UITestSupport {
         size: CGSize = SnapshotTesting.phoneSize
     ) -> UIWindow {
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        window.overrideUserInterfaceStyle = .light
+        // Mirror the app: dark UIKit materials under the predawn sky. See `LunaSky`.
+        window.overrideUserInterfaceStyle = .dark
+        window.traitOverrides.lunaSky = .predawn
         window.rootViewController = viewController
         window.makeKeyAndVisible()
         viewController.view.frame = window.bounds

@@ -141,14 +141,16 @@ public final class OnboardingStepViewController: UIViewController {
         if let secondaryAction {
             secondaryButton.setTitle(secondaryAction.title, for: .normal)
             secondaryButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
-            secondaryButton.tintColor = accent
+            // Borderless: the title IS the tint, and the brand indigo has almost
+            // no contrast against the night sky. Filled buttons keep the accent.
+            secondaryButton.tintColor = LunaColors.primaryText
             secondaryButton.addTarget(self, action: #selector(secondaryTapped), for: .touchUpInside)
             buttonStack.addArrangedSubview(secondaryButton)
         }
 
         continueButton.setTitle(continueTitle, for: .normal)
         continueButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
-        continueButton.tintColor = primaryAction == nil ? .white : accent
+        continueButton.tintColor = primaryAction == nil ? .white : LunaColors.primaryText
         if primaryAction == nil {
             continueButton.backgroundColor = accent
             continueButton.layer.cornerRadius = 14

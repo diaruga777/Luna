@@ -57,7 +57,7 @@ public enum LunaSurfacePalette {
     /// dark now, so the tempering is toward white in each, and light.
     public static let progressAccent = UIColor { traits in
         let base = baseColor.resolvedColor(with: traits)
-        let amount: CGFloat = traits.userInterfaceStyle == .dark ? 0.10 : 0.06
+        let amount: CGFloat = traits.lunaSky == .night ? 0.10 : 0.06
         return blended(base, toward: .white, amount: amount)
     }
 

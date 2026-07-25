@@ -3,6 +3,7 @@
 //  LunaPriceUI
 //
 
+import LunaDesignSystem
 import LunaFetch
 import LunaHTMLClassification
 import LunaModels
@@ -93,7 +94,13 @@ public enum PriceGraphEmailSnapshot {
         let series = PriceHistory.series(for: tracker)
         guard series.count >= 2 else { return nil }
         let view = PriceGraphView(frame: CGRect(x: 0, y: 0, width: 600, height: 300))
-        view.backgroundColor = .white
+        // The graph labels itself with `LunaColors`, which is light-on-dark in
+        // both appearances — so the emailed sheet is the app's own night sky, not
+        // white, or the text renders invisible.
+        // `LunaSkyTrait` defaults to `.night`, so the plain dark trait collection
+        // resolves the whole graph — background and labels — to true black.
+        let night = UITraitCollection(userInterfaceStyle: .dark)
+        view.backgroundColor = LunaColors.background.resolvedColor(with: night)
         view.setData(series, currency: tracker.displayCurrency)
         view.layoutIfNeeded()
         let renderer = UIGraphicsImageRenderer(bounds: view.bounds)

@@ -66,7 +66,7 @@ public enum LunaColors {
     /// neutral gray when dark, the tinted predawn equivalent when light.
     static func night(dark: CGFloat, predawn: CGFloat) -> UIColor {
         UIColor { traits in
-            traits.userInterfaceStyle == .dark
+            traits.lunaSky == .night
                 ? UIColor(white: dark, alpha: 1)
                 : LunaSurfacePalette.predawnSurface(level: predawn)
         }
@@ -78,8 +78,10 @@ public enum LunaColors {
             light: UIColor(white: lightWhite, alpha: 1))
     }
 
+    /// Keyed on `LunaSkyTrait`, not `userInterfaceStyle` — see `LunaSky` for why
+    /// the style itself stays pinned to `.dark` app-wide.
     private static func dynamic(dark: UIColor, light: UIColor) -> UIColor {
-        UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
+        UIColor { traits in traits.lunaSky == .night ? dark : light }
     }
 
     /// Covers UIKit-owned surfaces whose colors are not assigned by Luna code.

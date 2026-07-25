@@ -7,12 +7,16 @@ import LunaSocial
 import LunaDesignSystem
 import UIKit
 
-/// The reader's share affordance: a custom medium-detent bottom sheet offering
-/// explicit options to pick a friend, share the link, copy the link, or share
-/// the article as an EPUB. Replaces the old
-/// `UIAlertController(.actionSheet)`. The rows' actions are injected so the
-/// sheet stays UI-only; `AppReaderShareProvider` wires them to the social /
-/// export stack.
+/// The reader's share options: copy the link, share the link, mail it to a
+/// contact, or export the article as an EPUB.
+///
+/// `menu(rows:)` is the primary presentation — a native `UIMenu` hung off the
+/// share button, so the system renders it as a Liquid Glass popover and gives the
+/// press-and-slide-to-pick gesture for free. The bottom sheet this class still
+/// draws is the fallback for the few share entry points that aren't a button we
+/// own (a context-menu action, the archive tray). Both are built from the same
+/// `rows`, so the wording never diverges. The actions are injected so this stays
+/// UI-only; `AppReaderShareProvider` wires them to the social / export stack.
 public final class ReaderShareSheet: UIViewController {
 
     /// One tappable option.
@@ -40,21 +44,33 @@ public final class ReaderShareSheet: UIViewController {
     ) -> [Row] {
         var rows: [Row] = []
         rows.append(Row(
-            title: "Send to a Contact…", systemImage: "person.2",
-            isPrimary: false, action: onPickFriend))
+            title: "Copy link", systemImage: "doc.on.doc",
+            isPrimary: false, action: onCopyLink))
         rows.append(Row(
-            title: "Share Link…", systemImage: "link",
+            title: "Share link", systemImage: "square.and.arrow.up",
             isPrimary: false, action: onShareLink))
         rows.append(Row(
-            title: "Copy Link", systemImage: "doc.on.doc",
-            isPrimary: false, action: onCopyLink))
+            title: "Send as email", systemImage: "envelope",
+            isPrimary: false, action: onPickFriend))
         // eBook export only applies to readable articles, not media / platform posts.
         if includeEbook {
             rows.append(Row(
-                title: "Share eBook…", systemImage: "book",
+                title: "Share .epub", systemImage: "book",
                 isPrimary: false, action: onShareEbook))
         }
         return rows
+    }
+
+    /// The same options as a native menu, for hanging off a share button. Ordering is
+    /// pinned (`.displayInline` inside a fixed-order parent at the call site) so the
+    /// list reads top-to-bottom exactly as `rows` builds it, whichever edge of the
+    /// screen the popover opens toward.
+    public static func menu(rows: [Row]) -> UIMenu {
+        UIMenu(children: rows.map { row in
+            UIAction(title: row.title, image: UIImage(systemName: row.systemImage)) { _ in
+                row.action()
+            }
+        })
     }
 
     private let rows: [Row]

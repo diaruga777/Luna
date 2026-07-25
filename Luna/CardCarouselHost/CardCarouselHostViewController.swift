@@ -101,12 +101,15 @@ class CardCarouselHostViewController: UIViewController {
         carousel.setTopInset(view.safeAreaInsets.top + inset)
     }
 
+    /// A nil `action` leaves the button's behaviour to the caller — used by the
+    /// share pill, which presents a menu as its primary action rather than firing
+    /// a tap handler.
     final func configureBottomButton(
-        _ button: UIButton, symbol: String, action: Selector, accessibilityLabel: String
+        _ button: UIButton, symbol: String, action: Selector?, accessibilityLabel: String
     ) {
         button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 10)
         button.accessibilityLabel = accessibilityLabel
-        button.addTarget(self, action: action, for: .touchUpInside)
+        if let action { button.addTarget(self, action: action, for: .touchUpInside) }
         button.translatesAutoresizingMaskIntoConstraints = false
     }
 

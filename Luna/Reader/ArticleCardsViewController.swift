@@ -433,7 +433,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     @objc private func readerBackTapped() { readerForChrome?.chromeBack(); updateReaderChrome() }
     @objc private func readerAudioTapped() { readerForChrome?.chromeToggleAudio(); updateReaderChrome() }
-    @objc private func readerShareTapped() { readerForChrome?.chromeShare(from: readerShareButton) }
     @objc private func readerModeChanged() {
         guard chromeModes.indices.contains(readerModeControl.selectedSegmentIndex) else { return }
         readerForChrome?.chromeSetMode(chromeModes[readerModeControl.selectedSegmentIndex])
@@ -447,8 +446,21 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
             accessibilityLabel: "Settings")
         configureBottomButton(
-            readerShareButton, symbol: "square.and.arrow.up", action: #selector(readerShareTapped),
+            readerShareButton, symbol: "square.and.arrow.up", action: nil,
             accessibilityLabel: "Share")
+        // The pill is retargeted as the focused reader changes, so the menu is built
+        // fresh on each press against whatever `readerForChrome` points at now.
+        ReaderShareMenu.install(
+            on: readerShareButton,
+            providesMenu: true,
+            build: { [weak self] in
+                guard let self else { return nil }
+                return self.readerForChrome?.chromeShareMenu(from: self.readerShareButton)
+            },
+            fallback: { [weak self] in
+                guard let self else { return }
+                self.readerForChrome?.chromeShare(from: self.readerShareButton)
+            })
         mountBottomControls(leading: settingsButton, trailing: readerShareButton)
 
         // The mode switcher owns the mini carousel's bottom-center lane only

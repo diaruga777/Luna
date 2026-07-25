@@ -576,6 +576,17 @@ public final class SplitWebOverlayViewController: UIViewController,
             urlString: page.url.absoluteString, title: page.displayTitle,
             from: self, sourceView: sourceView)
     }
+
+    public func chromeShareMenu(from sourceView: UIView) -> UIMenu? {
+        guard let page = topPage else { return nil }
+        return shareProvider?.shareMenu(
+            urlString: page.url.absoluteString, title: page.displayTitle,
+            from: self, sourceView: sourceView)
+    }
+
+    /// Whether the share pill should present a menu at all — false with no provider,
+    /// or with one whose share is a single verb.
+    public var providesShareMenu: Bool { shareProvider?.providesShareMenu == true }
     public func chromeBack() { closeInnermostReader() }
 
     private func notifyChromeStateChanged() {
@@ -713,10 +724,17 @@ private final class InlineReaderPresentationController: UIPresentationController
             x: max(containerView.bounds.maxX - 92, 0), y: cardFrame.maxY,
             width: min(92, containerView.bounds.width),
             height: max(containerView.bounds.maxY - cardFrame.maxY, 0))
-        shareProxy.addAction(UIAction { [weak overlay, weak shareProxy] _ in
-            guard let overlay, let shareProxy else { return }
-            overlay.chromeShare(from: shareProxy)
-        }, for: .touchUpInside)
+        ReaderShareMenu.install(
+            on: shareProxy,
+            providesMenu: overlay.providesShareMenu,
+            build: { [weak overlay, weak shareProxy] in
+                guard let overlay, let shareProxy else { return nil }
+                return overlay.chromeShareMenu(from: shareProxy)
+            },
+            fallback: { [weak overlay, weak shareProxy] in
+                guard let overlay, let shareProxy else { return }
+                overlay.chromeShare(from: shareProxy)
+            })
         containerView.addSubview(shareProxy)
         self.shareProxy = shareProxy
     }

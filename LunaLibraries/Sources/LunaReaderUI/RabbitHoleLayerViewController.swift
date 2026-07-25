@@ -160,6 +160,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             from: self, sourceView: sourceView)
     }
 
+    /// The same options as `performShare`, as a menu for a share button to present.
+    public func shareMenu(from sourceView: UIView) -> UIMenu? {
+        guard let target = descriptor.url else { return nil }
+        return shareProvider?.shareMenu(
+            urlString: target.absoluteString, title: descriptor.title,
+            from: self, sourceView: sourceView)
+    }
+
     private static let emptyContent = ArticleContent(title: "", blocks: [])
     private static var emptyItem: ReadingListItem {
         var item = ReadingListItem(urlString: "about:blank")
@@ -358,7 +366,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             shareButton.configuration = GlassStyle.circularButtonConfiguration(
                 symbol: "square.and.arrow.up", padding: 8)
             shareButton.tintColor = GlassStyle.readingAccent
-            shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+            ReaderShareMenu.install(
+                on: shareButton,
+                providesMenu: shareProvider?.providesShareMenu == true,
+                build: { [weak self] in
+                    guard let self else { return nil }
+                    return self.shareMenu(from: self.shareButton)
+                },
+                fallback: { [weak self] in self?.shareTapped() })
             header.addSubview(shareButton)
             updateSaveSlot()
         }
@@ -542,7 +557,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     @objc private func saveTapped() { performSave() }
 
-    @objc private func shareTapped() { performShare(from: shareButton) }
+    private func shareTapped() { performShare(from: shareButton) }
 
     // MARK: - Mode switching
 

@@ -212,7 +212,11 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         floatingShareButton.configuration = GlassStyle.solidCircularButtonConfiguration(
             symbol: "square.and.arrow.up", padding: 14)
         floatingShareButton.tintColor = GlassStyle.readingAccent
-        floatingShareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+        ReaderShareMenu.install(
+            on: floatingShareButton,
+            providesMenu: shareProvider?.providesShareMenu == true,
+            build: { [weak self] in self?.shareMenu() },
+            fallback: { [weak self] in self?.shareTapped() })
         floatingShareButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(floatingShareButton)
         let bottom = floatingShareButton.bottomAnchor.constraint(
@@ -411,7 +415,18 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         return scroll
     }
 
-    @objc private func shareTapped() {
+    /// The share options for whatever the button currently points at: an inline
+    /// reader opened on top of this one, else this reader's own article.
+    private func shareMenu() -> UIMenu? {
+        if let inlineReaderForChrome {
+            return inlineReaderForChrome.chromeShareMenu(from: floatingShareButton)
+        }
+        return shareProvider?.shareMenu(
+            urlString: item.urlString, title: item.title ?? content.title,
+            from: self, sourceView: floatingShareButton)
+    }
+
+    private func shareTapped() {
         if let inlineReaderForChrome {
             inlineReaderForChrome.chromeShare(from: floatingShareButton)
             return

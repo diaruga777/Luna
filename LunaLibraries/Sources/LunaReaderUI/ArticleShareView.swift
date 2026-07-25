@@ -11,9 +11,13 @@ import UIKit
 /// readers. The owning view controller wires the actions.
 public final class ArticleShareView: UIView {
 
+    private let shareMenu: (() -> UIMenu?)?
     private let onShare: () -> Void
 
-    public init(onShare: @escaping () -> Void) {
+    /// `shareMenu` non-nil turns the button into a menu button (press-and-slide to
+    /// pick an option); nil keeps it a plain tap that runs `onShare`.
+    public init(shareMenu: (() -> UIMenu?)? = nil, onShare: @escaping () -> Void) {
+        self.shareMenu = shareMenu
         self.onShare = onShare
         super.init(frame: .zero)
         build()
@@ -40,7 +44,11 @@ public final class ArticleShareView: UIView {
         shareConfig.baseBackgroundColor = GlassStyle.readingAccent
         shareConfig.cornerStyle = .large
         let shareButton = UIButton(configuration: shareConfig)
-        shareButton.addAction(UIAction { [weak self] _ in self?.onShare() }, for: .touchUpInside)
+        ReaderShareMenu.install(
+            on: shareButton,
+            providesMenu: shareMenu != nil,
+            build: { [weak self] in self?.shareMenu?() },
+            fallback: { [weak self] in self?.onShare() })
 
         let buttons = UIStackView(arrangedSubviews: [shareButton])
         buttons.axis = .vertical

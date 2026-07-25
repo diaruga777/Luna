@@ -38,6 +38,10 @@ public protocol ReaderChromeControlling: AnyObject {
     func chromeSetMode(_ mode: ReadingListItem.ReaderMode)
     func chromeToggleAudio()
     func chromeShare(from sourceView: UIView)
+    /// The share options for the focused page as a menu, so the host's share pill can
+    /// present the system popover instead of routing through `chromeShare`. Rebuilt
+    /// on every press — the pill outlives the page it points at.
+    func chromeShareMenu(from sourceView: UIView) -> UIMenu?
     func chromeBack()
 }
 
@@ -430,6 +434,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public func chromeShare(from sourceView: UIView) {
         layers[safe: focus]?.performShare(from: sourceView)
+    }
+
+    public func chromeShareMenu(from sourceView: UIView) -> UIMenu? {
+        layers[safe: focus]?.shareMenu(from: sourceView)
     }
 
     /// Pop one layer (the external back pill; shown only above the root).

@@ -1415,6 +1415,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func makeShareView() -> ArticleShareView {
         return ArticleShareView(
+            shareMenu: shareProvider?.providesShareMenu == true
+                ? { [weak self] in
+                    guard let self else { return nil }
+                    return self.shareProvider?.shareMenu(
+                        urlString: self.item.urlString, title: self.item.title,
+                        from: self, sourceView: self.shareView)
+                }
+                : nil,
             onShare: { [weak self] in
                 guard let self else { return }
                 self.shareProvider?.presentShareSheet(

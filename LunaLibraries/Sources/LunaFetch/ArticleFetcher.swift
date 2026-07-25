@@ -47,13 +47,21 @@ public struct ArticleFetcher: HTMLFetching {
     /// memory-limited share/action extension into jetsam.
     public static let maxBytes = WebFetchConstants.maxBytes
 
-    public enum FetchError: Error {
+    public enum FetchError: Error, Equatable {
         /// A non-2xx answer. The status code is carried so a failed save can say
         /// WHICH refusal it was (403 blocked vs 404 gone vs 429 rate-limited);
         /// nil when the response wasn't even an HTTP response.
         case badResponse(status: Int?)
         case notHTML
         case tooLarge
+        /// The request for an ARTICLE was redirected into the publisher's own
+        /// subscribe / sign-in / cookie-check interstitial (`landedOn`). A 200 with
+        /// a body — but the body is the subscription pitch, not the article, and it
+        /// runs long enough and clean enough of gate wording to read as a perfectly
+        /// good article to the extractor. So the fetch FAILS here instead: the page
+        /// we asked for was never served (News Corp's
+        /// `…/subscribe/news/1/?dest=<article>` is the live case).
+        case subscribeRedirect(landedOn: URL)
     }
 
     public func fetchHTML(from url: URL) async throws -> String {
@@ -315,6 +323,9 @@ public struct ArticleFetcher: HTMLFetching {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw FetchError.badResponse(status: (response as? HTTPURLResponse)?.statusCode)
         }
+        if let landing = Self.subscribeRedirectLanding(requested: url, response: http) {
+            throw FetchError.subscribeRedirect(landedOn: landing)
+        }
         // A server that declares an oversized body (a mis-served large file) is
         // rejected outright. For everything else, bound the page we parse so the
         // memory-limited extension can't be pushed into jetsam by a huge page.
@@ -326,6 +337,28 @@ public struct ArticleFetcher: HTMLFetching {
             ?? String(data: bounded, encoding: .isoLatin1)
         else { throw FetchError.notHTML }
         return html
+    }
+
+    /// The interstitial a request LANDED on when the site redirected it there, or nil
+    /// when the response is the page we asked for. Pure (takes the response's final
+    /// URL, not the network) so the whole policy is unit-testable.
+    ///
+    /// Fires only on a genuine substitution: the final URL differs from the requested
+    /// one AND is a subscribe / sign-in / cookie-check interstitial
+    /// (`NewsAggregatorUnwrapper.isInterstitialURL`) AND the request wasn't for an
+    /// interstitial in the first place — so deliberately saving a subscribe page, or
+    /// replaying an archived one, still fetches normally.
+    static func subscribeRedirectLanding(requested: URL, response: HTTPURLResponse) -> URL? {
+        subscribeRedirectLanding(requested: requested, finalURL: response.url)
+    }
+
+    /// Testable core of `subscribeRedirectLanding(requested:response:)`.
+    public static func subscribeRedirectLanding(requested: URL, finalURL: URL?) -> URL? {
+        guard let finalURL, finalURL != requested,
+              NewsAggregatorUnwrapper.isInterstitialURL(finalURL),
+              !NewsAggregatorUnwrapper.isInterstitialURL(requested)
+        else { return nil }
+        return finalURL
     }
 
     /// Caps `data` at `maxBytes`, backing up off any partial trailing UTF-8

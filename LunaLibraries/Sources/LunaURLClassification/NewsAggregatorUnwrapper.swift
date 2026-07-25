@@ -274,6 +274,20 @@ public enum NewsAggregatorUnwrapper {
         return nil
     }
 
+    /// True when `url` is a publisher's subscribe / sign-in / cookie-check
+    /// interstitial rather than content — judged by its PATH alone (whole segments),
+    /// so it holds for the bare interstitial that carries no `dest=` target.
+    ///
+    /// The fetch layer needs exactly this question, separately from
+    /// `interstitialTarget`: a paywalled article REDIRECTS to the interstitial, so a
+    /// plain GET of the article silently returns the subscription pitch, and HTML
+    /// that long and that free of gate wording reads as a perfectly good article
+    /// body. Recognizing the landing page is what lets that fetch fail instead
+    /// (`ArticleFetcher.FetchError.subscribeRedirect`).
+    public static func isInterstitialURL(_ url: URL) -> Bool {
+        isInterstitialPath(url)
+    }
+
     /// True when any whole path segment of `url` is an interstitial marker.
     private static func isInterstitialPath(_ url: URL) -> Bool {
         url.path.split(separator: "/").contains {

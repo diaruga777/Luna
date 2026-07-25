@@ -33,14 +33,23 @@ public enum BypassStrategySelector {
             return []
         }
 
+        var strategies: [BypassStrategy] = []
+
+        // The `?amp` rendering FIRST wherever it applies: it is silent, one request,
+        // and on those hosts (News Corp Australia) it is the only thing that works at
+        // all — their premium articles redirect a plain read to a subscribe page, so
+        // every strategy that needs the article's own HTML has nothing to chew on.
+        if AMPQueryBypass.ampQueryURL(for: url) != nil {
+            strategies.append(.ampQuery)
+        }
+
         // A site rule → the browser-tier direct unlock before archive.today.
         if rule != nil {
-            return [.directUnlock, .archiveToday]
+            return strategies + [.directUnlock, .archiveToday]
         }
 
         // Otherwise go straight to the archive flow, with NYT's trailing-dot browser
         // pre-stage.
-        var strategies: [BypassStrategy] = []
         if let host = url.host, TrailingDotBypass.isNYTHost(host) {
             strategies.append(.trailingDotHost)
         }

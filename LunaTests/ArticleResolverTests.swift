@@ -301,4 +301,49 @@ final class ArticleResolverTests: XCTestCase {
         // WSJ's title survives; the body never became readable.
         XCTAssertEqual(result, .paywalled(title: "WSJ Story"))
     }
+
+    // MARK: - Subscribe-redirect hosts (News Corp Australia)
+
+    private var newsCorpArticle: URL {
+        URL(string: "https://www.theaustralian.com.au/wealth/retirement/"
+            + "selffunded-retirees-hit-by-new-30pc-topup-tax-on-investments/news-story/"
+            + "476176fcef46250d229a1612ce9f44d1")!
+    }
+
+    /// The whole reported bug, end to end: the direct read is refused as a subscribe
+    /// redirect, and the `?amp` rendering — which the same site DOESN'T redirect —
+    /// carries the full body, so the save lands readable with no browser, no archive
+    /// and no CAPTCHA.
+    func testSubscribeRedirectIsRecoveredByTheAMPQueryFetch() async {
+        let fetcher = MockArticleFetcher()
+        fetcher.fetchErrorsByURL[newsCorpArticle.absoluteString] =
+            .subscribeRedirect(landedOn: URL(string:
+                "https://www.theaustralian.com.au/subscribe/news/1/?dest=x")!)
+        fetcher.htmlByURL[newsCorpArticle.absoluteString + "?amp"] =
+            BypassFixtures.html("Readable/theaustralian-amp.html")
+
+        let result = await ArticleResolver.resolve(url: newsCorpArticle, fetcher: fetcher)
+
+        if case let .readable(content, _) = result {
+            XCTAssertGreaterThan(content.bodyTextLength, 2500)
+            XCTAssertTrue(content.wholeText.contains("top-up tax"))
+        } else {
+            XCTFail("expected the AMP rendering to be readable, got \(result)")
+        }
+    }
+
+    /// And when even the AMP fetch fails, the item parks with the redirect's own
+    /// reason — never with the subscription pitch as its body.
+    func testSubscribeRedirectWithNoAMPRecoveryParksWithItsReason() async {
+        let fetcher = MockArticleFetcher()
+        let landing = URL(string: "https://www.theaustralian.com.au/subscribe/news/1/?dest=x")!
+        fetcher.fetchErrorsByURL[newsCorpArticle.absoluteString] =
+            .subscribeRedirect(landedOn: landing)
+        fetcher.fetchErrorsByURL[newsCorpArticle.absoluteString + "?amp"] =
+            .subscribeRedirect(landedOn: landing)
+
+        let result = await ArticleResolver.resolve(url: newsCorpArticle, fetcher: fetcher)
+
+        XCTAssertEqual(result, .unreadable(.subscribeRedirect))
+    }
 }

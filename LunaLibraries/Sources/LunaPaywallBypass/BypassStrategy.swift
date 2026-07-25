@@ -29,6 +29,12 @@ public enum BypassStrategy: Equatable {
     case freshSession
     /// Discover the AMP URL (`rel=amphtml`) and fetch it. Silent.
     case amp
+    /// Fetch the `?amp` variant of the article URL directly, for hosts that route
+    /// their AMP rendering by query and serve the full body in it (`AMPQueryBypass`).
+    /// Needs no direct HTML — which is the point: on those sites the direct read is
+    /// redirected to a subscribe page, so there is no `rel=amphtml` to discover.
+    /// Silent.
+    case ampQuery
     /// Wayback: resolve the newest 200 snapshot (CDX, then Availability) and fetch
     /// the raw `id_` replay. Silent.
     case waybackRaw

@@ -16,6 +16,7 @@ public enum SilentStrategy: Equatable {
     case trailingDotHost
     case freshSession
     case amp
+    case ampQuery
     case waybackRaw
     case jinaReader
     case ladderProxy(LadderProxy)
@@ -30,6 +31,7 @@ public enum SilentStrategy: Equatable {
         case .trailingDotHost: return .trailingDotHost
         case .freshSession: return .freshSession
         case .amp: return .amp
+        case .ampQuery: return .ampQuery
         case .waybackRaw: return .waybackRaw
         case .jinaReader: return .jinaReader
         case let .ladderProxy(proxy): return .ladderProxy(proxy)
@@ -123,6 +125,7 @@ public struct BypassPlan: Equatable {
         case .trailingDotHost: return .trailingDotHost
         case .freshSession: return .freshSession
         case .amp: return .amp
+        case .ampQuery: return .ampQuery
         case .waybackRaw: return .waybackRaw
         case .jinaReader: return .jinaReader
         case let .ladderProxy(proxy): return .ladderProxy(proxy)
@@ -137,13 +140,16 @@ public enum BypassURLs {
 
     /// The URL a silent strategy fetches over URLSession, or nil when it can't be
     /// formed / the strategy is zero-network (`.jsonLDBody`) or AMP-discovered (`.amp`,
-    /// which needs the direct HTML). `freshSession`/`userAgent`/`referer`/`waybackRaw`/
+    /// which needs the direct HTML — unlike `.ampQuery`, which derives the AMP URL from
+    /// the article URL alone). `freshSession`/`userAgent`/`referer`/`waybackRaw`/
     /// `jinaReader` fetch the canonical `article` URL itself (the request transform is
     /// the header/session, not the URL), so they return `article`.
     public static func requestURL(for strategy: SilentStrategy, article: URL) -> URL? {
         switch strategy {
         case .jsonLDBody, .amp:
             return nil
+        case .ampQuery:
+            return AMPQueryBypass.ampQueryURL(for: article)
         case .trailingDotHost:
             return TrailingDotBypass.trailingDotURL(for: article)
         case let .ladderProxy(proxy):

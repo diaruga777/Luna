@@ -37,10 +37,15 @@ final class MockArticleFetcher: HTMLFetching {
     var refererHTMLByURL: [String: String] = [:]
     /// URLs (absolute strings) that should throw a fetch error instead of returning.
     var failingURLs: Set<String> = []
+    /// URLs (absolute strings) that should throw a SPECIFIC `ArticleFetcher.FetchError`
+    /// — e.g. the `.subscribeRedirect` a premium News Corp article answers with, which
+    /// callers treat differently from a generic failure.
+    var fetchErrorsByURL: [String: ArticleFetcher.FetchError] = [:]
 
     enum MockError: Error { case noStub }
 
     private func html(for url: URL) throws -> String {
+        if let error = fetchErrorsByURL[url.absoluteString] { throw error }
         if failingURLs.contains(url.absoluteString) { throw MockError.noStub }
         guard let html = htmlByURL[url.absoluteString] else { throw MockError.noStub }
         return html

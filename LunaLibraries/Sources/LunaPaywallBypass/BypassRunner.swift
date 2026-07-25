@@ -79,6 +79,17 @@ public struct BypassRunner: BypassRunning {
                 try await fetcher.fetchHTML(from: ampURL)
             }
 
+        case .ampQuery:
+            guard let ampURL = BypassURLs.requestURL(for: .ampQuery, article: url) else { return nil }
+            // The base URL stays the AMP document's own URL so its relative links and
+            // images resolve; it's the same origin and path as the article. The
+            // subscriber GATE is stripped before extraction — an AMP document carries
+            // the pitch alongside the body, and its gate wording would otherwise make
+            // the extractor reject the very article it holds.
+            return await extraction.fetchAndExtract(baseURL: ampURL) {
+                AMPQueryBypass.unhidingAMPGate(in: try await fetcher.fetchHTML(from: ampURL))
+            }
+
         case .waybackRaw:
             return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchWaybackRawHTML(for: url)

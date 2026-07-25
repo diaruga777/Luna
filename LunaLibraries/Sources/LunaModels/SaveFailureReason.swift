@@ -39,6 +39,9 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     case noMediaFound
     /// The extraction/persistence step itself failed (encode or disk write).
     case couldNotSave
+    /// The site answered the article request by redirecting to its own subscribe /
+    /// sign-in page, so the article was never served.
+    case subscribeRedirect
     /// Nothing more specific was captured.
     case unknown
 
@@ -75,6 +78,8 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return "No downloadable media was found"
         case .couldNotSave:
             return "Luna couldn't store the download"
+        case .subscribeRedirect:
+            return "The site sent Luna to its subscribe page"
         case .unknown:
             return "Luna couldn't fetch this link"
         }
@@ -101,6 +106,8 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             }
         case .notReadable, .notHTML:
             return "Apple Intelligence can sometimes pull an article out anyway."
+        case .subscribeRedirect:
+            return "Open it in the browser below to read it there."
         case .tooLarge, .unsupportedDocument, .noMediaFound, .couldNotSave, .unknown:
             return nil
         }
@@ -114,7 +121,8 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return true
         case let .httpStatus(code):
             return code == 429 || (500...599).contains(code)
-        case .notReadable, .notHTML, .tooLarge, .unsupportedDocument, .noMediaFound, .unknown:
+        case .notReadable, .notHTML, .tooLarge, .unsupportedDocument, .noMediaFound,
+             .subscribeRedirect, .unknown:
             return false
         }
     }

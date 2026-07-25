@@ -22,6 +22,8 @@ public extension SaveFailureReason {
                 self = .notHTML
             case .tooLarge:
                 self = .tooLarge
+            case .subscribeRedirect:
+                self = .subscribeRedirect
             }
             return
         }

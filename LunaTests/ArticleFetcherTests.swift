@@ -102,6 +102,56 @@ final class ArticleFetcherTests: XCTestCase {
         XCTAssertNil(ArticleFetcher.newestMemento(fromTimeMap: ""))
     }
 
+    // MARK: - Subscribe-interstitial redirects
+
+    /// The live regression: a premium News Corp article answers a plain GET with a
+    /// 302 chain that ends on the publisher's own subscribe page. It's a 200 with a
+    /// long body, so nothing downstream can tell it isn't the article — the FETCH has
+    /// to fail instead.
+    func testArticleRedirectedToSubscribePageIsReportedAsSuch() {
+        let article = url("https://www.theaustralian.com.au/wealth/retirement/story/news-story/abc")
+        let interstitial = url(
+            "https://www.theaustralian.com.au/subscribe/news/1/?dest=https%3A%2F%2Fwww."
+            + "theaustralian.com.au%2Fwealth%2Fretirement%2Fstory%2Fnews-story%2Fabc"
+            + "&memtype=anonymous&mode=premium")
+        XCTAssertEqual(
+            ArticleFetcher.subscribeRedirectLanding(requested: article, finalURL: interstitial),
+            interstitial)
+    }
+
+    /// The `/remote/check_cookie.html?url=…` bounce the same publishers serve counts
+    /// too — it is equally not the article.
+    func testCookieCheckBounceCounts() {
+        let article = url("https://www.heraldsun.com.au/news/story/news-story/abc")
+        let bounce = url("https://www.heraldsun.com.au/remote/check_cookie.html?url=x")
+        XCTAssertEqual(
+            ArticleFetcher.subscribeRedirectLanding(requested: article, finalURL: bounce), bounce)
+    }
+
+    /// No redirect, no substitution: the page we asked for came back.
+    func testUnredirectedResponseIsNotASubscribeRedirect() {
+        let article = url("https://www.theaustralian.com.au/news/story/news-story/abc")
+        XCTAssertNil(
+            ArticleFetcher.subscribeRedirectLanding(requested: article, finalURL: article))
+        XCTAssertNil(ArticleFetcher.subscribeRedirectLanding(requested: article, finalURL: nil))
+    }
+
+    /// A redirect to another ARTICLE (a canonicalizing 301) is normal and must pass.
+    func testRedirectToOrdinaryPageIsNotASubscribeRedirect() {
+        XCTAssertNil(ArticleFetcher.subscribeRedirectLanding(
+            requested: url("https://example.com/story"),
+            finalURL: url("https://example.com/2026/07/story")))
+    }
+
+    /// Asking FOR a subscribe page (the user saved one, or an archive replay of one)
+    /// still fetches: the guard only catches a page being substituted for the article.
+    func testRequestingAnInterstitialIsNotItselfARedirect() {
+        let interstitial = url("https://www.theaustralian.com.au/subscribe/news/1/?x=1")
+        XCTAssertNil(ArticleFetcher.subscribeRedirectLanding(
+            requested: interstitial,
+            finalURL: url("https://www.theaustralian.com.au/subscribe/news/1/?x=1&nk=2")))
+    }
+
     func testTitleGuessFallsBackToHostWhenSlugIsOpaque() {
         // FT content URLs are bare UUIDs — no humanizable slug, so fall back to host.
         let guess = ArticleFetcher.articleTitleGuess(

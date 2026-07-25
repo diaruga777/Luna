@@ -9,10 +9,11 @@
 //  Two other transitions stage the same "solar eclipse" motif for card-shaped
 //  scenes: `CardEclipseAnimator` (LunaDesignSystem) for the root carousel's
 //  paging, and `InlineReaderEclipseTransition` (LunaReaderUI), which reuses
-//  that file's corona and flare drawing directly. This file draws its own
-//  silhouette-shadow corona and radial-light point instead, because it
-//  eclipses an arbitrary snapshot shape — a reading-list row, not a rounded
-//  card — so it can't share those card-shaped primitives.
+//  that file's corona and flare drawing directly. This file shares the
+//  `EclipseCorona` renderer with them but adds a silhouette-shadow layer and its
+//  own radial-light point, because it eclipses an arbitrary snapshot shape — a
+//  reading-list row, not a rounded card — and needs the glow to follow that
+//  outline as well as its bounding rounded rect.
 
 import LunaDesignSystem
 import ObjectiveC
@@ -215,14 +216,16 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         let flare = makeRadialLight(
             diameter: sourceIsFullScreen ? 46 : 38,
             center: lightCenter,
+            // Warm, clipped-white core drifting to a cool flare tail, matching
+            // the card transitions' `EclipseFlareView`.
             colors: [
-                UIColor.white,
-                UIColor.white.withAlphaComponent(0.86),
-                UIColor.white.withAlphaComponent(0.34),
-                UIColor.white.withAlphaComponent(0.08),
+                UIColor(red: 1.00, green: 0.992, blue: 0.965, alpha: 1),
+                UIColor(red: 1.00, green: 0.965, blue: 0.900, alpha: 0.88),
+                UIColor(red: 1.00, green: 0.965, blue: 0.900, alpha: 0.36),
+                UIColor(red: 0.800, green: 0.860, blue: 1.00, alpha: 0.10),
                 UIColor.clear
             ],
-            locations: [0, 0.04, 0.17, 0.43, 1]
+            locations: [0, 0.05, 0.18, 0.44, 1]
         )
 
         // Compact sources put the light below the body so the snapshot masks the
@@ -257,11 +260,19 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
             return EclipseInteriorCoronaView(cornerRadius: cornerRadius, frame: bounds)
         }
 
-        // Rendering the white silhouette beneath the black body means only its
-        // shadow escapes. The result follows the complete source outline instead of
-        // collapsing into a second point light at the leading edge.
+        // Two layers. `EclipseCorona` supplies the photographic structure —
+        // chromosphere hairline, power-law halo, uneven streamers — against the
+        // source's bounding rounded rect. Under it, the white silhouette rendered
+        // beneath the black body contributes a tight shadow that follows the row's
+        // *actual* outline, so a non-rectangular source still glows along its own
+        // edges instead of only along the rectangle.
+        let host = UIView(frame: bounds)
+        host.isUserInteractionEnabled = false
+        host.clipsToBounds = false
+        host.backgroundColor = .clear
+
         let halo = UIImageView(image: silhouette)
-        halo.frame = bounds
+        halo.frame = host.bounds
         halo.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         halo.tintColor = .white
         halo.clipsToBounds = false
@@ -269,8 +280,17 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         halo.layer.shadowColor = UIColor.white.cgColor
         halo.layer.shadowOpacity = 1
         halo.layer.shadowOffset = .zero
-        halo.layer.shadowRadius = 22
-        return halo
+        halo.layer.shadowRadius = 7
+        host.addSubview(halo)
+
+        let structure = EclipseCoronaView(
+            bodySize: bounds.size,
+            cornerRadius: cornerRadius,
+            tint: LunaSurfacePalette.atmosphereTint)
+        structure.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.addSubview(structure)
+
+        return host
     }
 
     private func makeRadialLight(
@@ -326,42 +346,37 @@ private final class EclipseRadialLightView: UIView {
     }
 }
 
-private final class EclipseInteriorCoronaView: UIView {
+/// A source that already fills the transition container has nowhere outward to
+/// glow, so its corona falls inward from every edge. `EclipseCorona` renders the
+/// same profile as the exterior case — chromosphere hairline on the limb, then a
+/// power-law falloff — mirrored inward, into a cached image.
+private final class EclipseInteriorCoronaView: UIImageView {
     private let cornerRadius: CGFloat
 
     init(cornerRadius: CGFloat, frame: CGRect) {
         self.cornerRadius = cornerRadius
         super.init(frame: frame)
-        isOpaque = false
         isUserInteractionEnabled = false
         backgroundColor = .clear
-        contentMode = .redraw
+        contentMode = .scaleToFill
+        reloadCorona()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    override func draw(_ rect: CGRect) {
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-        context.setBlendMode(.screen)
-
-        // Nested translucent strokes create a glow that falls inward from every
-        // source edge. The outermost stroke stays inside the full-screen bounds.
-        let depth: CGFloat = 30
-        let steps = 24
-        for step in 0..<steps {
-            let progress = CGFloat(step) / CGFloat(steps - 1)
-            let inset = 1 + progress * depth
-            let alpha = 0.42 * (1 - progress) * (1 - progress)
-            let path = UIBezierPath(
-                roundedRect: bounds.insetBy(dx: inset, dy: inset),
-                cornerRadius: max(0, cornerRadius - inset)
-            )
-            context.setStrokeColor(UIColor.white.withAlphaComponent(alpha).cgColor)
-            context.setLineWidth(2)
-            context.addPath(path.cgPath)
-            context.strokePath()
+    override var bounds: CGRect {
+        didSet {
+            guard bounds.size != oldValue.size else { return }
+            reloadCorona()
         }
+    }
+
+    private func reloadCorona() {
+        image = EclipseCorona.interiorImage(
+            size: bounds.size,
+            cornerRadius: cornerRadius,
+            tint: LunaSurfacePalette.atmosphereTint)
     }
 }
 

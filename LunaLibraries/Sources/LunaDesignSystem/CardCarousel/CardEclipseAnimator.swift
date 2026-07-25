@@ -331,25 +331,16 @@ public final class CardEclipseTransition {
         oppositeVeil?.removeFromSuperview()
     }
 
-    /// The corona: two stacked glows — a tight, hot rim and a wide, soft halo —
-    /// each a white rounded rect matching the sun's silhouette whose shadow is
-    /// the light. The card body above them is opaque, so only the glow escaping
-    /// past the edges is visible.
+    /// The corona around the sun's card-shaped silhouette. `EclipseCorona` does
+    /// the drawing — a chromosphere hairline on the limb, a power-law halo, and
+    /// uneven equatorial streamers — rather than the layer shadows this used to
+    /// stack, whose Gaussian profile read as a lamp behind the card.
     public static func makeCorona(frame: CGRect) -> UIView {
-        let corona = UIView(frame: frame)
-        corona.isUserInteractionEnabled = false
-        for (radius, opacity) in [(CGFloat(48), Float(0.95)), (CGFloat(14), Float(1))] {
-            let glow = UIView(frame: corona.bounds)
-            glow.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            glow.backgroundColor = .white
-            glow.layer.cornerRadius = CarouselCardView.cornerRadius
-            glow.layer.cornerCurve = .continuous
-            glow.layer.shadowColor = UIColor.white.cgColor
-            glow.layer.shadowOpacity = opacity
-            glow.layer.shadowOffset = .zero
-            glow.layer.shadowRadius = radius
-            corona.addSubview(glow)
-        }
+        let corona = EclipseCoronaView(
+            bodySize: frame.size,
+            cornerRadius: CarouselCardView.cornerRadius,
+            tint: LunaSurfacePalette.atmosphereTint)
+        corona.frame = frame
         return corona
     }
 }
@@ -371,21 +362,30 @@ public final class EclipseFlareView: UIView {
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
 
+    /// The blown-out core of an overexposed highlight, and the cooler bloom a
+    /// sensor smears around it.
+    private static let core = UIColor(red: 1.00, green: 0.992, blue: 0.965, alpha: 1)
+    private static let bloom = UIColor(red: 1.00, green: 0.965, blue: 0.900, alpha: 1)
+    private static let tail = UIColor(red: 0.800, green: 0.860, blue: 1.00, alpha: 1)
+
     public override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let maxRadius = min(bounds.width, bounds.height) / 2
 
-        // Core: white-hot, dropping off quickly, with only a faint diffuse tail.
+        // Core: clipped-white, dropping off almost immediately into a warm bloom
+        // that cools as it spreads — the chromatic drift of a real overexposure,
+        // where the highlight burns out warm and the flare tail goes blue.
         let colors: [CGColor] = [
-            UIColor.white.cgColor,
-            UIColor.white.cgColor,
-            UIColor.white.withAlphaComponent(0.55).cgColor,
-            UIColor.white.withAlphaComponent(0.16).cgColor,
-            UIColor.white.withAlphaComponent(0.04).cgColor,
+            Self.core.cgColor,
+            Self.core.cgColor,
+            Self.bloom.withAlphaComponent(0.62).cgColor,
+            Self.bloom.withAlphaComponent(0.24).cgColor,
+            Self.tail.withAlphaComponent(0.09).cgColor,
+            Self.tail.withAlphaComponent(0.02).cgColor,
             UIColor.clear.cgColor,
         ]
-        let locations: [CGFloat] = [0, 0.04, 0.09, 0.2, 0.42, 1]
+        let locations: [CGFloat] = [0, 0.04, 0.09, 0.17, 0.32, 0.6, 1]
         if let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
             colors: colors as CFArray,
@@ -399,18 +399,57 @@ public final class EclipseFlareView: UIView {
                 options: .drawsAfterEndLocation)
         }
 
-        // Diffraction spikes: long rays on the axes, shorter dimmer diagonals.
-        for index in 0..<8 {
-            let diagonal = index % 2 == 1
-            let angle = CGFloat(index) * .pi / 4
+        // Diffraction spikes. A real aperture never produces a perfectly regular
+        // star: lengths and brightnesses vary spike to spike and the whole set is
+        // rotated off the axes, so the fixed jitter table below is what keeps this
+        // from reading as a synthetic asterisk.
+        let jitter: [(length: CGFloat, alpha: CGFloat)] = [
+            (1.00, 0.92), (0.34, 0.34), (0.62, 0.52), (0.28, 0.26),
+            (0.88, 0.78), (0.31, 0.30), (0.55, 0.46), (0.26, 0.24),
+        ]
+        let rotation: CGFloat = 0.14
+        for (index, spike) in jitter.enumerated() {
+            let angle = rotation + CGFloat(index) * .pi / 4
             drawSpike(
                 context: context,
                 center: center,
                 angle: angle,
-                length: maxRadius * (diagonal ? 0.5 : 1),
-                halfWidth: maxRadius * (diagonal ? 0.02 : 0.028),
-                peakAlpha: diagonal ? 0.5 : 0.9)
+                length: maxRadius * spike.length,
+                halfWidth: maxRadius * (0.018 + 0.012 * spike.length),
+                peakAlpha: spike.alpha)
         }
+
+        // The lens ghost: a faint ring concentric with the highlight, thrown by
+        // internal reflections. Barely visible, but it is the detail that makes a
+        // bright point read as photographed rather than drawn.
+        drawGhostRing(context: context, center: center, radius: maxRadius * 0.52)
+    }
+
+    private func drawGhostRing(context: CGContext, center: CGPoint, radius: CGFloat) {
+        guard let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                Self.tail.withAlphaComponent(0).cgColor,
+                Self.tail.withAlphaComponent(0.034).cgColor,
+                Self.bloom.withAlphaComponent(0.018).cgColor,
+                Self.tail.withAlphaComponent(0).cgColor,
+            ] as CFArray,
+            locations: [0, 0.45, 0.62, 1])
+        else { return }
+        context.saveGState()
+        context.addEllipse(in: CGRect(
+            x: center.x - radius, y: center.y - radius,
+            width: radius * 2, height: radius * 2))
+        context.addEllipse(in: CGRect(
+            x: center.x - radius * 0.78, y: center.y - radius * 0.78,
+            width: radius * 1.56, height: radius * 1.56))
+        context.clip(using: .evenOdd)
+        context.drawRadialGradient(
+            gradient,
+            startCenter: center, startRadius: radius * 0.78,
+            endCenter: center, endRadius: radius,
+            options: [])
+        context.restoreGState()
     }
 
     /// One tapered ray from the center: a thin concave-sided kite filled with a
@@ -428,11 +467,12 @@ public final class EclipseFlareView: UIView {
         guard let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
             colors: [
-                UIColor.white.withAlphaComponent(peakAlpha).cgColor,
-                UIColor.white.withAlphaComponent(peakAlpha * 0.35).cgColor,
+                Self.core.withAlphaComponent(peakAlpha).cgColor,
+                Self.bloom.withAlphaComponent(peakAlpha * 0.38).cgColor,
+                Self.tail.withAlphaComponent(peakAlpha * 0.10).cgColor,
                 UIColor.clear.cgColor,
             ] as CFArray,
-            locations: [0, 0.35, 1])
+            locations: [0, 0.3, 0.6, 1])
         else { return }
 
         context.saveGState()

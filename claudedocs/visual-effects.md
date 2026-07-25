@@ -1,8 +1,8 @@
 # Visual effects
 
 Luna uses ordinary UIKit presentation, navigation, and content-change animations. The
-shared custom effects are the night-sky starfield, the loading indicator, onboarding
-progress dots, moon-horizon download progress, and the eclipse transitions.
+shared custom effects are the night-sky starfield, the loading indicator,
+moon-horizon download progress, and the eclipse transitions.
 
 ## Appearance palette
 
@@ -85,13 +85,6 @@ indicator: a configurable grid of rounded dots whose opacity and scale ripple di
 It is a plain UIKit/Core Animation view with the familiar `startAnimating()`,
 `stopAnimating()`, and `hidesWhenStopped` API. The email login cover can resolve its grid
 into a checkmark after successful verification.
-
-## Onboarding progress (`OnboardingDotMatrixProgressView`)
-
-`LunaLibraries/Sources/LunaSocialUI/OnboardingDotMatrixProgressView.swift` renders the
-current onboarding position as a compact row of dots. Completed/current dots use the
-reading accent and upcoming dots are dimmed. The current dot pulses unless Reduce Motion
-is enabled. Step illustrations are implemented separately by `OnboardingAnimationView`.
 
 ## Moon-horizon progress (`MoonHorizonProgressBar` / `MoonHorizonProgressView`)
 

@@ -4,12 +4,18 @@ Luna is four apps over one shared store. The central **Luna** app (bare bundle i
 `com.hsanabria.luna`, a paid app) handles EVERY content kind; each single-content
 app handles exactly one:
 
-| App | Bundle id | Handles |
-| --- | --- | --- |
-| Luna (central, paid) | `<prefix>` | everything |
-| Luna Reader | `<prefix>.reader` | articles, paywalled articles, documents |
-| Luna Downloader | `<prefix>.downloader` | social / video media |
-| Luna Price Tracker | `<prefix>.pricetracker` | product price trackers |
+| App | Bundle id | Handles | Email |
+| --- | --- | --- | --- |
+| Luna (central, paid) | `<prefix>` | everything | yes |
+| Luna Reader | `<prefix>.reader` | articles, paywalled articles, documents | yes |
+| Luna Downloader | `<prefix>.downloader` | social / video media | no — URL sharing only |
+| Luna Price Tracker | `<prefix>.pricetracker` | product price trackers | no — URL sharing only |
+
+Email is a second, independent per-app capability, `AppSurface.sharesByEmail`:
+connecting an account, sending saves to contacts, and importing shares/newsletters
+from a mailbox. It is a runtime property of the surface rather than a link-set
+decision, because the shell files that offer those affordances are universal —
+see `claudedocs/social-sharing.md` and `claudedocs/incoming-mail.md`.
 
 Every app runs the SAME classification pipeline (`LunaIngest`: unwrap → classify,
 including the page fetch and HTML heuristics) on any incoming URL from any surface

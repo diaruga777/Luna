@@ -5,6 +5,12 @@ reading-list items. Reuses the send-to-Kindle Gmail account + app password.
 Runs on launch/foreground AND on a background schedule (so newsletters reach
 Kindle even if the app is never opened).
 
+Only in the apps that do email at all (`AppSurface.sharesByEmail`: the central
+**Luna** app and **Luna Reader**). Downloader and Price Tracker connect no account,
+so they neither import mail on launch/foreground/pull-to-refresh nor register the
+mail-fetch background task — see `claudedocs/social-sharing.md`. Each importing app
+still KEEPS only its own kinds from what it imports.
+
 ## Key files (`Luna/Mail/`)
 
 - **`GmailIMAPClient`** (`IMAPFetching`): hand-rolled minimal IMAP4rev1 over

@@ -1,35 +1,51 @@
 # Email login flow
 
-`Luna/Mail/` implements the email-account sign-in flow shared by all three apps
-(the app target, filesystem-synchronized, so no project-file edits are needed when
-files are added here). Entry point: `EmailLoginFlow.present(from:accountStore:
-completion:)`, called from `AppDelegate` (first-launch prompt), the "Replay
-Onboarding" flow (`OnboardingFlow`, with an ephemeral `accountStore` — see
-`claudedocs/onboarding.md`), and `EmailAndKindleSettingsScreen`. It builds and
-presents a `UINavigationController`.
-During first-launch onboarding, `OnboardingFlow` instead embeds the same
-`EmailEntryViewController` directly as its root. That mode replaces modal Cancel
-with a top-right **Skip for now** action and advances to the Safari onboarding
-step after a successful credential/OAuth check; all address-entry, provider
-inference, AutoFill, autodiscovery, loading-cover, and success behaviors are shared.
+`Luna/Mail/` implements email-account sign-in for the two apps that do email
+(`Luna` and `LunaReader` — `AppSurface.sharesByEmail`; the app target is
+filesystem-synchronized, so no project-file edits are needed when files are added
+here).
 
-## Screens
+There is **one** entry point and no modal sheet: the Sharing Account section of
+**Settings → Email & Sending** (`EmailAndKindleSettingsScreen`) IS the sign-in
+form until an account exists. Anything that needs an account and doesn't have one
+redirects there rather than asking first —
+`SendToFriendSheet.accountSetupLauncher`, installed by the `KindWiring` variants
+of those two apps, calls
+`EmailAndKindleSettingsScreen.pushForAccountSetup(from:)`, which pushes the screen
+with the address field already focused (`focusesAddressField`, honored in
+`viewDidAppear`). An app extension, which can't navigate the app's settings,
+explains in an alert instead.
 
-1. **`EmailEntryViewController`** (`EmailLoginFlow.swift`) — address entry. A
-   hero (accent rounded icon tile + 28pt bold title + secondary-label body,
-   `OnboardingStepViewController`'s visual language, see below) sits above a
-   rounded field card, with a filled "Continue" button pinned above the keyboard.
-   In onboarding this is the first onboarding screen itself, not a second sheet
-   launched from an opt-in screen, and the field still autofocuses from
-   `viewDidAppear`.
-2. **`CredentialViewController`** (`CredentialViewController.swift`, its own
-   file) — app-specific password entry, pushed for every provider except
-   Outlook. Same hero/card/button treatment; the hero symbol is `key.fill` and
-   the title is the provider's display name.
-3. **Outlook** skips step 2 entirely — `ASWebAuthenticationSession` runs OAuth
+## Steps
+
+1. **The inline address row** (`EmailAndKindleSettingsScreen`) — an "Email" label,
+   a right-aligned address field carrying the AutoFill invariants below, and the
+   provider chip that fades in once the domain is recognized; beneath it a
+   **Connect** row, tinted and selectable only while the typed address could
+   plausibly be one, and showing a small dot-matrix spinner during autodiscovery.
+   The field and chip are long-lived views re-hosted into each freshly built cell:
+   the screen reloads its table on `viewWillAppear`, and rebuilding the field
+   would drop both the half-typed address and the keyboard session.
+2. **`EmailAccountSetup`** (`EmailAccountSetup.swift`) — everything between the
+   address and a saved account: provider inference, IMAP/SMTP resolution
+   (registry or ISPDB autodiscovery), then either pushing step 3 or running
+   Outlook OAuth to completion. It is owned by the screen that holds the field, so
+   another entry point could reuse it unchanged. `onBusyChange` brackets the one
+   network wait so the Connect row can show it; `completion(true)` means an
+   account was saved.
+3. **`CredentialViewController`** (`CredentialViewController.swift`) —
+   app-specific password entry, pushed for every provider except Outlook. A hero
+   (accent rounded icon tile + 28pt bold title + secondary-label body) sits above
+   a rounded field card with a filled "Sign In" button pinned above the keyboard;
+   the hero symbol is `key.fill` and the title is the provider's display name.
+   Pushed onto the settings stack, it always stays put through its success
+   checkmark and hands control to `completion` (the settings screen pops back to
+   itself and reloads) — it has no dismissal mode of its own.
+4. **Outlook** skips step 3 entirely — `ASWebAuthenticationSession` runs OAuth
    instead (see below).
 
-Both screens use `view.keyboardLayoutGuide` for the button: one required
+`CredentialViewController` uses `view.keyboardLayoutGuide` for its button: one
+required
 constraint (`button.bottomAnchor == view.keyboardLayoutGuide.topAnchor -16`)
 is enough, because `keyboardLayoutGuide.topAnchor` already rests at the
 safe-area bottom when no keyboard is shown — no separate "floor" constraint is
@@ -39,26 +55,21 @@ conflict with the keyboard-tracking one at rest).
 ## Shared visual language (`EmailLoginShared.swift`)
 
 `EmailLoginUI` — static builders for the hero tile, title label, body label,
-field card, and leading glyph — mirrors `OnboardingStepViewController`'s
-`iconTile`/title/body/button treatment (`LunaLibraries/Sources/LunaSocialUI/
-OnboardingStepViewController.swift`) so the login flow reads as a continuation
-of onboarding rather than a bolted-on system form. `GlassStyle.lunaBrandAccent`
+field card, and leading glyph — gives the credential screen a composed look
+rather than a bolted-on system form. `GlassStyle.lunaBrandAccent`
 (the indigo/periwinkle app-icon accent) is the fill throughout, not the user's
-reading accent, for the same reason onboarding uses it.
+reading accent, so the screen reads as "Luna" whatever the reading accent is.
 
-- **`EmailLoginActionButton`** — the filled 52pt/cornerRadius-14 Continue/Sign
-  In button. `isEnabled` dims to 50% alpha (a stock disabled state barely dims
+- **`EmailLoginActionButton`** — the filled 52pt/cornerRadius-14 Sign In button.
+  `isEnabled` dims to 50% alpha (a stock disabled state barely dims
   a solid fill). `setLoading(true)` swaps the title for a small embedded white
-  `DotMatrixSpinnerView` and blocks taps — used only by `EmailEntryViewController`
-  during `resolveServer` autodiscovery (the address-entry step's only network
-  wait; the credential step instead shows the full-screen loading cover, since
-  its wait is longer and worth taking over the whole screen for). Restoring the
+  `DotMatrixSpinnerView` and blocks taps. Restoring the
   correct `isEnabled` afterward is the caller's job — `setLoading` only undoes
   the title swap.
 - **`ProviderBadgeView`** / **`ProviderBadgeText`** — the small capsule chip
   ("Gmail", "iCloud", …) inside the email field card. `ProviderBadgeText.text(for:)`
-  is a pure function (`.generic` → `nil`) driven from the existing
-  `addressEdited` `.editingChanged`/`.editingDidEnd` control action — no
+  is a pure function (`.generic` → `nil`) driven from the settings screen's
+  `addressEdited` `.editingChanged` control action — no
   delegate. The badge view's constraints never change; only `alpha` is
   animated, so there's no layout jump when it appears or disappears. Because
   an empty field has no `@`, `ProviderInference.inferProviderID` returns
@@ -72,7 +83,7 @@ reading accent, for the same reason onboarding uses it.
 
 `LunaLibraries/Sources/LunaMailAccount/ProviderInference.swift` infers a
 `MailProvider.ID` from the address's domain (`gmail.com` → `.gmail`, etc.;
-anything unrecognized → `.generic`). For `.generic`, `EmailEntryViewController
+anything unrecognized → `.generic`). For `.generic`, `EmailAccountSetup
 .resolveServer` first tries Thunderbird's ISPDB
 (`autoconfig.thunderbird.net`) for the custom domain's IMAP/SMTP settings, and
 falls back to a `imap.<host>`/`smtp.<host>` implicit-TLS guess if that also
@@ -82,19 +93,20 @@ see the button-embedded spinner above.
 ## OAuth vs. app-password paths
 
 - **Outlook** (`.outlook`) is OAuth-only (Microsoft Graph, not IMAP/SMTP) —
-  `EmailEntryViewController.startOutlookOAuth` runs PKCE via
+  `EmailAccountSetup.startOutlookOAuth` runs PKCE via
   `MicrosoftOAuth` + `ASWebAuthenticationSession`, skipping
   `CredentialViewController` entirely.
   - **User cancellation** (`ASWebAuthenticationSessionError.canceledLogin`)
-    is silent: the entry screen stays exactly as it was, no cover, no alert.
+    is silent: the settings screen stays exactly as it was, no cover, no alert.
   - Any **other session error**, or a **callback that arrives without a
     `code` query item** (a real failure, not a cancellation — e.g. Microsoft
     denied the request), shows "Outlook sign-in failed." This used to return
     silently in both cases; only the cancellation case is silent now.
   - On a successful callback, the token exchange (`exchangeOutlookCode`) shows
-    the loading cover, requests notification authorization (see below), swaps
+    the loading cover, swaps
     the access/refresh tokens into `EmailAccountStore`, best-effort installs
-    the inbox filter, then resolves the cover to a checkmark before dismissing.
+    the inbox filter, then resolves the cover to a checkmark before handing back
+    to the settings screen.
 - **Everyone else** (Gmail/iCloud/Yahoo/generic IMAP) authenticates with an
   app-specific password via `IMAPSMTPTransport` (`LunaMailTransport`), entered
   in `CredentialViewController`.
@@ -126,20 +138,15 @@ cover is torn down (`hide()`) and the screen's own UI (button, field
 interaction) is explicitly re-enabled before the error alert is shown — never
 left disabled with no cover and no way to retry.
 
-### Notification permission during the network wait
+### Notification permission
 
-Right after each cover is shown and verification/exchange has started,
-`NotificationManager.requestAuthorization()` (`LunaSocial`) is called. This
-used to fire from `EmailEntryViewController.continueTapped`, interrupting the
-user with the system permission dialog mid-typing, before anything they'd
-asked for had actually started. Now it fires only once the network round trip
-is already underway and the screen is covered and unusable anyway — the
-system dialog appears over the dot-matrix cover, and the user answers it
-during otherwise-dead waiting time instead of at an arbitrary earlier moment.
-Neither success nor failure handling is gated on the dialog's outcome in any
-way; it's fire-and-forget, same as every other call site
-(`AppDelegate`, `OnboardingFlow`'s `existingAccountStep`, both untouched by
-this change).
+`NotificationManager.requestAuthorization()` (`LunaSocial`) is requested at
+launch by `AppDelegate` — with no setup flow left, that is the earliest honest
+moment, and share arrivals and price drops are all Luna posts. The credential
+screen still calls it once its cover is up and verification is underway: normally
+a no-op, but if the launch prompt somehow went unanswered, that network round
+trip is dead waiting time the system dialog can share. Fire-and-forget either
+way — no success or failure handling is gated on its outcome.
 
 ### Success beat: checkmark resolve
 
@@ -152,8 +159,8 @@ row-major y-axis) animate to full opacity/1.05x scale with a small stagger
 ordered by position along the stroke (`checkmarkStrokePosition`); every other
 dot fades to ~0.08 opacity/0.6x scale. After the last dot settles, it holds for
 `holdDuration` (default 0.35s; total beat ≈0.5s) and calls `completion`. Both
-verification paths call this on success, then dismiss from the completion — so the
-user sees the spinner resolve into a checkmark before the sheet closes. The classification
+verification paths call this on success and hand back from the completion — so the
+user sees the spinner resolve into a checkmark before the screen changes. The classification
 (`isCheckmarkDot(dimension:index:)`) and stroke-position
 (`checkmarkStrokePosition(dimension:index:)`) functions are pure/static/public
 so the shape can be sanity-checked without a live view (`LunaTests/
@@ -182,28 +189,28 @@ error type from outside `LunaMailTransport`.
 
 ## AutoFill invariants (do not regress)
 
-Both text fields:
+Both the inline address field and the password field:
 
 - **No delegate.** The system owns the native AutoFill/credential-suggestion
   insertion path directly; a delegate would interpose on iOS 26's input-
   suggestion/replacement path used by system and third-party credential
   providers.
 - **`becomeFirstResponder()` only in `viewDidAppear`**, never `viewDidLoad` —
-  starting the input session before the view is attached to the presented
-  window can leave the suggestion bar showing a choice from a provisional
-  session that never delivers its tap to the field.
+  starting the input session before the view is attached to the window can leave
+  the suggestion bar showing a choice from a provisional session that never
+  delivers its tap to the field. The address field additionally takes the keyboard
+  only when a redirect asked for it (`focusesAddressField`); a plain visit to the
+  settings screen leaves the keyboard down.
 - **Return key via a control action** (`.editingDidEndOnExit`), not a
   delegate method.
-- The email field additionally mirrors its text into `enteredAddress` via
-  `.editingChanged`/`.editingDidEnd` (AutoFill and password-manager fills can
-  arrive through editing-change and drop the field's own `text` if the
-  extension UI backgrounds the app mid-fill) and sets `textContentType =
-  .emailAddress` to prefer the fast personal-email suggestion over the
+- The address field sets `textContentType = .emailAddress` (and the email
+  keyboard) to prefer the fast personal-email suggestion over the
   password-manager UI.
 - The password field deliberately sets **no** `textContentType` (see above).
 
-`LunaTests/EmailEntryAutoFillTests.swift` pins these; since the field now sits
-inside a rounded field card (several levels deep — scroll view → content →
-stack → card → field, not a direct subview of the root view), its lookup uses
-a small recursive `findTextField(in:)` search rather than a flat
-`view.subviews` scan.
+`LunaTests/EmailEntryAutoFillTests.swift` pins these. It hosts the settings
+screen in a window so the table realizes real cells, then looks inside the
+sign-in row for its field (the Kindle section has a field of its own, so a
+first-match search of the whole view would be ambiguous). Both it and
+`EmailLoginTests` build the screen with an injected scratch `EmailAccountStore`,
+so the form's behavior doesn't depend on whatever the App Group Keychain holds.

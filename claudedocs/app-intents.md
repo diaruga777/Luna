@@ -32,7 +32,7 @@ is `.done`, `.unhandled`, or `.requiresScreenshot`; transient entities are resul
 values only and are not queryable.
 
 Outside Safari, the optional **OnScreenURLs** input is checked first, before the
-normal decision table **and before the onboarding interception**, so a supplied
+normal decision table, so a supplied
 URL this app can handle is saved even when the current app would otherwise be
 unsupported. It is
 deliberately a scalar String configured with
@@ -55,7 +55,7 @@ is reported or ignored**:
 |---|---|---|
 | one candidate | predicted kind is handled by THIS app | **save** — and throw on any failure |
 | one candidate | predicted kind belongs to a sibling app, or unusable URL | **skip** — silent fall-through |
-| ≥2 distinct valid, non-collapsing URLs | at least one is handleable | **divergent** — throws `multipleURLs` (after the onboarding hijack: an in-flight setup run must still advance) |
+| ≥2 distinct valid, non-collapsing URLs | at least one is handleable | **divergent** — throws `multipleURLs` |
 | ≥2 distinct valid URLs | none handleable | **skip** |
 | nothing usable | — | **skip** |
 
@@ -72,19 +72,12 @@ ingest task continues and persists pending work for retry.
 
 The shared **Settings → Shortcut & Safari → Handle On-Screen URLs** toggle is on
 by default. Turning it off makes `ProvideContextIntent` ignore the `OnScreenURLs`
-input entirely and continue through the same onboarding and app/screenshot
+input entirely and continue through the same app/screenshot
 decision it would use when no URL was supplied. The preference is stored in the
 App Group through `AppIntentSettings`, so the settings UI and background intent
 execution always read the same value across all three apps.
 
-When no usable on-screen URL was supplied, the **onboarding hijack** runs:
-`ActionButtonOnboardingStore.shared
-.handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)` gets the
-invocation before app classification (see "Action Button onboarding" below).
-`.foregroundThenUnsupported` → foreground Luna, return `.unhandled`;
-`.unsupported` → return `.unhandled`; `.none` → proceed.
-
-Then the pure decision table (`LunaIntents.ProvideContextDecision.decide`,
+With no usable on-screen URL supplied, the pure decision table decides (`LunaIntents.ProvideContextDecision.decide`,
 evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 
 | `app` | conditions | result |
@@ -93,7 +86,7 @@ evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 | Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **done** — saves `lastURL` NOW via the action-button path |
 | Safari | URL stale/absent, vision model available | **requiresScreenshot** |
 | Safari | URL stale/absent, no vision model | **unhandled** |
-| Shortcuts (outside onboarding) | — | **unhandled** (no meaningful screenshot of Shortcuts' own UI) |
+| Shortcuts | — | **unhandled** (no meaningful screenshot of Shortcuts' own UI) |
 | Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | this app doesn't handle media | **unhandled** |
 | Platform app | handles media, no vision model | **unhandled** |
 | Platform app | handles media, vision model available | **requiresScreenshot** |
@@ -338,38 +331,19 @@ Both intents conform to `ForegroundContinuableIntent` and call
 intent continues and returns its result). It's deprecated in iOS 26 in favor
 of `supportedModes: IntentModes` + `continueInForeground()`, but remains
 functional (introduced 16.4, present in both SDKs); one code path beats mixing
-the two mechanisms on the same intent type. Used for: the onboarding
-bounce-back, and the double-save "ask every time" friend prompt —
+the two mechanisms on the same intent type. Used for: the double-save
+"ask every time" friend prompt —
 `ReadingListIngestor` records the pending prompt, the intent foregrounds, and
 `SceneDelegate.applyPendingFriendPrompt()` presents `SendToFriendSheet`.
 
-## Action Button onboarding (`LunaStorage.ActionButtonOnboardingStore`)
+## Action Button setup
 
 The iOS 27+ Action Button is set up by importing the bundled `Send To
-Luna.shortcut` and assigning it to the Action Button in Settings. Both
-`ProvideContextIntent` invocations that happen DURING this setup — one from
-the Shortcuts app's own first run, one from wherever the Action Button is
-actually pressed — are hijacked before any decision work.
-`AppNamePlatform.isShortcuts(forAppName:)` recognizes the first of these
-("Shortcuts" is otherwise `.unhandled`).
-
-`ActionButtonOnboardingStore` (`LunaLibraries/Sources/LunaStorage/`) is a
-per-surface (`AppSurface.storageIdentifier`: `"reader"`/`"downloader"`/
-`"pricetracker"`) state machine persisted in App Group `UserDefaults`
-(`onboarding.actionButtonState.<surface>`), driven by:
-- `SceneDelegate.sceneWillEnterForeground` / `AppDelegate.applicationDidEnterBackground`
-  → `handleAppForegrounded`/`handleAppBackgrounded` (track the Luna↔Shortcuts↔Settings
-  round trip),
-- the onboarding UI → `beginInstallStep` / `markSettingsDeeplinkTapped`,
-- `ProvideContextIntent.perform()` →
-  `handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)`, called
-  before any decision work. It returns a `ProvideContextInterception`:
-  `.foregroundThenUnsupported` (foreground Luna in-intent, then return `.unhandled` — the
-  freshly-imported shortcut's first run, or real setup completing while another
-  app was frontmost), `.unsupported` (return `.unhandled` without foregrounding — Luna is
-  already frontmost; the in-app UI reacts to
-  `ActionButtonOnboardingStore.stateDidChangeNotification` instead), or `.none`
-  (no interception — the normal decision flow proceeds).
+Luna.shortcut` (Settings → Shortcut & Safari → Install Shortcut) and assigning it
+to the Action Button in Settings. There is no in-app state machine tracking that
+round trip: an invocation from the Shortcuts app's own first run carries no
+content, and `AppNamePlatform.isShortcuts(forAppName:)` already reports it
+`.unhandled` through the ordinary decision table.
 
 `SystemSettingsLink.openActionButton()` deep-links Settings → Action Button
 (`App-Prefs:root=ACTION_BUTTON`, falling back through the same private-scheme

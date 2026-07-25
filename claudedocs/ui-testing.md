@@ -32,10 +32,10 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 | `ReaderKit/UITestFixtures.swift` | `UITestState` enum + `UITestFixtures` builders (pure, shared by app + tests). |
 | `ReaderKit/ReadingListItem.swift` | DEBUG `init(seed:…)` fixture initializer + `deterministicUUID(from:)`. |
 | `ReaderKit/ReadingListStore.swift` | DEBUG `seedForTesting(items:contents:)` / `wipeForTesting()`. |
-| `Luna/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>` / `-uiTestOnboardingStep <n>` / `-uiTestScreen <name>`. Exposes `isUITestLaunch`. |
+| `Luna/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>` / `-uiTestScreen <name>`. Exposes `isUITestLaunch`. |
 | `Luna/UITestScreen.swift` | `UITestScreen` enum + `UITestScreenBuilder`: deep-links the window root to any named screen for the screenshot agent. DEBUG-only. |
 | `ReaderKit/UITestFixtures.swift` | Also defines `UITestLaunch.isActive` (reads the harness launch args; usable from ReaderKit, which can't import the app target). |
-| `Luna/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` + forces a UI-test root (deep-linked screen, onboarding, or reading list). |
+| `Luna/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` + forces a UI-test root (deep-linked screen or reading list). |
 
 ### Named states (`UITestState`)
 
@@ -47,8 +47,7 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 
 ### In-app seeding (screenshot agent)
 
-Launch the app with `-uiTestState mixed` (optionally `-uiTestOnboardingStep 0` to
-show onboarding instead of the list). The seeder wipes + seeds
+Launch the app with `-uiTestState mixed`. The seeder wipes + seeds
 `ReadingListStore.shared`, disables animations, **pins the reading-list sectioning
 clock** to `UITestFixtures.baseDate` (`UITestSeeder.sectioningNow`) so fixed-date
 fixtures land in the **Reading** section instead of Archive, **resets persisted list
@@ -72,8 +71,8 @@ real share sheet can't be driven on a simulator).
 
 The simulator-only debug tap targets (reading-list row ellipsis, reader "Split
 High/Low") overlay real content. They are gated on
-`!UITestLaunch.isActive`, so they vanish for any `-uiTestState`/`-uiTestScreen`/
-`-uiTestOnboardingStep` launch (the screenshot agent) but remain for interactive
+`!UITestLaunch.isActive`, so they vanish for any `-uiTestState`/`-uiTestScreen`
+launch (the screenshot agent) but remain for interactive
 simulator automation (no launch arg) and for unit/snapshot tests (which build VCs
 directly, so reference images are unaffected).
 
@@ -116,7 +115,6 @@ the reference for inspection.
 | Test file | Snapshot | Navigation / layout |
 |---|---|---|
 | `ReadingListScreenTests` | each state + each filter segment | row tap → reader / tracker editor / archive reader / openItem (video, platform); settings/friends buttons; table layout |
-| `OnboardingScreenTests` | every step (email, Safari, shortcut install, Action Button, action extension) | flow root shows email first; step buttons in-bounds |
 | `ReaderScreenTests` | scroll / highlight / rsvp / inline-header / standalone scroll + rsvp | mode switcher swaps hosted child VC; reader child in-bounds |
 | `PriceTrackingScreenTests` | — | price-editor layout/store list |
 | `SocialAndSeederTests` | — | friends-screen layout; seeder contract (every state ↔ fixture, mixed covers all types, deterministic ids, wipe) |

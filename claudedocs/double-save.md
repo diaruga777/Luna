@@ -47,7 +47,7 @@ resolves the configured action (`resolvedIntentAction`) and passes it as
     itself via `ForegroundContinuableIntent.requestToContinueInForeground()`
     (no shortcut branch involved). On foreground,
     `SceneDelegate.applyPendingFriendPrompt()`
-    consumes the prompt (only once the main UI is up, so onboarding never
+    consumes the prompt (only once the main UI is up, so a debug root never
     swallows it) and presents `SendToFriendSheet` for the item.
   - A repeat press with `intentAction` armed NEVER falls back into the legacy
     12 s regime (a 9 s repeat press is ignored, not sent).

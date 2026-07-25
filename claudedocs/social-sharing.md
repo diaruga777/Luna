@@ -1,9 +1,18 @@
 # Social Sharing (Contacts via Email)
 
-Contact sharing is **email-based**, universal across all three apps (no
-CloudKit, no separate identity/crypto system, no per-app gating). A contact is
+Contact sharing is **email-based** (no CloudKit, no separate identity/crypto
+system). A contact is
 just an email address; sharing an item sends a nicely-formatted email that a
 recipient's Luna app recognizes and imports.
+
+**Only the apps that do email have it**: `AppSurface.sharesByEmail` — the central
+**Luna** app and **Luna Reader**. **Downloader** and **Price Tracker** share a save
+as a plain URL through the system share sheet instead, so they show no Contacts
+button or settings row, offer no "Send to Contact…" row action, connect no account,
+and run no mail import (see `claudedocs/incoming-mail.md`). Everything below
+therefore describes those two apps. An account connected in either is visible to
+both — the metadata lives in App Group defaults and the secret in the shared
+App-Group keychain access group.
 
 ## Key files
 

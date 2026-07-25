@@ -59,11 +59,25 @@ Original mode applies the same stable top content inset directly to its WKWebVie
 Archive **capture** enables content JavaScript and waits for the DOM/CSS/font/layout
 signature to settle, because some publishers install their layout from deferred
 scripts. Capture uses Luna's generic junk blocker, generic paywall cleanup, bundled
-per-site cleanup, and per-host metering-script rules. Ingestion captures the resolver's
-unlocked HTML first and only navigates to the live publisher URL as a capture fallback,
-so the saved artifact does not replace a readable response with a fresh paywall.
-Extension saves attempt the same capture while alive; the main-app backfill uses the
-cleaned live capture path when the extension expires first.
+per-site cleanup, and per-host metering-script rules.
+
+**The archive is captured from the HTML that produced the reader, and only ever from
+that.** Ingestion writes the resolver's winning HTML to
+`OriginalArchives/<id>-reader-source.html` (`ReadingListStore.saveReaderSourceHTML`,
+excluded from backups, deleted the moment its `.webarchive` exists) BEFORE starting the
+up-to-20s capture, so a surface that dies mid-flight still leaves the right capture
+input behind — the share extension always dies, and `backfillMissingWebArchives` picks
+the file up on the next app launch. A LIVE navigation is reserved for a save with no
+recorded source at all (legacy rows; the Safari text-only action snapshot, which carries
+no HTML); it is NOT a fallback for a failed capture. That fallback was the bug: whenever
+the reader content came from a bypass the live page is a DIFFERENT document — the Paris
+Review's Steinbeck interview reads out of a 49k-character pre-paywall Wayback snapshot
+while the live page serves a 12k teaser under an un-dismissible subscribe card (598KB of
+real article vs a 17MB archive of the wall) — so a live capture produced an "original"
+the user never read and could not get past. With no archive at all, Original falls back
+to the styled `ArticleContent` snapshot, which IS the version that drove the reader. The
+archive.today reader records its extracted snapshot the same way, in case its own
+web-view capture fails.
 The generic WebKit CSS only targets structural wall containers—not arbitrary
 `paywall` classes, because Condé Nast uses that class on the readable article
 paragraphs themselves. DOM cleanup observes late child insertion for the full page
@@ -74,6 +88,17 @@ before persistence. Replay applies the same sanitization in memory to legacy arc
 adds a structural-wall/contrast safety stylesheet, and runs with content JavaScript
 disabled in a non-persistent web session. It also verifies that the archive contains
 the article that Luna extracted and checks the rendered article typography after load.
+That content check (`WebArchiveSanitizer.containsReadableArticle`) is CONTIGUOUS, not a
+word-set overlap: a metered teaser IS the article's opening, and prose reuses vocabulary
+heavily enough that the Paris Review live capture — holding the first 28% of a
+5,000-word interview — matched 68% of the distinct words sampled from the interview's
+END, so the old "42% of the first 240 words appear somewhere" gate accepted it. Instead
+it takes 48-character verbatim probes from blocks spread evenly across the whole saved
+article (first block to last, inclusive) and requires ≥60% present; the same two
+archives score 8/8 and 1/8. Matching compares letters and digits with all separators
+dropped, so a `<br>` or `&nbsp;` the two sides serialize differently cannot fail an
+identical passage. This also repairs items saved before the capture fix: an existing
+archive of a wall simply stops being shown.
 An absent, unsafe, content-mismatched, or visibly unstyled archive is replaced by a
 self-contained HTML snapshot built from the saved `ArticleContent` (including local
 images and links), with a no-network/no-script CSP and explicit light/dark palettes.
@@ -359,6 +384,22 @@ four-consumer skip + index-space alignment + id lookup).
 **Stage-2 component (`ArticleExtraction`).** The ONE place HTML becomes content AND is judged readable. Wraps the pure `ArticleExtractor` parser and exposes: `extract(html:baseURL:)`, `extractFromJSONLD(html:baseURL:)`, the shared `fetchAndExtract(baseURL:fetch:) -> ExtractedArticle?` helper (one fetch-then-extract for the whole pipeline — the byte-identical `ArticleResolver.extractedContent` / `BypassRunner.extracted` duplicates were deleted), and the SINGLE predicate `static isReadableArticle(_:html:)`. That predicate (`bodyTextLength >= ArticleContent.readableBodyThreshold && !PaywallDetector.looksPaywalled(content:html:)`) consolidated the three former duplicate readable/locked checks — `ArticleResolver.isReadable`, `BypassGate` step 3, and the implicit `!looksPaywalled` inside `ArticleContent.hasReadableBody`. It is HTML-aware (folds in the schema.org lock), so the lock can't be skipped via a text-only path. `ExtractedArticle { content, sourceHTML }` replaces the old `(ArticleContent, String)` tuple. `ArticleContent.hasReadableBody` is now a thin text-only (`html: nil`) call into the predicate. Tests: `ArticleExtractionTests` (per-site readable + paywalled-stub table for nytimes/washingtonpost/wsj/smh.com.au; the HTML-lock false-negative guard; long-article-quoting-a-gate-phrase policy locked).
 
 Layered readability: **refined** (aggressive junk-by-class stripping — footers, share/social bars, related rails, **comments**, **subscribe/paywall promos**, newsletter prompts) → **basic** (structural tags only) → JSON-LD `articleBody` → raw body text. `extract()` **trusts a substantial refined result** (≥600 chars) even when `basic` is much larger; the `refined*3 ≥ basic` guard only arbitrates a *medium* refined (350–600). This is the fix for archived WSJ/FT snapshots, where a long reader-comments thread + subscription gate hold more `<p>` text than the article — the old guard fell back to the unstripped `basic` pass and surfaced gate + comments instead of the body. `bestContainer` also **prefers an explicit article-body container** (`[itemprop=articleBody]`, `[class*=article-body|articleBody|article-content]`, …) with ≥400 chars before paragraph-scoring, so both layers target the prose.
+
+**A structural line break is worth a space.** `makeBlock`'s walk concatenates the text
+nodes it finds, so any element that ends its line without carrying a whitespace
+character used to be a zero-width join: `<br>` contributed nothing, and a `<p>` nested
+in a `<blockquote>` is walked as part of that one quote (it's skipped as its own block by
+`hasBlockAncestor`). The Paris Review separates the paragraphs of a quoted passage with
+`…his feeling.<br><br>The discipline…`, which reached the reader as "feeling.The
+discipline" — four such joins in one quote. `lineBreakingTags` (`br`, `hr`, `img`, and
+the block-level containers) therefore synthesizes a space on entering and leaving the
+element, collapsed against whatever whitespace is already there so real markup still
+yields exactly one and it never leads a block. Inline tags are excluded — a boundary
+inside `<em>un</em><strong>believable</strong>` would split the word. Appended between
+text nodes, so link ranges recorded earlier don't move and later ones shift with the text
+they name. Tests: `ArticleExtractorTests.testBRBetweenSentencesBecomesASpace`,
+`testNestedParagraphsInAQuoteAreSpaceSeparated`,
+`testLineBreakCollapsesAndKeepsLinkRangesAligned`, `testInlineMarkupDoesNotGainASpace`.
 
 **Paragraph-like `<div>`/`<section>`**: scoring and block extraction treat a `<div>`/`<section>` with **no block-level child element** (pure inline/text) as a paragraph — `isParagraphLikeContainer` / `paragraphLikeElements`. archive.today rewrites the captured page so **every body paragraph is a styled `<div>` with no `<p>` at all**; without this the whole body is invisible (extraction collapsed to the title + a stray summary box, ~1k chars). Div/section paragraph blocks must clear the same **>20-char** bar scoring uses, so short UI chrome (timecodes, "Up Next", labels) isn't emitted; explicit `<p>`/heading/list/quote tags keep any-length behavior.
 

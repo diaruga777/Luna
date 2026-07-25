@@ -1422,9 +1422,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private func scrollToBlock(_ blockIndex: Int) {
         let ranges = rendered.blockTextRanges
         guard !ranges.isEmpty else { return }
-        let forward = (blockIndex..<ranges.count).lazy.compactMap { ranges[$0] }.first
-        let backward = (0...min(blockIndex, ranges.count - 1)).reversed()
-            .lazy.compactMap { ranges[$0] }.first
+        // A prefix render carries fewer ranges than the article has blocks, so the
+        // index is clamped rather than trusted to be in bounds.
+        let start = min(max(blockIndex, 0), ranges.count - 1)
+        let forward = (start..<ranges.count).lazy.compactMap { ranges[$0] }.first
+        let backward = (0...start).reversed().lazy.compactMap { ranges[$0] }.first
         guard let range = forward ?? backward else { return }
         scrollRange(range, toFractionFromTop: Self.anchorScrollFractionFromTop, animated: true)
     }

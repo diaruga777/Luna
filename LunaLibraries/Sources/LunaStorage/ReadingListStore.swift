@@ -848,6 +848,48 @@ public final class ReadingListStore {
         }
     }
 
+    // MARK: - Reader-source HTML (the archive's capture input)
+
+    /// The HTML that produced the item's reader content, held only until a
+    /// `.webarchive` has been captured from it. The name is derived from the item id
+    /// (like an imported document's source file), so it needs no field on the model.
+    private func readerSourceHTMLURL(for itemID: UUID) -> URL {
+        originalArchivesDirectory
+            .appendingPathComponent("\(itemID.uuidString)-reader-source.html")
+    }
+
+    /// Records the exact HTML the resolver read the article out of, so the archive
+    /// can be captured from THAT document rather than from a fresh live navigation.
+    ///
+    /// This matters whenever the two differ, which is every paywall bypass: the Paris
+    /// Review's Steinbeck interview resolves through a pre-paywall Wayback snapshot
+    /// holding the whole 49k-character interview, while the live page serves a 12k
+    /// teaser under a subscribe card. Capturing live archived the teaser — a
+    /// "original page" that was neither the original the user read nor dismissible.
+    ///
+    /// Written by whichever surface ingested the article, INCLUDING the share
+    /// extension, whose own capture attempt races its process death; the file is what
+    /// lets the app's backfill finish that work from the right document.
+    public func saveReaderSourceHTML(_ html: String, for itemID: UUID) {
+        guard !html.isEmpty else { return }
+        let url = readerSourceHTMLURL(for: itemID)
+        try? Data(html.utf8).write(to: url, options: .atomic)
+        BackupPolicy.excludeFromBackups(url)
+    }
+
+    /// The saved reader-source HTML, when an archive still has to be captured from it.
+    public func readerSourceHTML(for itemID: UUID) -> String? {
+        guard let data = try? Data(contentsOf: readerSourceHTMLURL(for: itemID))
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Drops the capture input once the archive exists (or capture is known to be
+    /// hopeless), so a transient artifact doesn't accumulate in the App Group.
+    public func removeReaderSourceHTML(for itemID: UUID) {
+        try? fileManager.removeItem(at: readerSourceHTMLURL(for: itemID))
+    }
+
     /// The saved web archive, when one was successfully captured for a web page.
     public func webArchiveURL(for item: ReadingListItem) -> URL? {
         guard let fileName = item.originalArchiveFileName,
@@ -1045,6 +1087,8 @@ public final class ReadingListStore {
         if let thumb = item.thumbnailFileName {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(thumb))
         }
+        // The archive's pending capture input, when this item never got that far.
+        removeReaderSourceHTML(for: item.id)
         // Release this save's downloaded images (deleted only if no other save/preloaded
         // page still references the same shared `img-<hash>` file).
         imageReferences.removeReferences(contentKey: ImageReferenceStore.itemKey(item.id))

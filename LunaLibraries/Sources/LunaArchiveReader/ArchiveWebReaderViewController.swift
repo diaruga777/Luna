@@ -930,6 +930,11 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     // the loaded article up; extensions finish via `onExtracted`).
                     self.loadingOverlay.isHidden = true
                     _ = self.store.saveContent(content, for: item)
+                    // The unlocked snapshot this reader extracted from. If the
+                    // web-view capture below fails, the app's backfill must still
+                    // archive THIS document — a live navigation would put the
+                    // publisher's wall back into the item's "original".
+                    self.store.saveReaderSourceHTML(html, for: item.id)
                     self.captureUnlockedWebArchive(for: item)
                     SharedDiagnosticLog.record(
                         "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")
@@ -956,6 +961,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                   data.count > 1024
             else { return }
             self.store.saveWebArchive(data, for: item)
+            self.store.removeReaderSourceHTML(for: item.id)
             SharedDiagnosticLog.record(
                 "archive: captured unlocked .webarchive (\(data.count) bytes)", category: "archive")
         }

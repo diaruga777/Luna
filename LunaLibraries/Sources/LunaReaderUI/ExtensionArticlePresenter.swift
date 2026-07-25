@@ -38,16 +38,21 @@ public final class ExtensionArticlePresenter {
         // does; a no-op if a script is already cached.
         ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded(
             item: item, content: content, articlesDirectory: store.articlesDirectory)
-        // Best-effort while the extension remains alive: archive the SAME unlocked
-        // HTML that produced the native reader, with the shared ad/paywall cleanup.
-        // If the process ends first, the main app's cleaned live backfill repairs it.
+        // Record the HTML that produced the native reader FIRST, synchronously. The
+        // WebKit capture below needs seconds and the extension is killed as soon as
+        // the sheet dismisses, so it usually loses that race — and the app's backfill
+        // used to "repair" the loss with a LIVE capture, i.e. with the publisher's
+        // paywalled page instead of the unlocked document the reader was built from.
+        // With the source on disk the backfill finishes the job from the right one.
         if !html.isEmpty {
+            store.saveReaderSourceHTML(html, for: item.id)
             let archiveStore = store
             let itemID = item.id
             Task {
                 guard let archive = await WebArchiveCapturer.capture(html: html, baseURL: url),
                       let current = archiveStore.item(withID: itemID) else { return }
                 archiveStore.saveWebArchive(archive, for: current)
+                archiveStore.removeReaderSourceHTML(for: itemID)
             }
         }
         // Give the row the SAME cover thumbnail an in-app save produces. Best-effort

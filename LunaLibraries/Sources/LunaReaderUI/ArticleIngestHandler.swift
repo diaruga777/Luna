@@ -120,6 +120,11 @@ public final class ArticleIngestHandler {
     /// surfaces (extensions, paste, friend-share) don't capture inline. This repairs
     /// every ready web page that lacks an archive — one WebKit capture at a time so we
     /// never run a fleet of web views — which is also how those surfaces get covered.
+    ///
+    /// It captures from the item's saved reader-source HTML when one is on disk (the
+    /// share extension leaves it exactly so this pass can finish its work from the
+    /// right document); only a save with no recorded source falls back to a live
+    /// navigation.
     public func backfillMissingWebArchives(store: ReadingListStore) {
         Task { @MainActor in
             guard !isBackfillingArchives else { return }
@@ -142,20 +147,37 @@ public final class ArticleIngestHandler {
         }
     }
 
-    /// Captures and stores a cleaned `.webarchive`, preferring the resolver's exact
-    /// unlocked HTML over a fresh live navigation that may reintroduce a paywall.
+    /// Captures and stores a cleaned `.webarchive` from the HTML that produced the
+    /// reader — the ONE document "Original" is supposed to show.
+    ///
+    /// A live navigation is only for a save with no recorded source HTML at all
+    /// (legacy rows, and the Safari text-only action snapshot, which carries none).
+    /// It is NOT a fallback for a failed capture: whenever the reader content came
+    /// from a bypass, the live page is a DIFFERENT document — the Paris Review serves
+    /// a 12k-character teaser under a subscribe card where the reader holds the whole
+    /// 49k interview — so archiving it produces a wrong, un-dismissible "original".
+    /// With no archive, the reader falls back to a styled snapshot of the saved
+    /// content, which IS the version the user read.
     private func captureWebArchiveIfPossible(
         for item: ReadingListItem, url: URL, html: String?, store: ReadingListStore
     ) async {
         guard url.scheme?.hasPrefix("http") ?? false else { return }   // never for lunamail://, lunadoc://
-        var archive: Data?
+        // Record the capture input before the (up-to-20s) capture, so a process that
+        // dies mid-flight — the share extension always does — leaves the backfill
+        // something better than the live page to work from.
         if let html, !html.isEmpty {
-            archive = await WebArchiveCapturer.capture(html: html, baseURL: url)
+            store.saveReaderSourceHTML(html, for: item.id)
         }
-        if archive == nil {
+        let sourceHTML = html?.isEmpty == false ? html : store.readerSourceHTML(for: item.id)
+        let archive: Data?
+        if let sourceHTML {
+            archive = await WebArchiveCapturer.capture(html: sourceHTML, baseURL: url)
+        } else {
             archive = await WebArchiveCapturer.capture(url: url)
         }
-        if let archive { store.saveWebArchive(archive, for: item) }
+        guard let archive, let current = store.item(withID: item.id) else { return }
+        store.saveWebArchive(archive, for: current)
+        store.removeReaderSourceHTML(for: item.id)
     }
 
     // MARK: - Thumbnail backfill

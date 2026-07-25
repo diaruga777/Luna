@@ -1,21 +1,75 @@
 # Visual effects
 
 Luna uses ordinary UIKit presentation, navigation, and content-change animations. The
-shared custom effects are the loading indicator, onboarding progress dots, moon-horizon
-download progress, and the Reader-only Lunar Eclipse navigation treatment.
+shared custom effects are the night-sky starfield, the loading indicator, onboarding
+progress dots, moon-horizon download progress, and the eclipse transitions.
 
 ## Appearance palette
 
-`LunaColors` in `LunaDesignSystem` is the semantic palette shared by all three apps and
-their extensions. Dark mode is white text on a true-black base. Light mode deliberately
-remains charcoal: black text sits on a 46% sRGB-gray base (approximately 4.58:1 contrast),
-with progressively lighter gray surfaces for cards, grouped content, and nested readers.
-This is the darkest neutral base that clears the 4.5:1 normal-text contrast target.
+`LunaColors` in `LunaDesignSystem` is the semantic palette shared by all four apps and
+their extensions. **Both appearances are night.** Dark mode is white text on a true-black
+base. Light mode is the **predawn** theme: the same near-black sky lifted one barely
+perceptible notch (mean channel 0.055 against dark mode's 0.000 — `#0E0E0F` for the
+central app) and given a faint chromatic cast. It is not a light theme and never carries
+dark-on-light text; the two appearances differ only by that lift and cast, so "Light"
+reads as the sky a few minutes before sunrise rather than as a different app. Nested
+surfaces (cards, grouped content, `ReaderDepth`'s reader levels) step up in both ramps,
+with each predawn level a notch above its dark twin.
+
+The cast comes from `LunaSurfacePalette.predawnSurface(level:)`: the app's own
+`atmosphereTint` cooled 60% toward a deep pre-sunrise blue, normalised to unit mean, and
+pulled 55% back toward neutral, then scaled to `level`. So brightness is controlled purely
+by `level` and no app's hue ever shouts. The central Luna app's tint is **white**, making
+its sky achromatic moonlight — the neutral parent of the three coloured children (Reader
+cool, Downloader warm, Price Tracker faintly teal).
+
+### The sky travels on `LunaSkyTrait`, not `userInterfaceStyle`
+
+`userInterfaceStyle` is pinned to **`.dark` app-wide** and the chosen appearance rides a
+custom trait (`LunaSky`: `.night` / `.predawn`). This is not incidental: UIKit's own
+surfaces — Liquid Glass, blur effects, alerts and action sheets, keyboards, scroll
+indicators, text selection — key off the style and render *light* under a light trait. A
+light-mode glass bar came out white carrying near-white Luna text. Pinning the style fixes
+all of those at once, and as a bonus every implicit `.label` / `.placeholderText` /
+`UIListContentConfiguration` default now resolves to its dark (light-on-dark) variant.
+
+Consequences to remember:
+
+- `LunaSkyTrait.affectsColorAppearance` is true, so dynamic colours re-resolve on a sky
+  change exactly as they would on a style change — the in-app appearance switch still
+  repaints a live hierarchy instead of rebuilding it.
+- Views that cache resolved `CGColor`s must `registerForTraitChanges([LunaSkyTrait.self])`.
+  **A `UITraitUserInterfaceStyle` change will never arrive again.**
+- `.system` follows the device through the window **scene**, since the pinned window can no
+  longer report the device style (`AppearanceSettings.followSystemStyle(of:)`).
+- `AppearanceSettings.apply(to:)` has a `UIWindow` form for the apps and a
+  `UIViewController` form for surfaces that render in someone else's window — the share and
+  action extensions (via `ShareViewController`) and both App Clips.
+- Anything rendering Luna colours onto a non-Luna surface must resolve them explicitly.
+  The emailed price graph (`PriceGraphEmailSnapshot`) resolves against a plain dark trait
+  collection so background and labels agree.
 
 App UI must use `LunaColors` instead of UIKit's label/background/grouped/fill/separator
-semantic colors, because UIKit's light variants return white surfaces. `AppearanceSettings`
-also installs matching appearances for UIKit-owned table, collection, text-input,
-navigation-bar, and tab-bar surfaces before each scene builds its root controller.
+semantic colors. `AppearanceSettings` also installs matching appearances for UIKit-owned
+table, collection, text-input, navigation-bar, and tab-bar surfaces before each scene
+builds its root controller.
+
+## Starfield (`StarfieldView`)
+
+`LunaLibraries/Sources/LunaDesignSystem/StarfieldView.swift` puts an extremely faint
+scatter of stars behind the card decks (`ArticleCardsViewController`,
+`SavedMediaCardsViewController`) and the reading list (as `tableView.backgroundView`).
+
+Deliberately below the threshold of casual notice: the brightest star sits at ~13% alpha
+and most are under 6%, so the background still reads as black and only rewards someone who
+looks. **Nothing animates** — a twinkle would announce the effect and defeat the point.
+
+The sky is *fixed*: 170 positions come from one deterministic seeded table in normalised
+coordinates, so every screen and every app shows the same constellations and a rotation or
+resize never reshuffles them. Brightness follows a cubed roll, so faint stars vastly
+outnumber bright ones as in a real magnitude distribution; every 19th star also gets a soft
+bloom. Stars carry the app's `atmosphereTint` washed 55% toward white — present as a cast,
+still starlight. The central app's sky is plain moonlight.
 
 ## Loading spinner (`DotMatrixSpinnerView`)
 
@@ -60,6 +114,49 @@ animation silhouettes the source while a scene-wide veil darkens, moves the ecli
 zenith under a corona, swaps the screen beneath the opaque frame, and uncovers the reader.
 The reverse crosses the screen back to the originating row. Simulator builds use a longer
 duration for visual tuning; device builds use production timing.
+
+## The corona (`EclipseCorona`)
+
+All three eclipse transitions — `CardEclipseAnimator` (carousel paging),
+`InlineReaderEclipseTransition`, and `LunarEclipseTransition` — share one corona renderer,
+`LunaLibraries/Sources/LunaDesignSystem/EclipseCorona.swift`. It is modelled on what a
+camera records at totality rather than on a soft glow:
+
+- **Chromosphere.** A hairline of near-white, slightly warm light sitting exactly on the
+  limb. The single strongest "real photograph" cue: a blur has no hard inner edge, a real
+  corona does. Achieved by clipping away the silhouette interior so only the outer half of
+  the stroke survives.
+- **Power-law falloff.** Concentric offset curves of the silhouette weighted by
+  `(1 + d/d₀)^-n`, so the corona is bright and tight at the limb yet still faintly alive
+  two radii out. A layer shadow's Gaussian profile dies far too abruptly and read as a lamp
+  behind the card.
+- **Streamers.** 26 uneven rays, long and bright near the equator and short fine brushes
+  over the poles, each fanned into raised-cosine slices with jittered tips. Slices must
+  **abut exactly** — overlapping them screen-blends into a bright seam down every ray — and
+  each slice runs its gradient from the silhouette *centre*, so the discarded interior
+  absorbs the ramp-up and no arc appears where the gradient began.
+- **Pearl, not white.** Warm-white at the limb cooling to faint blue outward, with 22% of
+  the app's `atmosphereTint` mixed into the outer corona (a no-op for the central app).
+- **Prominences.** Three small hydrogen-alpha arcs on the limb, drawn in `plusLighter` so
+  the pink survives instead of being screened into the rim.
+
+The full-screen (interior) variant, for a source that already fills the transition
+container, is four trapezoid-clipped edge gradients — each clipped to the points nearer its
+edge than any other, so brightness is a function of distance to the nearest edge and the
+bands agree along every diagonal. Nested rounded-rect strokes (the obvious alternative)
+offset by √2 more at the corners and read as a bevelled picture frame.
+
+Rendering is hundreds of stroked curves plus a gradient per ray slice, far too much for a
+`draw(_:)` on every frame, so each geometry is baked into a cached `UIImage` below screen
+scale. Card geometry is constant within a session, so only the first transition pays.
+
+The diamond-ring point (`EclipseFlareView`) matches: a blown-out warm core drifting to a
+cool flare tail, irregular spike lengths rotated off the axes, and a faint lens ghost ring.
+
+`EclipsePreviewRecorderTests` renders the corona, the interior corona, the flare, and the
+starfield to PNGs for tuning. It is skipped unless `RECORD_ECLIPSE_PREVIEWS=1` and
+`ECLIPSE_PREVIEW_DIR` are set — and as with snapshot recording, those must be passed with
+the `TEST_RUNNER_` prefix to reach the runner's environment.
 
 ## Testing notes
 

@@ -79,6 +79,22 @@ stable Xcode 26.2.
 > substitute generic symbols or invent new action artwork. Share extensions keep the full-color
 > `AppIcon*` sets.
 
+> **Appearance: both modes are night, and the sky is NOT `userInterfaceStyle`.** Dark mode is
+> true black; "Light" is the **predawn** theme — the same near-black sky lifted one barely
+> perceptible notch (mean 0.055 vs 0.000) and faintly tinted with the app's own colour cooled
+> toward pre-sunrise blue. Because UIKit's own materials (Liquid Glass, blur, alerts,
+> keyboards, scroll indicators, text selection) key off `userInterfaceStyle` and render LIGHT
+> under a light trait, the style is **pinned to `.dark` app-wide** and the chosen appearance
+> rides a custom trait, `LunaSkyTrait` (`LunaSky.night` / `.predawn`) — see
+> `claudedocs/visual-effects.md`. Consequences: a view caching resolved `CGColor`s must
+> `registerForTraitChanges([LunaSkyTrait.self])` (**a style change will never arrive again**);
+> `.system` follows the device via the window *scene*, not the window; `AppearanceSettings.apply`
+> has a `UIWindow` form for apps and a `UIViewController` form for surfaces living in someone
+> else's window (share/action extensions via `ShareViewController`, both App Clips); and code
+> rendering Luna colours onto a foreign surface must resolve them against an explicit trait
+> collection (as `PriceGraphEmailSnapshot` does). The one deliberate hold-out is the Live
+> Activity widget, which keeps system semantics and so still goes light with the OS.
+
 ## Agent workflow
 
 - Always commit completed work in small, logical chunks as you go — don't wait for
@@ -227,17 +243,22 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 1689 tests, 16 skipped, 3 failures**
-  (measured 2026-07-25). The 3 failures are the long-standing
-  `AudioMiniPlayerTests.testMiniPlayer{Playing,Paused,Slim}Snapshot` reference-image
-  drifts (2.2–3.9% pixel diff against a 2% tolerance) — they fail on an untouched
-  main too, so treat them as the baseline, not a regression, and re-record with
-  `RECORD_SNAPSHOTS=1` if the mini-player design is settled. The 16 skips are
+- **Current suite state on the iOS 26.x sim: 1695 tests, 20 skipped, 0 failures**
+  (measured 2026-07-25, full run with nothing skipped on the command line). The
+  long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
+  snapshot set was re-recorded for the predawn palette, and the harness now pins the
+  same appearance the app does (dark style + `lunaSky = .predawn`, over
+  `LunaColors.background`) instead of forcing a light style. The 20 skips are
   intentional `XCTSkip`s —
   `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot`, the twelve
   `GuideVideoRecorderTests.testRecord*` methods (gated behind
-  `RECORD_GUIDE_VIDEOS=1`), and two `SocialMediaResolverTests` live-YouTube transfers
-  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`). One class,
+  `RECORD_GUIDE_VIDEOS=1`), two `SocialMediaResolverTests` live-YouTube transfers
+  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), and the four
+  `EclipsePreviewRecorderTests` corona/starfield preview recorders
+  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`). **The bundled
+  `Luna/Resources/*Light.mp4` onboarding guide videos still bake in the old 46%-gray
+  charcoal palette** — deliberately left stale; re-record via `RECORD_GUIDE_VIDEOS=1`
+  when onboarding is next revisited. One class,
   `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
   rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
   test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a

@@ -748,13 +748,23 @@ public struct ArticleExtractor {
 
     // MARK: - Images
 
+    /// Roughly two screen heights of reader prose, measured in characters. The
+    /// extractor has no typography, and the lead-image rule below only needs an
+    /// order-of-magnitude answer to "does this article open on a wall of text".
+    private static let leadImageProseBudget = 1400
+
     /// Inserts the highest-priority Open Graph/Twitter lead image at the top of
-    /// the article. If the same image was already found in the body, move it
-    /// rather than showing the hero twice.
+    /// the article — but ONLY when the body has no picture of its own in its first
+    /// couple of screens. A hero stacked directly above (or a few lines from) the
+    /// same photo in the content reads as a rendering glitch, and an unrelated
+    /// second picture that close is no better. If the lead image only appears
+    /// deeper down, it's moved up rather than shown twice.
     private func prependLeadImage(
         from document: Document, to blocks: inout [ArticleContent.Block], baseURL: URL
     ) {
-        guard let leadURL = leadImageURL(from: document, baseURL: baseURL) else { return }
+        guard let leadURL = leadImageURL(from: document, baseURL: baseURL),
+              !hasImageNearTop(of: blocks)
+        else { return }
         let leadString = leadURL.absoluteString
         if let index = blocks.firstIndex(where: {
             $0.kind == .image && normalizedImageURL($0.imageURLString) == leadString
@@ -764,6 +774,17 @@ public struct ArticleExtractor {
             blocks.insert(
                 ArticleContent.Block(kind: .image, text: "", links: [], imageURLString: leadString), at: 0)
         }
+    }
+
+    /// Whether an image block falls within the first ~two screen heights of content.
+    private func hasImageNearTop(of blocks: [ArticleContent.Block]) -> Bool {
+        var prose = 0
+        for block in blocks {
+            if block.kind == .image { return true }
+            prose += block.text.count
+            if prose >= Self.leadImageProseBudget { return false }
+        }
+        return false
     }
 
     /// Metadata selectors are deliberately attribute-order independent. Several

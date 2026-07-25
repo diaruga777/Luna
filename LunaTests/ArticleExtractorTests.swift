@@ -120,9 +120,9 @@ final class ArticleExtractorTests: XCTestCase {
         <html><head>
         <meta property="og:image:secure_url" content="https://cdn.example.com/header.webp">
         </head><body><article>
-        <p>Opening article paragraph with enough text to give the article container a dominant score here.</p>
+        \(fillerArticleParagraphs(count: 12))
         <figure><img src="data:image/gif;base64,placeholder" data-srcset="/body-small.jpg 640w, /body-large.jpg 1600w"></figure>
-        <p>Closing article paragraph with enough text to keep the article container scoring dominant.</p>
+        \(fillerArticleParagraphs(count: 3))
         </article></body></html>
         """
 
@@ -134,14 +134,34 @@ final class ArticleExtractorTests: XCTestCase {
         ])
     }
 
+    /// A body image within the first couple of screens already does the hero's
+    /// job — repeating the metadata art above it would just look like a glitch.
+    func testSkipsMetadataHeroWhenBodyHasAnImageNearTheTop() throws {
+        let html = """
+        <html><head>
+        <meta property="og:image:secure_url" content="https://cdn.example.com/header.webp">
+        </head><body><article>
+        <p>Opening article paragraph with enough text to give the article container a dominant score here.</p>
+        <figure><img src="/body-large.jpg" width="1600" height="900"></figure>
+        \(fillerArticleParagraphs(count: 6))
+        </article></body></html>
+        """
+
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let images = content.blocks.filter { $0.kind == .image }
+        XCTAssertEqual(images.map(\.imageURLString), ["https://example.com/body-large.jpg"],
+                       "no cover image on top of a picture the reader meets immediately")
+        XCTAssertEqual(content.blocks.first?.kind, .paragraph)
+    }
+
     func testRetainsGIFBodyImageAndCanPromoteGIFToLeadImage() throws {
         let gifURL = "https://i0.wp.com/example.com/uploads/motion.gif?resize=800%2C80&ssl=1"
         let html = """
         <html><head><meta property="og:image" content="\(gifURL)"></head>
         <body><article>
-        <p>Opening article paragraph with enough text to give the article container a dominant score here.</p>
+        \(fillerArticleParagraphs(count: 12))
         <figure><img src="\(gifURL)" width="800" height="180"></figure>
-        <p>Closing article paragraph with enough text to keep the article container scoring dominant.</p>
+        \(fillerArticleParagraphs(count: 3))
         </article></body></html>
         """
 

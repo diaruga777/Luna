@@ -524,3 +524,47 @@ private final class DelayedThumbnailDataSource: @preconcurrency CardCarouselData
         completions.removeValue(forKey: index)?(image)
     }
 }
+
+/// The starfield behind the cards is handed to the carousel as `chromeBackdrop`
+/// so it leaves and returns with the rest of the chrome, on the same curve.
+final class CardCarouselChromeBackdropTests: XCTestCase {
+
+    @MainActor
+    private func makeCarousel() -> CardCarouselViewController {
+        let carousel = CardCarouselViewController()
+        carousel.loadViewIfNeeded()
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        carousel.view.layoutIfNeeded()
+        return carousel
+    }
+
+    @MainActor
+    func testBackdropFadesOutAndBackWithImmersion() {
+        let carousel = makeCarousel()
+        let backdrop = StarfieldView(frame: carousel.view.bounds)
+        carousel.view.insertSubview(backdrop, at: 0)
+        carousel.chromeBackdrop = backdrop
+        XCTAssertEqual(backdrop.alpha, 1, accuracy: 0.001)
+
+        carousel.setImmersed(true, animated: false)
+        XCTAssertEqual(backdrop.alpha, 0, accuracy: 0.001, "stars should leave with the chrome")
+
+        carousel.setImmersed(false, animated: false)
+        XCTAssertEqual(backdrop.alpha, 1, accuracy: 0.001, "stars should come back with it")
+    }
+
+    /// Weak, so a host that tears its backdrop down mid-immersion doesn't leave
+    /// the carousel holding a dangling view.
+    @MainActor
+    func testBackdropReferenceIsWeak() {
+        let carousel = makeCarousel()
+        autoreleasepool {
+            let backdrop = StarfieldView(frame: carousel.view.bounds)
+            carousel.chromeBackdrop = backdrop
+            XCTAssertNotNil(carousel.chromeBackdrop)
+        }
+        XCTAssertNil(carousel.chromeBackdrop)
+        // Immersion must stay safe with nothing registered.
+        carousel.setImmersed(true, animated: false)
+    }
+}

@@ -7,10 +7,14 @@ import UIKit
 
 /// The night sky behind the cards: a fixed, extremely faint scatter of stars.
 ///
-/// Deliberately below the threshold of casual notice — the brightest star sits
-/// at roughly 13% alpha and most sit under 6%, so the background still reads as
-/// black and only rewards someone who looks. Nothing animates; a twinkle would
-/// announce the effect and defeat the point.
+/// Quiet, but no longer invisible — the brightest star sits at roughly 20% alpha
+/// and most sit under 8%, so the background still reads as black and the stars
+/// stay something you notice rather than something you're shown. Nothing
+/// animates; a twinkle would announce the effect and defeat the point.
+///
+/// The carousel takes this view as its `chromeBackdrop`, so it fades out with the
+/// scrub strip and side cards when a reader takes the screen, and fades back in
+/// with them.
 ///
 /// The sky is *fixed*: positions come from one deterministic table generated at
 /// load, in normalised coordinates, so every screen and every app shows the same
@@ -52,8 +56,8 @@ public final class StarfieldView: UIView {
             return Star(
                 x: random(),
                 y: random(),
-                radius: 0.35 + brightness * 0.6,
-                alpha: 0.016 + brightness * 0.115,
+                radius: 0.40 + brightness * 0.65,
+                alpha: 0.030 + brightness * 0.165,
                 bloom: index % 19 == 0)
         }
     }

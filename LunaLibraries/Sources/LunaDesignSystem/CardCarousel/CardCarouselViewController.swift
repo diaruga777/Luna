@@ -475,6 +475,12 @@ public final class CardCarouselViewController: UIViewController {
     /// inside the card moves — only the chrome fades.
     private var immersionExtendsCard = true
 
+    /// A host-owned decorative view behind the cards — the starfield — that the
+    /// carousel treats as its own chrome: it fades out with the scrub strip and
+    /// side cards on immersion and fades back in with them, on the same curve.
+    /// Weak, and never laid out or positioned here; the host still owns it.
+    public weak var chromeBackdrop: UIView?
+
     /// Cards rest this far below the carousel view's top — hosts whose header
     /// overlays the carousel reserve their header height here.
     public func setTopInset(_ inset: CGFloat) {
@@ -519,6 +525,9 @@ public final class CardCarouselViewController: UIViewController {
 
     private func applyImmersionLayout() {
         scrubber.alpha = isImmersed ? 0 : 1
+        // A host-owned backdrop (the starfield) counts as carousel chrome, so it
+        // leaves and returns on the same curve as the strip and the side cards.
+        chromeBackdrop?.alpha = isImmersed ? 0 : 1
         // The Reader replaces this bottom-center strip with its mode switcher
         // during immersion. A short downward drift makes that handoff read as
         // one control yielding the lane to the other instead of a hard swap.

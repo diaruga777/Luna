@@ -117,7 +117,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        StarfieldView.install(behindContentsOf: view)
+        // Handed to the carousel as chrome, so it fades away with the scrub
+        // strip and side cards when a reader takes over the screen.
+        carousel.chromeBackdrop = StarfieldView.install(behindContentsOf: view)
 
         var style = CardCarouselStyle()
         style.edgeGap = 10

@@ -60,9 +60,16 @@ builds its root controller.
 scatter of stars behind the card decks (`ArticleCardsViewController`,
 `SavedMediaCardsViewController`) and the reading list (as `tableView.backgroundView`).
 
-Deliberately below the threshold of casual notice: the brightest star sits at ~13% alpha
-and most are under 6%, so the background still reads as black and only rewards someone who
-looks. **Nothing animates** — a twinkle would announce the effect and defeat the point.
+Quiet, but not invisible: the brightest star sits at ~20% alpha and most are under 8%, so
+the background still reads as black and the stars stay something you notice rather than
+something you're shown. **Nothing animates** — a twinkle would announce the effect and
+defeat the point.
+
+The card decks hand their starfield to the carousel as `chromeBackdrop`, so it counts as
+carousel chrome: it fades out with the scrub strip and side cards when a reader takes over
+the screen, and fades back in with them, inside the same 0.32s ease-in-out animation block
+(`applyImmersionLayout`) so the timing matches for free. The reference is weak — the host
+still owns the view. The reading list has no immersion and keeps its stars up.
 
 The sky is *fixed*: 170 positions come from one deterministic seeded table in normalised
 coordinates, so every screen and every app shows the same constellations and a rotation or

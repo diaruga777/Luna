@@ -77,6 +77,10 @@ private final class PackageMockFetcher: HTMLFetching {
         html
     }
 
+    func fetchWaybackPrePaywallHTML(for url: URL) async throws -> String {
+        html
+    }
+
     func fetchJinaReader(for url: URL) async throws -> String {
         html
     }

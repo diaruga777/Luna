@@ -28,6 +28,9 @@ public protocol HTMLFetching {
     /// Resolves the newest Wayback 200 snapshot (CDX, then Availability) and fetches
     /// its raw `id_` replay — un-mangled source HTML the extractor likes.
     func fetchWaybackRawHTML(for url: URL) async throws -> String
+    /// Resolves the OLDEST Wayback 200 snapshot and fetches its raw `id_` replay — the
+    /// capture that predates a paywall the publisher added after publication.
+    func fetchWaybackPrePaywallHTML(for url: URL) async throws -> String
     /// Fetches the r.jina.ai reader rendering of `url` (`https://r.jina.ai/<url>`).
     func fetchJinaReader(for url: URL) async throws -> String
 }
@@ -243,24 +246,66 @@ public struct ArticleFetcher: HTMLFetching {
     /// Availability-API replay when CDX returns nothing.
     public func fetchWaybackRawHTML(for url: URL) async throws -> String {
         let canonical = Self.canonicalForArchiving(url).absoluteString
-        if let timestamp = try? await waybackNewestTimestamp(forCanonical: canonical),
-           let rawURL = URL(string: "https://web.archive.org/web/\(timestamp)id_/\(canonical)") {
-            return try await fetch(url: rawURL, userAgent: Self.safariUserAgent, timeout: 30)
+        if let timestamp = try? await waybackTimestamp(forCanonical: canonical, end: .newest) {
+            return try await fetchWaybackRaw(timestamp: timestamp, canonical: canonical)
         }
         return try await fetchWaybackHTML(for: url)
     }
 
-    /// CDX newest-200 lookup → the snapshot timestamp, or nil when none is available.
-    private func waybackNewestTimestamp(forCanonical canonical: String) async throws -> String? {
+    /// Resolves the OLDEST Wayback 200 snapshot and fetches its raw `id_` replay — the
+    /// capture most likely to PREDATE a wall the publisher added later.
+    ///
+    /// A paywall is a property of the site at a moment in time, not of the article: The
+    /// Paris Review put its interview archive online free and metered it years later, so
+    /// every recent capture of a 1969 interview carries the same truncated preview the
+    /// live page serves while the 2010–2016 captures hold the whole 50 000-character
+    /// piece. Newest-first (`fetchWaybackRawHTML`) is right for an article that was
+    /// walled from publication — where the oldest capture is just an older wall — so the
+    /// two run in that order and the readability gate picks the winner.
+    ///
+    /// Throws rather than falling back to the Availability API: that API only answers
+    /// "closest to now", which is exactly the capture the newest-first attempt already
+    /// tried.
+    public func fetchWaybackPrePaywallHTML(for url: URL) async throws -> String {
+        let canonical = Self.canonicalForArchiving(url).absoluteString
+        guard let timestamp = try? await waybackTimestamp(forCanonical: canonical, end: .oldest)
+        else { throw FetchError.badResponse(status: nil) }
+        return try await fetchWaybackRaw(timestamp: timestamp, canonical: canonical)
+    }
+
+    /// The raw `…/web/<ts>id_/<url>` replay for a resolved snapshot (the `id_` suffix
+    /// strips IA's banner/asset rewriting).
+    private func fetchWaybackRaw(timestamp: String, canonical: String) async throws -> String {
+        guard let rawURL = URL(string: "https://web.archive.org/web/\(timestamp)id_/\(canonical)")
+        else { throw FetchError.badResponse(status: nil) }
+        return try await fetch(url: rawURL, userAgent: Self.safariUserAgent, timeout: 30)
+    }
+
+    /// Which end of an article's capture history a Wayback lookup wants.
+    private enum SnapshotEnd {
+        case newest
+        case oldest
+    }
+
+    /// CDX 200-only lookup at one end of the capture history → the snapshot timestamp,
+    /// or nil when none is available. A negative `limit` returns the LAST n rows (newest,
+    /// with `fastLatest` letting IA answer from the tail of the index); a positive one
+    /// returns the first n (oldest).
+    private func waybackTimestamp(
+        forCanonical canonical: String, end: SnapshotEnd
+    ) async throws -> String? {
         var components = URLComponents(string: "https://web.archive.org/cdx/search/cdx")
-        components?.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "url", value: canonical),
             URLQueryItem(name: "output", value: "json"),
             URLQueryItem(name: "filter", value: "statuscode:200"),
             URLQueryItem(name: "collapse", value: "digest"),
-            URLQueryItem(name: "limit", value: "-5"),
-            URLQueryItem(name: "fastLatest", value: "true"),
+            URLQueryItem(name: "limit", value: end == .newest ? "-5" : "5"),
         ]
+        if end == .newest {
+            queryItems.append(URLQueryItem(name: "fastLatest", value: "true"))
+        }
+        components?.queryItems = queryItems
         guard let cdxURL = components?.url else { return nil }
         var request = URLRequest(url: cdxURL, timeoutInterval: 15)
         request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
@@ -268,7 +313,10 @@ public struct ArticleFetcher: HTMLFetching {
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               data.count <= Self.maxBytes
         else { return nil }
-        return Self.newestSnapshotTimestamp(fromCDXJSON: data)
+        switch end {
+        case .newest: return Self.newestSnapshotTimestamp(fromCDXJSON: data)
+        case .oldest: return Self.oldestSnapshotTimestamp(fromCDXJSON: data)
+        }
     }
 
     /// Parses a Wayback CDX JSON response (an array of rows, the first being the
@@ -278,8 +326,24 @@ public struct ArticleFetcher: HTMLFetching {
     /// `filter=statuscode:200` they're all 200s, so we take the last row whose body
     /// `length` isn't trivially small (a tiny capture is a stub, not the article).
     public static func newestSnapshotTimestamp(fromCDXJSON data: Data) -> String? {
+        // Rows are oldest→newest, so the LAST qualifying one is the newest.
+        qualifyingSnapshotTimestamps(fromCDXJSON: data).last
+    }
+
+    /// The OLDEST non-trivial 200 snapshot's 14-digit timestamp in a CDX response — the
+    /// capture most likely to predate a later-added paywall (see
+    /// `fetchWaybackPrePaywallHTML`). Pure, same parsing as
+    /// `newestSnapshotTimestamp(fromCDXJSON:)`, opposite end.
+    public static func oldestSnapshotTimestamp(fromCDXJSON data: Data) -> String? {
+        qualifyingSnapshotTimestamps(fromCDXJSON: data).first
+    }
+
+    /// Every usable snapshot timestamp in a CDX response, in the API's own oldest→newest
+    /// row order: 14-digit, status 200, and a body `length` that isn't trivially small (a
+    /// tiny capture is a stub/redirect shell, not the article).
+    private static func qualifyingSnapshotTimestamps(fromCDXJSON data: Data) -> [String] {
         guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[Any]],
-              rows.count > 1 else { return nil }
+              rows.count > 1 else { return [] }
 
         func stringValue(_ value: Any?) -> String? {
             if let string = value as? String { return string }
@@ -293,7 +357,7 @@ public struct ArticleFetcher: HTMLFetching {
         let lengthIndex = header.firstIndex(of: "length") ?? 6
         let minLength = 1024   // a 200 capture this small is a stub/redirect shell
 
-        var newest: String?
+        var timestamps: [String] = []
         for row in rows.dropFirst() {
             guard row.count > timestampIndex,
                   let timestamp = stringValue(row[timestampIndex]),
@@ -302,9 +366,9 @@ public struct ArticleFetcher: HTMLFetching {
             if row.count > statusIndex, let status = stringValue(row[statusIndex]), status != "200" { continue }
             if row.count > lengthIndex, let length = stringValue(row[lengthIndex]),
                let bytes = Int(length), bytes < minLength { continue }
-            newest = timestamp   // rows are oldest→newest, so the last qualifying wins
+            timestamps.append(timestamp)
         }
-        return newest
+        return timestamps
     }
 
     private func fetch(

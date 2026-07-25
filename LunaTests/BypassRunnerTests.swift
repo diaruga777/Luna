@@ -75,6 +75,13 @@ final class BypassRunnerTests: XCTestCase {
         XCTAssertEqual(fetcher.calls.first?.kind, .waybackRaw)
     }
 
+    func testWaybackPrePaywallStrategy() async {
+        fetcher.prePaywallHTMLByURL[articleURL.absoluteString] = readableHTML()
+        let result = await runner.run(.waybackPrePaywall, url: articleURL, directHTML: nil)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(fetcher.calls.first?.kind, .waybackPrePaywall)
+    }
+
     func testJinaReaderStrategy() async {
         fetcher.htmlByURL[articleURL.absoluteString] = readableHTML()
         _ = await runner.run(.jinaReader, url: articleURL, directHTML: nil)

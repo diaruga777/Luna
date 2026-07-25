@@ -18,19 +18,41 @@ final class BypassStrategySelectorTests: XCTestCase {
             for: url("https://example.com/x"), directHTML: html), [])
     }
 
-    func testRuleHostGoesDirectUnlockThenArchive() {
+    func testRuleHostTriesTheArchivesSilentlyThenDirectUnlock() {
         for article in ["https://www.wsj.com/articles/x", "https://www.nytimes.com/story"] {
             XCTAssertEqual(
                 BypassStrategySelector.strategies(for: url(article), directHTML: locked),
-                [.directUnlock, .archiveToday], article)
+                [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday], article)
         }
     }
 
     func testUnknownHostUsesArchive() {
+        // Wayback (both ends of the capture history) is silent and CAPTCHA-free, so it
+        // precedes the user-visible archive.today flow.
         XCTAssertEqual(
             BypassStrategySelector.strategies(
                 for: url("https://unknown.example/story"), directHTML: locked),
-            [.archiveToday])
+            [.waybackRaw, .waybackPrePaywall, .archiveToday])
+    }
+
+    func testTruncatedGenerousPreviewGetsTheArchivePlan() {
+        // The Paris Review shape: a long readable preview cut off server-side, with the
+        // subscribe gate standing where the rest of the interview should be. No metadata
+        // lock and no thin body, so ONLY the structural signal opens the plan.
+        let paragraph = "<p>Interview prose paragraph running long enough to count as real "
+            + "reported text rather than a caption or a byline line.</p>"
+        let truncated = """
+        <html><body><div class="article-body-wrap">
+          <main class="article-body">\(String(repeating: paragraph, count: 20))</main>
+          <div class="paywall"><h1>Want to keep reading?</h1>
+            <h4>Already a subscriber? Sign in below.</h4></div>
+        </div></body></html>
+        """
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(
+                for: url("https://www.theparisreview.org/interviews/3810/x"),
+                directHTML: truncated),
+            [.waybackRaw, .waybackPrePaywall, .archiveToday])
     }
 
     func testRuleHostWithoutMarkersStillBypasses() {
@@ -41,7 +63,7 @@ final class BypassStrategySelectorTests: XCTestCase {
         let known = url("https://www.delish.com/story")
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: known, directHTML: noEvidence),
-            [.directUnlock, .archiveToday])
+            [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
     }
 
     func testUnknownHostWithoutMarkersIsNotBypassed() {

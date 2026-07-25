@@ -18,6 +18,7 @@ public enum SilentStrategy: Equatable {
     case amp
     case ampQuery
     case waybackRaw
+    case waybackPrePaywall
     case jinaReader
     case ladderProxy(LadderProxy)
 
@@ -33,6 +34,7 @@ public enum SilentStrategy: Equatable {
         case .amp: return .amp
         case .ampQuery: return .ampQuery
         case .waybackRaw: return .waybackRaw
+        case .waybackPrePaywall: return .waybackPrePaywall
         case .jinaReader: return .jinaReader
         case let .ladderProxy(proxy): return .ladderProxy(proxy)
         }
@@ -74,6 +76,12 @@ public struct BypassPlan: Equatable {
     /// serially burn ~a minute before parking; this bounds the whole leg so the ingest
     /// path fails fast to `.needsArchive` instead of blocking.
     public static let silentChainDeadlineSeconds: TimeInterval = 20
+
+    /// The same budget when the resolver already HOLDS a readable browser capture (the
+    /// Safari "Read in Luna" hand-off of a page whose body the server truncated). The
+    /// chain is then only trying to IMPROVE on something the user can already read, so it
+    /// gets a fraction of the time before we hand that capture back.
+    public static let trustedCaptureSilentDeadlineSeconds: TimeInterval = 8
 
     /// Build the plan for `url` from the existing pure selector. PURE — no I/O. The
     /// selector still owns gate + per-host-rule + generic-fallback + normalization;
@@ -127,6 +135,7 @@ public struct BypassPlan: Equatable {
         case .amp: return .amp
         case .ampQuery: return .ampQuery
         case .waybackRaw: return .waybackRaw
+        case .waybackPrePaywall: return .waybackPrePaywall
         case .jinaReader: return .jinaReader
         case let .ladderProxy(proxy): return .ladderProxy(proxy)
         case .directUnlock, .archiveToday: return nil
@@ -154,7 +163,7 @@ public enum BypassURLs {
             return TrailingDotBypass.trailingDotURL(for: article)
         case let .ladderProxy(proxy):
             return proxy.url(for: article)
-        case .userAgent, .referer, .freshSession, .waybackRaw, .jinaReader:
+        case .userAgent, .referer, .freshSession, .waybackRaw, .waybackPrePaywall, .jinaReader:
             return article
         }
     }

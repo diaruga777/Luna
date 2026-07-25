@@ -43,6 +43,17 @@ public enum BypassStrategySelector {
             strategies.append(.ampQuery)
         }
 
+        // The Wayback Machine, both ends of the capture history, before ANY browser tier:
+        // it is silent, needs no CAPTCHA, and is the only technique that can beat a
+        // server-side truncation — the publisher never sent the rest of the body, so
+        // nothing done to the live page can recover it. Newest capture first (right for an
+        // article walled from publication), then the oldest, which predates a wall added
+        // later (`.waybackPrePaywall`). Both are cheap enough to precede a user-visible
+        // WKWebView flow, and the readability gate discards a capture that carries the
+        // same wall.
+        strategies.append(.waybackRaw)
+        strategies.append(.waybackPrePaywall)
+
         // A site rule → the browser-tier direct unlock before archive.today.
         if rule != nil {
             return strategies + [.directUnlock, .archiveToday]

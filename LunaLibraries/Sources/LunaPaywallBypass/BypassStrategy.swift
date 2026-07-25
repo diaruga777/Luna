@@ -38,6 +38,12 @@ public enum BypassStrategy: Equatable {
     /// Wayback: resolve the newest 200 snapshot (CDX, then Availability) and fetch
     /// the raw `id_` replay. Silent.
     case waybackRaw
+    /// Wayback: resolve the OLDEST 200 snapshot and fetch the raw `id_` replay — the
+    /// capture that predates a wall the publisher added after publication (the only
+    /// thing that works on a site whose archive went free-then-metered, e.g. The Paris
+    /// Review's interview archive). Runs AFTER `.waybackRaw`, whose newest capture is
+    /// the right answer for an article walled from publication. Silent.
+    case waybackPrePaywall
     /// r.jina.ai reader proxy (`https://r.jina.ai/<url>`) → Markdown/HTML. Silent.
     case jinaReader
     /// A server-rendering proxy (1ft.io) whose response is plain HTML a URLSession

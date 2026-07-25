@@ -24,7 +24,7 @@ final class MockArticleFetcher: HTMLFetching {
         var kind: Kind
 
         enum Kind: String, Equatable {
-            case plain, userAgent, referer, freshSession, waybackRaw, jina
+            case plain, userAgent, referer, freshSession, waybackRaw, waybackPrePaywall, jina
         }
     }
 
@@ -35,6 +35,10 @@ final class MockArticleFetcher: HTMLFetching {
     /// serve a readable page to the Drudge/Google referer while the direct read stays
     /// locked). Falls back to `htmlByURL` when absent.
     var refererHTMLByURL: [String: String] = [:]
+    /// HTML returned specifically for the OLDEST-snapshot Wayback fetch of a URL (so a
+    /// test can serve a pre-paywall archive capture while the direct read and the newest
+    /// capture stay walled). Falls back to `htmlByURL` when absent.
+    var prePaywallHTMLByURL: [String: String] = [:]
     /// URLs (absolute strings) that should throw a fetch error instead of returning.
     var failingURLs: Set<String> = []
     /// URLs (absolute strings) that should throw a SPECIFIC `ArticleFetcher.FetchError`
@@ -79,6 +83,13 @@ final class MockArticleFetcher: HTMLFetching {
     func fetchWaybackRawHTML(for url: URL) async throws -> String {
         calls.append(.init(url: url, userAgent: nil, referer: nil, xForwardedFor: nil,
                            noCookies: false, kind: .waybackRaw))
+        return try html(for: url)
+    }
+
+    func fetchWaybackPrePaywallHTML(for url: URL) async throws -> String {
+        calls.append(.init(url: url, userAgent: nil, referer: nil, xForwardedFor: nil,
+                           noCookies: false, kind: .waybackPrePaywall))
+        if let prePaywallHTML = prePaywallHTMLByURL[url.absoluteString] { return prePaywallHTML }
         return try html(for: url)
     }
 

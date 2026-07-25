@@ -96,6 +96,11 @@ public struct BypassRunner: BypassRunning {
                 try await fetcher.fetchWaybackRawHTML(for: url)
             }
 
+        case .waybackPrePaywall:
+            return await extraction.fetchAndExtract(baseURL: url) {
+                try await fetcher.fetchWaybackPrePaywallHTML(for: url)
+            }
+
         case .jinaReader:
             return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchJinaReader(for: url)

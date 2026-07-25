@@ -76,14 +76,15 @@ public enum ArticleResolver {
         // stale schema.org lock would otherwise re-reject the very content the user is
         // looking at, sending them back through the whole archive dance.
         //
-        // But a capture that STILL reads as locked is only a FLOOR, never the winner,
-        // when this host has a site-unlock rule: Safari can apply the rule's
-        // script-blocking half yet cannot spoof the request User-Agent, so a partially
-        // unlocked capture may be the publisher's TRUNCATED render (NYT sends the whole
-        // body and truncates the DOM client-side — a hand-off of that is 2k readable
-        // characters of a 5k article). The one silent rule fetch below can do what the
-        // browser could not; the capture stays as the fallback, so consulting it can
-        // only improve the result, and a host with no rule still returns immediately.
+        // But a capture that STILL reads as locked is only a FLOOR, never the winner:
+        // Safari can apply a rule's script-blocking half yet cannot spoof the request
+        // User-Agent, so a partially unlocked capture may be the publisher's TRUNCATED
+        // render (NYT sends the whole body and truncates the DOM client-side — a hand-off
+        // of that is 2k readable characters of a 5k article), and on a
+        // generous-preview site the browser is looking at a body the SERVER already cut
+        // short, which no amount of on-page unlocking can restore. The silent tier below
+        // can do what the browser could not; the capture stays as the fallback, so
+        // consulting it can only improve the result.
         var trustedCapture: ExtractedArticle?
         if let direct {
             if ArticleExtraction.isReadableArticle(direct) {
@@ -91,9 +92,6 @@ public enum ArticleResolver {
             }
             if trustsPrefetchedHTML, prefetchedHTML != nil,
                direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold {
-                guard siteRule != nil else {
-                    return .readable(direct.content, html: direct.sourceHTML)
-                }
                 trustedCapture = direct
             }
         }
@@ -108,11 +106,11 @@ public enum ArticleResolver {
         // (crawler/custom UA or spoofed Referer) and a forced JSON-LD reconstruction
         // before parking for the browser tier. Kept out of the strategy enum because
         // the rule carries arbitrary UA/referer strings the enum can't express.
+        // Never trade a trusted capture DOWN: a rule fetch or an archive snapshot can
+        // come back readable (no lock declaration, over the threshold) and still be
+        // shorter than what the user already had on screen.
+        let floor = trustedCapture?.content.bodyTextLength ?? 0
         if let rule = siteRule {
-            // Never trade a trusted capture DOWN: a rule fetch can come back readable
-            // (no lock declaration, over the threshold) and still be shorter than what
-            // the user already had on screen.
-            let floor = trustedCapture?.content.bodyTextLength ?? 0
             if let html = try? await SiteUnlockSilent.fetch(url: url, rule: rule, fetcher: fetcher),
                let candidate = await extraction.fetchAndExtract(baseURL: url, fetch: { html }),
                ArticleExtraction.isReadableArticle(candidate),
@@ -129,29 +127,35 @@ public enum ArticleResolver {
             }
         }
 
-        // The rule couldn't beat the capture. Hand back what the user is already
-        // looking at rather than walking the generic bypass chain: a live browser
-        // capture beats anything a background fetch will find, and the user is waiting.
-        if let trustedCapture {
-            return .readable(trustedCapture.content, html: trustedCapture.sourceHTML)
-        }
-
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
         let plan = BypassPlan.make(for: url, directHTML: direct?.sourceHTML)
-        let silentDeadline = Date().addingTimeInterval(BypassPlan.silentChainDeadlineSeconds)
+        // A trusted capture is already on screen, so the chain is a bounded attempt to
+        // IMPROVE it, not the thing the user is waiting for — it gets the shorter budget.
+        let silentDeadline = Date().addingTimeInterval(
+            trustedCapture == nil
+                ? BypassPlan.silentChainDeadlineSeconds
+                : BypassPlan.trustedCaptureSilentDeadlineSeconds)
         for strategy in plan.silent {
             let candidate = await bypassRunner.run(strategy.asBypassStrategy, url: url,
                                                    directHTML: direct?.sourceHTML)
-            if let candidate, ArticleExtraction.isReadableArticle(candidate) {
+            if let candidate, ArticleExtraction.isReadableArticle(candidate),
+               candidate.content.bodyTextLength >= floor {
                 return .readable(candidate.content, html: candidate.sourceHTML)
             }
             if Date() > silentDeadline { break }
         }
 
+        // Nothing beat the capture. Hand back what the user is already looking at rather
+        // than parking the item for the browser tier: a live browser capture is real
+        // content, and the user is waiting on it.
+        if let trustedCapture {
+            return .readable(trustedCapture.content, html: trustedCapture.sourceHTML)
+        }
+
         // No silent strategy worked. Map to the resolution — preserving the title so
         // the item parks for the WKWebView archive path. (The legacy `fetchArchivedHTML`
-        // last-silent attempt was dropped: `.waybackRaw` already covers Wayback in every
-        // rule, and `archive.ph/newest` belongs to the bounded WKWebView terminal flow,
+        // last-silent attempt was dropped: `.waybackRaw` covers Wayback in every plan,
+        // and `archive.ph/newest` belongs to the bounded WKWebView terminal flow,
         // not a silent fetch — removing the duplicate Wayback hit + near-always-failing
         // archive.ph GET is the NYT/WSJ "no silent strategy worked" speed fix.)
         return resolution(direct: direct, archived: nil, directFailure: directFailure)

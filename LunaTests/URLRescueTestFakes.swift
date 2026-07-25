@@ -23,6 +23,7 @@ final class FakeRescueHTMLFetcher: HTMLFetching {
     func fetchHTML(from url: URL, referer: String) async throws -> String { try result() }
     func fetchHTMLWithoutCookies(from url: URL) async throws -> String { try result() }
     func fetchWaybackRawHTML(for url: URL) async throws -> String { try result() }
+    func fetchWaybackPrePaywallHTML(for url: URL) async throws -> String { try result() }
     func fetchJinaReader(for url: URL) async throws -> String { try result() }
 }
 

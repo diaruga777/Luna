@@ -201,6 +201,20 @@ final class ArticleResolverTests: XCTestCase {
             + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
     }
 
+    /// The Paris Review shape: a LONG readable preview (no metadata lock, far over every
+    /// length threshold) that the server cut off, with the subscribe gate standing where
+    /// the rest of the interview should be. Only `TruncationGateDetector` can see this.
+    private func truncatedPreviewHTML(paragraphs: Int) -> String {
+        let paragraph = "<p>" + String(repeating: "A sentence of the published interview. ", count: 24) + "</p>"
+        return "<html><head><title>The Art of Fiction No. 45</title></head><body>"
+            + #"<div class="article-body-wrap"><main class="article-body">"#
+            + String(repeating: paragraph, count: paragraphs)
+            + "</main>"
+            + #"<div class="paywall"><h1>Want to keep reading?</h1>"#
+            + "<h4>Already a subscriber? Sign in below.</h4></div>"
+            + "</div></body></html>"
+    }
+
     private func bodyLength(of resolution: ArticleResolution) -> Int? {
         if case let .readable(content, _) = resolution { return content.bodyTextLength }
         return nil
@@ -269,9 +283,11 @@ final class ArticleResolverTests: XCTestCase {
         }
     }
 
-    /// A host with no site-unlock rule has nothing the app can do that the browser
-    /// couldn't: the capture is returned immediately, with no extra network at all.
-    func testTrustedCaptureOnRuleFreeHostCostsNoExtraFetch() async {
+    /// A host with no site-unlock rule still gets the silent ARCHIVE tier: a body the
+    /// server truncated is one thing the browser provably could not fix, and a
+    /// pre-paywall capture can. The capture is kept when nothing beats it, and the
+    /// attempt costs exactly the two Wayback probes — no re-fetch of the page itself.
+    func testTrustedCaptureOnRuleFreeHostStillTriesTheArchives() async {
         let articleURL = URL(string: "https://www.example-blog-host.com/2026/07/post")!
         XCTAssertNil(SiteUnlockRules.rule(for: articleURL), "fixture host must carry no unlock rule")
         let capture = truncatedLockedCaptureHTML()
@@ -285,7 +301,38 @@ final class ArticleResolverTests: XCTestCase {
         } else {
             XCTFail("expected readable, got \(result)")
         }
-        XCTAssertTrue(fetcher.calls.isEmpty, "no rule → no extra fetch")
+        XCTAssertEqual(fetcher.calls.map(\.kind), [.waybackRaw, .waybackPrePaywall])
+    }
+
+    /// The Paris Review case end to end: the live page serves a long readable preview cut
+    /// off server-side, the NEWEST Wayback capture carries the same wall, and the OLDEST
+    /// one predates the paywall entirely. The resolver must walk past the truncated
+    /// capture and return the pre-paywall body.
+    func testPrePaywallCaptureBeatsATruncatedPreview() async {
+        let articleURL = URL(string: "https://www.theparisreview.org/interviews/3810/steinbeck")!
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[articleURL.absoluteString] = truncatedPreviewHTML(paragraphs: 20)
+        fetcher.prePaywallHTMLByURL[articleURL.absoluteString] = proseHTML("steinbeck", paragraphs: 40)
+
+        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
+
+        guard case let .readable(content, _) = result else {
+            return XCTFail("expected readable, got \(result)")
+        }
+        XCTAssertTrue(content.title.contains("steinbeck"), "the pre-paywall capture must win")
+        XCTAssertEqual(fetcher.calls.map(\.kind), [.plain, .waybackRaw, .waybackPrePaywall])
+    }
+
+    /// Same shape, but the archives only ever hold the walled version: the item parks for
+    /// the browser tier under its real title rather than silently saving the preview.
+    func testTruncatedPreviewWithNoPrePaywallCaptureParks() async {
+        let articleURL = URL(string: "https://www.theparisreview.org/interviews/3810/steinbeck")!
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[articleURL.absoluteString] = truncatedPreviewHTML(paragraphs: 20)
+
+        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
+
+        XCTAssertEqual(result, .paywalled(title: "The Art of Fiction No. 45"))
     }
 
     /// When EVERY silent strategy fails (no readable result anywhere) on a host that

@@ -65,4 +65,35 @@ final class WaybackCDXTests: XCTestCase {
         """)
         XCTAssertEqual(ArticleFetcher.newestSnapshotTimestamp(fromCDXJSON: data), "20260101000000")
     }
+
+    // MARK: - Oldest (pre-paywall) end
+
+    func testOldestQualifyingRowWins() {
+        // The pre-paywall strategy wants the OTHER end of the same response: the first
+        // capture, taken before the publisher metered the page.
+        let data = json("""
+        [["urlkey","timestamp","original","mimetype","statuscode","digest","length"],
+         ["com,example)/a","20100101000000","https://example.com/a","text/html","200","D1","8000"],
+         ["com,example)/a","20250601120000","https://example.com/a","text/html","200","D2","9000"],
+         ["com,example)/a","20260101000000","https://example.com/a","text/html","200","D3","12000"]]
+        """)
+        XCTAssertEqual(ArticleFetcher.oldestSnapshotTimestamp(fromCDXJSON: data), "20100101000000")
+        XCTAssertEqual(ArticleFetcher.newestSnapshotTimestamp(fromCDXJSON: data), "20260101000000")
+    }
+
+    func testOldestSkipsTinyCapture() {
+        // The first capture is a sub-1KB stub (a redirect shell / "coming soon" page);
+        // the first REAL capture is the pre-paywall one.
+        let data = json("""
+        [["urlkey","timestamp","original","mimetype","statuscode","digest","length"],
+         ["com,example)/a","20090101000000","https://example.com/a","text/html","200","D0","200"],
+         ["com,example)/a","20100101000000","https://example.com/a","text/html","200","D1","8000"]]
+        """)
+        XCTAssertEqual(ArticleFetcher.oldestSnapshotTimestamp(fromCDXJSON: data), "20100101000000")
+    }
+
+    func testOldestReturnsNilWithoutRows() {
+        XCTAssertNil(ArticleFetcher.oldestSnapshotTimestamp(fromCDXJSON: json("[]")))
+        XCTAssertNil(ArticleFetcher.oldestSnapshotTimestamp(fromCDXJSON: json("{not an array}")))
+    }
 }

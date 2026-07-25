@@ -338,26 +338,72 @@ open class ShareViewController: UIViewController {
             .replacingOccurrences(of: "'", with: "&#39;")
     }
 
-    /// Handles a shared text item by extracting its first web link. Saves nothing
-    /// if there is no link.
+    /// Handles a shared TEXT payload — text the host handed over instead of a URL.
+    /// A link inside it is the share and wins (`ShareTextURL.firstLink` allows a
+    /// caption around it: the YouTube share sheet sends `<video title>\n<link>`,
+    /// and importing that caption as a text document loses the video). Genuine
+    /// text with no link — or with a whole document's worth of prose around one —
+    /// still imports as a document.
     private func handleText(_ provider: NSItemProvider) {
-        provider.loadItem(forTypeIdentifier: UTType.text.identifier) { [weak self] value, _ in
+        let identifier = ShareAttachmentRouter.textTypeIdentifier(
+            among: provider.registeredTypeIdentifiers)
+        provider.loadItem(forTypeIdentifier: identifier) { [weak self] value, _ in
             guard let self else { return }
             self.cancelLoadWatchdog()
-            let text = (value as? String) ?? (value as? NSAttributedString)?.string
-            // A Facebook deep link (`fbrpc://…&target_url=…`) shared as text isn't a
-            // link `ShareTextURL.extract` can detect, so unwrap it to its real http
-            // article first; otherwise fall back to the normal link extraction.
-            guard let text, let extracted = Self.facebookTargetIfPresent(in: text)
-                ?? ShareTextURL.extract(from: text),
-                  let url = URLUnwrapper.ingestURL(from: extracted.absoluteString) else {
+            let text = (value as? String)
+                ?? (value as? NSAttributedString)?.string
+                ?? (value as? Data).flatMap { String(data: $0, encoding: .utf8) }
+            guard let text else {
                 self.failOrComplete("No link found to save.")
                 return
             }
-            SharedReadingListAppender.append(urlString: url.absoluteString)
-            SharedDiagnosticLog.record("saved url (text) \(url.absoluteString)", category: "share")
-            self.presentSavedOrReader(url: url)
+            // A Facebook deep link (`fbrpc://…&target_url=…`) shared as text isn't a
+            // link `NSDataDetector` can detect, so unwrap it to its real http
+            // article first; otherwise fall back to the normal link extraction.
+            if let extracted = Self.facebookTargetIfPresent(in: text)
+                ?? ShareTextURL.extract(from: text)
+                ?? ShareTextURL.firstLink(in: text),
+               let url = URLUnwrapper.ingestURL(from: extracted.absoluteString) {
+                SharedReadingListAppender.append(urlString: url.absoluteString)
+                SharedDiagnosticLog.record(
+                    "saved url (text) \(url.absoluteString)", category: "share")
+                self.presentSavedOrReader(url: url)
+                return
+            }
+            self.saveTextAsDocument(text)
         }
+    }
+
+    /// Imports a shared text payload that carries no link as a text document —
+    /// what the document branch did for the same payload before text routed here.
+    /// The append copies synchronously, so the temp file is removed straight after.
+    private func saveTextAsDocument(_ text: String) {
+        let fileName = Self.documentFileName(forSharedText: text)
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(fileName)
+        do {
+            try text.write(to: temporaryURL, atomically: true, encoding: .utf8)
+        } catch {
+            SharedDiagnosticLog.record(
+                "share: couldn't stage shared text as a document", category: "share")
+            failOrComplete("No link found to save.")
+            return
+        }
+        saveDocumentDirectly(sourceURL: temporaryURL)
+        try? FileManager.default.removeItem(at: temporaryURL)
+    }
+
+    /// The stored document's file name — and so its title, which
+    /// `SharedReadingListAppender.appendDocument` takes from the file name. The
+    /// shared text's own first line beats the provider's generic "text".
+    private static func documentFileName(forSharedText text: String) -> String {
+        let firstLine = text.split(whereSeparator: \.isNewline).first
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        let title = firstLine
+            .filter { $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" || $0 == "_" }
+            .trimmingCharacters(in: .whitespaces)
+            .prefix(60)
+        return "\(title.isEmpty ? "Shared Text" : String(title)).txt"
     }
 
     /// The http article inside a Facebook deep link when the shared text IS such a

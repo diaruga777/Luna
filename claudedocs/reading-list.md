@@ -61,10 +61,18 @@ Archive section keeps its header and controls.
     the shared diagnostic log. A **web link is `public.url` WITHOUT
     `public.file-url`** — that file-URL exclusion, not "advertises no document
     type", is what separates a link from a file: hosts commonly register ONE
-    provider for both the link and a plain-text rendering of it (the YouTube share
-    sheet: `public.url` + `public.plain-text`), and the old "any document type wins"
-    rule imported those shares as `.txt` documents, so a shared video was dropped by
-    Downloader as Reader-owned and stored by Luna/Reader as an unreadable document.
+    provider for both the link and a plain-text rendering of it, and the old "any
+    document type wins" rule imported those shares as `.txt` documents, so a shared
+    video was dropped by Downloader as Reader-owned and stored by Luna/Reader as an
+    unreadable document (`lunadoc://…` titled "text").
+  - **Plain text that is NOT a file routes to `.text`, where a link inside it wins**
+    (`handleText`): hosts that hand over a link as text commonly caption it — the
+    YouTube share sheet sends `<video title>\n<link>` — so `ShareTextURL.firstLink`
+    accepts a link with up to `shortTextLimit` of caption around it, alongside the
+    stricter `ShareTextURL.extract` ("the text IS just a link") that a text FILE
+    still uses. Text with no link, or a document's worth of prose around one, still
+    imports as a document — now titled from its first line rather than the
+    provider's generic "text". Rich text (`.rtf`) and in-memory PDFs stay documents.
 
 ## Tests
 

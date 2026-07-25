@@ -7,9 +7,8 @@ import Foundation
 import LunaStorage
 
 /// Where `EmailAccountStore` persists the account **secret** (the metadata lives
-/// in `UserDefaults` directly). Exists so tests — and the onboarding replay
-/// overlay (see `OnboardingStores` in the app shell) — can swap the Keychain for
-/// an in-memory stand-in without touching `EmailAccountStore`'s own logic.
+/// in `UserDefaults` directly). Exists so tests can swap the Keychain for an
+/// in-memory stand-in without touching `EmailAccountStore`'s own logic.
 public protocol MailCredentialStorage {
     func read(service: String, account: String) -> String?
     func write(_ value: String?, service: String, account: String)
@@ -35,8 +34,8 @@ public struct KeychainCredentialStorage: MailCredentialStorage {
 }
 
 /// A scratch, process-local credential store. Nothing written here ever reaches
-/// the real Keychain — used for tests and for the onboarding replay overlay,
-/// where a "sign in" during a replay must not persist a real credential.
+/// the real Keychain — used by tests that exercise sign-in without leaving a real
+/// credential behind.
 public final class InMemoryCredentialStorage: MailCredentialStorage {
     private var storage: [String: String] = [:]
     private let lock = NSLock()

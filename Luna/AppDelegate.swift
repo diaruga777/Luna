@@ -83,12 +83,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             EmailAccountStore.shared.account?.address ?? "none"
         }
 
-        // Let the share sheet launch the email-account login flow when no account
-        // is connected yet.
-        SendToFriendSheet.accountSetupLauncher = { presenter in
-            EmailLoginFlow.present(from: presenter)
-        }
-
         // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
         // reading list so saved articles are semantically discoverable and
         // Siri can resolve "my article about …"/"from …" without the app

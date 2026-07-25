@@ -2,9 +2,9 @@
 //  EmailLoginTests.swift
 //  LunaTests
 //
-//  Pure-function and lightweight-integration coverage for the redesigned email
-//  login flow: password normalization, address validation, provider-badge text,
-//  and the two action buttons' enablement tracking their fields.
+//  Pure-function and lightweight-integration coverage for connecting an email
+//  account: password normalization, address validation, provider-badge text, and
+//  the inline sign-in form in Settings → Email & Sending tracking what's typed.
 //
 
 import LunaMailAccount
@@ -43,14 +43,14 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertEqual(CredentialViewController.normalizedPassword("   ", providerID: .generic), "")
     }
 
-    // MARK: - EmailEntryViewController.isValidAddress
+    // MARK: - EmailAccountSetup.isValidAddress
 
     func testIsValidAddressRequiresAtAndDot() {
-        XCTAssertTrue(EmailEntryViewController.isValidAddress("person@example.com"))
-        XCTAssertTrue(EmailEntryViewController.isValidAddress("  person@example.com  "))
-        XCTAssertFalse(EmailEntryViewController.isValidAddress("person@example"))
-        XCTAssertFalse(EmailEntryViewController.isValidAddress("person.example.com"))
-        XCTAssertFalse(EmailEntryViewController.isValidAddress(""))
+        XCTAssertTrue(EmailAccountSetup.isValidAddress("person@example.com"))
+        XCTAssertTrue(EmailAccountSetup.isValidAddress("  person@example.com  "))
+        XCTAssertFalse(EmailAccountSetup.isValidAddress("person@example"))
+        XCTAssertFalse(EmailAccountSetup.isValidAddress("person.example.com"))
+        XCTAssertFalse(EmailAccountSetup.isValidAddress(""))
     }
 
     // MARK: - ProviderBadgeText (provider-badge visibility)
@@ -81,30 +81,27 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertFalse(CredentialViewController.isConnectivityFailure(FakeProtocolError()))
     }
 
-    // MARK: - Continue button enablement (EmailEntryViewController)
+    // MARK: - Inline sign-in form (Settings → Email & Sending)
 
-    func testContinueButtonEnablementTracksFieldValidity() throws {
-        let controller = EmailEntryViewController(accountStore: .shared, completion: nil)
-        controller.loadViewIfNeeded()
-        let field = try XCTUnwrap(findView(of: UITextField.self, in: controller.view))
-        let button = try XCTUnwrap(findView(of: EmailLoginActionButton.self, in: controller.view))
+    /// The Connect row is the form's action: tinted and selectable only once the
+    /// typed address could plausibly be one.
+    func testConnectRowEnablementTracksTypedAddress() throws {
+        let (screen, field) = try makeUnconfiguredAccountForm()
 
-        XCTAssertFalse(button.isEnabled, "empty field starts disabled")
+        XCTAssertFalse(connectRowIsEnabled(in: screen), "empty field starts disabled")
 
         field.text = "person@example.com"
         field.sendActions(for: .editingChanged)
-        XCTAssertTrue(button.isEnabled)
+        XCTAssertTrue(connectRowIsEnabled(in: screen))
 
         field.text = "not-an-email"
         field.sendActions(for: .editingChanged)
-        XCTAssertFalse(button.isEnabled)
+        XCTAssertFalse(connectRowIsEnabled(in: screen))
     }
 
     func testProviderBadgeFadesInOnlyForKnownDomains() throws {
-        let controller = EmailEntryViewController(accountStore: .shared, completion: nil)
-        controller.loadViewIfNeeded()
-        let field = try XCTUnwrap(findView(of: UITextField.self, in: controller.view))
-        let badge = try XCTUnwrap(findView(of: ProviderBadgeView.self, in: controller.view))
+        let (screen, field) = try makeUnconfiguredAccountForm()
+        let badge = try findBadge(in: screen)
 
         XCTAssertEqual(badge.alpha, 0, "hidden at rest (empty field)")
 
@@ -117,10 +114,23 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertEqual(badge.alpha, 0)
     }
 
+    /// With no account connected the Sharing Account section IS the sign-in form,
+    /// so the old separate "Connect Email Account…" push has no row left.
+    func testUnconfiguredAccountSectionShowsTheFormAndNoPushRow() throws {
+        let (screen, _) = try makeUnconfiguredAccountForm()
+
+        XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 2)
+        let addressRow = try XCTUnwrap(
+            screen.tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
+        XCTAssertNotNil(findView(of: UITextField.self, in: addressRow.contentView))
+        XCTAssertEqual(addressRow.accessoryType, .none)
+    }
+
     // MARK: - Sign In button enablement (CredentialViewController)
 
     private var suiteName: String!
     private var defaults: UserDefaults!
+    private var window: UIWindow?
 
     override func setUp() {
         super.setUp()
@@ -129,6 +139,9 @@ final class EmailLoginTests: XCTestCase {
     }
 
     override func tearDown() {
+        window?.isHidden = true
+        window?.rootViewController = nil
+        window = nil
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         suiteName = nil
@@ -155,6 +168,29 @@ final class EmailLoginTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// The Email & Sending screen with a scratch (empty) account store, hosted in
+    /// a window so the table realizes real cells, plus its inline address field.
+    private func makeUnconfiguredAccountForm() throws -> (EmailAndKindleSettingsScreen, UITextField) {
+        let store = EmailAccountStore(defaults: defaults, credentialStorage: InMemoryCredentialStorage())
+        XCTAssertFalse(store.isConfigured)
+        let screen = EmailAndKindleSettingsScreen(accountStore: store)
+        window = UITestSupport.host(screen)
+        let row = try XCTUnwrap(screen.tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
+        // The Kindle section carries a text field too, so look inside this row.
+        let field = try XCTUnwrap(findView(of: UITextField.self, in: row.contentView))
+        return (screen, field)
+    }
+
+    private func connectRowIsEnabled(in screen: EmailAndKindleSettingsScreen) -> Bool {
+        let cell = screen.tableView(screen.tableView, cellForRowAt: IndexPath(row: 1, section: 0))
+        return cell.selectionStyle != .none
+    }
+
+    private func findBadge(in screen: EmailAndKindleSettingsScreen) throws -> ProviderBadgeView {
+        let row = try XCTUnwrap(screen.tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
+        return try XCTUnwrap(findView(of: ProviderBadgeView.self, in: row.contentView))
+    }
 
     private func findView<T: UIView>(of type: T.Type, in view: UIView) -> T? {
         if let match = view as? T { return match }

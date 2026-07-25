@@ -14,14 +14,32 @@ import LunaStorage
 import LunaDesignSystem
 import UIKit
 
-/// Email & Sending settings. Includes the Reader-only Double Save action
-/// (send to Kindle / friend when the same link is saved twice with the Action
-/// Button — see `claudedocs/double-save.md`).
+/// Email & Sending settings. This is also where an email account gets connected:
+/// until one is, the Sharing Account section IS the sign-in form (an inline
+/// address field + Connect), and everything that needs an account to send —
+/// `SendToFriendSheet`, Send to Kindle — routes the user here. Includes the
+/// Reader-only Double Save action (send to Kindle / friend when the same link is
+/// saved twice with the Action Button — see `claudedocs/double-save.md`).
 final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
         case lunaAccount, kindle, doubleSave, importMail, subjectFilters
     }
+
+    /// Set by a caller that sent the user here to connect an account (the
+    /// unconfigured-send redirect), so the address field takes the keyboard as
+    /// soon as the screen appears. One-shot.
+    var focusesAddressField = false
+
+    /// The inline sign-in field and its provider chip. Long-lived rather than
+    /// built per cell: `viewWillAppear` reloads the table, and a freshly built
+    /// field would drop both the half-typed address and the keyboard session.
+    private lazy var addressField = makeAddressField()
+    private lazy var addressBadge = ProviderBadgeView()
+    /// Non-nil only while a sign-in attempt is in flight (it owns the OAuth
+    /// session / autodiscovery task).
+    private var accountSetup: EmailAccountSetup?
+    private var isConnecting = false
 
     /// The double-save action only fires for Reader's Action Button saves, so
     /// its section only shows there.
@@ -34,8 +52,30 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     /// Field tags for the text fields.
     private enum Field: Int { case kindleAddress = 1 }
 
-    init() { super.init(style: .insetGrouped) }
+    /// The account this screen reads, signs in to, and signs out of. Injectable so
+    /// tests can exercise the inline sign-in form without touching the App Group
+    /// Keychain; every caller in the app uses the shared store.
+    private let accountStore: EmailAccountStore
+
+    init(accountStore: EmailAccountStore = .shared) {
+        self.accountStore = accountStore
+        super.init(style: .insetGrouped)
+    }
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The one destination for "this needs an email account first": pushes this
+    /// screen with the inline sign-in field already focused. Installed as
+    /// `SendToFriendSheet.accountSetupLauncher` by the `KindWiring` variants of the
+    /// apps that send email.
+    static func pushForAccountSetup(from presenter: UIViewController) {
+        let screen = EmailAndKindleSettingsScreen()
+        screen.focusesAddressField = true
+        if let nav = presenter.navigationController {
+            nav.pushViewController(screen, animated: true)
+        } else {
+            presenter.present(UINavigationController(rootViewController: screen), animated: true)
+        }
+    }
 
     override func viewDidLoad() {
         headerTitle = "Email & Sending"
@@ -45,15 +85,30 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Refresh value rows edited on pushed subscreens (double-save recipients).
+        // Refresh value rows edited on pushed subscreens (double-save recipients),
+        // and swap the sign-in form for the connected-account rows after a
+        // successful sign-in on a pushed credential screen.
         tableView.reloadData()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Only once the field is attached to the window: starting the input
+        // session earlier can leave the keyboard's email suggestion bar bound to
+        // a provisional session that never delivers its tap to this field.
+        guard focusesAddressField, !accountStore.isConfigured else { return }
+        focusesAddressField = false
+        addressField.becomeFirstResponder()
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { visibleSections.count }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch visibleSections[section] {
-        case .lunaAccount: return EmailAccountStore.shared.isConfigured ? 3 : 1
+        case .lunaAccount:
+            // Connected: address, inbox filter, sign out. Otherwise the inline
+            // sign-in form: address field + Connect.
+            return accountStore.isConfigured ? 3 : 2
         case .kindle: return 3 /* mode, kindle address, test send */
         case .doubleSave:
             let showsRecipients = DoubleSaveActionStore.shared
@@ -77,7 +132,9 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .lunaAccount:
-            return "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you."
+            let base = "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you."
+            guard !accountStore.isConfigured else { return base }
+            return base + "\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next."
         case .kindle:
             return "Articles are emailed from the connected Luna email account (the section at the top of this screen). That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings), and sending requires the account to be connected."
         case .doubleSave:
@@ -100,11 +157,11 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
         switch visibleSections[indexPath.section] {
         case .lunaAccount:
-            if EmailAccountStore.shared.isConfigured {
+            if accountStore.isConfigured {
                 switch indexPath.row {
                 case 0:
-                    content.text = EmailAccountStore.shared.account?.address
-                    content.secondaryText = EmailAccountStore.shared.account?.provider.displayName
+                    content.text = accountStore.account?.address
+                    content.secondaryText = accountStore.account?.provider.displayName
                 case 1:
                     content.text = "Inbox Filter"
                     content.secondaryText = "Keep Luna mail out of your inbox"
@@ -115,10 +172,19 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                     content.textProperties.color = .systemRed
                     cell.selectionStyle = .default
                 }
+            } else if indexPath.row == 0 {
+                return addressEntryCell()
             } else {
-                content.text = "Connect Email Account…"
-                content.textProperties.color = view.tintColor ?? .systemBlue
-                cell.selectionStyle = .default
+                content.text = "Connect"
+                content.textProperties.color = canConnect
+                    ? (view.tintColor ?? .systemBlue) : LunaColors.tertiaryText
+                content.image = UIImage(systemName: "person.badge.key")
+                cell.selectionStyle = canConnect ? .default : .none
+                if isConnecting {
+                    let spinner = DotMatrixSpinnerView(dimension: 4, side: 20)
+                    spinner.startAnimating()
+                    cell.accessoryView = spinner
+                }
             }
 
         case .kindle:
@@ -190,16 +256,16 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         tableView.deselectRow(at: indexPath, animated: true)
         switch visibleSections[indexPath.section] {
         case .lunaAccount:
-            if EmailAccountStore.shared.isConfigured {
+            if accountStore.isConfigured {
                 switch indexPath.row {
                 case 1: presentFilterGuide()
                 case 2:
-                    EmailAccountStore.shared.clear()
+                    accountStore.clear()
                     tableView.reloadData()
                 default: break
                 }
-            } else {
-                EmailLoginFlow.present(from: self) { [weak self] _ in self?.tableView.reloadData() }
+            } else if indexPath.row == 1 {
+                connectAccount()
             }
         case .doubleSave where indexPath.row <= 1:
             DoubleSaveActionStore.shared.setAction(
@@ -265,6 +331,122 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             FriendsStore.shared.friend(withEmail: email)?.displayName ?? Friend.localPart(email)
         }
         return names.count <= 2 ? names.joined(separator: ", ") : "\(names.count) Contacts"
+    }
+
+    // MARK: - Inline account sign-in
+
+    /// Whether the address as typed is worth a network round trip.
+    private var canConnect: Bool {
+        !isConnecting && EmailAccountSetup.isValidAddress(addressField.text ?? "")
+    }
+
+    private func makeAddressField() -> UITextField {
+        let field = UITextField()
+        field.placeholder = "you@example.com"
+        field.font = .preferredFont(forTextStyle: .body)
+        field.keyboardType = .emailAddress
+        field.autocapitalizationType = .none
+        field.autocorrectionType = .no
+        // Prefer the system's fast personal-email suggestion over the credential
+        // manager UI. AutoFill insertion stays native because this field has no
+        // delegate and starts its input session only once hosted in the window.
+        field.textContentType = .emailAddress
+        field.returnKeyType = .go
+        field.textAlignment = .right
+        field.textColor = LunaColors.secondaryText
+        field.translatesAutoresizingMaskIntoConstraints = false
+        // Keep the delegate nil — in particular, don't interpose on the iOS 26
+        // input-suggestion/replacement path used by credential providers. The
+        // return key needs only a control action.
+        field.addTarget(self, action: #selector(connectAccount), for: .editingDidEndOnExit)
+        field.addTarget(self, action: #selector(addressEdited), for: .editingChanged)
+        return field
+    }
+
+    /// The sign-in form's first row: label, the inline address field, and the
+    /// provider chip that appears once the domain is recognized.
+    private func addressEntryCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        let nameLabel = UILabel()
+        nameLabel.text = "Email"
+        nameLabel.font = .preferredFont(forTextStyle: .body)
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        nameLabel.setContentHuggingPriority(.required, for: .horizontal)
+        nameLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        // Re-hosting the same two long-lived views: removing them from the
+        // previous cell drops that cell's constraints on them too.
+        addressField.removeFromSuperview()
+        addressBadge.removeFromSuperview()
+        cell.contentView.addSubview(nameLabel)
+        cell.contentView.addSubview(addressField)
+        cell.contentView.addSubview(addressBadge)
+        NSLayoutConstraint.activate([
+            nameLabel.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            nameLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            addressField.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 12),
+            addressField.trailingAnchor.constraint(equalTo: addressBadge.leadingAnchor, constant: -8),
+            addressField.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            // The badge stays installed and only fades, so it never jumps layout.
+            addressBadge.trailingAnchor.constraint(
+                equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            addressBadge.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        ])
+        addressEdited()
+        return cell
+    }
+
+    @objc private func addressEdited() {
+        let address = (addressField.text ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        addressBadge.setProvider(
+            ProviderBadgeText.text(for: ProviderInference.inferProviderID(for: address)))
+        reloadConnectRow()
+    }
+
+    /// Repaints just the Connect row (enablement + spinner) without rebuilding the
+    /// address cell, which would interrupt typing.
+    private func reloadConnectRow() {
+        guard !accountStore.isConfigured,
+              let section = visibleSections.firstIndex(of: .lunaAccount),
+              tableView.numberOfSections > section,
+              tableView.numberOfRows(inSection: section) > 1
+        else { return }
+        tableView.reloadRows(at: [IndexPath(row: 1, section: section)], with: .none)
+    }
+
+    @objc private func connectAccount() {
+        guard !isConnecting else { return }
+        guard EmailAccountSetup.isValidAddress(addressField.text ?? "") else {
+            addressField.shake()
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            return
+        }
+        addressField.resignFirstResponder()
+        let setup = EmailAccountSetup(
+            presenter: self,
+            accountStore: accountStore,
+            onBusyChange: { [weak self] busy in
+                self?.isConnecting = busy
+                self?.reloadConnectRow()
+            },
+            completion: { [weak self] connected in
+                guard let self else { return }
+                self.isConnecting = false
+                self.accountSetup = nil
+                guard connected else { self.reloadConnectRow(); return }
+                self.addressField.text = ""
+                // The credential screen stays on screen through its success
+                // checkmark; come back to the (now connected) settings rows.
+                if self.navigationController?.topViewController !== self {
+                    self.navigationController?.popToViewController(self, animated: true)
+                }
+                self.tableView.reloadData()
+            })
+        accountSetup = setup
+        setup.start(address: addressField.text ?? "")
     }
 
     // MARK: - Field cells
@@ -366,7 +548,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     private func presentFilterGuide() {
-        guard let providerID = EmailAccountStore.shared.account?.providerID else { return }
+        guard let providerID = accountStore.account?.providerID else { return }
         if FilterGuide.isAutomatic(providerID) {
             presentInfoAlert(
                 title: "Filter Active",

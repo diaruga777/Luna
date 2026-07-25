@@ -2,11 +2,11 @@
 //  EmailLoginShared.swift
 //  Luna
 //
-//  Visual language and small helpers shared by the email-login screens
-//  (`EmailEntryViewController`, `CredentialViewController`): the hero/title/body/
-//  field-card treatment lifted from `OnboardingStepViewController` so the flow reads
-//  as a continuation of onboarding, plus the filled action button, the provider
-//  badge chip, the OAuth presentation-context anchor, and the invalid-input shake.
+//  Visual language and small helpers shared by the email sign-in surfaces
+//  (`CredentialViewController`, and the inline address field in Settings →
+//  Email & Sending): the hero/title/body/field-card treatment, the filled action
+//  button, the provider badge chip, the OAuth presentation-context anchor, and
+//  the invalid-input shake.
 //
 
 import LunaMailAccount
@@ -15,8 +15,7 @@ import AuthenticationServices
 import UIKit
 
 enum EmailLoginUI {
-    /// The brand-accent rounded icon tile — `OnboardingStepViewController`'s
-    /// `iconTile`, sized down slightly (96pt vs. 108pt) to share the screen with
+    /// The brand-accent rounded icon tile, 96pt, sized to share the screen with
     /// the field card below it.
     static func heroTile(symbol: String) -> UIView {
         let tile = UIView()
@@ -33,8 +32,7 @@ enum EmailLoginUI {
         tile.addSubview(glyph)
         // Wrapped in a centering container: the screens' vertical stacks use
         // `.fill` alignment, which would otherwise stretch the tile's required
-        // 96pt width to the full stack width (the same reason
-        // OnboardingStepViewController centers its visual inside a panel).
+        // 96pt width to the full stack width.
         let wrapper = UIView()
         wrapper.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(tile)
@@ -93,10 +91,9 @@ enum EmailLoginUI {
     }
 }
 
-/// The filled accent action button shared by both screens (Continue / Sign In):
-/// 52pt tall, white 19pt semibold title, `GlassStyle.lunaBrandAccent` fill,
-/// cornerRadius 14 — `OnboardingStepViewController`'s primary-button treatment.
-/// Disabling dims to 50% alpha (the stock disabled state barely dims a solid fill).
+/// The filled accent action button (Sign In): 52pt tall, white 19pt semibold
+/// title, `GlassStyle.lunaBrandAccent` fill, cornerRadius 14. Disabling dims to
+/// 50% alpha (the stock disabled state barely dims a solid fill).
 final class EmailLoginActionButton: UIButton {
     private let spinner = DotMatrixSpinnerView(dimension: 4, side: 20)
     private var restingTitle: String

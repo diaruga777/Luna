@@ -14,8 +14,11 @@ import UIKit
 /// with the plain URL.
 public enum SendToFriendSheet {
 
-    /// Injected by the app so the sheet can launch the email-account login flow
-    /// when no account is configured yet.
+    /// Injected by the app so an attempted send with no account configured can
+    /// redirect to the screen where one gets connected (Settings → Email &
+    /// Sending, whose Sharing Account section is the sign-in form until then).
+    /// Installed only by the `KindWiring` variants of the apps that send email at
+    /// all — the others never reach this path.
     public static var accountSetupLauncher: ((UIViewController) -> Void)?
 
     /// Presents the recipient picker for a reading-list item (preferred — sends
@@ -136,18 +139,21 @@ public enum SendToFriendSheet {
         }
     }
 
+    /// Sending needs an account, so go straight to where one is connected rather
+    /// than asking permission to go there. Only a surface with no route installed
+    /// (an app extension, which can't navigate the app's settings) explains in an
+    /// alert instead.
     private static func promptAccountSetup(from presenter: UIViewController) {
-        let alert = UIAlertController(
-            title: "Set up email first",
-            message: "Connect your email account to send articles to contacts.",
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Not Now", style: .cancel))
-        if let launcher = accountSetupLauncher {
-            alert.addAction(UIAlertAction(title: "Set Up", style: .default) { _ in
-                launcher(presenter)
-            })
+        guard let launcher = accountSetupLauncher else {
+            let alert = UIAlertController(
+                title: "Set up email first",
+                message: "Connect your email account in Luna → Settings → Email & Sending to send articles to contacts.",
+                preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            presenter.present(alert, animated: true)
+            return
         }
-        presenter.present(alert, animated: true)
+        launcher(presenter)
     }
 
     private static func presentError(_ error: Error, from presenter: UIViewController) {

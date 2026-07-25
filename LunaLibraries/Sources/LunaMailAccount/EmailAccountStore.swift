@@ -39,9 +39,9 @@ public final class EmailAccountStore {
     /// Posted whenever the account is saved or cleared.
     public static let accountChanged = Notification.Name("LunaEmailAccountChanged")
 
-    /// `credentialStorage` defaults to the real Keychain; injectable so tests and
-    /// the onboarding replay overlay can redirect the secret to an in-memory
-    /// stand-in without changing any of the logic below.
+    /// `credentialStorage` defaults to the real Keychain; injectable so tests can
+    /// redirect the secret to an in-memory stand-in without changing any of the
+    /// logic below.
     public init(defaults: UserDefaults? = nil, credentialStorage: MailCredentialStorage = KeychainCredentialStorage()) {
         self.defaults = defaults
             ?? UserDefaults(suiteName: AppConfig.appGroupID)

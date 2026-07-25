@@ -23,6 +23,7 @@ import LunaPriceUI
 import LunaReaderUI
 import LunaReadingList
 import LunaSend
+import LunaSocialUI
 import LunaStorage
 import UIKit
 
@@ -44,6 +45,13 @@ enum KindWiring {
                 .flatMap { UIImage(data: $0) }
         }
         EmailShareCenter.priceGraphSnapshot = { PriceGraphEmailSnapshot.jpegData(for: $0) }
+
+        // Sending needs a connected email account: an attempted send without one
+        // redirects to the screen that connects it (its Sharing Account section is
+        // the sign-in form until then). Only the email-sending apps install this.
+        SendToFriendSheet.accountSetupLauncher = { presenter in
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+        }
         // The central Luna app is the only surface whose card deck contains
         // non-article cards; give them their tap routing.
         NonArticleCardOpening.install()

@@ -2,8 +2,10 @@
 //  CredentialViewController.swift
 //  Luna
 //
-//  Step 2 of the email-login flow (`EmailLoginFlow`): an app-specific password for
-//  the provider inferred/resolved in `EmailEntryViewController`. See
+//  Step 2 of connecting an email account: an app-specific password for the
+//  provider `EmailAccountSetup` inferred and resolved from the entered address.
+//  Pushed onto whatever navigation stack collected that address, and left in place
+//  on success — `completion` owns what happens next. See
 //  `claudedocs/email-login.md`.
 //
 
@@ -18,7 +20,6 @@ final class CredentialViewController: UIViewController {
     private let account: EmailAccount
     private let accountStore: EmailAccountStore
     private let completion: ((Bool) -> Void)?
-    private let dismissOnCompletion: Bool
     private let passwordField = UITextField()
     private let revealButton = UIButton(type: .system)
     private let signInButton = EmailLoginActionButton(title: "Sign In")
@@ -26,13 +27,11 @@ final class CredentialViewController: UIViewController {
     init(
         account: EmailAccount,
         accountStore: EmailAccountStore,
-        completion: ((Bool) -> Void)?,
-        dismissOnCompletion: Bool = true
+        completion: ((Bool) -> Void)?
     ) {
         self.account = account
         self.accountStore = accountStore
         self.completion = completion
-        self.dismissOnCompletion = dismissOnCompletion
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -196,9 +195,9 @@ final class CredentialViewController: UIViewController {
         passwordField.isUserInteractionEnabled = false
         passwordField.resignFirstResponder()
         let cover = EmailLoginLoadingCover(host: navigationController?.view ?? view)
-        // The network round trip below (IMAP + SMTP verification) is otherwise
-        // dead waiting time — let the system permission dialog appear over the
-        // cover instead of interrupting the user later at an arbitrary moment.
+        // Idempotent (authorization is requested at launch too) — but if that
+        // prompt is somehow still unanswered, the network round trip below is
+        // dead waiting time the system dialog can share.
         NotificationManager.requestAuthorization()
 
         Task { @MainActor in
@@ -207,12 +206,8 @@ final class CredentialViewController: UIViewController {
                 try await transport.verifyCredentials()
                 accountStore.save(account, credential: .appPassword(password))
                 cover.resolveToCheckmark { [self] in
-                    if dismissOnCompletion {
-                        self.dismiss(animated: true) { self.completion?(true) }
-                    } else {
-                        cover.hide()
-                        completion?(true)
-                    }
+                    cover.hide()
+                    completion?(true)
                 }
             } catch {
                 cover.hide()

@@ -18,6 +18,7 @@ import LunaModels
 import LunaReaderUI
 import LunaReadingList
 import LunaSend
+import LunaSocialUI
 import LunaStorage
 import UIKit
 
@@ -67,6 +68,13 @@ enum KindWiring {
                 let nav = UINavigationController(rootViewController: voice)
                 presenter.present(nav, animated: true)
             }
+        }
+
+        // Sending needs a connected email account: an attempted send without one
+        // redirects to the screen that connects it (its Sharing Account section is
+        // the sign-in form until then). Only the email-sending apps install this.
+        SendToFriendSheet.accountSetupLauncher = { presenter in
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
     }
 

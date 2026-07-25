@@ -2,7 +2,12 @@
 //  EmailEntryAutoFillTests.swift
 //  LunaTests
 //
+//  The AutoFill invariants of the inline email-address field in Settings →
+//  Email & Sending (the only place an account is connected). See
+//  `claudedocs/email-login.md`.
+//
 
+import LunaMailAccount
 import UIKit
 import XCTest
 @testable import Luna
@@ -10,12 +15,32 @@ import XCTest
 @MainActor
 final class EmailEntryAutoFillTests: XCTestCase {
 
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+    private var window: UIWindow?
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "EmailEntryAutoFillTests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+
+    override func tearDown() {
+        window?.isHidden = true
+        window?.rootViewController = nil
+        window = nil
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        suiteName = nil
+        super.tearDown()
+    }
+
     func testFieldUsesPersonalEmailAutocompleteAndEmailKeyboard() throws {
         let (_, field) = try makeSubject()
 
         XCTAssertEqual(field.textContentType, .emailAddress)
         XCTAssertEqual(field.keyboardType, .emailAddress)
-        XCTAssertEqual(field.returnKeyType, .continue)
+        XCTAssertEqual(field.returnKeyType, .go)
         XCTAssertNil(field.delegate, "Email autocomplete must reach the native text field directly")
     }
 
@@ -39,35 +64,44 @@ final class EmailEntryAutoFillTests: XCTestCase {
     }
 
     func testReturnKeyUsesControlActionWithoutInstallingDelegate() throws {
-        let (controller, field) = try makeSubject()
+        let (screen, field) = try makeSubject()
         let actions = field.actions(
-            forTarget: controller, forControlEvent: .editingDidEndOnExit) ?? []
+            forTarget: screen, forControlEvent: .editingDidEndOnExit) ?? []
 
-        XCTAssertTrue(actions.contains("continueTapped"))
+        XCTAssertTrue(actions.contains("connectAccount"))
         XCTAssertNil(field.delegate)
     }
 
-    func testInputSessionStartsAfterFieldIsHostedInWindow() throws {
-        let (controller, field) = try makeSubject()
+    /// Only a redirect ("you need an account to send this") asks for the keyboard.
+    func testRedirectStartsTheInputSessionAfterTheFieldIsHostedInWindow() throws {
+        let (screen, field) = try makeSubject()
         XCTAssertFalse(field.isFirstResponder)
 
-        let window = UITestSupport.host(controller)
-        controller.viewDidAppear(false)
+        screen.focusesAddressField = true
+        screen.viewDidAppear(false)
 
         XCTAssertTrue(field.isFirstResponder)
         field.resignFirstResponder()
-        window.isHidden = true
-        window.rootViewController = nil
     }
 
-    private func makeSubject() throws -> (EmailEntryViewController, UITextField) {
-        let controller = EmailEntryViewController(accountStore: .shared, completion: nil)
-        controller.loadViewIfNeeded()
-        // The field now sits inside a rounded field-card several levels deep
-        // (scroll view → content → stack → card → field) rather than as a direct
-        // subview of the root view.
-        let field = try XCTUnwrap(findTextField(in: controller.view))
-        return (controller, field)
+    func testPlainVisitLeavesTheKeyboardAlone() throws {
+        let (screen, field) = try makeSubject()
+
+        screen.viewDidAppear(false)
+
+        XCTAssertFalse(field.isFirstResponder)
+    }
+
+    /// The screen with an empty scratch account store, hosted in a window so the
+    /// table realizes real cells, plus the address field from the sign-in row (the
+    /// Kindle section has a field of its own, so this looks inside that one cell).
+    private func makeSubject() throws -> (EmailAndKindleSettingsScreen, UITextField) {
+        let store = EmailAccountStore(defaults: defaults, credentialStorage: InMemoryCredentialStorage())
+        let screen = EmailAndKindleSettingsScreen(accountStore: store)
+        window = UITestSupport.host(screen)
+        let row = try XCTUnwrap(screen.tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
+        let field = try XCTUnwrap(findTextField(in: row.contentView))
+        return (screen, field)
     }
 
     private func findTextField(in view: UIView) -> UITextField? {

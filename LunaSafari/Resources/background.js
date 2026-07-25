@@ -53,78 +53,6 @@ function injectContentScript(tabId, url) {
     }).catch(function () { /* some pages block injection; ignore */ });
 }
 
-// --- Safari-onboarding takeover overlay --------------------------------------
-// Asked once at script load ("onboardingStatus"): the native handler
-// (SharedOnboardingStatus / SafariWebExtensionHandler) records that THIS
-// extension is enabled and — if the app left a one-shot takeover pending for its
-// Safari onboarding step — tells us to show a full-page "You're all set!"
-// overlay with a real, user-tappable "Back to Luna" link. Never auto-navigates:
-// that would fight the user's own navigation / could be blocked as a redirect.
-let pendingTakeoverScheme = null;
-
-// Runs INSIDE the page via scripting.executeScript — must be self-contained
-// (no closures over background-page state). Mirrors content.js's toast styling
-// (indigo #5856D6) for visual continuity with "Unlocked with Luna".
-function lunaTakeoverOverlayScript(scheme) {
-    if (document.getElementById("luna-onboarding-takeover")) { return; }
-    var INDIGO = "#5856D6";
-    var overlay = document.createElement("div");
-    overlay.id = "luna-onboarding-takeover";
-    overlay.style.cssText = "position:fixed;inset:0;z-index:2147483647;" +
-        "background:" + INDIGO + ";color:#ffffff;" +
-        "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-        "text-align:center;padding:32px;box-sizing:border-box;" +
-        "font-family:-apple-system,system-ui,sans-serif;";
-
-    var headline = document.createElement("div");
-    headline.textContent = "You're all set!";
-    headline.style.cssText = "font-size:28px;font-weight:700;margin:0 0 12px;";
-
-    var subline = document.createElement("div");
-    subline.textContent = "The Luna extension is enabled.";
-    subline.style.cssText = "font-size:17px;opacity:0.9;margin:0 0 32px;";
-
-    var link = document.createElement("a");
-    link.href = scheme + "://";
-    link.textContent = "Back to Luna";
-    link.style.cssText = "display:inline-block;background:#ffffff;color:" + INDIGO + ";" +
-        "font-size:17px;font-weight:600;padding:14px 28px;border-radius:999px;" +
-        "text-decoration:none;";
-
-    overlay.appendChild(headline);
-    overlay.appendChild(subline);
-    overlay.appendChild(link);
-    (document.body || document.documentElement).appendChild(overlay);
-}
-
-function injectTakeoverOverlay(scheme) {
-    if (!browser.scripting || !browser.scripting.executeScript) { return; }
-    browser.tabs.query({ active: true, currentWindow: true }).then(function (tabs) {
-        var tab = tabs && tabs[0];
-        if (!tab || !tab.id || !/^https?:\/\//i.test(tab.url || "")) {
-            pendingTakeoverScheme = scheme; // no eligible tab yet — retry once
-            return;
-        }
-        browser.scripting.executeScript({
-            target: { tabId: tab.id }, func: lunaTakeoverOverlayScript, args: [scheme]
-        }).catch(function () {
-            pendingTakeoverScheme = scheme; // injection failed — retry once
-        });
-    }).catch(function () {
-        pendingTakeoverScheme = scheme;
-    });
-}
-
-function checkOnboardingStatus() {
-    browser.runtime.sendNativeMessage("application.id", { type: "onboardingStatus" })
-        .then(function (resp) {
-            if (resp && resp.takeover && resp.scheme) {
-                injectTakeoverOverlay(resp.scheme);
-            }
-        })
-        .catch(function () {});
-}
-
 async function reportActiveTab() {
     try {
         const tabs = await browser.tabs.query({ active: true, currentWindow: true });
@@ -146,12 +74,6 @@ browser.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
     }
     if (changeInfo.status === "complete" && tab.url) {
         injectContentScript(tabId, tab.url);
-    }
-    // One retry for a takeover overlay that had no eligible tab the first time.
-    if (pendingTakeoverScheme && changeInfo.status === "complete" && /^https?:\/\//i.test(tab.url || "")) {
-        var scheme = pendingTakeoverScheme;
-        pendingTakeoverScheme = null;
-        injectTakeoverOverlay(scheme);
     }
 });
 
@@ -194,4 +116,3 @@ browser.runtime.onMessage.addListener(function (message) {
 
 syncBypassRuleset();
 reportActiveTab();
-checkOnboardingStatus();

@@ -28,7 +28,7 @@ public enum LunaApp: CaseIterable, Equatable {
     }
 
     /// Bare per-app identifier used as the raw key segment for App-Group
-    /// storage (installed markers, per-surface onboarding stores, …).
+    /// storage (installed markers, per-surface stores, …).
     public var storageIdentifier: String {
         switch self {
         case .luna: return "luna"

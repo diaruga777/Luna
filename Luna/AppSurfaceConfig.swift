@@ -30,7 +30,7 @@ extension AppSurface {
     /// Bare per-surface identifier (`"luna"` / `"reader"` / `"downloader"` /
     /// `"pricetracker"`) — the same suffix convention as
     /// `InstalledAppMarkers.key(for:)` — used as the raw key segment for
-    /// LunaStorage's per-surface onboarding stores. `AppSurface` lives in
+    /// LunaStorage's per-surface stores. `AppSurface` lives in
     /// `LunaReadingListUI`, which already depends on `LunaStorage`, so those
     /// stores take this bare string rather than the enum itself (importing
     /// `LunaReadingListUI` back into `LunaStorage` would cycle).

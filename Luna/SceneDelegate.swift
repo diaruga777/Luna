@@ -172,11 +172,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
-        // Action Button onboarding: the one-shot "installed the shortcut but never
-        // ran it" skip. Unconditional — the state machine self-gates (a no-op
-        // unless this surface was left `awaitingShortcutRun`).
-        ActionButtonOnboardingStore.shared.handleAppForegrounded(
-            forSurface: AppSurfaceConfig.current.storageIdentifier)
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()

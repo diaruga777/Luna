@@ -7,8 +7,8 @@ import UIKit
 
 /// The signed Action Button shortcut shipped in the app bundle. Single source of
 /// truth for its name (used both to load the resource and in the user-facing
-/// setup copy) and for the share-sheet install flow that Settings and onboarding
-/// both invoke.
+/// setup copy) and for the share-sheet install flow Settings' Shortcut & Safari
+/// screen invokes.
 enum BundledShortcut {
 
     /// The shortcut's name as it appears in the Shortcuts app and the Action

@@ -124,7 +124,7 @@ public enum ProvideContextOnScreenURL {
     /// What `ProvideContextIntent` should do with the supplied on-screen URLs.
     public enum Plan: Equatable {
         /// Nothing this app could have saved was on screen: continue with the
-        /// ordinary onboarding/app/screenshot decision, silently.
+        /// ordinary app/screenshot decision, silently.
         case skip
         /// Save this URL now, and REPORT any failure — pre-validation says this
         /// app handles the kind, so a failed save is a real error.
@@ -194,9 +194,8 @@ public enum ProvideContextOnScreenURL {
     }
 }
 
-/// The pure decision core of the "Provide Context" App Intent — everything
-/// that ISN'T the onboarding-hijack step (which runs after supplied-URL handling
-/// in the intent itself, via `ActionButtonOnboardingStore`'s state machine) and
+/// The pure decision core of the "Provide Context" App Intent — everything that
+/// isn't supplied-URL handling (which runs first, in the intent itself) and
 /// isn't a side effect (saving the fresh Safari URL, foregrounding). Given
 /// only the facts below, decides what the Shortcut should do next.
 ///
@@ -208,7 +207,7 @@ public enum ProvideContextOnScreenURL {
 /// | Safari                          | `safariURLFresh`                                      | `.saveImmediately` |
 /// | Safari                          | !`safariURLFresh`, `visionModelAvailable`             | `.screenshotNeeded`|
 /// | Safari                          | !`safariURLFresh`, !`visionModelAvailable`            | `.unsupported`     |
-/// | Shortcuts (outside onboarding)  | — (no meaningful screenshot of Shortcuts' own UI)     | `.unsupported`     |
+/// | Shortcuts                       | — (no meaningful screenshot of Shortcuts' own UI)     | `.unsupported`     |
 /// | recognized platform             | !`handlesMediaKind`                                   | `.unsupported`     |
 /// | recognized platform             | `handlesMediaKind`, !`visionModelAvailable`           | `.unsupported`     |
 /// | recognized platform             | `handlesMediaKind`, `visionModelAvailable`            | `.screenshotNeeded`|

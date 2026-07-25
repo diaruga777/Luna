@@ -64,7 +64,7 @@ final class ProvideContextDecisionTests: XCTestCase {
             .unsupported)
     }
 
-    // MARK: - Shortcuts (outside onboarding — onboarding hijack happens before this function)
+    // MARK: - Shortcuts
 
     func testShortcutsOutsideOnboardingIsUnsupported() {
         XCTAssertEqual(decide(appName: "Shortcuts", isShortcuts: true), .unsupported)

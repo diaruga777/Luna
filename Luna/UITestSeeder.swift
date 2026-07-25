@@ -36,7 +36,7 @@ enum UITestSeeder {
     }
 
     /// Whether this process was launched by the UI-test / screenshot harness at all
-    /// (a seeded state, a deep-linked screen, or an onboarding step). The screenshot
+    /// (a seeded state or a deep-linked screen). The screenshot
     /// agent uses this to suppress simulator-only debug tap targets (the row ellipsis,
     /// reader "Split High/Low") that otherwise overlay real content in captures. Those
     /// hooks still appear for interactive simulator automation runs (no launch arg)

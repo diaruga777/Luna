@@ -63,8 +63,8 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
     }
 
     func testCompleteURLIsAcceptedForAnOtherwiseUnhandledNonSafariApp() {
-        // ProvideContextIntent evaluates this candidate before it runs either
-        // onboarding interception or current-app classification.
+        // ProvideContextIntent evaluates this candidate before it runs
+        // current-app classification.
         let arbitraryAppIsSafari = AppNamePlatform.isSafari(forAppName: "Notes")
         XCTAssertEqual(
             ProvideContextOnScreenURL.collapseText(

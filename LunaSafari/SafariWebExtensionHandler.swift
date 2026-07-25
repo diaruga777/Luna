@@ -18,7 +18,6 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let item = context.inputItems.first as? NSExtensionItem
         let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any]
         var payload: [String: Any] = ["ok": true]
-        SharedOnboardingStatus.recordEnabled()
 
         switch message?["type"] as? String {
         case "buttonMode", "buttonContext":
@@ -28,7 +27,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // The pill deep-links ONLY into this extension's own containing app,
             // and only for the content kinds that app handles: the central Luna
             // app handles everything; each single-content app handles one kind.
-            let (_, scheme) = SharedOnboardingStatus.currentSurfaceAndScheme
+            let (_, scheme) = SharedSurfaceScheme.currentSurfaceAndScheme
             payload["scheme"] = scheme
             payload["supportsArticles"] = Self.hostHandlesArticles
             payload["supportsMedia"] = Self.hostHandlesMedia
@@ -47,14 +46,6 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                let html = message?["html"] as? String {
                 SharedSafariURL.recordUnlockedContent(urlString, html: html)
             }
-        case "onboardingStatus":
-            // background.js asks this once at script load. Records that this
-            // extension is now enabled/running, and — if the app left a takeover
-            // pending for this surface (its Safari onboarding step is on screen) —
-            // consumes it one-shot and tells the page to show the takeover overlay.
-            let (takeover, scheme) = SharedOnboardingStatus.recordEnabledAndConsumeTakeover()
-            payload["takeover"] = takeover
-            payload["scheme"] = scheme
         default:
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
                 SharedSafariURL.record(urlString)

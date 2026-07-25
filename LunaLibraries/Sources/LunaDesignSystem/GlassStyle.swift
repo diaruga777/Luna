@@ -14,9 +14,9 @@ public enum GlassStyle {
 
     /// The fixed Luna brand accent — the indigo/periwinkle of the app icon. Used
     /// where the surface should read as "Luna" regardless of the user's reader
-    /// highlight preference (which defaults to blue): first-run onboarding and its
-    /// illustrations, so the buttons and mock UI match the purple app icon rather
-    /// than looking like a generic blue template.
+    /// highlight preference (which defaults to blue): the email sign-in screens,
+    /// so their hero tile and action button match the purple app icon rather than
+    /// looking like a generic blue template.
     public static let lunaBrandAccent = UIColor(red: 0.36, green: 0.31, blue: 0.85, alpha: 1)
 
     /// A small liquid-glass mark for the RSVP focal reticule — one sits above

@@ -4,7 +4,7 @@
 //
 //  App Intent definition (kept in the app target for App Intents discovery).
 //  The decision core is `LunaIntents.ProvideContextDecision`; this wrapper adds
-//  the onboarding hijack, the immediate Safari save, and foregrounding.
+//  the supplied-URL fast path, the immediate Safari save, and foregrounding.
 //
 
 import AppIntents
@@ -97,8 +97,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
 
         // A supplied URL this app can handle takes precedence over every
-        // app-based decision, including onboarding interception and an
-        // otherwise unsupported current app — and, because pre-validation says
+        // app-based decision, including an otherwise unsupported current app —
+        // and, because pre-validation says
         // the save SHOULD work, its failures are thrown rather than swallowed.
         // A link owned by a sibling app (or no usable link at all) falls through
         // in silence to the decision below. Safari deliberately ignores this
@@ -111,34 +111,6 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             return try await saveURL(urlString, reporter: reporter)
         }
 
-        // With no single usable supplied URL, let the Action Button onboarding state
-        // machine hijack this invocation if it's mid-flight for this surface.
-        // Its first interception fires from the Shortcuts app (the freshly
-        // imported shortcut's own first run); its second fires from wherever
-        // the Action Button was actually pressed, once real setup is complete.
-        if let app {
-            let surface = AppSurfaceConfig.current.storageIdentifier
-            switch ActionButtonOnboardingStore.shared.handleProvideContextInvoked(
-                appName: app,
-                isCurrentAppLuna: ActionButtonIntentSupport.isCurrentAppLuna(comparedTo: app),
-                forSurface: surface
-            ) {
-            case .foregroundThenUnsupported:
-                // Bounce the user back into Luna (in-app onboarding reacts to
-                // the state change). A declined prompt remains unhandled.
-                try? await requestToContinueInForeground()
-                return ProvideContextResultEntity(outcome: .unhandled)
-            case .unsupported:
-                return ProvideContextResultEntity(outcome: .unhandled)
-            case .none:
-                break
-            }
-        }
-
-        // Ambiguity is reported only AFTER onboarding has had its say: an
-        // in-flight setup run must still be able to advance its state machine,
-        // and it can be pressed from any app that happens to have several links
-        // on screen.
         if case .divergent = plan { throw ProvideContextError.multipleURLs }
 
         let decision = ProvideContextDecision.decide(
@@ -236,22 +208,5 @@ enum ActionButtonIntentSupport {
     static var doubleSaveSurface: String? {
         guard AppSurfaceConfig.current == .reader else { return nil }
         return AppSurfaceConfig.current.storageIdentifier
-    }
-
-    /// Whether the "current app" reported by Shortcuts (`Get Current App`) is THIS
-    /// Luna app — i.e. the Action Button was pressed while Luna itself was
-    /// frontmost, so there's no need to bounce the user back to it. Compared
-    /// case-insensitively against the running bundle's display/bundle name, plus a
-    /// generic "Luna"-prefix match (covers "Luna", "Luna Reader", "Luna Downloader",
-    /// "Luna Price Tracker" regardless of exactly how Shortcuts reports the name).
-    static func isCurrentAppLuna(comparedTo appName: String) -> Bool {
-        let name = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !name.isEmpty else { return false }
-        if name.hasPrefix("luna") { return true }
-        let displayName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)?
-            .lowercased()
-        let bundleName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)?
-            .lowercased()
-        return name == displayName || name == bundleName
     }
 }

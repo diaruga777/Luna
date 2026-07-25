@@ -286,7 +286,12 @@ open class ShareViewController: UIViewController {
         let title = result?["title"] as? String
         let kind = result?["Kind"] as? String
         let articleText = result?["ArticleText"] as? String
-        let prefetchedHTML = kind == "article"
+        // The snapshot is of the page the user was ON. When that URL unwraps to a
+        // different page — a publisher's subscribe interstitial holding the article
+        // behind `?dest=` — the snapshot is the subscription pitch, so it must not
+        // travel with the unwrapped article URL.
+        let capturesOwnPage = rawURLString.map { !URLUnwrapper.unwrapsToDifferentPage($0) } ?? false
+        let prefetchedHTML = kind == "article" && capturesOwnPage
             ? Self.articleSnapshotHTML(title: title, text: articleText)
             : nil
         let url = rawURLString.flatMap { URLUnwrapper.ingestURL(from: $0) }

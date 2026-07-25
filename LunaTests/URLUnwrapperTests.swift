@@ -141,6 +141,118 @@ final class URLUnwrapperTests: XCTestCase {
         XCTAssertEqual(URLUnwrapper.unwrapOffline("plain string"), "plain string")
     }
 
+    // MARK: - Publisher subscribe / cookie-check interstitials
+
+    /// The live regression: a paywalled News Corp article REDIRECTS to the
+    /// publisher's own subscribe page, so the interstitial URL is what Safari's
+    /// address bar shows and what a share hands us. Left wrapped, extraction reads
+    /// the subscription pitch as the body and the archive reader asks archive.today
+    /// for a URL it never snapshots. Note the `dest` value is NOT percent-encoded
+    /// here — that's verbatim how the site emits it.
+    func testUnwrapOfflineResolvesNewsCorpSubscribeInterstitial() {
+        let article = "https://www.theaustralian.com.au/wealth/retirement/"
+            + "selffunded-retirees-hit-by-new-30pc-topup-tax-on-investments/"
+            + "news-story/476176fcef46250d229a1612ce9f44d1"
+        let result = URLUnwrapper.unwrapOffline(url(
+            "https://www.theaustralian.com.au/subscribe/news/1/"
+            + "?sourceCode=TAWEB_MRE170_a_TWT&dest=\(article)"
+            + "&memtype=anonymous&mode=premium&v21=GROUPA-Segment-1-NOSCORE"))
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.wrapper, .interstitial)
+        XCTAssertEqual(result.url.absoluteString, article)
+    }
+
+    func testUnwrapOfflineResolvesPercentEncodedInterstitialTarget() {
+        let article = "https://www.heraldsun.com.au/news/victoria/story/news-story/abc123"
+        let encoded = article.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics) ?? article
+        let result = URLUnwrapper.unwrapOffline(url(
+            "https://www.heraldsun.com.au/subscribe/news/1/?dest=\(encoded)&memtype=anonymous"))
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.url.absoluteString, article)
+    }
+
+    /// The `/remote/check_cookie.html?url=…` bounce the same publishers serve when
+    /// no cookie is present — a second wrapper shape carrying the same page.
+    func testUnwrapOfflineResolvesCookieCheckBounce() {
+        let target = "https://www.theaustralian.com.au/business/story/news-story/def456"
+        let result = URLUnwrapper.unwrapOffline(url(
+            "https://www.theaustralian.com.au/remote/check_cookie.html?url=\(target)"))
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.url.absoluteString, target)
+    }
+
+    /// The same-site rule is what keeps this handler from becoming a general
+    /// open-redirect follower: a `dest=` pointing off-site is never followed.
+    func testInterstitialNeverFollowsAnOffSiteTarget() {
+        let result = URLUnwrapper.unwrapOffline(url(
+            "https://www.theaustralian.com.au/subscribe/news/1/?dest=https://evil.example/x"))
+        XCTAssertFalse(result.didUnwrap)
+        XCTAssertNil(result.wrapper)
+    }
+
+    /// `www.` ↔ bare and login-subdomain ↔ site both count as same-site.
+    func testInterstitialAcceptsSameSiteAcrossSubdomains() {
+        let target = "https://www.example.com/news/story"
+        let result = URLUnwrapper.unwrapOffline(url(
+            "https://login.example.com/signin?returnUrl=\(target)"))
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.url.absoluteString, target)
+    }
+
+    /// A self-referential `dest=` (the interstitial pointing at itself) must not be
+    /// reported as an unwrap — there is no new page to go to.
+    func testInterstitialPointingAtAnotherInterstitialIsNotUnwrapped() {
+        let result = URLUnwrapper.unwrapOffline(url(
+            "https://www.theaustralian.com.au/subscribe/news/1/"
+            + "?dest=https://www.theaustralian.com.au/subscribe/news/2/"))
+        XCTAssertFalse(result.didUnwrap)
+    }
+
+    /// The handler is identified by PATH, so it must only fire on a whole
+    /// `subscribe`-style segment — never on an article whose slug merely contains
+    /// the word, and never on an interstitial path with no target param.
+    func testInterstitialIgnoresOrdinaryArticlesAndTargetlessInterstitials() {
+        // An article whose SLUG contains "subscribe" is not an interstitial, even
+        // carrying a same-site absolute `dest=` — only whole segments count.
+        let slug = url("https://www.theguardian.com/media/2026/how-to-subscribe-to-anything"
+            + "?dest=https://www.theguardian.com/world/2026/other")
+        XCTAssertFalse(URLUnwrapper.unwrapOffline(slug).didUnwrap)
+
+        let sluggedSegment = url("https://www.example.com/news/subscribers-only-story"
+            + "?dest=https://www.example.com/news/story")
+        XCTAssertFalse(URLUnwrapper.unwrapOffline(sluggedSegment).didUnwrap)
+
+        let bare = url("https://www.theaustralian.com.au/subscribe/news/1/?memtype=anonymous")
+        XCTAssertFalse(URLUnwrapper.unwrapOffline(bare).didUnwrap)
+
+        // A relative `dest=` is not an absolute http(s) URL, so it is not a target.
+        let relative = url("https://www.example.com/subscribe?dest=/news/story")
+        XCTAssertFalse(URLUnwrapper.unwrapOffline(relative).didUnwrap)
+    }
+
+    /// Registered last precisely so it can't shadow the host-keyed handlers, whose
+    /// hosts it would otherwise match (its matcher accepts every http(s) URL).
+    func testInterstitialIsLastAndShadowsNoOtherHandler() {
+        XCTAssertEqual(URLUnwrapper.handlers.last?.kind, .interstitial)
+        let googleNews = URLUnwrapper.unwrapOffline(url(
+            "https://news.google.com/articles/"
+            + "CBMiK2h0dHBzOi8vd3d3LmJiYy5jb20vbmV3cy93b3JsZC0xMjM0NTY30gEA"))
+        XCTAssertEqual(googleNews.wrapper, .googleNews)
+    }
+
+    /// `unwrapsToDifferentPage` is what the Safari / action-extension hand-offs use
+    /// to decide whether their captured on-screen HTML belongs to the URL being
+    /// saved. Tracking-param stripping alone must NOT count as a different page.
+    func testUnwrapsToDifferentPageOnlyReportsARealUnwrap() {
+        XCTAssertTrue(URLUnwrapper.unwrapsToDifferentPage(
+            "https://www.theaustralian.com.au/subscribe/news/1/"
+            + "?dest=https://www.theaustralian.com.au/business/story/news-story/x"))
+        XCTAssertFalse(URLUnwrapper.unwrapsToDifferentPage(
+            "https://www.theguardian.com/world/2026/jun/20/story?utm_source=twitter"))
+        XCTAssertFalse(URLUnwrapper.unwrapsToDifferentPage("not a url at all"))
+    }
+
     // MARK: - Tracking-param stripping
 
     func testUnwrapStripsTrackingParamsFromResult() async {

@@ -143,8 +143,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               let normalizedURL = URLUnwrapper.ingestURL(from: articleURL) else { return }
         let urlString = normalizedURL.absoluteString
         // If the Safari extension just handed over the already-unlocked page HTML for
-        // this URL, render that instead of re-fetching (which could re-lock).
-        let prefetchedHTML = SafariContentStore.take(for: articleURL)
+        // this URL, render that instead of re-fetching (which could re-lock). Always
+        // CONSUME the capture (so it can't leak onto a later open), but drop it when
+        // the URL unwrapped to a different page: the extension captured the wrapper
+        // it was sitting on — a publisher's subscribe interstitial holds the article
+        // behind `?dest=` — so those bytes are the subscription pitch, not the article.
+        let capturedHTML = SafariContentStore.take(for: articleURL)
+        let prefetchedHTML = URLUnwrapper.unwrapsToDifferentPage(articleURL)
+            ? nil
+            : capturedHTML
         Task { @MainActor in
             let result = await ReadingListIngestor.shared.handleSavePress(
                 urlString: urlString, prefetchedHTML: prefetchedHTML,

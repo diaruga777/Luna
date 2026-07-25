@@ -212,6 +212,88 @@ public enum NewsAggregatorUnwrapper {
         HostMatching.hostSuffixMatches(host, "facebook.com") || host == "fb.com"
     }
 
+    // MARK: - Publisher subscribe / cookie-check interstitials
+
+    /// Query params publishers use to carry the page a subscribe / sign-in /
+    /// cookie-check interstitial is holding hostage. `dest` is News Corp's
+    /// (`theaustralian.com.au`, `heraldsun.com.au`, `dailytelegraph.com.au`,
+    /// `couriermail.com.au`, `news.com.au`, …); `url` is the same family's
+    /// `/remote/check_cookie.html` bounce; the rest are the conventional names.
+    private static let interstitialTargetParams = [
+        "dest", "destination", "returnurl", "return_url", "return", "redirect",
+        "redirecturl", "redirect_uri", "url", "next", "targeturl",
+    ]
+
+    /// Path shapes that mark a URL as an interstitial rather than content. Matched
+    /// against whole, lowercased path segments (plus the `check_cookie.html` leaf),
+    /// so an article whose slug merely CONTAINS one of these words is untouched.
+    private static let interstitialPathSegments: Set<String> = [
+        "subscribe", "subscribes", "subscription", "subscriptions", "paywall",
+        "signin", "sign-in", "login", "log-in", "register", "checkout",
+        "check_cookie.html",
+    ]
+
+    /// Extracts the real page from a publisher's own subscribe / sign-in /
+    /// cookie-check interstitial, fully offline — the target travels inline in a
+    /// query param. Shape (News Corp Australia, the case that motivated this):
+    ///
+    ///     https://www.theaustralian.com.au/subscribe/news/1/?sourceCode=…
+    ///         &dest=https://www.theaustralian.com.au/wealth/…/news-story/<id>
+    ///         &memtype=anonymous&mode=premium
+    ///
+    /// A paywalled article on those sites REDIRECTS to this URL, so it is what
+    /// Safari's address bar shows and what a share/copy hands us. Left wrapped it
+    /// poisons everything downstream: extraction reads the subscription pitch as
+    /// the body, dedupe keys every locked article on the same interstitial path,
+    /// and the archive reader asks archive.today for a URL it never snapshots.
+    ///
+    /// Deliberately conservative — this is the one handler whose matcher can't key
+    /// on the host, so the PATH must prove the URL is an interstitial AND the
+    /// target must be an absolute http(s) URL on the SAME site. That same-site rule
+    /// is what keeps this from becoming a general open-redirect follower: an
+    /// attacker's `?dest=` can only ever point back into the publisher's own
+    /// domain. Returns nil (caller keeps the original URL) when the target is
+    /// itself an interstitial, so a self-referential `dest=` can't loop. Pure.
+    public static func interstitialTarget(_ url: URL) -> URL? {
+        guard url.scheme?.lowercased().hasPrefix("http") == true,
+              let host = url.host?.lowercased(),
+              isInterstitialPath(url),
+              let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        else { return nil }
+
+        for name in interstitialTargetParams {
+            guard let raw = queryItems.first(where: { $0.name.lowercased() == name })?.value,
+                  let target = URL(string: raw),
+                  target.scheme?.lowercased().hasPrefix("http") == true,
+                  let targetHost = target.host?.lowercased(),
+                  isSameSite(targetHost, host),
+                  !isInterstitialPath(target)
+            else { continue }
+            return target
+        }
+        return nil
+    }
+
+    /// True when any whole path segment of `url` is an interstitial marker.
+    private static func isInterstitialPath(_ url: URL) -> Bool {
+        url.path.split(separator: "/").contains {
+            interstitialPathSegments.contains($0.lowercased())
+        }
+    }
+
+    /// Same-site in either direction (`www.x.com` ↔ `x.com`, `x.com` ↔
+    /// `myaccount.x.com`), by comparing `www.`-stripped hosts for equality or a
+    /// subdomain relationship. Deliberately not a public-suffix parse: the only
+    /// question here is whether an interstitial is handing us back a page on its
+    /// own site, and both hosts come from the same URL family.
+    private static func isSameSite(_ target: String, _ wrapper: String) -> Bool {
+        let target = HostMatching.normalizedHost(target)
+        let wrapper = HostMatching.normalizedHost(wrapper)
+        return target == wrapper
+            || HostMatching.hostSuffixMatches(target, wrapper)
+            || HostMatching.hostSuffixMatches(wrapper, target)
+    }
+
     // MARK: - Helpers
 
     /// First capture group of `pattern` in `text`, or nil.

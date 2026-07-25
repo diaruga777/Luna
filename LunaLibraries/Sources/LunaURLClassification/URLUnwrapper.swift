@@ -14,6 +14,7 @@ public enum WrapperKind: String, Equatable {
     case googleNews
     case googleShare
     case shortener
+    case interstitial
 }
 
 /// The canonical result of unwrapping one incoming URL. `url` is always the best
@@ -94,12 +95,19 @@ public enum URLUnwrapper {
     /// EXTEND HERE: add a wrapper by appending a handler. Matchers are otherwise
     /// disjoint; order matters only on overlap (Facebook runs first because an
     /// `fbrpc://` deep link has no http host and must be tried before the host gate).
+    ///
+    /// `.interstitial` MUST stay last: a subscribe / sign-in / cookie-check
+    /// interstitial lives on the publisher's own host, so it is the one handler
+    /// identified by PATH rather than host and its matcher accepts every http(s)
+    /// URL. The dispatch loop `break`s after the first matcher that fires, so
+    /// anywhere earlier it would shadow every handler below it.
     public static let handlers: [WrapperHandler] = [
         .facebook,
         .googleNews,
         .googleShare,
         .appleNews,
         .shorteners(redirectShortenerHosts.union(amazonShortLinkHosts)),
+        .interstitial,
     ]
 
     /// THE app-wide entry. Run once per incoming URL on EVERY surface. Resolves the
@@ -137,6 +145,20 @@ public enum URLUnwrapper {
             break
         }
         return result(unchanged: url)
+    }
+
+    /// True when `string` names a DIFFERENT page than `ingestURL` will hand
+    /// downstream — i.e. an offline handler unwrapped it. Surfaces that captured
+    /// the on-screen HTML for `string` (the Safari "Read in Luna" hand-off, the
+    /// action extension's article snapshot) must discard that capture when this is
+    /// true: the bytes belong to the wrapper page (a publisher's subscribe
+    /// interstitial is the live case — its HTML is the subscription pitch), not to
+    /// the article being saved. Tracking-param stripping alone is NOT a different
+    /// page, so a `?utm_…` article keeps its capture.
+    public static func unwrapsToDifferentPage(_ string: String) -> Bool {
+        guard let url = URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines))
+        else { return false }
+        return unwrapOffline(url).didUnwrap
     }
 
     /// String convenience for input gates that hold a raw string. Returns the
@@ -270,6 +292,19 @@ public extension WrapperHandler {
                 await NewsAggregatorUnwrapper.resolveFinalRedirectViaGET(url, session: session)
             }
         })
+
+    /// Publisher subscribe / sign-in / cookie-check interstitials that carry the
+    /// real page in a `dest=`-style query param (News Corp's
+    /// `…/subscribe/news/1/?dest=<article>` and friends) — resolvable offline. The
+    /// interstitial sits on the publisher's OWN host, so unlike every other handler
+    /// this one can't be identified by host: the matcher accepts any http(s) URL and
+    /// `interstitialTarget` does the real (path + same-site) gating, returning nil
+    /// for the overwhelming majority of URLs. Registered LAST for that reason — see
+    /// `URLUnwrapper.handlers`.
+    public static let interstitial = WrapperHandler(
+        kind: .interstitial,
+        matches: { scheme, _ in scheme == "https" || scheme == "http" },
+        resolve: { url in .immediate(NewsAggregatorUnwrapper.interstitialTarget(url)) })
 
     /// Link shorteners — follow HTTP redirects (HEAD) and return the final URL only
     /// if it left the shortener's host.

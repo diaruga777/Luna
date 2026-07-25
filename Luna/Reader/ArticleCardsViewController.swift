@@ -1465,14 +1465,69 @@ private final class ReaderCardContentViewController: CardContentViewController,
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
+            // Sampled before the card resizes: only a restore triggered by
+            // reaching the article's end owes the content a compensating slide.
+            let restoringAtArticleEnd = !immersed && extendsCard && self.isFocusedContentAtEnd
+            let extensionBeforeRestore = self.immersionBottomExtension
             self.delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
+            if restoringAtArticleEnd {
+                self.keepArticleEndAtReturningCardEdge(by: extensionBeforeRestore)
+            }
         }
-        immersionTracker.bottomRevealDistance = { [weak self] in
-            guard let self,
-                  let resting = self.delegate?.readerCardInlineFrameInWindow(self)
-            else { return 0 }
-            return max(0, self.view.bounds.height - resting.height)
+        immersionTracker.immersionBottomExtension = { [weak self] in
+            self?.immersionBottomExtension ?? 0
         }
+    }
+
+    // MARK: - Immersion geometry
+
+    /// How much taller the live card is than its resting footprint — the
+    /// distance the card's bottom edge travels back UP when the chrome returns.
+    /// Zero whenever the card is already resting.
+    private var immersionBottomExtension: CGFloat {
+        guard isViewLoaded, let resting = delegate?.readerCardInlineFrameInWindow(self)
+        else { return 0 }
+        return max(0, view.bounds.height - resting.height)
+    }
+
+    /// Whether the focused reader is sitting on the last of its content. The
+    /// tolerance matches the tracker's: a settling scroll stops a point or two
+    /// short of the exact maximum.
+    private var isFocusedContentAtEnd: Bool {
+        guard let scrollView = rabbitHoleReader?.focusedContentScrollView else { return false }
+        let maximum = scrollView.contentSize.height + scrollView.adjustedContentInset.bottom
+            - scrollView.bounds.height
+        let position = scrollView.contentOffset.y
+        return maximum > 0 && maximum - position <= 12
+    }
+
+    /// The chrome returns by pulling the card's bottom edge back up, which would
+    /// otherwise drag the article's end down out of sight behind it. The scroll
+    /// range grows by exactly that extension as the card shrinks, so sliding the
+    /// content up by the same amount — on the same curve — leaves the end of the
+    /// article exactly where the reader last saw it, now resting on the restored
+    /// card's bottom edge.
+    private func keepArticleEndAtReturningCardEdge(by extensionHeight: CGFloat) {
+        guard extensionHeight > 0.5,
+              let scrollView = rabbitHoleReader?.focusedContentScrollView
+        else { return }
+        let target = CGPoint(
+            x: scrollView.contentOffset.x, y: scrollView.contentOffset.y + extensionHeight)
+        UIView.animate(
+            withDuration: 0.32, delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
+            animations: { scrollView.contentOffset = target },
+            completion: { _ in
+                // The restored card sheds the bottom safe area the immersed one
+                // reached into, so the reader's own bottom inset can shrink under
+                // the slide. Settle any resulting overshoot rather than leaving a
+                // gap below the last line.
+                let maximum = scrollView.contentSize.height
+                    + scrollView.adjustedContentInset.bottom - scrollView.bounds.height
+                guard scrollView.contentOffset.y > maximum + 0.5 else { return }
+                scrollView.setContentOffset(
+                    CGPoint(x: scrollView.contentOffset.x, y: max(0, maximum)), animated: true)
+            })
     }
 
     override func viewDidLoad() {

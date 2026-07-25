@@ -15,6 +15,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private static let suggestionModeKey = "safariSuggestionMode"
 
     func beginRequest(with context: NSExtensionContext) {
+        SharedSafariURL.recordExtensionRun(isCentral: Self.isCentralLunaHost)
         let item = context.inputItems.first as? NSExtensionItem
         let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any]
         var payload: [String: Any] = ["ok": true]

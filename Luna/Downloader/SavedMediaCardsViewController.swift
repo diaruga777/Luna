@@ -160,6 +160,24 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             openStateChanged: { [weak self] open in
                 self?.carousel.setMuteButtonOccluded(open)
             })
+        mountLeftTray(
+            shifting: { [weak self] in
+                guard let self else { return [] }
+                return [self.carousel.view, self.emptyView]
+            },
+            canPull: { [weak self] in
+                guard let self else { return false }
+                let count = self.items.count + self.failedSaves.count + self.cardOffset
+                return count == 0 || self.carousel.currentIndex == 0
+            },
+            setupTapped: { [weak self] kind in self?.openLeftTraySetup(kind) },
+            savedURL: { [weak self] url, captureSource, sourceView in
+                self?.saveLeftTrayURL(
+                    url, captureSource: captureSource, sourceView: sourceView)
+            },
+            openStateChanged: { [weak self] open in
+                self?.carousel.setMuteButtonOccluded(open)
+            })
 
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT
         // process, so the in-process .savedMediaChanged post below never reaches
@@ -180,13 +198,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             self, selector: #selector(applicationForegrounded), name: UIApplication.didBecomeActiveNotification,
             object: nil)
         NotificationCenter.default.addObserver(
-            self, selector: #selector(refreshPasteboardURL),
-            name: UIPasteboard.changedNotification, object: nil)
-        NotificationCenter.default.addObserver(
             self, selector: #selector(handleJobProgressChanged(_:)),
             name: .downloaderJobProgressChanged, object: nil)
         reload()
-        refreshPasteboardURL()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -234,7 +248,49 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         store.purgeExpired()
         expireTemporaryPasteboardMediaIfNeeded()
         reload()
-        refreshPasteboardURL()
+    }
+
+    private func openLeftTraySetup(_ kind: LeftTraySetupKind) {
+        SetupOnboardingFlow.present(kind, from: self)
+    }
+
+    private func saveLeftTrayURL(
+        _ urlString: String,
+        captureSource: CaptureSource,
+        sourceView: UIView
+    ) {
+        let snapshot = sourceView.snapshotView(afterScreenUpdates: false)
+        let startFrame = sourceView.convert(sourceView.bounds, to: view)
+        Task { [weak self] in
+            let result = await ReadingListIngestor.shared.handleSavePress(
+                urlString: urlString, source: captureSource)
+            guard let self else { return }
+            let item: ReadingListItem?
+            switch result {
+            case .saved(let value), .sentToEreaders(let value),
+                 .sentToFriends(let value), .friendPromptRequested(let value):
+                item = value
+            case .ignored:
+                item = ReadingListStore.shared.item(forURLString: urlString)
+            case .unsupportedKind:
+                item = nil
+            }
+            guard item != nil else { return }
+            self.pendingPasteboardDownloadURLString = urlString
+            self.reload()
+            guard let snapshot else { return }
+            snapshot.frame = startFrame
+            self.view.addSubview(snapshot)
+            let target = self.carousel.view.convert(self.carousel.view.bounds, to: self.view)
+            UIView.animate(
+                withDuration: 0.48, delay: 0,
+                usingSpringWithDamping: 0.84, initialSpringVelocity: 0,
+                options: [.allowUserInteraction, .beginFromCurrentState]
+            ) {
+                snapshot.frame = target.insetBy(dx: 20, dy: 36)
+                snapshot.alpha = 0
+            } completion: { _ in snapshot.removeFromSuperview() }
+        }
     }
 
     @objc private func reload() {
@@ -292,6 +348,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         archiveTray?.setItems(makeArchiveTrayItems())
         archiveTray?.setDownloadProgress(archiveDownloadProgress)
         refreshArchivePullAvailability(animated: false)
+        refreshLeftPullAvailability(animated: false)
         updateShareButton()
     }
 
@@ -972,6 +1029,7 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         navigationTargetDidChangeTo index: Int
     ) {
+        if index != 0 { leftTray?.setPullAvailable(false, animated: true) }
         updateArchivePullAvailability(
             forTargetIndex: index,
             cardCount: items.count + failedSaves.count + cardOffset,
@@ -979,6 +1037,7 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
+        refreshLeftPullAvailability(animated: true)
         refreshArchivePullAvailability(animated: true)
         updateShareButton()
         if renderedPasteboardState != nil, index == 0 {

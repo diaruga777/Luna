@@ -62,9 +62,22 @@ public enum WebArchiveSanitizer {
             fromPropertyList: archive, format: format, options: 0)
     }
 
-    /// Checks that an archive contains the article Luna saved, rather than only a
-    /// publisher shell or subscription prompt. This is intentionally content-based:
-    /// a large navigation document can be many kilobytes while containing no story.
+    /// Checks that an archive holds the article Luna saved, rather than a publisher
+    /// shell, a metered teaser, or a different revision of the page. This is
+    /// intentionally content-based: a large navigation document can be many kilobytes
+    /// while containing no story.
+    ///
+    /// The test is CONTIGUOUS and spread across the whole article, because word
+    /// overlap can't separate a teaser from the real thing — a teaser IS the
+    /// article's opening, and English prose reuses vocabulary heavily enough that a
+    /// live capture holding only the first 28% of a 5,000-word interview still
+    /// matched 68% of the distinct words sampled from its END (measured on the Paris
+    /// Review Steinbeck interview). Verbatim probes from blocks across the article
+    /// separate them completely: that same capture contained none of them.
+    ///
+    /// Comparison runs on letters and digits only, with separators removed entirely,
+    /// so whitespace the two sides serialize differently — a `<br>`, a `&nbsp;`, a
+    /// collapsed newline — can never fail an otherwise identical passage.
     public static func containsReadableArticle(
         _ archiveData: Data,
         content: ArticleContent
@@ -73,19 +86,56 @@ public enum WebArchiveSanitizer {
               let pageText = try? SwiftSoup.parse(html).text()
         else { return false }
 
-        let pageWords = Set(words(in: pageText))
-        let articleWords = words(in: content.blocks
+        let page = condensed(pageText)
+        let probes = proseProbes(in: content)
+        guard !probes.isEmpty else {
+            let title = condensed(content.title)
+            return !title.isEmpty && page.contains(title)
+        }
+        let matched = probes.reduce(into: 0) { count, probe in
+            if page.contains(probe) { count += 1 }
+        }
+        return Double(matched) / Double(probes.count) >= probeMatchThreshold
+    }
+
+    /// Condensed characters per probe (~9 words of English prose) — long enough that
+    /// a coincidental match is not a real possibility.
+    private static let probeLength = 48
+    /// How many places across the article to sample.
+    private static let probeCount = 8
+    /// Share of probes an archive must contain. Below 1.0 so one block the page
+    /// renders from different markup (a pull quote, a caption promoted into prose)
+    /// doesn't reject an otherwise complete capture.
+    private static let probeMatchThreshold = 0.6
+
+    /// Verbatim samples of the saved prose, taken from text blocks spread evenly
+    /// across the article so a capture holding only its opening fails. Each probe
+    /// comes from INSIDE a single block: a window spanning two blocks isn't
+    /// contiguous on the page, where a caption, byline, or ad label can sit between
+    /// them.
+    private static func proseProbes(in content: ArticleContent) -> [String] {
+        let candidates = content.blocks
             .filter { $0.kind != .image }
-            .map(\.text)
-            .joined(separator: " "))
-        guard articleWords.count >= 40 else {
-            return normalize(pageText).contains(normalize(content.title))
+            .map { condensed($0.text) }
+            .filter { $0.count >= probeLength }
+        guard let last = candidates.indices.last else { return [] }
+        // Spread from the first block to the LAST one inclusive — sampling a prefix
+        // of the blocks would accept exactly the teaser this is meant to reject.
+        var indices: [Int] = []
+        for slot in 0..<probeCount {
+            let index = probeCount == 1 ? 0 : slot * last / (probeCount - 1)
+            if indices.last != index { indices.append(index) }
         }
-        let sample = Array(articleWords.prefix(240))
-        let matched = sample.reduce(into: 0) { count, word in
-            if pageWords.contains(word) { count += 1 }
+        return indices.map { String(candidates[$0].prefix(probeLength)) }
+    }
+
+    /// Lowercased letters and digits, nothing else — no spaces to disagree about.
+    private static func condensed(_ source: String) -> String {
+        source.lowercased().unicodeScalars.reduce(into: "") { result, scalar in
+            if CharacterSet.alphanumerics.contains(scalar) {
+                result.append(Character(scalar))
+            }
         }
-        return Double(matched) / Double(sample.count) >= 0.42
     }
 
     static func mainHTML(in archiveData: Data) -> String? {
@@ -146,19 +196,6 @@ public enum WebArchiveSanitizer {
         return String(data: data, encoding: preferred)
             ?? String(data: data, encoding: .utf8)
             ?? String(data: data, encoding: .windowsCP1252)
-    }
-
-    private static func words(in source: String) -> [String] {
-        normalize(source).split(separator: " ").map(String.init).filter { $0.count >= 4 }
-    }
-
-    private static func normalize(_ source: String) -> String {
-        source.lowercased()
-            .unicodeScalars
-            .map { CharacterSet.alphanumerics.contains($0) ? Character(String($0)) : " " }
-            .reduce(into: "") { $0.append($1) }
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
     }
 
     private static func replacing(_ pattern: String, in source: String, with replacement: String) -> String {

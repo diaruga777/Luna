@@ -179,6 +179,53 @@ final class OriginalPageViewControllerTests: XCTestCase {
         XCTAssertTrue(WebArchiveSanitizer.containsReadableArticle(full, content: content))
     }
 
+    /// Paris Review regression: a live capture of a metered page holds the article's
+    /// OPENING, so word overlap accepted it — the teaser's distinct vocabulary matched
+    /// 68% of the words sampled from the END of the real 5,000-word interview. The
+    /// gate has to be contiguous and spread across the article, or "Original" shows a
+    /// truncated page under an un-dismissible subscribe card.
+    func testArchiveReadabilityRejectsATeaserHoldingOnlyTheArticleOpening() throws {
+        let paragraphs = (1...12).map { index in
+            "Section \(index) of the interview turns to the discipline of the written "
+            + "word, which punishes both stupidity and dishonesty in equal measure, and "
+            + "he circles back to the loneliness that makes a writer send signals out."
+        }
+        let content = ArticleContent(
+            title: "The Art of Fiction No. 45",
+            blocks: paragraphs.map { .init(kind: .paragraph, text: $0, links: []) })
+        let teaser = try archiveData(html: """
+        <html><body><article><p>\(paragraphs[0])</p><p>\(paragraphs[1])</p></article>
+        <div class="paywall"><h1>Want to keep reading? Subscribe and save 33%.</h1></div>
+        </body></html>
+        """)
+        let whole = try archiveData(
+            html: "<html><body><article>"
+                + paragraphs.map { "<p>\($0)</p>" }.joined()
+                + "</article></body></html>")
+
+        XCTAssertFalse(WebArchiveSanitizer.containsReadableArticle(teaser, content: content),
+                       "a capture holding only the opening is not the saved article")
+        XCTAssertTrue(WebArchiveSanitizer.containsReadableArticle(whole, content: content))
+    }
+
+    /// The comparison ignores separators entirely, so the same passage still matches
+    /// when the archive's DOM breaks its lines with markup (`<br>`, `&nbsp;`) that the
+    /// saved blocks represent as ordinary spaces.
+    func testArchiveReadabilitySurvivesDifferentWhitespaceMarkup() throws {
+        let sentences = (1...6).map {
+            "Line \($0) of the quoted passage runs long enough to be sampled verbatim by the readability gate."
+        }
+        let content = ArticleContent(
+            title: "A Quoted Passage",
+            blocks: sentences.map { .init(kind: .quote, text: $0, links: []) })
+        let archive = try archiveData(
+            html: "<html><body><article><blockquote>"
+                + sentences.joined(separator: "<br><br>&nbsp;")
+                + "</blockquote></article></body></html>")
+
+        XCTAssertTrue(WebArchiveSanitizer.containsReadableArticle(archive, content: content))
+    }
+
     func testSavedSnapshotIsSelfContainedAndDarkModeAware() throws {
         let linked = "Read the supporting source"
         let content = ArticleContent(

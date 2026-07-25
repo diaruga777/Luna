@@ -28,16 +28,22 @@ app targets):
 4. **Attempt provenance** — "Tried 3 times · last 2 hours ago" once there's been
    more than one attempt (the retry sweep runs on every launch/foreground, so this
    climbs on its own).
-5. **Four actions**: Try with Apple Intelligence (the LLM rescue), Open in Browser,
-   Share Link, and Try Again — the last only for a reason where retrying the same
-   background fetch could plausibly differ (`isWorthRetrying`: offline, timeout,
-   transport, 429, 5xx — never a 403 or an unreadable page).
+5. **Four actions, in two ranks.** The LLM rescue is the one thing worth trying,
+   so it takes a full-width prominent glass capsule
+   (`GlassStyle.actionButtonConfiguration(prominent:)`, Luna brand indigo); the
+   escapes — Browser, Share, Retry — share one line below it as compact plain-glass
+   pills. Retry appears only for a reason where re-running the same background
+   fetch could plausibly differ (`isWorthRetrying`: offline, timeout, transport,
+   429, 5xx — never a 403 or an unreadable page).
 6. **A subtle red rim** (`CardSurfaceView.setEdgeGlow`, tint
    `LunaColors.errorAccent`), supplied per card through the
    `CardCarouselDataSource.edgeGlowColorForCardAt` hook. `CardSurfaceView` clips
    (the letterbox tone and corner radius both need it), so an outward
    `layer.shadow` would be swallowed — the glow is a tinted ring stroked just
    INSIDE the edge whose shadow blooms inward, reading as a lit rim.
+   **The rim is the ONLY red on the card**: the failure line and the spinner use
+   the ordinary text hierarchy, so a broken save reads as a card with a lit edge
+   rather than a red warning panel.
 
 While a rescue is in flight the card says "Trying harder with Apple
 Intelligence…" with a spinner and hides every button that would start another;

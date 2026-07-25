@@ -135,14 +135,15 @@ public enum ArticleResolver {
             trustedCapture == nil
                 ? BypassPlan.silentChainDeadlineSeconds
                 : BypassPlan.trustedCaptureSilentDeadlineSeconds)
+        let directHTML = direct?.sourceHTML
         for strategy in plan.silent {
-            let candidate = await bypassRunner.run(strategy.asBypassStrategy, url: url,
-                                                   directHTML: direct?.sourceHTML)
+            let candidate = await withDeadline(silentDeadline) {
+                await bypassRunner.run(strategy.asBypassStrategy, url: url, directHTML: directHTML)
+            }
             if let candidate, ArticleExtraction.isReadableArticle(candidate),
                candidate.content.bodyTextLength >= floor {
                 return .readable(candidate.content, html: candidate.sourceHTML)
             }
-            if Date() > silentDeadline { break }
         }
 
         // Nothing beat the capture. Hand back what the user is already looking at rather
@@ -159,6 +160,30 @@ public enum ArticleResolver {
         // not a silent fetch — removing the duplicate Wayback hit + near-always-failing
         // archive.ph GET is the NYT/WSJ "no silent strategy worked" speed fix.)
         return resolution(direct: direct, archived: nil, directFailure: directFailure)
+    }
+
+    /// Runs `work`, abandoning it when `deadline` passes — so the silent chain can never
+    /// overrun its budget however slowly one fetch answers. The budget used to be
+    /// advisory (checked only BETWEEN strategies) while a single strategy can spend ~45s
+    /// of its own timeouts, and `IngestPipeline`'s overall 28s cap turns an overrun into a
+    /// FAILED save on an ordinary host, not the archive-reader park the page deserves.
+    /// Returns nil once the deadline has already passed, so a strategy never starts on a
+    /// spent budget.
+    private static func withDeadline<T: Sendable>(
+        _ deadline: Date, _ work: @escaping @Sendable () async -> T?
+    ) async -> T? {
+        let remaining = deadline.timeIntervalSinceNow
+        guard remaining > 0 else { return nil }
+        return await withTaskGroup(of: T?.self) { group in
+            group.addTask { await work() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
     }
 
     /// The page's advertised AMP URL (`<link rel="amphtml" href="…">`), absolute,

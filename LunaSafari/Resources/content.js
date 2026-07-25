@@ -90,7 +90,14 @@
         // app) — unlocking is article handling, so the Downloader and Price
         // Tracker extensions never reveal.
         browser.runtime.sendMessage({ type: "bypassEnabled" }).then(function (resp) {
-            if (resp && resp.enabled) { revealArticle(); }
+            if (!resp || !resp.enabled) { return; }
+            // A publisher that answers a premium article with a server-side redirect to
+            // its own subscribe page leaves NOTHING on the page to reveal — the article
+            // isn't in this document. Go back to the article the interstitial names
+            // (once) instead; when that fires we're navigating away, so skip the
+            // cleanup for this document.
+            if (escapeSubscribeInterstitial()) { return; }
+            revealArticle();
         }).catch(function () {});
     }
 
@@ -102,6 +109,116 @@
         var target = readTarget(resp);
         if (target) { injectLunaButton(target); }
     }
+
+    // ── Publisher subscribe interstitials ────────────────────────────────────────
+    // Some publishers don't overlay a wall on the article; they REDIRECT the request
+    // to their own subscribe page (News Corp Australia:
+    // `…/subscribe/news/1/?dest=<article>&memtype=anonymous&mode=premium`). Safari's
+    // address bar then shows the interstitial, and there is no article in the DOM to
+    // unlock — the cleanup below has nothing to work with. So leave: navigate back to
+    // the page the interstitial itself names, asking for its AMP rendering, which on
+    // those sites is served un-metered (the app's `.ampQuery` bypass does the same
+    // thing over URLSession — `AMPQueryBypass`).
+    //
+    // Deliberately narrow, because this MOVES the user:
+    //   • only on a known news/article host (the shared `__LUNA_NEWS_HOSTS` list),
+    //   • only on a SUBSCRIBE-family path — never a sign-in / register / checkout
+    //     page, where hopping to `?next=…` would abandon something the user started,
+    //   • only to an absolute http(s) target on the SAME site that isn't itself an
+    //     interstitial (so a hostile `?dest=` can't make this an open redirect), and
+    //   • once per target per tab, so a site that redirects straight back can't loop.
+
+    // Mirrors the subscribe half of NewsAggregatorUnwrapper.interstitialPathSegments.
+    var SUBSCRIBE_PATH_SEGMENTS = ["subscribe", "subscribes", "subscription",
+        "subscriptions", "paywall", "check_cookie.html"];
+    // Mirrors NewsAggregatorUnwrapper.interstitialPathSegments in full — used to
+    // reject a target that is itself an interstitial.
+    var INTERSTITIAL_PATH_SEGMENTS = SUBSCRIBE_PATH_SEGMENTS.concat(
+        ["signin", "sign-in", "login", "log-in", "register", "checkout"]);
+    // Mirrors NewsAggregatorUnwrapper.interstitialTargetParams.
+    var INTERSTITIAL_TARGET_PARAMS = ["dest", "destination", "returnurl", "return_url",
+        "return", "redirect", "redirecturl", "redirect_uri", "url", "next", "targeturl"];
+
+    function pathHasSegment(pathname, segments) {
+        return pathname.split("/").some(function (segment) {
+            return segments.indexOf(segment.toLowerCase()) >= 0;
+        });
+    }
+
+    function sameSite(a, b) {
+        var x = a.replace(/^www\./, ""), y = b.replace(/^www\./, "");
+        return x === y || x.endsWith("." + y) || y.endsWith("." + x);
+    }
+
+    /// The article a subscribe interstitial is holding, as an absolute URL string, or
+    /// null when this page isn't one (the overwhelmingly common case). Test hook:
+    /// `window.__lunaSubscribeInterstitialTarget`.
+    function subscribeInterstitialTarget() {
+        if (!isKnownArticleHost()) { return null; }
+        if (!pathHasSegment(location.pathname, SUBSCRIBE_PATH_SEGMENTS)) { return null; }
+        var candidates = [];
+        try {
+            var params = new URL(location.href).searchParams;
+            INTERSTITIAL_TARGET_PARAMS.forEach(function (name) {
+                var value = params.get(name);
+                if (value) { candidates.push(value); }
+            });
+        } catch (e) {}
+        // The same publishers also name the held article in `og:url` (with
+        // `og:type=article`), which is what the browser-tier cleanup script reads.
+        var ogType = document.querySelector('meta[property="og:type"][content]');
+        var ogURL = document.querySelector('meta[property="og:url"][content]');
+        if (ogURL && ogType && (ogType.getAttribute("content") || "").toLowerCase() === "article") {
+            candidates.push(ogURL.getAttribute("content"));
+        }
+        for (var i = 0; i < candidates.length; i++) {
+            var target;
+            try { target = new URL(decodeURIComponent(candidates[i]), location.href); } catch (e) { continue; }
+            if (target.protocol !== "https:" && target.protocol !== "http:") { continue; }
+            if (!sameSite(target.hostname.toLowerCase(), location.hostname.toLowerCase())) { continue; }
+            if (pathHasSegment(target.pathname, INTERSTITIAL_PATH_SEGMENTS)) { continue; }
+            if (target.pathname === location.pathname) { continue; }
+            return target.href;
+        }
+        return null;
+    }
+
+    /// Same transform as Swift's `AMPQueryBypass.ampQueryURL` — a bare `amp` flag
+    /// appended, existing query preserved. A site that doesn't route AMP by query
+    /// simply ignores it and serves the article.
+    function withAMPFlag(urlString) {
+        try {
+            var url = new URL(urlString);
+            if (url.searchParams.has("amp") || url.pathname.toLowerCase().endsWith("/amp")) {
+                return url.href;
+            }
+            url.search = url.search ? url.search + "&amp" : "?amp";
+            url.hash = "";
+            return url.href;
+        } catch (e) { return urlString; }
+    }
+
+    /// Leaves a subscribe interstitial for the article it holds. Returns true when a
+    /// navigation was started (the caller then does nothing else with this document).
+    function escapeSubscribeInterstitial() {
+        var target = subscribeInterstitialTarget();
+        if (!target) { return false; }
+        var destination = withAMPFlag(target);
+        // One attempt per destination per tab: if the site bounces us straight back to
+        // the interstitial, we stop rather than ping-pong.
+        var key = "__lunaInterstitialHop:" + destination;
+        try {
+            if (sessionStorage.getItem(key)) { return false; }
+            sessionStorage.setItem(key, "1");
+        } catch (e) {}
+        // `replace`, not `assign`: the interstitial doesn't belong in history, and Back
+        // must return to wherever the user actually came from.
+        location.replace(destination);
+        return true;
+    }
+
+    window.__lunaSubscribeInterstitialTarget = subscribeInterstitialTarget;
+    window.__lunaWithAMPFlag = withAMPFlag;
 
     // Generic paywall-overlay cleanup (mirrors the app's browser-tier cleanup): remove
     // common overlay containers, un-blur/un-clamp the body, restore scroll, un-lazy
@@ -177,6 +294,28 @@
                         if (articleChars(el) > 400) { reveal(el); } else { el.remove(); }
                         announceUnlock();
                     });
+                });
+                // AMP subscriber gating (`amp-subscriptions`): the document ships BOTH
+                // the story and the pitch, and the AMP runtime picks between them after
+                // load — `[subscriptions-section="content"]` is the article, anything
+                // else (`content-not-granted`, its preview) is the gate. Dropping the
+                // gate and the attribute that hides the content reveals the body the
+                // page already contains. Mirrors Swift's `AMPQueryBypass
+                // .unhidingAMPGate` (the silent tier) and upstream's
+                // `amp_unhide_subscr_section`.
+                document.querySelectorAll("[subscriptions-section]").forEach(function (el) {
+                    var role = (el.getAttribute("subscriptions-section") || "").toLowerCase();
+                    if (role === "content") {
+                        el.removeAttribute("subscriptions-section");
+                        el.style.removeProperty("display");
+                    } else {
+                        el.remove();
+                        announceUnlock();
+                    }
+                });
+                document.querySelectorAll("[amp-access-hide]").forEach(function (el) {
+                    el.removeAttribute("amp-access-hide");
+                    announceUnlock();
                 });
                 [document.documentElement, document.body].forEach(function (el) {
                     if (!el) { return; }

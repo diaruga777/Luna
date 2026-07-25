@@ -220,6 +220,52 @@ final class ArchiveTrayControllerTests: XCTestCase {
         XCTAssertEqual(tray.trayFrameForTesting.minX, 364, accuracy: 0.5)
     }
 
+    /// Downloader re-downloads an unavailable archived item in place, so its
+    /// progress belongs on that item's own cell — there is no floating download
+    /// bar anywhere in the app any more.
+    @MainActor
+    func testArchivedItemDrawsItsOwnDownloadProgressBar() {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [] }, canPull: { true })
+        let unavailable = makeItem(title: nil)
+        tray.setItems([unavailable])
+        tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
+
+        // No job: no bar.
+        XCTAssertNil(tray.cellDownloadProgressForTesting(itemAt: 0))
+
+        tray.setDownloadProgress([unavailable.id: 0.42])
+        XCTAssertEqual(try XCTUnwrap(tray.cellDownloadProgressForTesting(itemAt: 0)), 0.42, accuracy: 0.001)
+
+        // Another item's job leaves this cell alone.
+        tray.setDownloadProgress([UUID(): 0.9])
+        XCTAssertNil(tray.cellDownloadProgressForTesting(itemAt: 0))
+    }
+
+    /// Progress ticks arrive several times a second; reloading the arc for each
+    /// one would restart every visible cell's thumbnail load.
+    @MainActor
+    func testProgressUpdatesReuseTheSameCellInsteadOfReloading() throws {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [] }, canPull: { true })
+        let item = makeItem(title: nil)
+        tray.setItems([item])
+        tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
+        let cell = try XCTUnwrap(tray.cellForTesting(itemAt: 0))
+
+        tray.setDownloadProgress([item.id: 0.1])
+        tray.setDownloadProgress([item.id: 0.75])
+
+        XCTAssertIdentical(tray.cellForTesting(itemAt: 0), cell)
+        XCTAssertEqual(try XCTUnwrap(tray.cellDownloadProgressForTesting(itemAt: 0)), 0.75, accuracy: 0.001)
+    }
+
     @MainActor
     func testOpeningShiftsTheCardByTwoThirdsOfTheScreen() {
         let host = UIViewController()

@@ -32,7 +32,8 @@ own adapters later). The Downloader-specific adapters live in
   button on the root; Friends remains reachable through Settings. Its 9:16
   thumbnail chips have a visible pitch gap and enough strip height for selection
   scaling/shadows, so neither selected nor neighboring previews overlap or clip.
-  The download-progress footer floats above this bottom chrome.
+  Nothing floats above this bottom chrome: download progress is drawn inside the
+  downloading item's own card (see "Store plumbing" below).
 
 ## Interaction model
 
@@ -189,11 +190,24 @@ structurally guarantees no card view outlives its slot.
 `SavedMediaCardsViewController` keeps the grid's plumbing: cross-process Darwin
 bridge, `.savedMediaChanged`/`.readingListChanged`/foreground/activation reloads,
 expiry purge, Photos reconciliation (full `.authorized` only), long-press context
-menu (Download / Share / Save to Photos / Archive / Delete), mark-opened on centering, and the
-`DownloaderProgressFooterView`. Reloads are fingerprinted
+menu (Download / Share / Save to Photos / Archive / Delete), and mark-opened on
+centering. Reloads are fingerprinted
 (`id|thumbnail|storageState` per item) so store notifications that change nothing
 visible don't rebuild live card content mid-playback; real changes reload while
 keeping the currently centered item centered by id.
+
+**Download progress is never floating chrome.** The app-level
+`DownloaderProgressFooterView` was deleted: an in-flight download is drawn inside
+the card of the item downloading it (the undownloaded card's own glass status bar
+— see `claudedocs/media-download.md`), or, for an archived row re-downloading in
+place, on that row's archive-tray cell (`ArchiveTrayController.setDownloadProgress`
+updates visible cells without a reload, since ticks arrive several times a
+second). Every such view is a pure observer of
+`.downloaderJobProgressChanged`; the transfer lives in
+`LiveMediaDownloadManager`'s background `URLSession`, so paging the card away,
+leaving the screen, or backgrounding the app does not pause or cancel it, and a
+card that returns mid-transfer re-reads `currentDownloadSnapshot` to resume its
+bar.
 
 The old `SavedMediaGridViewController` + `SavedMediaViewerViewController` were
 deleted with this change (the carousel replaces both).

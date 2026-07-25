@@ -128,6 +128,11 @@ final class ArchiveTrayController: NSObject {
     private let collection: UICollectionView
     private var pan: UIPanGestureRecognizer!
     private var items: [ArchiveTrayItem] = []
+    /// Download progress of archived items that are being re-fetched, keyed by
+    /// item id. Downloader's archive re-downloads in place, and progress belongs
+    /// on the thing that is downloading, so the cell draws its own bar rather
+    /// than any floating chrome.
+    private var downloadProgress: [UUID: Double] = [:]
     private var progress: CGFloat = 0
     private var panStartProgress: CGFloat = 0
     private var laidOutSize = CGSize.zero
@@ -191,6 +196,17 @@ final class ArchiveTrayController: NSObject {
         // The closed peek exists only when there are cells to peek, so a
         // change in emptiness repositions the closed arc.
         applyProgress()
+    }
+
+    /// Applies live download progress to the cells that have it, without a
+    /// reload — progress ticks arrive several times a second and must not tear
+    /// down cells (or restart their thumbnail loads) while the arc is open.
+    func setDownloadProgress(_ progress: [UUID: Double]) {
+        guard progress != downloadProgress else { return }
+        downloadProgress = progress
+        for case let cell as ArchiveTrayCell in collection.visibleCells {
+            cell.applyDownloadProgress(progress)
+        }
     }
 
     /// Re-evaluates the host's right-edge condition. Paging onto the last card
@@ -326,6 +342,15 @@ final class ArchiveTrayController: NSObject {
         contextMenu(for: items[index], sourceView: collection)
     }
     func setOpenForTesting(_ open: Bool) { setOpen(open, animated: false) }
+    /// Item 0 is the arc header, hence the offset on both hooks below.
+    func cellForTesting(itemAt index: Int) -> UICollectionViewCell? {
+        collection.layoutIfNeeded()
+        return collection.cellForItem(at: IndexPath(item: index + 1, section: 0))
+    }
+    /// The fraction the item's own cell is drawing, or nil when it draws no bar.
+    func cellDownloadProgressForTesting(itemAt index: Int) -> Float? {
+        (cellForTesting(itemAt: index) as? ArchiveTrayCell)?.downloadProgressForTesting
+    }
     #endif
 }
 
@@ -363,7 +388,8 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
         }
         let cell = collectionView.dequeueReusableCell(
             withReuseIdentifier: ArchiveTrayCell.reuseID, for: indexPath) as! ArchiveTrayCell
-        cell.configure(with: items[indexPath.item - 1])
+        let item = items[indexPath.item - 1]
+        cell.configure(with: item, downloadProgress: downloadProgress[item.id])
         return cell
     }
 
@@ -443,10 +469,15 @@ private final class ArchiveTrayCell: UICollectionViewCell {
     private let titleLabel = UILabel()
     private let footerLabel = UILabel()
     private let unavailableIcon = UIImageView(image: UIImage(systemName: "arrow.down.circle.dotted"))
+    /// Shown in place of the dotted glyph while this archived item is being
+    /// re-downloaded, so the progress lives on the item itself.
+    private let downloadProgressBar = MoonHorizonProgressBar()
     private var imageCompactConstraint: NSLayoutConstraint!
     private var imageFillConstraint: NSLayoutConstraint!
     private var representedID: UUID?
     private var unarchive: ((UIView) -> Void)?
+    private var isAvailable = true
+    private var isDownloading = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -464,7 +495,8 @@ private final class ArchiveTrayCell: UICollectionViewCell {
         footerLabel.textColor = LunaColors.secondaryText
         unavailableIcon.tintColor = LunaColors.primaryText
         unavailableIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 25)
-        for child in [imageView, titleLabel, footerLabel, unavailableIcon] {
+        downloadProgressBar.isHidden = true
+        for child in [imageView, titleLabel, footerLabel, unavailableIcon, downloadProgressBar] {
             child.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(child)
         }
@@ -485,6 +517,13 @@ private final class ArchiveTrayCell: UICollectionViewCell {
             footerLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
             unavailableIcon.centerXAnchor.constraint(equalTo: imageView.centerXAnchor),
             unavailableIcon.centerYAnchor.constraint(equalTo: imageView.centerYAnchor),
+            downloadProgressBar.leadingAnchor.constraint(
+                equalTo: imageView.leadingAnchor, constant: 10),
+            downloadProgressBar.trailingAnchor.constraint(
+                equalTo: imageView.trailingAnchor, constant: -10),
+            downloadProgressBar.bottomAnchor.constraint(
+                equalTo: imageView.bottomAnchor, constant: -8),
+            downloadProgressBar.heightAnchor.constraint(equalToConstant: 20),
         ])
     }
 
@@ -496,10 +535,12 @@ private final class ArchiveTrayCell: UICollectionViewCell {
         unarchive = nil
         accessibilityCustomActions = nil
         imageView.image = nil
+        isDownloading = false
+        downloadProgressBar.isHidden = true
         super.prepareForReuse()
     }
 
-    func configure(with item: ArchiveTrayItem) {
+    func configure(with item: ArchiveTrayItem, downloadProgress: Double?) {
         representedID = item.id
         unarchive = item.unarchive
         titleLabel.text = item.title
@@ -508,8 +549,8 @@ private final class ArchiveTrayCell: UICollectionViewCell {
         imageFillConstraint.isActive = !item.showsMetadata
         titleLabel.isHidden = !item.showsMetadata
         footerLabel.isHidden = !item.showsMetadata
-        unavailableIcon.isHidden = item.isAvailable
-        contentView.alpha = item.isAvailable ? 1 : 0.64
+        isAvailable = item.isAvailable
+        setDownloadProgress(downloadProgress, animated: false)
         accessibilityLabel = [item.title, item.footer].compactMap { $0 }.joined(separator: ", ")
         accessibilityHint = item.isAvailable ? "Opens item" : "Downloads item"
         accessibilityCustomActions = [UIAccessibilityCustomAction(
@@ -523,9 +564,34 @@ private final class ArchiveTrayCell: UICollectionViewCell {
         }
     }
 
+    /// Follows an in-flight re-download of THIS item, if the map names it.
+    func applyDownloadProgress(_ progress: [UUID: Double]) {
+        guard let representedID else { return }
+        setDownloadProgress(progress[representedID], animated: true)
+    }
+
+    /// A downloading cell reads as active work rather than missing media: the
+    /// dotted "tap to download" glyph and the unavailable dimming both give way
+    /// to the bar until the transfer ends.
+    private func setDownloadProgress(_ value: Double?, animated: Bool) {
+        isDownloading = value != nil
+        downloadProgressBar.isHidden = !isDownloading
+        unavailableIcon.isHidden = isAvailable || isDownloading
+        contentView.alpha = isAvailable || isDownloading ? 1 : 0.64
+        if let value {
+            downloadProgressBar.setProgress(Float(value), animated: animated)
+        }
+    }
+
     @objc private func performAccessibilityUnarchive() -> Bool {
         guard let unarchive else { return false }
         unarchive(self)
         return true
     }
+
+    #if DEBUG
+    var downloadProgressForTesting: Float? {
+        downloadProgressBar.isHidden ? nil : downloadProgressBar.progress
+    }
+    #endif
 }

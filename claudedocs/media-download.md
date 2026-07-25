@@ -21,9 +21,11 @@ Every Downloader save has one durable `SavedMediaItem` row and exactly one visib
 
 1. **`undownloaded`** — the URL is saved, but no media backing exists yet. The
    carousel card shows a dotted-outline download glyph. While a job runs it becomes
-   a downloading card with an explicit **Downloading** status, moon-horizon progress
-   bar, and a static poster as soon as the resolver exposes one. Tapping the glyph
-   starts the download.
+   a downloading card: a static poster as soon as the resolver exposes one, dimmed
+   behind an **embedded glass status bar** inside the card's own bottom edge that
+   carries the job's status line, a percentage while bytes are moving, and the
+   moon-horizon progress bar. Tapping the glyph starts the download. See
+   "In-app progress" below for why nothing floats.
 2. **`localFile(fileName:)`** — the media file lives under the shared App Group at
    `SavedMedia/Files`; an optional generated thumbnail lives in `SavedMedia/Thumbnails`.
 3. **`photosReference(localIdentifier:…)`** — the manifest keeps PhotoKit's durable
@@ -213,7 +215,7 @@ Photos references remain governed by the user's Photos library.
   `autoDownloadedURLs` marker never suppresses a missing or `.undownloaded` row, so an
   interrupted/crashed save is restartable by pasting the URL again. Store-change notifications
   and live job-progress notifications from async ingestion / URLSession delegates are marshalled
-  onto the main queue before UIKit carousel/footer observers run. A launch pass compares every
+  onto the main queue before UIKit card/tray observers run. A launch pass compares every
   persisted resolving/downloading/waiting job with the background session's real tasks and recreates a
   missing transfer; pasting the same interrupted URL performs the same repair immediately. New
   jobs register their background task before notifying UI, so a termination cannot leave a
@@ -229,6 +231,37 @@ The carousel observes both `.savedMediaChanged` and `.readingListChanged`.
 `SavedMediaStore` also posts an App-Group-specific Darwin notification for mutations made
 in another process; the carousel bridges it back to `.savedMediaChanged` and reloads on app
 activation because Darwin notifications may be dropped while suspended.
+
+## In-app progress: embedded, never floating
+
+In-app download progress is drawn **on the item that is downloading**, not in
+app-level chrome. There is no floating download bar; the former
+`DownloaderProgressFooterView` — a glass slab pinned above the scrub strip that
+adopted whichever job started first — is deleted.
+
+- An **`.undownloaded` carousel card** carries its own progress: poster + dim +
+  an embedded glass status bar inside the card's bottom edge (status line,
+  percentage while `.downloading`, moon-horizon bar). Failure keeps the bar up
+  with the reason in red, the retry glyph, and — for a `.noMedia` failure with a
+  model available — "Try Apple Intelligence" (see `claudedocs/url-rescue.md`).
+- An **archived row re-downloading in place** (tapping an unavailable archive
+  cell) draws its bar on that cell. `ArchiveTrayController.setDownloadProgress`
+  applies ticks to visible cells directly — a `reloadData` per tick would restart
+  every visible cell's thumbnail load. While downloading, the cell drops the
+  dotted glyph and the unavailable dimming, because it is active work rather than
+  missing media.
+- The **pasteboard preview card** keeps its own progress card, as before.
+
+**Every one of these views is a pure observer.** They read
+`.downloaderJobProgressChanged` (and `currentDownloadSnapshot(forSourceURLString:)`
+on load) and never own the transfer, which lives in `LiveMediaDownloadManager`'s
+shared-container background `URLSession`. So paging the card off screen, leaving
+the Downloader screen, or backgrounding the app tears the view down without
+touching the download; only the Live Activity's explicit pause
+(`LiveMediaDownloadManager.suspend(jobID:)`, called solely from the widget's
+intent) ever suspends one. A card recreated mid-transfer re-reads the snapshot and
+picks the bar up where it is, and out-of-app progress remains the Live Activity's
+job.
 
 ## Long downloads, interruption, and storage
 

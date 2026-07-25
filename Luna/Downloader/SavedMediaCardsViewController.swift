@@ -8,7 +8,11 @@
 //  paging, playback/mute/scrub gestures) lives in LunaDesignSystem/CardCarousel;
 //  this controller adapts SavedMediaItems into card content and keeps the grid's
 //  store plumbing: cross-process change observation, expiry purge, Photos
-//  reconciliation, context-menu actions, and the download-progress footer.
+//  reconciliation, and context-menu actions. Download progress is never floating
+//  chrome: it is drawn inside the card (or archive-tray cell) of the item that is
+//  actually downloading, while the transfer itself lives in
+//  `LiveMediaDownloadManager`'s background URLSession and so survives paging
+//  away, this screen disappearing, and the app being backgrounded.
 //
 
 import AVFoundation
@@ -68,7 +72,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
-    private let downloadFooter = DownloaderProgressFooterView()
     private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
         symbol: "photo.on.rectangle.angled", title: "No Saved Media",
         subtitle: "Saved Downloader links appear here after Luna downloads the media.")
@@ -79,6 +82,12 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private weak var activePlayer: AVPlayer?
     private var items: [SavedMediaItem] = []
     private var archivedItems: [SavedMediaItem] = []
+    /// In-flight progress of jobs whose row is ARCHIVED, keyed by item id. An
+    /// archived row has no carousel card to draw its bar in — tapping an
+    /// unavailable archive cell re-downloads in place — so its tray cell carries
+    /// the bar instead. Live rows need no equivalent map: their own card content
+    /// controller observes the same notification directly.
+    private var archiveDownloadProgress: [UUID: Double] = [:]
     /// Saves whose ingestion FAILED. They carry no kind (the classifier never
     /// got one), so the surface gate keeps them and every app shows them — this
     /// app included: a Downloader link that broke belongs on the Downloader's
@@ -135,7 +144,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         ])
 
         mountBottomControls()
-        mountDownloadFooter()
         mountArchiveTray(
             shifting: { [weak self] in
                 guard let self else { return [] }
@@ -171,6 +179,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(refreshPasteboardURL),
             name: UIPasteboard.changedNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleJobProgressChanged(_:)),
+            name: .downloaderJobProgressChanged, object: nil)
         reload()
         refreshPasteboardURL()
     }
@@ -198,22 +209,23 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         mountBottomControls(leading: settingsButton, trailing: shareButton)
     }
 
-    /// Floats the download-progress footer above the scrub strip, mirroring the
-    /// Live Activity / action-extension download UI. It reveals itself only
-    /// while a Downloader-owned job is running.
-    private func mountDownloadFooter() {
-        view.addSubview(downloadFooter)
-        NSLayoutConstraint.activate([
-            downloadFooter.leadingAnchor.constraint(
-                equalTo: view.leadingAnchor, constant: 16),
-            downloadFooter.trailingAnchor.constraint(
-                equalTo: view.trailingAnchor, constant: -16),
-            downloadFooter.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -92),
-        ])
-    }
-
     // MARK: - Store
+
+    /// Keeps the archive tray's in-cell bars current. Posted on the main queue by
+    /// `postDownloaderJobProgress`, so this only ever runs there. Live (unarchived)
+    /// rows are handled by their own card, not here.
+    @objc private func handleJobProgressChanged(_ notification: Notification) {
+        guard let urlString = notification.userInfo?["sourceURLString"] as? String,
+              let id = archivedItems.first(where: { $0.sourceURLString == urlString })?.id
+        else { return }
+        let snapshot = notification.userInfo?["snapshot"] as? DownloaderJobSnapshot
+        if let snapshot, snapshot.phase != .finished, snapshot.phase != .failed {
+            archiveDownloadProgress[id] = snapshot.progress
+        } else {
+            archiveDownloadProgress[id] = nil
+        }
+        archiveTray?.setDownloadProgress(archiveDownloadProgress)
+    }
 
     @objc private func applicationForegrounded() {
         store.purgeExpired()
@@ -257,6 +269,10 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         items = updated
         archivedItems = updatedArchive
         failedSaves = updatedFailed
+        // A row that left the archive (unarchived, or completed into a live card)
+        // takes its tray bar with it.
+        let archivedIDs = Set(archivedItems.map(\.id))
+        archiveDownloadProgress = archiveDownloadProgress.filter { archivedIDs.contains($0.key) }
         renderedPasteboardState = pasteboardState
         let pendingIndex = pendingPasteboardDownloadURLString.flatMap { pending in
             items.firstIndex { $0.sourceURLString == pending }
@@ -271,6 +287,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         emptyView.isHidden = hasAnyCard || renderedPasteboardState != nil
         carousel.view.isHidden = !hasAnyCard && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())
+        archiveTray?.setDownloadProgress(archiveDownloadProgress)
         refreshArchivePullAvailability(animated: false)
         updateShareButton()
     }
@@ -1358,8 +1375,16 @@ final class TemporaryPasteboardMediaCardContentViewController: CardContentViewCo
 // MARK: - Undownloaded card content
 
 /// Card content for an item whose media hasn't been fetched yet. During a job it
-/// becomes a real downloading card: early poster, explicit status, and the same
-/// moon-horizon progress bar used by the Live Activity/footer.
+/// becomes a real downloading card: early poster, explicit status, percentage,
+/// and the same moon-horizon progress bar the Live Activity draws — all inside
+/// this card. There is deliberately no app-level download bar: the download
+/// belongs to one item, so its progress is drawn on that item.
+///
+/// The bar is a pure OBSERVER of `LiveMediaDownloadManager`'s job state. Nothing
+/// here starts, holds, or stops the transfer, so paging this card off screen (or
+/// backgrounding the app) tears the view down without touching the background
+/// URLSession; `viewDidLoad` re-reads `currentDownloadSnapshot` so a card that
+/// comes back mid-transfer picks the bar up where it is.
 private final class UndownloadedMediaCardContentViewController: CardContentViewController {
 
     private let sourceURLString: String
@@ -1370,14 +1395,12 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
     private let poster = UIImageView()
     private let posterDim = UIView()
     private let statusLabel = UILabel()
+    private let percentLabel = UILabel()
     private let progress = MoonHorizonProgressBar()
-    private lazy var statusStack: UIStackView = {
-        let stack = UIStackView(arrangedSubviews: [statusLabel, progress])
-        stack.axis = .vertical
-        stack.alignment = .fill
-        stack.spacing = 10
-        return stack
-    }()
+    /// The embedded bar: a glass slab inside the card's bottom edge, reading
+    /// status on the leading side and percent-complete on the trailing side,
+    /// with the horizon bar spanning beneath them.
+    private let statusBar = UIVisualEffectView(effect: GlassStyle.barEffect())
     private var loadedThumbnailFileName: String?
 
     init(item: SavedMediaItem, download: @escaping () -> Void, rescue: (() -> Void)? = nil) {
@@ -1432,17 +1455,38 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
         view.addSubview(rescueButton)
 
         statusLabel.text = "Downloading"
-        statusLabel.textAlignment = .center
-        statusLabel.textColor = .white
-        statusLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        statusLabel.layer.shadowColor = UIColor.black.cgColor
-        statusLabel.layer.shadowOpacity = 0.45
-        statusLabel.layer.shadowRadius = 3
+        statusLabel.textColor = LunaColors.primaryText
+        statusLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        statusLabel.numberOfLines = 2
+
+        percentLabel.textColor = LunaColors.secondaryText
+        percentLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .regular)
+        percentLabel.textAlignment = .right
+        percentLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         progress.translatesAutoresizingMaskIntoConstraints = false
-        statusStack.isHidden = true
-        statusStack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(statusStack)
+
+        let row = UIStackView(arrangedSubviews: [statusLabel, percentLabel])
+        row.axis = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 10
+        let column = UIStackView(arrangedSubviews: [row, progress])
+        column.axis = .vertical
+        column.alignment = .fill
+        column.spacing = 8
+        column.translatesAutoresizingMaskIntoConstraints = false
+
+        statusBar.isHidden = true
+        statusBar.clipsToBounds = true
+        if #available(iOS 26.0, *) {
+            statusBar.cornerConfiguration = .corners(radius: .fixed(18))
+        } else {
+            statusBar.layer.cornerRadius = 18
+            statusBar.layer.cornerCurve = .continuous
+        }
+        statusBar.translatesAutoresizingMaskIntoConstraints = false
+        statusBar.contentView.addSubview(column)
+        view.addSubview(statusBar)
 
         NSLayoutConstraint.activate([
             poster.topAnchor.constraint(equalTo: view.topAnchor),
@@ -1455,15 +1499,20 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
             posterDim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             button.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            statusStack.leadingAnchor.constraint(
-                equalTo: view.leadingAnchor, constant: 28),
-            statusStack.trailingAnchor.constraint(
-                equalTo: view.trailingAnchor, constant: -28),
-            statusStack.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
+            statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            statusBar.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            column.leadingAnchor.constraint(
+                equalTo: statusBar.contentView.leadingAnchor, constant: 14),
+            column.trailingAnchor.constraint(
+                equalTo: statusBar.contentView.trailingAnchor, constant: -14),
+            column.topAnchor.constraint(equalTo: statusBar.contentView.topAnchor, constant: 10),
+            column.bottomAnchor.constraint(
+                equalTo: statusBar.contentView.bottomAnchor, constant: -10),
             progress.heightAnchor.constraint(equalToConstant: 20),
             rescueButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            rescueButton.bottomAnchor.constraint(equalTo: statusStack.topAnchor, constant: -16),
+            rescueButton.bottomAnchor.constraint(equalTo: statusBar.topAnchor, constant: -16),
         ])
 
         NotificationCenter.default.addObserver(
@@ -1485,20 +1534,23 @@ private final class UndownloadedMediaCardContentViewController: CardContentViewC
 
     private func apply(_ snapshot: DownloaderJobSnapshot?) {
         guard let snapshot else {
-            statusStack.isHidden = true
+            statusBar.isHidden = true
             posterDim.isHidden = true
             button.isHidden = false
             rescueButton.isHidden = true
             return
         }
 
-        statusLabel.text = snapshot.phase == .downloading
-            ? "Downloading"
-            : snapshot.message
-        statusLabel.textColor = snapshot.phase == .failed ? .systemRed : .white
+        statusLabel.text = snapshot.message
+        statusLabel.textColor = snapshot.phase == .failed
+            ? .systemRed : LunaColors.primaryText
+        // A percentage is only honest once bytes are actually moving; resolving
+        // and waiting phases have no meaningful fraction yet.
+        percentLabel.text = snapshot.phase == .downloading
+            ? "\(Int((snapshot.progress * 100).rounded()))%" : nil
         progress.isHidden = snapshot.phase == .failed
         progress.setProgress(Float(snapshot.progress), animated: true)
-        statusStack.isHidden = false
+        statusBar.isHidden = false
         button.isHidden = snapshot.phase != .failed
         // Offer the AI rescue only on a genuine no-media failure, when installed.
         rescueButton.isHidden = !(snapshot.phase == .failed

@@ -378,6 +378,12 @@ public final class CardCarouselViewController: UIViewController {
                 verticalPadding: style.verticalPadding,
                 fillsVertically: style.fillsVertically)
         }
+        // Render the eclipse corona for this exact card geometry now, in the
+        // background, rather than on whichever tap first starts a transition.
+        EclipseCorona.prewarm(
+            bodySize: centeredCardFrame().size,
+            cornerRadius: CarouselCardView.cornerRadius,
+            tint: LunaSurfacePalette.atmosphereTint)
         guard !isTransitioning else { return }
         for slot in slots.values { applyRestingLayout(to: slot) }
         scrubPreview.layout(centeredCardFrame: centeredCardFrame())

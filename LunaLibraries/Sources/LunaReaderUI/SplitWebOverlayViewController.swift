@@ -523,6 +523,23 @@ public final class SplitWebOverlayViewController: UIViewController,
         presentationMetrics.cardFrameInWindow
     }
 
+    /// Bakes the eclipse corona for the geometry a reader opened from
+    /// `cardFrameInWindow` will use — the card footprint minus the tab strip,
+    /// which is a different size from the carousel's own card corona and so a
+    /// separate cache entry. Call it once the resting card frame is known so the
+    /// first article open doesn't render it mid-transition.
+    @MainActor
+    public static func prewarmEclipseCorona(cardFrameInWindow: CGRect) {
+        let metrics = InlineReaderPresentationMetrics(
+            cardFrameInWindow: cardFrameInWindow, tabHeight: tabBarHeight)
+        EclipseCorona.prewarm(
+            bodySize: metrics.localCardFrame.size,
+            // `CardEclipseTransition.makeCorona` always uses the carousel card's
+            // radius, whatever the body it surrounds.
+            cornerRadius: CarouselCardView.cornerRadius,
+            tint: LunaSurfacePalette.atmosphereTint)
+    }
+
     private var presentationMetrics: InlineReaderPresentationMetrics {
         InlineReaderPresentationMetrics(
             cardFrameInWindow: cardFrameInWindow, tabHeight: Self.tabBarHeight)

@@ -10,6 +10,7 @@ import LunaDesignSystem
 import UIKit
 import XCTest
 
+@MainActor
 final class EclipsePreviewRecorderTests: XCTestCase {
 
     private var outputDirectory: URL {

@@ -107,25 +107,78 @@ public enum EclipseCorona {
 
     // MARK: - Exterior corona (light falling outward from a rounded silhouette)
 
-    // Transition rendering is main-thread-only; the caches never leave it.
-    nonisolated(unsafe) private static var exteriorCache: [String: UIImage] = [:]
+    // Cache reads/writes happen on the main thread only. `prewarm` renders on a
+    // background queue but hops back here to store.
+    @MainActor private static var exteriorCache: [String: UIImage] = [:]
+    /// Geometries a `prewarm` is currently rendering, so a second call is a no-op.
+    @MainActor private static var prewarming: Set<String> = []
+
+    private static func exteriorKey(
+        silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor
+    ) -> String {
+        cacheKey(
+            "ext", silhouetteSize.width, silhouetteSize.height, cornerRadius,
+            reach(for: silhouetteSize), tint: tint)
+    }
 
     /// The corona around an opaque rounded-rect silhouette, as an image whose
     /// bounds are `silhouetteSize` grown by `reach` on all sides. The silhouette
     /// interior is left untouched, so the image is safe to composite above or
     /// below the body it surrounds.
+    ///
+    /// A cache miss renders synchronously, which is a visible hitch on the frame
+    /// that asks — call `prewarm(bodySize:cornerRadius:tint:)` as soon as the
+    /// geometry is known so a transition never hits that path.
+    @MainActor
     public static func exteriorImage(
         silhouetteSize: CGSize,
         cornerRadius: CGFloat,
         tint: UIColor
     ) -> UIImage? {
         guard silhouetteSize.width > 1, silhouetteSize.height > 1 else { return nil }
-        let reach = reach(for: silhouetteSize)
-        let key = cacheKey(
-            "ext", silhouetteSize.width, silhouetteSize.height, cornerRadius, reach,
-            tint: tint)
+        let key = exteriorKey(
+            silhouetteSize: silhouetteSize, cornerRadius: cornerRadius, tint: tint)
         if let cached = exteriorCache[key] { return cached }
+        let image = renderExterior(
+            silhouetteSize: silhouetteSize, cornerRadius: cornerRadius, tint: tint)
+        if let image { exteriorCache[key] = image }
+        return image
+    }
 
+    /// Renders and caches a geometry's corona on a background queue.
+    ///
+    /// The raster is hundreds of stroked offset curves plus a gradient per ray
+    /// slice over a canvas larger than the card — tens of milliseconds, which is
+    /// several dropped frames if it lands on the tap that starts the transition.
+    /// Call this the moment the card geometry is known (the carousel does it from
+    /// `viewDidLayoutSubviews`); by the first tap the image is already waiting.
+    /// Idempotent, and cheap to call on every layout pass.
+    @MainActor
+    public static func prewarm(
+        bodySize: CGSize, cornerRadius: CGFloat, tint: UIColor
+    ) {
+        guard bodySize.width > 1, bodySize.height > 1 else { return }
+        let key = exteriorKey(
+            silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint)
+        guard exteriorCache[key] == nil, prewarming.insert(key).inserted else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let image = renderExterior(
+                silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint)
+            Task { @MainActor in
+                prewarming.remove(key)
+                if let image, exteriorCache[key] == nil { exteriorCache[key] = image }
+            }
+        }
+    }
+
+    /// The actual drawing. Deliberately free of UIKit state so `prewarm` can run
+    /// it off the main thread: `UIGraphicsImageRenderer`'s block form keeps its
+    /// context thread-local, and every colour here is static (never a dynamic
+    /// `UIColor` needing trait resolution).
+    private static func renderExterior(
+        silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor
+    ) -> UIImage? {
+        let reach = reach(for: silhouetteSize)
         let size = CGSize(
             width: silhouetteSize.width + reach * 2,
             height: silhouetteSize.height + reach * 2)
@@ -134,11 +187,15 @@ public enum EclipseCorona {
 
         let format = UIGraphicsImageRendererFormat()
         format.opaque = false
-        format.scale = 1.5
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { rendererContext in
+        // 1x on purpose. Core Graphics defers rasterisation to image creation, so
+        // cost tracks pixel count almost exactly — 2x here is 4x the work — and
+        // everything in this pass is smooth and low-frequency, where the upscale
+        // is invisible. The one detail that needs real resolution, the
+        // chromosphere hairline, is a vector layer in `EclipseCoronaView` instead.
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { rendererContext in
             let context = rendererContext.cgContext
-            // Clip away the silhouette interior so the chromosphere stroke ends
-            // exactly on the limb and nothing leaks over the body.
+            // Clip away the silhouette interior so nothing leaks over the body.
             let outside = UIBezierPath(rect: CGRect(origin: .zero, size: size))
             outside.append(
                 UIBezierPath(roundedRect: silhouette, cornerRadius: cornerRadius))
@@ -153,15 +210,23 @@ public enum EclipseCorona {
                 cornerRadius: cornerRadius, reach: reach, tint: tint)
             drawStreamers(
                 context: context, silhouette: silhouette, reach: reach, tint: tint)
-            drawChromosphere(
-                context: context, silhouette: silhouette, cornerRadius: cornerRadius)
             context.restoreGState()
 
             drawProminences(context: context, silhouette: silhouette)
         }
-        exteriorCache[key] = image
-        return image
     }
+
+    /// The chromosphere: the hairline on the limb itself, as `(width, alpha)` pairs
+    /// to stroke on the body's own outline. Drawn as vector layers rather than
+    /// baked into the raster so it stays razor-sharp at any scale — the hard inner
+    /// edge is the whole reason the corona reads as photographed. Only the outer
+    /// half of each stroke shows; the opaque body covers the rest.
+    static let chromosphereStrokes: [(width: CGFloat, alpha: CGFloat)] = [
+        (5.0, 0.16), (2.0, 0.34), (0.9, 0.82),
+    ]
+
+    /// The chromosphere colour, resolved.
+    static var chromosphereColor: UIColor { inner }
 
     /// The smooth part of the corona: concentric offset curves of the silhouette,
     /// weighted by a power law so the profile has a bright edge and a long tail.
@@ -262,21 +327,6 @@ public enum EclipseCorona {
         }
     }
 
-    /// The hairline on the limb itself, plus one soft bead just outside it. The
-    /// clip already removed the interior, so only the outer half of each stroke
-    /// survives and the inner edge is perfectly hard.
-    private static func drawChromosphere(
-        context: CGContext, silhouette: CGRect, cornerRadius: CGFloat
-    ) {
-        for (width, alpha) in [(CGFloat(5.0), CGFloat(0.16)), (2.0, 0.34), (0.9, 0.82)] {
-            context.setLineWidth(width)
-            context.setStrokeColor(inner.withAlphaComponent(alpha).cgColor)
-            context.addPath(
-                UIBezierPath(roundedRect: silhouette, cornerRadius: cornerRadius).cgPath)
-            context.strokePath()
-        }
-    }
-
     /// Prominences: small hydrogen-alpha arcs on the limb. Drawn in normal blend
     /// so the pink survives instead of being screened into the white rim.
     private static func drawProminences(context: CGContext, silhouette: CGRect) {
@@ -314,11 +364,12 @@ public enum EclipseCorona {
 
     // MARK: - Interior corona (light falling inward from the frame edges)
 
-    nonisolated(unsafe) private static var interiorCache: [String: UIImage] = [:]
+    @MainActor private static var interiorCache: [String: UIImage] = [:]
 
     /// The corona for a source that already fills the transition container: the
     /// light has nowhere outward to go, so it falls inward from every edge. Same
     /// profile and structure as the exterior corona, mirrored.
+    @MainActor
     public static func interiorImage(
         size: CGSize, cornerRadius: CGFloat, tint: UIColor
     ) -> UIImage? {
@@ -468,8 +519,13 @@ public enum EclipseCorona {
 /// they would the body itself.
 public final class EclipseCoronaView: UIView {
     private let halo = UIImageView()
+    private let cornerRadius: CGFloat
+    /// The chromosphere hairline. Vector layers, not part of the raster, so the
+    /// limb stays razor-sharp while the smooth passes rasterise cheaply at 1x.
+    private var chromosphere: [CAShapeLayer] = []
 
     public init(bodySize: CGSize, cornerRadius: CGFloat, tint: UIColor) {
+        self.cornerRadius = cornerRadius
         super.init(frame: CGRect(origin: .zero, size: bodySize))
         isUserInteractionEnabled = false
         clipsToBounds = false
@@ -484,8 +540,29 @@ public final class EclipseCoronaView: UIView {
         halo.image = EclipseCorona.exteriorImage(
             silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint)
         addSubview(halo)
+
+        // Only the outer half of each stroke is ever visible: every call site
+        // composites this view beneath an opaque body.
+        for stroke in EclipseCorona.chromosphereStrokes {
+            let rim = CAShapeLayer()
+            rim.fillColor = nil
+            rim.strokeColor = EclipseCorona.chromosphereColor
+                .withAlphaComponent(stroke.alpha).cgColor
+            rim.lineWidth = stroke.width
+            layer.addSublayer(rim)
+            chromosphere.append(rim)
+        }
     }
 
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
+
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        let path = UIBezierPath(roundedRect: bounds, cornerRadius: cornerRadius).cgPath
+        for rim in chromosphere {
+            rim.frame = bounds
+            rim.path = path
+        }
+    }
 }

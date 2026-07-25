@@ -1386,6 +1386,10 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // Bake the inline reader's eclipse corona now rather than on the first
+        // article open. (The carousel prewarms its own card geometry separately.)
+        SplitWebOverlayViewController.prewarmEclipseCorona(
+            cardFrameInWindow: inlineReaderCardFrameInWindow)
         // The reader fills the card — the fade-out's bottom extension just
         // grows this frame, revealing more content; nothing inside shifts.
         reader?.view.frame = view.bounds

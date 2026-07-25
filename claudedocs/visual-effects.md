@@ -146,9 +146,37 @@ edge than any other, so brightness is a function of distance to the nearest edge
 bands agree along every diagonal. Nested rounded-rect strokes (the obvious alternative)
 offset by √2 more at the corners and read as a bevelled picture frame.
 
+### Cost and prewarming
+
 Rendering is hundreds of stroked curves plus a gradient per ray slice, far too much for a
-`draw(_:)` on every frame, so each geometry is baked into a cached `UIImage` below screen
-scale. Card geometry is constant within a session, so only the first transition pays.
+`draw(_:)` on every frame, so each geometry is baked into a cached `UIImage`.
+
+Core Graphics defers rasterisation to image creation, so the cost tracks pixel count almost
+exactly — the drawing block itself measures ~13 ms while `renderer.image {}` took ~190 ms at
+2x. The raster therefore runs at **1x** (~100 ms for a card, and the upscale is invisible on
+passes this smooth), and the one detail that needs real resolution — the chromosphere
+hairline — is a vector `CAShapeLayer` in `EclipseCoronaView` instead of part of the image.
+`preferredRange` makes no difference; don't bother with it.
+
+100 ms is still several dropped frames, so nothing waits for the first transition to ask:
+`EclipseCorona.prewarm(bodySize:cornerRadius:tint:)` renders on a background queue and hops
+back to the main thread to store. `renderExterior` is deliberately free of UIKit state so it
+can — `UIGraphicsImageRenderer`'s block form keeps its context thread-local, and every colour
+in the pass is static rather than a dynamic `UIColor` needing trait resolution.
+
+Two geometries get prewarmed, both as soon as they are known and both idempotent, so calling
+them from every layout pass is fine:
+
+| Geometry | Prewarmed from |
+| --- | --- |
+| the centered card (paging transitions) | `CardCarouselViewController.viewDidLayoutSubviews` |
+| the card minus the 42pt tab strip (inline reader) | `SplitWebOverlayViewController.prewarmEclipseCorona(cardFrameInWindow:)`, called from the reader card's `viewDidLayoutSubviews` |
+
+Verified on a real launch: the prewarm starts ~130 ms in and completes before any transition,
+with no synchronous miss. `EclipseCoronaPrewarmTests` guards the contract — in particular that
+the prewarm key matches what the transition asks for, since a mismatch silently does the work
+twice and the hitch comes back. The interior corona (~3 ms) and the flare (~1.5 ms) are cheap
+enough to leave alone.
 
 The diamond-ring point (`EclipseFlareView`) matches: a blown-out warm core drifting to a
 cool flare tail, irregular spike lengths rotated off the axes, and a faint lens ghost ring.

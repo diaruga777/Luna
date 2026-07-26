@@ -75,13 +75,12 @@ class CardCarouselHostViewController: UIViewController {
     final func mountLeftTray(
         shifting views: @escaping () -> [UIView],
         canPull: @escaping () -> Bool,
-        setupTapped: @escaping (LeftTraySetupKind) -> Void,
         savedURL: @escaping (String, CaptureSource, UIView) -> Void,
         openStateChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         leftTray = LeftTrayController(
             host: self, shiftedViews: views, canPull: canPull,
-            setupTapped: setupTapped, savedURL: savedURL,
+            savedURL: savedURL,
             openStateChanged: openStateChanged)
     }
 

@@ -38,4 +38,14 @@ final class LeftTrayStorageTests: XCTestCase {
         XCTAssertTrue(status.shortcutHasRun(isCentral: false))
         XCTAssertFalse(status.shortcutHasRun(isCentral: true))
     }
+
+    func testShortcutRunPostsSetupStatusChange() {
+        let status = LunaSetupStatusStore(defaults: defaults)
+        let expectation = expectation(
+            forNotification: LunaSetupStatusStore.didChange, object: nil)
+
+        status.recordShortcutRun(isCentral: false)
+
+        wait(for: [expectation], timeout: 1)
+    }
 }

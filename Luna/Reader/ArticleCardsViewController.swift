@@ -240,7 +240,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 guard let self else { return false }
                 return self.items.isEmpty || self.carousel.currentIndex == 0
             },
-            setupTapped: { [weak self] kind in self?.openLeftTraySetup(kind) },
             savedURL: { [weak self] url, captureSource, sourceView in
                 self?.saveLeftTrayURL(
                     url, captureSource: captureSource, sourceView: sourceView)
@@ -272,10 +271,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // immediately instead of waiting on the probe's round-trip (a `detectPatterns`
         // call).
         reload()
-    }
-
-    private func openLeftTraySetup(_ kind: LeftTraySetupKind) {
-        SetupOnboardingFlow.present(kind, from: self)
     }
 
     private func saveLeftTrayURL(

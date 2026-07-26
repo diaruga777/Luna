@@ -170,7 +170,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 let count = self.items.count + self.failedSaves.count + self.cardOffset
                 return count == 0 || self.carousel.currentIndex == 0
             },
-            setupTapped: { [weak self] kind in self?.openLeftTraySetup(kind) },
             savedURL: { [weak self] url, captureSource, sourceView in
                 self?.saveLeftTrayURL(
                     url, captureSource: captureSource, sourceView: sourceView)
@@ -248,10 +247,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         store.purgeExpired()
         expireTemporaryPasteboardMediaIfNeeded()
         reload()
-    }
-
-    private func openLeftTraySetup(_ kind: LeftTraySetupKind) {
-        SetupOnboardingFlow.present(kind, from: self)
     }
 
     private func saveLeftTrayURL(

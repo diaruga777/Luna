@@ -13,7 +13,7 @@ import LunaURLClassification
 import UIKit
 import UniformTypeIdentifiers
 
-enum LeftTraySetupKind {
+enum LeftTraySetupKind: Equatable {
     case safari
     case shortcut
     case email
@@ -44,7 +44,8 @@ private enum LeftTrayRow {
     var height: CGFloat {
         switch self {
         case .paste: return 154
-        case .setup, .recent: return 116
+        case .setup: return 176
+        case .recent: return 116
         }
     }
 }
@@ -115,7 +116,6 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private weak var host: UIViewController?
     private let shiftedViews: () -> [UIView]
     private let canPull: () -> Bool
-    private let setupTapped: (LeftTraySetupKind) -> Void
     private let savedURL: (String, CaptureSource, UIView) -> Void
     private let openStateChanged: (Bool) -> Void
 
@@ -132,6 +132,13 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private var laidOutSize = CGSize.zero
     private var pullAvailable = false
     private var chromeHidden = false
+    private var assumesShortcutInstalled = UserDefaults.standard.bool(
+        forKey: "leftTray.shortcutInstallerOpened.\(LunaApp.current.storageIdentifier)")
+    private var activeEmailCard: ExpandedEmailSetupCard?
+    private var emailAccountSetup: EmailAccountSetup?
+    private var keyboardFrameInScreen: CGRect?
+    private let shortcutGuide = SetupGuideVideo(guide: .actionButton)
+    private let safariGuide = SetupGuideVideo(guide: .safariExtension)
 
     var pasteConfiguration: UIPasteConfiguration?
 
@@ -142,14 +149,12 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         host: UIViewController,
         shiftedViews: @escaping () -> [UIView],
         canPull: @escaping () -> Bool,
-        setupTapped: @escaping (LeftTraySetupKind) -> Void,
         savedURL: @escaping (String, CaptureSource, UIView) -> Void,
         openStateChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.host = host
         self.shiftedViews = shiftedViews
         self.canPull = canPull
-        self.setupTapped = setupTapped
         self.savedURL = savedURL
         self.openStateChanged = openStateChanged
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
@@ -186,6 +191,13 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             LeftTrayCell.self, forCellWithReuseIdentifier: LeftTrayCell.reuseID)
         tray.addSubview(collection)
 
+        for guide in [shortcutGuide, safariGuide] {
+            guide.playerView.frame = CGRect(x: 1, y: 1, width: 2, height: 2)
+            guide.playerView.alpha = 0.01
+            tray.insertSubview(guide.playerView, belowSubview: collection)
+            guide.prepare()
+        }
+
         pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.delegate = self
         view.addGestureRecognizer(pan)
@@ -202,6 +214,16 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         NotificationCenter.default.addObserver(
             self, selector: #selector(applicationForegrounded),
             name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(setupStatusChanged),
+            name: LunaSetupStatusStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillChange(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillHide(_:)),
+            name: UIResponder.keyboardWillHideNotification, object: nil)
+        LunaSetupStatusStore.startObservingCrossProcessChanges()
         rebuildRows()
     }
 
@@ -211,18 +233,23 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         laidOutSize = bounds.size
         if firstLayout { pullAvailable = canPull() }
         dismissControl.frame = bounds
-        let width = bounds.width * 2 / 3
+        let width = trayWidth(for: bounds.width)
         let top = safeAreaInsets.top + 8
         let bottom = safeAreaInsets.bottom + 8
         tray.bounds = CGRect(x: 0, y: 0, width: width, height: max(0, bounds.height - top - bottom))
         tray.center.y = top + tray.bounds.height / 2
         collection.frame = tray.bounds
-        layout.itemWidth = max(0, floor(width) - 56)
+        layout.itemWidth = max(0, floor(width) - 30)
         layout.radius = max(tray.bounds.height, 400) * 1.4
         layout.topInset = max(28, tray.bounds.height / 2 - (rows.first?.height ?? 116) / 2)
         layout.bottomInset = max(28, tray.bounds.height / 2 - (rows.last?.height ?? 116) / 2)
         layout.invalidateLayout()
+        updateExpandedEmailFrame(animated: false)
         applyProgress()
+    }
+
+    private func trayWidth(for hostWidth: CGFloat) -> CGFloat {
+        min(hostWidth - 12, max(280, hostWidth * 0.82))
     }
 
     func refreshPullAvailability(animated: Bool) {
@@ -248,12 +275,25 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     func dismiss(animated: Bool) { setOpen(false, animated: animated) }
 
     @objc private func applicationForegrounded() {
+        shortcutGuide.stopPictureInPicture()
+        safariGuide.stopPictureInPicture()
         detectPasteboard()
         RecentURLMatcher.shared.refresh()
-        rebuildRows()
+        if EmailAccountStore.shared.isConfigured, let card = activeEmailCard {
+            dismissExpandedEmailCard(
+                card, completed: true, destination: emailRowFrame() ?? card.frame)
+            return
+        }
+        removeCompletedSetupRows()
     }
 
     @objc private func contentChanged() { rebuildRows() }
+
+    @objc private func setupStatusChanged() {
+        shortcutGuide.stopPictureInPicture()
+        safariGuide.stopPictureInPicture()
+        removeCompletedSetupRows()
+    }
 
     @objc private func pasteboardChanged() {
         pasteEvaluationTask?.cancel()
@@ -335,7 +375,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         rebuildRows()
     }
 
-    private func rebuildRows() {
+    private func makeRows() -> [LeftTrayRow] {
         var next: [LeftTrayRow] = []
         let setup = LunaSetupStatusStore.shared
         let isCentral = AppSurfaceConfig.current == .all
@@ -350,11 +390,55 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         }
         next.append(.paste)
         next.append(contentsOf: RecentURLMatcher.shared.matches.map(LeftTrayRow.recent))
+        return next
+    }
+
+    private func rebuildRows() {
+        let next = makeRows()
         rows = next
         layout.itemHeights = rows.map(\.height)
         collection.reloadData()
         layout.invalidateLayout()
         applyProgress()
+    }
+
+    /// Setup completion has a little physicality: the finished cards shrink and
+    /// fade, then the remaining arc closes up around the paste row.
+    private func removeCompletedSetupRows() {
+        let next = makeRows()
+        let completedIndexes = rows.indices.filter { index in
+            guard case let .setup(kind) = rows[index] else { return false }
+            return !next.contains {
+                guard case let .setup(nextKind) = $0 else { return false }
+                return nextKind == kind
+            }
+        }
+        guard !completedIndexes.isEmpty else {
+            rebuildRows()
+            return
+        }
+
+        let indexPaths = completedIndexes.map { IndexPath(item: $0, section: 0) }
+        let visible = indexPaths.compactMap { collection.cellForItem(at: $0) }
+        UIView.animate(
+            withDuration: 0.24,
+            animations: {
+                visible.forEach {
+                    $0.alpha = 0
+                    $0.transform = CGAffineTransform(scaleX: 0.78, y: 0.78)
+                }
+            },
+            completion: { [weak self] _ in
+                guard let self else { return }
+                self.rows = next
+                self.layout.itemHeights = next.map(\.height)
+                self.collection.performBatchUpdates({
+                    self.collection.deleteItems(at: indexPaths)
+                }, completion: { _ in
+                    self.layout.invalidateLayout()
+                    self.centerPaste(animated: true)
+                })
+            })
     }
 
     private var pasteIndex: Int {
@@ -381,7 +465,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             panStartProgress = progress
             if progress < 0.01 { centerPaste(animated: false) }
         case .changed:
-            let travel = max(1, laidOutSize.width * 2 / 3 - Self.peek)
+            let travel = max(1, trayWidth(for: laidOutSize.width) - Self.peek)
             progress = min(max(
                 panStartProgress + gesture.translation(in: host?.view).x / travel, 0), 1)
             applyProgress()
@@ -420,10 +504,10 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
 
     private func applyProgress() {
         guard laidOutSize.width > 0 else { return }
-        let width = laidOutSize.width * 2 / 3
+        let width = trayWidth(for: laidOutSize.width)
         let closedX = pullAvailable ? -width + Self.peek : -width
         tray.frame.origin.x = closedX + (0 - closedX) * progress
-        let shift = laidOutSize.width * 2 / 3 * progress
+        let shift = width * progress
         shiftedViews().forEach { $0.transform = CGAffineTransform(translationX: shift, y: 0) }
         openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01
@@ -447,6 +531,190 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         detectPasteboard()
     }
 
+    private func performSetupAction(_ kind: LeftTraySetupKind, from sourceView: UIView) {
+        switch kind {
+        case .email:
+            presentExpandedEmailCard(from: sourceView)
+        case .shortcut:
+            if assumesShortcutInstalled {
+                shortcutGuide.startPictureInPicture()
+                SystemSettingsLink.openActionButton()
+            } else {
+                guard let host else { return }
+                BundledShortcut.presentInstaller(from: host, sourceView: sourceView)
+                assumesShortcutInstalled = true
+                UserDefaults.standard.set(
+                    true,
+                    forKey: "leftTray.shortcutInstallerOpened."
+                        + LunaApp.current.storageIdentifier)
+                if let index = rows.firstIndex(where: {
+                    if case .setup(.shortcut) = $0 { return true }
+                    return false
+                }) {
+                    collection.reloadItems(at: [IndexPath(item: index, section: 0)])
+                }
+            }
+        case .safari:
+            safariGuide.startPictureInPicture()
+            if let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia") {
+                UIApplication.shared.open(url)
+            }
+        }
+    }
+
+    private func presentExpandedEmailCard(from sourceView: UIView) {
+        guard activeEmailCard == nil, let host else { return }
+        let startFrame = sourceView.convert(sourceView.bounds, to: host.view)
+        let card = ExpandedEmailSetupCard()
+        card.frame = startFrame
+        card.onCancel = { [weak self, weak card] in
+            guard let self, let card else { return }
+            self.dismissExpandedEmailCard(card, completed: false, destination: startFrame)
+        }
+        card.onNext = { [weak self, weak card] address in
+            guard let self, let card else { return }
+            self.beginEmailSetup(address: address, card: card)
+        }
+        activeEmailCard = card
+        host.view.addSubview(card)
+        collection.isScrollEnabled = false
+        pan.isEnabled = false
+        dismissControl.isUserInteractionEnabled = false
+        host.view.layoutIfNeeded()
+        UIView.animate(
+            withDuration: 0.42, delay: 0,
+            usingSpringWithDamping: 0.88, initialSpringVelocity: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction],
+            animations: {
+                card.frame = self.expandedEmailFrame()
+                card.layer.cornerRadius = 24
+                card.layoutIfNeeded()
+            },
+            completion: { _ in card.focusAddress() })
+    }
+
+    private func beginEmailSetup(address: String, card: ExpandedEmailSetupCard) {
+        guard emailAccountSetup == nil, let host else { return }
+        card.setBusy(true)
+        let setup = EmailAccountSetup(
+            presenter: host,
+            onBusyChange: { [weak card] busy in card?.setBusy(busy) },
+            completion: { [weak self, weak card] connected in
+                guard let self, let card else { return }
+                self.emailAccountSetup = nil
+                card.setBusy(false)
+                if connected || EmailAccountStore.shared.isConfigured {
+                    let finish = {
+                        let destination = self.emailRowFrame() ?? card.frame
+                        self.dismissExpandedEmailCard(
+                            card, completed: true, destination: destination)
+                    }
+                    if let nav = host.navigationController,
+                       nav.topViewController !== host {
+                        nav.popToViewController(host, animated: true)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: finish)
+                    } else {
+                        finish()
+                    }
+                } else {
+                    card.focusAddress()
+                }
+            })
+        emailAccountSetup = setup
+        if !setup.start(address: address) {
+            emailAccountSetup = nil
+            card.setBusy(false)
+            card.rejectAddress()
+        }
+    }
+
+    private func dismissExpandedEmailCard(
+        _ card: ExpandedEmailSetupCard, completed: Bool, destination: CGRect
+    ) {
+        card.endEditing(true)
+        UIView.animate(
+            withDuration: completed ? 0.34 : 0.28,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState],
+            animations: {
+                card.frame = destination
+                card.alpha = 0
+                card.transform = completed
+                    ? CGAffineTransform(scaleX: 0.72, y: 0.72)
+                    : .identity
+            },
+            completion: { [weak self] _ in
+                guard let self else { return }
+                card.removeFromSuperview()
+                self.activeEmailCard = nil
+                self.collection.isScrollEnabled = true
+                self.pan.isEnabled = true
+                self.dismissControl.isUserInteractionEnabled = true
+                if completed {
+                    self.removeCompletedSetupRows()
+                }
+            })
+    }
+
+    private func emailRowFrame() -> CGRect? {
+        guard let host,
+              let index = rows.firstIndex(where: {
+                  if case .setup(.email) = $0 { return true }
+                  return false
+              }),
+              let cell = collection.cellForItem(at: IndexPath(item: index, section: 0))
+        else { return nil }
+        return cell.convert(cell.bounds, to: host.view)
+    }
+
+    private func expandedEmailFrame() -> CGRect {
+        guard let host else { return .zero }
+        let inset: CGFloat = 12
+        let bounds = host.view.bounds
+        let top = max(inset, host.view.safeAreaInsets.top + inset)
+        let keyboardTop: CGFloat
+        if let keyboardFrameInScreen {
+            keyboardTop = host.view.convert(keyboardFrameInScreen, from: nil).minY
+        } else {
+            keyboardTop = bounds.height * 0.54
+        }
+        let bottom = max(top + 280, keyboardTop - inset)
+        return CGRect(
+            x: inset, y: top, width: bounds.width - inset * 2,
+            height: min(bounds.height - top - inset, bottom - top))
+    }
+
+    @objc private func keyboardWillChange(_ notification: Notification) {
+        keyboardFrameInScreen = notification.userInfo?[
+            UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+        updateExpandedEmailFrame(animated: true, notification: notification)
+    }
+
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        keyboardFrameInScreen = nil
+        updateExpandedEmailFrame(animated: true, notification: notification)
+    }
+
+    private func updateExpandedEmailFrame(
+        animated: Bool, notification: Notification? = nil
+    ) {
+        guard let card = activeEmailCard else { return }
+        let changes = { card.frame = self.expandedEmailFrame() }
+        guard animated else {
+            changes()
+            return
+        }
+        let duration = notification?.userInfo?[
+            UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval ?? 0.25
+        let rawCurve = notification?.userInfo?[
+            UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt ?? 7
+        UIView.animate(
+            withDuration: duration, delay: 0,
+            options: UIView.AnimationOptions(rawValue: rawCurve << 16)
+                .union(.beginFromCurrentState),
+            animations: changes)
+    }
+
     private func contextMenu(for preview: RecentURLPreview, sourceView: UIView) -> UIMenu {
         UIMenu(children: [
             UIAction(title: "Open", image: UIImage(systemName: "safari")) { _ in
@@ -462,6 +730,172 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             },
         ])
     }
+}
+
+/// The email setup row's expanded state. It deliberately stays a view inside
+/// the tray's host rather than becoming another onboarding controller, so its
+/// geometry can animate directly from and back into the selected card.
+private final class ExpandedEmailSetupCard: UIView {
+    var onNext: ((String) -> Void)?
+    var onCancel: (() -> Void)?
+
+    private let addressField = UITextField()
+    private let providerBadge = ProviderBadgeView()
+    private let providerInfo = UILabel()
+    private let nextButton = EmailLoginActionButton(title: "Next")
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = LunaColors.secondaryBackground
+        layer.cornerRadius = 16
+        layer.cornerCurve = .continuous
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.20
+        layer.shadowRadius = 24
+        layer.shadowOffset = CGSize(width: 0, height: 10)
+        clipsToBounds = false
+        let pulse = CABasicAnimation(keyPath: "shadowOpacity")
+        pulse.fromValue = 0.13
+        pulse.toValue = 0.27
+        pulse.duration = 1.8
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        layer.add(pulse, forKey: "setupPulse")
+
+        let close = UIButton(type: .system)
+        close.setImage(UIImage(systemName: "xmark"), for: .normal)
+        close.accessibilityLabel = "Close email setup"
+        close.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+        close.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = UILabel()
+        title.text = "Connect your email"
+        title.font = .systemFont(ofSize: 27, weight: .bold)
+        title.textColor = LunaColors.primaryText
+        title.numberOfLines = 1
+        title.adjustsFontSizeToFitWidth = true
+        title.minimumScaleFactor = 0.8
+        title.translatesAutoresizingMaskIntoConstraints = false
+
+        let body = UILabel()
+        body.text = "Enter the address Luna should use to send and import links."
+        body.font = .preferredFont(forTextStyle: .subheadline)
+        body.textColor = LunaColors.secondaryText
+        body.numberOfLines = 2
+        body.translatesAutoresizingMaskIntoConstraints = false
+
+        let fieldCard = EmailLoginUI.fieldCard()
+        let glyph = EmailLoginUI.leadingGlyph("envelope")
+        addressField.placeholder = "you@example.com"
+        addressField.font = .preferredFont(forTextStyle: .body)
+        addressField.textColor = LunaColors.primaryText
+        addressField.keyboardType = .emailAddress
+        addressField.autocapitalizationType = .none
+        addressField.autocorrectionType = .no
+        addressField.textContentType = .emailAddress
+        addressField.returnKeyType = .next
+        addressField.addTarget(self, action: #selector(nextTapped), for: .editingDidEndOnExit)
+        addressField.addTarget(self, action: #selector(addressChanged), for: .editingChanged)
+        addressField.translatesAutoresizingMaskIntoConstraints = false
+        fieldCard.addSubview(glyph)
+        fieldCard.addSubview(addressField)
+        fieldCard.addSubview(providerBadge)
+
+        providerInfo.font = .preferredFont(forTextStyle: .footnote)
+        providerInfo.textColor = LunaColors.secondaryText
+        providerInfo.numberOfLines = 1
+        providerInfo.translatesAutoresizingMaskIntoConstraints = false
+
+        nextButton.isEnabled = false
+        nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
+
+        for view in [close, title, body, fieldCard, providerInfo, nextButton] {
+            addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            close.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            close.widthAnchor.constraint(equalToConstant: 32),
+            close.heightAnchor.constraint(equalToConstant: 32),
+
+            title.topAnchor.constraint(equalTo: topAnchor, constant: 22),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
+            title.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -10),
+            body.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
+            body.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
+
+            fieldCard.topAnchor.constraint(equalTo: body.bottomAnchor, constant: 18),
+            fieldCard.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
+            fieldCard.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
+            glyph.leadingAnchor.constraint(equalTo: fieldCard.leadingAnchor, constant: 15),
+            glyph.centerYAnchor.constraint(equalTo: fieldCard.centerYAnchor),
+            addressField.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 10),
+            addressField.centerYAnchor.constraint(equalTo: fieldCard.centerYAnchor),
+            addressField.trailingAnchor.constraint(equalTo: providerBadge.leadingAnchor, constant: -8),
+            providerBadge.trailingAnchor.constraint(equalTo: fieldCard.trailingAnchor, constant: -12),
+            providerBadge.centerYAnchor.constraint(equalTo: fieldCard.centerYAnchor),
+
+            providerInfo.topAnchor.constraint(equalTo: fieldCard.bottomAnchor, constant: 8),
+            providerInfo.leadingAnchor.constraint(equalTo: fieldCard.leadingAnchor),
+            providerInfo.trailingAnchor.constraint(equalTo: fieldCard.trailingAnchor),
+
+            nextButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
+            nextButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
+            nextButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -18),
+        ])
+        accessibilityViewIsModal = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    func focusAddress() {
+        guard !EmailAccountStore.shared.isConfigured else { return }
+        addressField.becomeFirstResponder()
+    }
+
+    func setBusy(_ busy: Bool) {
+        addressField.isEnabled = !busy
+        nextButton.setLoading(busy)
+        nextButton.isEnabled = !busy && EmailAccountSetup.isValidAddress(addressField.text ?? "")
+    }
+
+    func rejectAddress() {
+        addressField.shake()
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        focusAddress()
+    }
+
+    @objc private func addressChanged() {
+        let address = (addressField.text ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let providerID = ProviderInference.inferProviderID(for: address)
+        let provider = MailProvider.provider(for: providerID)
+        providerBadge.setProvider(ProviderBadgeText.text(for: providerID))
+        if address.contains("@") {
+            providerInfo.text = providerID == .generic
+                ? "Custom provider · IMAP setup"
+                : "\(provider.displayName) · "
+                    + (provider.authKind == .oauth
+                        ? "Secure provider sign-in" : "App-specific password")
+        } else {
+            providerInfo.text = nil
+        }
+        nextButton.isEnabled = EmailAccountSetup.isValidAddress(address)
+    }
+
+    @objc private func nextTapped() {
+        let address = addressField.text ?? ""
+        guard EmailAccountSetup.isValidAddress(address) else {
+            rejectAddress()
+            return
+        }
+        addressField.resignFirstResponder()
+        onNext?(address)
+    }
+
+    @objc private func cancelTapped() { onCancel?() }
 }
 
 extension LeftTrayController: UIGestureRecognizerDelegate {
@@ -491,7 +925,15 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
             withReuseIdentifier: LeftTrayCell.reuseID, for: indexPath) as! LeftTrayCell
         switch rows[indexPath.item] {
         case .setup(let kind):
-            cell.configureSetup(kind: kind, tint: LunaSurfacePalette.baseColor)
+            cell.configureSetup(
+                kind: kind,
+                assumesShortcutInstalled: assumesShortcutInstalled,
+                appName: LunaApp.current.displayName,
+                tint: LunaSurfacePalette.baseColor,
+                action: { [weak self, weak cell] in
+                    guard let self, let cell else { return }
+                    self.performSetupAction(kind, from: cell)
+                })
         case .paste:
             cell.configurePaste(
                 state: pasteState, pasteTarget: self,
@@ -506,7 +948,9 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
         let source = collectionView.cellForItem(at: indexPath) ?? collectionView
         switch rows[indexPath.item] {
         case .setup(let kind):
-            setupTapped(kind)
+            if kind == .email {
+                performSetupAction(kind, from: source)
+            }
         case .paste:
             if case let .preview(_, preview) = pasteState {
                 save(preview, source: .paste, sourceView: source)
@@ -545,7 +989,9 @@ private final class LeftTrayCell: UICollectionViewCell {
     private let subtitleLabel = UILabel()
     private let pasteBadge = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
     private let spinner = UIActivityIndicatorView(style: .medium)
+    private let setupButton = UIButton(type: .system)
     private let settingsButton = UIButton(type: .system)
+    private var setupAction: (() -> Void)?
     private var pasteControl: UIPasteControl?
     private var titleLeadingConstraint: NSLayoutConstraint!
     private var titleTrailingConstraint: NSLayoutConstraint!
@@ -574,6 +1020,12 @@ private final class LeftTrayCell: UICollectionViewCell {
         subtitleLabel.textColor = LunaColors.secondaryText
         subtitleLabel.numberOfLines = 2
         pasteBadge.tintColor = LunaColors.secondaryText
+        setupButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+        setupButton.titleLabel?.lineBreakMode = .byTruncatingTail
+        setupButton.layer.cornerRadius = 12
+        setupButton.layer.cornerCurve = .continuous
+        setupButton.isHidden = true
+        setupButton.addTarget(self, action: #selector(setupButtonTapped), for: .touchUpInside)
         settingsButton.titleLabel?.numberOfLines = 2
         settingsButton.titleLabel?.textAlignment = .center
         settingsButton.isHidden = true
@@ -581,7 +1033,8 @@ private final class LeftTrayCell: UICollectionViewCell {
         spinner.hidesWhenStopped = true
 
         for view in [
-            imageView, symbolView, titleLabel, subtitleLabel, pasteBadge, spinner, settingsButton,
+            imageView, symbolView, titleLabel, subtitleLabel, pasteBadge, spinner,
+            setupButton, settingsButton,
         ] {
             view.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(view)
@@ -599,7 +1052,7 @@ private final class LeftTrayCell: UICollectionViewCell {
             imageView.widthAnchor.constraint(equalTo: contentView.widthAnchor, multiplier: 0.40),
             symbolView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
             symbolView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            symbolView.widthAnchor.constraint(equalTo: contentView.widthAnchor, multiplier: 0.30),
+            symbolView.widthAnchor.constraint(equalTo: contentView.widthAnchor, multiplier: 0.24),
             titleTopConstraint,
             titleLeadingConstraint,
             titleTrailingConstraint,
@@ -611,6 +1064,10 @@ private final class LeftTrayCell: UICollectionViewCell {
             pasteBadge.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -9),
             spinner.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            setupButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            setupButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            setupButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            setupButton.heightAnchor.constraint(equalToConstant: 38),
             settingsButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
             settingsButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
             settingsButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
@@ -628,6 +1085,8 @@ private final class LeftTrayCell: UICollectionViewCell {
         symbolView.isHidden = true
         titleLabel.text = nil
         subtitleLabel.text = nil
+        setupButton.isHidden = true
+        setupAction = nil
         settingsButton.isHidden = true
         settingsButton.removeTarget(nil, action: nil, for: .allEvents)
         pasteBadge.isHidden = true
@@ -644,6 +1103,9 @@ private final class LeftTrayCell: UICollectionViewCell {
         titleCenterYConstraint?.isActive = false
         titleCenterYConstraint = nil
         titleLabel.textAlignment = .natural
+        titleLabel.numberOfLines = 2
+        isAccessibilityElement = false
+        accessibilityTraits = []
         super.prepareForReuse()
     }
 
@@ -661,26 +1123,46 @@ private final class LeftTrayCell: UICollectionViewCell {
         accessibilityHint = "Saves as a full card"
     }
 
-    func configureSetup(kind: LeftTraySetupKind, tint: UIColor) {
+    func configureSetup(
+        kind: LeftTraySetupKind,
+        assumesShortcutInstalled: Bool,
+        appName: String,
+        tint: UIColor,
+        action: @escaping () -> Void
+    ) {
         symbolView.isHidden = false
+        titleLabel.numberOfLines = 3
         let symbol: String
         switch kind {
         case .safari:
             symbol = "safari"
-            titleLabel.text = "Set up Safari"
-            subtitleLabel.text = "Save as you browse"
+            titleLabel.text = AppSurfaceConfig.current.handlesArticles
+                ? "Apply Luna in Safari" : "Save From Safari"
+            subtitleLabel.text = nil
+            configureSetupButton(
+                title: "Open Safari", symbol: "arrow.up.forward.app", tint: tint)
         case .shortcut:
-            symbol = "square.and.arrow.down.on.square"
-            titleLabel.text = "Install Shortcut"
-            subtitleLabel.text = "Save from the Action Button"
+            symbol = assumesShortcutInstalled
+                ? "button.horizontal.top.press" : "square.and.arrow.down.on.square"
+            titleLabel.text = assumesShortcutInstalled
+                ? "One more step! Set your action button to \(appName)"
+                : "Save to Luna with your Action Button"
+            subtitleLabel.text = nil
+            configureSetupButton(
+                title: assumesShortcutInstalled ? "Open Settings" : "Install shortcut",
+                symbol: assumesShortcutInstalled
+                    ? "gearshape" : "square.and.arrow.down",
+                tint: tint)
         case .email:
             symbol = "envelope.badge"
             titleLabel.text = "Connect Email"
-            subtitleLabel.text = "Send articles and import links"
+            subtitleLabel.text = "Send articles and import links · Tap to continue"
         }
+        setupAction = action
         symbolView.image = UIImage(systemName: symbol)
         symbolView.tintColor = tint
         replaceTitleLeading(anchor: symbolView.trailingAnchor, constant: 6)
+        replaceTitleTrailing(anchor: contentView.trailingAnchor, constant: -14)
         contentView.layer.borderWidth = 1
         contentView.layer.borderColor = tint.withAlphaComponent(0.55).cgColor
         contentView.layer.shadowColor = tint.cgColor
@@ -696,7 +1178,25 @@ private final class LeftTrayCell: UICollectionViewCell {
         contentView.layer.add(pulse, forKey: "setupPulse")
         accessibilityLabel = titleLabel.text
         accessibilityHint = subtitleLabel.text
+        if kind == .email {
+            isAccessibilityElement = true
+            accessibilityTraits = .button
+        }
     }
+
+    private func configureSetupButton(title: String, symbol: String, tint: UIColor) {
+        setupButton.isHidden = false
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = title
+        configuration.image = UIImage(systemName: symbol)
+        configuration.imagePadding = 7
+        configuration.baseBackgroundColor = tint
+        configuration.baseForegroundColor = .white
+        configuration.cornerStyle = .medium
+        setupButton.configuration = configuration
+    }
+
+    @objc private func setupButtonTapped() { setupAction?() }
 
     func configurePaste(
         state: LeftTrayPasteState,

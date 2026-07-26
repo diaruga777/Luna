@@ -86,10 +86,6 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
                 guard let self else { return false }
                 return self.items.isEmpty || self.carousel.currentIndex == 0
             },
-            setupTapped: { [weak self] kind in
-                guard let self else { return }
-                SetupOnboardingFlow.present(kind, from: self)
-            },
             savedURL: { [weak self] url, source, _ in
                 self?.saveLeftTrayURL(url, source: source)
             })

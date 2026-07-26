@@ -167,6 +167,25 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertFalse(button.isEnabled)
     }
 
+    func testBackingOutOfCredentialScreenCompletesAttemptAsCancelled() {
+        let store = EmailAccountStore(
+            defaults: defaults, credentialStorage: InMemoryCredentialStorage())
+        let root = UIViewController()
+        let nav = UINavigationController(rootViewController: root)
+        window = UITestSupport.host(nav)
+        var completion: Bool?
+        let controller = CredentialViewController(
+            account: EmailAccount(
+                providerID: .gmail, address: "person@gmail.com"),
+            accountStore: store,
+            completion: { completion = $0 })
+
+        nav.pushViewController(controller, animated: false)
+        nav.popViewController(animated: false)
+
+        XCTAssertEqual(completion, false)
+    }
+
     // MARK: - Helpers
 
     /// The Email & Sending screen with a scratch (empty) account store, hosted in

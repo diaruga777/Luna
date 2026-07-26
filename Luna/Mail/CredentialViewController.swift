@@ -23,6 +23,7 @@ final class CredentialViewController: UIViewController {
     private let passwordField = UITextField()
     private let revealButton = UIButton(type: .system)
     private let signInButton = EmailLoginActionButton(title: "Sign In")
+    private var didFinish = false
 
     init(
         account: EmailAccount,
@@ -159,6 +160,14 @@ final class CredentialViewController: UIViewController {
         passwordField.becomeFirstResponder()
     }
 
+    override func didMove(toParent parent: UIViewController?) {
+        super.didMove(toParent: parent)
+        if parent == nil, !didFinish {
+            didFinish = true
+            completion?(false)
+        }
+    }
+
     @objc private func passwordEdited() {
         signInButton.isEnabled = !(passwordField.text ?? "").isEmpty
     }
@@ -207,6 +216,7 @@ final class CredentialViewController: UIViewController {
                 accountStore.save(account, credential: .appPassword(password))
                 cover.resolveToCheckmark { [self] in
                     cover.hide()
+                    didFinish = true
                     completion?(true)
                 }
             } catch {

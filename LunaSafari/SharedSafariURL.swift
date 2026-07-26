@@ -19,6 +19,7 @@ enum SharedSafariURL {
     static let recentHistoryLimit = 20
     static let sharedSafariSetupKey = "setup.safari.hasRun.shared"
     static let centralSafariSetupKey = "setup.safari.hasRun.luna"
+    static let setupStatusDarwinNotification = "\(appGroupID).setupStatusChanged"
 
     static func record(_ urlString: String) {
         let defaults = UserDefaults(suiteName: appGroupID)
@@ -38,6 +39,10 @@ enum SharedSafariURL {
     static func recordExtensionRun(isCentral: Bool) {
         UserDefaults(suiteName: appGroupID)?.set(
             true, forKey: isCentral ? centralSafariSetupKey : sharedSafariSetupKey)
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(setupStatusDarwinNotification as CFString),
+            nil, nil, true)
     }
 
     // The already-unlocked article HTML captured in Safari, handed to the app so it

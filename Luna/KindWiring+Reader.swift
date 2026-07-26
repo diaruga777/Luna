@@ -76,9 +76,6 @@ enum KindWiring {
         SendToFriendSheet.accountSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
-        SetupOnboardingFlow.openEmailSetup = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
     }
 
     // MARK: - Root UI shape

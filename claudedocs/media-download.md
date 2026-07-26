@@ -165,15 +165,12 @@ Photos references remain governed by the user's Photos library.
 - **Ingest, App Intents, and short-lived extensions** — normal ingestion calls
   `MediaAutoDownloader`, while `.appIntent` ingestion deliberately skips the awaited inline
   downloader and any automatic Downloader-host Live Activity; the Save/Provide Context intent
-  owns the single handoff after the reading-list result is known. Returning media to Shortcuts
-  (`AppIntentSettings.returnsMediaToShortcuts`, App-Group-backed, default on — the inverse of the
-  **Download in Background** row under Settings → Shortcut & Safari) first resolves
+  owns the single handoff after the reading-list result is known. The handoff resolves
   the asset and its advertised/HEAD content length. Known files up to **100 MiB** run through the
   Live Activity/background URLSession engine and are awaited so the intent can return an optional
   `IntentFile`. Larger or indeterminate files are handed to that engine and the intent returns
   immediately with no file. Existing local files are reused and Photos-backed rows are copied to
-  a transient file. Turning **Download in Background** on always uses the immediate
-  background handoff.
+  a transient file. There is no user switch for this size policy.
   **A handoff that downloads nothing is an ERROR, not a quiet nil.**
   `LiveMediaDownloadManager.startReportingResult` names why a start didn't happen
   (`LiveMediaDownloadStartResult`: `started` / `alreadyDownloaded` / `deferredUntilWiFi` /
@@ -332,7 +329,7 @@ the way to put media on the pasteboard.)
 
 ## Settings
 
-Downloader's `Settings → Downloads` screen has two picker rows:
+Luna and Luna Downloader share the same `Settings → Downloads` screen with two picker rows:
 
 1. **Download Automatically** — **Never**, **Always** (the default), or **On Wi-Fi Only**.
    `AutoDownloadSettings.policy` reads and writes the two prefs behind it
@@ -347,13 +344,9 @@ Downloader's `Settings → Downloads` screen has two picker rows:
    default age (1 month); a since-removed age (2 days, 1 week) maps to the closest
    surviving one.
 
-**Download in Background** (whether the Action Button intents wait for the download and
-hand the file back to Shortcuts) lives under `Settings → Shortcut & Safari`, and only on
-the media-handling surfaces.
-
 All values live in the App Group so the app, App Intents, share/action extensions, and
-background completion code make the same decision. Reader/Price Tracker continue to show
-their legacy per-platform Photos auto-save controls.
+background completion code make the same decision. Photos storage is global: every completed
+download is saved to Photos or none are; there are no per-platform Photos toggles.
 
 ## Core implementation
 

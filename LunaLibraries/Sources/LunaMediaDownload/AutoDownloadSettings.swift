@@ -61,9 +61,6 @@ public enum AutoDownloadSettings {
         (defaults.array(forKey: pendingWiFiDownloadsKey) as? [String]) ?? []
     }
 
-    /// Platforms that support auto-download, in display order.
-    public static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok, .facebook]
-
     // Master switch for the action extension's media preview: when ON (default),
     // the preview auto-downloads the media inline; when OFF it starts in a pending
     // state with a manual download button. Stored in the App Group so both the app
@@ -92,18 +89,6 @@ public enum AutoDownloadSettings {
             autoDownloadMediaInPreview = newValue != .never
             wifiOnlyDownloads = newValue == .wifiOnly
         }
-    }
-
-    private static func key(for platform: ContentPlatform) -> String {
-        "autoDownloadMedia.\(platform.rawValue)"
-    }
-
-    public static func isEnabled(for platform: ContentPlatform) -> Bool {
-        defaults.bool(forKey: key(for: platform))
-    }
-
-    public static func setEnabled(_ enabled: Bool, for platform: ContentPlatform) {
-        defaults.set(enabled, forKey: key(for: platform))
     }
 
     // Dedup: which URLs have already been auto-downloaded, so the in-process

@@ -1,68 +1,37 @@
-# Double-save action (Reader, Action Button only)
+# Double save (Reader, Action Button only)
 
-Saving the **exact same URL twice within 7 seconds** through the **Action
-Button intents** (`ProvideContextIntent`'s immediate Safari save and
-`SaveIntent`'s screenshot save — see `app-intents.md`) in **Luna Reader** runs
-a configurable action on the already-saved item. `SaveIntent` additionally
-detects the repeat press by screenshot **digest** (a visually-similar
-screenshot within the same 7 s window re-runs the previous save with no model
-call), since a second screenshot of the same screen resolves to the same URL.
-No other save surface triggers it: share/action/Safari extensions, paste,
-manual add, mail import, and the other two apps all keep plain save semantics,
-as does the pre-existing **legacy in-app double-save regime** (12 s window,
-ereader destinations whose App-Intents mode is "Double Save" — see below).
+Saving the exact same URL twice within 7 seconds through Luna Reader's Action
+Button intents sends the already-saved article to Kindle when Kindle is
+configured. If Kindle is not configured, the second save does nothing. This is
+fixed behavior: there is no double-save settings section and double save never
+sends to a contact.
 
-## Setting (Settings → Email & Sending → Double Save; Reader only)
+`SaveIntent` also detects a repeated screenshot by digest. A visually similar
+screenshot inside the same seven-second window re-runs the previous save without
+another model call, so it reaches the same Kindle-or-no-op decision.
 
-`LunaStorage.DoubleSaveActionStore` (App Group defaults, per-surface keys):
-
-- **Action** (`DoubleSaveAction`): `sendToKindle` (default) or `sendToFriend`.
-- **Friend mode** (`DoubleSaveFriendMode`): `preset` (one or more friend emails,
-  picked in `DoubleSaveRecipientsScreen` from `FriendsStore`) or `askEveryTime`
-  (default).
-- The store also carries the one-shot **pending friend prompt** hand-off
-  (`setPendingFriendPrompt` / `takePendingFriendPrompt`, 5-minute lifetime) used
-  by the ask-every-time path below.
+No other save surface uses this regime. Share/action/Safari extensions, paste,
+manual add, mail import, Luna Downloader, and Luna Price Tracker keep normal
+save semantics.
 
 ## Flow
 
-The Action Button intents (and only they) call
-`IntentIngestHelper.handleSavePress(urlString:doubleSaveActionSurface:)` with a
-non-nil surface when `AppSurfaceConfig.current == .reader`
-(`ActionButtonIntentSupport.doubleSaveSurface`); that threads
-`doubleSaveActionSurface` into `ReadingListIngestor.handleSavePress`, which
-resolves the configured action (`resolvedIntentAction`) and passes it as
-`SavePressPolicy.decide(intentAction:)`:
+The Reader Action Button intents pass a non-nil
+`doubleSaveActionSurface` through `IntentIngestHelper` to
+`ReadingListIngestor.handleSavePress`. The ingestor arms
+`SavePressPolicy.IntentAction.sendToKindle` only when the Kindle destination is
+configured. A repeat within `intentDoublePressWindow` (7 seconds) then becomes
+`.sendToEreaders([kindle])`, retaining the 24-hour resend cooldown. A platform
+item or unconfigured Kindle is ignored.
 
-- With `intentAction` non-nil, a repeat press within
-  `SavePressPolicy.intentDoublePressWindow` (7 s) decides:
-  - `.sendToKindle` → `.sendToEreaders([kindle])`, reusing the 24 h resend
-    cooldown; ignored for platform items (no EPUB) or when Kindle isn't
-    configured (resolver returns nil).
-  - `.sendToFriends(emails)` → the ingestor emails the item via
-    `EmailShareCenter.shared.send(item:to:)` (errors are logged to the
-    diagnostic log, never fail the intent) → result `.sentToFriends`.
-  - `.promptFriendSelector` → the ingestor records the pending friend prompt
-    and returns `.friendPromptRequested`; the intent then foregrounds Luna
-    itself via `ForegroundContinuableIntent.requestToContinueInForeground()`
-    (no shortcut branch involved). On foreground,
-    `SceneDelegate.applyPendingFriendPrompt()`
-    consumes the prompt (only once the main UI is up, so a debug root never
-    swallows it) and presents `SendToFriendSheet` for the item.
-  - A repeat press with `intentAction` armed NEVER falls back into the legacy
-    12 s regime (a 9 s repeat press is ignored, not sent).
-- Resolver fallbacks: `preset` with no emails picked, or no sharing account
-  configured → treated as `askEveryTime` (the sheet guides account setup);
-  Kindle unconfigured → nil (repeat press ignored).
+The older 12-second in-app regime remains for a configured ereader destination
+whose capture-source mode is `.doubleSave`; it also only sends to that ereader.
 
-The legacy regime is unchanged for in-app saves: within 12 s, sends to every
-configured destination whose App-Intents send mode is `.doubleSave`
-(`ArticleSendCoordinator.doubleSaveDestinationIDs()`).
+Legacy `DoubleSaveActionStore` values may remain in an existing App Group, but
+the active resolver and Settings UI no longer read them. Pending contact prompts
+are not consumed on foreground.
 
 ## Tests
 
-- `SavePressPolicyTests` — both regimes: 6.9 s / 7.1 s boundaries, no legacy
-  fallback at 9 s, Kindle cooldown + platform-item exclusion, friend send on
-  platform items, prompt case.
-- `DoubleSaveActionStoreTests` — defaults, round-trip, per-surface isolation,
-  one-shot + expiring pending prompt.
+`SavePressPolicyTests` covers the seven-second boundary, Kindle cooldown and
+platform-item exclusion, plus the older in-app ereader regime.

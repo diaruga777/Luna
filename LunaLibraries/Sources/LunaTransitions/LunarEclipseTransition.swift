@@ -38,8 +38,7 @@ public enum LunarEclipseTransitionCenter {
         from fromViewController: UIViewController,
         to toViewController: UIViewController
     ) -> UIViewControllerAnimatedTransitioning? {
-        guard AppearanceSettings.lunarEclipseReaderTransitionEnabled,
-              !UIAccessibility.isReduceMotionEnabled else { return nil }
+        guard !UIAccessibility.isReduceMotionEnabled else { return nil }
         switch operation {
         case .push:
             guard let context = objc_getAssociatedObject(toViewController, &contextKey) as? Context,

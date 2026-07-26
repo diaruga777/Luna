@@ -15,8 +15,8 @@ import Foundation
 ///   ereader destination in double-save mode (skipping any sent in the past day).
 /// - **Action Button (Save App Intent)**: when the caller passes an
 ///   `intentAction` (only the Action Button save path does), a second press
-///   within 7 s performs the user's configured double-save action instead —
-///   send to Kindle, email preset friends, or open the friend selector.
+///   within 7 s performs that resolved action. The app currently resolves only
+///   configured Kindle; contact actions are retained here as inert legacy cases.
 public enum SavePressPolicy {
 
     public enum Decision: Equatable {

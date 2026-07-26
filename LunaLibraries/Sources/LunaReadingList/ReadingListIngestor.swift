@@ -392,15 +392,14 @@ public final class ReadingListIngestor {
 
     /// The save-press entry point shared by the intents and the in-app add:
     /// first press saves and ingests; a second press within a few seconds
-    /// triggers the configured double-save behavior; any other press on an
+    /// triggers the fixed Kindle double-save behavior; any other press on an
     /// existing URL is ignored. Awaits the resulting work (callers bound it
     /// with a timeout).
     ///
     /// `doubleSaveActionSurface`: non-nil ONLY for saves arriving through the
     /// Action Button's Save App Intent on a surface with the double-save action
-    /// enabled (today: Reader). It carries the surface's storage identifier and
-    /// switches a repeat press into the 7 s configured-action regime
-    /// (`DoubleSaveActionStore`) instead of the legacy ereader double save.
+    /// enabled (today: Reader). It switches a repeat press into the 7 s
+    /// Kindle-or-no-op regime instead of the legacy ereader double save.
     @discardableResult
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
                                 prefetchedHTML: String? = nil,
@@ -468,34 +467,14 @@ public final class ReadingListIngestor {
         }
     }
 
-    /// Resolves the configured double-save action into the policy's pure input,
-    /// applying the configuration checks the policy itself can't know about.
-    /// nil ⇒ the action can't run right now (e.g. Kindle not configured), so a
-    /// repeat press falls back to being ignored.
+    /// Arms the fixed Action Button double-save behavior. A configured Kindle
+    /// receives the article; without one, the repeat press does nothing.
     private static func resolvedIntentAction(
-        forSurface surface: String
+        forSurface _: String
     ) -> SavePressPolicy.IntentAction? {
-        let store = DoubleSaveActionStore.shared
-        switch store.action(forSurface: surface) {
-        case .sendToKindle:
-            guard IngestorKindHandlers.article?.isDestinationConfigured(
-                ArticleDestinationID.kindle) ?? false else { return nil }
-            return .sendToKindle
-        case .sendToFriend:
-            // Preset recipients need a configured sharing account to actually
-            // send; without one (or without any preset picked yet) fall back to
-            // the in-app selector, which guides account setup itself.
-            guard store.friendMode(forSurface: surface) == .preset else {
-                return .promptFriendSelector
-            }
-            let emails = store.presetFriendEmails(forSurface: surface).filter {
-                !FriendsStore.shared.isBlocked($0)
-            }
-            guard !emails.isEmpty, EmailShareCenter.shared.isConfigured else {
-                return .promptFriendSelector
-            }
-            return .sendToFriends(emails: emails)
-        }
+        guard IngestorKindHandlers.article?.isDestinationConfigured(
+            ArticleDestinationID.kindle) ?? false else { return nil }
+        return .sendToKindle
     }
 
     /// Saves `urlString` as a normal article, bypassing product-page detection. Used

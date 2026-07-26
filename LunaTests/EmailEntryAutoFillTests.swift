@@ -3,7 +3,7 @@
 //  LunaTests
 //
 //  The AutoFill invariants of the inline email-address field in Settings →
-//  Email & Sending (the only place an account is connected). See
+//  Email (the only place an account is connected). See
 //  `claudedocs/email-login.md`.
 //
 

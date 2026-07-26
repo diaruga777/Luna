@@ -160,7 +160,12 @@ enum KindWiring {
             },
             SettingsCategory(
                 title: L10n.string("Kindle"), symbol: "book.closed",
-                requiresEmail: true
+                requiresEmail: true,
+                makePrerequisite: {
+                    let email = EmailAndKindleSettingsScreen()
+                    email.focusesAddressField = true
+                    return email
+                }
             ) {
                 KindleSettingsScreen()
             },

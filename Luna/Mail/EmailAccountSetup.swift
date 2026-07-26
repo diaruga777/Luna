@@ -6,7 +6,7 @@
 //  infer the provider, resolve IMAP/SMTP settings, then either push the
 //  app-specific-password screen (`CredentialViewController`) or run Outlook OAuth
 //  to completion. Owned by whatever screen holds the address field — today the
-//  inline field in Settings → Email & Sending. See `claudedocs/email-login.md`.
+//  inline field in Settings → Email. See `claudedocs/email-login.md`.
 //
 
 import LunaMailAccount

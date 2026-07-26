@@ -4,7 +4,7 @@
 //
 //  Visual language and small helpers shared by the email sign-in surfaces
 //  (`CredentialViewController`, and the inline address field in Settings →
-//  Email & Sending): the hero/title/body/field-card treatment, the filled action
+//  Email): the hero/title/body/field-card treatment, the filled action
 //  button, the provider badge chip, the OAuth presentation-context anchor, and
 //  the invalid-input shake.
 //

@@ -6,7 +6,7 @@ filesystem-synchronized, so no project-file edits are needed when files are adde
 here).
 
 There is **one** entry point and no modal sheet: the Sharing Account section of
-**Settings → Email & Sending** (`EmailAndKindleSettingsScreen`) IS the sign-in
+**Settings → Email** (`EmailAndKindleSettingsScreen`) IS the sign-in
 form until an account exists. Anything that needs an account and doesn't have one
 redirects there rather than asking first —
 `SendToFriendSheet.accountSetupLauncher`, installed by the `KindWiring` variants
@@ -18,9 +18,10 @@ explains in an alert instead.
 
 ## Steps
 
-1. **The inline address row** (`EmailAndKindleSettingsScreen`) — an "Email" label,
-   a right-aligned address field carrying the AutoFill invariants below, and the
-   provider chip that fades in once the domain is recognized; beneath it a
+1. **The inline address row** (`EmailAndKindleSettingsScreen`) — the same rounded
+   envelope field card used by the left-tray setup, with a left-aligned address
+   field carrying the AutoFill invariants below and a provider chip that fades in
+   once the domain is recognized; beneath it a
    **Connect** row, tinted and selectable only while the typed address could
    plausibly be one, and showing a small dot-matrix spinner during autodiscovery.
    The field and chip are long-lived views re-hosted into each freshly built cell:

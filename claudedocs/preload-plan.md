@@ -18,7 +18,7 @@ can never corrupt or delete the user's library.
 
 ## Setting
 `ReaderSettings.preloadDepth: Int` (App Group), default **1**, clamped 0…5. 0 = off.
-Settings UI: a stepper/segmented row under Reading List. Depth N
+Settings UI: a stepper row under Settings → Reader → Preload Links. Depth N
 means: preload links on the saved page (depth 1), then links on those pages (depth
 2), … up to N.
 

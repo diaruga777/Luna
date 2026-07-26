@@ -43,7 +43,7 @@ surface, but the standalone Price Tracker root is
   editable carousel cards; central Luna retains the `.priceTracking` list section
   and extension/save-time flows retain `PriceTrackingViewController`.
 - `Luna/ReadingList/ReadingListSectioning.swift` — **pure** (UIKit-free, unit-tested) sectioning logic extracted from the VC: `Section`/`ListFilter` enums (stable raw values 0/2/3/4/5), `assignSections(items:now:)` (Reading/Archive/Error buckets, 7-day `archiveAge` strict-`>` cutoff), `shouldShowFilter(items:)`, `rendersAsReader(_:)`. The VC delegates to these.
-- `Luna/ReadingList/ReadingListSubtitle.swift` — **pure** assembly of the grey metadata line: `parts(for:leadingLabel:formattedDate:showReadingTime:showReadingProgress:)` → ordered `[String]` (leading label · date · reading time · progress% · send status · lifecycle status); `readingTimeMinutes(wordCount:)` = `ceil(words/220)` floored at 1. The VC builds the `NSAttributedString` (colors + "from <friend>") around these parts.
+- `Luna/ReadingList/ReadingListSubtitle.swift` — **pure** assembly of the grey metadata line: `parts(for:leadingLabel:formattedDate:showReadingTime:showReadingProgress:)` → ordered `[String]` (leading label · date · reading time · progress% · send status · lifecycle status); `readingTimeMinutes(wordCount:)` = `ceil(words/220)` floored at 1. Article surfaces always pass both display flags on; they are no longer settings. The VC builds the `NSAttributedString` (colors + "from <friend>") around these parts.
   - **Pasteboard suggestion**: the Reader and Downloader card roots use only
     `detectPatterns(.probableWebURL)` on launch/foreground and prepend a synthetic
     paste-icon card without reading the value. The actual read happens when the

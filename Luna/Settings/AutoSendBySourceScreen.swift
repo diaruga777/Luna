@@ -45,8 +45,7 @@ final class AutoSendBySourceScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        L10n.string(
-            "Choose which saves \(destinationName) receives automatically.\n\nWith \"Double Save\", saving twice in rapid succession forwards. (e.g. 2 Action Button presses).")
+        L10n.string("Choose which saves \(destinationName) receives automatically.")
     }
 
     override func tableView(
@@ -94,7 +93,8 @@ final class AutoSendBySourceScreen: NavHeaderTableController {
         button.showsMenuAsPrimaryAction = true
         button.changesSelectionAsPrimaryAction = true
         let current = SourceSendSettings.appIntentsMode(forDestination: destinationID)
-        button.menu = UIMenu(children: ArticleSendMode.allCases.map { mode in
+        let configurableModes: [ArticleSendMode] = [.off, .allSaves]
+        button.menu = UIMenu(children: configurableModes.map { mode in
             UIAction(title: mode.displayName, state: mode == current ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 SourceSendSettings.setAppIntentsMode(mode, forDestination: self.destinationID)

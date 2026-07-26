@@ -24,8 +24,8 @@ struct ArticleListSupport: ArticleListSupporting {
         ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle)
     }
 
-    var showsReadingTime: Bool { ReaderSettings.showReadingTime }
-    var showsReadingProgress: Bool { ReaderSettings.showReadingProgress }
+    var showsReadingTime: Bool { true }
+    var showsReadingProgress: Bool { true }
 
     func openArticle(
         _ item: ReadingListItem, content: ArticleContent,

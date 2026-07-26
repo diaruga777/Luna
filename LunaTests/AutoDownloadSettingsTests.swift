@@ -10,7 +10,6 @@ import XCTest
 
 final class AutoDownloadSettingsTests: XCTestCase {
     private let photosKey = "autoSaveDownloadsToPhotos"
-    private let intentMediaKey = "returnMediaFromAppIntents"
     private let wifiOnlyKey = "wifiOnlyDownloads"
     private let autoDownloadKey = "autoDownloadMediaInPreview"
     private let pendingWiFiKey = "pendingWiFiDownloads"
@@ -23,14 +22,12 @@ final class AutoDownloadSettingsTests: XCTestCase {
 
     private func preservingSettings(_ body: () -> Void) {
         let previousPhotos = defaults.object(forKey: photosKey)
-        let previousIntentMedia = defaults.object(forKey: intentMediaKey)
         let previousRetentionDisabled = defaults.object(forKey: retentionDisabledKey)
         let previousRetentionDays = defaults.object(forKey: retentionDaysKey)
         let previousAutoDownload = defaults.object(forKey: autoDownloadKey)
         let previousWiFiOnly = defaults.object(forKey: wifiOnlyKey)
         defer {
             restore(previousPhotos, forKey: photosKey)
-            restore(previousIntentMedia, forKey: intentMediaKey)
             restore(previousRetentionDisabled, forKey: retentionDisabledKey)
             restore(previousRetentionDays, forKey: retentionDaysKey)
             restore(previousAutoDownload, forKey: autoDownloadKey)
@@ -44,32 +41,6 @@ final class AutoDownloadSettingsTests: XCTestCase {
             defaults.set(value, forKey: key)
         } else {
             defaults.removeObject(forKey: key)
-        }
-    }
-
-    func testDownloadActionDefaults() {
-        preservingSettings {
-            defaults.removeObject(forKey: photosKey)
-            defaults.removeObject(forKey: intentMediaKey)
-
-            XCTAssertTrue(AutoDownloadSettings.autoSaveDownloadsToPhotos)
-            // "Download in Background" is the user-facing inverse of the stored
-            // "return the file to Shortcuts" behaviour, which stays the default.
-            XCTAssertTrue(AppIntentSettings.returnsMediaToShortcuts)
-            XCTAssertFalse(AppIntentSettings.downloadMediaInBackground)
-        }
-    }
-
-    func testDownloadActionSettingsRoundTrip() {
-        preservingSettings {
-            AutoDownloadSettings.autoSaveDownloadsToPhotos = false
-            AppIntentSettings.downloadMediaInBackground = true
-
-            XCTAssertFalse(AutoDownloadSettings.autoSaveDownloadsToPhotos)
-            XCTAssertFalse(AppIntentSettings.returnsMediaToShortcuts)
-
-            AppIntentSettings.downloadMediaInBackground = false
-            XCTAssertTrue(AppIntentSettings.returnsMediaToShortcuts)
         }
     }
 

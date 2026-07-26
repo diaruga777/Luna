@@ -44,12 +44,14 @@ struct SettingsCategory {
     let symbol: String
     var detail: (() -> String?)? = nil
     var requiresEmail = false
+    var makePrerequisite: (() -> UIViewController)? = nil
     let make: () -> UIViewController
 }
 
 /// Top-level settings: a system-Settings-style menu that drills into a focused
 /// subpage per category.
 final class SettingsViewController: NavHeaderTableController, UIGestureRecognizerDelegate {
+    private let emailIsConfigured: () -> Bool
 
     private let categories: [SettingsCategory] =
         // Kind rows first (Reader/Audio/Reading List/Email for article apps,
@@ -64,7 +66,12 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
             SettingsCategory(title: L10n.string("Appearance"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
         ]
 
-    init() { super.init(style: .insetGrouped) }
+    init(emailIsConfigured: @escaping () -> Bool = {
+        EmailAccountStore.shared.isConfigured
+    }) {
+        self.emailIsConfigured = emailIsConfigured
+        super.init(style: .insetGrouped)
+    }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
@@ -98,7 +105,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         content.text = category.title
         content.secondaryText = category.detail?()
         content.image = UIImage(systemName: category.symbol)
-        let enabled = !category.requiresEmail || EmailAccountStore.shared.isConfigured
+        let enabled = !category.requiresEmail || emailIsConfigured()
         content.textProperties.color = enabled ? LunaColors.primaryText : LunaColors.tertiaryText
         content.imageProperties.tintColor = enabled ? view.tintColor : LunaColors.tertiaryText
         cell.accessoryType = .disclosureIndicator
@@ -110,8 +117,8 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         tableView.deselectRow(at: indexPath, animated: true)
         guard categories.indices.contains(indexPath.row) else { return }
         let category = categories[indexPath.row]
-        guard !category.requiresEmail || EmailAccountStore.shared.isConfigured else {
-            presentEmailRequiredAlert()
+        guard !category.requiresEmail || emailIsConfigured() else {
+            presentEmailRequiredAlert(for: category)
             return
         }
         navigationController?.pushViewController(category.make(), animated: true)
@@ -133,23 +140,21 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         navigationController?.pushViewController(DiagnosticsViewController(), animated: true)
     }
 
-    private func presentEmailRequiredAlert() {
+    private func presentEmailRequiredAlert(for category: SettingsCategory) {
         let alert = UIAlertController(
             title: L10n.string("Set up email first"), message: nil, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
         alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default) {
             [weak self] _ in
-            guard let self else { return }
-            let email = EmailAndKindleSettingsScreen()
-            email.focusesAddressField = true
-            self.navigationController?.pushViewController(email, animated: true)
+            guard let self, let prerequisite = category.makePrerequisite?() else { return }
+            self.navigationController?.pushViewController(prerequisite, animated: true)
         })
         present(alert, animated: true)
     }
 }
 
-// (ReaderSettingsScreen + ReadingListSettingsScreen moved to
-// `ReaderSettingsScreens.swift` — article-kind, per-target compiled.)
+// (`ReaderSettingsScreen` lives in `ReaderSettingsScreens.swift` — article-kind,
+// per-target compiled.)
 // MARK: - Shortcut & Safari
 
 final class ShortcutSettingsScreen: NavHeaderTableController {

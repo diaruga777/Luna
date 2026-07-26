@@ -192,28 +192,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         KindWiring.sceneDidForeground()
         // A notification tapped while the app was backgrounded.
         applyPendingNotificationRoute()
-        // A double save with "ask every time" bounced the user into Luna: present
-        // the friend selector for the double-saved item.
-        applyPendingFriendPrompt()
-    }
-
-    /// Presents the friend-selector share sheet for a pending double-save
-    /// "ask every time" hand-off (recorded by the Save App Intent right before
-    /// the Shortcut opened Luna). One-shot; consumed only once the main UI is
-    /// actually up so a debug or UI-test root doesn't swallow it.
-    private func applyPendingFriendPrompt() {
-        guard AppSurfaceConfig.current.sharesByEmail,
-              let nav = mainNavigationController,
-              let root = nav.viewControllers.first
-        else { return }
-        let surface = AppSurfaceConfig.current.storageIdentifier
-        guard let urlString = DoubleSaveActionStore.shared
-            .takePendingFriendPrompt(forSurface: surface) else { return }
-        let item = ReadingListStore.shared.item(forURLString: urlString)
-        nav.dismiss(animated: false)
-        nav.popToRootViewController(animated: false)
-        SendToFriendSheet.present(
-            from: root, item: item, urlString: urlString, title: item?.title)
     }
 
     private func uiTestRootViewController() -> UIViewController? {

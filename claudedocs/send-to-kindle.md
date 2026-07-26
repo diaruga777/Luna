@@ -107,13 +107,11 @@ an `intentAction` (only the Action Button's Save App Intent does, via
   and that hasn't already sent this item within the last 24 h
   (`SavePressPolicy.resendCooldown`). `ArticleSendCoordinator.doubleSaveDestinationIDs()`
   supplies the eligible, configured destination ids.
-- **Action Button (Save App Intent), 7 s window** — the user's configured
-  `DoubleSaveActionStore` action resolves (via
-  `ReadingListIngestor.resolvedIntentAction`) to one of
-  `.sendToKindle`, `.sendToFriends(emails:)`, or `.promptFriendSelector`;
-  `SavePressPolicy` turns that into `.sendToEreaders`/`.sendToFriends`/
-  `.promptFriendSelector` respectively (falling back to `.ignore` if, e.g.,
-  Kindle isn't configured).
+- **Action Button (Save App Intent), 7 s window** —
+  `ReadingListIngestor.resolvedIntentAction` resolves to `.sendToKindle` when
+  Kindle is configured, and nil otherwise. `SavePressPolicy` turns the former
+  into `.sendToEreaders`; there is no contact action or user-facing double-save
+  setting.
 
 Either way, platform items (videos, posts, tracks — no article EPUB target)
 never trigger an ereader send; a double press on one is always `.ignore`.
@@ -187,11 +185,13 @@ generation, delivery, and per-destination per-item state:
 
 ## UI
 
-- Settings → "Email & Sending" (`EmailAndKindleSettingsScreen`): the connected
-  sharing account, a Send-to-Kindle section (Kindle address, a "Send Test to
-  Kindle" row, and the Double-Save-Action picker for the Action Button's 7 s
-  regime), the "Also Send to Kindle" import toggle, and a "Forwarding
-  Settings" disclosure row per destination pushing `AutoSendBySourceScreen`.
+- Settings → "Email" (`EmailAndKindleSettingsScreen`) groups the connected
+  sharing account, import toggle/senders, and subject filters.
+- Settings → "Kindle" (`KindleSettingsScreen`) owns the Kindle address, test
+  send, and forwarding-settings disclosure. Its top-level row is dimmed until
+  email is connected; tapping it offers to open Email with the address field
+  focused. Action Button double save has no setting: it sends to configured
+  Kindle or does nothing.
 - `AutoSendBySourceScreen` — three rows today: App Intents mode
   (off/all-saves/double-save) and on/off for email and for share-sheet-&-paste.
   There is no row for friend shares (see the capture-source caveat above).
@@ -205,7 +205,7 @@ generation, delivery, and per-destination per-item state:
 `ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests` cover the
 EPUB/MIME building blocks. `DoubleSavePolicyTests` and
 `ScreenshotDoublePressTests` cover the newer Action-Button 7 s double-save
-regime and its `DoubleSaveActionStore`; `DoubleSaveActionStoreTests` covers
+regime; the legacy `DoubleSaveActionStoreTests` cover
 that store directly. There is currently **no** dedicated test coverage for
 `SourceSendSettings`'s per-source resolution or for `ArticleSendCoordinator`'s
 multi-destination fan-out/retry/backoff, or for the legacy 12 s regime in

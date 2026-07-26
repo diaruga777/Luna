@@ -102,11 +102,10 @@ progress and its head point.
 
 ## Lunar Eclipse navigation
 
-Luna Reader exposes an off-by-default **Lunar Eclipse Transition** toggle under Settings
-→ Appearance. When enabled and Reduce Motion is off, a native reader opened from a real
-Reader list row uses `LunarEclipseTransition`; its corresponding pop uses the reverse
-treatment. Search, deep links, Downloader, Price Tracker, modals, and reader-internal
-navigation retain their standard animations.
+When Reduce Motion is off, a native reader opened from a real Reader list row always uses
+`LunarEclipseTransition`; its corresponding pop uses the reverse treatment. There is no
+Luna-specific switch. Reduce Motion disables the effect. Search, deep links, Downloader,
+Price Tracker, modals, and reader-internal navigation retain their standard animations.
 
 `LunarEclipseNavigationDelegate` installs the navigation delegate and
 `LunarEclipseTransitionCenter` carries the source-row context into the animator. The

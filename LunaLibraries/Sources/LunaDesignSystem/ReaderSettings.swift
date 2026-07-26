@@ -23,8 +23,6 @@ public enum ReaderSettings {
     private static let fontScaleKey = "readerFontScale"
     private static let serifKey = "readerSerifFont"
     private static let fontKey = "readerFont"
-    private static let readingTimeKey = "showReadingTime"
-    private static let progressKey = "showReadingProgress"
     private static let lastReaderModeKey = "lastReaderMode"
     private static let rsvpModeKey = "rsvpDisplayMode"
     private static let preloadDepthKey = "linkPreloadDepth"
@@ -38,8 +36,7 @@ public enum ReaderSettings {
     public static func migrateFromStandardIfNeeded() {
         guard !defaults.bool(forKey: migratedKey) else { return }
         let standard = UserDefaults.standard
-        for key in [wpmKey, fontScaleKey, serifKey,
-                    readingTimeKey, progressKey, lastReaderModeKey] {
+        for key in [wpmKey, fontScaleKey, serifKey, lastReaderModeKey] {
             if let value = standard.object(forKey: key) { defaults.set(value, forKey: key) }
         }
         defaults.set(true, forKey: migratedKey)
@@ -136,18 +133,6 @@ public enum ReaderSettings {
             return useSerifFont ? .newYork : .system
         }
         set { defaults.set(newValue.rawValue, forKey: fontKey) }
-    }
-
-    /// Show estimated reading time in the list (Pocket-style).
-    public static var showReadingTime: Bool {
-        get { (defaults.object(forKey: readingTimeKey) as? Bool) ?? true }
-        set { defaults.set(newValue, forKey: readingTimeKey) }
-    }
-
-    /// Show reading progress percentage in the list (Pocket-style).
-    public static var showReadingProgress: Bool {
-        get { (defaults.object(forKey: progressKey) as? Bool) ?? true }
-        set { defaults.set(newValue, forKey: progressKey) }
     }
 
     /// Base words-per-minute for the RSVP reader. Per-word display time is

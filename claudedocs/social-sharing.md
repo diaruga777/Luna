@@ -89,7 +89,7 @@ Tapping a "pending request" notification should route to
 
 - Sharing Account (any provider) is set up once via `EmailLoginFlow` (see
   `incoming-mail.md`) and powers import, friend sharing, AND Send-to-Kindle
-  from one connected account — Settings → "Email & Sending".
+  from one connected account — Settings → "Email".
 - No App-Group-only queuing needed for extensions: the Share/Action
   extensions don't send friend emails themselves (`EmailShareCenter` is
   main-app only); they queue through the normal share-sheet/URL ingest path.

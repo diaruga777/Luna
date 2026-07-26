@@ -13,7 +13,6 @@ public enum AppearanceSettings {
     private static var defaults: UserDefaults { UserDefaults(suiteName: ReaderSettings.appGroupID) ?? .standard }
 
     private static let interfaceStyleKey = "appearanceInterfaceStyle"
-    private static let lunarEclipseReaderTransitionKey = "lunarEclipseReaderTransitionEnabled"
 
     /// The interface style the app forces regardless of the device setting.
     public enum InterfaceStyle: String, CaseIterable {
@@ -32,12 +31,6 @@ public enum AppearanceSettings {
     public static var interfaceStyle: InterfaceStyle {
         get { InterfaceStyle(rawValue: defaults.string(forKey: interfaceStyleKey) ?? "") ?? .system }
         set { defaults.set(newValue.rawValue, forKey: interfaceStyleKey) }
-    }
-
-    /// An opt-in Reader-only transition used when opening and closing an article.
-    public static var lunarEclipseReaderTransitionEnabled: Bool {
-        get { (defaults.object(forKey: lunarEclipseReaderTransitionKey) as? Bool) ?? false }
-        set { defaults.set(newValue, forKey: lunarEclipseReaderTransitionKey) }
     }
 
     /// Applies the current `interfaceStyle` to a window. Call at every

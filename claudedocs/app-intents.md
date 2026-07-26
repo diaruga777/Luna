@@ -100,26 +100,25 @@ central Luna app — a sibling never hands off cross-app anymore);
 `IntentIngestHelper.handleSavePress` with the Reader-only double-save surface
 armed (see `double-save.md`). Because `.done` bypasses `SaveIntent`,
 `ProvideContextIntent` also sends a downloadable tracked Safari URL through the
-shared permission-aware Downloader handoff before returning. With **Return
-Downloaded Media** on (the default), it resolves the content length and checks storage.
+shared permission-aware Downloader handoff before returning. It resolves the content length
+and checks storage.
 A known file up to 100 MiB runs through the Live Activity/background engine and is
 awaited so the completed static image/GIF/video can be attached as `media`; larger or
 unknown files start the same durable transfer and return `media = nil` immediately.
-With the setting off, every file uses that immediate background handoff. A friend-prompt
-outcome foregrounds Luna.
+There is no user setting for this threshold.
 
 ## `SaveIntent` (`app: String`, `screenshot: IntentFile`) → `SaveResultEntity`
 
 The return value is a `TransientAppEntity` with optional `media: IntentFile`.
-Non-media saves and background-download mode return `media = nil`.
+Non-media saves and large/unknown media downloads return `media = nil`.
 
 1. **Digest double-press skip** — `ScreenshotDigest.digest(forImageData:)`
    (32×32 grayscale, CoreGraphics-only) vs `ScreenshotDoublePressStore.last()`
    (App-Group single-slot: digest + date + saved URL).
    `ScreenshotDoublePress.decide` treats a visually-similar screenshot within
    `SavePressPolicy.intentDoublePressWindow` (7 s) as an Action Button
-   double-press: **no model call** — the previous save is re-run so the
-   configured double-save action fires (Kindle / friend / prompt), and the
+   double-press: **no model call** — the previous save is re-run so configured
+   Kindle receives it (or nothing happens when Kindle is not configured), and the
    snapshot timestamp is refreshed. `ScreenshotDigest.similarityThreshold`
    still needs on-device tuning against status-bar clock/Dynamic Island noise.
 2. Otherwise: prompt = `AppNamePlatform.safariScreenPrompt` ("title ; site")
@@ -139,13 +138,10 @@ Non-media saves and background-download mode return `media = nil`.
    "Runtime + progress UI") so a
    failure can be reported, then the row is verified against the store. If the
    RUNNING app handles media (Downloader / central Luna) and the URL is downloadable,
-   the intent performs exactly one media handoff regardless of per-platform toggles.
-   `AppIntentSettings.returnsMediaToShortcuts` is App-Group-backed and defaults on (its
-   user-facing inverse is **Download in Background** under Settings ▸ Shortcut & Safari):
-   it reuses an already-downloaded local/Photos-backed
+   the intent performs exactly one media handoff. It reuses an already-downloaded local/Photos-backed
    item when present, otherwise resolves the content length and checks available storage.
    A known file at or below 100 MiB is awaited through `LiveMediaDownloadManager` and
-   returned as an `IntentFile`; larger/unknown files and all setting-off invocations call
+   returned as an `IntentFile`; larger/unknown files call
    `MediaAutoDownloader.startDownloaderIntentDownload` and return nil while the Live
    Activity/background transfer continues (which activity shows depends on the runtime —
    see "Runtime + progress UI"). Reader, Downloader, and Price Tracker each embed
@@ -155,10 +151,10 @@ Non-media saves and background-download mode return `media = nil`.
    actions preserve a valid extension instead of exposing the durable UUID storage name.
    The platform finder's resolved URL is carried separately from the save outcome, so a
    duplicate/double-save timeout cannot suppress the media handoff.
-   Downloader's shared “Save Downloads to Photos” preference is honored: an undetermined
+   The shared “Save Downloads to Photos” preference is honored: an undetermined
    read/write permission request foregrounds the invoking app first; denial falls back to
    the shared local media library. Insufficient space throws a user-facing intent error
-   before transfer. A `friendPromptRequested` outcome also foregrounds Luna.
+   before transfer.
 5. Errors are thrown as `SaveError: CustomLocalizedStringResourceConvertible`
    (`unsupportedApp`, `unsupportedKind`, `modelUnavailable`, `networkUnavailable`,
    `quotaLimitReached`, `serviceUnavailable`, `nothingIdentifiable`,

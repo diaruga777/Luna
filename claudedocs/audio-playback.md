@@ -274,7 +274,8 @@ a way to pick up where an extension left off.
   disturbs an in-progress one.
 - **`AudioSettingsScreen`** (`Luna/Settings/AudioSettingsScreen.swift`) —
   "Audio" settings category: autoplay toggle, "Clean up articles for
-  listening (Apple Intelligence)" toggle, link to `VoiceSettingsScreen`.
+  listening (Apple Intelligence)" toggle, enhanced-voice installation status,
+  and the direct link to iOS's voice installer.
 
 ## Key file paths
 

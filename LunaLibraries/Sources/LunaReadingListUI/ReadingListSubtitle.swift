@@ -32,8 +32,8 @@ public enum ReadingListSubtitle {
     ///     platform registry, so the caller supplies it.
     ///   - formattedDate: the save date, already formatted by the caller's
     ///     `DateFormatter` (locale/timezone dependent, so kept out of here).
-    ///   - showReadingTime: the `ReaderSettings.showReadingTime` toggle.
-    ///   - showReadingProgress: the `ReaderSettings.showReadingProgress` toggle.
+    ///   - showReadingTime: whether this surface includes article reading time.
+    ///   - showReadingProgress: whether this surface includes article progress.
     ///   - isRescuing: whether a URL-rescue attempt is in flight for this item,
     ///     so a `.failed` row reads "trying harder…" instead of "pull to retry".
     public static func parts(

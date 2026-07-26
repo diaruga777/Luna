@@ -8,25 +8,23 @@ import LunaURLClassification
 import LunaStorage
 import Foundation
 
-/// Saves a just-ingested social post's media. Luna Downloader always stores
-/// supported media in its app-owned library; sibling apps keep the older
-/// per-platform opt-in Photos behavior. Hooked into the ingest funnel
+/// Saves a just-ingested social post's media. Luna and Luna Downloader use the
+/// same supported-platform policy and app-owned media library. Hooked into the ingest funnel
 /// (`ReadingListIngestor.ingestPlatformItem`) so EVERY save method flows through it
 /// — including share-sheet saves, which the main app re-ingests from the pending
 /// queue.
 public enum MediaAutoDownloader {
-    /// Whether a saved URL is a platform whose media should auto-download (enabled +
-    /// supported). Used by the share extension to decide whether to stay alive.
+    /// Whether a saved URL is supported by a media-handling app. Used by the
+    /// share extension to decide whether to stay alive.
     public static func isEnabled(forURLString urlString: String) -> Bool {
-        if DirectMediaURL.kind(for: urlString) != nil { return isRunningInDownloader }
+        guard isRunningInDownloader else { return false }
+        if DirectMediaURL.kind(for: urlString) != nil { return true }
         guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         return MediaDownloadablePlatform.supported.contains(platform)
-            && (isRunningInDownloader || AutoDownloadSettings.isEnabled(for: platform))
     }
 
-    /// Downloads the post's first media item if auto-download is enabled for its
-    /// platform and it hasn't already been downloaded. Downloader persists to its
-    /// app-owned media library; sibling apps use the legacy Photos destination.
+    /// Downloads the post's first media item if it hasn't already been downloaded.
+    /// Media-handling apps persist to their shared app-owned media library.
     /// AWAITS completion (so the app intent finishes the download before returning)
     /// and marks the URL so the main-app ingest fallback won't download it again.
     @discardableResult
@@ -39,12 +37,8 @@ public enum MediaAutoDownloader {
               let url = URL(string: urlString)
         else { return false }
         do {
-            if isRunningInDownloader {
-                _ = try await service.downloadFirstMediaToAppStorage(
-                    from: url, title: nil, onProgress: { _ in })
-            } else {
-                _ = try await service.downloadFirstMediaToPhotos(from: url, onProgress: { _ in })
-            }
+            _ = try await service.downloadFirstMediaToAppStorage(
+                from: url, title: nil, onProgress: { _ in })
             AutoDownloadSettings.markDownloaded(urlString)
             return true
         } catch {

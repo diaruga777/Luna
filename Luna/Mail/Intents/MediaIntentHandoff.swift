@@ -79,14 +79,12 @@ enum MediaIntentHandoff {
             await foreground()
         }
         let photosAuthorized = await DownloaderIntentPhotoPermission.requestIfNeeded()
-        if AppIntentSettings.returnsMediaToShortcuts,
-           let existing = SavedMediaStore.shared.existingDownloadedItem(
+        if let existing = SavedMediaStore.shared.existingDownloadedItem(
                forURLString: urlString) {
             let media = await MediaAutoDownloader.exportFile(from: existing)
             return media.map { intentFile(for: $0) }
         }
-        if AppIntentSettings.returnsMediaToShortcuts,
-           let sourceURL = URL(string: urlString),
+        if let sourceURL = URL(string: urlString),
            let inspection = await MediaDownloadPreflight.inspect(sourceURL: sourceURL) {
             if let error = MediaDownloadPreflight.storageError(for: inspection) {
                 throw MediaHandoffError.insufficientStorage(error.message)
@@ -133,7 +131,7 @@ enum MediaIntentHandoff {
             }
         } else {
             try await startInBackground(
-                for: urlString, reason: "setting", photosAuthorized: photosAuthorized)
+                for: urlString, reason: "size unavailable", photosAuthorized: photosAuthorized)
             return nil
         }
     }

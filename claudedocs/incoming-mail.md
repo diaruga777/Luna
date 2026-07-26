@@ -75,9 +75,9 @@ still KEEPS only its own kinds from what it imports.
 
 ## Settings
 
-Merged into `Settings → Email & Sending` (`EmailAndKindleSettingsScreen`): the
+Grouped under `Settings → Email` (`EmailAndKindleSettingsScreen`): the
 one connected "Sharing Account" (any provider) powers friend sharing, import,
-AND Send-to-Kindle. "Import from Email" section: on/off toggle, **"Also Send to
+and Send to Kindle. "Import from Email" section: on/off toggle, **"Also Send to
 Kindle"** toggle (`autoSendToKindle`), add/remove allowed senders (swipe to
 delete). A separate **"Subject Filters"** section adds/removes fuzzy subject
 phrases (swipe to delete).

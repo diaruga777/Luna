@@ -9,21 +9,16 @@ import LunaMail
 import LunaMailAccount
 import LunaSend
 import LunaModels
-import LunaSocial
-import LunaStorage
 import LunaDesignSystem
 import UIKit
 
-/// Email & Sending settings. This is also where an email account gets connected:
+/// Email settings. This is also where an email account gets connected:
 /// until one is, the Sharing Account section IS the sign-in form (an inline
-/// address field + Connect), and everything that needs an account to send —
-/// `SendToFriendSheet`, Send to Kindle — routes the user here. Includes the
-/// Reader-only Double Save action (send to Kindle / friend when the same link is
-/// saved twice with the Action Button — see `claudedocs/double-save.md`).
+/// address field + Connect). Everything that needs an account routes here.
 final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case lunaAccount, kindle, doubleSave, importMail, subjectFilters
+        case lunaAccount, importMail, subjectFilters
     }
 
     /// Set by a caller that sent the user here to connect an account (the
@@ -40,17 +35,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     /// session / autodiscovery task).
     private var accountSetup: EmailAccountSetup?
     private var isConnecting = false
-
-    /// The double-save action only fires for Reader's Action Button saves, so
-    /// its section only shows there.
-    private var visibleSections: [Section] {
-        Section.allCases.filter { $0 != .doubleSave || AppSurfaceConfig.current == .reader }
-    }
-
-    private var doubleSaveSurface: String { AppSurfaceConfig.current.storageIdentifier }
-
-    /// Field tags for the text fields.
-    private enum Field: Int { case kindleAddress = 1 }
 
     /// The account this screen reads, signs in to, and signs out of. Injectable so
     /// tests can exercise the inline sign-in form without touching the App Group
@@ -78,15 +62,14 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     override func viewDidLoad() {
-        headerTitle = L10n.string("Email & Sending")
+        headerTitle = L10n.string("Email")
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Refresh value rows edited on pushed subscreens (double-save recipients),
-        // and swap the sign-in form for the connected-account rows after a
+        // Swap the sign-in form for the connected-account rows after a
         // successful sign-in on a pushed credential screen.
         tableView.reloadData()
     }
@@ -99,48 +82,46 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         guard focusesAddressField, !accountStore.isConfigured else { return }
         focusesAddressField = false
         addressField.becomeFirstResponder()
+        // Pushing while the prerequisite alert is still dismissing can make
+        // UIKit accept first-responder status before it is willing to present
+        // the keyboard. Retry once after both transitions have settled.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, self.view.window != nil, !self.accountStore.isConfigured else {
+                return
+            }
+            self.addressField.becomeFirstResponder()
+        }
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { visibleSections.count }
+    override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch visibleSections[section] {
+        switch Section(rawValue: section)! {
         case .lunaAccount:
             // Connected: address, inbox filter, sign out. Otherwise the inline
             // sign-in form: address field + Connect.
             return accountStore.isConfigured ? 3 : 2
-        case .kindle: return 3 /* mode, kindle address, test send */
-        case .doubleSave:
-            let showsRecipients = DoubleSaveActionStore.shared
-                .action(forSurface: doubleSaveSurface) == .sendToFriend
-            return showsRecipients ? 3 : 2 /* kindle choice, friend choice, [recipients] */
         case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
         case .subjectFilters: return IncomingMailSettings.subjectFilters.count + 1 /* add */
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        switch visibleSections[section] {
+        switch Section(rawValue: section)! {
         case .lunaAccount: return L10n.string("Sharing Account")
-        case .kindle: return L10n.string("Send to Kindle")
-        case .doubleSave: return L10n.string("Double Save")
         case .importMail: return L10n.string("Import from Email")
         case .subjectFilters: return L10n.string("Subject Filters")
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        switch visibleSections[section] {
+        switch Section(rawValue: section)! {
         case .lunaAccount:
             let base = L10n.string(
                 "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.")
             guard !accountStore.isConfigured else { return base }
             return L10n.string(
                 "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next.")
-        case .kindle:
-            return L10n.string("Articles are emailed from the connected Luna email account (the section at the top of this screen). That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings), and sending requires the account to be connected.")
-        case .doubleSave:
-            return L10n.string("Saving the same link twice within 7 seconds with the Action Button shortcut runs this action on the already-saved article.")
         case .importMail:
             return L10n.string("New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight.")
         case .subjectFilters:
@@ -157,7 +138,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         cell.accessoryType = .none
         cell.selectionStyle = .none
 
-        switch visibleSections[indexPath.section] {
+        switch Section(rawValue: indexPath.section)! {
         case .lunaAccount:
             if accountStore.isConfigured {
                 switch indexPath.row {
@@ -187,37 +168,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                     spinner.startAnimating()
                     cell.accessoryView = spinner
                 }
-            }
-
-        case .kindle:
-            switch indexPath.row {
-            case 0:
-                content.text = L10n.string("Kindle forwarding settings")
-                cell.accessoryType = .disclosureIndicator
-                cell.selectionStyle = .default
-            case 1:
-                return fieldCell("Kindle", placeholder: L10n.string("name@kindle.com"),
-                                 text: KindleSendSettings.kindleAddress, field: .kindleAddress)
-            default:
-                content.text = L10n.string("Send Test to Kindle")
-                content.textProperties.color = view.tintColor ?? .systemBlue
-                content.image = UIImage(systemName: "paperplane")
-                cell.selectionStyle = .default
-            }
-
-        case .doubleSave:
-            let action = DoubleSaveActionStore.shared.action(forSurface: doubleSaveSurface)
-            switch indexPath.row {
-            case 0, 1:
-                let rowAction: DoubleSaveAction = indexPath.row == 0 ? .sendToKindle : .sendToFriend
-                content.text = rowAction.displayName
-                cell.accessoryType = action == rowAction ? .checkmark : .none
-                cell.selectionStyle = .default
-            default:
-                content.text = L10n.string("Recipients")
-                content.secondaryText = doubleSaveRecipientsSummary()
-                cell.accessoryType = .disclosureIndicator
-                cell.selectionStyle = .default
             }
 
         case .importMail:
@@ -256,7 +206,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        switch visibleSections[indexPath.section] {
+        switch Section(rawValue: indexPath.section)! {
         case .lunaAccount:
             if accountStore.isConfigured {
                 switch indexPath.row {
@@ -269,21 +219,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             } else if indexPath.row == 1 {
                 connectAccount()
             }
-        case .doubleSave where indexPath.row <= 1:
-            DoubleSaveActionStore.shared.setAction(
-                indexPath.row == 0 ? .sendToKindle : .sendToFriend,
-                forSurface: doubleSaveSurface)
-            tableView.reloadSections(IndexSet(integer: indexPath.section), with: .automatic)
-        case .doubleSave:
-            navigationController?.pushViewController(DoubleSaveRecipientsScreen(), animated: true)
-        case .kindle where indexPath.row == 0:
-            navigationController?.pushViewController(
-                AutoSendBySourceScreen(
-                    destinationID: ArticleDestinationID.kindle,
-                    destinationName: L10n.string("Kindle")),
-                animated: true)
-        case .kindle where indexPath.row == 2:
-            sendTestEmail()
         case .importMail where indexPath.row - 2 == IncomingMailSettings.allowedSenders.count:
             promptForSender()
         case .subjectFilters where indexPath.row == IncomingMailSettings.subjectFilters.count:
@@ -294,7 +229,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        switch visibleSections[indexPath.section] {
+        switch Section(rawValue: indexPath.section)! {
         case .importMail:
             return indexPath.row >= 2
                 && indexPath.row - 2 < IncomingMailSettings.allowedSenders.count
@@ -310,7 +245,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         forRowAt indexPath: IndexPath
     ) {
         guard editingStyle == .delete else { return }
-        switch visibleSections[indexPath.section] {
+        switch Section(rawValue: indexPath.section)! {
         case .importMail:
             IncomingMailSettings.removeSender(at: indexPath.row - 2)
         case .subjectFilters:
@@ -319,21 +254,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             return
         }
         tableView.deleteRows(at: [indexPath], with: .automatic)
-    }
-
-    /// The Recipients row's value text: the chosen friends (by display name),
-    /// or the ask-every-time mode.
-    private func doubleSaveRecipientsSummary() -> String {
-        let store = DoubleSaveActionStore.shared
-        guard store.friendMode(forSurface: doubleSaveSurface) == .preset else {
-            return L10n.string("Ask Every Time")
-        }
-        let emails = store.presetFriendEmails(forSurface: doubleSaveSurface)
-        guard !emails.isEmpty else { return L10n.string("Ask Every Time") }
-        let names = emails.map { email in
-            FriendsStore.shared.friend(withEmail: email)?.displayName ?? Friend.localPart(email)
-        }
-        return names.count <= 2 ? names.joined(separator: ", ") : "\(names.count) Contacts"
     }
 
     // MARK: - Inline account sign-in
@@ -355,8 +275,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         // delegate and starts its input session only once hosted in the window.
         field.textContentType = .emailAddress
         field.returnKeyType = .go
-        field.textAlignment = .right
-        field.textColor = LunaColors.secondaryText
+        field.textAlignment = .left
+        field.textColor = LunaColors.primaryText
         field.translatesAutoresizingMaskIntoConstraints = false
         // Keep the delegate nil — in particular, don't interpose on the iOS 26
         // input-suggestion/replacement path used by credential providers. The
@@ -366,36 +286,39 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         return field
     }
 
-    /// The sign-in form's first row: label, the inline address field, and the
-    /// provider chip that appears once the domain is recognized.
+    /// The sign-in form's first row, matching the rounded field card in the
+    /// left-tray email setup.
     private func addressEntryCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
-        let nameLabel = UILabel()
-        nameLabel.text = L10n.string("Email")
-        nameLabel.font = .preferredFont(forTextStyle: .body)
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.setContentHuggingPriority(.required, for: .horizontal)
-        nameLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        cell.backgroundColor = .clear
+        let fieldCard = EmailLoginUI.fieldCard()
+        let glyph = EmailLoginUI.leadingGlyph("envelope")
 
         // Re-hosting the same two long-lived views: removing them from the
         // previous cell drops that cell's constraints on them too.
         addressField.removeFromSuperview()
         addressBadge.removeFromSuperview()
-        cell.contentView.addSubview(nameLabel)
-        cell.contentView.addSubview(addressField)
-        cell.contentView.addSubview(addressBadge)
+        cell.contentView.addSubview(fieldCard)
+        fieldCard.addSubview(glyph)
+        fieldCard.addSubview(addressField)
+        fieldCard.addSubview(addressBadge)
         NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
-            nameLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-            addressField.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 12),
+            fieldCard.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
+            fieldCard.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
+            fieldCard.leadingAnchor.constraint(
+                equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            fieldCard.trailingAnchor.constraint(
+                equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            glyph.leadingAnchor.constraint(equalTo: fieldCard.leadingAnchor, constant: 15),
+            glyph.centerYAnchor.constraint(equalTo: fieldCard.centerYAnchor),
+            addressField.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 10),
             addressField.trailingAnchor.constraint(equalTo: addressBadge.leadingAnchor, constant: -8),
-            addressField.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            addressField.centerYAnchor.constraint(equalTo: fieldCard.centerYAnchor),
             // The badge stays installed and only fades, so it never jumps layout.
             addressBadge.trailingAnchor.constraint(
-                equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
-            addressBadge.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                equalTo: fieldCard.trailingAnchor, constant: -12),
+            addressBadge.centerYAnchor.constraint(equalTo: fieldCard.centerYAnchor),
         ])
         addressEdited()
         return cell
@@ -413,7 +336,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     /// address cell, which would interrupt typing.
     private func reloadConnectRow() {
         guard !accountStore.isConfigured,
-              let section = visibleSections.firstIndex(of: .lunaAccount),
+              let section = Section.allCases.firstIndex(of: .lunaAccount),
               tableView.numberOfSections > section,
               tableView.numberOfRows(inSection: section) > 1
         else { return }
@@ -450,55 +373,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             })
         accountSetup = setup
         setup.start(address: addressField.text ?? "")
-    }
-
-    // MARK: - Field cells
-
-    private func fieldCell(
-        _ label: String, placeholder: String, text: String, field: Field, secure: Bool = false
-    ) -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        let nameLabel = UILabel()
-        nameLabel.text = label
-        nameLabel.font = .preferredFont(forTextStyle: .body)
-
-        let textField = UITextField()
-        textField.placeholder = placeholder
-        textField.text = text
-        textField.tag = field.rawValue
-        textField.isSecureTextEntry = secure
-        textField.autocapitalizationType = .none
-        textField.autocorrectionType = .no
-        textField.keyboardType = secure ? .default : .emailAddress
-        textField.textAlignment = .right
-        textField.textColor = LunaColors.secondaryText
-        textField.addTarget(self, action: #selector(fieldEdited(_:)), for: .editingChanged)
-        textField.addTarget(self, action: #selector(fieldEdited(_:)), for: .editingDidEnd)
-
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        cell.contentView.addSubview(nameLabel)
-        cell.contentView.addSubview(textField)
-        NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
-            nameLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-            textField.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 12),
-            textField.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
-            textField.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-        ])
-        nameLabel.setContentHuggingPriority(.required, for: .horizontal)
-        nameLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        cell.selectionStyle = .none
-        return cell
-    }
-
-    @objc private func fieldEdited(_ textField: UITextField) {
-        let value = (textField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        switch Field(rawValue: textField.tag) {
-        case .kindleAddress: KindleSendSettings.kindleAddress = value
-        case nil: break
-        }
     }
 
     // MARK: - Import & filters
@@ -570,12 +444,128 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         present(alert, animated: true)
     }
 
-    // MARK: - Test sends
+}
+
+/// Kindle-specific forwarding, address, and test-send settings. The top-level
+/// Settings menu gates this screen until the shared email account is connected.
+final class KindleSettingsScreen: NavHeaderTableController {
+    private lazy var kindleAddressField: UITextField = {
+        let field = UITextField()
+        field.placeholder = L10n.string("name@kindle.com")
+        field.text = KindleSendSettings.kindleAddress
+        field.font = .preferredFont(forTextStyle: .body)
+        field.textColor = LunaColors.primaryText
+        field.keyboardType = .emailAddress
+        field.autocapitalizationType = .none
+        field.autocorrectionType = .no
+        field.textContentType = .emailAddress
+        field.returnKeyType = .done
+        field.addTarget(self, action: #selector(addressEdited), for: .editingChanged)
+        field.addTarget(self, action: #selector(addressEdited), for: .editingDidEnd)
+        field.translatesAutoresizingMaskIntoConstraints = false
+        return field
+    }()
+
+    init() { super.init(style: .insetGrouped) }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidLoad() {
+        headerTitle = L10n.string("Kindle")
+        super.viewDidLoad()
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        3
+    }
+
+    override func tableView(
+        _ tableView: UITableView, titleForHeaderInSection section: Int
+    ) -> String? {
+        L10n.string("Send to Kindle")
+    }
+
+    override func tableView(
+        _ tableView: UITableView, titleForFooterInSection section: Int
+    ) -> String? {
+        L10n.string("Articles are emailed from your connected Luna email account. That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings).")
+    }
+
+    override func tableView(
+        _ tableView: UITableView, cellForRowAt indexPath: IndexPath
+    ) -> UITableViewCell {
+        switch indexPath.row {
+        case 0:
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            var content = cell.defaultContentConfiguration()
+            content.text = L10n.string("Kindle forwarding settings")
+            cell.contentConfiguration = content
+            cell.accessoryType = .disclosureIndicator
+            return cell
+        case 1:
+            return kindleAddressCell()
+        default:
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            var content = cell.defaultContentConfiguration()
+            content.text = L10n.string("Send Test to Kindle")
+            content.textProperties.color = view.tintColor ?? .systemBlue
+            content.image = UIImage(systemName: "paperplane")
+            cell.contentConfiguration = content
+            return cell
+        }
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        switch indexPath.row {
+        case 0:
+            navigationController?.pushViewController(
+                AutoSendBySourceScreen(
+                    destinationID: ArticleDestinationID.kindle,
+                    destinationName: L10n.string("Kindle")),
+                animated: true)
+        case 2:
+            sendTestEmail()
+        default:
+            break
+        }
+    }
+
+    private func kindleAddressCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        let label = UILabel()
+        label.text = L10n.string("Kindle")
+        label.font = .preferredFont(forTextStyle: .body)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentHuggingPriority(.required, for: .horizontal)
+
+        kindleAddressField.removeFromSuperview()
+        cell.contentView.addSubview(label)
+        cell.contentView.addSubview(kindleAddressField)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            label.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            kindleAddressField.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 12),
+            kindleAddressField.trailingAnchor.constraint(
+                equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            kindleAddressField.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        ])
+        return cell
+    }
+
+    @objc private func addressEdited() {
+        KindleSendSettings.kindleAddress = (kindleAddressField.text ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     private func sendTestEmail() {
-        guard ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) else {
-            presentInfoAlert(title: L10n.string("Not Configured"),
-                             message: L10n.string("Connect an email account and enter your Kindle address first."))
+        guard ArticleSendCoordinator.shared.isConfigured(
+            destinationID: ArticleDestinationID.kindle
+        ) else {
+            presentInfoAlert(
+                title: L10n.string("Not Configured"),
+                message: L10n.string("Enter your Kindle address first."))
             return
         }
         Task { [weak self] in
@@ -586,9 +576,9 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                     title: L10n.string("Test Sent"),
                     message: L10n.string("Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list."))
             } catch {
-                self?.presentInfoAlert(title: L10n.string("Test Failed"), message: L10n.string("\(error)"))
+                self?.presentInfoAlert(
+                    title: L10n.string("Test Failed"), message: L10n.string("\(error)"))
             }
         }
     }
-
 }

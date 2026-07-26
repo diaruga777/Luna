@@ -4,7 +4,7 @@
 //
 //  Pure-function and lightweight-integration coverage for connecting an email
 //  account: password normalization, address validation, provider-badge text, and
-//  the inline sign-in form in Settings → Email & Sending tracking what's typed.
+//  the inline sign-in form in Settings → Email tracking what's typed.
 //
 
 import LunaMailAccount
@@ -81,7 +81,7 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertFalse(CredentialViewController.isConnectivityFailure(FakeProtocolError()))
     }
 
-    // MARK: - Inline sign-in form (Settings → Email & Sending)
+    // MARK: - Inline sign-in form (Settings → Email)
 
     /// The Connect row is the form's action: tinted and selectable only once the
     /// typed address could plausibly be one.
@@ -188,7 +188,7 @@ final class EmailLoginTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// The Email & Sending screen with a scratch (empty) account store, hosted in
+    /// The Email screen with a scratch (empty) account store, hosted in
     /// a window so the table realizes real cells, plus its inline address field.
     private func makeUnconfiguredAccountForm() throws -> (EmailAndKindleSettingsScreen, UITextField) {
         let store = EmailAccountStore(defaults: defaults, credentialStorage: InMemoryCredentialStorage())

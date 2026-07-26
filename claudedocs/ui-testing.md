@@ -144,7 +144,8 @@ simulator can't drive). The real `ShareViewController` is a thin `ExtensionHost`
   hooks (see `simulator-testing.md`).
 - **Replays screen** (`ReplaysViewController`) — lists the device's real accumulated
   diagnostic replays (live save URLs + wall-clock timestamps), not pixel-stable.
-  Covered by a layout-sanity assertion + the Settings → Diagnostics nav test.
+  Covered by a layout-sanity assertion; Diagnostics is opened with five taps in
+  blank space on the top-level Settings screen.
 - **WKWebView content** (archive reader, platform embeds, share-reader after fetch)
   — no network in tests; only the deterministic loading/chrome state is snapshotted.
 

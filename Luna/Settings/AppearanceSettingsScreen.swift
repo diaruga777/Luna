@@ -7,10 +7,8 @@ import LunaDesignSystem
 import UIKit
 import LunaModels
 
-/// App-wide interface style and the Reader-only Lunar Eclipse experiment.
+/// App-wide interface style.
 final class AppearanceSettingsScreen: NavHeaderTableController {
-
-    private enum Section: Int, CaseIterable { case theme, motion }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -20,46 +18,18 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
         super.viewDidLoad()
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int {
-        AppSurfaceConfig.current == .reader ? Section.allCases.count : 1
-    }
-
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         1
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        switch Section(rawValue: section)! {
-        case .theme: return L10n.string("Theme")
-        case .motion: return L10n.string("Motion")
-        }
-    }
-
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        switch Section(rawValue: section)! {
-        case .theme: return nil
-        case .motion:
-            return L10n.string("Lunar Eclipse is an opt-in transition used only when Luna Reader opens or closes an article. Reduce Motion disables it automatically.")
-        }
+        L10n.string("Theme")
     }
 
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        switch Section(rawValue: indexPath.section)! {
-        case .theme:
-            return themeCell()
-        case .motion:
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            cell.selectionStyle = .none
-            var content = cell.defaultContentConfiguration()
-            content.text = L10n.string("Lunar Eclipse Transition")
-            cell.contentConfiguration = content
-            cell.accessoryView = makeToggle(
-                isOn: AppearanceSettings.lunarEclipseReaderTransitionEnabled,
-                action: #selector(lunarEclipseTransitionToggled(_:)))
-            return cell
-        }
+        themeCell()
     }
 
     /// A full-width segmented control (System / Light / Dark) — three options don't
@@ -94,9 +64,5 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
             .flatMap(\.windows) {
             AppearanceSettings.apply(to: window)
         }
-    }
-
-    @objc private func lunarEclipseTransitionToggled(_ toggle: UISwitch) {
-        AppearanceSettings.lunarEclipseReaderTransitionEnabled = toggle.isOn
     }
 }

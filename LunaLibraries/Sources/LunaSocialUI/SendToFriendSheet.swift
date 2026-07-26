@@ -145,7 +145,7 @@ public enum SendToFriendSheet {
         guard let launcher = accountSetupLauncher else {
             let alert = UIAlertController(
                 title: L10n.string("Set up email first"),
-                message: L10n.string("Connect your email account in Luna → Settings → Email & Sending to send articles to contacts."),
+                message: L10n.string("Connect your email account in Luna → Settings → Email to send articles to contacts."),
                 preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
             presenter.present(alert, animated: true)

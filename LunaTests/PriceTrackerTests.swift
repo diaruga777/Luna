@@ -24,6 +24,27 @@ final class PriceTrackerTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1000))
     }
 
+    func testAbsoluteThresholdRoundTripsThroughStoredFraction() {
+        var tracker = makeTracker(price: "120", threshold: 0.10)
+        XCTAssertEqual(tracker.alertThresholdPrice, Decimal(string: "108"))
+
+        tracker.setAlertThresholdPrice(Decimal(string: "100")!)
+
+        XCTAssertEqual(
+            NSDecimalNumber(decimal: tracker.alertThresholdPrice).doubleValue,
+            100,
+            accuracy: 0.0001)
+        XCTAssertEqual(tracker.alertThresholdFraction, 1.0 / 6.0, accuracy: 0.0001)
+    }
+
+    func testAbsoluteThresholdClampsToModelRange() {
+        var tracker = makeTracker(price: "100", threshold: 0.10)
+        tracker.setAlertThresholdPrice(Decimal(200))
+        XCTAssertEqual(tracker.alertThresholdFraction, 0.01)
+        tracker.setAlertThresholdPrice(Decimal(-50))
+        XCTAssertEqual(tracker.alertThresholdFraction, 0.95)
+    }
+
     // MARK: - Best price
 
     func testCurrentBestPriceIsMinimumAcrossStores() {

@@ -151,6 +151,22 @@ public struct PriceTracker: Codable, Equatable {
         !isArchived && discountFraction >= alertThresholdFraction
     }
 
+    /// Absolute alert price drawn on the price-history graph.
+    public var alertThresholdPrice: Decimal {
+        initialPrice * (1 - Decimal(alertThresholdFraction))
+    }
+
+    /// Updates the stored fractional threshold from an absolute graph price.
+    /// The persisted model keeps its existing 1%...95% drop invariant, so direct
+    /// typing and graph dragging cannot create an impossible threshold.
+    public mutating func setAlertThresholdPrice(_ price: Decimal) {
+        guard initialPrice > 0 else { return }
+        let fraction = NSDecimalNumber(
+            decimal: (initialPrice - price) / initialPrice
+        ).doubleValue
+        alertThresholdFraction = min(max(fraction, 0.01), 0.95)
+    }
+
     /// Whether this tracker has an alert the user hasn't seen yet: it's alerting AND
     /// the user hasn't acknowledged the current alert. This is the condition that
     /// floats the row to the very TOP of the whole reading list (badged red). Once

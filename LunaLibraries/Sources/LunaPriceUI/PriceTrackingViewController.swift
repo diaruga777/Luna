@@ -113,8 +113,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// alongside the list it adds to.
     private let addSellerButton = UIButton(type: .system)
     /// Price-history graph slot, BELOW the table and ABOVE the alert footer, outside
-    /// the scroll view. Shows the graph once there are ≥3 days of data, else a
-    /// pending "Awaiting more data" state.
+    /// the scroll view. It remains visible with an empty history so the threshold is
+    /// still legible while a newly saved tracker awaits its first refresh.
     private let graphContainer = UIView()
     private let graphTitleLabel = UILabel()
     private let graphView = PriceGraphView()
@@ -357,18 +357,19 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         ])
     }
 
-    /// Shows the graph when there are ≥3 days of data, else a graph-shaped placeholder.
+    /// The graph remains present from day one. Even without history it carries the
+    /// current alert line; this legacy editor keeps that line read-only because its
+    /// separate threshold footer remains the extension-safe editing control.
     private func refreshGraph() {
         guard let tracker else { graphContainer.isHidden = true; return }
         graphContainer.isHidden = false
         let series = PriceHistory.series(for: tracker)
-        let hasEnough = PriceHistory.distinctDayCount(tracker) >= PriceHistory.minimumDaysForGraph
-            && series.count >= 2
-        if hasEnough {
-            graphView.setData(series, currency: tracker.displayCurrency)
-        } else {
-            graphView.showPlaceholder()
-        }
+        graphView.setData(
+            series,
+            currency: tracker.displayCurrency,
+            thresholdPrice: tracker.alertThresholdPrice,
+            baselinePrice: tracker.initialPrice,
+            allowsThresholdEditing: false)
     }
 
     // MARK: - Threshold footer

@@ -1,44 +1,35 @@
-# Price History Graph Plan (nextcommands #5)
+# Price History Graph
 
-Store every refreshed price bucketed by calendar day (lowest per day), and show an
-adaptive price-over-time graph in the price-tracker detail view.
+Every refreshed price is bucketed by calendar day (lowest per day) and shown in
+the Price Tracker card's adaptive price-over-time graph.
 
-## Storage (migration-safe)
-- `PriceDaySnapshot { dayStart, lowestPrice, currency, fxRate? }` (ReaderKit).
-- `PriceTrackerStore.priceHistory: [PriceDaySnapshot]` (oldest-first).
-- **Migration**: `PriceTrackerStore` gets a custom `init(from:)` that
-  `decodeIfPresent`s `priceHistory ?? []` — synthesized Decodable does NOT default
-  missing keys (it throws `keyNotFound`), so this is required for old saves to load.
-- `PriceTrackerStore.recordSample(price:currency:at:)`: append a new day or lower the
-  existing day's minimum (bucket by `Calendar.startOfDay`). Pure.
-- Wired in `PriceRefresher.refresh` on the SUCCESS branch only (via
-  `PriceTracker.recordPriceSample`) — failed fetches don't record.
+## Storage and aggregation
 
-## Aggregation (`PriceHistory`, pure, tested)
-- `series(for:)`: per-day lowest ACROSS stores → if the overall span is small keep
-  daily points, else re-bucket to week/month/year taking the lowest per period.
-- `bucket(forSpanDays:)`: <61d → day, <366d → week, <3y → month, else year.
-- `distinctDayCount` + `minimumDaysForGraph = 3` gate the graph vs the pending state.
+- `PriceDaySnapshot { dayStart, lowestPrice, currency, fxRate? }` is stored on
+  each `PriceTrackerStore`. Migration defaults missing history to `[]`.
+- Successful refreshes call `recordPriceSample`; failed fetches record nothing.
+- `PriceHistory.series(for:)` takes the daily low across stores and adapts day →
+  week → month → year as the span grows.
+- The graph accepts zero, one, or many points. Zero points draw real axes and the
+  editable threshold instead of replacing the chart with a pending state.
+- FX conversion remains deferred. An optional per-snapshot `fxRate` is applied
+  when present; otherwise v1 assumes the tracker's display currency.
 
-## FX (deferred)
-The app has no exchange-rate source today, and most trackers are single-currency
-(one product across stores in one region). v1 plots `lowestPrice` directly in the
-tracker's `displayCurrency`; each snapshot carries an optional `fxRate` that
-`PriceHistory` applies when present, so adding an FX-rate fetch later is a pure
-data fill with no migration. Multi-currency conversion is therefore best-effort in
-v1 (documented).
+## View and interaction
 
-## View (`PriceGraphView` + `PriceTrackingViewController`)
-- A `graphContainer` is inserted BELOW the sellers table and ABOVE the alert footer,
-  OUTSIDE the scroll view (fixed height), per the spec.
-- ≥3 days → `PriceGraphView` (line + filled area, y min/max labels, x endpoint
-  dates); else an "Awaiting more data" pending label.
-- `PriceGraphView` press-and-drag scrubber (`UILongPressGestureRecognizer`,
-  minimumPressDuration 0): highlights the nearest point + a callout with the value,
-  full date, and store host. Refreshed on `viewWillAppear`.
+- The product thumbnail/title header sits above `PriceGraphView`; tracked sites
+  and the add button sit below it.
+- The price series is grey. The absolute alert threshold is a dashed, fixed
+  Price Tracker green line with a leading grab handle and a price label above it.
+  Points strictly below the threshold are green dots.
+- Dragging only the handle moves the threshold and changes its label into a
+  decimal-pad text field with checkmark/cancel controls. Checkmark persists via
+  `PriceTracker.setAlertThresholdPrice`; cancel restores the pre-edit value.
+- The series itself never drags or scrubs. Tapping near one point shows the small
+  price/date/store tooltip; tapping elsewhere dismisses it.
 
 ## Tests
-`PriceHistoryTests`: day bucketing keeps the lowest per day; new-day append;
-per-store merge takes the cross-store low; span→bucket thresholds; re-bucketing to
-week/month takes the period low; `distinctDayCount`; old-save decode (no
-`priceHistory` key) → empty history.
+
+`PriceHistoryTests` covers bucketing, cross-store lows, rebucketing, and migration.
+`PriceTrackerTests` covers absolute-threshold/fraction conversion and clamping.
+`PriceTrackingScreenTests` verifies the carousel root and zero-point threshold.

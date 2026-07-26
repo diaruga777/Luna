@@ -335,30 +335,49 @@ public final class URLRescueEngine {
         }
     }
 
-    private func withTimeout(seconds: TimeInterval, fallback: RescueOutcome, _ work: @escaping () async -> RescueOutcome) async -> RescueOutcome {
-        await withTaskGroup(of: RescueOutcome?.self) { group in
-            group.addTask { await work() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                return nil
+    /// Races `work` against `seconds` on UNSTRUCTURED tasks, resuming on
+    /// whichever finishes first; nil means the timeout won.
+    ///
+    /// Deliberately NOT a task group. A group does not return until every child
+    /// has finished, and `cancelAll()` only REQUESTS cancellation — so a single
+    /// cancellation-deaf child hangs the group and, with it, the very timeout
+    /// meant to bound it. A `LanguageModelSession.respond` that never comes back
+    /// is exactly such a child, which is what left the failed-save card stuck on
+    /// "Asking Apple Intelligence" forever instead of giving up after 90 s. Same
+    /// reasoning and the same shape as `IntentIngestHelper.savePressRacingTimeout`,
+    /// which carries this warning for the same reason.
+    private func raceAgainstTimeout<T>(
+        seconds: TimeInterval, _ work: @escaping () async -> T
+    ) async -> T? {
+        let resumeLock = NSLock()
+        var resumed = false
+        return await withCheckedContinuation { continuation in
+            @Sendable func finish(_ value: T?) {
+                resumeLock.lock()
+                let first = !resumed
+                resumed = true
+                resumeLock.unlock()
+                if first { continuation.resume(returning: value) }
             }
-            let first = await group.next() ?? fallback
-            group.cancelAll()
-            return first ?? fallback
+            Task { finish(await work()) }
+            Task {
+                try? await Task.sleep(
+                    nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+                finish(nil)
+            }
         }
     }
 
+    private func withTimeout(seconds: TimeInterval, fallback: RescueOutcome, _ work: @escaping () async -> RescueOutcome) async -> RescueOutcome {
+        await raceAgainstTimeout(seconds: seconds, work) ?? fallback
+    }
+
     private func withThrowingTimeout<T>(seconds: TimeInterval, _ work: @escaping () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await work() }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw URLRescueError.timedOut
-            }
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+        let outcome = await raceAgainstTimeout(seconds: seconds) { () -> Result<T, Error> in
+            do { return .success(try await work()) } catch { return .failure(error) }
         }
+        guard let outcome else { throw URLRescueError.timedOut }
+        return try outcome.get()
     }
 }
 

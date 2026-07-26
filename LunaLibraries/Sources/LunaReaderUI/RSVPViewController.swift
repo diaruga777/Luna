@@ -700,13 +700,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func configureControls() {
         var playConfig = GlassStyle.circularButtonConfiguration(symbol: "play.fill", padding: 16)
         playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 28)
+        // `.capsule` can size the glass background optically around the tall,
+        // narrow play glyph even when the control itself is square. A fixed
+        // radius makes the configured background use the full 60×60 circle.
+        playConfig.cornerStyle = .fixed
+        playConfig.background.cornerRadius = 30
         playPauseButton.configuration = playConfig
         playPauseButton.accessibilityLabel = L10n.string("Play")
-        // Pin a true circle for the fixed 60×60 button: the glass/filled capsule
-        // background otherwise hugs the play glyph's content width and reads as
-        // an egg rather than a round button.
+        // Pin the control layer too, so both the glass and its clipping mask stay
+        // circular through highlighted/disabled configuration updates.
         playPauseButton.clipsToBounds = true
         playPauseButton.layer.cornerRadius = 30
+        playPauseButton.layer.cornerCurve = .circular
         playPauseButton.addTarget(self, action: #selector(togglePlayPause), for: .touchUpInside)
 
         scrubber.minimumValue = 0
@@ -768,9 +773,41 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // obscures them.
         installShareView()
 
+        // Prefer the roomy 32pt footer margins and 48pt secondary circles, but
+        // let compact widths ease them together—symmetrically—down to 16pt /
+        // 44pt. The 60pt play circle stays required and never becomes the row's
+        // compression escape hatch.
+        let preferredLeading = controlsStack.leadingAnchor.constraint(
+            equalTo: view.leadingAnchor, constant: 32)
+        let preferredTrailing = controlsStack.trailingAnchor.constraint(
+            equalTo: view.trailingAnchor, constant: -32)
+        preferredLeading.priority = .defaultHigh
+        preferredTrailing.priority = .defaultHigh
+
+        let secondaryButtons = [
+            skipBackButton, wpmDownButton, wpmUpButton, skipForwardButton,
+        ]
+        let preferredSecondaryDiameter = skipBackButton.widthAnchor.constraint(equalToConstant: 48)
+        preferredSecondaryDiameter.priority = .defaultHigh
+        var adaptiveButtonConstraints: [NSLayoutConstraint] = [preferredSecondaryDiameter]
+        for button in secondaryButtons {
+            adaptiveButtonConstraints.append(contentsOf: [
+                button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                button.widthAnchor.constraint(equalTo: button.heightAnchor),
+            ])
+        }
+        for button in secondaryButtons.dropFirst() {
+            adaptiveButtonConstraints.append(
+                button.widthAnchor.constraint(equalTo: skipBackButton.widthAnchor))
+        }
+
         NSLayoutConstraint.activate([
-            controlsStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            controlsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            controlsStack.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
+            controlsStack.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor, constant: -16),
+            preferredLeading,
+            preferredTrailing,
             controlsStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
             speedRow.heightAnchor.constraint(equalToConstant: 64),
             buttonRow.leadingAnchor.constraint(greaterThanOrEqualTo: speedRow.leadingAnchor, constant: 8),
@@ -779,15 +816,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             buttonRow.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
             playPauseButton.widthAnchor.constraint(equalToConstant: 60),
             playPauseButton.heightAnchor.constraint(equalToConstant: 60),
-            skipBackButton.widthAnchor.constraint(equalToConstant: 48),
-            skipBackButton.heightAnchor.constraint(equalToConstant: 48),
-            wpmDownButton.widthAnchor.constraint(equalToConstant: 48),
-            wpmDownButton.heightAnchor.constraint(equalToConstant: 48),
-            wpmUpButton.widthAnchor.constraint(equalToConstant: 48),
-            wpmUpButton.heightAnchor.constraint(equalToConstant: 48),
-            skipForwardButton.widthAnchor.constraint(equalToConstant: 48),
-            skipForwardButton.heightAnchor.constraint(equalToConstant: 48),
-        ])
+            playPauseButton.widthAnchor.constraint(equalTo: playPauseButton.heightAnchor),
+        ] + adaptiveButtonConstraints)
     }
 
     /// The full-screen pause tap plus the slow-motion press-and-hold.

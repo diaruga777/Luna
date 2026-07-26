@@ -232,6 +232,20 @@ final class ReaderScreenTests: XCTestCase {
         }
     }
 
+    func testRSVPPlayButtonUsesTrueCircularGeometry() throws {
+        let reader = RSVPViewController(item: item, content: shortArticleContent())
+        reader.view.frame = CGRect(x: 0, y: 0, width: 320, height: 650)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let play = try XCTUnwrap(
+            findControl(in: reader.view, accessibilityLabel: "Play") as? UIButton)
+        XCTAssertEqual(play.bounds.width, play.bounds.height, accuracy: 0.01)
+        XCTAssertEqual(play.bounds.width, 60, accuracy: 0.01)
+        XCTAssertEqual(play.layer.cornerRadius, 30, accuracy: 0.01)
+        XCTAssertEqual(play.configuration?.background.cornerRadius, 30)
+    }
+
     func testFinishedScrollReaderStartsAtTopInsteadOfPersistedEnd() {
         var finished = item
         finished.readState = .read

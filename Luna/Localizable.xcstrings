@@ -1,22 +1,122 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "  %@ (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "  %1$@ (%2$lld)"
+          }
+        }
+      }
+    },
     "%@" : {
+
+    },
+    "%@ · App-specific password" : {
+
+    },
+    "%@ · Secure provider sign-in" : {
+
+    },
+    "%@ Button" : {
 
     },
     "A screenshot of the current app's screen." : {
 
     },
+    "Action Button Shortcut" : {
+
+    },
+    "Add" : {
+
+    },
+    "All Articles" : {
+
+    },
+    "Allow photo library access in Settings to save media." : {
+
+    },
+    "Allow Photos access in Settings to delete this media from Photos." : {
+
+    },
+    "Allow Photos access to play this archived item." : {
+
+    },
     "App" : {
+
+    },
+    "App password" : {
+
+    },
+    "Appearance" : {
+
+    },
+    "Apply Luna in Safari" : {
+
+    },
+    "archive" : {
+
+    },
+    "Archive" : {
+
+    },
+    "Archive Tracker" : {
 
     },
     "Article" : {
 
     },
+    "As %@" : {
+
+    },
+    "Asking Apple Intelligence…" : {
+
+    },
+    "Bump to Top" : {
+
+    },
+    "Can't Save This Link" : {
+
+    },
+    "Cancel" : {
+
+    },
     "Capture Outcome" : {
 
     },
+    "Check the address and app password and try again." : {
+
+    },
+    "Checking URL" : {
+
+    },
+    "Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away." : {
+
+    },
+    "Clear" : {
+
+    },
+    "Clear Diagnostics?" : {
+
+    },
+    "Close email setup" : {
+
+    },
+    "Connect Email" : {
+
+    },
+    "Connect your email" : {
+
+    },
+    "Contacts" : {
+
+    },
     "Context Result" : {
+
+    },
+    "Copy Link" : {
 
     },
     "Couldn't find a matching post or page to save." : {
@@ -25,13 +125,157 @@
     "Couldn't identify anything to save on this screen." : {
 
     },
+    "Couldn't keep the pasted media." : {
+
+    },
+    "Couldn't load this page" : {
+
+    },
+    "Couldn't prepare this media for sharing." : {
+
+    },
+    "Couldn't reach the mail servers. Check your connection and try again." : {
+
+    },
+    "Couldn't save this media to Photos." : {
+
+    },
+    "Couldn't save to your photo library." : {
+
+    },
+    "Couldn't send to %@%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't send to %1$@%2$@"
+          }
+        }
+      }
+    },
+    "Couldn't sign in" : {
+
+    },
+    "Couldn't start Outlook sign-in." : {
+
+    },
+    "Couldn't start the media download." : {
+
+    },
+    "Couldn't write the log file." : {
+
+    },
+    "Create an app password…" : {
+
+    },
+    "Custom provider · IMAP setup" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete %lld archived item%@?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete %1$lld archived item%2$@?"
+          }
+        }
+      }
+    },
+    "Delete All" : {
+
+    },
+    "Delete Selected" : {
+
+    },
+    "Diagnostics" : {
+
+    },
+    "Document" : {
+
+    },
     "Done" : {
 
     },
     "Done." : {
 
     },
+    "Download" : {
+
+    },
+    "Download Automatically" : {
+
+    },
+    "Download media" : {
+
+    },
+    "Download started" : {
+
+    },
+    "Downloading" : {
+
+    },
+    "Downloading temporary preview…" : {
+
+    },
+    "Downloads" : {
+
+    },
+    "Downloads item" : {
+
+    },
+    "Edit List" : {
+
+    },
+    "Enter an app-specific password for this account." : {
+
+    },
+    "Enter the address Luna should use to send and import links." : {
+
+    },
+    "Export Failed" : {
+
+    },
     "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, or requires a screenshot." : {
+
+    },
+    "Handle On-Screen URLs" : {
+
+    },
+    "https://…" : {
+
+    },
+    "Install shortcut" : {
+
+    },
+    "Install Shortcut" : {
+
+    },
+    "Invalid paste" : {
+
+    },
+    "Invalid URL" : {
+
+    },
+    "Last visited Safari URL (%@): %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last visited Safari URL (%1$@): %2$@"
+          }
+        }
+      }
+    },
+    "Locked Only" : {
+
+    },
+    "Luna" : {
+
+    },
+    "Luna can try harder with Apple Intelligence. Choose what this save should become." : {
 
     },
     "Luna can't save from this app." : {
@@ -58,13 +302,100 @@
     "Media" : {
 
     },
+    "Media is no longer available locally." : {
+
+    },
+    "Media is still downloading." : {
+
+    },
+    "Never" : {
+
+    },
+    "Next" : {
+
+    },
+    "No diagnostics recorded yet." : {
+
+    },
     "No Safari page tracked yet. Is the Luna extension enabled?" : {
+
+    },
+    "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page." : {
+
+    },
+    "No Saved Media" : {
+
+    },
+    "No URL to paste" : {
+
+    },
+    "Not Now" : {
+
+    },
+    "OK" : {
+
+    },
+    "On-Screen URLs" : {
+
+    },
+    "One more step! Set your action button to %@" : {
 
     },
     "OnScreenURLs" : {
 
     },
+    "Open" : {
+
+    },
+    "Open in Photos" : {
+
+    },
+    "Open Safari" : {
+
+    },
+    "Open Settings" : {
+
+    },
+    "Open Shortcuts" : {
+
+    },
+    "Opens item" : {
+
+    },
+    "Opens when this tray is opened" : {
+
+    },
+    "Or change %@ to “Allow”" : {
+
+    },
     "Outcome" : {
+
+    },
+    "Outlook isn't configured in this build." : {
+
+    },
+    "Outlook sign-in failed. Please try again." : {
+
+    },
+    "Paste Link" : {
+
+    },
+    "Paste setting" : {
+
+    },
+    "Paste the copied link to preview it here." : {
+
+    },
+    "Paste URL" : {
+
+    },
+    "Paste URL automatically" : {
+
+    },
+    "Pasted Media" : {
+
+    },
+    "Photos Access Needed" : {
 
     },
     "Provide Context" : {
@@ -73,28 +404,83 @@
     "Read Article" : {
 
     },
+    "Read in Luna" : {
+
+    },
     "Reading %@." : {
 
     },
     "Reading articles aloud isn't available in this app." : {
 
     },
+    "Reading List" : {
+
+    },
+    "Refresh Last Visited Website" : {
+
+    },
     "Requires Screenshot" : {
+
+    },
+    "Rescue as %@" : {
 
     },
     "Save" : {
 
     },
+    "Save a Link" : {
+
+    },
+    "Save articles, documents, and links to read them here." : {
+
+    },
+    "Save articles, media, and products to see them here." : {
+
+    },
+    "Save Failed" : {
+
+    },
+    "Save From Safari" : {
+
+    },
     "Save Result" : {
 
     },
+    "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"%@\" in Settings → Action Button.\n\n%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"%1$@\" in Settings → Action Button.\n\n%2$@"
+          }
+        }
+      }
+    },
+    "Save to Luna with your Action Button" : {
+
+    },
+    "Save to Photos" : {
+
+    },
+    "Save to Photos puts every finished download in your photo library and keeps it there. Otherwise all downloads stay in Luna and are deleted automatically once they reach the age you pick." : {
+
+    },
     "Saved" : {
+
+    },
+    "Saved Downloader links appear here after Luna downloads the media." : {
 
     },
     "Saved to Luna" : {
 
     },
     "Saved to Luna." : {
+
+    },
+    "Saved to Photos" : {
+
+    },
+    "Saves as a full card" : {
 
     },
     "Screen analysis is temporarily unavailable. Try again in a moment." : {
@@ -112,13 +498,61 @@
     "Second step of the Action Button shortcut. Pass the current app (from Get Current App) and a screenshot of it; Luna reads the screen with an on-device/Private Cloud Compute model and saves the matching post or page." : {
 
     },
+    "Select All" : {
+
+    },
+    "Send articles and import links · Tap to continue" : {
+
+    },
+    "Send to Contact…" : {
+
+    },
+    "Send to Kindle" : {
+
+    },
+    "Send To Luna" : {
+
+    },
+    "Set up email first" : {
+
+    },
+    "Settings" : {
+
+    },
     "Several different links are on screen. Open the one you want and try again." : {
+
+    },
+    "Share" : {
+
+    },
+    "Share Current Media" : {
+
+    },
+    "Share eBook…" : {
+
+    },
+    "Share Failed" : {
+
+    },
+    "Share Link…" : {
+
+    },
+    "Shortcut & Safari" : {
+
+    },
+    "Sign In" : {
+
+    },
+    "Sign-in failed" : {
 
     },
     "Source" : {
 
     },
     "Starts reading a saved article out loud in the background." : {
+
+    },
+    "Storage" : {
 
     },
     "That article isn't ready to read yet." : {
@@ -130,19 +564,71 @@
     "The current app, from Get Current App." : {
 
     },
+    "The media was added to your photo library." : {
+
+    },
+    "The media was saved in Luna. Allow photo library access in Settings to also save it to Photos." : {
+
+    },
     "The output from Get On-Screen URLs. Compatible complete values may be saved directly." : {
+
+    },
+    "Theme" : {
+
+    },
+    "This erases the saved log." : {
 
     },
     "Title" : {
 
     },
+    "Track a product to see its price here." : {
+
+    },
+    "Track in Luna" : {
+
+    },
+    "Tried %lld times · last %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Tried %1$lld times · last %2$@"
+          }
+        }
+      }
+    },
+    "Try Apple Intelligence" : {
+
+    },
+    "Try with Apple Intelligence" : {
+
+    },
+    "Unarchive" : {
+
+    },
+    "Unarchive Tracker" : {
+
+    },
     "Unhandled" : {
+
+    },
+    "unknown time" : {
+
+    },
+    "When browsing in Safari (with the Luna extension enabled), show the \"%@\" button when it applies. Choose when it appears." : {
+
+    },
+    "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling." : {
 
     },
     "You don't have any unread articles to read." : {
 
     },
     "You've hit the screen-analysis limit for now. Try again later." : {
+
+    },
+    "you@example.com" : {
 
     }
   },

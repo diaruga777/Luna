@@ -456,6 +456,8 @@ final class SocialMediaResolverTests: XCTestCase {
             throw XCTSkip("Set RUN_LIVE_YOUTUBE_TESTS=1 for real YouTube transfers")
         }
         let reportedURLs = [
+            // The mobile-host + `?ra=m` shape Safari hands over from a Shorts page.
+            "https://m.youtube.com/shorts/vPdLeu8Njok?ra=m",
             "https://youtube.com/shorts/bcHXFQIZ4lY?si=5yVkolWnfCb8U4N9",
             "https://youtu.be/JFryZD88SBo?si=mIacqZSqFo_TXiYk",
         ]

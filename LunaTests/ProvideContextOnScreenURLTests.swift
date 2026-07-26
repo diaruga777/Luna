@@ -219,6 +219,29 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
             .skip)
     }
 
+    /// Safari's address bar shows the bare domain, so that is what on-screen URL
+    /// extraction reads — `youtube.com`, not `m.youtube.com/shorts/<id>`. The
+    /// extension's tracked URL is the exact page, so it has to win; saving the
+    /// domain classifies as an unrecognized page and dies in the article path.
+    func testSafariPrefersTheTrackedURLOverTheAddressBarDomain() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.plan(
+                text: "youtube.com", isSafari: true, safariHasFreshTrackedURL: true,
+                verdict: { .handleable(urlString: $0) }),
+            .skip)
+    }
+
+    /// With no tracked URL, the on-screen value is still the fallback — that is
+    /// what it was added for, and it must keep working.
+    func testSafariStillUsesOnScreenURLWithoutATrackedURL() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.plan(
+                text: "https://m.youtube.com/shorts/vPdLeu8Njok?ra=m",
+                isSafari: true, safariHasFreshTrackedURL: false,
+                verdict: { .handleable(urlString: $0) }),
+            .save("https://m.youtube.com/shorts/vPdLeu8Njok?ra=m"))
+    }
+
     func testSafariPlansCentralAppYouTubeURLAsSave() {
         XCTAssertEqual(
             ProvideContextOnScreenURL.plan(

@@ -142,9 +142,19 @@ public enum ProvideContextOnScreenURL {
     public static func plan(
         text: String?,
         isSafari: Bool,
+        safariHasFreshTrackedURL: Bool = false,
         isEnabled: Bool = true,
         verdict: (String) -> IntentURLPrecheck.Verdict = { IntentURLPrecheck.verdict(for: $0) }
     ) -> Plan {
+        // In Safari the extension's tracked URL is the EXACT page URL, while the
+        // on-screen value is whatever Shortcuts can read off the screen — and what
+        // Safari puts on screen is the bare domain, because the address bar hides
+        // the scheme and path. Saving `youtube.com` instead of
+        // `youtube.com/shorts/<id>` classifies as an unrecognized web page, so it
+        // takes the article route and dies there. Defer to the tracked URL
+        // whenever there is a fresh one; the on-screen value stays the fallback
+        // for when the extension has nothing, which is what it is documented to be.
+        if isSafari, safariHasFreshTrackedURL { return .skip }
         switch resolveText(text, isSafari: isSafari, isEnabled: isEnabled) {
         case .none:
             return .skip

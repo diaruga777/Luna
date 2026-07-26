@@ -106,9 +106,12 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         // in silence to the decision below. Safari uses the supplied URL too;
         // its extension-backed URL store remains the fallback when Shortcuts
         // supplies nothing usable.
+        let safariURLFresh = SafariURLStore.isFresh()
+            && !(SafariURLStore.lastURL ?? "").isEmpty
         let plan = ProvideContextOnScreenURL.plan(
             text: onScreenURLs,
             isSafari: isSafari,
+            safariHasFreshTrackedURL: safariURLFresh,
             isEnabled: AppIntentSettings.handleOnScreenURLs)
         if case let .save(urlString) = plan {
             return try await saveURL(urlString, reporter: reporter)
@@ -121,8 +124,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             isSafari: isSafari,
             isShortcuts: app.map { AppNamePlatform.isShortcuts(forAppName: $0) } ?? false,
             platform: app.flatMap { AppNamePlatform.platform(forAppName: $0) },
-            safariURLFresh: SafariURLStore.isFresh()
-                && !(SafariURLStore.lastURL ?? "").isEmpty,
+            safariURLFresh: safariURLFresh,
             // A recognized-platform save is media, so only media-handling apps
             // (Downloader, the central Luna app) proceed to a screenshot save.
             handlesMediaKind: AppSurfaceConfig.current.handlesMedia,

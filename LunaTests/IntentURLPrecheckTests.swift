@@ -23,6 +23,7 @@ final class IntentURLPrecheckTests: XCTestCase {
         for value in [
             "https://example.com/article",
             "https://www.tiktok.com/@luna/video/123",
+            "https://www.youtube.com/watch?v=abc123",
             "https://www.amazon.com/dp/B000000000",
         ] {
             guard case let .handleable(urlString) = IntentURLPrecheck.verdict(

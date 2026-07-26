@@ -17,9 +17,9 @@ import Foundation
 /// Get Current App); the intent decides what the Shortcut should do next and
 /// returns a transient entity whose outcome is `.unhandled`, `.done`, or
 /// `.requiresScreenshot`. A completed synchronous media download is attached
-/// to the entity for the Shortcut to display or pass onward. Outside Safari,
-/// compatible complete URLs supplied by the Shortcut are saved directly before
-/// screenshot analysis is considered.
+/// to the entity for the Shortcut to display or pass onward. Compatible complete
+/// URLs supplied by the Shortcut are saved directly before app-specific fallback
+/// or screenshot analysis is considered, including while Safari is current.
 ///
 /// The background runtime and the Live-Activity permission this intent runs under
 /// are per-target composition: see `CaptureIntentRuntime.swift` (universal
@@ -103,8 +103,9 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         // and, because pre-validation says
         // the save SHOULD work, its failures are thrown rather than swallowed.
         // A link owned by a sibling app (or no usable link at all) falls through
-        // in silence to the decision below. Safari deliberately ignores this
-        // input and continues to use its extension-backed URL store.
+        // in silence to the decision below. Safari uses the supplied URL too;
+        // its extension-backed URL store remains the fallback when Shortcuts
+        // supplies nothing usable.
         let plan = ProvideContextOnScreenURL.plan(
             text: onScreenURLs,
             isSafari: isSafari,

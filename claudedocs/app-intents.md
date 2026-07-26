@@ -31,8 +31,8 @@ ProvideContextOutcome` (`AppEnum`) and optional `media: IntentFile`. The outcome
 is `.done`, `.unhandled`, or `.requiresScreenshot`; transient entities are result
 values only and are not queryable.
 
-Outside Safari, the optional **OnScreenURLs** input is checked first, before the
-normal decision table, so a supplied
+The optional **OnScreenURLs** input is checked first, before the normal decision
+table (including in Safari), so a supplied
 URL this app can handle is saved even when the current app would otherwise be
 unsupported. It is
 deliberately a scalar String configured with
@@ -63,7 +63,7 @@ is reported or ignored**:
 (`Classifier.classify(url:)`, no fetch) and maps the predicted `ContentKind` to
 its owning app (`.undetermined` → article, matching where the pipeline sends a
 plain page), then runs `SurfaceSupport.evaluate`. A `.save` plan goes through the
-same immediate-URL save function used by the Safari-extension fast path and
+same immediate-URL save function used by the Safari-extension fallback and
 returns `.done` (with synchronous media when applicable). Because the pre-check
 already said this app handles the kind, a foreign-kind rejection from the REAL
 classification (an undetermined page that turned out to be a product) throws

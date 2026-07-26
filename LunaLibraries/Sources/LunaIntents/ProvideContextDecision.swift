@@ -8,11 +8,13 @@ import LunaURLClassification
 import Foundation
 
 /// Collapses the optional URLs extracted from the current screen into one
-/// trustworthy save candidate. Every nonempty input must be a substring of the
-/// longest input, which covers duplicate, prefix, and partial OCR results without
-/// guessing between divergent URLs. HTTP and HTTPS schemes are ignored for this
-/// compatibility comparison because on-screen detection commonly returns both
-/// forms for the same page.
+/// trustworthy save candidate. This applies in Safari too: the explicit URL
+/// supplied by Shortcuts is preferred, while Safari's extension-backed URL
+/// store remains the intent's fallback. Every nonempty input must be a substring
+/// of the longest input, which covers duplicate, prefix, and partial OCR results
+/// without guessing between divergent URLs. HTTP and HTTPS schemes are ignored
+/// for this compatibility comparison because on-screen detection commonly
+/// returns both forms for the same page.
 public enum ProvideContextOnScreenURL {
     private static let embeddedWebURL = try? NSRegularExpression(
         pattern: #"(?i)https?://[^\s<>\"'\[\]{}]*?(?=(?:,\s*https?://)|[\s<>\"'\[\]{}]|$)"#)
@@ -58,7 +60,7 @@ public enum ProvideContextOnScreenURL {
         isSafari: Bool,
         isEnabled: Bool = true
     ) -> Resolution {
-        guard isEnabled, !isSafari, let value, !value.isEmpty, let embeddedWebURL else {
+        guard isEnabled, let value, !value.isEmpty, let embeddedWebURL else {
             return .none
         }
         let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
@@ -72,8 +74,8 @@ public enum ProvideContextOnScreenURL {
     /// `collapse`, keeping the reason a collapse failed: divergent values are
     /// reported as such (deduplicated, and only the ones that are valid URLs on
     /// their own) instead of collapsing into an indistinguishable `nil`.
-    public static func resolve(_ values: [String]?, isSafari: Bool) -> Resolution {
-        guard !isSafari, let values, !values.isEmpty else { return .none }
+    public static func resolve(_ values: [String]?, isSafari _: Bool) -> Resolution {
+        guard let values, !values.isEmpty else { return .none }
         let candidates = values.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
         }

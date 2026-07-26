@@ -143,10 +143,11 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
         }
     }
 
-    func testSafariNeverUsesOnScreenURLs() {
-        XCTAssertNil(
+    func testSafariUsesCompleteOnScreenURL() {
+        XCTAssertEqual(
             ProvideContextOnScreenURL.collapseText(
-                "https://example.com/post", isSafari: true))
+                "https://example.com/post", isSafari: true),
+            "https://example.com/post")
     }
 
     // MARK: - Divergent values
@@ -218,11 +219,10 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
             .skip)
     }
 
-    func testSafariSkipsEvenAHandleableURL() {
+    func testSafariPlansCentralAppYouTubeURLAsSave() {
         XCTAssertEqual(
             ProvideContextOnScreenURL.plan(
-                text: "https://example.com/post", isSafari: true,
-                verdict: { .handleable(urlString: $0) }),
-            .skip)
+                text: "https://www.youtube.com/watch?v=abc123", isSafari: true),
+            .save("https://www.youtube.com/watch?v=abc123"))
     }
 }

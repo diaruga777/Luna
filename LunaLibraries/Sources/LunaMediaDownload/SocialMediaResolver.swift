@@ -373,10 +373,26 @@ public enum TikTokMediaParser {
         return []
     }
 
+    /// TikTok ships the item in one of two scripts depending on which variant of
+    /// the page it decides to serve, and BOTH wrap the same `itemStruct` — only the
+    /// route in differs, so everything above this is shared.
+    ///
+    /// - The app shell puts it in `__UNIVERSAL_DATA_FOR_REHYDRATION__` under
+    ///   `__DEFAULT_SCOPE__`.
+    /// - The logged-out "reflow" page — what a background fetch actually gets —
+    ///   puts it in a separate `api-data` script, whose `__DEFAULT_SCOPE__` carries
+    ///   only reflow/ui-strategy keys and no video at all. Missing this route is
+    ///   why every TikTok save reported "couldn't find media to download".
     private static func videoItemStruct(in html: String) -> [String: Any]? {
-        guard let jsonString = rehydrationJSON(in: html),
-              let root = (try? JSONSerialization.jsonObject(with: Data(jsonString.utf8))) as? [String: Any],
-              let scope = root["__DEFAULT_SCOPE__"] as? [String: Any] else { return nil }
+        if let item = rehydrationItemStruct(in: html) { return item }
+        return apiDataItemStruct(in: html)
+    }
+
+    private static func rehydrationItemStruct(in html: String) -> [String: Any]? {
+        guard let root = jsonObject(
+            inScriptWithID: "__universal_data_for_rehydration__", html: html),
+              let scope = root["__DEFAULT_SCOPE__"] as? [String: Any]
+        else { return nil }
 
         for key in ["webapp.video-detail", "webapp.reflow.video.detail"] {
             guard let detail = scope[key] as? [String: Any],
@@ -387,9 +403,30 @@ public enum TikTokMediaParser {
         return nil
     }
 
-    private static func rehydrationJSON(in html: String) -> String? {
-        guard let scriptStart = html.range(of: "<script", options: [.caseInsensitive]) else { return nil }
-        var searchStart = scriptStart.lowerBound
+    /// The reflow page's payload: `{"videoDetail": {"itemInfo": {"itemStruct": …}}}`
+    /// (alongside `commentList`).
+    private static func apiDataItemStruct(in html: String) -> [String: Any]? {
+        guard let root = jsonObject(inScriptWithID: "api-data", html: html),
+              let detail = root["videoDetail"] as? [String: Any],
+              let info = detail["itemInfo"] as? [String: Any],
+              let item = info["itemStruct"] as? [String: Any]
+        else { return nil }
+        return item
+    }
+
+    private static func jsonObject(
+        inScriptWithID id: String, html: String
+    ) -> [String: Any]? {
+        guard let body = scriptBody(withID: id, html: html) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: Data(body.utf8))) as? [String: Any]
+    }
+
+    /// The body of the `<script>` whose `id` attribute is exactly `id`. Matched on
+    /// the quoted attribute rather than a bare substring so a script URL that
+    /// happens to contain the same word can't be mistaken for the payload.
+    private static func scriptBody(withID id: String, html: String) -> String? {
+        let needles = ["id=\"\(id)\"", "id='\(id)'"]
+        var searchStart = html.startIndex
         while searchStart < html.endIndex,
               let tagStart = html[searchStart...].range(of: "<script", options: [.caseInsensitive]) {
             guard let tagEnd = html[tagStart.upperBound...].firstIndex(of: ">") else { return nil }
@@ -398,7 +435,7 @@ public enum TikTokMediaParser {
             guard let end = html[contentStart...].range(of: "</script>", options: [.caseInsensitive]) else {
                 return nil
             }
-            if tag.contains("__universal_data_for_rehydration__") {
+            if needles.contains(where: tag.contains) {
                 return String(html[contentStart..<end.lowerBound])
             }
             searchStart = end.upperBound

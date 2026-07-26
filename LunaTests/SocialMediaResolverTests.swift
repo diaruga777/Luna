@@ -303,6 +303,74 @@ final class SocialMediaResolverTests: XCTestCase {
         ])
     }
 
+    /// The variant a background fetch actually gets. TikTok serves the item in a
+    /// separate `api-data` script, and the rehydration blob it ships alongside
+    /// carries only reflow/ui-strategy keys with no video anywhere in it — so a
+    /// parser that reads only the rehydration route finds nothing and every
+    /// TikTok save reports "couldn't find media to download".
+    func testTikTokAPIDataScriptResolvesAsVideo() {
+        let html = #"""
+        <script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+        {"__DEFAULT_SCOPE__":{"webapp.reflow.video.strategy":{"status_code":0},"webapp.app-context":{"appId":123}}}
+        </script>
+        <script id="api-data" type="application/json">
+        {"commentList":[],"videoDetail":{"itemInfo":{"itemStruct":{"video":{"playAddr":"https://video.example.com/apidata.mp4","cover":"https://cdn.example.com/cover.jpg"}}}}}
+        </script>
+        """#
+
+        XCTAssertEqual(TikTokMediaParser.assets(fromHTML: html), [
+            MediaAsset(
+                url: URL(string: "https://video.example.com/apidata.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/cover.jpg")!),
+        ])
+    }
+
+    /// The rehydration route still wins when it HAS the item, so the app-shell
+    /// variant keeps working rather than being shadowed by a stale `api-data`.
+    func testTikTokPrefersRehydrationItemOverAPIData() {
+        let html = #"""
+        <script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+        {"__DEFAULT_SCOPE__":{"webapp.video-detail":{"itemInfo":{"itemStruct":{"video":{"playAddr":"https://video.example.com/shell.mp4"}}}}}}
+        </script>
+        <script id="api-data" type="application/json">
+        {"videoDetail":{"itemInfo":{"itemStruct":{"video":{"playAddr":"https://video.example.com/apidata.mp4"}}}}}
+        </script>
+        """#
+
+        XCTAssertEqual(TikTokMediaParser.assets(fromHTML: html), [
+            MediaAsset(url: URL(string: "https://video.example.com/shell.mp4")!, kind: .video),
+        ])
+    }
+
+    /// A photo carousel in the `api-data` route resolves to its images, not a video.
+    func testTikTokAPIDataPhotoCarouselResolvesAsImages() {
+        let html = #"""
+        <script id="api-data" type="application/json">
+        {"videoDetail":{"itemInfo":{"itemStruct":{"imagePost":{"images":[{"imageURL":{"urlList":["https://cdn.example.com/one.jpg"]}},{"imageURL":{"urlList":["https://cdn.example.com/two.jpg"]}}]}}}}}
+        </script>
+        """#
+
+        XCTAssertEqual(TikTokMediaParser.assets(fromHTML: html), [
+            MediaAsset(url: URL(string: "https://cdn.example.com/one.jpg")!, kind: .image),
+            MediaAsset(url: URL(string: "https://cdn.example.com/two.jpg")!, kind: .image),
+        ])
+    }
+
+    /// The id match is on the quoted attribute, so a script URL containing the
+    /// same word is not mistaken for the payload.
+    func testTikTokIgnoresScriptWhoseSourceMerelyMentionsAPIData() {
+        let html = #"""
+        <script src="https://cdn.example.com/api-data/loader.js"></script>
+        <script id="api-data" type="application/json">
+        {"videoDetail":{"itemInfo":{"itemStruct":{"video":{"playAddr":"https://video.example.com/real.mp4"}}}}}
+        </script>
+        """#
+
+        XCTAssertEqual(TikTokMediaParser.assets(fromHTML: html), [
+            MediaAsset(url: URL(string: "https://video.example.com/real.mp4")!, kind: .video),
+        ])
+    }
+
     func testYouTubeURLFamilyNormalizesVideoIDAndTimestampRange() throws {
         let cases: [(String, Double)] = [
             ("https://youtu.be/dQw4w9WgXcQ?t=1m30s", 90),

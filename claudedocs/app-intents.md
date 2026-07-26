@@ -338,16 +338,13 @@ the two mechanisms on the same intent type. Used for: the double-save
 
 ## Action Button setup
 
-The iOS 27+ Action Button is set up by importing the bundled `Send To
-Luna.shortcut` (Settings → Shortcut & Safari → Install Shortcut) and assigning it
-to the Action Button in Settings. There is no in-app state machine tracking that
-round trip: an invocation from the Shortcuts app's own first run carries no
-content, and `AppNamePlatform.isShortcuts(forAppName:)` already reports it
-`.unhandled` through the ordinary decision table.
-
-`SystemSettingsLink.openActionButton()` deep-links Settings → Action Button
-(`App-Prefs:root=ACTION_BUTTON`, falling back through the same private-scheme
-cascade as `open()`).
+The iOS 27+ Action Button is set up from the left tray. Its first state imports
+the bundled `Send To Luna.shortcut`; once opened, that row assumes installation
+and becomes “One more step! Set your action button to {App Name}.” Open Settings
+starts the per-surface PiP guide and opens Settings at its root. The row remains
+until a real App Intent invocation records the shared completion marker, at
+which point the running app receives the cross-process status notification,
+stops PiP, and animates the row away.
 
 ## Bundled shortcut + user setup
 

@@ -1,17 +1,34 @@
 # Left arc tray
 
-The central Luna, Reader, and Downloader card decks expose a mirrored companion
-to the archive tray at the left edge of the first card. Price Tracker is
-deliberately deferred. Pulling right opens the tray and shifts the card deck;
-closing recenters the taller paste row while the tray retracts.
+The central Luna, Reader, Downloader, and Price Tracker card decks expose a
+mirrored companion to the archive tray at the left edge of the first card.
+Pulling right opens the wider tray and shifts the card deck; closing recenters
+the taller paste row while the tray retracts.
 
 ## Row order and behavior
 
 Rows are ordered top-to-bottom as email setup (where supported), Shortcut setup,
 Safari setup, pasteboard, then up to five recent Safari matches. This makes the
 pasteboard row the opening focal point, with setup above and recent links below.
-Setup rows reuse the focused visual language and copy from the deleted
-first-launch onboarding, but each is now an independent modal destination.
+Setup rows pulse until complete and own their actions directly; there is no
+first-launch onboarding or generic setup-step controller.
+
+- Email (Reader and central Luna) expands from its arc card into an inset card
+  from the safe-area top to the keyboard. Its focused address field infers the
+  provider live; Return and Next hand the address to `EmailAccountSetup`, which
+  presents Outlook OAuth or the existing app-password credential controller as
+  needed. Success shrinks/fades the expanded card, removes its row, and
+  recenters the tray.
+- Shortcut starts with “Save to Luna with your Action Button” and an Install
+  shortcut button. Opening the bundled shortcut persists the assumed-installed
+  intermediate state; the row becomes the per-app Action Button instruction
+  with an Open Settings button.
+- Safari says “Apply Luna in Safari” for Luna/Reader and “Save From Safari” for
+  Downloader/Price Tracker, with one Open Safari button.
+
+The Settings/Safari hops start the former onboarding guide clips directly in
+Picture in Picture. PiP stops on foreground return and also through a Darwin
+notification as soon as a Safari extension or App Intent records completion.
 
 Setup completion is based on the feature actually running, not on dismissing its
 guide:
@@ -21,9 +38,9 @@ guide:
 - Shortcut is complete after any Luna App Intent has run.
 - Email is complete whenever the shared email account is configured.
 
-Reader and Downloader share Safari/Shortcut completion through the App Group.
-The central Luna bundle uses independent completion keys for its own extension
-and intents. Email is shown only by article-capable surfaces.
+Reader, Downloader, and Price Tracker share Safari/Shortcut completion through
+the App Group. The central Luna bundle uses independent completion keys for its
+own extension and intents. Email is shown only by article-capable surfaces.
 
 ## Safari trail and matching
 

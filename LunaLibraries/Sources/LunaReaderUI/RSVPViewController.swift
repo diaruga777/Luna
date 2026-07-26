@@ -605,25 +605,17 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         gazeCoordinator?.setVisible(true)
     }
 
-    /// Spans approximately three monospaced characters around the ORP column.
-    /// The top/bottom lines stand clear of the glyph — a 12pt gap above the cap
-    /// height and below the baseline, so the letter breathes rather than being
-    /// pinched between two hairlines — while their 3pt ticks point inward without
-    /// crossing behind it. The extra gap comes out of the clear lane around the
-    /// focal column (`focalCenterY`'s clearances), so nothing else moves.
+    /// Spans several characters around the ORP column. The top/bottom lines sit
+    /// clear of the glyph — far enough that their inward ticks stop short of the
+    /// letter's cap rather than closing in on it (see `RSVPFocusReticuleMetrics`).
     private func layoutFocusReticule() {
-        let focalX = focalColumnX
         let centerY = focalCenterY
-        let verticalPadding: CGFloat = 12
-        let height = ceil(wordFont.capHeight + verticalPadding * 2)
-        let characterWidth = ("0" as NSString).size(withAttributes: [.font: wordFont]).width
-        let width = ceil(characterWidth * 3)
         let baselineY = centerY - wordFont.lineHeight / 2 + wordFont.ascender
-        focusReticule.frame = CGRect(
-            x: focalX - width / 2,
-            y: baselineY - wordFont.capHeight - verticalPadding,
-            width: width,
-            height: height)
+        focusReticule.frame = RSVPFocusReticuleMetrics.frame(
+            focalX: focalColumnX,
+            capTop: baselineY - wordFont.capHeight,
+            capHeight: wordFont.capHeight,
+            characterWidth: ("0" as NSString).size(withAttributes: [.font: wordFont]).width)
     }
 
     private func configureWordLabel() {

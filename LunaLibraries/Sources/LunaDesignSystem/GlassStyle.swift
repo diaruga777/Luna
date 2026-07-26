@@ -6,6 +6,39 @@
 import LunaModels
 import UIKit
 
+/// The reticule's own geometry, published so the reader can place it with
+/// clearance the ticks are guaranteed not to eat into (see `verticalPadding`).
+public enum RSVPFocusReticuleMetrics {
+    /// Thickness of each horizontal hairline.
+    public static let lineThickness: CGFloat = 2.25
+    /// Thickness and length of the inward ticks.
+    public static let tickThickness: CGFloat = 2.25
+    public static let tickLength: CGFloat = 4.5
+    /// Clear space left between a tick's inner end and the ORP glyph's cap, so
+    /// the cue frames the letter instead of crowding it.
+    public static let glyphClearance: CGFloat = 6
+    /// Distance from the glyph's cap edge out to the reticule's own edge —
+    /// everything the lines and ticks occupy, plus the clearance.
+    public static var verticalPadding: CGFloat { lineThickness + tickLength + glyphClearance }
+    /// Reticule width, in multiples of a character's advance at the reader's
+    /// font: wide enough to bridge the focal column's neighbours.
+    public static let characterSpan: CGFloat = 4.5
+
+    /// The reticule's frame around an ORP glyph whose cap box starts at
+    /// `capTop`, centered on the focal column at `focalX`. The hairlines land
+    /// `glyphClearance` + tick length clear of the cap on both sides.
+    public static func frame(
+        focalX: CGFloat, capTop: CGFloat, capHeight: CGFloat, characterWidth: CGFloat
+    ) -> CGRect {
+        let width = ceil(characterWidth * characterSpan)
+        return CGRect(
+            x: focalX - width / 2,
+            y: capTop - verticalPadding,
+            width: width,
+            height: ceil(capHeight + verticalPadding * 2))
+    }
+}
+
 /// The quiet focus bridge around RSVP's optimal-recognition-position letter.
 ///
 /// Two broad hairlines fade from the reading accent at the focal column,
@@ -53,9 +86,9 @@ private final class RSVPFocusReticuleView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let lineHeight: CGFloat = 1.5
-        let tickWidth: CGFloat = 1.5
-        let tickLength: CGFloat = 3
+        let lineHeight = RSVPFocusReticuleMetrics.lineThickness
+        let tickWidth = RSVPFocusReticuleMetrics.tickThickness
+        let tickLength = RSVPFocusReticuleMetrics.tickLength
         topLine.frame = CGRect(x: 0, y: 0, width: bounds.width, height: lineHeight)
         bottomLine.frame = CGRect(
             x: 0, y: max(0, bounds.height - lineHeight),

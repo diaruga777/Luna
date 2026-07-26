@@ -226,9 +226,23 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
     func testSafariPrefersTheTrackedURLOverTheAddressBarDomain() {
         XCTAssertEqual(
             ProvideContextOnScreenURL.plan(
-                text: "youtube.com", isSafari: true, safariHasFreshTrackedURL: true,
+                text: "https://youtube.com", isSafari: true,
+                safariTrackedURLString: "https://m.youtube.com/shorts/vPdLeu8Njok?ra=m",
                 verdict: { .handleable(urlString: $0) }),
             .skip)
+    }
+
+    /// The tracked URL's freshness window is days wide, so a tracked URL on a
+    /// DIFFERENT site than what's on screen is stale history. Saving it stores a
+    /// page the user left long ago — and, being a stale article rather than the
+    /// video they're looking at, it never reaches the media download at all.
+    func testSafariIgnoresATrackedURLFromADifferentSite() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.plan(
+                text: "https://youtube.com", isSafari: true,
+                safariTrackedURLString: "https://www.nytimes.com/2026/07/20/some-article.html",
+                verdict: { .handleable(urlString: $0) }),
+            .save("https://youtube.com"))
     }
 
     /// With no tracked URL, the on-screen value is still the fallback — that is
@@ -237,7 +251,7 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
         XCTAssertEqual(
             ProvideContextOnScreenURL.plan(
                 text: "https://m.youtube.com/shorts/vPdLeu8Njok?ra=m",
-                isSafari: true, safariHasFreshTrackedURL: false,
+                isSafari: true, safariTrackedURLString: nil,
                 verdict: { .handleable(urlString: $0) }),
             .save("https://m.youtube.com/shorts/vPdLeu8Njok?ra=m"))
     }

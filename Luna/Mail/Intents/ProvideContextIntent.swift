@@ -106,12 +106,12 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         // in silence to the decision below. Safari uses the supplied URL too;
         // its extension-backed URL store remains the fallback when Shortcuts
         // supplies nothing usable.
-        let safariURLFresh = SafariURLStore.isFresh()
-            && !(SafariURLStore.lastURL ?? "").isEmpty
+        let trackedURLString = SafariURLStore.isFresh() ? SafariURLStore.lastURL : nil
+        let safariURLFresh = !(trackedURLString ?? "").isEmpty
         let plan = ProvideContextOnScreenURL.plan(
             text: onScreenURLs,
             isSafari: isSafari,
-            safariHasFreshTrackedURL: safariURLFresh,
+            safariTrackedURLString: trackedURLString,
             isEnabled: AppIntentSettings.handleOnScreenURLs)
         if case let .save(urlString) = plan {
             return try await saveURL(urlString, reporter: reporter)
@@ -136,7 +136,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         // silently did nothing. Record which inputs produced it.
         SharedDiagnosticLog.record(
             "provide context: decision=\(decision) app=\(app ?? "nil") safari=\(isSafari) "
-                + "safariURLFresh=\(safariURLFresh) plan=\(plan) vision=\(visionAvailable) "
+                + "safariURLFresh=\(safariURLFresh) tracked=\(trackedURLString ?? "nil") "
+                + "plan=\(plan) vision=\(visionAvailable) "
                 + "handlesMedia=\(AppSurfaceConfig.current.handlesMedia)",
             category: "intents")
 
@@ -187,6 +188,11 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         }
 
         reporter.enter(.downloading)
+        ActionButtonIntentSupport.byteProgress = { received, expected in
+            reporter.setExpectedBytes(expected)
+            reporter.setReceivedBytes(received)
+        }
+        defer { ActionButtonIntentSupport.byteProgress = nil }
         let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
             for: savedURLString
         ) {
@@ -205,6 +211,12 @@ enum ActionButtonIntentSupport {
     /// article/product-only apps ⇒ the intents return no media, matching the
     /// gate that only media-handling apps hand off.
     static var mediaHandoff: ((String, () async -> Void) async throws -> IntentFile?)?
+
+    /// Set for the duration of an awaited media handoff so the transfer's real
+    /// `(received, expected)` byte counts reach the running intent's progress
+    /// reporter. A plain closure rather than a parameter because the handoff seam
+    /// is installed per-target and must stay kind-agnostic.
+    static var byteProgress: ((Int64, Int64?) -> Void)?
 
     /// One media handoff shared by ProvideContext's completed Safari fast path
     /// and SaveIntent's screenshot/search path. `foreground` is invoked only

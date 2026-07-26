@@ -142,20 +142,31 @@ public enum ProvideContextOnScreenURL {
     public static func plan(
         text: String?,
         isSafari: Bool,
-        safariHasFreshTrackedURL: Bool = false,
+        safariTrackedURLString: String? = nil,
         isEnabled: Bool = true,
         verdict: (String) -> IntentURLPrecheck.Verdict = { IntentURLPrecheck.verdict(for: $0) }
     ) -> Plan {
-        // In Safari the extension's tracked URL is the EXACT page URL, while the
-        // on-screen value is whatever Shortcuts can read off the screen — and what
-        // Safari puts on screen is the bare domain, because the address bar hides
-        // the scheme and path. Saving `youtube.com` instead of
-        // `youtube.com/shorts/<id>` classifies as an unrecognized web page, so it
-        // takes the article route and dies there. Defer to the tracked URL
-        // whenever there is a fresh one; the on-screen value stays the fallback
-        // for when the extension has nothing, which is what it is documented to be.
-        if isSafari, safariHasFreshTrackedURL { return .skip }
-        switch resolveText(text, isSafari: isSafari, isEnabled: isEnabled) {
+        let resolution = resolveText(text, isSafari: isSafari, isEnabled: isEnabled)
+
+        // In Safari the two inputs are complementary and BOTH are unreliable alone.
+        // The extension's tracked URL is the exact page URL but its freshness
+        // window is days wide, so it may name a page the user left long ago. The
+        // on-screen value is current but truncated: Safari's address bar hides the
+        // scheme and path, so it reads as the bare domain (`youtube.com`), which
+        // classifies as an unrecognized page and dies in the article route.
+        //
+        // They corroborate each other. When the tracked URL is on the SAME SITE as
+        // what's on screen it is the same page seen in full detail, so defer to it
+        // (`.skip` lets the decision table save it). When the hosts disagree the
+        // tracked URL is stale history — keep the on-screen value, which at least
+        // names the site the user is actually looking at.
+        if isSafari, case let .single(onScreen) = resolution,
+           let tracked = safariTrackedURLString,
+           sameSite(tracked, onScreen) {
+            return .skip
+        }
+
+        switch resolution {
         case .none:
             return .skip
         case let .single(urlString):
@@ -170,6 +181,26 @@ public enum ProvideContextOnScreenURL {
             }
             return anyHandleable ? .divergent : .skip
         }
+    }
+
+    /// Whether two URLs name the same site, ignoring the `www.`/`m.`/`mobile.`
+    /// prefixes Safari and YouTube swap freely (`youtube.com` vs
+    /// `m.youtube.com`). Compared in both directions so either value may be the
+    /// bare registrable domain.
+    private static func sameSite(_ lhs: String, _ rhs: String) -> Bool {
+        func host(_ value: String) -> String? {
+            guard let host = URLUnwrapper.ingestURL(from: value)?.host?.lowercased(),
+                  !host.isEmpty
+            else { return nil }
+            for prefix in ["www.", "m.", "mobile."] where host.hasPrefix(prefix) {
+                return String(host.dropFirst(prefix.count))
+            }
+            return host
+        }
+        guard let left = host(lhs), let right = host(rhs) else { return false }
+        return left == right
+            || left.hasSuffix("." + right)
+            || right.hasSuffix("." + left)
     }
 
     private static func hasTruncationSuffix(_ value: String) -> Bool {

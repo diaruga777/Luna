@@ -107,7 +107,12 @@ enum MediaIntentHandoff {
                 CaptureIntentExtendedRuntime.isAvailable
             ) {
                 await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
-                    forURLString: urlString)
+                    forURLString: urlString,
+                    onByteProgress: { received, expected in
+                        // Real bytes, so the system's progress UI counts actual
+                        // MB instead of a heartbeat estimate.
+                        ActionButtonIntentSupport.byteProgress?(received, expected)
+                    })
             }
             SharedDiagnosticLog.record(
                 "intent media handoff: synchronous=true, bytes=\(inspection.expectedByteCount.map(String.init) ?? "unknown"), result=\(result), systemProgressUI=\(CaptureIntentExtendedRuntime.isAvailable), photosAuthorized=\(photosAuthorized)",

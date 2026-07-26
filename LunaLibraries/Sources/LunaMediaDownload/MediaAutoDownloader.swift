@@ -103,8 +103,13 @@ public enum MediaAutoDownloader {
     /// durable downloads are reused without another network fetch. A
     /// Photos-backed item is copied to a transient file because `IntentFile`
     /// needs an on-disk resource it can hand to Shortcuts.
+    /// `onByteProgress` receives the transfer's `(received, expected)` byte counts
+    /// as they land, so an awaiting App Intent can report REAL download progress
+    /// instead of an estimate. Called on the polling cadence of
+    /// `waitForDownloaderResult`.
     public static func downloadForDownloaderIntentAwaiting(
-        forURLString urlString: String
+        forURLString urlString: String,
+        onByteProgress: @escaping (Int64, Int64?) -> Void = { _, _ in }
     ) async -> AwaitedIntentDownload {
         guard shouldStartDownloaderIntentDownload(forURLString: urlString),
               let url = URL(string: urlString)
@@ -139,7 +144,7 @@ public enum MediaAutoDownloader {
             }
         }
         guard let item = await LiveMediaDownloadManager.shared.waitForDownloaderResult(
-            forSourceURLString: urlString),
+            forSourceURLString: urlString, onByteProgress: onByteProgress),
             let media = await exportFile(from: item)
         else { return .failed(message: nil) }
         return .completed(media)

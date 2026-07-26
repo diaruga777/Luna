@@ -105,9 +105,23 @@ extension LongRunningIntent where Self: CancellableIntent {
         progress.totalUnitCount = 1_000
         return try await performBackgroundTask {
             let heartbeat = Task {
+                // Once the transfer's size is known, report BYTES: a file-kind
+                // `Progress` in bytes is what makes the system render
+                // "1.2 MB of 4.4 MB" instead of a percentage of nothing in
+                // particular. Until then (and for saves with no download at all)
+                // the estimate drives it, which is only ever the 0–2% save band.
                 while !Task.isCancelled {
                     reporter.tick()
-                    progress.completedUnitCount = Int64(reporter.fraction * 1_000)
+                    if let bytes = reporter.byteCounts {
+                        if progress.totalUnitCount != bytes.expected {
+                            progress.kind = .file
+                            progress.fileOperationKind = .downloading
+                            progress.totalUnitCount = bytes.expected
+                        }
+                        progress.completedUnitCount = bytes.received
+                    } else {
+                        progress.completedUnitCount = Int64(reporter.fraction * 1_000)
+                    }
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                 }
             }

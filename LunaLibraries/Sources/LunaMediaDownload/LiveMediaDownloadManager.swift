@@ -717,15 +717,20 @@ public final class LiveMediaDownloadManager: NSObject {
     /// its durable file. Used only for App Intent downloads below the inline size
     /// threshold; the transfer itself still runs through the same background
     /// URLSession state machine as larger handoffs.
+    /// `onByteProgress` reports the running job's `(received, expected)` byte
+    /// counts on each poll, so an awaiting App Intent can show the real transfer
+    /// rather than a heartbeat estimate.
     public func waitForDownloaderResult(
-        forSourceURLString urlString: String
+        forSourceURLString urlString: String,
+        onByteProgress: @escaping (Int64, Int64?) -> Void = { _, _ in }
     ) async -> SavedMediaItem? {
         while !Task.isCancelled {
             if let item = SavedMediaStore.shared.existingDownloadedItem(
                 forURLString: urlString) {
                 return item
             }
-            guard store.job(forSourceURLString: urlString) != nil else { return nil }
+            guard let job = store.job(forSourceURLString: urlString) else { return nil }
+            onByteProgress(job.receivedByteCount ?? 0, job.expectedByteCount)
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
         return nil

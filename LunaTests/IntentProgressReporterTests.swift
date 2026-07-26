@@ -34,9 +34,66 @@ final class IntentProgressReporterTests: XCTestCase {
         for _ in 0..<500 { reporter.tick() }
         // Saving tops out below the downloading band — a save that hasn't
         // finished must not report the download as started.
-        XCTAssertLessThanOrEqual(
-            reporter.fraction, IntentProgressReporter.Stage.saving.band.upperBound)
-        XCTAssertGreaterThan(reporter.fraction, 0.4)
+        let band = IntentProgressReporter.Stage.saving.band
+        XCTAssertLessThanOrEqual(reporter.fraction, band.upperBound)
+        // Expressed against the band, not a literal: ticks close on its top
+        // asymptotically, and the split between stages is free to change.
+        XCTAssertGreaterThan(
+            reporter.fraction,
+            band.lowerBound + (band.upperBound - band.lowerBound) * 0.9)
+    }
+
+    /// The save is a sliver on purpose. It is fast, and the bytes are the only
+    /// part with an honest measure, so the transfer owns essentially the whole
+    /// bar. When the save had half of it, a failed save looked to the user like a
+    /// download that died halfway through.
+    func testSaveIsASliverAndTheTransferOwnsTheBar() {
+        let saving = IntentProgressReporter.Stage.saving.band
+        let downloading = IntentProgressReporter.Stage.downloading.band
+        XCTAssertLessThanOrEqual(saving.upperBound, 0.02)
+        XCTAssertGreaterThan(downloading.upperBound - downloading.lowerBound, 0.9)
+    }
+
+    // MARK: - Real byte counts
+
+    func testByteCountsAreNilUntilTheSizeIsKnown() {
+        let reporter = IntentProgressReporter()
+        reporter.enter(.downloading)
+        XCTAssertNil(reporter.byteCounts)
+        reporter.setReceivedBytes(1_024)
+        XCTAssertNil(reporter.byteCounts, "received bytes alone can't scale a bar")
+        reporter.setExpectedBytes(4_096)
+        XCTAssertEqual(reporter.byteCounts?.expected, 4_096)
+    }
+
+    func testByteProgressAdvancesTheFractionWithinTheDownloadBand() {
+        let reporter = IntentProgressReporter()
+        reporter.enter(.downloading)
+        reporter.setExpectedBytes(1_000)
+        reporter.setReceivedBytes(500)
+        let band = IntentProgressReporter.Stage.downloading.band
+        let midpoint = band.lowerBound + (band.upperBound - band.lowerBound) / 2
+        XCTAssertEqual(reporter.fraction, midpoint, accuracy: 0.0001)
+        XCTAssertEqual(reporter.byteCounts?.received, 500)
+    }
+
+    func testByteCountsNeverExceedTheExpectedSizeOrGoBackward() {
+        let reporter = IntentProgressReporter()
+        reporter.setExpectedBytes(1_000)
+        reporter.setReceivedBytes(900)
+        reporter.setReceivedBytes(100)
+        XCTAssertEqual(reporter.byteCounts?.received, 900, "progress must not rewind")
+        reporter.setReceivedBytes(5_000)
+        XCTAssertEqual(
+            reporter.byteCounts?.received, 1_000,
+            "a bar can't report more bytes than the file has")
+    }
+
+    func testZeroOrMissingExpectedSizeIsIgnored() {
+        let reporter = IntentProgressReporter()
+        reporter.setExpectedBytes(nil)
+        reporter.setExpectedBytes(0)
+        XCTAssertNil(reporter.byteCounts, "a zero total would divide by zero")
     }
 
     func testEnteringAStageSnapsForwardToItsFloor() {

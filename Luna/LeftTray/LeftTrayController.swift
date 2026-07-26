@@ -289,7 +289,13 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     }
 
     @objc private func contentChanged() {
-        rebuildRows()
+        guard !Thread.isMainThread else {
+            rebuildRows()
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.rebuildRows()
+        }
     }
 
     @objc private func setupStatusChanged() {

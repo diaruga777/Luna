@@ -163,7 +163,14 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             acceptableTypeIdentifiers: [UTType.url.identifier, UTType.plainText.identifier])
         super.init()
         configure()
-        detectPasteboard()
+        // NOT inline: `UIPasteboard.general` is a synchronous XPC round-trip to
+        // pasteboardd, and this initializer runs from `viewDidLoad` during scene
+        // creation. A slow or wedged pasteboardd (Universal Clipboard churn is
+        // enough) then blocks the main thread straight through the 20 s
+        // scene-create watchdog and the app is killed with 0x8BADF00D before it
+        // ever draws. Nothing here is needed for the first frame — the paste row
+        // just appears when the answer lands — so let the scene come up first.
+        DispatchQueue.main.async { [weak self] in self?.detectPasteboard() }
         RecentURLMatcher.shared.refresh()
     }
 

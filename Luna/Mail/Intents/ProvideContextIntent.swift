@@ -119,6 +119,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
         if case .divergent = plan { throw ProvideContextError.multipleURLs }
 
+        let visionAvailable = ScreenCaptureModelSessionFactory.makeDefault().isAvailable
         let decision = ProvideContextDecision.decide(
             appName: app,
             isSafari: isSafari,
@@ -128,7 +129,16 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             // A recognized-platform save is media, so only media-handling apps
             // (Downloader, the central Luna app) proceed to a screenshot save.
             handlesMediaKind: AppSurfaceConfig.current.handlesMedia,
-            visionModelAvailable: ScreenCaptureModelSessionFactory.makeDefault().isAvailable)
+            visionModelAvailable: visionAvailable)
+
+        // An `.unsupported` decision ends the intent instantly, having saved
+        // nothing — indistinguishable, from the outside, from a save that
+        // silently did nothing. Record which inputs produced it.
+        SharedDiagnosticLog.record(
+            "provide context: decision=\(decision) app=\(app ?? "nil") safari=\(isSafari) "
+                + "safariURLFresh=\(safariURLFresh) plan=\(plan) vision=\(visionAvailable) "
+                + "handlesMedia=\(AppSurfaceConfig.current.handlesMedia)",
+            category: "intents")
 
         switch decision {
         case .unsupported:

@@ -17,9 +17,9 @@ public enum RescueHint: String, Codable, CaseIterable {
     /// The user-facing label for the hint picker.
     public var displayName: String {
         switch self {
-        case .article: return "Article"
-        case .product: return "Price Tracker"
-        case .media: return "Media Download"
+        case .article: return L10n.string("Article")
+        case .product: return L10n.string("Price Tracker")
+        case .media: return L10n.string("Media Download")
         }
     }
 }

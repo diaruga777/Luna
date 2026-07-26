@@ -28,12 +28,12 @@ public enum ReadingListSectioning {
 
         public var title: String {
             switch self {
-            case .reading: return "Reading"
-            case .archive: return "Archive"
-            case .error: return "Couldn't Load"
-            case .pasteboard: return "From Pasteboard"
-            case .priceTracking: return "Price tracking"
-            case .priceAlert: return "Price drop"
+            case .reading: return L10n.string("Reading")
+            case .archive: return L10n.string("Archive")
+            case .error: return L10n.string("Couldn't Load")
+            case .pasteboard: return L10n.string("From Pasteboard")
+            case .priceTracking: return L10n.string("Price tracking")
+            case .priceAlert: return L10n.string("Price drop")
             }
         }
 
@@ -62,10 +62,10 @@ public enum ReadingListSectioning {
 
         public var displayName: String {
             switch self {
-            case .all: return "All"
-            case .articles: return "Articles"
-            case .mediaAndLinks: return "Media & Links"
-            case .priceTrackers: return "Price"
+            case .all: return L10n.string("All")
+            case .articles: return L10n.string("Articles")
+            case .mediaAndLinks: return L10n.string("Media & Links")
+            case .priceTrackers: return L10n.string("Price")
             }
         }
 

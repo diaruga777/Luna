@@ -26,7 +26,7 @@ public enum AlertThresholdPillChrome {
     /// The pill's "Alert threshold" title label, styled identically everywhere.
     public static func makeTitleLabel() -> UILabel {
         let title = UILabel()
-        title.text = "Alert threshold"
+        title.text = L10n.string("Alert threshold")
         title.font = .preferredFont(forTextStyle: .headline)
         title.textColor = LunaColors.primaryText
         return title

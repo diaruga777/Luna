@@ -78,7 +78,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     override func viewDidLoad() {
-        headerTitle = "Email & Sending"
+        headerTitle = L10n.string("Email & Sending")
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
@@ -121,28 +121,30 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch visibleSections[section] {
-        case .lunaAccount: return "Sharing Account"
-        case .kindle: return "Send to Kindle"
-        case .doubleSave: return "Double Save"
-        case .importMail: return "Import from Email"
-        case .subjectFilters: return "Subject Filters"
+        case .lunaAccount: return L10n.string("Sharing Account")
+        case .kindle: return L10n.string("Send to Kindle")
+        case .doubleSave: return L10n.string("Double Save")
+        case .importMail: return L10n.string("Import from Email")
+        case .subjectFilters: return L10n.string("Subject Filters")
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .lunaAccount:
-            let base = "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you."
+            let base = L10n.string(
+                "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.")
             guard !accountStore.isConfigured else { return base }
-            return base + "\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next."
+            return L10n.string(
+                "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next.")
         case .kindle:
-            return "Articles are emailed from the connected Luna email account (the section at the top of this screen). That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings), and sending requires the account to be connected."
+            return L10n.string("Articles are emailed from the connected Luna email account (the section at the top of this screen). That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings), and sending requires the account to be connected.")
         case .doubleSave:
-            return "Saving the same link twice within 7 seconds with the Action Button shortcut runs this action on the already-saved article."
+            return L10n.string("Saving the same link twice within 7 seconds with the Action Button shortcut runs this action on the already-saved article.")
         case .importMail:
-            return "New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight."
+            return L10n.string("New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight.")
         case .subjectFilters:
-            return "Also import any email whose subject contains one of these phrases, regardless of sender."
+            return L10n.string("Also import any email whose subject contains one of these phrases, regardless of sender.")
         }
     }
 
@@ -163,19 +165,19 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                     content.text = accountStore.account?.address
                     content.secondaryText = accountStore.account?.provider.displayName
                 case 1:
-                    content.text = "Inbox Filter"
-                    content.secondaryText = "Keep Luna mail out of your inbox"
+                    content.text = L10n.string("Inbox Filter")
+                    content.secondaryText = L10n.string("Keep Luna mail out of your inbox")
                     cell.accessoryType = .disclosureIndicator
                     cell.selectionStyle = .default
                 default:
-                    content.text = "Sign Out"
+                    content.text = L10n.string("Sign Out")
                     content.textProperties.color = .systemRed
                     cell.selectionStyle = .default
                 }
             } else if indexPath.row == 0 {
                 return addressEntryCell()
             } else {
-                content.text = "Connect"
+                content.text = L10n.string("Connect")
                 content.textProperties.color = canConnect
                     ? (view.tintColor ?? .systemBlue) : LunaColors.tertiaryText
                 content.image = UIImage(systemName: "person.badge.key")
@@ -190,14 +192,14 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         case .kindle:
             switch indexPath.row {
             case 0:
-                content.text = "Kindle forwarding settings"
+                content.text = L10n.string("Kindle forwarding settings")
                 cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default
             case 1:
-                return fieldCell("Kindle", placeholder: "name@kindle.com",
+                return fieldCell("Kindle", placeholder: L10n.string("name@kindle.com"),
                                  text: KindleSendSettings.kindleAddress, field: .kindleAddress)
             default:
-                content.text = "Send Test to Kindle"
+                content.text = L10n.string("Send Test to Kindle")
                 content.textProperties.color = view.tintColor ?? .systemBlue
                 content.image = UIImage(systemName: "paperplane")
                 cell.selectionStyle = .default
@@ -212,7 +214,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 cell.accessoryType = action == rowAction ? .checkmark : .none
                 cell.selectionStyle = .default
             default:
-                content.text = "Recipients"
+                content.text = L10n.string("Recipients")
                 content.secondaryText = doubleSaveRecipientsSummary()
                 cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default
@@ -221,11 +223,11 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         case .importMail:
             switch indexPath.row {
             case 0:
-                content.text = "Import from Email"
+                content.text = L10n.string("Import from Email")
                 cell.accessoryView = makeToggle(
                     isOn: IncomingMailSettings.isEnabled, action: #selector(importToggled(_:)))
             case 1:
-                content.text = "Also Send to Kindle"
+                content.text = L10n.string("Also Send to Kindle")
                 cell.accessoryView = makeToggle(
                     isOn: IncomingMailSettings.autoSendToKindle, action: #selector(autoSendToggled(_:)))
             default:
@@ -233,7 +235,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 if senderIndex < IncomingMailSettings.allowedSenders.count {
                     content.text = IncomingMailSettings.allowedSenders[senderIndex]
                 } else {
-                    content.text = "Add Sender…"
+                    content.text = L10n.string("Add Sender…")
                     content.textProperties.color = view.tintColor ?? .systemBlue
                     cell.selectionStyle = .default
                 }
@@ -243,7 +245,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             if indexPath.row < IncomingMailSettings.subjectFilters.count {
                 content.text = IncomingMailSettings.subjectFilters[indexPath.row]
             } else {
-                content.text = "Add Subject Filter…"
+                content.text = L10n.string("Add Subject Filter…")
                 content.textProperties.color = view.tintColor ?? .systemBlue
                 cell.selectionStyle = .default
             }
@@ -277,7 +279,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         case .kindle where indexPath.row == 0:
             navigationController?.pushViewController(
                 AutoSendBySourceScreen(
-                    destinationID: ArticleDestinationID.kindle, destinationName: "Kindle"),
+                    destinationID: ArticleDestinationID.kindle,
+                    destinationName: L10n.string("Kindle")),
                 animated: true)
         case .kindle where indexPath.row == 2:
             sendTestEmail()
@@ -323,10 +326,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     private func doubleSaveRecipientsSummary() -> String {
         let store = DoubleSaveActionStore.shared
         guard store.friendMode(forSurface: doubleSaveSurface) == .preset else {
-            return "Ask Every Time"
+            return L10n.string("Ask Every Time")
         }
         let emails = store.presetFriendEmails(forSurface: doubleSaveSurface)
-        guard !emails.isEmpty else { return "Ask Every Time" }
+        guard !emails.isEmpty else { return L10n.string("Ask Every Time") }
         let names = emails.map { email in
             FriendsStore.shared.friend(withEmail: email)?.displayName ?? Friend.localPart(email)
         }
@@ -342,7 +345,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private func makeAddressField() -> UITextField {
         let field = UITextField()
-        field.placeholder = "you@example.com"
+        field.placeholder = L10n.string("you@example.com")
         field.font = .preferredFont(forTextStyle: .body)
         field.keyboardType = .emailAddress
         field.autocapitalizationType = .none
@@ -369,7 +372,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         let nameLabel = UILabel()
-        nameLabel.text = "Email"
+        nameLabel.text = L10n.string("Email")
         nameLabel.font = .preferredFont(forTextStyle: .body)
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.setContentHuggingPriority(.required, for: .horizontal)
@@ -511,16 +514,16 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private func promptForSender() {
         let alert = UIAlertController(
-            title: "Add Sender", message: "Emails from this address will be imported.",
+            title: L10n.string("Add Sender"), message: L10n.string("Emails from this address will be imported."),
             preferredStyle: .alert)
         alert.addTextField { field in
-            field.placeholder = "name@example.com"
+            field.placeholder = L10n.string("name@example.com")
             field.keyboardType = .emailAddress
             field.autocapitalizationType = .none
             field.autocorrectionType = .no
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self, weak alert] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Add"), style: .default) { [weak self, weak alert] _ in
             guard let text = alert?.textFields?.first?.text else { return }
             IncomingMailSettings.addSender(text)
             self?.tableView.reloadData()
@@ -530,16 +533,16 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private func promptForSubjectFilter() {
         let alert = UIAlertController(
-            title: "Add Subject Filter",
-            message: "Email whose subject contains this phrase will be imported, regardless of sender.",
+            title: L10n.string("Add Subject Filter"),
+            message: L10n.string("Email whose subject contains this phrase will be imported, regardless of sender."),
             preferredStyle: .alert)
         alert.addTextField { field in
-            field.placeholder = "Subject contains…"
+            field.placeholder = L10n.string("Subject contains…")
             field.autocapitalizationType = .sentences
             field.autocorrectionType = .default
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self, weak alert] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Add"), style: .default) { [weak self, weak alert] _ in
             guard let text = alert?.textFields?.first?.text else { return }
             IncomingMailSettings.addSubjectFilter(text)
             self?.tableView.reloadData()
@@ -551,19 +554,19 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         guard let providerID = accountStore.account?.providerID else { return }
         if FilterGuide.isAutomatic(providerID) {
             presentInfoAlert(
-                title: "Filter Active",
-                message: "Luna set up an inbox rule automatically for this account.")
+                title: L10n.string("Filter Active"),
+                message: L10n.string("Luna set up an inbox rule automatically for this account."))
             return
         }
         let alert = UIAlertController(
-            title: "Inbox Filter", message: FilterGuide.instructions(for: providerID),
+            title: L10n.string("Inbox Filter"), message: FilterGuide.instructions(for: providerID),
             preferredStyle: .alert)
         if let url = FilterGuide.settingsURL(for: providerID) {
-            alert.addAction(UIAlertAction(title: "Open Filter Settings", style: .default) { _ in
+            alert.addAction(UIAlertAction(title: L10n.string("Open Filter Settings"), style: .default) { _ in
                 UIApplication.shared.open(url)
             })
         }
-        alert.addAction(UIAlertAction(title: "Done", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Done"), style: .cancel))
         present(alert, animated: true)
     }
 
@@ -571,8 +574,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private func sendTestEmail() {
         guard ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) else {
-            presentInfoAlert(title: "Not Configured",
-                             message: "Connect an email account and enter your Kindle address first.")
+            presentInfoAlert(title: L10n.string("Not Configured"),
+                             message: L10n.string("Connect an email account and enter your Kindle address first."))
             return
         }
         Task { [weak self] in
@@ -580,10 +583,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 try await ArticleSendCoordinator.shared.sendTestDocument(
                     toDestinationID: ArticleDestinationID.kindle)
                 self?.presentInfoAlert(
-                    title: "Test Sent",
-                    message: "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list.")
+                    title: L10n.string("Test Sent"),
+                    message: L10n.string("Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list."))
             } catch {
-                self?.presentInfoAlert(title: "Test Failed", message: "\(error)")
+                self?.presentInfoAlert(title: L10n.string("Test Failed"), message: L10n.string("\(error)"))
             }
         }
     }

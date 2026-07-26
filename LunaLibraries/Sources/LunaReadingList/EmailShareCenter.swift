@@ -47,9 +47,9 @@ public final class EmailShareCenter {
 
         public var errorDescription: String? {
             switch self {
-            case .notConfigured: return "Set up your email account first."
-            case .noRecipients: return "Choose at least one recipient."
-            case .buildFailed: return "Couldn't build the email."
+            case .notConfigured: return L10n.string("Set up your email account first.")
+            case .noRecipients: return L10n.string("Choose at least one recipient.")
+            case .buildFailed: return L10n.string("Couldn't build the email.")
             }
         }
     }
@@ -152,7 +152,7 @@ public final class EmailShareCenter {
     private func priceSummary(for tracker: PriceTracker) -> String {
         let price = PriceFormatting.string(
             amount: tracker.currentBestPrice, currency: tracker.displayCurrency)
-        return "Best price: \(price)"
+        return L10n.string("Best price: \(price)")
     }
 
     /// Loads a local image file (in the Articles directory) as an inline image.

@@ -23,7 +23,10 @@ case "${PRODUCT_BUNDLE_IDENTIFIER}" in
     ;;
 esac
 
-/usr/bin/plutil -replace name -string "$app_name" "$manifest"
+messages="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/_locales/en/messages.json"
+if [ -f "$messages" ]; then
+  /usr/bin/plutil -replace extensionName.message -string "$app_name" "$messages"
+fi
 
 info_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
 if [ -f "$info_plist" ]; then

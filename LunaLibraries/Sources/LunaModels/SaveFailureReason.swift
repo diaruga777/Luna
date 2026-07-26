@@ -50,38 +50,38 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     public var headline: String {
         switch self {
         case .offline:
-            return "No internet connection"
+            return L10n.string("No internet connection")
         case .timedOut:
-            return "The site took too long to respond"
+            return L10n.string("The site took too long to respond")
         case let .httpStatus(code):
             switch code {
-            case 401, 403: return "The site refused the request (\(code))"
-            case 404, 410: return "The page is gone (\(code))"
-            case 429: return "The site is rate-limiting Luna (429)"
-            case 500...599: return "The site had a server error (\(code))"
-            default: return "The site answered with HTTP \(code)"
+            case 401, 403: return L10n.string("The site refused the request (\(code))")
+            case 404, 410: return L10n.string("The page is gone (\(code))")
+            case 429: return L10n.string("The site is rate-limiting Luna (429)")
+            case 500...599: return L10n.string("The site had a server error (\(code))")
+            default: return L10n.string("The site answered with HTTP \(code)")
             }
         case let .network(detail):
             return detail
         case .notReadable:
-            return "Nothing readable was found on the page"
+            return L10n.string("Nothing readable was found on the page")
         case .notHTML:
-            return "The link isn't a readable web page"
+            return L10n.string("The link isn't a readable web page")
         case .tooLarge:
-            return "The page is too large to read"
+            return L10n.string("The page is too large to read")
         case let .unsupportedDocument(type):
             let trimmed = type.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty
                 ? "Luna can't read this document"
                 : "Luna can't read .\(trimmed) documents"
         case .noMediaFound:
-            return "No downloadable media was found"
+            return L10n.string("No downloadable media was found")
         case .couldNotSave:
-            return "Luna couldn't store the download"
+            return L10n.string("Luna couldn't store the download")
         case .subscribeRedirect:
-            return "The site sent Luna to its subscribe page"
+            return L10n.string("The site sent Luna to its subscribe page")
         case .unknown:
-            return "Luna couldn't fetch this link"
+            return L10n.string("Luna couldn't fetch this link")
         }
     }
 
@@ -90,24 +90,24 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     public var suggestion: String? {
         switch self {
         case .offline:
-            return "It will retry automatically once you're back online."
+            return L10n.string("It will retry automatically once you're back online.")
         case .timedOut, .network:
-            return "Pull to retry, or open it in the browser below."
+            return L10n.string("Pull to retry, or open it in the browser below.")
         case let .httpStatus(code):
             switch code {
             case 401, 403, 429:
-                return "Opening it in the browser often works where a background fetch can't."
+                return L10n.string("Opening it in the browser often works where a background fetch can't.")
             case 404, 410:
-                return "The page may have moved — try the browser to check."
+                return L10n.string("The page may have moved — try the browser to check.")
             case 500...599:
-                return "The site's problem, not yours. Retry in a little while."
+                return L10n.string("The site's problem, not yours. Retry in a little while.")
             default:
-                return "Pull to retry, or open it in the browser below."
+                return L10n.string("Pull to retry, or open it in the browser below.")
             }
         case .notReadable, .notHTML:
-            return "Apple Intelligence can sometimes pull an article out anyway."
+            return L10n.string("Apple Intelligence can sometimes pull an article out anyway.")
         case .subscribeRedirect:
-            return "Open it in the browser below to read it there."
+            return L10n.string("Open it in the browser below to read it there.")
         case .tooLarge, .unsupportedDocument, .noMediaFound, .couldNotSave, .unknown:
             return nil
         }

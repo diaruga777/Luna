@@ -66,6 +66,6 @@ public enum SurfaceSupport {
     /// upsell for `owner` slots in here — until then the link is unset and the
     /// copy stays informational.
     public static func unsupportedMessage(owner: LunaApp, current: LunaApp = .current) -> String {
-        "\(current.displayName) can't save this type of link — it belongs in \(owner.displayName)."
+        L10n.string("\(current.displayName) can't save this type of link — it belongs in \(owner.displayName).")
     }
 }

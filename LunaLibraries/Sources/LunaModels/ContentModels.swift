@@ -12,14 +12,14 @@ public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .x: return "X"
-        case .bluesky: return "Bluesky"
-        case .reddit: return "Reddit"
-        case .tiktok: return "TikTok"
-        case .instagram: return "Instagram"
-        case .facebook: return "Facebook"
-        case .youtube: return "YouTube"
-        case .web: return "Web"
+        case .x: return L10n.string("X")
+        case .bluesky: return L10n.string("Bluesky")
+        case .reddit: return L10n.string("Reddit")
+        case .tiktok: return L10n.string("TikTok")
+        case .instagram: return L10n.string("Instagram")
+        case .facebook: return L10n.string("Facebook")
+        case .youtube: return L10n.string("YouTube")
+        case .web: return L10n.string("Web")
         }
     }
 

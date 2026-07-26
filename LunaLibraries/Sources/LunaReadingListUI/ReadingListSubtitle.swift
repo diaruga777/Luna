@@ -16,7 +16,7 @@ import Foundation
 public enum ReadingListSubtitle {
     /// Human-readable destination names, keyed by destination id.
     public static let destinationNames: [String: String] = [
-        ArticleDestinationID.kindle: "Kindle",
+        ArticleDestinationID.kindle: L10n.string("Kindle"),
     ]
 
     /// Words read per minute used for the reading-time estimate.
@@ -47,7 +47,7 @@ public enum ReadingListSubtitle {
         var parts = [leadingLabel, formattedDate]
 
         if showReadingTime, let minutes = readingTimeMinutes(wordCount: item.wordCount) {
-            parts.append("\(minutes) min")
+            parts.append(L10n.string("\(minutes) min"))
         }
         if showReadingProgress, item.readState != .read,
            let progress = item.readingProgress, progress > 0.01 {
@@ -57,16 +57,19 @@ public enum ReadingListSubtitle {
         for (destinationID, state) in item.sendStates.sorted(by: { $0.key < $1.key }) {
             let name = destinationNames[destinationID] ?? destinationID
             switch state {
-            case .sent: parts.append("sent to \(name)")
-            case .failed: parts.append("\(name) send failed")
-            case .queued: parts.append("sending to \(name)…")
+            case .sent: parts.append(L10n.string("sent to \(name)"))
+            case .failed: parts.append(L10n.string("\(name) send failed"))
+            case .queued: parts.append(L10n.string("sending to \(name)…"))
             }
         }
 
         switch item.state {
-        case .pending: parts.append("downloading…")
-        case .failed: parts.append(isRescuing ? "trying harder…" : "pull to retry")
-        case .needsCaptcha: parts.append("tap to unlock")
+        case .pending: parts.append(L10n.string("downloading…"))
+        case .failed:
+            parts.append(isRescuing
+                ? L10n.string("trying harder…")
+                : L10n.string("pull to retry"))
+        case .needsCaptcha: parts.append(L10n.string("tap to unlock"))
         case .ready: break
         }
 

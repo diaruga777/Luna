@@ -330,13 +330,13 @@ final class InvalidPasteCardContentViewController: CardContentViewController {
             pointSize: 40, weight: .medium)
 
         let title = UILabel()
-        title.text = "Invalid paste"
+        title.text = L10n.string("Invalid paste")
         title.font = .preferredFont(forTextStyle: .title2)
         title.textColor = LunaColors.primaryText
         title.textAlignment = .center
 
         let detail = UILabel()
-        detail.text = "Invalid URL"
+        detail.text = L10n.string("Invalid URL")
         detail.font = .preferredFont(forTextStyle: .subheadline)
         detail.textColor = LunaColors.secondaryText
         detail.textAlignment = .center

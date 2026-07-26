@@ -41,10 +41,10 @@ public enum LunaApp: CaseIterable, Equatable {
     /// The user-visible app name.
     public var displayName: String {
         switch self {
-        case .luna: return "Luna"
-        case .reader: return "Luna Reader"
-        case .downloader: return "Luna Downloader"
-        case .priceTracker: return "Luna Price Tracker"
+        case .luna: return L10n.string("Luna")
+        case .reader: return L10n.string("Luna Reader")
+        case .downloader: return L10n.string("Luna Downloader")
+        case .priceTracker: return L10n.string("Luna Price Tracker")
         }
     }
 

@@ -28,7 +28,7 @@ final class ClipReaderViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Luna"
+        title = L10n.string("Luna")
         // Same appearance the host app pins: the clip pushes LunaReaderUI /
         // LunaMediaDownload screens that are light-on-dark in both appearances.
         AppearanceSettings.apply(to: self)
@@ -43,7 +43,7 @@ final class ClipReaderViewController: UIViewController {
 
     func handleLaunchURL(_ launchURL: URL) {
         guard let sourceURL = LunaAppClipInvocationURL.sourceURL(from: launchURL) else {
-            update(.failed("This Luna link is missing a readable URL."))
+            update(.failed(L10n.string("This Luna link is missing a readable URL.")))
             return
         }
         load(sourceURL)
@@ -79,13 +79,14 @@ final class ClipReaderViewController: UIViewController {
             navigationController?.setViewControllers([reader], animated: false)
 
         case .needsArchive(_):
-            update(.failed("This article needs an archive unlock. Open it in Luna Reader to finish loading it."))
+            update(.failed(L10n.string(
+                "This article needs an archive unlock. Open it in Luna Reader to finish loading it.")))
 
         case .product(_, _), .video(_, _), .social(_, _), .document, .unsupported:
-            update(.failed("This Luna link is not a readable article."))
+            update(.failed(L10n.string("This Luna link is not a readable article.")))
 
         case .failed:
-            update(.failed("Couldn't load this article."))
+            update(.failed(L10n.string("Couldn't load this article.")))
         }
     }
 
@@ -136,21 +137,21 @@ final class ClipReaderViewController: UIViewController {
         switch state {
         case .waiting:
             spinner.stopAnimating()
-            titleLabel.text = "Ready to read"
-            detailLabel.text = "Open a Luna reader link to start."
+            titleLabel.text = L10n.string("Ready to read")
+            detailLabel.text = L10n.string("Open a Luna reader link to start.")
             retryButton.isHidden = true
 
         case let .loading(url):
             spinner.startAnimating()
-            titleLabel.text = "Loading"
+            titleLabel.text = L10n.string("Loading")
             detailLabel.text = url.host ?? url.absoluteString
             retryButton.isHidden = true
 
         case let .failed(message):
             spinner.stopAnimating()
-            titleLabel.text = "Couldn't open"
+            titleLabel.text = L10n.string("Couldn't open")
             detailLabel.text = message
-            retryButton.configuration?.title = "Try Again"
+            retryButton.configuration?.title = L10n.string("Try Again")
             retryButton.isHidden = lastSourceURL == nil
         }
     }

@@ -7,6 +7,7 @@ import LunaSocial
 import LunaDesignSystem
 import ContactsUI
 import UIKit
+import LunaModels
 
 /// The Contacts screen (shared by all three apps): the saved email recipients,
 /// an entry to the pending-requests moderation queue (badged), and ways to add
@@ -23,7 +24,7 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     public override func viewDidLoad() {
-        headerTitle = "Contacts"
+        headerTitle = L10n.string("Contacts")
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         NotificationCenter.default.addObserver(
@@ -65,8 +66,8 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
         _ tableView: UITableView, titleForHeaderInSection section: Int
     ) -> String? {
         switch Section(rawValue: section)! {
-        case .contacts: return contacts.isEmpty ? nil : "Contacts"
-        case .blocked: return blocked.isEmpty ? nil : "Blocked"
+        case .contacts: return contacts.isEmpty ? nil : L10n.string("Contacts")
+        case .blocked: return blocked.isEmpty ? nil : L10n.string("Blocked")
         default: return nil
         }
     }
@@ -79,15 +80,15 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
         cell.accessoryType = .disclosureIndicator
         switch Section(rawValue: indexPath.section)! {
         case .pending:
-            config.text = "Pending Requests"
+            config.text = L10n.string("Pending Requests")
             config.secondaryText = "\(pendingCount) waiting"
             config.image = UIImage(systemName: "tray.and.arrow.down")
         case .add:
             if indexPath.row == 0 {
-                config.text = "Add by Email"
+                config.text = L10n.string("Add by Email")
                 config.image = UIImage(systemName: "envelope")
             } else {
-                config.text = "Add from Phone Contacts"
+                config.text = L10n.string("Add from Phone Contacts")
                 config.image = UIImage(systemName: "person.crop.circle.badge.plus")
             }
             cell.accessoryType = .none
@@ -141,7 +142,7 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     // MARK: - Adding
 
     private func promptForEmail() {
-        EmailRecipientPrompt.presentEmailAlert(from: self, title: "Add contact") { [weak self] raw in
+        EmailRecipientPrompt.presentEmailAlert(from: self, title: L10n.string("Add contact")) { [weak self] raw in
             guard Friend.isValidEmail(raw) else { return }
             _ = FriendsStore.shared.add(email: raw)
             self?.reload()

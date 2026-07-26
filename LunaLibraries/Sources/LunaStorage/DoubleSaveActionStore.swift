@@ -5,6 +5,7 @@
 
 import LunaAppConfig
 import Foundation
+import LunaModels
 
 /// What a Reader double save (the same URL saved twice within 7 seconds via the
 /// Action Button's Save App Intent — no other save surface) should do.
@@ -18,8 +19,8 @@ public enum DoubleSaveAction: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .sendToKindle: return "Send to Kindle"
-        case .sendToFriend: return "Send to Contact"
+        case .sendToKindle: return L10n.string("Send to Kindle")
+        case .sendToFriend: return L10n.string("Send to Contact")
         }
     }
 }
@@ -33,8 +34,8 @@ public enum DoubleSaveFriendMode: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .preset: return "Preset Contacts"
-        case .askEveryTime: return "Ask Every Time"
+        case .preset: return L10n.string("Preset Contacts")
+        case .askEveryTime: return L10n.string("Ask Every Time")
         }
     }
 }

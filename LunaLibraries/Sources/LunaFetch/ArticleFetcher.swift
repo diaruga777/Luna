@@ -4,6 +4,7 @@
 //
 
 import LunaHTMLClassification
+import LunaModels
 import LunaURLClassification
 import Foundation
 
@@ -181,7 +182,8 @@ public struct ArticleFetcher: HTMLFetching {
         if words.count >= 2 {
             return words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
         }
-        return (article.host ?? "Article").replacingOccurrences(of: "www.", with: "")
+        return (article.host ?? L10n.string("Article"))
+            .replacingOccurrences(of: "www.", with: "")
     }
 
     /// The Wayback Machine's replay snapshot. (NOT the `id_` raw variant — for JS-heavy

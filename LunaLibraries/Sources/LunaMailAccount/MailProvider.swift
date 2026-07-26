@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// How Luna authenticates to a provider's mail servers.
 public enum MailAuthKind: String, Codable, Equatable {
@@ -111,40 +112,37 @@ public struct MailProvider: Equatable {
         switch id {
         case .gmail:
             return MailProvider(
-                id: .gmail, displayName: "Gmail",
+                id: .gmail, displayName: L10n.string("Gmail"),
                 server: MailServerConfig(
                     imapHost: "imap.gmail.com",
                     smtpHost: "smtp.gmail.com", smtpPort: 465, smtpUsesSTARTTLS: false),
                 authKind: .appPassword, filterSupport: .automatic,
                 appPasswordURL: URL(string: "https://myaccount.google.com/apppasswords"),
-                setupInstructions: "Turn on 2-Step Verification, then create an app "
-                    + "password for \"Mail\" and paste the 16-character code here.",
+                setupInstructions: L10n.string("Turn on 2-Step Verification, then create an app password for \"Mail\" and paste the 16-character code here."),
                 domains: ["gmail.com", "googlemail.com"])
         case .icloud:
             return MailProvider(
-                id: .icloud, displayName: "iCloud",
+                id: .icloud, displayName: L10n.string("iCloud"),
                 server: MailServerConfig(
                     imapHost: "imap.mail.me.com",
                     smtpHost: "smtp.mail.me.com", smtpPort: 587, smtpUsesSTARTTLS: true),
                 authKind: .appPassword, filterSupport: .guided,
                 appPasswordURL: URL(string: "https://appleid.apple.com"),
-                setupInstructions: "At appleid.apple.com, under Sign-In and Security → "
-                    + "App-Specific Passwords, create one and paste it here.",
+                setupInstructions: L10n.string("At appleid.apple.com, under Sign-In and Security → App-Specific Passwords, create one and paste it here."),
                 domains: ["icloud.com", "me.com", "mac.com"])
         case .yahoo:
             return MailProvider(
-                id: .yahoo, displayName: "Yahoo",
+                id: .yahoo, displayName: L10n.string("Yahoo"),
                 server: MailServerConfig(
                     imapHost: "imap.mail.yahoo.com",
                     smtpHost: "smtp.mail.yahoo.com", smtpPort: 465, smtpUsesSTARTTLS: false),
                 authKind: .appPassword, filterSupport: .guided,
                 appPasswordURL: URL(string: "https://login.yahoo.com/account/security/app-passwords"),
-                setupInstructions: "In Yahoo Account Security, generate an app password "
-                    + "and paste it here.",
+                setupInstructions: L10n.string("In Yahoo Account Security, generate an app password and paste it here."),
                 domains: ["yahoo.com", "ymail.com", "rocketmail.com"])
         case .outlook:
             return MailProvider(
-                id: .outlook, displayName: "Outlook",
+                id: .outlook, displayName: L10n.string("Outlook"),
                 server: nil,
                 authKind: .oauth, filterSupport: .automatic,
                 appPasswordURL: nil,
@@ -152,12 +150,11 @@ public struct MailProvider: Equatable {
                 domains: ["outlook.com", "hotmail.com", "live.com", "msn.com"])
         case .generic:
             return MailProvider(
-                id: .generic, displayName: "Other (IMAP)",
+                id: .generic, displayName: L10n.string("Other (IMAP)"),
                 server: nil,
                 authKind: .appPassword, filterSupport: .guided,
                 appPasswordURL: nil,
-                setupInstructions: "Enter your mail server settings and password. If "
-                    + "your provider requires an app password, create one first.",
+                setupInstructions: L10n.string("Enter your mail server settings and password. If your provider requires an app password, create one first."),
                 domains: [])
         }
     }

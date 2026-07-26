@@ -77,10 +77,10 @@ final class MediaListSupport: MediaListSupporting {
             await MainActor.run {
                 if started {
                     status.update(progress: 0.05)
-                    status.showResult(message: "Download started", success: true)
+                    status.showResult(message: L10n.string("Download started"), success: true)
                 } else {
                     status.showResult(
-                        message: "Couldn't start the media download.", success: false)
+                        message: L10n.string("Couldn't start the media download."), success: false)
                 }
             }
         }
@@ -90,7 +90,7 @@ final class MediaListSupport: MediaListSupporting {
         _ item: ReadingListItem, status: MediaDownloadStatusView
     ) {
         guard let media = SavedMediaStore.shared.item(forURLString: item.urlString) else {
-            status.showResult(message: "Media is still downloading.", success: false)
+            status.showResult(message: L10n.string("Media is still downloading."), success: false)
             return
         }
         status.startProgress()
@@ -99,7 +99,7 @@ final class MediaListSupport: MediaListSupporting {
                 guard let fileURL = media.fileURL, let kind = media.kind else {
                     await MainActor.run {
                         status.showResult(
-                            message: "Media is no longer available locally.", success: false)
+                            message: L10n.string("Media is no longer available locally."), success: false)
                     }
                     return
                 }
@@ -118,12 +118,12 @@ final class MediaListSupport: MediaListSupporting {
                 _ = try SavedMediaStore.shared.transitionToPhotosReference(
                     media.id, localIdentifier: identifier, kind: kind)
                 await MainActor.run {
-                    status.showResult(message: "Saved to Photos", success: true)
+                    status.showResult(message: L10n.string("Saved to Photos"), success: true)
                 }
             } catch {
                 await MainActor.run {
                     status.showResult(
-                        message: "Couldn't save to your photo library.",
+                        message: L10n.string("Couldn't save to your photo library."),
                         success: false)
                 }
             }

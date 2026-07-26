@@ -219,7 +219,7 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     }
 
     private func drawEmptyCaption(in plot: CGRect) {
-        let caption = "No price history yet"
+        let caption = L10n.string("No price history yet")
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: LunaColors.tertiaryText,
@@ -238,8 +238,8 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         thresholdHandle.layer.cornerCurve = .continuous
         thresholdHandle.layer.borderWidth = 2
         thresholdHandle.layer.borderColor = LunaColors.background.cgColor
-        thresholdHandle.accessibilityLabel = "Alert threshold"
-        thresholdHandle.accessibilityHint = "Drag vertically to edit the alert price"
+        thresholdHandle.accessibilityLabel = L10n.string("Alert threshold")
+        thresholdHandle.accessibilityHint = L10n.string("Drag vertically to edit the alert price")
         addSubview(thresholdHandle)
 
         thresholdPan.addTarget(self, action: #selector(thresholdDragged(_:)))
@@ -268,7 +268,7 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         thresholdField.keyboardType = .decimalPad
         thresholdField.returnKeyType = .done
         thresholdField.delegate = self
-        thresholdField.accessibilityLabel = "Alert threshold price"
+        thresholdField.accessibilityLabel = L10n.string("Alert threshold price")
         thresholdField.addTarget(self, action: #selector(thresholdFieldChanged), for: .editingChanged)
 
         configureEditorButton(commitButton, symbol: "checkmark", action: #selector(commitThreshold))
@@ -287,7 +287,7 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         configuration.baseForegroundColor = thresholdColor
         button.configuration = configuration
         button.addTarget(self, action: action, for: .touchUpInside)
-        button.accessibilityLabel = symbol == "checkmark" ? "Save threshold" : "Cancel threshold edit"
+        button.accessibilityLabel = symbol == "checkmark" ? L10n.string("Save threshold") : L10n.string("Cancel threshold edit")
     }
 
     private func layoutThresholdControls() {

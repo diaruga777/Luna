@@ -127,7 +127,7 @@ public final class ShareReaderViewController: UIViewController {
             // A video/post/document reached the reader VC (shouldn't, since the
             // host routes those to SavedNonTextualViewController) — never extract it;
             // confirm the save and let the app render it.
-            presentSavedConfirmation(productName: url.host ?? "Saved")
+            presentSavedConfirmation(productName: url.host ?? L10n.string("Saved"))
         case .failed, .unsupported:
             // .unsupported can't genuinely occur here (the driver gates and
             // discards before presenting a reader), so treat it as a failure.
@@ -190,7 +190,7 @@ public final class ShareReaderViewController: UIViewController {
         icon.contentMode = .center
 
         let label = UILabel()
-        label.text = "Tracking price for \(productName)"
+        label.text = L10n.string("Tracking price for \(productName)")
         label.textColor = LunaColors.primaryText
         label.font = .preferredFont(forTextStyle: .headline)
         label.textAlignment = .center
@@ -220,7 +220,7 @@ public final class ShareReaderViewController: UIViewController {
         icon.contentMode = .center
 
         let label = UILabel()
-        label.text = "Couldn't load this article."
+        label.text = L10n.string("Couldn't load this article.")
         label.textColor = .systemRed
         label.font = .preferredFont(forTextStyle: .headline)
         label.textAlignment = .center

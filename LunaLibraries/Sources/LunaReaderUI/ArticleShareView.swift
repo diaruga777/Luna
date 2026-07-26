@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// End-of-article share affordance: a separator, a prompt, and a Share button.
 /// Shown at the bottom of the scroll reader and revealed at the end of the speed
@@ -32,13 +33,13 @@ public final class ArticleShareView: UIView {
         separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
 
         let prompt = UILabel()
-        prompt.text = "Done reading? Share it."
+        prompt.text = L10n.string("Done reading? Share it.")
         prompt.font = .preferredFont(forTextStyle: .subheadline)
         prompt.textColor = LunaColors.secondaryText
         prompt.textAlignment = .center
 
         var shareConfig = UIButton.Configuration.filled()
-        shareConfig.title = "Share"
+        shareConfig.title = L10n.string("Share")
         shareConfig.image = UIImage(systemName: "square.and.arrow.up")
         shareConfig.imagePadding = 8
         shareConfig.baseBackgroundColor = GlassStyle.readingAccent

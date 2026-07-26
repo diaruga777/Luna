@@ -4,6 +4,7 @@
 //
 
 import UIKit
+import LunaModels
 
 /// The one-time "better voices available" nudge shown the FIRST time the user
 /// starts read-aloud in the app. It never blocks playback — read-aloud proceeds
@@ -29,14 +30,13 @@ public enum VoiceFirstRunPrompt {
         VoiceModelStore.hasSeenVoicePrompt = true
 
         let alert = UIAlertController(
-            title: "Better Voices Available",
-            message: "Reading aloud with the standard voice. You can install "
-                + "higher-quality Apple voices for read-aloud in Settings.",
+            title: L10n.string("Better Voices Available"),
+            message: L10n.string("Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings."),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Open Settings"), style: .default) { _ in
             openVoiceSettings(presenter)
         })
-        alert.addAction(UIAlertAction(title: "Not Now", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
         presenter.present(alert, animated: true)
     }
 }

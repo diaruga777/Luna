@@ -1,0 +1,28 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSPhotoLibraryAddUsageDescription" : {
+      "comment" : "Explains why Luna adds downloaded media to Photos.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luna saves photos, GIFs, and videos you download from social posts to your photo library."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription" : {
+      "comment" : "Explains why Luna opens media it previously saved in Photos.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luna loads media you saved to Photos so it remains available in Downloader."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

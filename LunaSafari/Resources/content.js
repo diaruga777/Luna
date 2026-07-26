@@ -18,6 +18,11 @@
     // resurrect an independently-maintained Safari rule set.
     var PRODUCT_RULES = self.__LUNA_PRODUCT_RULES || {};
 
+    function localizedMessage(key) {
+        if (typeof browser === "undefined" || !browser.i18n) { return ""; }
+        return browser.i18n.getMessage(key);
+    }
+
     function productRuleArray(name) {
         return Array.isArray(PRODUCT_RULES[name]) ? PRODUCT_RULES[name] : [];
     }
@@ -367,7 +372,8 @@
         if (document.getElementById("queue-unlock-toast")) { return; }
         var toast = document.createElement("div");
         toast.id = "queue-unlock-toast";
-        toast.appendChild(document.createTextNode("Unlocked with Luna"));
+        toast.appendChild(document.createTextNode(
+            localizedMessage("unlockedWithLuna")));
         applyStyle(toast, {
             position: "fixed", left: "50%",
             // The button pill is ~48px tall at bottom 20px; 84px clears it plus a gap.
@@ -1018,7 +1024,8 @@
             webkitAppearance: "none", appearance: "none"
         });
         btn.addEventListener("click", function () {
-            btn.textContent = target.pressedLabel || "Opening Luna…";
+            btn.textContent = target.pressedLabel
+                || localizedMessage("openingLuna");
             btn.style.opacity = "0.7";
             btn.style.pointerEvents = "none";
             var open = function () {
@@ -1056,7 +1063,7 @@
     function readTarget(context) {
         if (!(context && context.supportsArticles)) { return null; }
         return {
-            label: "📖  Read in Luna",
+            label: localizedMessage("readInLuna"),
             captureContent: true,
             url: function () { return ownSchemeTarget(context, location.href); }
         };
@@ -1065,7 +1072,7 @@
     function downloadTargetFor(context) {
         if (!(context && context.supportsMedia)) { return null; }
         return {
-            label: "Download in Luna",
+            label: localizedMessage("downloadInLuna"),
             captureContent: false,
             url: function () { return ownSchemeTarget(context, location.href); }
         };
@@ -1075,7 +1082,7 @@
     function trackTargetFor(context) {
         if (!(context && context.supportsProducts)) { return null; }
         return {
-            label: "Track in Luna",
+            label: localizedMessage("trackInLuna"),
             captureContent: false,
             url: function () { return ownSchemeTarget(context, location.href); }
         };

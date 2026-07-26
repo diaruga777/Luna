@@ -484,7 +484,8 @@ public final class SplitWebOverlayViewController: UIViewController,
     private static func titleFallback(_ title: String?, url: URL) -> String {
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
-        return url.host?.replacingOccurrences(of: "www.", with: "") ?? "Reader"
+        return url.host?.replacingOccurrences(of: "www.", with: "")
+            ?? L10n.string("Reader")
     }
 
     private func closeInnermostReader() {
@@ -786,7 +787,7 @@ private final class InlineReaderTabButton: UIButton {
     init(url: URL, title: String) {
         self.url = url
         super.init(frame: .zero)
-        accessibilityLabel = "Return to \(title)"
+        accessibilityLabel = L10n.string("Return to \(title)")
         backgroundColor = LunaColors.background
         clipsToBounds = false
         layer.mask = tabShapeMask
@@ -827,7 +828,7 @@ private final class InlineReaderTabButton: UIButton {
     deinit { faviconTask?.cancel() }
 
     func updateTitle(_ title: String) {
-        accessibilityLabel = "Return to \(title)"
+        accessibilityLabel = L10n.string("Return to \(title)")
         titleLabelView.text = title
     }
 

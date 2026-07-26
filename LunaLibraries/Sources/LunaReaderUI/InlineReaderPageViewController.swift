@@ -83,7 +83,8 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             .first(where: { !$0.isEmpty }) {
             return title
         }
-        return url.host?.replacingOccurrences(of: "www.", with: "") ?? "Reader"
+        return url.host?.replacingOccurrences(of: "www.", with: "")
+            ?? L10n.string("Reader")
     }
 
     /// Keeps page content flush with the host's one-row or two-row chrome.

@@ -24,6 +24,7 @@
 //
 
 import UIKit
+import LunaModels
 
 public protocol CardCarouselDataSource: AnyObject {
     func numberOfCards(in carousel: CardCarouselViewController) -> Int
@@ -357,7 +358,7 @@ public final class CardCarouselViewController: UIViewController {
         // The traveling activity pulse belongs to download progress, not
         // deterministic media playback position.
         playbackScrubProgress.showsActivityPulse = false
-        playbackScrubProgress.accessibilityLabel = "Video position"
+        playbackScrubProgress.accessibilityLabel = L10n.string("Video position")
         cardArea.addSubview(playbackScrubProgress)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([

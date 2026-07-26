@@ -48,7 +48,7 @@ let package = Package(
         // Single source of truth for the shared App Group / iCloud container ids,
         // read from build-injected Info.plist keys (see Config/Luna.xcconfig).
         .target(name: "LunaAppConfig"),
-        .target(name: "LunaModels"),
+        .target(name: "LunaModels", resources: [.process("Resources")]),
         .target(name: "LunaURLClassification", dependencies: ["LunaModels"]),
         .target(name: "LunaHTMLClassification", dependencies: [
             "LunaModels", "LunaURLClassification", "LunaPriceMetadata",

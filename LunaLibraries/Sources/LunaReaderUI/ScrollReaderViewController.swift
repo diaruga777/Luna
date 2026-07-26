@@ -934,10 +934,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         guard let hit = image(at: location) else { return nil }
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
             UIMenu(children: [
-                UIAction(title: "Copy Image", image: UIImage(systemName: "doc.on.doc")) { _ in
+                UIAction(title: L10n.string("Copy Image"), image: UIImage(systemName: "doc.on.doc")) { _ in
                     UIPasteboard.general.image = hit.image
                 },
-                UIAction(title: "Save Image", image: UIImage(systemName: "square.and.arrow.down")) { _ in
+                UIAction(title: L10n.string("Save Image"), image: UIImage(systemName: "square.and.arrow.down")) { _ in
                     UIImageWriteToSavedPhotosAlbum(hit.image, nil, nil, nil)
                 },
             ])
@@ -1075,7 +1075,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         footerPlayButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
         let forward = footerButton("forward.frame.fill", action: #selector(skipForward))
 
-        footerRateButton.setTitle("1×", for: .normal)
+        footerRateButton.setTitle(L10n.string("1×"), for: .normal)
         footerRateButton.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 16, weight: .semibold)
         footerRateButton.addTarget(self, action: #selector(cycleRate), for: .touchUpInside)
 
@@ -1555,7 +1555,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                          suggestedActions: [UIMenuElement]) -> UIMenu? {
         guard range.length > 0 else { return nil }
         let quote = (textView.text as NSString).substring(with: range)
-        let share = UIAction(title: "Share",
+        let share = UIAction(title: L10n.string("Share"),
                              image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
             self?.shareHighlightedText(quote, in: range)
         }
@@ -1671,8 +1671,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             view.addSubview(button)
             return button
         }
-        let top = hookButton("Split High", fraction: 0.12)
-        let bottom = hookButton("Split Low", fraction: 0.82)
+        let top = hookButton(L10n.string("Split High"), fraction: 0.12)
+        let bottom = hookButton(L10n.string("Split Low"), fraction: 0.82)
         NSLayoutConstraint.activate([
             top.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             top.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -24),

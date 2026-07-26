@@ -392,11 +392,11 @@ final class ReadingListViewController: UITableViewController {
         let message: String
         switch surface {
         case .all:
-            message = "Save articles, media, and products to see them here."
+            message = L10n.string("Save articles, media, and products to see them here.")
         case .reader:
-            message = "Save articles, documents, and links to read them here."
+            message = L10n.string("Save articles, documents, and links to read them here.")
         case .priceTracker:
-            message = "Track a product to see its price here."
+            message = L10n.string("Track a product to see its price here.")
         case .downloader:
             return nil
         }
@@ -622,20 +622,20 @@ final class ReadingListViewController: UITableViewController {
         var leading = [
             NavHeaderBar.imageButton(
                 systemName: "gearshape", target: self, action: #selector(settingsTapped),
-                accessibilityLabel: "Settings"),
+                accessibilityLabel: L10n.string("Settings")),
         ]
         // Contacts is email sharing's address book, so only the apps that send
         // email show it.
         if sharesByEmail {
             leading.append(NavHeaderBar.imageButton(
                 systemName: "person.2", target: self, action: #selector(friendsTapped),
-                accessibilityLabel: "Contacts"))
+                accessibilityLabel: L10n.string("Contacts")))
         }
         header.setLeadingControls(leading)
         header.setTrailingControls([
             NavHeaderBar.imageButton(
                 systemName: "plus", target: self, action: #selector(addTapped),
-                accessibilityLabel: "Add"),
+                accessibilityLabel: L10n.string("Add")),
         ])
     }
 
@@ -661,7 +661,7 @@ final class ReadingListViewController: UITableViewController {
         if showsLargeListHeader {
             let titleRow = UIView()
             titleRow.translatesAutoresizingMaskIntoConstraints = false
-            largeTitleLabel.text = "Reading List"
+            largeTitleLabel.text = L10n.string("Reading List")
             largeTitleLabel.font = .systemFont(ofSize: 34, weight: .bold)
             largeTitleLabel.textColor = LunaColors.primaryText
             largeTitleLabel.adjustsFontForContentSizeCategory = true
@@ -718,11 +718,11 @@ final class ReadingListViewController: UITableViewController {
             header.setTrailingControls([
                 NavHeaderBar.imageButton(
                     systemName: "trash", target: self, action: #selector(deleteSelectedTapped),
-                    tint: .systemRed, accessibilityLabel: "Delete Selected"),
+                    tint: .systemRed, accessibilityLabel: L10n.string("Delete Selected")),
                 NavHeaderBar.textButton(
-                    title: "Select All", target: self, action: #selector(selectAllTapped)),
+                    title: L10n.string("Select All"), target: self, action: #selector(selectAllTapped)),
                 NavHeaderBar.textButton(
-                    title: "Done", target: self, action: #selector(doneEditing), bold: true),
+                    title: L10n.string("Done"), target: self, action: #selector(doneEditing), bold: true),
             ])
         } else {
             setDefaultHeaderControls()
@@ -752,20 +752,20 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func addTapped() {
         let alert = UIAlertController(
-            title: "Save a Link", message: nil, preferredStyle: .alert)
+            title: L10n.string("Save a Link"), message: nil, preferredStyle: .alert)
         // Prefill from the already-evaluated pasteboard suggestion, never from a
         // live `UIPasteboard` read: that read is synchronous cross-process IPC and
         // raises the system paste banner, stalling the tap before the present
         // animation can start.
         let prefill = pasteboardSuggestions.pasteboardCandidate?.urlString
         alert.addTextField { field in
-            field.placeholder = "https://…"
+            field.placeholder = L10n.string("https://…")
             field.keyboardType = .URL
             field.autocapitalizationType = .none
             field.text = prefill
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak alert] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Save"), style: .default) { [weak alert] _ in
             guard let entered = alert?.textFields?.first?.text?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !entered.isEmpty
             else { return }
@@ -792,12 +792,12 @@ final class ReadingListViewController: UITableViewController {
         let archived = groups.first { $0.section == .archive }?.items ?? []
         guard !archived.isEmpty else { return }
         let alert = UIAlertController(
-            title: "Delete \(archived.count) archived item\(archived.count == 1 ? "" : "s")?",
+            title: L10n.string("Delete \(archived.count) archived item\(archived.count == 1 ? "" : "s")?"),
             message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "Delete All", style: .destructive) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Delete All"), style: .destructive) { [weak self] _ in
             self?.store.deleteItems(ids: Set(archived.map(\.id)))
         })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
         // Anchor the sheet: all targets build for iPad too, where an
         // unanchored action sheet raises NSGenericException.
         alert.popoverPresentationController?.sourceView = sender
@@ -900,7 +900,7 @@ final class ReadingListViewController: UITableViewController {
             // Spell the colour out: an appended run with no foreground attribute
             // takes NSAttributedString's own black default, not label.textColor.
             title.append(NSAttributedString(
-                string: "  \(kind.title) (\(group.items.count))",
+                string: L10n.string("  \(kind.title) (\(group.items.count))"),
                 attributes: [.foregroundColor: headerColor]))
             label.attributedText = title
 
@@ -918,7 +918,7 @@ final class ReadingListViewController: UITableViewController {
 
         if kind == .archive {
             let deleteButton = UIButton(type: .system)
-            deleteButton.setTitle("Delete All", for: .normal)
+            deleteButton.setTitle(L10n.string("Delete All"), for: .normal)
             deleteButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
             deleteButton.tintColor = .systemRed
             deleteButton.addTarget(self, action: #selector(deleteAllArchiveTapped), for: .touchUpInside)
@@ -1062,7 +1062,7 @@ final class ReadingListViewController: UITableViewController {
             leadingLabel = ListKindSupport.media?.subtitleLeadingLabel(for: item)
                 ?? platform.displayName
         } else if item.isDocument {
-            leadingLabel = item.documentType?.uppercased() ?? "Document"
+            leadingLabel = item.documentType?.uppercased() ?? L10n.string("Document")
         } else {
             leadingLabel = item.channelName ?? host
         }
@@ -1094,17 +1094,17 @@ final class ReadingListViewController: UITableViewController {
     /// toggle + attempt budget (a deliberate user request).
     private func presentRescueSheet(for item: ReadingListItem, presenter: UIViewController) {
         let alert = UIAlertController(
-            title: "Couldn't load this page",
-            message: "Luna can try harder with Apple Intelligence. Choose what this save should become.",
+            title: L10n.string("Couldn't load this page"),
+            message: L10n.string("Luna can try harder with Apple Intelligence. Choose what this save should become."),
             preferredStyle: .actionSheet)
         let defaultHint = URLRescueWiring.defaultHint(for: AppSurfaceConfig.current)
         let ordered = [defaultHint] + RescueHint.allCases.filter { $0 != defaultHint }
         for hint in ordered {
-            alert.addAction(UIAlertAction(title: "Rescue as \(hint.displayName)", style: .default) { _ in
+            alert.addAction(UIAlertAction(title: L10n.string("Rescue as \(hint.displayName)"), style: .default) { _ in
                 URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: hint)
             })
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = presenter.view
             popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY,
@@ -1356,7 +1356,7 @@ final class ReadingListViewController: UITableViewController {
         let name = ReadingListSubtitle.destinationNames[first.destinationID] ?? first.destinationID
         let extra = notices.count > 1 ? " (+\(notices.count - 1) more)" : ""
         mediaDownloadStatusView().showResult(
-            message: "Couldn't send to \(name)\(extra)",
+            message: L10n.string("Couldn't send to \(name)\(extra)"),
             success: false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
             self?.isPresentingSendFailureNotice = false

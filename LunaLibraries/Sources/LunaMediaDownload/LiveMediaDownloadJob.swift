@@ -89,13 +89,19 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     /// surfaces never drift.
     var statusMessage: String {
         switch phase {
-        case .resolving: return "Preparing download"
-        case .downloading: return "Downloading"
-        case .waiting: return "Waiting to resume"
-        case .suspended: return "Paused. Resume within 5 seconds."
-        case .saving: return isDownloaderOwned ? "Saving to Luna" : "Saving to Photos"
-        case .finished: return isDownloaderOwned ? "Saved to Luna" : "Saved to Photos"
-        case .failed: return errorMessage ?? "Download failed"
+        case .resolving: return L10n.string("Preparing download")
+        case .downloading: return L10n.string("Downloading")
+        case .waiting: return L10n.string("Waiting to resume")
+        case .suspended: return L10n.string("Paused. Resume within 5 seconds.")
+        case .saving:
+            return isDownloaderOwned
+                ? L10n.string("Saving to Luna")
+                : L10n.string("Saving to Photos")
+        case .finished:
+            return isDownloaderOwned
+                ? L10n.string("Saved to Luna")
+                : L10n.string("Saved to Photos")
+        case .failed: return errorMessage ?? L10n.string("Download failed")
         }
     }
 

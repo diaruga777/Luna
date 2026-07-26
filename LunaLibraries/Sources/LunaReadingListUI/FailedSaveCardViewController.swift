@@ -228,9 +228,9 @@ public final class FailedSaveCardViewController: CardContentViewController {
         }, for: .valueChanged)
 
         applyRescueTitle()
-        configure(browserButton, title: "Browser", symbol: "globe")
-        configure(shareButton, title: "Share", symbol: "square.and.arrow.up")
-        configure(retryButton, title: "Retry", symbol: "arrow.clockwise")
+        configure(browserButton, title: L10n.string("Browser"), symbol: "globe")
+        configure(shareButton, title: L10n.string("Share"), symbol: "square.and.arrow.up")
+        configure(retryButton, title: L10n.string("Retry"), symbol: "arrow.clockwise")
 
         rescueButton.addAction(UIAction { [weak self] _ in
             guard let self else { return }
@@ -341,7 +341,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
         // would start it again goes away.
         if model.isRescuing {
             spinner.startAnimating()
-            detailLabel.text = "Trying harder with Apple Intelligence…"
+            detailLabel.text = L10n.string("Trying harder with Apple Intelligence…")
             suggestionLabel.isHidden = true
             hintControl.isHidden = true
             rescueButton.isHidden = true
@@ -385,8 +385,9 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
     private func applyRescueTitle() {
         let title = model.hintChoices.count > 1
-            ? selectedHint().map { "Extract as \($0.displayName)" } ?? "Try with Apple Intelligence"
-            : "Try with Apple Intelligence"
+            ? selectedHint().map { L10n.string("Extract as \($0.displayName)") }
+                ?? L10n.string("Try with Apple Intelligence")
+            : L10n.string("Try with Apple Intelligence")
         rescueButton.configuration = GlassStyle.actionButtonConfiguration(
             title: title, symbol: "wand.and.stars", prominent: true)
         rescueButton.contentHorizontalAlignment = .center

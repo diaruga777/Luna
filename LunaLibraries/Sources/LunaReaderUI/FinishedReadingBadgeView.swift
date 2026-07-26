@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// A persistent Liquid Glass completion pill shared by both reader modes.
 public final class FinishedReadingBadgeView: UIView {
@@ -57,18 +58,18 @@ public final class FinishedReadingBadgeView: UIView {
         checkLayer.lineWidth = 2.4
         glassView.contentView.layer.addSublayer(checkLayer)
 
-        configure(label: readLabel, text: "Read")
+        configure(label: readLabel, text: L10n.string("Read"))
         glassView.contentView.addSubview(readLabel)
 
-        configure(label: archiveLabel, text: "Sent to archive")
+        configure(label: archiveLabel, text: L10n.string("Sent to archive"))
         archiveLabel.textAlignment = .center
         archiveLabel.accessibilityIdentifier = Self.messageAccessibilityIdentifier
         archiveLabel.alpha = 0
         glassView.contentView.addSubview(archiveLabel)
 
         accessibilityIdentifier = Self.accessibilityIdentifier
-        accessibilityLabel = "Read"
-        accessibilityHint = "Shows archive status"
+        accessibilityLabel = L10n.string("Read")
+        accessibilityHint = L10n.string("Shows archive status")
         accessibilityTraits = .button
         isAccessibilityElement = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(pillTapped)))
@@ -131,7 +132,7 @@ public final class FinishedReadingBadgeView: UIView {
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + Self.automaticExpansionDelay, execute: work)
         }
-        UIAccessibility.post(notification: .announcement, argument: "Read")
+        UIAccessibility.post(notification: .announcement, argument: L10n.string("Read"))
     }
 
     public func resetForReuse() {
@@ -148,7 +149,7 @@ public final class FinishedReadingBadgeView: UIView {
         readLabel.alpha = 1
         readLabel.transform = .identity
         archiveLabel.alpha = 0
-        accessibilityLabel = "Read"
+        accessibilityLabel = L10n.string("Read")
     }
 
     private func configure(label: UILabel, text: String) {
@@ -193,7 +194,7 @@ public final class FinishedReadingBadgeView: UIView {
         automaticExpansionWorkItem = nil
         collapseWorkItem?.cancel()
         isExpanded = true
-        accessibilityLabel = "Sent to archive"
+        accessibilityLabel = L10n.string("Sent to archive")
 
         // The expanded status replaces the collapsed check-and-label content;
         // the glass surface itself remains continuously visible.
@@ -219,7 +220,7 @@ public final class FinishedReadingBadgeView: UIView {
         collapseWorkItem?.cancel()
         collapseWorkItem = nil
         isExpanded = false
-        accessibilityLabel = "Read"
+        accessibilityLabel = L10n.string("Read")
         UIView.animate(
             withDuration: 0.32, delay: 0,
             usingSpringWithDamping: 0.84, initialSpringVelocity: 0.2,

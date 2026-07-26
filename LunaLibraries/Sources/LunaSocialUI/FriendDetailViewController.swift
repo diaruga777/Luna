@@ -6,6 +6,7 @@
 import LunaSocial
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// Per-contact settings: rename, notifications, block/unblock, and remove.
 public final class FriendDetailViewController: NavHeaderTableController {
@@ -43,20 +44,20 @@ public final class FriendDetailViewController: NavHeaderTableController {
         cell.accessoryView = nil
         switch Section(rawValue: indexPath.section)! {
         case .profile:
-            config.text = friend.name ?? "Set a name"
+            config.text = friend.name ?? L10n.string("Set a name")
             config.secondaryText = friend.email
             cell.accessoryType = .disclosureIndicator
         case .notifications:
-            config.text = "Notify on every share"
+            config.text = L10n.string("Notify on every share")
             let toggle = UISwitch()
             toggle.isOn = friend.notifyOnEveryShare
             toggle.addTarget(self, action: #selector(toggleNotify(_:)), for: .valueChanged)
             cell.accessoryView = toggle
         case .blocking:
-            config.text = friend.isBlocked ? "Unblock Contact" : "Block Contact"
+            config.text = friend.isBlocked ? L10n.string("Unblock Contact") : L10n.string("Block Contact")
             config.textProperties.color = friend.isBlocked ? .systemBlue : .systemRed
         case .remove:
-            config.text = "Remove Contact"
+            config.text = L10n.string("Remove Contact")
             config.textProperties.color = .systemRed
         }
         cell.contentConfiguration = config
@@ -67,7 +68,7 @@ public final class FriendDetailViewController: NavHeaderTableController {
         _ tableView: UITableView, titleForFooterInSection section: Int
     ) -> String? {
         Section(rawValue: section) == .notifications
-            ? "By default you're notified only the first time this contact shares with you."
+            ? L10n.string("By default you're notified only the first time this contact shares with you.")
             : nil
     }
 
@@ -91,10 +92,10 @@ public final class FriendDetailViewController: NavHeaderTableController {
     }
 
     private func promptRename() {
-        let alert = UIAlertController(title: "Name", message: friend.email, preferredStyle: .alert)
-        alert.addTextField { $0.text = self.friend.name; $0.placeholder = "Name" }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak alert] _ in
+        let alert = UIAlertController(title: L10n.string("Name"), message: friend.email, preferredStyle: .alert)
+        alert.addTextField { $0.text = self.friend.name; $0.placeholder = L10n.string("Name") }
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Save"), style: .default) { [weak self, weak alert] _ in
             guard let self else { return }
             let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
             self.friend.name = (name?.isEmpty ?? true) ? nil : name

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// When a destination sends articles automatically.
 /// Shared by every destination's settings.
@@ -17,9 +18,9 @@ public enum ArticleSendMode: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .off: return "Off"
-        case .allSaves: return "All Saved Articles"
-        case .doubleSave: return "Double Save"
+        case .off: return L10n.string("Off")
+        case .allSaves: return L10n.string("All Saved Articles")
+        case .doubleSave: return L10n.string("Double Save")
         }
     }
 }

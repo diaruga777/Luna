@@ -219,7 +219,7 @@ final class MiniPlayerHostViewController: UIViewController {
         if case .announcing(let nextItemID) = center.state {
             let next = ReadingListStore.shared.item(withID: nextItemID)
             miniPlayer.apply(.init(
-                title: next?.title ?? "Next article",
+                title: next?.title ?? L10n.string("Next article"),
                 isUpNext: true,
                 thumbnailPath: thumbnailPath(fileName: next?.thumbnailFileName),
                 isPlaying: snapshot.isAudiblyPlaying,

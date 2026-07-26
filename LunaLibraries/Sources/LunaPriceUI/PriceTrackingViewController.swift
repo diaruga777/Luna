@@ -123,7 +123,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     private lazy var sellersHeaderView: UIView = {
         let container = UIView()
         let label = UILabel()
-        label.text = "Sellers"
+        label.text = L10n.string("Sellers")
         label.font = .preferredFont(forTextStyle: .footnote)
         label.adjustsFontForContentSizeCategory = true
         label.textColor = LunaColors.secondaryText
@@ -173,7 +173,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         super.viewDidLoad()
         view.backgroundColor = LunaColors.groupedBackground
 
-        navHeader.title = "Price Tracker"
+        navHeader.title = L10n.string("Price Tracker")
         navHeader.mount(in: self)
 
         productHeader.backgroundColor = LunaColors.groupedBackground
@@ -195,7 +195,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         addSellerButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSellerButton.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
         addSellerButton.translatesAutoresizingMaskIntoConstraints = false
-        addSellerButton.accessibilityLabel = "Add seller"
+        addSellerButton.accessibilityLabel = L10n.string("Add seller")
         view.addSubview(productHeader)
 
         tableView.dataSource = self
@@ -301,7 +301,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             leftControl = NavHeaderBar.backButton(target: self, action: #selector(leftButtonTapped))
         case .done:
             leftControl = NavHeaderBar.textButton(
-                title: "Done", target: self, action: #selector(leftButtonTapped), bold: true)
+                title: L10n.string("Done"), target: self, action: #selector(leftButtonTapped), bold: true)
         }
         navHeader.setLeadingControls([leftControl])
 
@@ -315,7 +315,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
              .revertAddedStore where readInsteadSupported:
             navHeader.setTrailingControls([
                 NavHeaderBar.textButton(
-                    title: "Read instead", target: self, action: #selector(readInsteadTapped)),
+                    title: L10n.string("Read instead"), target: self, action: #selector(readInsteadTapped)),
             ])
         case .hidden, .discardTracker, .revertAddedStore:
             navHeader.setTrailingControls([])
@@ -337,7 +337,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         graphContainer.backgroundColor = LunaColors.groupedBackground
         graphContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        graphTitleLabel.text = "Price History"
+        graphTitleLabel.text = L10n.string("Price History")
         graphTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         graphTitleLabel.textColor = LunaColors.secondaryText
         graphTitleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -408,18 +408,18 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// actions — Add (paste a URL), Search (browse to one), Cancel.
     @objc private func addSellerTapped() {
         let alert = UIAlertController(
-            title: "Add a seller",
-            message: "Track this product's price at another store.",
+            title: L10n.string("Add a seller"),
+            message: L10n.string("Track this product's price at another store."),
             preferredStyle: .alert)
-        alert.addTextField { $0.placeholder = "https://…"; $0.keyboardType = .URL }
-        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self, weak alert] _ in
+        alert.addTextField { $0.placeholder = L10n.string("https://…"); $0.keyboardType = .URL }
+        alert.addAction(UIAlertAction(title: L10n.string("Add"), style: .default) { [weak self, weak alert] _ in
             guard let urlString = alert?.textFields?.first?.text, !urlString.isEmpty else { return }
             self?.addSeller(urlString: urlString)
         })
-        alert.addAction(UIAlertAction(title: "Search", style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Search"), style: .default) { [weak self] _ in
             self?.presentSearchOverlay()
         })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
         present(alert, animated: true)
     }
 
@@ -445,7 +445,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             if let report {
                 report(.duplicate)
             } else {
-                presentPriceMessage(title: "Already tracked", message: "This page is already a seller.")
+                presentPriceMessage(title: L10n.string("Already tracked"), message: L10n.string("This page is already a seller."))
             }
             return
         }
@@ -466,8 +466,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
                         self.presentNoPriceWithRescueOption(urlString: urlString)
                     } else {
                         self.presentPriceMessage(
-                            title: "No price found",
-                            message: "We couldn't read a price on that page, so it wasn't added.")
+                            title: L10n.string("No price found"),
+                            message: L10n.string("We couldn't read a price on that page, so it wasn't added."))
                     }
                     return
                 }
@@ -485,13 +485,13 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// when the resolver is installed — i.e. the main app, never extensions).
     private func presentNoPriceWithRescueOption(urlString: String) {
         let alert = UIAlertController(
-            title: "No price found",
-            message: "We couldn't read a price on that page. Apple Intelligence can try to find it.",
+            title: L10n.string("No price found"),
+            message: L10n.string("We couldn't read a price on that page. Apple Intelligence can try to find it."),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Ask Apple Intelligence", style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Ask Apple Intelligence"), style: .default) { [weak self] _ in
             self?.askIntelligenceForPrice(urlString: urlString)
         })
-        alert.addAction(UIAlertAction(title: "Not Now", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
         present(alert, animated: true)
     }
 
@@ -504,8 +504,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             guard let self, var current = self.tracker else { return }
             guard let resolved else {
                 self.presentPriceMessage(
-                    title: "Still no price",
-                    message: "Apple Intelligence couldn't find a price on this page either.")
+                    title: L10n.string("Still no price"),
+                    message: L10n.string("Apple Intelligence couldn't find a price on this page either."))
                 return
             }
             current.upsertStore(PriceTrackerStore(
@@ -653,7 +653,7 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
     ) -> UISwipeActionsConfiguration? {
         guard let tracker, tracker.stores.count > 1 else { return nil }
         let urlString = tracker.stores[indexPath.row].urlString
-        let delete = UIContextualAction(style: .destructive, title: "Remove") { [weak self] _, _, done in
+        let delete = UIContextualAction(style: .destructive, title: L10n.string("Remove")) { [weak self] _, _, done in
             guard let self, var current = self.tracker else { return done(false) }
             let removed = current.removeStore(urlString: urlString)
             if removed { self.store.updatePriceTracker(current, for: self.itemID) }
@@ -673,7 +673,9 @@ private extension PriceTrackingViewController {
     }()
 
     public func refreshDescription(for store: PriceTrackerStore) -> String {
-        guard let refreshed = store.lastRefreshed else { return "Not yet refreshed" }
-        return "Refreshed \(Self.refreshedFormatter.string(from: refreshed))"
+        guard let refreshed = store.lastRefreshed else {
+            return L10n.string("Not yet refreshed")
+        }
+        return L10n.string("Refreshed \(Self.refreshedFormatter.string(from: refreshed))")
     }
 }

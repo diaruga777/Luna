@@ -48,22 +48,22 @@ enum ReadingListRowMenuFactory {
 
     static func menu(for item: ReadingListItem, actions: RowMenuActions) -> UIMenu {
         let sendToFriend = UIAction(
-            title: "Send to Contact…", image: UIImage(systemName: "person.2")
+            title: L10n.string("Send to Contact…"), image: UIImage(systemName: "person.2")
         ) { _ in actions.sendToFriend() }
         let sendToKindle = UIAction(
-            title: "Send to Kindle", image: UIImage(systemName: "paperplane")
+            title: L10n.string("Send to Kindle"), image: UIImage(systemName: "paperplane")
         ) { _ in actions.sendToKindle() }
         let shareEbook = UIAction(
-            title: "Share eBook…", image: UIImage(systemName: "square.and.arrow.up")
+            title: L10n.string("Share eBook…"), image: UIImage(systemName: "square.and.arrow.up")
         ) { _ in actions.shareEbook() }
         let shareLink = UIAction(
-            title: "Share Link…", image: UIImage(systemName: "link")
+            title: L10n.string("Share Link…"), image: UIImage(systemName: "link")
         ) { _ in actions.shareLink() }
         let copyLink = UIAction(
-            title: "Copy Link", image: UIImage(systemName: "doc.on.doc")
+            title: L10n.string("Copy Link"), image: UIImage(systemName: "doc.on.doc")
         ) { _ in actions.copyLink() }
         let delete = UIAction(
-            title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
+            title: L10n.string("Delete"), image: UIImage(systemName: "trash"), attributes: .destructive
         ) { _ in actions.delete() }
         // Videos: share to friends + delete. Documents: ereaders + read +
         // delete. Articles: everything. Each ereader row shows only when
@@ -79,7 +79,9 @@ enum ReadingListRowMenuFactory {
                 trackerChildren.append(shareLink)
                 trackerChildren.append(copyLink)
             }
-            let archiveTitle = tracker.isArchived ? "Unarchive Tracker" : "Archive Tracker"
+            let archiveTitle = tracker.isArchived
+                ? L10n.string("Unarchive Tracker")
+                : L10n.string("Archive Tracker")
             let archiveIcon = tracker.isArchived ? "tray.and.arrow.up" : "archivebox"
             trackerChildren.append(UIAction(
                 title: archiveTitle, image: UIImage(systemName: archiveIcon)
@@ -93,10 +95,10 @@ enum ReadingListRowMenuFactory {
         // three content hints (surfaced first for the failed row, above the rest).
         if item.state == .failed, actions.canRescue {
             let hintActions = RescueHint.allCases.map { hint in
-                UIAction(title: "As \(hint.displayName)") { _ in actions.rescue(hint) }
+                UIAction(title: L10n.string("As \(hint.displayName)")) { _ in actions.rescue(hint) }
             }
             let rescueMenu = UIMenu(
-                title: "Try with Apple Intelligence",
+                title: L10n.string("Try with Apple Intelligence"),
                 image: UIImage(systemName: "wand.and.stars"),
                 children: hintActions)
             // A failed row's menu is just the rescue submenu + delete.
@@ -105,7 +107,7 @@ enum ReadingListRowMenuFactory {
         // Reading-section items only: jump an item to the top of the list.
         if actions.isInReadingSection {
             children.append(UIAction(
-                title: "Bump to Top", image: UIImage(systemName: "arrow.up.to.line")
+                title: L10n.string("Bump to Top"), image: UIImage(systemName: "arrow.up.to.line")
             ) { _ in actions.bumpToTop() })
         }
         if item.canShareToFriends, actions.sharesByEmail {
@@ -120,7 +122,7 @@ enum ReadingListRowMenuFactory {
         // X / Instagram / TikTok posts: download the post's media.
         if actions.canSaveMediaToPhotos {
             children.append(UIAction(
-                title: "Save to Photos", image: UIImage(systemName: "photo.badge.arrow.down")
+                title: L10n.string("Save to Photos"), image: UIImage(systemName: "photo.badge.arrow.down")
             ) { _ in actions.saveMediaToPhotos() })
         }
         // Article-only actions — ereader sends, and the eBook for text-only
@@ -136,13 +138,13 @@ enum ReadingListRowMenuFactory {
         // Archived (read) items can be unarchived back to the Reading section.
         if item.readState == .read {
             children.append(UIAction(
-                title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")
+                title: L10n.string("Unarchive"), image: UIImage(systemName: "tray.and.arrow.up")
             ) { _ in actions.unarchive() })
         }
         children.append(delete)
         // "Edit List" enters multi-select / drag-reorder edit mode (bottom item).
         let editList = UIAction(
-            title: "Edit List", image: UIImage(systemName: "arrow.up.arrow.down")
+            title: L10n.string("Edit List"), image: UIImage(systemName: "arrow.up.arrow.down")
         ) { _ in actions.editList() }
         return UIMenu(children: children + [editList])
     }

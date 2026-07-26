@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// A non-blocking media-download status pill pinned to the bottom of the reading
 /// list. It shows download progress and the final result WITHOUT capturing touches
@@ -71,7 +72,7 @@ public final class MediaDownloadStatusView: UIView {
         hideWorkItem?.cancel()
         icon.image = UIImage(systemName: "arrow.down.circle")
         icon.tintColor = GlassStyle.readingAccent
-        label.text = "Saving media…"
+        label.text = L10n.string("Saving media…")
         progress.isHidden = false
         progress.setProgress(0, animated: false)
         reveal()

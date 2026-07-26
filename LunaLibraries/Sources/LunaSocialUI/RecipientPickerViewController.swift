@@ -7,6 +7,7 @@ import LunaSocial
 import LunaDesignSystem
 import ContactsUI
 import UIKit
+import LunaModels
 
 /// Picks one or more email recipients: the saved friends list (multi-select),
 /// plus "Enter email…" and "Add from Contacts" (the system `CNContactPicker`,
@@ -32,7 +33,7 @@ public final class RecipientPickerViewController: UITableViewController,
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Send to"
+        title = L10n.string("Send to")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
@@ -57,7 +58,9 @@ public final class RecipientPickerViewController: UITableViewController,
     public override func tableView(
         _ tableView: UITableView, titleForHeaderInSection section: Int
     ) -> String? {
-        Section(rawValue: section) == .recipients && !allRecipients.isEmpty ? "Contacts" : nil
+        Section(rawValue: section) == .recipients && !allRecipients.isEmpty
+            ? L10n.string("Contacts")
+            : nil
     }
 
     public override func tableView(
@@ -68,10 +71,10 @@ public final class RecipientPickerViewController: UITableViewController,
         switch Section(rawValue: indexPath.section)! {
         case .actions:
             if indexPath.row == 0 {
-                config.text = "Enter email address…"
+                config.text = L10n.string("Enter email address…")
                 config.image = UIImage(systemName: "envelope")
             } else {
-                config.text = "Add from Phone Contacts"
+                config.text = L10n.string("Add from Phone Contacts")
                 config.image = UIImage(systemName: "person.crop.circle.badge.plus")
             }
             cell.accessoryType = .none
@@ -101,7 +104,7 @@ public final class RecipientPickerViewController: UITableViewController,
     // MARK: - Adding recipients
 
     private func promptForEmail() {
-        EmailRecipientPrompt.presentEmailAlert(from: self, title: "Recipient email") { [weak self] raw in
+        EmailRecipientPrompt.presentEmailAlert(from: self, title: L10n.string("Recipient email")) { [weak self] raw in
             self?.addRecipient(email: raw, name: nil)
         }
     }
@@ -132,7 +135,7 @@ public final class RecipientPickerViewController: UITableViewController,
     private func updateSendButton() {
         let count = selected.count
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: count == 0 ? "Send" : "Send (\(count))",
+            title: count == 0 ? L10n.string("Send") : L10n.string("Send (\(count))"),
             style: .done, target: self, action: #selector(send))
         navigationItem.rightBarButtonItem?.isEnabled = count > 0
     }

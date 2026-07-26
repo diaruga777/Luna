@@ -9,6 +9,7 @@ import LunaReadingList
 import LunaDesignSystem
 import LunaStorage
 import LunaModels
+import LunaMailAccount
 import UIKit
 
 /// Shared helpers for the settings subpages.
@@ -29,7 +30,7 @@ extension UITableViewController {
 
     func presentInfoAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
         present(alert, animated: true)
     }
 }
@@ -42,12 +43,13 @@ struct SettingsCategory {
     let title: String
     let symbol: String
     var detail: (() -> String?)? = nil
+    var requiresEmail = false
     let make: () -> UIViewController
 }
 
 /// Top-level settings: a system-Settings-style menu that drills into a focused
 /// subpage per category.
-final class SettingsViewController: NavHeaderTableController {
+final class SettingsViewController: NavHeaderTableController, UIGestureRecognizerDelegate {
 
     private let categories: [SettingsCategory] =
         // Kind rows first (Reader/Audio/Reading List/Email for article apps,
@@ -55,20 +57,25 @@ final class SettingsViewController: NavHeaderTableController {
         // email sharing's address book, so it appears only where email exists.
         KindWiring.settingsCategories()
         + (AppSurfaceConfig.current.sharesByEmail
-            ? [SettingsCategory(title: "Contacts", symbol: "person.2") { FriendsViewController() }]
+            ? [SettingsCategory(title: L10n.string("Contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
         + [
-            SettingsCategory(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
-            SettingsCategory(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
-            SettingsCategory(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
+            SettingsCategory(title: L10n.string("Shortcut & Safari"), symbol: "safari") { ShortcutSettingsScreen() },
+            SettingsCategory(title: L10n.string("Appearance"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
         ]
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = "Settings"
+        headerTitle = L10n.string("Settings")
         super.viewDidLoad()
+        let diagnosticsGesture = UITapGestureRecognizer(
+            target: self, action: #selector(openDiagnostics))
+        diagnosticsGesture.numberOfTapsRequired = 5
+        diagnosticsGesture.cancelsTouchesInView = false
+        diagnosticsGesture.delegate = self
+        tableView.addGestureRecognizer(diagnosticsGesture)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -91,6 +98,9 @@ final class SettingsViewController: NavHeaderTableController {
         content.text = category.title
         content.secondaryText = category.detail?()
         content.image = UIImage(systemName: category.symbol)
+        let enabled = !category.requiresEmail || EmailAccountStore.shared.isConfigured
+        content.textProperties.color = enabled ? LunaColors.primaryText : LunaColors.tertiaryText
+        content.imageProperties.tintColor = enabled ? view.tintColor : LunaColors.tertiaryText
         cell.accessoryType = .disclosureIndicator
         cell.contentConfiguration = content
         return cell
@@ -99,7 +109,42 @@ final class SettingsViewController: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard categories.indices.contains(indexPath.row) else { return }
-        navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
+        let category = categories[indexPath.row]
+        guard !category.requiresEmail || EmailAccountStore.shared.isConfigured else {
+            presentEmailRequiredAlert()
+            return
+        }
+        navigationController?.pushViewController(category.make(), animated: true)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
+    ) -> Bool {
+        var touchedView: UIView? = touch.view
+        while let view = touchedView {
+            if view is UITableViewCell || view is UIControl { return false }
+            if view === tableView { return true }
+            touchedView = view.superview
+        }
+        return false
+    }
+
+    @objc private func openDiagnostics() {
+        navigationController?.pushViewController(DiagnosticsViewController(), animated: true)
+    }
+
+    private func presentEmailRequiredAlert() {
+        let alert = UIAlertController(
+            title: L10n.string("Set up email first"), message: nil, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default) {
+            [weak self] _ in
+            guard let self else { return }
+            let email = EmailAndKindleSettingsScreen()
+            email.focusesAddressField = true
+            self.navigationController?.pushViewController(email, animated: true)
+        })
+        present(alert, animated: true)
     }
 }
 
@@ -109,33 +154,22 @@ final class SettingsViewController: NavHeaderTableController {
 
 final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Section 0: the Safari extension's surface-specific button visibility.
-    /// Then the media apps' background-download preference, and the Action-Button
-    /// shortcut's URL preference and actions.
+    /// Then the Action-Button shortcut's URL preference and actions.
     private enum Section: Int, CaseIterable {
-        case suggestionButton, backgroundDownload, onScreenURLs, shortcut
+        case suggestionButton, onScreenURLs, shortcut
     }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
     private var safariButtonName: String {
         switch AppSurfaceConfig.current {
-        case .all: return "Luna"
-        case .reader: return "Read in Luna"
-        case .downloader: return "Download"
-        case .priceTracker: return "Track in Luna"
-        }
-    }
-    /// Only the media-handling apps' intents download media, so only they show the
-    /// background-download row (the pref itself lives in `AppIntentSettings`, which
-    /// every app links — `LunaMediaDownload` is not universal).
-    private var handlesMedia: Bool {
-        switch AppSurfaceConfig.current {
-        case .all, .downloader: return true
-        case .reader, .priceTracker: return false
+        case .all: return L10n.string("Luna")
+        case .reader: return L10n.string("Read in Luna")
+        case .downloader: return L10n.string("Download")
+        case .priceTracker: return L10n.string("Track in Luna")
         }
     }
     private var visibleSections: [Section] {
         var sections: [Section] = [.suggestionButton]
-        if handlesMedia { sections.append(.backgroundDownload) }
         if #available(iOS 27.0, *) { sections += [.onScreenURLs, .shortcut] }
         return sections
     }
@@ -144,7 +178,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = "Shortcut & Safari"
+        headerTitle = L10n.string("Shortcut & Safari")
         super.viewDidLoad()
         refreshSafariStatus()
     }
@@ -154,7 +188,6 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch visibleSections[section] {
         case .suggestionButton: return 1
-        case .backgroundDownload: return 1
         case .onScreenURLs: return 1
         case .shortcut: return Row.allCases.count
         }
@@ -162,24 +195,20 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch visibleSections[section] {
-        case .suggestionButton: return "\(safariButtonName) Button"
-        case .backgroundDownload: return "Media"
-        case .onScreenURLs: return "On-Screen URLs"
-        case .shortcut: return "Action Button Shortcut"
+        case .suggestionButton: return L10n.string("\(safariButtonName) Button")
+        case .onScreenURLs: return L10n.string("On-Screen URLs")
+        case .shortcut: return L10n.string("Action Button Shortcut")
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .suggestionButton:
-            return "When browsing in Safari (with the Luna extension enabled), show the "
-                + "\"\(safariButtonName)\" button when it applies. Choose when it appears."
-        case .backgroundDownload:
-            return "When on, Save and Provide Context return right away and the media keeps downloading in the background with a Live Activity. When off, they wait for the download to finish and return the image or video to your shortcut."
+            return L10n.string("When browsing in Safari (with the Luna extension enabled), show the \"\(safariButtonName)\" button when it applies. Choose when it appears.")
         case .onScreenURLs:
-            return "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling."
+            return L10n.string("When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling.")
         case .shortcut:
-            let base = "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
+            let base = L10n.string("Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)")
             return base
         }
     }
@@ -209,24 +238,11 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
             return cell
         }
 
-        if visibleSections[indexPath.section] == .backgroundDownload {
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            cell.selectionStyle = .none
-            var content = cell.defaultContentConfiguration()
-            content.text = "Download in Background"
-            content.image = UIImage(systemName: "arrow.down.doc")
-            cell.contentConfiguration = content
-            cell.accessoryView = makeToggle(
-                isOn: AppIntentSettings.downloadMediaInBackground,
-                action: #selector(backgroundDownloadToggled(_:)))
-            return cell
-        }
-
         if visibleSections[indexPath.section] == .onScreenURLs {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             cell.selectionStyle = .none
             var content = cell.defaultContentConfiguration()
-            content.text = "Handle On-Screen URLs"
+            content.text = L10n.string("Handle On-Screen URLs")
             content.image = UIImage(systemName: "link")
             cell.contentConfiguration = content
             cell.accessoryView = makeToggle(
@@ -240,13 +256,13 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         content.textProperties.color = view.tintColor ?? .systemBlue
         switch Row(rawValue: indexPath.row)! {
         case .install:
-            content.text = "Install Shortcut"
+            content.text = L10n.string("Install Shortcut")
             content.image = UIImage(systemName: "square.and.arrow.down")
         case .openShortcuts:
-            content.text = "Open Shortcuts"
+            content.text = L10n.string("Open Shortcuts")
             content.image = UIImage(systemName: "arrow.up.forward.app")
         case .refreshStatus:
-            content.text = "Refresh Last Visited Website"
+            content.text = L10n.string("Refresh Last Visited Website")
             content.image = UIImage(systemName: "arrow.clockwise")
         }
         cell.contentConfiguration = content
@@ -260,10 +276,6 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
 
     @objc private func handleOnScreenURLsToggled(_ sender: UISwitch) {
         AppIntentSettings.handleOnScreenURLs = sender.isOn
-    }
-
-    @objc private func backgroundDownloadToggled(_ sender: UISwitch) {
-        AppIntentSettings.downloadMediaInBackground = sender.isOn
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -286,10 +298,11 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         if let url = SafariURLStore.lastURL {
             let when = SafariURLStore.lastDate.map {
                 RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date())
-            } ?? "unknown time"
-            safariStatusText = "Last visited Safari URL (\(when)): \(url)"
+            } ?? L10n.string("unknown time")
+            safariStatusText = L10n.string("Last visited Safari URL (\(when)): \(url)")
         } else {
-            safariStatusText = "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
+            safariStatusText = L10n.string(
+                "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page.")
         }
     }
 }

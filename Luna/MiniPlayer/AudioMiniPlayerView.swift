@@ -17,6 +17,7 @@
 import LunaAudioPlayback
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 final class AudioMiniPlayerView: UIView {
 
@@ -115,20 +116,20 @@ final class AudioMiniPlayerView: UIView {
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         configureIconButton(skipBackButton, symbol: "backward.frame.fill", pointSize: 14,
-                            accessibilityLabel: "Previous paragraph", action: #selector(skipBackTapped))
+                            accessibilityLabel: L10n.string("Previous paragraph"), action: #selector(skipBackTapped))
         configureIconButton(playPauseButton, symbol: "play.fill", pointSize: 20,
-                            accessibilityLabel: "Play", action: #selector(playPauseTapped))
+                            accessibilityLabel: L10n.string("Play"), action: #selector(playPauseTapped))
         configureIconButton(skipForwardButton, symbol: "forward.frame.fill", pointSize: 14,
-                            accessibilityLabel: "Next paragraph", action: #selector(skipForwardTapped))
+                            accessibilityLabel: L10n.string("Next paragraph"), action: #selector(skipForwardTapped))
 
-        rateButton.setTitle("1×", for: .normal)
+        rateButton.setTitle(L10n.string("1×"), for: .normal)
         rateButton.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         rateButton.setTitleColor(LunaColors.primaryText, for: .normal)
-        rateButton.accessibilityLabel = "Playback speed"
+        rateButton.accessibilityLabel = L10n.string("Playback speed")
         rateButton.addTarget(self, action: #selector(rateTapped), for: .touchUpInside)
 
         configureIconButton(autoplayButton, symbol: "text.line.first.and.arrowtriangle.forward",
-                            pointSize: 15, accessibilityLabel: "Autoplay next article",
+                            pointSize: 15, accessibilityLabel: L10n.string("Autoplay next article"),
                             action: #selector(autoplayTapped))
 
         row.axis = .horizontal
@@ -218,15 +219,15 @@ final class AudioMiniPlayerView: UIView {
         let previousPath = self.display?.thumbnailPath
         self.display = display
 
-        titleLabel.text = display.isUpNext ? "Up Next · \(display.title)" : display.title
+        titleLabel.text = display.isUpNext ? L10n.string("Up Next · \(display.title)") : display.title
         titleLabel.textColor = display.isUpNext ? LunaColors.secondaryText : LunaColors.primaryText
         playPauseButton.configuration?.image = UIImage(
             systemName: display.isPlaying ? "pause.fill" : "play.fill")
-        playPauseButton.accessibilityLabel = display.isPlaying ? "Pause" : "Play"
+        playPauseButton.accessibilityLabel = display.isPlaying ? L10n.string("Pause") : L10n.string("Play")
         rateButton.setTitle(
             display.rate == 1.0 ? "1×" : String(format: "%g×", display.rate), for: .normal)
         autoplayButton.tintColor = display.isAutoplayOn ? GlassStyle.readingAccent : LunaColors.secondaryText
-        autoplayButton.accessibilityValue = display.isAutoplayOn ? "on" : "off"
+        autoplayButton.accessibilityValue = display.isAutoplayOn ? L10n.string("on") : L10n.string("off")
 
         if display.thumbnailPath != previousPath {
             loadThumbnail(path: display.thumbnailPath)

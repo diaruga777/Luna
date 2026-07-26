@@ -101,7 +101,7 @@ public enum EmailContentRenderer {
             bodyHTML += "<p style=\"margin:8px 0;line-height:1.5\">\(escape(line))</p>"
         }
         bodyHTML += "<p style=\"margin:16px 0\"><a href=\"\(attr(originalURL))\" "
-            + "style=\"color:#2b6cb0\">Open the original &rarr;</a></p>"
+            + "style=\"color:#2b6cb0\">\(escape(L10n.string("Open the original →")))</a></p>"
 
         let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? originalURL : title
@@ -122,7 +122,7 @@ public enum EmailContentRenderer {
         title: String, originalURL: String, byline: String?,
         bodyHTML: String, marker: LunaShareMarker
     ) -> String {
-        var header = "<div style=\"font-size:13px;color:#888;margin-bottom:4px\">Shared with you via Luna</div>"
+        var header = "<div style=\"font-size:13px;color:#888;margin-bottom:4px\">\(escape(L10n.string("Shared with you via Luna")))</div>"
         header += "<h1 style=\"font-size:24px;margin:0 0 6px\">"
             + "<a href=\"\(attr(originalURL))\" style=\"color:#111;text-decoration:none\">\(escape(title))</a></h1>"
         if let byline, !byline.isEmpty {
@@ -143,7 +143,7 @@ public enum EmailContentRenderer {
     }
 
     private static func plainDocument(title: String, originalURL: String, body: String) -> String {
-        "Shared with you via Luna\n\n\(title)\n\(originalURL)\n\n\(body)\n"
+        L10n.string("Shared with you via Luna\n\n\(title)\n\(originalURL)\n\n\(body)\n")
     }
 
     // MARK: - Inline HTML (escaping + link ranges)

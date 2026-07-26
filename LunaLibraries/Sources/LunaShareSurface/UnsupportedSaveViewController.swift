@@ -40,7 +40,7 @@ public final class UnsupportedSaveViewController: UIViewController {
         icon.contentMode = .center
 
         let title = UILabel()
-        title.text = "Can't Save This Link"
+        title.text = L10n.string("Can't Save This Link")
         title.textColor = LunaColors.primaryText
         title.font = .preferredFont(forTextStyle: .headline)
         title.textAlignment = .center

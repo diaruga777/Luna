@@ -1,0 +1,28 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSPhotoLibraryAddUsageDescription" : {
+      "comment" : "Explains why the share extension adds downloaded media to Photos.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luna saves photos, GIFs, and videos you download from social posts to your photo library."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription" : {
+      "comment" : "Explains why the share extension opens media it previously saved in Photos.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luna loads media you saved to Photos so it can be shared again."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -116,7 +116,7 @@ public final class SavedNonTextualViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        title = "Luna Downloader"
+        title = L10n.string("Luna Downloader")
 
         let onDone = self.onDone
         navigationItem.leftBarButtonItem = UIBarButtonItem(
@@ -128,7 +128,7 @@ public final class SavedNonTextualViewController: UIViewController {
         badge.tintColor = GlassStyle.readingAccent
         badge.contentMode = .center
 
-        savedLabel.text = "Saved"
+        savedLabel.text = L10n.string("Saved")
         savedLabel.font = .preferredFont(forTextStyle: .body)
         savedLabel.textColor = LunaColors.secondaryText
         savedLabel.textAlignment = .center
@@ -196,7 +196,7 @@ public final class SavedNonTextualViewController: UIViewController {
         Self.styleAsSystemPlayButton(playOverlay, diameter: 60)
         previewContainer.addSubview(playOverlay)
 
-        previewPlaceholder.text = "Unable to preview media"
+        previewPlaceholder.text = L10n.string("Unable to preview media")
         previewPlaceholder.font = .preferredFont(forTextStyle: .subheadline)
         previewPlaceholder.textColor = LunaColors.secondaryText
         previewPlaceholder.textAlignment = .center
@@ -230,7 +230,7 @@ public final class SavedNonTextualViewController: UIViewController {
         ])
 
         var dlConfig = UIButton.Configuration.filled()
-        dlConfig.title = "Download media"
+        dlConfig.title = L10n.string("Download media")
         dlConfig.image = UIImage(systemName: "arrow.down.circle")
         dlConfig.imagePadding = 8
         dlConfig.baseBackgroundColor = GlassStyle.readingAccent
@@ -249,7 +249,7 @@ public final class SavedNonTextualViewController: UIViewController {
         ])
 
         var shareConfig = UIButton.Configuration.tinted()
-        shareConfig.title = "Share"
+        shareConfig.title = L10n.string("Share")
         shareConfig.image = UIImage(systemName: "square.and.arrow.up")
         shareConfig.imagePadding = 8
         shareConfig.baseForegroundColor = GlassStyle.readingAccent
@@ -260,7 +260,7 @@ public final class SavedNonTextualViewController: UIViewController {
         // Hold layout space (visible but disabled) so the row height is stable.
 
         var saveConfig = UIButton.Configuration.tinted()
-        saveConfig.title = "Save to Photos"
+        saveConfig.title = L10n.string("Save to Photos")
         saveConfig.image = UIImage(systemName: "photo.badge.arrow.down")
         saveConfig.imagePadding = 8
         saveConfig.baseForegroundColor = GlassStyle.readingAccent
@@ -297,7 +297,7 @@ public final class SavedNonTextualViewController: UIViewController {
     private func configureDeleteButton() {
         guard deleteButton.configuration == nil else { return }
         var config = UIButton.Configuration.tinted()
-        config.title = "Delete and exit"
+        config.title = L10n.string("Delete and exit")
         config.image = UIImage(systemName: "trash")
         config.imagePadding = 8
         config.baseForegroundColor = .systemRed
@@ -359,7 +359,7 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadProgress.isHidden = false
             shareButton.isEnabled = false
             saveButton.isEnabled = false
-            downloadStatus.text = "Downloading…"
+            downloadStatus.text = L10n.string("Downloading…")
             downloadStatus.textColor = LunaColors.secondaryText
             downloadStatus.isHidden = false
 
@@ -422,7 +422,7 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.applyMediaState(.ready(media))
                 }
             } catch {
-                let message = (error as? MediaDownloadError)?.message ?? "Couldn't download the media."
+                let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't download the media.")
                 await MainActor.run {
                     guard !self.isDeleting else { return }
                     self.applyMediaState(.failed(message: message))
@@ -669,7 +669,7 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.markItemRead()
                     await MainActor.run { self.finishSave(success: true) }
                 } catch {
-                    let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
+                    let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't save the media.")
                     await MainActor.run { self.finishSave(message: message, success: false) }
                 }
             }
@@ -688,7 +688,7 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.markItemRead()
                     await MainActor.run { self.finishSave(success: true) }
                 } catch {
-                    let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
+                    let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't save the media.")
                     await MainActor.run { self.finishSave(message: message, success: false) }
                 }
             }
@@ -698,7 +698,7 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     private func showSavingStatus() {
-        downloadStatus.text = "Saving to Photos…"
+        downloadStatus.text = L10n.string("Saving to Photos…")
         downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
     }
@@ -722,7 +722,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
     private func setSaveButton(savedToPhotos: Bool) {
         var config = saveButton.configuration
-        config?.title = savedToPhotos ? "Saved to Photos" : "Save to Photos"
+        config?.title = savedToPhotos ? L10n.string("Saved to Photos") : L10n.string("Save to Photos")
         config?.image = UIImage(
             systemName: savedToPhotos ? "checkmark.circle.fill" : "photo.badge.arrow.down")
         config?.baseForegroundColor = savedToPhotos ? .systemGreen : GlassStyle.readingAccent
@@ -737,7 +737,7 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadButton.isEnabled = false
         shareButton.isEnabled = false
         saveButton.isEnabled = false
-        downloadStatus.text = "Deleting…"
+        downloadStatus.text = L10n.string("Deleting…")
         downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
 
@@ -759,7 +759,7 @@ public final class SavedNonTextualViewController: UIViewController {
                 await MainActor.run { self.onDone() }
             } catch {
                 let message = (error as? MediaDownloadError)?.message
-                    ?? "Couldn't delete this media."
+                    ?? L10n.string("Couldn't delete this media.")
                 await MainActor.run {
                     self.isDeleting = false
                     self.deleteButton.isEnabled = true

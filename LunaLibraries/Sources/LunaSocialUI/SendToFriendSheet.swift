@@ -64,7 +64,7 @@ public enum SendToFriendSheet {
     /// an ordinary non-interactive subview, so it can go up immediately, even while
     /// a menu is still wiping away.
     public static func presentCopiedConfirmation(from presenter: UIViewController) {
-        LunaToast.show("Copied", from: presenter)
+        LunaToast.show(L10n.string("Copied"), from: presenter)
     }
 
     private static func presentFriendPicker(
@@ -88,16 +88,16 @@ public enum SendToFriendSheet {
         urlString: String,
         title: String?
     ) {
-        let sheet = UIAlertController(title: "Send to Contact", message: nil, preferredStyle: .actionSheet)
+        let sheet = UIAlertController(title: L10n.string("Send to Contact"), message: nil, preferredStyle: .actionSheet)
         for recipient in recipients {
             sheet.addAction(UIAlertAction(title: recipient.email, style: .default) { _ in
                 deliver(item: item, urlString: urlString, title: title, to: [recipient.email], from: presenter)
             })
         }
-        sheet.addAction(UIAlertAction(title: "Other…", style: .default) { _ in
+        sheet.addAction(UIAlertAction(title: L10n.string("Other…"), style: .default) { _ in
             presentFriendPicker(from: presenter, item: item, urlString: urlString, title: title)
         })
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
         sheet.popoverPresentationController?.sourceView = presenter.view
         presenter.present(sheet, animated: true)
     }
@@ -144,10 +144,10 @@ public enum SendToFriendSheet {
     private static func promptAccountSetup(from presenter: UIViewController) {
         guard let launcher = accountSetupLauncher else {
             let alert = UIAlertController(
-                title: "Set up email first",
-                message: "Connect your email account in Luna → Settings → Email & Sending to send articles to contacts.",
+                title: L10n.string("Set up email first"),
+                message: L10n.string("Connect your email account in Luna → Settings → Email & Sending to send articles to contacts."),
                 preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
             presenter.present(alert, animated: true)
             return
         }
@@ -156,10 +156,10 @@ public enum SendToFriendSheet {
 
     private static func presentError(_ error: Error, from presenter: UIViewController) {
         let alert = UIAlertController(
-            title: "Couldn't send",
+            title: L10n.string("Couldn't send"),
             message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription,
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
         presenter.present(alert, animated: true)
     }
 }

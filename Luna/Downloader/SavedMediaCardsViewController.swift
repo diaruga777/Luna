@@ -73,8 +73,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
     private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
-        symbol: "photo.on.rectangle.angled", title: "No Saved Media",
-        subtitle: "Saved Downloader links appear here after Luna downloads the media.")
+        symbol: "photo.on.rectangle.angled", title: L10n.string("No Saved Media"),
+        subtitle: L10n.string("Saved Downloader links appear here after Luna downloads the media."))
     private let settingsButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
     /// The player behind the currently-presented full-screen video, held weakly
@@ -218,10 +218,10 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private func mountBottomControls() {
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: "Settings")
+            accessibilityLabel: L10n.string("Settings"))
         configureBottomButton(
             shareButton, symbol: "square.and.arrow.up", action: #selector(shareCurrentTapped),
-            accessibilityLabel: "Share Current Media")
+            accessibilityLabel: L10n.string("Share Current Media"))
         mountBottomControls(leading: settingsButton, trailing: shareButton)
     }
 
@@ -396,8 +396,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                                 self?.startDownload(item)
                             } else {
                                 self?.presentAlert(
-                                    title: "Photos Access Needed",
-                                    message: "Allow Photos access to play this archived item.")
+                                    title: L10n.string("Photos Access Needed"),
+                                    message: L10n.string("Allow Photos access to play this archived item."))
                             }
                             return
                         }
@@ -523,7 +523,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         }
 
         let title = PlatformRecognizer.recognize(url.absoluteString)?.platform.displayName
-            ?? url.host ?? "Pasted Media"
+            ?? url.host ?? L10n.string("Pasted Media")
         pasteboardState = .downloading(
             changeCount: expectedChangeCount, url: url, title: title, progress: 0)
         reload()
@@ -593,7 +593,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             } catch {
                 await MainActor.run {
                     self.isCommittingPasteboardMedia = false
-                    self.presentAlert(title: "Save Failed", message: "Couldn't keep the pasted media.")
+                    self.presentAlert(title: L10n.string("Save Failed"), message: L10n.string("Couldn't keep the pasted media."))
                 }
                 return
             }
@@ -607,7 +607,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 try? FileManager.default.removeItem(at: persistentCopy)
                 await MainActor.run {
                     self.isCommittingPasteboardMedia = false
-                    self.presentAlert(title: "Save Failed", message: "Couldn't keep the pasted media.")
+                    self.presentAlert(title: L10n.string("Save Failed"), message: L10n.string("Couldn't keep the pasted media."))
                 }
                 return
             }
@@ -650,8 +650,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 if pasteboardChanged { self.refreshPasteboardURL() }
                 if photosFailure {
                     self.presentAlert(
-                        title: "Photos Access Needed",
-                        message: "The media was saved in Luna. Allow photo library access in Settings to also save it to Photos.")
+                        title: L10n.string("Photos Access Needed"),
+                        message: L10n.string("The media was saved in Luna. Allow photo library access in Settings to also save it to Photos."))
                 }
             }
         }
@@ -702,7 +702,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                   let fileURL = await self.prepareShareFile(for: item)
             else {
                 self?.presentAlert(
-                    title: "Share Failed", message: "Couldn't prepare this media for sharing.")
+                    title: L10n.string("Share Failed"), message: L10n.string("Couldn't prepare this media for sharing."))
                 return
             }
 
@@ -788,8 +788,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 else { return }
                 guard await photoSaver.requestReadAuthorization() else {
                     presentAlert(
-                        title: "Photos Access Needed",
-                        message: "Allow photo library access in Settings to save media.")
+                        title: L10n.string("Photos Access Needed"),
+                        message: L10n.string("Allow photo library access in Settings to save media."))
                     return
                 }
                 let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
@@ -798,16 +798,16 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 try await SavedMediaPhotosSync.saveAndTransition(
                     itemID: item.id, fileURL: tempURL, kind: kind, shouldMoveFile: true,
                     saver: photoSaver, store: store)
-                presentAlert(title: "Saved to Photos", message: "The media was added to your photo library.")
+                presentAlert(title: L10n.string("Saved to Photos"), message: L10n.string("The media was added to your photo library."))
             } catch {
-                presentAlert(title: "Save Failed", message: "Couldn't save this media to Photos.")
+                presentAlert(title: L10n.string("Save Failed"), message: L10n.string("Couldn't save this media to Photos."))
             }
         }
     }
 
     private func presentAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
         present(alert, animated: true)
     }
 
@@ -826,8 +826,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 self.store.delete(item)
             } catch {
                 self?.presentAlert(
-                    title: "Photos Access Needed",
-                    message: "Allow Photos access in Settings to delete this media from Photos.")
+                    title: L10n.string("Photos Access Needed"),
+                    message: L10n.string("Allow Photos access in Settings to delete this media from Photos."))
             }
         }
     }
@@ -925,8 +925,8 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
             switch state {
             case .placeholder:
                 return PasteboardPlaceholderCardContentViewController(
-                    title: "Paste Link",
-                    detail: "Paste the copied link to preview it here.",
+                    title: L10n.string("Paste Link"),
+                    detail: L10n.string("Paste the copied link to preview it here."),
                     onPaste: { [weak self] value in self?.handlePastedValue(value) })
             case .invalid:
                 return InvalidPasteCardContentViewController()
@@ -1074,14 +1074,14 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
         // only honest verbs.
         if let failed = failedSave(atCarouselIndex: index) {
             return UIMenu(children: [
-                UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) {
+                UIAction(title: L10n.string("Share Link…"), image: UIImage(systemName: "square.and.arrow.up")) {
                     [weak self] _ in
                     guard let self else { return }
                     SendToFriendSheet.shareLink(
                         urlString: failed.urlString, from: self, sourceView: self.view)
                 },
                 UIAction(
-                    title: "Delete", image: UIImage(systemName: "trash"),
+                    title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
                     attributes: .destructive
                 ) { [weak self] _ in
                     ReadingListStore.shared.delete(failed)
@@ -1095,27 +1095,27 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
         switch item.storageState {
         case .undownloaded:
             actions.append(UIAction(
-                title: "Download", image: UIImage(systemName: "arrow.down.circle")
+                title: L10n.string("Download"), image: UIImage(systemName: "arrow.down.circle")
             ) { [weak self] _ in self?.startDownload(item) })
         case .localFile:
             actions.append(UIAction(
-                title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.share(item, sourceIndex: index) })
             if item.kind?.canSaveToPhotos == true {
                 actions.append(UIAction(
-                    title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")
+                    title: L10n.string("Save to Photos"), image: UIImage(systemName: "photo.badge.plus")
                 ) { [weak self] _ in self?.saveToPhotos(item) })
             }
         case .photosReference:
             actions.append(UIAction(
-                title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.share(item, sourceIndex: index) })
         }
         actions.append(UIAction(
-            title: "Archive", image: UIImage(systemName: "archivebox")
+            title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
         ) { [weak self] _ in self?.store.setArchived(true, for: item.id) })
         actions.append(UIAction(
-            title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
+            title: L10n.string("Delete"), image: UIImage(systemName: "trash"), attributes: .destructive
         ) { [weak self] _ in self?.deleteSavedItem(for: item) })
         return UIMenu(children: actions)
     }
@@ -1163,7 +1163,7 @@ private final class PasteboardMediaDownloadCardContentViewController: CardConten
         urlLabel.numberOfLines = 4
         urlLabel.lineBreakMode = .byTruncatingMiddle
 
-        statusLabel.text = "Downloading temporary preview…"
+        statusLabel.text = L10n.string("Downloading temporary preview…")
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
         statusLabel.textColor = LunaColors.secondaryText
         statusLabel.textAlignment = .center
@@ -1335,7 +1335,7 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
             pointSize: 52, weight: .regular)
         configuration.baseForegroundColor = LunaColors.secondaryText
         button.configuration = configuration
-        button.accessibilityLabel = "Download media"
+        button.accessibilityLabel = L10n.string("Download media")
         button.addAction(UIAction { [weak self] _ in self?.download() }, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
@@ -1344,20 +1344,20 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         // is available. Runs a one-shot URL rescue with the media hint.
         var rescueConfig = UIButton.Configuration.tinted()
         rescueConfig.image = UIImage(systemName: "wand.and.stars")
-        rescueConfig.title = "Try Apple Intelligence"
+        rescueConfig.title = L10n.string("Try Apple Intelligence")
         rescueConfig.imagePadding = 6
         rescueConfig.cornerStyle = .capsule
         rescueButton.configuration = rescueConfig
         rescueButton.isHidden = true
         rescueButton.addAction(UIAction { [weak self] _ in
             self?.rescueButton.isHidden = true
-            self?.statusLabel.text = "Asking Apple Intelligence…"
+            self?.statusLabel.text = L10n.string("Asking Apple Intelligence…")
             self?.rescue?()
         }, for: .touchUpInside)
         rescueButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(rescueButton)
 
-        statusLabel.text = "Downloading"
+        statusLabel.text = L10n.string("Downloading")
         statusLabel.textColor = LunaColors.primaryText
         statusLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         statusLabel.numberOfLines = 2

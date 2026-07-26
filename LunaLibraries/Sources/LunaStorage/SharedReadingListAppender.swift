@@ -56,7 +56,7 @@ public enum SharedReadingListAppender {
         insertIfNew(dedupeURLString: nil) {
             newItemDict(
                 id: id, urlString: "lunadoc://\(id.uuidString)",
-                title: title.isEmpty ? "Document" : title, documentType: ext)
+                title: title.isEmpty ? L10n.string("Document") : title, documentType: ext)
         }
     }
 

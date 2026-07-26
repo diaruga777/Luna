@@ -8,6 +8,7 @@ import LunaReadingListUI
 import LunaSocial
 import LunaStorage
 import UIKit
+import LunaModels
 
 /// Recipient picker for the "Send to Friend" double-save action: either
 /// "Ask Every Time" (a double save opens the friend selector in the app) or a
@@ -24,7 +25,7 @@ final class DoubleSaveRecipientsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = "Recipients"
+        headerTitle = L10n.string("Recipients")
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
@@ -42,17 +43,19 @@ final class DoubleSaveRecipientsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        Section(rawValue: section) == .friends && !friends.isEmpty ? "Send To" : nil
+        Section(rawValue: section) == .friends && !friends.isEmpty
+            ? L10n.string("Send To")
+            : nil
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .askEveryTime:
-            return "A double save opens Luna's contact selector so you pick recipients each time."
+            return L10n.string("A double save opens Luna's contact selector so you pick recipients each time.")
         case .friends:
             return friends.isEmpty
-                ? "Add contacts on the Contacts screen to preset recipients here."
-                : "A double save emails the article to every selected contact immediately."
+                ? L10n.string("Add contacts on the Contacts screen to preset recipients here.")
+                : L10n.string("A double save emails the article to every selected contact immediately.")
         }
     }
 

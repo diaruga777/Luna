@@ -9,6 +9,7 @@
 //
 
 import UIKit
+import LunaModels
 
 public final class CarouselCardView: CardSurfaceView {
 
@@ -93,7 +94,7 @@ public final class CarouselCardView: CardSurfaceView {
             UIImage(systemName: name,
                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)),
             for: .normal)
-        muteButton.accessibilityLabel = muted ? "Unmute" : "Mute"
+        muteButton.accessibilityLabel = muted ? L10n.string("Unmute") : L10n.string("Mute")
     }
 
     /// A small accessory pinned to the card's top-leading corner (the top-right

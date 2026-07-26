@@ -147,20 +147,17 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// archive.today rate-limits aggressively (HTTP 429) and, once it does, won't
     /// honor CAPTCHA solves until the throttle clears — so surface actionable
     /// remedies rather than letting the user re-solve a CAPTCHA that can't pass.
-    private static let rateLimitMessage =
-        "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n"
-        + "•  Wait ~30 minutes\n"
-        + "•  Switch networks or turn on a VPN\n"
-        + "•  Tap Open in Safari below and view there"
+    private static let rateLimitMessage = L10n.string(
+        "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n•  Wait ~30 minutes\n•  Switch networks or turn on a VPN\n•  Tap Open in Safari below and view there")
 
     /// Shown when archive.today returns an error AFTER the user solved the CAPTCHA
     /// (a stale/invalid capture session, an un-archivable page) — solving again
     /// won't help, so we stop and tell the user plainly rather than spin forever.
-    private static let cannotArchiveMessage =
-        "This site can't be archived right now. Try again in a little while, or open it in Safari."
+    private static let cannotArchiveMessage = L10n.string(
+        "This site can't be archived right now. Try again in a little while, or open it in Safari.")
 
-    private static let mayBeStuckMessage =
-        "This archive is taking longer than usual. It may be stuck, but we’re still waiting."
+    private static let mayBeStuckMessage = L10n.string(
+        "This archive is taking longer than usual. It may be stuck, but we’re still waiting.")
 
     public init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared) {
         self.articleURL = articleURL
@@ -387,14 +384,14 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         overlaySpinner.color = GlassStyle.readingAccent
         overlaySpinner.startAnimating()
 
-        overlayLabel.text = "Unlocking article…"
+        overlayLabel.text = L10n.string("Unlocking article…")
         overlayLabel.textColor = LunaColors.secondaryText
         overlayLabel.font = .preferredFont(forTextStyle: .callout)
         overlayLabel.textAlignment = .center
         overlayLabel.numberOfLines = 0
 
         var safariConfig = UIButton.Configuration.borderedProminent()
-        safariConfig.title = "Open in Safari"
+        safariConfig.title = L10n.string("Open in Safari")
         safariConfig.image = UIImage(systemName: "safari")
         safariConfig.imagePadding = 6
         safariConfig.cornerStyle = .large

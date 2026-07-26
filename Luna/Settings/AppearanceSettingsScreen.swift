@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// App-wide interface style and the Reader-only Lunar Eclipse experiment.
 final class AppearanceSettingsScreen: NavHeaderTableController {
@@ -15,7 +16,7 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = "Appearance"
+        headerTitle = L10n.string("Appearance")
         super.viewDidLoad()
     }
 
@@ -29,8 +30,8 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .theme: return "Theme"
-        case .motion: return "Motion"
+        case .theme: return L10n.string("Theme")
+        case .motion: return L10n.string("Motion")
         }
     }
 
@@ -38,8 +39,7 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: section)! {
         case .theme: return nil
         case .motion:
-            return "Lunar Eclipse is an opt-in transition used only when Luna Reader "
-                + "opens or closes an article. Reduce Motion disables it automatically."
+            return L10n.string("Lunar Eclipse is an opt-in transition used only when Luna Reader opens or closes an article. Reduce Motion disables it automatically.")
         }
     }
 
@@ -53,7 +53,7 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             cell.selectionStyle = .none
             var content = cell.defaultContentConfiguration()
-            content.text = "Lunar Eclipse Transition"
+            content.text = L10n.string("Lunar Eclipse Transition")
             cell.contentConfiguration = content
             cell.accessoryView = makeToggle(
                 isOn: AppearanceSettings.lunarEclipseReaderTransitionEnabled,

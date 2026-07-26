@@ -7,6 +7,7 @@ import LunaReadingListUI
 import LunaMediaDownload
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// Media download and retention controls. In Downloader this is the whole
 /// "Downloads" page: two picker rows — whether media downloads on its own, and
@@ -21,7 +22,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = isDownloader ? "Downloads" : "Auto-Download Media"
+        headerTitle = isDownloader ? L10n.string("Downloads") : L10n.string("Auto-Download Media")
         super.viewDidLoad()
     }
 
@@ -39,22 +40,22 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         guard !isDownloader else { return nil }
-        return section == 1 ? "Auto-Save to Photos by Platform" : nil
+        return section == 1 ? L10n.string("Auto-Save to Photos by Platform") : nil
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if isDownloader {
             switch DownloaderSection(rawValue: section)! {
             case .autoDownload:
-                return "Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away."
+                return L10n.string("Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away.")
             case .storage:
-                return "Save to Photos puts finished downloads in your photo library and keeps them there. Otherwise downloads stay in Luna and are deleted automatically once they reach the age you pick."
+                return L10n.string("Save to Photos puts finished downloads in your photo library and keeps them there. Otherwise downloads stay in Luna and are deleted automatically once they reach the age you pick.")
             }
         }
         if section == 0 {
-            return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
+            return L10n.string("When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button.")
         }
-        return "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Luna never reads or edits your photos."
+        return L10n.string("Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Luna never reads or edits your photos.")
     }
 
     override func tableView(
@@ -99,7 +100,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             }
         })
         return pickerCell(
-            title: "Download Automatically", symbol: "arrow.down.circle",
+            title: L10n.string("Download Automatically"), symbol: "arrow.down.circle",
             identifier: "downloadAutomaticallyPicker", value: current.displayName, menu: menu)
     }
 
@@ -112,7 +113,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             }
         })
         return pickerCell(
-            title: "Storage", symbol: "internaldrive",
+            title: L10n.string("Storage"), symbol: "internaldrive",
             identifier: "storagePicker", value: current.displayName, menu: menu)
     }
 
@@ -161,7 +162,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
-        content.text = "Auto-download media"
+        content.text = L10n.string("Auto-download media")
         content.image = UIImage(systemName: "arrow.down.circle")
         cell.contentConfiguration = content
 
@@ -196,15 +197,15 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
 
     private func presentPermissionAlert() {
         let alert = UIAlertController(
-            title: "Photos Access Needed",
-            message: "Allow photo library access in Settings to auto-download media.",
+            title: L10n.string("Photos Access Needed"),
+            message: L10n.string("Allow photo library access in Settings to auto-download media."),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Open Settings"), style: .default) { _ in
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
         })
-        alert.addAction(UIAlertAction(title: "OK", style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .cancel))
         present(alert, animated: true)
     }
 }

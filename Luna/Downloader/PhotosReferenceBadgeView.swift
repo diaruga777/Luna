@@ -1,4 +1,5 @@
 import UIKit
+import LunaModels
 
 /// Compact Photos-style rosette used as a storage-origin badge. It is drawn in
 /// code so it remains crisp at both grid and fullscreen sizes.
@@ -10,7 +11,7 @@ final class PhotosReferenceBadgeView: UIButton {
         super.init(frame: .zero)
         setImage(Self.icon, for: .normal)
         imageView?.contentMode = .scaleAspectFit
-        accessibilityLabel = "Open in Photos"
+        accessibilityLabel = L10n.string("Open in Photos")
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.28
         layer.shadowRadius = 2

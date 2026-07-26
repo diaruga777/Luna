@@ -5,6 +5,7 @@
 
 import SwiftUI
 import UIKit
+import LunaModels
 
 /// The shared geometry + palette for the "moon horizon" progress treatment: a
 /// full-width, very slightly curved lunar horizon. The sun's first light creeps
@@ -182,7 +183,7 @@ public final class MoonHorizonProgressBar: UIView {
         isUserInteractionEnabled = false
         isAccessibilityElement = true
         accessibilityTraits = .updatesFrequently
-        accessibilityLabel = "Progress"
+        accessibilityLabel = L10n.string("Progress")
 
         surfaceLayer.strokeColor = nil
         layer.addSublayer(surfaceLayer)
@@ -575,7 +576,7 @@ public struct MoonHorizonProgressView: View {
             }
         }
         .accessibilityElement()
-        .accessibilityLabel("Progress")
+        .accessibilityLabel(L10n.string("Progress"))
         .accessibilityValue("\(Int(progress * 100))%")
     }
 

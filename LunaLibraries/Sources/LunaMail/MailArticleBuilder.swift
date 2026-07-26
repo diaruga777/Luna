@@ -52,7 +52,9 @@ public enum MailArticleBuilder {
         guard blocks.contains(where: { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty })
         else { return nil }
         return ArticleContent(
-            title: title.isEmpty ? (author ?? "Email") : title, author: author, blocks: blocks)
+            title: title.isEmpty ? (author ?? L10n.string("Email")) : title,
+            author: author,
+            blocks: blocks)
     }
 
     /// Display name from a `From` header (`"Name" <addr>` → `Name`; else the

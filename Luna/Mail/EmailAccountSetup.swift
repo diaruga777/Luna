@@ -14,6 +14,7 @@ import LunaMailTransport
 import LunaSocial
 import AuthenticationServices
 import UIKit
+import LunaModels
 
 @MainActor
 final class EmailAccountSetup {
@@ -118,13 +119,13 @@ final class EmailAccountSetup {
         guard let presenter else { return }
         let clientID = MicrosoftOAuth.clientID
         guard !clientID.isEmpty else {
-            presentError("Outlook isn't configured in this build.")
+            presentError(L10n.string("Outlook isn't configured in this build."))
             return
         }
         let pkce = MicrosoftOAuth.makePKCE()
         guard let url = MicrosoftOAuth.authorizationURL(
             clientID: clientID, challenge: pkce.challenge, loginHint: address)
-        else { presentError("Couldn't start Outlook sign-in."); return }
+        else { presentError(L10n.string("Couldn't start Outlook sign-in.")); return }
 
         let context = AuthPresentationContext(anchor: presenter.view.window)
         contextProvider = context
@@ -144,7 +145,7 @@ final class EmailAccountSetup {
                         self.completion(false)
                         return
                     }
-                    self.presentError("Outlook sign-in failed. Please try again.")
+                    self.presentError(L10n.string("Outlook sign-in failed. Please try again."))
                     return
                 }
                 guard let callback,
@@ -153,7 +154,7 @@ final class EmailAccountSetup {
                 else {
                     // A callback without a `code` item is a real failure, not a
                     // cancellation — it must not fail silently.
-                    self.presentError("Outlook sign-in failed. Please try again.")
+                    self.presentError(L10n.string("Outlook sign-in failed. Please try again."))
                     return
                 }
                 // The webview is gone but the token exchange + inbox-filter setup
@@ -207,14 +208,14 @@ final class EmailAccountSetup {
         } catch {
             cover.hide()
             loadingCover = nil
-            presentError("Outlook sign-in failed. Please try again.")
+            presentError(L10n.string("Outlook sign-in failed. Please try again."))
         }
     }
 
     private func presentError(_ message: String) {
         completion(false)
-        let alert = UIAlertController(title: "Sign-in failed", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        let alert = UIAlertController(title: L10n.string("Sign-in failed"), message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
         presenter?.present(alert, animated: true)
     }
 }

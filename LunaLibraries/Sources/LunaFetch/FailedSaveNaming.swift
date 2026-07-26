@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// How a failed save is NAMED on its card. A page Luna couldn't read has no
 /// stored title, so the card walks a fallback chain instead of showing
@@ -23,7 +24,7 @@ public enum FailedSaveNaming {
     ) -> String {
         if let resolved = nonEmpty(resolvedTitle) { return resolved }
         if let stored = nonEmpty(itemTitle), stored != "Untitled" { return stored }
-        guard let url else { return "Untitled" }
+        guard let url else { return L10n.string("Untitled") }
         // `articleTitleGuess` already falls back to the bare host when the slug
         // holds no words, so this is the end of the chain.
         return ArticleFetcher.articleTitleGuess(from: url)

@@ -76,7 +76,7 @@ public final class AccountEmailSender: ArticleEmailSending {
 /// The Kindle destination: email through the connected Luna account.
 public final class KindleDestination: ArticleDestination {
     public let id = ArticleDestinationID.kindle
-    public let displayName = "Kindle"
+    public let displayName = L10n.string("Kindle")
 
     private let sender: ArticleEmailSending
 
@@ -298,7 +298,7 @@ public final class ArticleSendCoordinator {
         guard failureCount < retryPolicy.maxSoftFailures else {
             store.markSendTerminalFailure(
                 for: itemID, destination: destination.id,
-                errorMessage: "\(message) Luna gave up after \(failureCount) attempts.",
+                errorMessage: L10n.string("\(message) Luna gave up after \(failureCount) attempts."),
                 failureCount: failureCount)
             return
         }
@@ -328,7 +328,7 @@ public final class ArticleSendCoordinator {
     private static func userVisibleErrorMessage(_ error: Error) -> String {
         let message = String(describing: error)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty ? "Delivery failed." : message
+        return message.isEmpty ? L10n.string("Delivery failed.") : message
     }
 
     /// Sends a minimal test document to one destination so the user can verify
@@ -336,17 +336,19 @@ public final class ArticleSendCoordinator {
     public func sendTestDocument(toDestinationID id: String) async throws {
         guard let destination = destination(id: id) else { return }
         let content = ArticleContent(
-            title: "Luna Test Document",
+            title: L10n.string("Luna Test Document"),
             blocks: [ArticleContent.Block(
                 kind: .paragraph,
-                text: "If you can read this on your ereader, Luna's send setup works.",
+                text: L10n.string("If you can read this on your ereader, Luna's send setup works."),
                 links: [])])
         let epub = EpubBuilder().build(
             content: content,
             sourceURLString: "https://luna.local/test",
             imagesDirectory: store.articlesDirectory)
         try await destination.send(
-            epubData: epub, fileName: "Luna Test Document.epub", title: content.title)
+            epubData: epub,
+            fileName: L10n.string("Luna Test Document.epub"),
+            title: content.title)
     }
 
     /// A filesystem- and MIME-safe attachment name derived from the title.

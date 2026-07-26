@@ -6,6 +6,7 @@
 import LunaStorage
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// Shows the persistent diagnostic log and lets the user share it (as a `.txt`)
 /// or clear it. Reached from Settings → Diagnostics. Used to debug push /
@@ -39,22 +40,22 @@ final class DiagnosticsViewController: UIViewController {
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView)
 
-        header.title = "Diagnostics"
+        header.title = L10n.string("Diagnostics")
         // The way out: a back chevron when pushed; Done when the root (modal). Mirrors the
         // old conditional left bar button. The trailing actions (share / clear)
         // sit on the right, as before.
         let isRoot = navigationController?.viewControllers.first === self || navigationController == nil
         if isRoot {
             header.setLeadingControls([NavHeaderBar.textButton(
-                title: "Done", target: self, action: #selector(headerBack), bold: true)])
+                title: L10n.string("Done"), target: self, action: #selector(headerBack), bold: true)])
         } else {
             header.setLeadingControls([NavHeaderBar.backButton(target: self, action: #selector(headerBack))])
         }
         header.setTrailingControls([
             NavHeaderBar.imageButton(
                 systemName: "square.and.arrow.up", target: self, action: #selector(share),
-                accessibilityLabel: "Share"),
-            NavHeaderBar.textButton(title: "Clear", target: self, action: #selector(clear)),
+                accessibilityLabel: L10n.string("Share")),
+            NavHeaderBar.textButton(title: L10n.string("Clear"), target: self, action: #selector(clear)),
         ])
         let headerBottom = header.mount(in: self)
 
@@ -92,7 +93,7 @@ final class DiagnosticsViewController: UIViewController {
 
     private func reload() {
         let text = log.contents()
-        textView.text = text.isEmpty ? "No diagnostics recorded yet." : text
+        textView.text = text.isEmpty ? L10n.string("No diagnostics recorded yet.") : text
         // Show the most recent lines.
         textView.layoutIfNeeded()
         let end = NSRange(location: (textView.text as NSString).length, length: 0)
@@ -101,7 +102,7 @@ final class DiagnosticsViewController: UIViewController {
 
     @objc private func share() {
         guard let url = try? log.exportFile() else {
-            presentAlert(title: "Export Failed", message: "Couldn't write the log file.")
+            presentAlert(title: L10n.string("Export Failed"), message: L10n.string("Couldn't write the log file."))
             return
         }
         let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
@@ -111,10 +112,10 @@ final class DiagnosticsViewController: UIViewController {
 
     @objc private func clear() {
         let confirm = UIAlertController(
-            title: "Clear Diagnostics?",
-            message: "This erases the saved log.", preferredStyle: .alert)
-        confirm.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        confirm.addAction(UIAlertAction(title: "Clear", style: .destructive) { [weak self] _ in
+            title: L10n.string("Clear Diagnostics?"),
+            message: L10n.string("This erases the saved log."), preferredStyle: .alert)
+        confirm.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        confirm.addAction(UIAlertAction(title: L10n.string("Clear"), style: .destructive) { [weak self] _ in
             self?.log.clear()
             self?.reload()
         })
@@ -123,7 +124,7 @@ final class DiagnosticsViewController: UIViewController {
 
     private func presentAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
         present(alert, animated: true)
     }
 }

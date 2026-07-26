@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 import LunaStorage
 import LunaURLClassification
 
@@ -64,7 +65,9 @@ extension LiveMediaDownloadManager {
                 await activity.update(
                     using: state,
                     alertConfiguration: AlertConfiguration(
-                        title: "Download started", body: "\(job.title)", sound: .default))
+                        title: L10n.resource("Download started"),
+                        body: "\(job.title)",
+                        sound: .default))
             }
         } catch {
             SharedDiagnosticLog.record(
@@ -84,7 +87,7 @@ extension LiveMediaDownloadManager {
             sourceURLString: urlString,
             assetURLString: nil,
             mediaKind: "unknown",
-            title: title ?? "Media download",
+            title: title ?? L10n.string("Media download"),
             creator: nil,
             resolveKind: nil,
             phase: .failed,
@@ -134,7 +137,9 @@ extension LiveMediaDownloadManager {
         switch job.phase {
         case .finished, .failed:
             alert = AlertConfiguration(
-                title: job.phase == .failed ? "Download failed" : "Download finished",
+                title: job.phase == .failed
+                    ? L10n.resource("Download failed")
+                    : L10n.resource("Download finished"),
                 body: "\(job.title)",
                 sound: .default)
         default:

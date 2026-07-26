@@ -1,7 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "Luna Reader",
-    "description": "Tracks the page you're reading so Luna can save it to your reading list.",
+    "name": "__MSG_extensionName__",
+    "description": "__MSG_extensionDescription__",
+    "default_locale": "en",
     "version": "1.0",
     "icons": {
         "48": "icon-48.png",

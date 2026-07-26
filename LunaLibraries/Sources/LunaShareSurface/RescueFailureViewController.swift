@@ -60,15 +60,14 @@ public final class RescueFailureViewController: UIViewController {
         icon.contentMode = .center
 
         let title = UILabel()
-        title.text = "Couldn't load this page."
+        title.text = L10n.string("Couldn't load this page.")
         title.textColor = LunaColors.primaryText
         title.font = .preferredFont(forTextStyle: .headline)
         title.textAlignment = .center
         title.numberOfLines = 0
 
         let body = UILabel()
-        body.text = "Luna can try again with Apple Intelligence the next time you open it. "
-            + "What should this save become?"
+        body.text = L10n.string("Luna can try again with Apple Intelligence the next time you open it. What should this save become?")
         body.textColor = LunaColors.secondaryText
         body.font = .preferredFont(forTextStyle: .subheadline)
         body.textAlignment = .center
@@ -76,24 +75,24 @@ public final class RescueFailureViewController: UIViewController {
 
         segmented.selectedSegmentIndex = RescueHint.allCases.firstIndex(of: defaultHint) ?? 0
 
-        primaryButton.setTitle("Finish in Luna", for: .normal)
+        primaryButton.setTitle(L10n.string("Finish in Luna"), for: .normal)
         primaryButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         primaryButton.addTarget(self, action: #selector(finishTapped), for: .touchUpInside)
 
-        manualLabel.text = "Open Luna to finish saving this."
+        manualLabel.text = L10n.string("Open Luna to finish saving this.")
         manualLabel.textColor = LunaColors.secondaryText
         manualLabel.font = .preferredFont(forTextStyle: .footnote)
         manualLabel.textAlignment = .center
         manualLabel.numberOfLines = 0
         manualLabel.isHidden = true
 
-        doneButton.setTitle("Done", for: .normal)
+        doneButton.setTitle(L10n.string("Done"), for: .normal)
         doneButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         doneButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         doneButton.isHidden = true
 
         let notNow = UIButton(type: .system)
-        notNow.setTitle("Not Now", for: .normal)
+        notNow.setTitle(L10n.string("Not Now"), for: .normal)
         notNow.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
 
         let stack = UIStackView(arrangedSubviews: [icon, title, body, segmented, primaryButton, manualLabel, doneButton, notNow])

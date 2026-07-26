@@ -122,8 +122,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     private let store = ReadingListStore.shared
     private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
-        symbol: "books.vertical", title: "No Saved Articles",
-        subtitle: "Articles you save appear here as cards.")
+        symbol: "books.vertical", title: L10n.string("No Saved Articles"),
+        subtitle: L10n.string("Articles you save appear here as cards."))
     private let settingsButton = UIButton(type: .system)
     // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
     private let readerChromeRow = UIView()
@@ -351,10 +351,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
         configureChromeButton(
             readerBackButton, symbol: "chevron.backward", action: #selector(readerBackTapped),
-            label: "Back")
+            label: L10n.string("Back"))
         configureChromeButton(
             readerAudioButton, symbol: "speaker.slash", action: #selector(readerAudioTapped),
-            label: "Read Aloud")
+            label: L10n.string("Read Aloud"))
         for control in [readerBackButton, readerAudioButton] {
             readerChromeRow.addSubview(control)
         }
@@ -471,7 +471,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         readerAudioButton.setImage(
             UIImage(systemName: state.isAudioOn ? "speaker.wave.2" : "speaker.slash"), for: .normal)
-        readerAudioButton.accessibilityValue = state.isAudioOn ? "On" : "Off"
+        readerAudioButton.accessibilityValue = state.isAudioOn ? L10n.string("On") : L10n.string("Off")
 
         if chromeModes != state.modes {
             chromeModes = state.modes
@@ -501,10 +501,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private func mountBottomControls() {
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: "Settings")
+            accessibilityLabel: L10n.string("Settings"))
         configureBottomButton(
             readerShareButton, symbol: "square.and.arrow.up", action: nil,
-            accessibilityLabel: "Share")
+            accessibilityLabel: L10n.string("Share"))
         // The pill is retargeted as the focused reader changes, so the menu is built
         // fresh on each press against whatever `readerForChrome` points at now.
         ReaderShareMenu.install(
@@ -971,7 +971,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         for item: ReadingListItem, carouselIndex: Int
     ) -> UIMenu {
         let delete = UIAction(
-            title: "Delete", image: UIImage(systemName: "trash"),
+            title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
             attributes: .destructive
         ) { [weak self] _ in
             self?.deleteActive(item)
@@ -981,7 +981,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // rid of it (matching the list row's failed-item menu).
         if ReadingListSectioning.isFailedSave(item) {
             return UIMenu(children: [
-                UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) {
+                UIAction(title: L10n.string("Share Link…"), image: UIImage(systemName: "square.and.arrow.up")) {
                     [weak self] _ in
                     guard let self else { return }
                     AppReaderShareProvider.shared.presentShareSheet(
@@ -997,7 +997,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             for: item, presenter: self,
             sourceView: carousel.cardView(at: carouselIndex) ?? view) ?? []
         return UIMenu(children: kindActions + [
-            UIAction(title: "Archive", image: UIImage(systemName: "archivebox")) {
+            UIAction(title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")) {
                 [weak self] _ in
                 self?.archive(item, fromCarouselIndex: carouselIndex)
             },
@@ -1097,12 +1097,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             switch state {
             case .placeholder:
                 return PasteboardPlaceholderCardContentViewController(
-                    title: "Paste Link",
-                    detail: "Paste the copied link to preview it here.",
+                    title: L10n.string("Paste Link"),
+                    detail: L10n.string("Paste the copied link to preview it here."),
                     onPaste: { [weak self] value in self?.handlePastedValue(value) })
             case .loading:
                 return PasteboardPlaceholderCardContentViewController(
-                    title: "Loading Paste", detail: "Preparing a temporary reader card…")
+                    title: L10n.string("Loading Paste"), detail: L10n.string("Preparing a temporary reader card…"))
             case .invalid:
                 return InvalidPasteCardContentViewController()
             case .candidate(_, let candidate, let item):
@@ -1273,9 +1273,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     ) -> String? {
         if let state = renderedPasteboardState, index == 0 {
             switch state {
-            case .placeholder: return "Paste Link"
-            case .loading: return "Loading Paste"
-            case .invalid: return "Invalid paste"
+            case .placeholder: return L10n.string("Paste Link")
+            case .loading: return L10n.string("Loading Paste")
+            case .invalid: return L10n.string("Invalid paste")
             case .candidate(_, let candidate, _): return candidate.title
             }
         }
@@ -1561,12 +1561,12 @@ private final class ReaderCardContentViewController: CardContentViewController,
         self.knownContent = knownContent
         let senderSubtitle = senderName.flatMap { name -> String? in
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : "From \(trimmed)"
+            return trimmed.isEmpty ? nil : L10n.string("From \(trimmed)")
         }
         self.titleHeader = ReaderCardTitleHeaderView(
-            title: item.title ?? "Untitled", subtitle: senderSubtitle)
+            title: item.title ?? L10n.string("Untitled"), subtitle: senderSubtitle)
         self.scrollTitleHeader = ReaderCardTitleHeaderView(
-            title: item.title ?? "Untitled", subtitle: senderSubtitle)
+            title: item.title ?? L10n.string("Untitled"), subtitle: senderSubtitle)
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
@@ -1647,14 +1647,14 @@ private final class ReaderCardContentViewController: CardContentViewController,
             statusLabel.textAlignment = .center
             statusLabel.numberOfLines = 0
             if item.isPriceTracker {
-                statusLabel.text = "Tap to see price history"
+                statusLabel.text = L10n.string("Tap to see price history")
             } else if item.contentPlatform != nil {
-                statusLabel.text = "Tap to open"
+                statusLabel.text = L10n.string("Tap to open")
             } else {
                 switch item.state {
-                case .pending: statusLabel.text = "Fetching…"
-                case .failed: statusLabel.text = "Couldn't fetch this article"
-                case .needsCaptcha: statusLabel.text = "Locked — tap to unlock"
+                case .pending: statusLabel.text = L10n.string("Fetching…")
+                case .failed: statusLabel.text = L10n.string("Couldn't fetch this article")
+                case .needsCaptcha: statusLabel.text = L10n.string("Locked — tap to unlock")
                 case .ready: statusLabel.text = nil
                 }
             }

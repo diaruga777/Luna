@@ -6,6 +6,7 @@
 import LunaReaderUI
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// Informational read-aloud screen. Luna reads aloud with an enhanced Apple voice
 /// when one is installed and the built-in system voice otherwise — there is no
@@ -17,7 +18,7 @@ final class VoiceSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = "Voice"
+        headerTitle = L10n.string("Voice")
         super.viewDidLoad()
     }
 
@@ -40,13 +41,12 @@ final class VoiceSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        "Read-Aloud Voice"
+        L10n.string("Read-Aloud Voice")
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Luna reads aloud with enhanced Apple voices when they're installed, "
-            + "otherwise the built-in system voice. Install enhanced voices in iOS "
-            + "Settings → Accessibility → Spoken Content → Voices."
+        L10n.string(
+            "Luna reads aloud with enhanced Apple voices when they're installed, otherwise the built-in system voice. Install enhanced voices in iOS Settings → Accessibility → Spoken Content → Voices.")
     }
 
     override func tableView(
@@ -58,12 +58,12 @@ final class VoiceSettingsScreen: NavHeaderTableController {
         switch Row(rawValue: indexPath.row) {
         case .status:
             let installed = VoiceModelStore.isAppleEnhancedInstalled
-            content.text = installed ? "Enhanced voices installed" : "Not installed"
+            content.text = installed ? L10n.string("Enhanced voices installed") : L10n.string("Not installed")
             content.image = UIImage(systemName: installed ? "checkmark.circle.fill" : "xmark.circle")
             content.imageProperties.tintColor = installed ? .systemGreen : LunaColors.secondaryText
             cell.selectionStyle = .none
         case .install, .none:
-            content.text = "Install Enhanced Voices"
+            content.text = L10n.string("Install Enhanced Voices")
             content.textProperties.color = view.tintColor
             cell.accessoryType = .disclosureIndicator
             cell.selectionStyle = .default

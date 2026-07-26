@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// A frameless, zoomable image viewer. It starts at the inline attachment's frame
 /// and returns there on dismissal, preserving the reader's spatial context.
@@ -170,10 +171,10 @@ public final class ImageLightboxViewController: UIViewController, UIScrollViewDe
     ) -> UIContextMenuConfiguration? {
         UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
             UIMenu(children: [
-                UIAction(title: "Copy Image", image: UIImage(systemName: "doc.on.doc")) { _ in
+                UIAction(title: L10n.string("Copy Image"), image: UIImage(systemName: "doc.on.doc")) { _ in
                     UIPasteboard.general.image = self.image
                 },
-                UIAction(title: "Save Image", image: UIImage(systemName: "square.and.arrow.down")) { _ in
+                UIAction(title: L10n.string("Save Image"), image: UIImage(systemName: "square.and.arrow.down")) { _ in
                     UIImageWriteToSavedPhotosAlbum(self.image, nil, nil, nil)
                 },
             ])

@@ -6,6 +6,7 @@
 import LunaSocial
 import LunaDesignSystem
 import UIKit
+import LunaModels
 
 /// The reader's share options: copy the link, share the link, mail it to a
 /// contact, or export the article as an EPUB.
@@ -44,18 +45,18 @@ public final class ReaderShareSheet: UIViewController {
     ) -> [Row] {
         var rows: [Row] = []
         rows.append(Row(
-            title: "Copy link", systemImage: "doc.on.doc",
+            title: L10n.string("Copy link"), systemImage: "doc.on.doc",
             isPrimary: false, action: onCopyLink))
         rows.append(Row(
-            title: "Share link", systemImage: "square.and.arrow.up",
+            title: L10n.string("Share link"), systemImage: "square.and.arrow.up",
             isPrimary: false, action: onShareLink))
         rows.append(Row(
-            title: "Send as email", systemImage: "envelope",
+            title: L10n.string("Send as email"), systemImage: "envelope",
             isPrimary: false, action: onPickFriend))
         // eBook export only applies to readable articles, not media / platform posts.
         if includeEbook {
             rows.append(Row(
-                title: "Share .epub", systemImage: "book",
+                title: L10n.string("Share .epub"), systemImage: "book",
                 isPrimary: false, action: onShareEbook))
         }
         return rows
@@ -106,7 +107,7 @@ public final class ReaderShareSheet: UIViewController {
         view.backgroundColor = LunaColors.background
 
         let titleLabel = UILabel()
-        titleLabel.text = "Share"
+        titleLabel.text = L10n.string("Share")
         titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
         titleLabel.textAlignment = .center
 

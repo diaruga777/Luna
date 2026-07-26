@@ -6,6 +6,7 @@
 import LunaDesignSystem
 import LunaMediaDownload
 import UIKit
+import LunaModels
 
 @MainActor
 final class ClipDownloadViewController: UIViewController {
@@ -30,7 +31,7 @@ final class ClipDownloadViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Luna"
+        title = L10n.string("Luna")
         // Same appearance the host app pins: the clip pushes LunaReaderUI /
         // LunaMediaDownload screens that are light-on-dark in both appearances.
         AppearanceSettings.apply(to: self)
@@ -48,7 +49,7 @@ final class ClipDownloadViewController: UIViewController {
 
     func handleLaunchURL(_ launchURL: URL) {
         guard let sourceURL = ClipLaunchURL.sourceURL(from: launchURL) else {
-            update(.failed("This Luna link is missing a downloadable URL."))
+            update(.failed(L10n.string("This Luna link is missing a downloadable URL.")))
             return
         }
         startDownload(sourceURL)
@@ -129,31 +130,31 @@ final class ClipDownloadViewController: UIViewController {
     private func render() {
         switch state {
         case .waiting:
-            titleLabel.text = "Ready to download"
-            detailLabel.text = "Open a Luna download link to start."
+            titleLabel.text = L10n.string("Ready to download")
+            detailLabel.text = L10n.string("Open a Luna download link to start.")
             progressView.isHidden = true
             actionButton.isHidden = true
             retryButton.isHidden = true
         case let .downloading(url):
-            titleLabel.text = "Downloading"
+            titleLabel.text = L10n.string("Downloading")
             detailLabel.text = url.host ?? url.absoluteString
             progressView.isHidden = false
             actionButton.isHidden = true
             retryButton.isHidden = true
         case .ready:
-            titleLabel.text = "Download complete"
-            detailLabel.text = "Choose where to save or send it."
+            titleLabel.text = L10n.string("Download complete")
+            detailLabel.text = L10n.string("Choose where to save or send it.")
             progressView.isHidden = true
             actionButton.isHidden = false
             retryButton.isHidden = true
-            actionButton.configuration?.title = "Share"
+            actionButton.configuration?.title = L10n.string("Share")
         case let .failed(message):
-            titleLabel.text = "Couldn't download"
+            titleLabel.text = L10n.string("Couldn't download")
             detailLabel.text = message
             progressView.isHidden = true
             actionButton.isHidden = true
             retryButton.isHidden = lastSourceURL == nil
-            retryButton.configuration?.title = "Try Again"
+            retryButton.configuration?.title = L10n.string("Try Again")
         }
     }
 
@@ -194,11 +195,11 @@ final class ClipDownloadViewController: UIViewController {
         if let mediaError = error as? MediaDownloadError {
             switch mediaError {
             case .permissionDenied, .saveFailed:
-                return "The media downloaded, but iOS could not open the save sheet."
+                return L10n.string("The media downloaded, but iOS could not open the save sheet.")
             default:
                 return mediaError.message
             }
         }
-        return "Check the link and try again."
+        return L10n.string("Check the link and try again.")
     }
 }

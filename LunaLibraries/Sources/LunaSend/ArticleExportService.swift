@@ -72,10 +72,10 @@ public struct ArticleExportService {
                 guard let presenter else { return }
                 guard let fileURL else {
                     let alert = UIAlertController(
-                        title: "Couldn't Create eBook",
-                        message: "This article has no readable content to export.",
+                        title: L10n.string("Couldn't Create eBook"),
+                        message: L10n.string("This article has no readable content to export."),
                         preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
                     presenter.present(alert, animated: true)
                     return
                 }

@@ -1,0 +1,30 @@
+{
+    "extensionName": {
+        "message": "Luna Reader",
+        "description": "Name of the Safari extension."
+    },
+    "extensionDescription": {
+        "message": "Tracks the page you're reading so Luna can save it to your reading list.",
+        "description": "Description shown in Safari extension settings."
+    },
+    "unlockedWithLuna": {
+        "message": "Unlocked with Luna",
+        "description": "Toast shown after Luna removes a page's reading obstruction."
+    },
+    "openingLuna": {
+        "message": "Opening Luna…",
+        "description": "Temporary button label while the containing app opens."
+    },
+    "readInLuna": {
+        "message": "📖  Read in Luna",
+        "description": "Button that opens an article in Luna Reader."
+    },
+    "downloadInLuna": {
+        "message": "Download in Luna",
+        "description": "Button that sends downloadable media to Luna."
+    },
+    "trackInLuna": {
+        "message": "Track in Luna",
+        "description": "Button that adds a product to Luna Price Tracker."
+    }
+}

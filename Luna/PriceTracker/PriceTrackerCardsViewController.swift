@@ -20,8 +20,8 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
     private let store = ReadingListStore.shared
     private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
         symbol: "tag",
-        title: "No Tracked Products",
-        subtitle: "Paste or share a product page to start tracking its price.")
+        title: L10n.string("No Tracked Products"),
+        subtitle: L10n.string("Paste or share a product page to start tracking its price."))
     private let settingsButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
 
@@ -62,10 +62,10 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
 
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: "Settings")
+            accessibilityLabel: L10n.string("Settings"))
         configureBottomButton(
             shareButton, symbol: "square.and.arrow.up", action: #selector(shareCurrent),
-            accessibilityLabel: "Share Current Product")
+            accessibilityLabel: L10n.string("Share Current Product"))
         mountBottomControls(leading: settingsButton, trailing: shareButton)
 
         mountArchiveTray(
@@ -357,18 +357,18 @@ extension PriceTrackerCardsViewController: CardCarouselDelegate {
         let item = items[index]
         return UIMenu(children: [
             UIAction(
-                title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in
                 guard let self else { return }
                 self.share(item, sourceView: carousel.cardView(at: index) ?? self.view)
             },
             UIAction(
-                title: "Archive", image: UIImage(systemName: "archivebox")
+                title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
             ) { [weak self] _ in
                 self?.setArchived(true, itemID: item.id)
             },
             UIAction(
-                title: "Delete", image: UIImage(systemName: "trash"),
+                title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
                 attributes: .destructive
             ) { [weak self] _ in self?.store.delete(item) },
         ])
@@ -464,7 +464,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
 
     private func configureGraph() {
         let label = UILabel()
-        label.text = "Price History"
+        label.text = L10n.string("Price History")
         label.font = .systemFont(ofSize: 13, weight: .semibold)
         label.textColor = LunaColors.secondaryText
         contentStack.addArrangedSubview(label)
@@ -483,7 +483,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
 
     private func configureStores() {
         let heading = UILabel()
-        heading.text = "Tracked Sites"
+        heading.text = L10n.string("Tracked Sites")
         heading.font = .systemFont(ofSize: 13, weight: .semibold)
         heading.textColor = LunaColors.secondaryText
 
@@ -492,7 +492,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
         addConfiguration.baseForegroundColor = LunaSurfacePalette.baseColor(for: .priceTracker)
         addConfiguration.contentInsets = .zero
         addButton.configuration = addConfiguration
-        addButton.accessibilityLabel = "Add tracked site"
+        addButton.accessibilityLabel = L10n.string("Add tracked site")
         addButton.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
         addButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -557,14 +557,14 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             ?? listing.urlString
         configuration.subtitle = listing.lastPrice.map {
             PriceFormatting.string(amount: $0, currency: listing.currency)
-        } ?? "Price unavailable"
+        } ?? L10n.string("Price unavailable")
         configuration.titleAlignment = .leading
         configuration.image = UIImage(systemName: "safari")
         configuration.imagePadding = 8
         configuration.baseForegroundColor = LunaColors.primaryText
         open.configuration = configuration
         open.contentHorizontalAlignment = .leading
-        open.accessibilityHint = "Opens this tracked site"
+        open.accessibilityHint = L10n.string("Opens this tracked site")
         open.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             InAppBrowser.present(urlString: listing.urlString, from: self)
@@ -579,7 +579,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             removeConfiguration.image = UIImage(systemName: "minus.circle")
             removeConfiguration.baseForegroundColor = LunaColors.secondaryText
             remove.configuration = removeConfiguration
-            remove.accessibilityLabel = "Remove \(configuration.title ?? "site")"
+            remove.accessibilityLabel = L10n.string("Remove \(configuration.title ?? "site")")
             remove.addAction(UIAction { [weak self] _ in
                 guard let self, var tracker = self.tracker,
                       tracker.removeStore(urlString: listing.urlString) else { return }

@@ -92,7 +92,7 @@ final class AllKindsCardProvider: AllKindsCardProviding {
         switch media.storageState {
         case .undownloaded:
             return [UIAction(
-                title: "Download", image: UIImage(systemName: "arrow.down.circle")
+                title: L10n.string("Download"), image: UIImage(systemName: "arrow.down.circle")
             ) { _ in
                 Task {
                     _ = await LiveMediaDownloadManager.shared.start(
@@ -103,7 +103,7 @@ final class AllKindsCardProvider: AllKindsCardProviding {
             var actions: [UIMenuElement] = [shareAction(media, presenter: presenter, sourceView: sourceView)]
             if media.kind?.canSaveToPhotos == true {
                 actions.append(UIAction(
-                    title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")
+                    title: L10n.string("Save to Photos"), image: UIImage(systemName: "photo.badge.plus")
                 ) { [weak self, weak presenter] _ in
                     guard let presenter else { return }
                     self?.saveToPhotos(media, from: presenter)
@@ -146,7 +146,7 @@ final class AllKindsCardProvider: AllKindsCardProviding {
     private func shareAction(
         _ media: SavedMediaItem, presenter: UIViewController, sourceView: UIView
     ) -> UIAction {
-        UIAction(title: "Share", image: UIImage(systemName: "square.and.arrow.up")) {
+        UIAction(title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")) {
             [weak presenter] _ in
             guard let presenter else { return }
             Task { @MainActor in
@@ -154,8 +154,8 @@ final class AllKindsCardProvider: AllKindsCardProviding {
                 // derives the preview and no Luna metadata rides along.
                 guard let export = await MediaAutoDownloader.exportFile(from: media) else {
                     Self.presentAlert(
-                        title: "Share Failed",
-                        message: "Couldn't prepare this media for sharing.", from: presenter)
+                        title: L10n.string("Share Failed"),
+                        message: L10n.string("Couldn't prepare this media for sharing."), from: presenter)
                     return
                 }
                 let activity = UIActivityViewController(
@@ -180,8 +180,8 @@ final class AllKindsCardProvider: AllKindsCardProviding {
                 else { return }
                 guard await photoSaver.requestReadAuthorization() else {
                     Self.presentAlert(
-                        title: "Photos Access Needed",
-                        message: "Allow photo library access in Settings to save media.",
+                        title: L10n.string("Photos Access Needed"),
+                        message: L10n.string("Allow photo library access in Settings to save media."),
                         from: presenter)
                     return
                 }
@@ -192,12 +192,12 @@ final class AllKindsCardProvider: AllKindsCardProviding {
                     itemID: media.id, fileURL: tempURL, kind: kind, shouldMoveFile: true,
                     saver: photoSaver, store: SavedMediaStore.shared)
                 Self.presentAlert(
-                    title: "Saved to Photos",
-                    message: "The media was added to your photo library.", from: presenter)
+                    title: L10n.string("Saved to Photos"),
+                    message: L10n.string("The media was added to your photo library."), from: presenter)
             } catch {
                 Self.presentAlert(
-                    title: "Save Failed",
-                    message: "Couldn't save this media to Photos.", from: presenter)
+                    title: L10n.string("Save Failed"),
+                    message: L10n.string("Couldn't save this media to Photos."), from: presenter)
             }
         }
     }
@@ -206,7 +206,7 @@ final class AllKindsCardProvider: AllKindsCardProviding {
         title: String, message: String, from presenter: UIViewController
     ) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
         presenter.present(alert, animated: true)
     }
 }

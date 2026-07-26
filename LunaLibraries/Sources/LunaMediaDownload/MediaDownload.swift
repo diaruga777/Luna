@@ -24,15 +24,15 @@ public enum MediaDownloadError: Error {
     /// A short message suitable for a toast / status label.
     public var message: String {
         switch self {
-        case .unsupported: return "This link has no downloadable media."
-        case .noMedia: return "Couldn't find media to download."
-        case .permissionDenied: return "Allow Photos access in Settings to save media."
-        case .downloadFailed: return "Couldn't download the media."
-        case .saveFailed: return "Couldn't save to your photo library."
+        case .unsupported: return L10n.string("This link has no downloadable media.")
+        case .noMedia: return L10n.string("Couldn't find media to download.")
+        case .permissionDenied: return L10n.string("Allow Photos access in Settings to save media.")
+        case .downloadFailed: return L10n.string("Couldn't download the media.")
+        case .saveFailed: return L10n.string("Couldn't save to your photo library.")
         case .insufficientStorage(let required, _):
             let amount = ByteCountFormatter.string(
                 fromByteCount: required, countStyle: .file)
-            return "Not enough storage. Free at least \(amount) and try again."
+            return L10n.string("Not enough storage. Free at least \(amount) and try again.")
         }
     }
 }

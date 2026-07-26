@@ -5,6 +5,7 @@
 
 import ContactsUI
 import UIKit
+import LunaModels
 
 /// The two ways a screen collects an email recipient — a typed-address alert and
 /// the system contact picker — shared by the Friends screen and the recipient
@@ -18,12 +19,12 @@ enum EmailRecipientPrompt {
     ) {
         let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
         alert.addTextField {
-            $0.placeholder = "name@example.com"
+            $0.placeholder = L10n.string("name@example.com")
             $0.keyboardType = .emailAddress
             $0.autocapitalizationType = .none
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak alert] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Add"), style: .default) { [weak alert] _ in
             guard let raw = alert?.textFields?.first?.text else { return }
             onSubmit(raw)
         })

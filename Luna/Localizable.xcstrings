@@ -1,0 +1,150 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@" : {
+
+    },
+    "A screenshot of the current app's screen." : {
+
+    },
+    "App" : {
+
+    },
+    "Article" : {
+
+    },
+    "Capture Outcome" : {
+
+    },
+    "Context Result" : {
+
+    },
+    "Couldn't find a matching post or page to save." : {
+
+    },
+    "Couldn't identify anything to save on this screen." : {
+
+    },
+    "Done" : {
+
+    },
+    "Done." : {
+
+    },
+    "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, or requires a screenshot." : {
+
+    },
+    "Luna can't save from this app." : {
+
+    },
+    "Luna couldn't save this link." : {
+
+    },
+    "Luna found this on screen but couldn't save it." : {
+
+    },
+    "Luna needs permission to save media to your photo library." : {
+
+    },
+    "Luna saved the link but couldn't download its media." : {
+
+    },
+    "Luna saved this but couldn't fetch its content. Try again from the app." : {
+
+    },
+    "Luna saved this link but couldn't fetch the page. Try again from the app." : {
+
+    },
+    "Media" : {
+
+    },
+    "No Safari page tracked yet. Is the Luna extension enabled?" : {
+
+    },
+    "OnScreenURLs" : {
+
+    },
+    "Outcome" : {
+
+    },
+    "Provide Context" : {
+
+    },
+    "Read Article" : {
+
+    },
+    "Reading %@." : {
+
+    },
+    "Reading articles aloud isn't available in this app." : {
+
+    },
+    "Requires Screenshot" : {
+
+    },
+    "Save" : {
+
+    },
+    "Save Result" : {
+
+    },
+    "Saved" : {
+
+    },
+    "Saved to Luna" : {
+
+    },
+    "Saved to Luna." : {
+
+    },
+    "Screen analysis is temporarily unavailable. Try again in a moment." : {
+
+    },
+    "Screen analysis isn't available on this device." : {
+
+    },
+    "Screen analysis needs a network connection. Try again when you're back online." : {
+
+    },
+    "Screenshot" : {
+
+    },
+    "Second step of the Action Button shortcut. Pass the current app (from Get Current App) and a screenshot of it; Luna reads the screen with an on-device/Private Cloud Compute model and saves the matching post or page." : {
+
+    },
+    "Several different links are on screen. Open the one you want and try again." : {
+
+    },
+    "Source" : {
+
+    },
+    "Starts reading a saved article out loud in the background." : {
+
+    },
+    "That article isn't ready to read yet." : {
+
+    },
+    "The article to read. Leave blank for your latest unread article." : {
+
+    },
+    "The current app, from Get Current App." : {
+
+    },
+    "The output from Get On-Screen URLs. Compatible complete values may be saved directly." : {
+
+    },
+    "Title" : {
+
+    },
+    "Unhandled" : {
+
+    },
+    "You don't have any unread articles to read." : {
+
+    },
+    "You've hit the screen-analysis limit for now. Try again later." : {
+
+    }
+  },
+  "version" : "1.0"
+}

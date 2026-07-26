@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// The single "Storage" choice Downloader Settings shows: finished downloads
 /// either go to the photo library and stay there, or stay in Luna and are
@@ -23,8 +24,8 @@ public enum MediaStorageOption: Equatable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .photos: return "Save to Photos"
-        case .deleteAfter(let retention): return "Delete after \(retention.displayName)"
+        case .photos: return L10n.string("Save to Photos")
+        case .deleteAfter(let retention): return L10n.string("Delete after \(retention.displayName)")
         }
     }
 }

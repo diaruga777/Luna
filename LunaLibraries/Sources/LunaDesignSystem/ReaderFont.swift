@@ -4,6 +4,7 @@
 //
 
 import UIKit
+import LunaModels
 
 /// Preset reader typefaces. Every option ships with iOS — nothing is bundled
 /// or downloaded — and the named families are openly licensed designs picked
@@ -20,10 +21,10 @@ public enum ReaderFont: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .system: return "System"
-        case .newYork: return "New York"
-        case .charter: return "Charter"
-        case .stixTwo: return "STIX Two"
+        case .system: return L10n.string("System")
+        case .newYork: return L10n.string("New York")
+        case .charter: return L10n.string("Charter")
+        case .stixTwo: return L10n.string("STIX Two")
         }
     }
 
@@ -32,8 +33,8 @@ public enum ReaderFont: String, CaseIterable {
     private var familyName: String? {
         switch self {
         case .system, .newYork: return nil
-        case .charter: return "Charter"
-        case .stixTwo: return "STIX Two Text"
+        case .charter: return L10n.string("Charter")
+        case .stixTwo: return L10n.string("STIX Two Text")
         }
     }
 

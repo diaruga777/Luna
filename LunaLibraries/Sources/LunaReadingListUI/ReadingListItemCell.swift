@@ -174,7 +174,7 @@ public final class ReadingListItemCell: UITableViewCell {
             simulatorMenuButton.showsMenuAsPrimaryAction = true
             simulatorMenuButton.tintColor = LunaColors.tertiaryText
             simulatorMenuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
-            simulatorMenuButton.accessibilityLabel = "Row actions"
+            simulatorMenuButton.accessibilityLabel = L10n.string("Row actions")
             simulatorMenuButton.isHidden = true
             contentView.addSubview(simulatorMenuButton)
             NSLayoutConstraint.activate([

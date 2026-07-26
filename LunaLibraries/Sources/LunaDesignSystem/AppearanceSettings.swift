@@ -5,6 +5,7 @@
 
 import LunaAppConfig
 import UIKit
+import LunaModels
 
 /// App-wide appearance preferences, persisted in the App Group so all three apps and
 /// their extensions render with the same interface style.
@@ -20,9 +21,9 @@ public enum AppearanceSettings {
 
         public var displayName: String {
             switch self {
-            case .system: return "System"
-            case .light: return "Light"
-            case .dark: return "Dark"
+            case .system: return L10n.string("System")
+            case .light: return L10n.string("Light")
+            case .dark: return L10n.string("Dark")
             }
         }
     }

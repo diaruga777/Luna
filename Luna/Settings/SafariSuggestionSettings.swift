@@ -5,6 +5,7 @@
 
 import LunaStorage
 import Foundation
+import LunaModels
 
 /// When the Safari extension shows its "Read in Luna" button. Stored in the App
 /// Group so the extension's native handler can read it (the extension and app
@@ -20,9 +21,9 @@ enum SafariSuggestionMode: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .never: return "Never"
-        case .all: return "All Articles"
-        case .onlyLocked: return "Locked Only"
+        case .never: return L10n.string("Never")
+        case .all: return L10n.string("All Articles")
+        case .onlyLocked: return L10n.string("Locked Only")
         }
     }
 }

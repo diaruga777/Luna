@@ -92,15 +92,13 @@ enum KindWiring {
             AudioPlaybackCenter.shared.play(item: item, content: content)
         }
 
-        // Wire the read-aloud first-run prompt's "Open Settings" to push the
-        // Voice settings screen. Setting this hook is what enables the prompt in
-        // the main app (extensions leave it nil → the prompt is skipped).
+        // Voice status and installation now live on the Audio settings page.
         VoiceFirstRunPrompt.openVoiceSettings = { presenter in
-            let voice = VoiceSettingsScreen()
+            let audio = AudioSettingsScreen()
             if let nav = presenter.navigationController {
-                nav.pushViewController(voice, animated: true)
+                nav.pushViewController(audio, animated: true)
             } else {
-                let nav = UINavigationController(rootViewController: voice)
+                let nav = UINavigationController(rootViewController: audio)
                 presenter.present(nav, animated: true)
             }
         }
@@ -155,13 +153,18 @@ enum KindWiring {
 
     static func settingsCategories() -> [SettingsCategory] {
         [
-            SettingsCategory(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
-            // Audio (read-aloud playback) subsumes the old top-level Voice row —
-            // the Voice screen is reached from inside it.
-            SettingsCategory(title: "Audio", symbol: "headphones") { AudioSettingsScreen() },
-            SettingsCategory(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
-            SettingsCategory(title: "Email & Sending", symbol: "envelope") { EmailAndKindleSettingsScreen() },
-            SettingsCategory(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") {
+            SettingsCategory(title: L10n.string("Reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
+            SettingsCategory(title: L10n.string("Audio"), symbol: "headphones") { AudioSettingsScreen() },
+            SettingsCategory(title: L10n.string("Email"), symbol: "envelope") {
+                EmailAndKindleSettingsScreen()
+            },
+            SettingsCategory(
+                title: L10n.string("Kindle"), symbol: "book.closed",
+                requiresEmail: true
+            ) {
+                KindleSettingsScreen()
+            },
+            SettingsCategory(title: L10n.string("Downloads"), symbol: "arrow.down.circle") {
                 DownloadsSettingsScreen()
             },
         ]

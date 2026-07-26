@@ -288,7 +288,9 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         removeCompletedSetupRows()
     }
 
-    @objc private func contentChanged() { rebuildRows() }
+    @objc private func contentChanged() {
+        rebuildRows()
+    }
 
     @objc private func setupStatusChanged() {
         shortcutGuide.stopPictureInPicture()
@@ -718,11 +720,11 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
 
     private func contextMenu(for preview: RecentURLPreview, sourceView: UIView) -> UIMenu {
         UIMenu(children: [
-            UIAction(title: "Open", image: UIImage(systemName: "safari")) { _ in
+            UIAction(title: L10n.string("Open"), image: UIImage(systemName: "safari")) { _ in
                 guard let url = URL(string: preview.urlString) else { return }
                 UIApplication.shared.open(url)
             },
-            UIAction(title: "Share", image: UIImage(systemName: "square.and.arrow.up")) {
+            UIAction(title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")) {
                 [weak host] _ in
                 guard let host, let url = URL(string: preview.urlString) else { return }
                 let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
@@ -743,7 +745,7 @@ private final class ExpandedEmailSetupCard: UIView {
     private let addressField = UITextField()
     private let providerBadge = ProviderBadgeView()
     private let providerInfo = UILabel()
-    private let nextButton = EmailLoginActionButton(title: "Next")
+    private let nextButton = EmailLoginActionButton(title: L10n.string("Next"))
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -765,12 +767,12 @@ private final class ExpandedEmailSetupCard: UIView {
 
         let close = UIButton(type: .system)
         close.setImage(UIImage(systemName: "xmark"), for: .normal)
-        close.accessibilityLabel = "Close email setup"
+        close.accessibilityLabel = L10n.string("Close email setup")
         close.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         close.translatesAutoresizingMaskIntoConstraints = false
 
         let title = UILabel()
-        title.text = "Connect your email"
+        title.text = L10n.string("Connect your email")
         title.font = .systemFont(ofSize: 27, weight: .bold)
         title.textColor = LunaColors.primaryText
         title.numberOfLines = 1
@@ -779,7 +781,7 @@ private final class ExpandedEmailSetupCard: UIView {
         title.translatesAutoresizingMaskIntoConstraints = false
 
         let body = UILabel()
-        body.text = "Enter the address Luna should use to send and import links."
+        body.text = L10n.string("Enter the address Luna should use to send and import links.")
         body.font = .preferredFont(forTextStyle: .subheadline)
         body.textColor = LunaColors.secondaryText
         body.numberOfLines = 2
@@ -787,7 +789,7 @@ private final class ExpandedEmailSetupCard: UIView {
 
         let fieldCard = EmailLoginUI.fieldCard()
         let glyph = EmailLoginUI.leadingGlyph("envelope")
-        addressField.placeholder = "you@example.com"
+        addressField.placeholder = L10n.string("you@example.com")
         addressField.font = .preferredFont(forTextStyle: .body)
         addressField.textColor = LunaColors.primaryText
         addressField.keyboardType = .emailAddress
@@ -875,11 +877,15 @@ private final class ExpandedEmailSetupCard: UIView {
         let provider = MailProvider.provider(for: providerID)
         providerBadge.setProvider(ProviderBadgeText.text(for: providerID))
         if address.contains("@") {
-            providerInfo.text = providerID == .generic
-                ? "Custom provider · IMAP setup"
-                : "\(provider.displayName) · "
-                    + (provider.authKind == .oauth
-                        ? "Secure provider sign-in" : "App-specific password")
+            if providerID == .generic {
+                providerInfo.text = L10n.string("Custom provider · IMAP setup")
+            } else if provider.authKind == .oauth {
+                providerInfo.text = L10n.string(
+                    "\(provider.displayName) · Secure provider sign-in")
+            } else {
+                providerInfo.text = L10n.string(
+                    "\(provider.displayName) · App-specific password")
+            }
         } else {
             providerInfo.text = nil
         }
@@ -1152,7 +1158,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         replaceTitleLeading(anchor: imageView.trailingAnchor, constant: 10)
         pasteBadge.isHidden = !showsPasteboardBadge
         accessibilityLabel = [preview.title, preview.subtitle].compactMap { $0 }.joined(separator: ", ")
-        accessibilityHint = "Saves as a full card"
+        accessibilityHint = L10n.string("Saves as a full card")
     }
 
     func configureSetup(
@@ -1169,20 +1175,23 @@ private final class LeftTrayCell: UICollectionViewCell {
         switch kind {
         case .safari:
             setupTitleLabel.text = AppSurfaceConfig.current.handlesArticles
-                ? "Apply Luna in Safari" : "Save From Safari"
+                ? L10n.string("Apply Luna in Safari")
+                : L10n.string("Save From Safari")
             setupSubtitleLabel.isHidden = true
-            configureSetupButton(title: "Open Safari", tint: tint)
+            configureSetupButton(title: L10n.string("Open Safari"), tint: tint)
         case .shortcut:
             setupTitleLabel.text = assumesShortcutInstalled
-                ? "One more step! Set your action button to \(appName)"
-                : "Save to Luna with your Action Button"
+                ? L10n.string("One more step! Set your action button to \(appName)")
+                : L10n.string("Save to Luna with your Action Button")
             setupSubtitleLabel.isHidden = true
             configureSetupButton(
-                title: assumesShortcutInstalled ? "Open Settings" : "Install shortcut",
+                title: assumesShortcutInstalled
+                    ? L10n.string("Open Settings")
+                    : L10n.string("Install shortcut"),
                 tint: tint)
         case .email:
-            setupTitleLabel.text = "Connect Email"
-            setupSubtitleLabel.text = "Send articles and import links · Tap to continue"
+            setupTitleLabel.text = L10n.string("Connect Email")
+            setupSubtitleLabel.text = L10n.string("Send articles and import links · Tap to continue")
             setupButton.isHidden = true
         }
         setupAction = action
@@ -1231,7 +1240,7 @@ private final class LeftTrayCell: UICollectionViewCell {
     ) {
         switch state {
         case .notPresent:
-            titleLabel.text = "No URL to paste"
+            titleLabel.text = L10n.string("No URL to paste")
             titleLabel.textAlignment = .center
             titleTopConstraint.isActive = false
             titleCenterYConstraint = titleLabel.centerYAnchor.constraint(
@@ -1248,17 +1257,17 @@ private final class LeftTrayCell: UICollectionViewCell {
             dashes.frame = contentView.bounds
             contentView.layer.addSublayer(dashes)
         case .explicit:
-            titleLabel.text = "Paste URL"
+            titleLabel.text = L10n.string("Paste URL")
             titleLabel.textAlignment = .center
             installPasteControl(target: pasteTarget)
             configureSettingsButton(action: settingsAction)
         case .automatic:
             symbolView.isHidden = false
             symbolView.image = UIImage(systemName: "doc.on.clipboard")
-            titleLabel.text = "Paste URL automatically"
-            subtitleLabel.text = "Opens when this tray is opened"
+            titleLabel.text = L10n.string("Paste URL automatically")
+            subtitleLabel.text = L10n.string("Opens when this tray is opened")
         case .evaluating:
-            titleLabel.text = "Checking URL"
+            titleLabel.text = L10n.string("Checking URL")
             titleLabel.textAlignment = .center
             spinner.startAnimating()
         case .preview(_, let preview):
@@ -1266,7 +1275,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         case .failure:
             symbolView.isHidden = false
             symbolView.image = UIImage(systemName: "doc.on.clipboard")
-            titleLabel.text = "Invalid URL"
+            titleLabel.text = L10n.string("Invalid URL")
             replaceTitleLeading(anchor: symbolView.trailingAnchor, constant: 6)
         }
     }
@@ -1279,7 +1288,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         configuration.baseForegroundColor = .clear
         let control = UIPasteControl(configuration: configuration)
         control.target = target
-        control.accessibilityLabel = "Paste URL"
+        control.accessibilityLabel = L10n.string("Paste URL")
         control.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(control)
         contentView.insertSubview(control, aboveSubview: titleLabel)
@@ -1298,8 +1307,9 @@ private final class LeftTrayCell: UICollectionViewCell {
 
     private func configureSettingsButton(action: @escaping () -> Void) {
         settingsButton.isHidden = false
-        var text = AttributedString("Or change Paste setting to “Allow”")
-        if let range = text.range(of: "Paste setting") {
+        let linkText = L10n.string("Paste setting")
+        var text = AttributedString(L10n.string("Or change \(linkText) to “Allow”"))
+        if let range = text.range(of: linkText) {
             text[range].foregroundColor = LunaSurfacePalette.baseColor
             text[range].underlineStyle = .single
         }

@@ -629,7 +629,7 @@ public struct ProductPageDetector {
 
         let name = (node["name"] as? String)?.trimmedNonEmpty
             ?? document.flatMap { ProductPageDetector().productName(document: $0, baseURL: baseURL) }
-            ?? "Product"
+            ?? L10n.string("Product")
 
         let image = imageURL(from: node["image"], baseURL: baseURL)
         let brand = brandName(from: node["brand"])
@@ -760,7 +760,8 @@ public struct ProductPageDetector {
         if let itemprop = itempropValue(document, "name")?.trimmedNonEmpty { return itemprop }
         if let og = metaContent(document, names: ["og:title", "twitter:title"])?.trimmedNonEmpty { return og }
         if let title = (try? document.title())?.trimmedNonEmpty { return title }
-        return baseURL?.host?.replacingOccurrences(of: "www.", with: "") ?? "Product"
+        return baseURL?.host?.replacingOccurrences(of: "www.", with: "")
+            ?? L10n.string("Product")
     }
 
     private func productImage(document: Document, baseURL: URL?) -> URL? {

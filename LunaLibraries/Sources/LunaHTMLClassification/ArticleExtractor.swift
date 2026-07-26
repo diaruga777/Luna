@@ -533,7 +533,7 @@ public struct ArticleExtractor {
         if let h1 = try? document.select("h1").first()?.text(), !h1.isEmpty {
             return h1
         }
-        return "Untitled"
+        return L10n.string("Untitled")
     }
 
     // MARK: - Container scoring

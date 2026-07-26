@@ -17,6 +17,7 @@
 //
 
 import UIKit
+import LunaModels
 
 public final class NavHeaderBar: UIView {
 
@@ -192,7 +193,7 @@ public final class NavHeaderBar: UIView {
                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)),
             for: .normal)
         button.tintColor = LunaColors.primaryText
-        button.accessibilityLabel = "Back"
+        button.accessibilityLabel = L10n.string("Back")
         button.addTarget(target, action: action, for: .touchUpInside)
         sizeToBarButton(button)
         return button

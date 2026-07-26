@@ -14,6 +14,7 @@ import BackgroundTasks
 import UIKit
 import UserNotifications
 import os
+import LunaModels
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -74,10 +75,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         ReadingListIngestor.unsupportedSavePresenter = { owner in
             guard let presenter = Self.frontmostViewController() else { return }
             let alert = UIAlertController(
-                title: "Can't Save This Link",
+                title: L10n.string("Can't Save This Link"),
                 message: SurfaceSupport.unsupportedMessage(owner: owner),
                 preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
             presenter.present(alert, animated: true)
         }
 

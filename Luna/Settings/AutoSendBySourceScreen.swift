@@ -29,7 +29,7 @@ final class AutoSendBySourceScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = "Forwarding Settings"
+        headerTitle = L10n.string("Forwarding Settings")
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
@@ -41,11 +41,12 @@ final class AutoSendBySourceScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        "Forwarding settings: \(destinationName)"
+        L10n.string("Forwarding settings: \(destinationName)")
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Choose which saves \(destinationName) receives automatically.\n\nWith \"Double Save\", saving twice in rapid succession forwards. (e.g. 2 Action Button presses)."
+        L10n.string(
+            "Choose which saves \(destinationName) receives automatically.\n\nWith \"Double Save\", saving twice in rapid succession forwards. (e.g. 2 Action Button presses).")
     }
 
     override func tableView(
@@ -78,7 +79,7 @@ final class AutoSendBySourceScreen: NavHeaderTableController {
                 SourceSendSettings.setEmailEnabled(isOn, forDestination: self.destinationID)
             }
         case .shareAndPaste:
-            content.text = "Share Sheet & Paste"
+            content.text = L10n.string("Share Sheet & Paste")
             cell.accessoryView = makeToggle(
                 isOn: SourceSendSettings.shareAndPasteEnabled(forDestination: destinationID)
             ) { [weak self] isOn in

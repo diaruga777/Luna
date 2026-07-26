@@ -82,7 +82,7 @@ enum FailedSaveCardFactory {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         let when = formatter.localizedString(for: record.lastFailureDate, relativeTo: now)
-        return "Tried \(record.failureCount) times · last \(when)"
+        return L10n.string("Tried \(record.failureCount) times · last \(when)")
     }
 
     // MARK: - Actions

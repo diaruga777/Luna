@@ -839,7 +839,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
     private static func title(for url: URL) -> String {
         if let host = url.host(percentEncoded: false), !host.isEmpty { return host }
-        return "Media download"
+        return L10n.string("Media download")
     }
 
     /// The media-file download request for a resolved asset: browser UA, plus

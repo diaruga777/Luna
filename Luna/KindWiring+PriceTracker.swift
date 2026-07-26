@@ -45,11 +45,11 @@ enum KindWiring {
 
     // MARK: - Root UI shape
 
-    /// The tracker list in a bare nav controller — no audio mini-player host
-    /// (read-aloud is an article-app feature).
+    /// The Price Tracker uses the same root card deck + arc trays as Reader and
+    /// Downloader, without the article app's audio mini-player host.
     static func makeRootViewController() -> UIViewController {
         UINavigationController(
-            rootViewController: ReadingListViewController(surface: .priceTracker))
+            rootViewController: PriceTrackerCardsViewController())
     }
 
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {

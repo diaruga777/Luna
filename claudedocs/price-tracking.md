@@ -198,11 +198,12 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   (scheme → load; bare `host.tld[/…]` → https; else a Google web search). Unit-tested.
 - `ReaderKit/ProductSearchOverlayViewController.swift` — the **search overlay**, a
   near-fullscreen WKWebView styled like the inline reader (`SplitWebOverlayViewController`):
-  inset rounded glass card (`ReaderDepth` background), a glass header (✕ close +
-  back/forward `GlassStyle.circularButtonConfiguration`), and a bottom glass bar with
-  an editable URL field + a circular **+**. Preloads the Google Shopping search for
-  the product. Free browse/type-and-go. **+** → a **"Use this page?"** alert
-  ("Add to tracker" / "No thanks").
+  inset rounded glass card (`ReaderDepth` background), a compact ✕ tab above its
+  leading edge, a compact Safari tab above its trailing edge, and a bottom glass bar
+  with back/forward controls, an editable URL field, and a circular **+**. There is
+  no tab strip. Preloads the Google Shopping search for the product. Free
+  browse/type-and-go. **+** → a **"Use this page?"** alert ("Add to tracker" /
+  "No thanks").
   - **Keyboard avoidance:** the bottom bar is a direct child of the root view (NOT the
     card) and its `bottomAnchor` is pinned to `view.keyboardLayoutGuide.topAnchor`
     (`.defaultHigh`) with a `lessThanOrEqualTo` `safeAreaLayoutGuide.bottomAnchor` cap —
@@ -230,6 +231,20 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   (JS-loaded prices already in the DOM). The single source of "suggest = Add succeeds".
 - `ReaderKit/ProductSuggestionDebouncer.swift` — **pure** per-URL debounce
   (`shouldOffer(urlString:)` true once per URL; `hasOffered(urlString:)`).
+- `Luna/PriceTracker/PriceTrackerCardsViewController.swift` — the standalone
+  Price Tracker root. It adopts the exact shared root carousel, miniature
+  carousel, left setup/paste/recent arc, right archive arc, eclipse paging,
+  Settings, and Share chrome used by the sibling apps. Active cards contain:
+  - a 64pt product thumbnail and a 1–3 line product name;
+  - the always-present `PriceGraphView`, including its directly editable green
+    absolute alert threshold and tap-only point tooltip;
+  - tracked-site rows plus the green + button.
+  Mini chips show the product thumbnail with the Price Tracker app icon's green
+  tag silhouette (no magnifying glass) at bottom-trailing. Archiving is
+  exclusively manual through the card menu; no time/read-state path archives a
+  tracker. Adding a site opens `ProductSearchOverlayViewController` with the
+  Reader-style eclipse. Its top chrome is only two small tabs: X on the left
+  and Open in Safari on the right; it has no Reader tab strip.
 - `ShareKit/PriceTrackingViewController.swift` — the tracker editor (in `ShareKit/` so
   it compiles into the main app AND the extension targets), PUSHED onto the reading-list
   nav stack in-app, or PRESENTED modally by the action/share extension's
@@ -274,7 +289,10 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
 
-## Reading-list integration (`ReadingListSectioning` / `ReadingListViewController`)
+## Central-list integration (`ReadingListSectioning` / `ReadingListViewController`)
+
+The sectioned rows below remain for central Luna and test/extension navigation.
+The standalone Price Tracker app uses the card root above.
 
 - `Section.priceTracking` (raw 5, non-collapsible) sits **below** `.reading` in
   `displayOrder`; `Section.priceAlert` (raw 6, non-collapsible) is the very FIRST

@@ -253,6 +253,16 @@ enum UITestFixtures {
                                   currency: "USD", brand: "Acme", productID: seed,
                                   now: ago(days: daysAgo))
             if let current {
+                // Give the Price Tracker card a real tap-target series while the
+                // pending-price fixture below continues to exercise the zero-point
+                // graph and editable threshold.
+                pt.recordPriceSample(
+                    base, currency: "USD", urlString: url, at: ago(days: 3))
+                pt.recordPriceSample(
+                    (base + current) / 2, currency: "USD",
+                    urlString: url, at: ago(days: 2))
+                pt.recordPriceSample(
+                    current, currency: "USD", urlString: url, at: ago(days: 1))
                 pt.setPrice(current, currency: "USD", urlString: url, at: ago(hours: 4))
             }
             return ReadingListItem(

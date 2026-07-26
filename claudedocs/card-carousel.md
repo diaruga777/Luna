@@ -1,11 +1,12 @@
-# Card Carousel (Downloader + Reader roots)
+# Card Carousel (Downloader + Reader + Price Tracker roots)
 
-The Downloader's root screen is a carousel of vertical cards — one saved item per
-card — instead of a grid + pushed viewer. The machinery is **generic and
+All three standalone apps use a carousel of vertical cards — one saved item per
+card — as their root presentation. The machinery is **generic and
 surface-agnostic** and lives in `LunaLibraries/Sources/LunaDesignSystem/CardCarousel/`
-(LunaDesignSystem is already linked by all three apps, so Reader can adopt it with its
-own adapters later). The Downloader-specific adapters live in
-`Luna/Downloader/SavedMediaCardsViewController.swift`.
+(LunaDesignSystem is linked by all three apps). Surface adapters live in
+`Luna/Downloader/SavedMediaCardsViewController.swift`,
+`Luna/Reader/ArticleCardsViewController.swift`, and
+`Luna/PriceTracker/PriceTrackerCardsViewController.swift`.
 
 ## Layout
 
@@ -20,7 +21,7 @@ own adapters later). The Downloader-specific adapters live in
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
   (unit-tested in `CardCarouselMetricsTests`).
-- Both roots have no header bar. The Downloader scrub strip is bounded between
+- All three roots have no header bar. The Downloader scrub strip is bounded between
   the inner edges of the 44pt Liquid Glass Settings and Share circles (64pt
   horizontal inset), with no edge blur that could show as a band on black.
   Its thumbnail pitch uses a 20pt gap. The Reader's miniature-card strip runs
@@ -32,12 +33,16 @@ own adapters later). The Downloader-specific adapters live in
   button on the root; Friends remains reachable through Settings. Its 9:16
   thumbnail chips have a visible pitch gap and enough strip height for selection
   scaling/shadows, so neither selected nor neighboring previews overlap or clip.
-  Nothing floats above this bottom chrome: download progress is drawn inside the
-  downloading item's own card (see "Store plumbing" below).
+  Price Tracker uses the same miniature-card strip: each chip is the product
+  thumbnail with the app icon's **green tag silhouette only** (no magnifying
+  glass) pinned bottom-trailing. Nothing floats above this bottom chrome:
+  download progress is drawn inside the downloading item's own card (see
+  "Store plumbing" below).
 
 ## Interaction model
 
-- **Archive arc**: Reader and Downloader each keep a distinct, non-card, chrome-less
+- **Archive arc**: Reader, Downloader, and Price Tracker each keep a distinct,
+  non-card, chrome-less
   archive drawer just beyond the carousel's right edge — no background, no pull tab;
   the cells are the entire surface. Closed, the arc is fully offscreen away from the
   rightmost card; when the rightmost card centers AND the archive has items, the
@@ -56,8 +61,8 @@ own adapters later). The Downloader-specific adapters live in
   The peek is card chrome: dismissing the chrome (reader immersion) fades the
   closed arc out with the side-card peeks/scrub strip (same 0.32s ease-in-out,
   pull disabled while hidden) and it fades back when the chrome returns.
-  Long-pressing an item cell offers Unarchive and Share; both Reader
-  and Downloader also offer a destructive Delete that removes the complete save
+  Long-pressing an item cell offers Unarchive and Share; all three surfaces also
+  offer a destructive Delete that removes the complete save
   through the surface's normal cleanup path. Reader unarchive writes immediately,
   bumps the article to the first active position, and cross-dissolves the tray-cell
   snapshot into the centered card's final content while the tray spring-dismisses;

@@ -25,6 +25,46 @@ final class PriceTrackingScreenTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - Price Tracker card root
+
+    func testPriceTrackerRootUsesSharedCarouselAndArcTrays() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        let deck = PriceTrackerCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        XCTAssertEqual(deck.carousel.dataSource?.numberOfCards(in: deck.carousel), 3)
+        if case .miniCards = deck.carousel.style.scrubberStyle {
+            // expected
+        } else {
+            XCTFail("Price Tracker should use the same mini-card scrubber as Reader")
+        }
+        XCTAssertNotNil(deck.leftTray)
+        XCTAssertNotNil(deck.archiveTray)
+        XCTAssertNotNil(deck.carousel.contentController(at: 0))
+        _ = window
+    }
+
+    func testPriceTrackerCardKeepsThresholdOnZeroPointGraph() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        let deck = PriceTrackerCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        // Pending Keyboard is newest: it has no history points but still owns
+        // the graph and its editable absolute threshold.
+        guard let content = deck.carousel.contentController(at: 0),
+              let graph = findSubview(of: PriceGraphView.self, in: content.view),
+              let threshold = findButton(accessibilityLabel: "Alert threshold", in: graph)
+        else {
+            XCTFail("zero-point price card should expose its graph threshold")
+            return
+        }
+        XCTAssertEqual(threshold.accessibilityValue, "$108.00")
+        XCTAssertNotNil(graph.thresholdDragGestureRecognizer.view)
+        _ = window
+    }
+
     // MARK: - Price tracking editor
 
     // NOTE: The two PriceTrackingViewController snapshot tests are skipped — since the
@@ -224,6 +264,26 @@ final class PriceTrackingScreenTests: XCTestCase {
         if let table = view as? UITableView { return table }
         for subview in view.subviews {
             if let found = findTableView(in: subview) { return found }
+        }
+        return nil
+    }
+
+    private func findSubview<T: UIView>(of type: T.Type, in view: UIView) -> T? {
+        if let match = view as? T { return match }
+        for subview in view.subviews {
+            if let match = findSubview(of: type, in: subview) { return match }
+        }
+        return nil
+    }
+
+    private func findButton(accessibilityLabel: String, in view: UIView) -> UIButton? {
+        if let button = view as? UIButton, button.accessibilityLabel == accessibilityLabel {
+            return button
+        }
+        for subview in view.subviews {
+            if let button = findButton(accessibilityLabel: accessibilityLabel, in: subview) {
+                return button
+            }
         }
         return nil
     }

@@ -64,8 +64,18 @@ public final class LunaSetupStatusStore {
             .deliverImmediately)
     }
 
+    /// The in-process post hops to the main thread because its ONLY observer is UI
+    /// (the left setup tray, which animates completed cards away) while its only
+    /// posters are `recordShortcutRun` callers — the three App Intents, whose
+    /// `perform()` runs on the Swift-concurrency cooperative pool. Posting inline
+    /// drove `UIView.animate` off the main thread and aborted in Auto Layout's
+    /// thread assertion. Same hop `ReadingListStore.postChanged` and the Darwin
+    /// observer below already make. The Darwin post needs no hop: it is
+    /// thread-safe, and the receiving side hops before it republishes.
     private static func postChange() {
-        NotificationCenter.default.post(name: didChange, object: nil)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: didChange, object: nil)
+        }
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName(darwinNotificationName as CFString),

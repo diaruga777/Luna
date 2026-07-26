@@ -299,6 +299,12 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     }
 
     @objc private func setupStatusChanged() {
+        // Everything below is UIKit, and this fires from a notification whose
+        // posters are background App Intents — mirror `contentChanged`'s hop.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.setupStatusChanged() }
+            return
+        }
         shortcutGuide.stopPictureInPicture()
         safariGuide.stopPictureInPicture()
         removeCompletedSetupRows()
@@ -368,7 +374,13 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         pasteState = .evaluating(changeCount: changeCount)
         rebuildRows()
         pasteEvaluationTask?.cancel()
-        pasteEvaluationTask = Task { [weak self] in
+        // `@MainActor` is load-bearing: this class is a plain NSObject, so an
+        // unannotated Task resumes on the cooperative pool and `rebuildRows()`
+        // below would call `reloadData()` off the main thread — which poisons the
+        // collection view's layout engine and aborts at the NEXT main-thread
+        // rebuild with "Modifications to the layout engine must not be performed
+        // from a background thread".
+        pasteEvaluationTask = Task { @MainActor [weak self] in
             let preview = await RecentURLMatcher.evaluate(
                 urlString: url.absoluteString, surface: AppSurfaceConfig.current)
             guard let self, !Task.isCancelled,

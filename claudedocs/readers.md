@@ -23,7 +23,7 @@ TWO reading modes for extracted articles, with read-aloud, nested inline readers
 
 - **Scroll**: plain scrolling text (audio off) or read-aloud word-follow (audio on).
 - **RSVP** (`ReaderKit/RSVPViewController.swift`): a centered speed reader with a **Words/Phrases sub-segmented control** sitting just below the top-level switcher (`subModeControl`, persisted in `ReaderSettings.rsvpMode`). Both sub-modes share the focal-word index (switching keeps your place), the scrubber / ±25-word skip / ±25 wpm controls, and read-aloud.
-  - **Words**: the classic one-word-at-a-time display on the focal column with the ORP letter tinted between two glass reticule marks, and word-length-aware timing (`RSVPEngine`). Context shows only while paused.
+  - **Words**: the classic one-word-at-a-time display on the focal column with the ORP letter tinted over a compact focus axis, and word-length-aware timing (`RSVPEngine`). Context shows only while paused.
   - **Phrases**: a whole phrase shown over **two lines** in a glass reticule panel (`GlassStyle.focusPanel()`) in a **smaller proportional font** (`makePhraseFont`), with the surrounding prose **always visible above and below and updating as the phrase advances**. Phrase grouping + per-phrase timing come from `ReaderKit/ChunkPlanner.swift` driven by `ReaderKit/ReadingHeuristics.swift` (best-practice chunking: break at sentence/clause boundaries and before phrase-starting prepositions/conjunctions, never end a chunk on a determiner/preposition; dwell longer on long/complex/numeric words, skim function words). With read-aloud on, whole sentences are spoken and the **currently-spoken word is highlighted within the displayed phrase** (the phrase follows the speech word-to-word).
 
 The Reader carousel gives every card a stable title region using the normal 30pt
@@ -181,7 +181,7 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 
 - `ReaderKit/RSVPEngine.swift` — pure logic, unit-tested. Tokenizes blocks into `RSVPWord`s (the shared word space both sub-modes index). ORP index by length: 1→0, 2–5→1, 6–9→2, 10+→3. `duration(at:wpm:)` (Words timing) = 60/wpm × length factor (≤5: 1.0, 6–9: 1.3, 10+: 1.6) × pause factor (paragraph end 2.5, sentence end 1.8, clause `,;:` 1.3). **Words-mode behavior is unchanged.**
 - `ReaderKit/ChunkPlanner.swift` + `ReaderKit/ReadingHeuristics.swift` — pure, unit-tested phrase engine driving the **Phrases** sub-mode (no `WordMap`/NSRange — it builds directly from the `RSVPEngine` word stream). `ChunkPlanner.chunks(words:)` groups words into phrases (≤5 words / ≤30 chars, never ending on a determiner/preposition, breaking before phrase starters and at clause/sentence ends); `duration(for:wpm:)` weights per-word time by `ReadingHeuristics.difficultyFactor` (function words 0.6, long/≥4-syllable 1.35–1.7, numeric ≥1.4) plus a punctuation pause, floored at `minimumDisplay` (0.28s) so phrases stay legible at high WPM. `ReadingHeuristics` holds the function-word sets (binders / phrase-starters), a vowel-group syllable estimate, and the difficulty model.
-- `ReaderKit/RSVPViewController.swift` — hosts both sub-modes (`subModeControl`, default from `ReaderSettings.rsvpMode`). **Words**: word positioned so the ORP letter (tinted in the reading accent) sits on a fixed focal column (40% width), sighted by `reticuleTop`/`reticuleBottom` (`GlassStyle.reticuleMark()`, `layoutReticule`); context shows only while paused. **Phrases**: the chunk's words shown over two lines (`phraseLabel`, `numberOfLines = 2`, smaller proportional font, shrink-to-fit safety net) behind a glass `phrasePanel` (`GlassStyle.focusPanel()`), with `previousContextLabel`/`nextContextLabel` ALWAYS visible and re-filled on every advance (excluding the words in the focus panel); with audio on, `willSpeakRangeOfSpeechString` advances the displayed phrase to follow the spoken word and tints that word. Shared across both: tap = play/pause; scrubber (accent tint, pauses while scrubbing) — scrubbing/skip snap to the containing phrase in Phrases; **±25-word skip buttons**; ±25 wpm buttons (persisted via `ReaderSettings.baseWPM`, 100–900, default 300); "% · wpm" status; light haptic at sentence/paragraph ends; resume via `ReadingListItem.lastWordIndex` saved on pause/close.
+- `ReaderKit/RSVPViewController.swift` — hosts both sub-modes (`subModeControl`, default from `ReaderSettings.rsvpMode`). **Words**: word positioned so the ORP letter (tinted in the reading accent) sits on a fixed focal column (40% width), over a cap-height optical rail with two tiny faded glints (`GlassStyle.rsvpFocusAxis()`, `layoutFocusAxis`); context shows only while paused. The focus axis is only 8pt wide, lives directly behind the ORP glyph, and uses no separate vertical reticule band. **Phrases**: the chunk's words shown over two lines (`phraseLabel`, `numberOfLines = 2`, smaller proportional font, shrink-to-fit safety net) behind a glass `phrasePanel` (`GlassStyle.focusPanel()`), with `previousContextLabel`/`nextContextLabel` ALWAYS visible and re-filled on every advance (excluding the words in the focus panel); with audio on, `willSpeakRangeOfSpeechString` advances the displayed phrase to follow the spoken word and tints that word. Shared across both: tap = play/pause; scrubber (accent tint, pauses while scrubbing) — scrubbing/skip snap to the containing phrase in Phrases; **±25-word skip buttons**; ±25 wpm buttons (persisted via `ReaderSettings.baseWPM`, 100–900, default 300); "% · wpm" status; light haptic at sentence/paragraph ends; resume via `ReadingListItem.lastWordIndex` saved on pause/close.
   - **Skip = ±25 words, playback-state-preserving** (`skip(by:)`): target = `RSVPEngine.skipTarget(currentIndex:by:wordCount:)` (pure, clamped to `0…lastWord`, unit-tested for both ends / ±25 / short / empty docs). It captures `wasPlaying`, tears down the active engine (WPM timer in silent mode, synthesizer in read-aloud mode) WITHOUT flipping the play/pause glyph, seeks (`currentIndex` + displayed word + scrubber + status), then restores the exact prior state — resumes from the new word (`scheduleNext`/`speakCurrentSentence`) if it was playing, stays paused otherwise. Never toggles play/pause, never restarts from the beginning, never desyncs the displayed word from the engine; the audio session is left untouched so read-aloud resumes seamlessly.
 
 ### Link-hold mini RSVP preview
@@ -247,16 +247,17 @@ no nav bar of its own beyond Done.
   purple/yellow/orange/teal/pink/indigo), stored in `ReaderSettings.accent`
   (App Group); `GlassStyle.readingAccent` returns it. Picked via Settings →
   Reader → Highlight Color.
-- **RSVP focus = accented ORP letter between reticule marks**: two short glass
-  bars (`GlassStyle.reticuleMark()`, accent-tinted) sit 10pt above and below the
-  word band on the focal column, sighting the ORP letter the accent colours —
-  Words mode only (`layoutReticule`; Phrases has its own panel). They live
-  inside the half-band the context labels already clear and above the link
-  pill's lane, so they cost no other geometry. The focal centre is fitted into
-  the live space between the title-aware mode switcher and playback controls so
-  tall in-card title headers cannot crowd the controls, with Words mode
-  reserving enough headroom for the upper mark. Scroll/chunk highlight remains
-  an inline text-background tint in the accent.
+- **RSVP focus = accented ORP letter over a compact optical axis**:
+  `GlassStyle.rsvpFocusAxis()` draws a faint 2pt vertical rail directly behind
+  the ORP glyph with two 8pt hairline glints at its cap-height and baseline.
+  The glints fade at both ends and use the configured reading accent at low
+  opacity, leaving the fully tinted ORP letter as the strongest signal. The
+  whole cue is only the glyph's cap-height plus 10pt, so Words mode
+  (`layoutFocusAxis`; Phrases has its own panel) reserves no separate reticule
+  band. The focal centre is still fitted into the live space between the
+  title-aware mode switcher and playback controls so tall in-card title headers
+  cannot crowd the controls. Scroll/chunk highlight remains an inline
+  text-background tint in the accent.
 - **Shared chrome carries a subtle per-app tint.** `LunaSurfacePalette` resolves
   Reader (173/181/246), Downloader (204/118/9), or Price Tracker (7/255/157)
   from the host bundle-id component, including that host's extensions. Liquid

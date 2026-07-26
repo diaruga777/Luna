@@ -12,6 +12,10 @@ Safari setup, pasteboard, then up to five recent Safari matches. This makes the
 pasteboard row the opening focal point, with setup above and recent links below.
 Setup rows pulse until complete and own their actions directly; there is no
 first-launch onboarding or generic setup-step controller.
+Every tray card uses a barely off-black surface. Setup rows contain no leading
+glyph: their copy and standard Liquid Glass button are centered as a single
+stack. Arc positioning preserves each row's vertical center and limits rotation,
+so transformed cards retain visible separation rather than overlapping.
 
 - Email (Reader and central Luna) expands from its arc card into an inset card
   from the safe-area top to the keyboard. Its focused address field infers the

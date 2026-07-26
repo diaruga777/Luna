@@ -55,7 +55,7 @@ private enum LeftTrayRow {
 private final class LeftArcLayout: UICollectionViewLayout {
     var itemWidth: CGFloat = 200
     var itemHeights: [CGFloat] = []
-    var spacing: CGFloat = 10
+    var spacing: CGFloat = 32
     var topInset: CGFloat = 28
     var bottomInset: CGFloat = 28
     var trailingInset: CGFloat = 8
@@ -101,11 +101,12 @@ private final class LeftArcLayout: UICollectionViewLayout {
         attributes.size = CGSize(width: itemWidth, height: height)
         let viewportMid = collectionView.contentOffset.y + collectionView.bounds.height / 2
         let angle = (arcCenters[indexPath.item] - viewportMid) / max(radius, 1)
+        let rotation = min(max(angle, -0.075), 0.075)
         let apexCenterX = collectionView.bounds.width - trailingInset - itemWidth / 2
         attributes.center = CGPoint(
             x: apexCenterX - radius * (1 - cos(angle)),
-            y: viewportMid + radius * sin(angle))
-        attributes.transform = CGAffineTransform(rotationAngle: angle)
+            y: arcCenters[indexPath.item])
+        attributes.transform = CGAffineTransform(rotationAngle: rotation)
         attributes.zIndex = indexPath.item
         return attributes
     }
@@ -983,13 +984,21 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
 private final class LeftTrayCell: UICollectionViewCell {
     static let reuseID = "LeftTrayCell"
 
+    private static let cardBackground = UIColor(
+        red: 0.045, green: 0.047, blue: 0.052, alpha: 0.98)
+    private static let primaryCardText = UIColor.white
+    private static let secondaryCardText = UIColor.white.withAlphaComponent(0.68)
+
     private let imageView = UIImageView()
     private let symbolView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
     private let pasteBadge = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
     private let spinner = UIActivityIndicatorView(style: .medium)
+    private let setupTitleLabel = UILabel()
+    private let setupSubtitleLabel = UILabel()
     private let setupButton = UIButton(type: .system)
+    private let setupStack = UIStackView()
     private let settingsButton = UIButton(type: .system)
     private var setupAction: (() -> Void)?
     private var pasteControl: UIPasteControl?
@@ -1000,7 +1009,7 @@ private final class LeftTrayCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        contentView.backgroundColor = LunaColors.tertiaryBackground
+        contentView.backgroundColor = Self.cardBackground
         contentView.layer.cornerRadius = 16
         contentView.layer.cornerCurve = .continuous
         contentView.clipsToBounds = false
@@ -1010,22 +1019,35 @@ private final class LeftTrayCell: UICollectionViewCell {
         imageView.layer.cornerRadius = 16
         imageView.layer.cornerCurve = .continuous
         symbolView.contentMode = .center
-        symbolView.tintColor = LunaColors.primaryText
+        symbolView.tintColor = Self.primaryCardText
         symbolView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
             pointSize: 28, weight: .medium)
         titleLabel.font = .preferredFont(forTextStyle: .headline)
-        titleLabel.textColor = LunaColors.primaryText
+        titleLabel.textColor = Self.primaryCardText
         titleLabel.numberOfLines = 2
         subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
-        subtitleLabel.textColor = LunaColors.secondaryText
+        subtitleLabel.textColor = Self.secondaryCardText
         subtitleLabel.numberOfLines = 2
-        pasteBadge.tintColor = LunaColors.secondaryText
+        pasteBadge.tintColor = Self.secondaryCardText
+
+        setupTitleLabel.font = .preferredFont(forTextStyle: .headline)
+        setupTitleLabel.textColor = Self.primaryCardText
+        setupTitleLabel.textAlignment = .center
+        setupTitleLabel.numberOfLines = 3
+        setupSubtitleLabel.font = .preferredFont(forTextStyle: .caption1)
+        setupSubtitleLabel.textColor = Self.secondaryCardText
+        setupSubtitleLabel.textAlignment = .center
+        setupSubtitleLabel.numberOfLines = 2
         setupButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
-        setupButton.titleLabel?.lineBreakMode = .byTruncatingTail
-        setupButton.layer.cornerRadius = 12
-        setupButton.layer.cornerCurve = .continuous
-        setupButton.isHidden = true
+        setupButton.titleLabel?.lineBreakMode = .byClipping
         setupButton.addTarget(self, action: #selector(setupButtonTapped), for: .touchUpInside)
+        setupStack.axis = .vertical
+        setupStack.alignment = .center
+        setupStack.spacing = 12
+        setupStack.isHidden = true
+        setupStack.addArrangedSubview(setupTitleLabel)
+        setupStack.addArrangedSubview(setupSubtitleLabel)
+        setupStack.addArrangedSubview(setupButton)
         settingsButton.titleLabel?.numberOfLines = 2
         settingsButton.titleLabel?.textAlignment = .center
         settingsButton.isHidden = true
@@ -1034,7 +1056,7 @@ private final class LeftTrayCell: UICollectionViewCell {
 
         for view in [
             imageView, symbolView, titleLabel, subtitleLabel, pasteBadge, spinner,
-            setupButton, settingsButton,
+            setupStack, settingsButton,
         ] {
             view.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(view)
@@ -1064,10 +1086,13 @@ private final class LeftTrayCell: UICollectionViewCell {
             pasteBadge.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -9),
             spinner.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            setupButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            setupButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
-            setupButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
-            setupButton.heightAnchor.constraint(equalToConstant: 38),
+            setupStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 18),
+            setupStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -18),
+            setupStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            setupTitleLabel.widthAnchor.constraint(equalTo: setupStack.widthAnchor),
+            setupSubtitleLabel.widthAnchor.constraint(equalTo: setupStack.widthAnchor),
+            setupButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            setupButton.heightAnchor.constraint(equalToConstant: 44),
             settingsButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
             settingsButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
             settingsButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
@@ -1085,7 +1110,14 @@ private final class LeftTrayCell: UICollectionViewCell {
         symbolView.isHidden = true
         titleLabel.text = nil
         subtitleLabel.text = nil
-        setupButton.isHidden = true
+        titleLabel.isHidden = false
+        subtitleLabel.isHidden = false
+        setupTitleLabel.text = nil
+        setupSubtitleLabel.text = nil
+        setupSubtitleLabel.isHidden = false
+        setupButton.configuration = nil
+        setupButton.isHidden = false
+        setupStack.isHidden = true
         setupAction = nil
         settingsButton.isHidden = true
         settingsButton.removeTarget(nil, action: nil, for: .allEvents)
@@ -1096,7 +1128,7 @@ private final class LeftTrayCell: UICollectionViewCell {
             .removeFromSuperlayer()
         contentView.layer.shadowOpacity = 0
         contentView.layer.borderWidth = 0
-        contentView.backgroundColor = LunaColors.tertiaryBackground
+        contentView.backgroundColor = Self.cardBackground
         replaceTitleLeading(anchor: contentView.leadingAnchor, constant: 14)
         replaceTitleTrailing(anchor: contentView.trailingAnchor, constant: -12)
         replaceTitleTop(anchor: contentView.topAnchor, constant: 14)
@@ -1114,7 +1146,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         imageView.image = preview.image ?? UIImage(
             systemName: preview.kind == .media ? "play.rectangle.fill"
                 : preview.kind == .product ? "bag.fill" : "safari.fill")
-        imageView.tintColor = LunaColors.secondaryText
+        imageView.tintColor = Self.secondaryCardText
         titleLabel.text = preview.title
         subtitleLabel.text = preview.subtitle
         replaceTitleLeading(anchor: imageView.trailingAnchor, constant: 10)
@@ -1130,39 +1162,30 @@ private final class LeftTrayCell: UICollectionViewCell {
         tint: UIColor,
         action: @escaping () -> Void
     ) {
-        symbolView.isHidden = false
-        titleLabel.numberOfLines = 3
-        let symbol: String
+        symbolView.isHidden = true
+        titleLabel.isHidden = true
+        subtitleLabel.isHidden = true
+        setupStack.isHidden = false
         switch kind {
         case .safari:
-            symbol = "safari"
-            titleLabel.text = AppSurfaceConfig.current.handlesArticles
+            setupTitleLabel.text = AppSurfaceConfig.current.handlesArticles
                 ? "Apply Luna in Safari" : "Save From Safari"
-            subtitleLabel.text = nil
-            configureSetupButton(
-                title: "Open Safari", symbol: "arrow.up.forward.app", tint: tint)
+            setupSubtitleLabel.isHidden = true
+            configureSetupButton(title: "Open Safari", tint: tint)
         case .shortcut:
-            symbol = assumesShortcutInstalled
-                ? "button.horizontal.top.press" : "square.and.arrow.down.on.square"
-            titleLabel.text = assumesShortcutInstalled
+            setupTitleLabel.text = assumesShortcutInstalled
                 ? "One more step! Set your action button to \(appName)"
                 : "Save to Luna with your Action Button"
-            subtitleLabel.text = nil
+            setupSubtitleLabel.isHidden = true
             configureSetupButton(
                 title: assumesShortcutInstalled ? "Open Settings" : "Install shortcut",
-                symbol: assumesShortcutInstalled
-                    ? "gearshape" : "square.and.arrow.down",
                 tint: tint)
         case .email:
-            symbol = "envelope.badge"
-            titleLabel.text = "Connect Email"
-            subtitleLabel.text = "Send articles and import links · Tap to continue"
+            setupTitleLabel.text = "Connect Email"
+            setupSubtitleLabel.text = "Send articles and import links · Tap to continue"
+            setupButton.isHidden = true
         }
         setupAction = action
-        symbolView.image = UIImage(systemName: symbol)
-        symbolView.tintColor = tint
-        replaceTitleLeading(anchor: symbolView.trailingAnchor, constant: 6)
-        replaceTitleTrailing(anchor: contentView.trailingAnchor, constant: -14)
         contentView.layer.borderWidth = 1
         contentView.layer.borderColor = tint.withAlphaComponent(0.55).cgColor
         contentView.layer.shadowColor = tint.cgColor
@@ -1176,24 +1199,27 @@ private final class LeftTrayCell: UICollectionViewCell {
         pulse.autoreverses = true
         pulse.repeatCount = .infinity
         contentView.layer.add(pulse, forKey: "setupPulse")
-        accessibilityLabel = titleLabel.text
-        accessibilityHint = subtitleLabel.text
+        accessibilityLabel = setupTitleLabel.text
+        accessibilityHint = setupSubtitleLabel.text
         if kind == .email {
             isAccessibilityElement = true
             accessibilityTraits = .button
         }
     }
 
-    private func configureSetupButton(title: String, symbol: String, tint: UIColor) {
+    private func configureSetupButton(title: String, tint: UIColor) {
         setupButton.isHidden = false
-        var configuration = UIButton.Configuration.filled()
+        var configuration: UIButton.Configuration
+        if #available(iOS 26.0, *) {
+            configuration = .glass()
+        } else {
+            configuration = .tinted()
+            configuration.cornerStyle = .capsule
+        }
         configuration.title = title
-        configuration.image = UIImage(systemName: symbol)
-        configuration.imagePadding = 7
-        configuration.baseBackgroundColor = tint
         configuration.baseForegroundColor = .white
-        configuration.cornerStyle = .medium
         setupButton.configuration = configuration
+        setupButton.tintColor = tint
     }
 
     @objc private func setupButtonTapped() { setupAction?() }
@@ -1211,11 +1237,10 @@ private final class LeftTrayCell: UICollectionViewCell {
             titleCenterYConstraint = titleLabel.centerYAnchor.constraint(
                 equalTo: contentView.centerYAnchor)
             titleCenterYConstraint?.isActive = true
-            contentView.backgroundColor = .clear
             contentView.layer.sublayers?.first(where: { $0.name == "dashes" })?.removeFromSuperlayer()
             let dashes = CAShapeLayer()
             dashes.name = "dashes"
-            dashes.strokeColor = LunaColors.secondaryText.cgColor
+            dashes.strokeColor = Self.secondaryCardText.cgColor
             dashes.fillColor = UIColor.clear.cgColor
             dashes.lineDashPattern = [5, 5]
             dashes.path = UIBezierPath(
@@ -1280,7 +1305,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         }
         var config = UIButton.Configuration.plain()
         config.attributedTitle = text
-        config.baseForegroundColor = LunaColors.secondaryText
+        config.baseForegroundColor = Self.secondaryCardText
         settingsButton.configuration = config
         let identifier = UIAction.Identifier("leftTrayPasteSettings")
         settingsButton.removeAction(identifiedBy: identifier, for: .touchUpInside)

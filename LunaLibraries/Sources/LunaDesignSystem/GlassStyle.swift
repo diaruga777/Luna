@@ -5,47 +5,46 @@
 
 import UIKit
 
-/// The quiet optical axis behind RSVP's optimal-recognition-position letter.
+/// The quiet focus bridge around RSVP's optimal-recognition-position letter.
 ///
-/// A faint vertical rail gives the eye a stable landing point while two tiny
-/// edge glints make the rail feel intentional without reading as a crosshair.
-/// The caller sizes the view to the focused font's cap height, so it never
-/// reserves a separate reticule band above or below the word.
-private final class RSVPFocusAxisView: UIView {
-    private let rail = CAGradientLayer()
-    private let topGlint = CAGradientLayer()
-    private let bottomGlint = CAGradientLayer()
+/// Two broad hairlines fade from the reading accent at the focal column,
+/// through neutral gray, to transparent. Tiny inward ticks point toward the
+/// glyph without putting any line behind it.
+private final class RSVPFocusReticuleView: UIView {
+    private let topLine = CAGradientLayer()
+    private let bottomLine = CAGradientLayer()
+    private let topTick = CAGradientLayer()
+    private let bottomTick = CAGradientLayer()
 
     init(accent: UIColor) {
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         backgroundColor = .clear
 
-        rail.colors = [
-            accent.withAlphaComponent(0).cgColor,
-            accent.withAlphaComponent(0.12).cgColor,
-            accent.withAlphaComponent(0.12).cgColor,
-            accent.withAlphaComponent(0).cgColor,
-        ]
-        rail.locations = [0, 0.18, 0.82, 1]
-        rail.startPoint = CGPoint(x: 0.5, y: 0)
-        rail.endPoint = CGPoint(x: 0.5, y: 1)
-        layer.addSublayer(rail)
-
-        for glint in [topGlint, bottomGlint] {
-            glint.colors = [
+        let neutral = UIColor(white: 0.72, alpha: 1)
+        for line in [topLine, bottomLine] {
+            line.colors = [
                 accent.withAlphaComponent(0).cgColor,
-                accent.withAlphaComponent(0.48).cgColor,
+                neutral.withAlphaComponent(0.24).cgColor,
+                accent.withAlphaComponent(0.82).cgColor,
+                neutral.withAlphaComponent(0.24).cgColor,
                 accent.withAlphaComponent(0).cgColor,
             ]
-            glint.locations = [0, 0.5, 1]
-            glint.startPoint = CGPoint(x: 0, y: 0.5)
-            glint.endPoint = CGPoint(x: 1, y: 0.5)
-            glint.shadowColor = accent.cgColor
-            glint.shadowOpacity = 0.14
-            glint.shadowRadius = 1.5
-            glint.shadowOffset = .zero
-            layer.addSublayer(glint)
+            line.locations = [0, 0.28, 0.5, 0.72, 1]
+            line.startPoint = CGPoint(x: 0, y: 0.5)
+            line.endPoint = CGPoint(x: 1, y: 0.5)
+            layer.addSublayer(line)
+        }
+
+        topTick.colors = [
+            accent.withAlphaComponent(0.76).cgColor,
+            accent.withAlphaComponent(0.30).cgColor,
+        ]
+        bottomTick.colors = topTick.colors.map { Array($0.reversed()) }
+        for tick in [topTick, bottomTick] {
+            tick.startPoint = CGPoint(x: 0.5, y: 0)
+            tick.endPoint = CGPoint(x: 0.5, y: 1)
+            layer.addSublayer(tick)
         }
     }
 
@@ -53,30 +52,29 @@ private final class RSVPFocusAxisView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let railWidth: CGFloat = 2
-        let glintHeight: CGFloat = 1.5
-        let railInset = min(5, bounds.height / 4)
-        rail.frame = CGRect(
-            x: (bounds.width - railWidth) / 2, y: railInset,
-            width: railWidth, height: max(0, bounds.height - railInset * 2))
-        rail.cornerRadius = railWidth / 2
-
-        let glintFrame = CGRect(x: 0, y: 0, width: bounds.width, height: glintHeight)
-        topGlint.frame = glintFrame
-        bottomGlint.frame = glintFrame.offsetBy(dx: 0, dy: max(0, bounds.height - glintHeight))
-        topGlint.cornerRadius = glintHeight / 2
-        bottomGlint.cornerRadius = glintHeight / 2
-        topGlint.shadowPath = UIBezierPath(roundedRect: topGlint.bounds,
-                                           cornerRadius: glintHeight / 2).cgPath
-        bottomGlint.shadowPath = UIBezierPath(roundedRect: bottomGlint.bounds,
-                                              cornerRadius: glintHeight / 2).cgPath
+        let lineHeight: CGFloat = 1.5
+        let tickWidth: CGFloat = 1.5
+        let tickLength: CGFloat = 3
+        topLine.frame = CGRect(x: 0, y: 0, width: bounds.width, height: lineHeight)
+        bottomLine.frame = CGRect(
+            x: 0, y: max(0, bounds.height - lineHeight),
+            width: bounds.width, height: lineHeight)
+        topTick.frame = CGRect(
+            x: (bounds.width - tickWidth) / 2, y: lineHeight,
+            width: tickWidth, height: tickLength)
+        bottomTick.frame = CGRect(
+            x: (bounds.width - tickWidth) / 2,
+            y: max(0, bounds.height - lineHeight - tickLength),
+            width: tickWidth, height: tickLength)
+        for line in [topLine, bottomLine] { line.cornerRadius = lineHeight / 2 }
+        for tick in [topTick, bottomTick] { tick.cornerRadius = tickWidth / 2 }
     }
 }
 
 /// Liquid Glass styling for floating controls, falling back to material fills
 /// on OS versions without the glass APIs.
 public enum GlassStyle {
-    /// The reading accent (RSVP focus axis + ORP letter, scroll/chunk highlight),
+    /// The reading accent (RSVP reticule + ORP letter, scroll/chunk highlight),
     /// user-configurable via `ReaderSettings.accent`.
     public static var readingAccent: UIColor { ReaderSettings.accent.color }
 
@@ -107,11 +105,11 @@ public enum GlassStyle {
         return mark
     }
 
-    /// A cap-height-sized RSVP focus cue for the full reader's Words mode.
-    /// Its ORP-centered rail and two hairline glints use the user's reading
-    /// accent, but remain translucent enough for the accented glyph to lead.
-    public static func rsvpFocusAxis() -> UIView {
-        RSVPFocusAxisView(accent: readingAccent)
+    /// A compact RSVP focus cue for the full reader's Words mode. Its broad
+    /// hairlines fade accent → gray → transparent, with two tiny inward ticks
+    /// pointing toward the ORP glyph and no line behind the letter.
+    public static func rsvpFocusReticule() -> UIView {
+        RSVPFocusReticuleView(accent: readingAccent)
     }
 
     /// A subtle rounded glass panel sitting BEHIND the phrase reticule's two

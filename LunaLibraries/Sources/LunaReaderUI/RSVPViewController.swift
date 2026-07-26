@@ -135,10 +135,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// thread of the sentence.
     private let previousContextLabel = UILabel()
     private let nextContextLabel = UILabel()
-    /// A compact accent-tinted optical axis directly behind the ORP letter
-    /// (Words mode). It stays within the glyph's cap-height instead of claiming
-    /// separate vertical bands above and below the word.
-    private let focusAxis = GlassStyle.rsvpFocusAxis()
+    /// A compact accent-to-neutral reticule around the ORP letter (Words mode).
+    /// Its only vertical elements are two tiny inward ticks; nothing crosses
+    /// behind the highlighted glyph.
+    private let focusReticule = GlassStyle.rsvpFocusReticule()
     /// Glass panel behind the two-line phrase (Phrases mode).
     private let phrasePanel = GlassStyle.focusPanel()
     private let playPauseButton = UIButton(type: .system)
@@ -420,7 +420,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        layoutFocusAxis()
+        layoutFocusReticule()
         layoutPhrasePanel()
         layoutContext()
         layoutLinkPill()
@@ -468,22 +468,24 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // MARK: - Setup
 
     private func configureReticule() {
-        view.addSubview(focusAxis)
+        view.addSubview(focusReticule)
     }
 
-    /// Fits the optical axis tightly to the font's cap-height and aligns it with
-    /// the ORP column. The label is added after the axis, keeping the glyph crisp
-    /// above the translucent rail.
-    private func layoutFocusAxis() {
+    /// Spans approximately three monospaced characters around the ORP column.
+    /// The top/bottom lines sit just outside the glyph, while their 3pt ticks
+    /// point inward without crossing behind it.
+    private func layoutFocusReticule() {
         let focalX = view.bounds.width * Self.focalFraction
         let centerY = focalCenterY
-        let verticalPadding: CGFloat = 5
+        let verticalPadding: CGFloat = 6
         let height = ceil(wordFont.capHeight + verticalPadding * 2)
+        let characterWidth = ("0" as NSString).size(withAttributes: [.font: wordFont]).width
+        let width = ceil(characterWidth * 3)
         let baselineY = centerY - wordFont.lineHeight / 2 + wordFont.ascender
-        focusAxis.frame = CGRect(
-            x: focalX - 4,
+        focusReticule.frame = CGRect(
+            x: focalX - width / 2,
             y: baselineY - wordFont.capHeight - verticalPadding,
-            width: 8,
+            width: width,
             height: height)
     }
 
@@ -811,7 +813,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func applyDisplayMode() {
         let phrases = displayMode == .phrases
         wordLabel.isHidden = phrases
-        focusAxis.isHidden = phrases
+        focusReticule.isHidden = phrases
         phraseLabel.isHidden = !phrases
         phrasePanel.isHidden = !phrases
         // Context is always shown in Phrases; in Words it follows play/pause.

@@ -70,6 +70,11 @@ public final class URLRescueEngine {
     }
 
     private func runRescue(_ request: RescueRequest, host: String) async -> RescueOutcome {
+        // This engine outlives every attempt, so the model session must not:
+        // start from a clean one rather than inheriting the previous rescue's
+        // transcript (or a response our own timeout cancelled mid-flight).
+        session.beginAttempt()
+
         // (1) Learned rule — deterministic, before any LLM.
         if let cached = ruleStore.rule(forHost: host, hint: request.hint) {
             log("cachedRule hit host=\(host)")
@@ -103,8 +108,8 @@ public final class URLRescueEngine {
         var budget: RescueDigestBudget = supportsArticle ? .privateCloud : .onDevice
 
         // (4) Plan call, with one digest-halving retry on context overflow.
-        session.prewarm()
         let instructions = RescuePrompts.planInstructions(hint: request.hint, allowsArticlePayload: supportsArticle)
+        session.prewarm(instructions: instructions)
 
         var plan: RescuePlanResponse?
         for attempt in 0..<2 {

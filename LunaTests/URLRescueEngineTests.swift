@@ -58,6 +58,32 @@ final class URLRescueEngineTests: XCTestCase {
         XCTAssertEqual(session.prewarmCount, 1)
     }
 
+    /// Prewarming is what CREATES the underlying `LanguageModelSession`, so it has
+    /// to be handed the same instructions the plan call will rely on. Warming
+    /// first and passing instructions later built an instruction-less session that
+    /// the plan call then silently reused, dropping its task contract.
+    func testPrewarmReceivesThePlanInstructions() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        _ = await engine.rescue(request())
+        XCTAssertEqual(session.prewarmInstructions, session.planInstructions)
+        XCTAssertFalse(session.prewarmInstructions.isEmpty)
+    }
+
+    /// The engine is a process-lifetime singleton, so each attempt must start from
+    /// a fresh model session instead of inheriting the previous rescue's
+    /// transcript — or a response an earlier timeout cancelled mid-flight.
+    func testEachAttemptBeginsAFreshModelSession() async {
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "give_up")),
+            .plan(RescuePlanResponse(kind: "give_up")),
+        ])
+        let (engine, _) = makeEngine(session: session)
+        _ = await engine.rescue(request())
+        _ = await engine.rescue(request())
+        XCTAssertEqual(session.beginAttemptCount, 2)
+    }
+
     func testRerouteReentersPipelineWithForceArticle() async {
         let good = IngestResult(url: URL(string: "https://amp.example.com/story")!,
                                 outcome: .article(ArticleContent(title: "T", blocks: [

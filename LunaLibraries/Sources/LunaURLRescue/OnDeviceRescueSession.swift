@@ -32,8 +32,12 @@ public final class OnDeviceRescueSession: RescueModelSession {
     /// The 4096-token on-device window can't reproduce a full article.
     public var supportsArticlePayload: Bool { false }
 
-    public func prewarm() {
-        currentSession().prewarm()
+    public func beginAttempt() {
+        session = nil
+    }
+
+    public func prewarm(instructions: String) {
+        currentSession(instructions: instructions).prewarm()
     }
 
     public func requestPlan(instructions: String, prompt: String) async throws -> RescuePlanResponse {
@@ -55,8 +59,8 @@ public final class OnDeviceRescueSession: RescueModelSession {
         throw RescueModelError.modelUnavailable
     }
 
-    /// One `LanguageModelSession` per rescue attempt, created lazily and reused
-    /// (matches `FoundationModelsTrimSession.currentSession`).
+    /// One `LanguageModelSession` per rescue attempt — created lazily on first
+    /// use and reused for the rest of THIS attempt; `beginAttempt` clears it.
     private func currentSession(instructions: String? = nil) -> LanguageModelSession {
         if let session { return session }
         let newSession = instructions.map { LanguageModelSession(instructions: $0) } ?? LanguageModelSession()

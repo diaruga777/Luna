@@ -40,6 +40,8 @@ final class FakeRescueModelSession: RescueModelSession {
     var articleSupported: Bool
     private var responses: [Response]
     private(set) var prewarmCount = 0
+    private(set) var beginAttemptCount = 0
+    private(set) var prewarmInstructions: [String] = []
     private(set) var planPrompts: [String] = []
     private(set) var planInstructions: [String] = []
     private(set) var articlePrompts: [String] = []
@@ -52,7 +54,11 @@ final class FakeRescueModelSession: RescueModelSession {
 
     var isAvailable: Bool { available }
     var supportsArticlePayload: Bool { articleSupported }
-    func prewarm() { prewarmCount += 1 }
+    func beginAttempt() { beginAttemptCount += 1 }
+    func prewarm(instructions: String) {
+        prewarmCount += 1
+        prewarmInstructions.append(instructions)
+    }
 
     func requestPlan(instructions: String, prompt: String) async throws -> RescuePlanResponse {
         planInstructions.append(instructions)

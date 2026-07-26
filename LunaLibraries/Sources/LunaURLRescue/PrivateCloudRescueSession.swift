@@ -37,8 +37,13 @@ public final class PrivateCloudRescueSession: RescueModelSession {
         PrivateCloudComputeLanguageModel().availability == .available
     }
 
-    public func prewarm() {
-        currentSession().prewarm()
+    public func beginAttempt() {
+        session = nil
+        usingPrivateCloud = false
+    }
+
+    public func prewarm(instructions: String) {
+        currentSession(instructions: instructions).prewarm()
     }
 
     public func requestPlan(instructions: String, prompt: String) async throws -> RescuePlanResponse {

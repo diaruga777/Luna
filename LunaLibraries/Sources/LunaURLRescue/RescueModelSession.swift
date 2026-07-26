@@ -112,13 +112,29 @@ public protocol RescueModelSession: AnyObject {
     /// full-article payload is impossible in the 4096-token on-device window, so
     /// the validator rejects `kind == "article"` unless this is true.
     var supportsArticlePayload: Bool { get }
-    func prewarm()
+    /// Discards any model session left over from the previous attempt.
+    ///
+    /// The engine is a process-lifetime singleton (`URLRescueWiring.install()`),
+    /// so without this the SAME underlying session — and its ever-growing
+    /// transcript — is reused by every rescue the app ever runs, including one
+    /// whose response a timeout already cancelled. Called once per attempt, so
+    /// the plan call and its article follow-up still share a session.
+    func beginAttempt()
+    /// Warms the model for the attempt. Takes `instructions` because the session
+    /// is created here: warming without them would create an instruction-less
+    /// session that the plan call then silently reuses, dropping its contract.
+    func prewarm(instructions: String)
     /// The plan call. `instructions` is the static task contract; `prompt` is the
     /// URL + hint + untrusted digest. Throws `RescueModelError`.
     func requestPlan(instructions: String, prompt: String) async throws -> RescuePlanResponse
     /// The PCC-only follow-up: reproduce the article body. Throws
     /// `RescueModelError` (including `.modelUnavailable` on the on-device stub).
     func requestArticlePayload(instructions: String, prompt: String) async throws -> RescueArticleResponse
+}
+
+public extension RescueModelSession {
+    /// Model-less conformers (the stub, test fakes) hold nothing to discard.
+    func beginAttempt() {}
 }
 
 /// Stands in whenever no model can be constructed — a pre-iOS-26 device, Apple
@@ -129,7 +145,7 @@ public final class UnavailableRescueModelSession: RescueModelSession {
     public init() {}
     public var isAvailable: Bool { false }
     public var supportsArticlePayload: Bool { false }
-    public func prewarm() {}
+    public func prewarm(instructions: String) {}
     public func requestPlan(instructions: String, prompt: String) async throws -> RescuePlanResponse {
         throw RescueModelError.modelUnavailable
     }

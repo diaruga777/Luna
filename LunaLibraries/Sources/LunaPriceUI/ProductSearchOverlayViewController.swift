@@ -38,8 +38,9 @@ public protocol ProductSearchOverlayDelegate: AnyObject {
 
 /// A near-fullscreen web search/browse overlay for adding a seller to a price
 /// tracker, styled like the inline reader (`SplitWebOverlayViewController`): a themed
-/// `WKWebView` inside an inset rounded glass card with a glass header (close +
-/// back/forward), and a bottom URL bar with a circular "+" to add the current page.
+/// `WKWebView` inside an inset rounded glass card, compact close/Safari tabs above it,
+/// and a bottom URL bar with back/forward controls and a circular "+" to add the
+/// current page.
 ///
 /// It preloads a Google Shopping search for the product, lets the user browse/type
 /// freely, and offers two ways to add the page being viewed as a seller:
@@ -59,22 +60,26 @@ public protocol ProductSearchOverlayDelegate: AnyObject {
 /// priority) with a safe-area cap, so it rides up just above the keyboard while the
 /// user types and drops back when the keyboard dismisses — the field stays visible
 /// and usable the whole time.
-public final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate,
-    WKScriptMessageHandler {
+public final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate,
+    UITextFieldDelegate, WKScriptMessageHandler, UIViewControllerTransitioningDelegate {
 
     public weak var delegate: ProductSearchOverlayDelegate?
 
     private let initialURL: URL
     private let trackedProduct: ProductInfo
+    private let eclipseSourcePointInWindow: CGPoint?
+    private let eclipseSceneFrameInWindow: CGRect?
 
     private let dimView = UIView()
     private let card = UIView()
     private let cardShadow = UIView()
-    private let header = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    private let topTabs = UIView()
+    private let closeTab = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private let safariTab = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let closeButton = UIButton(type: .system)
+    private let safariButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
-    private let titleLabel = UILabel()
 
     private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
     private let urlField = UITextField()
@@ -99,16 +104,28 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
 
     private static let cardInset: CGFloat = 12
     private static let cardCornerRadius: CGFloat = 26
-    private static let headerHeight: CGFloat = 60
+    private static let topTabHeight: CGFloat = 38
     private static let bottomBarHeight: CGFloat = 60
     private static let buttonSize: CGFloat = 40
     private static let buttonInset: CGFloat = 14
 
-    public init(initialURL: URL, trackedProduct: ProductInfo) {
+    public init(
+        initialURL: URL,
+        trackedProduct: ProductInfo,
+        eclipseSourcePointInWindow: CGPoint? = nil,
+        eclipseSceneFrameInWindow: CGRect? = nil
+    ) {
         self.initialURL = initialURL
         self.trackedProduct = trackedProduct
+        self.eclipseSourcePointInWindow = eclipseSourcePointInWindow
+        self.eclipseSceneFrameInWindow = eclipseSceneFrameInWindow
         super.init(nibName: nil, bundle: nil)
-        modalPresentationStyle = .overFullScreen
+        if eclipseSourcePointInWindow != nil {
+            modalPresentationStyle = .custom
+            transitioningDelegate = self
+        } else {
+            modalPresentationStyle = .overFullScreen
+        }
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -140,7 +157,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         view.addSubview(card)
 
         configureWebView()
-        configureHeader()
+        configureTopTabs()
         configureBottomBar()
         loadURL(initialURL)
     }
@@ -157,7 +174,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     }
 
     private var cardFrame: CGRect {
-        let top = view.safeAreaInsets.top + 8
+        let top = view.safeAreaInsets.top + 8 + Self.topTabHeight - 4
         let bottom = view.bounds.height - view.safeAreaInsets.bottom - 8
         return CGRect(x: Self.cardInset, y: top,
                       width: view.bounds.width - Self.cardInset * 2, height: max(bottom - top, 0))
@@ -180,8 +197,6 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         webView.backgroundColor = themed
         webView.scrollView.backgroundColor = themed
         webView.underPageBackgroundColor = themed
-        webView.scrollView.contentInset.top = Self.headerHeight
-        webView.scrollView.verticalScrollIndicatorInsets.top = Self.headerHeight
         webView.scrollView.contentInset.bottom = Self.bottomBarHeight
         webView.navigationDelegate = self
         card.addSubview(webView)
@@ -194,30 +209,31 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
 
     // MARK: - Chrome
 
-    private func configureHeader() {
-        header.clipsToBounds = true
-        header.layer.cornerRadius = Self.cardCornerRadius
-        header.layer.cornerCurve = .continuous
-        header.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        card.addSubview(header)
+    private func configureTopTabs() {
+        topTabs.backgroundColor = .clear
+        view.addSubview(topTabs)
 
+        for tab in [closeTab, safariTab] {
+            tab.clipsToBounds = true
+            tab.layer.cornerRadius = 12
+            tab.layer.cornerCurve = .continuous
+            topTabs.addSubview(tab)
+        }
         closeButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark")
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        header.contentView.addSubview(closeButton)
+        closeButton.accessibilityLabel = "Close"
+        closeTab.contentView.addSubview(closeButton)
+
+        safariButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "safari")
+        safariButton.addTarget(self, action: #selector(openInSafariTapped), for: .touchUpInside)
+        safariButton.accessibilityLabel = "Open in Safari"
+        safariTab.contentView.addSubview(safariButton)
 
         backButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "chevron.backward")
         backButton.addTarget(self, action: #selector(goBackTapped), for: .touchUpInside)
-        header.contentView.addSubview(backButton)
 
         forwardButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "chevron.forward")
         forwardButton.addTarget(self, action: #selector(goForwardTapped), for: .touchUpInside)
-        header.contentView.addSubview(forwardButton)
-
-        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
-        titleLabel.textColor = LunaColors.secondaryText
-        titleLabel.textAlignment = .center
-        titleLabel.text = "Find a seller"
-        header.contentView.addSubview(titleLabel)
 
         updateNavButtons()
     }
@@ -242,10 +258,13 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         urlField.returnKeyType = .go
         urlField.placeholder = "Search or enter a URL"
         urlField.delegate = self
+        bottomBar.contentView.addSubview(backButton)
+        bottomBar.contentView.addSubview(forwardButton)
         bottomBar.contentView.addSubview(urlField)
 
-        addButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "plus")
-        addButton.tintColor = GlassStyle.readingAccent
+        var addConfiguration = GlassStyle.circularButtonConfiguration(symbol: "plus")
+        addConfiguration.baseForegroundColor = LunaSurfacePalette.baseColor(for: .priceTracker)
+        addButton.configuration = addConfiguration
         addButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
         bottomBar.contentView.addSubview(addButton)
 
@@ -269,26 +288,27 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
 
     private func layoutCardContents() {
         webView?.frame = card.bounds
-        header.frame = CGRect(x: 0, y: 0, width: card.bounds.width, height: Self.headerHeight)
-
         let s = Self.buttonSize
-        let y = (Self.headerHeight - s) / 2
-        closeButton.frame = CGRect(x: Self.buttonInset, y: y, width: s, height: s)
-        forwardButton.frame = CGRect(
-            x: card.bounds.width - Self.buttonInset - s, y: y, width: s, height: s)
-        backButton.frame = CGRect(
-            x: forwardButton.frame.minX - 6 - s, y: y, width: s, height: s)
-        let titleLeft = closeButton.frame.maxX + 8
-        let titleRight = backButton.frame.minX - 8
-        titleLabel.frame = CGRect(
-            x: titleLeft, y: 0, width: max(titleRight - titleLeft, 0), height: Self.headerHeight)
+        let tabY = view.safeAreaInsets.top + 8
+        topTabs.frame = CGRect(
+            x: Self.cardInset, y: tabY,
+            width: view.bounds.width - Self.cardInset * 2, height: Self.topTabHeight)
+        closeTab.frame = CGRect(x: 0, y: 0, width: 50, height: Self.topTabHeight)
+        safariTab.frame = CGRect(
+            x: topTabs.bounds.width - 50, y: 0, width: 50, height: Self.topTabHeight)
+        closeButton.frame = CGRect(
+            x: 6, y: (Self.topTabHeight - 34) / 2, width: 34, height: 34)
+        safariButton.frame = CGRect(
+            x: 10, y: (Self.topTabHeight - 34) / 2, width: 34, height: 34)
 
         let by = (Self.bottomBarHeight - s) / 2
+        backButton.frame = CGRect(x: 8, y: by, width: s, height: s)
+        forwardButton.frame = CGRect(x: backButton.frame.maxX + 2, y: by, width: s, height: s)
         addButton.frame = CGRect(
             x: bottomBar.bounds.width - Self.buttonInset - s, y: by, width: s, height: s)
         urlField.frame = CGRect(
-            x: Self.buttonInset, y: (Self.bottomBarHeight - 36) / 2,
-            width: addButton.frame.minX - 8 - Self.buttonInset, height: 36)
+            x: forwardButton.frame.maxX + 5, y: (Self.bottomBarHeight - 36) / 2,
+            width: addButton.frame.minX - 8 - (forwardButton.frame.maxX + 5), height: 36)
     }
 
     private func updateNavButtons() {
@@ -300,6 +320,11 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
 
     @objc private func closeTapped() {
         dismiss(animated: true)
+    }
+
+    @objc private func openInSafariTapped() {
+        guard let url = webView?.url else { return }
+        UIApplication.shared.open(url)
     }
 
     @objc private func goBackTapped() { webView?.goBack() }
@@ -564,5 +589,236 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         }
         return ProductMatcher.brandsCompatible(candidate.brand, tracked.brand)
             && ProductMatcher.nameSimilarity(candidate.name, tracked.name) >= ProductMatcher.nameThreshold
+    }
+
+    // MARK: - Card eclipse presentation
+
+    public func presentationController(
+        forPresented presented: UIViewController,
+        presenting: UIViewController?,
+        source: UIViewController
+    ) -> UIPresentationController? {
+        ProductSearchPresentationController(
+            presentedViewController: presented, presenting: presenting)
+    }
+
+    public func animationController(
+        forPresented presented: UIViewController,
+        presenting: UIViewController,
+        source: UIViewController
+    ) -> UIViewControllerAnimatedTransitioning? {
+        guard let point = eclipseSourcePointInWindow else { return nil }
+        return ProductSearchEclipseAnimator(
+            sourcePointInWindow: point,
+            sceneFrameInWindow: eclipseSceneFrameInWindow,
+            direction: .forward)
+    }
+
+    public func animationController(
+        forDismissed dismissed: UIViewController
+    ) -> UIViewControllerAnimatedTransitioning? {
+        guard let point = eclipseSourcePointInWindow else { return nil }
+        return ProductSearchEclipseAnimator(
+            sourcePointInWindow: point,
+            sceneFrameInWindow: eclipseSceneFrameInWindow,
+            direction: .reverse)
+    }
+}
+
+private final class ProductSearchPresentationController: UIPresentationController {
+    override var frameOfPresentedViewInContainerView: CGRect {
+        containerView?.bounds ?? .zero
+    }
+
+    override var shouldRemovePresentersView: Bool { false }
+}
+
+/// The Price Tracker's seller browser uses the same eclipse vocabulary as the
+/// Reader's inline page: a touch-sized black moon expands while a second dark
+/// surface rises from below, then the web card appears at totality.
+private final class ProductSearchEclipseAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+    enum Direction { case forward, reverse }
+
+    private let sourcePointInWindow: CGPoint
+    private let sceneFrameInWindow: CGRect?
+    private let direction: Direction
+
+    init(
+        sourcePointInWindow: CGPoint,
+        sceneFrameInWindow: CGRect?,
+        direction: Direction
+    ) {
+        self.sourcePointInWindow = sourcePointInWindow
+        self.sceneFrameInWindow = sceneFrameInWindow
+        self.direction = direction
+    }
+
+    func transitionDuration(
+        using transitionContext: UIViewControllerContextTransitioning?
+    ) -> TimeInterval {
+        CardEclipseTransition.duration
+    }
+
+    func animateTransition(using context: UIViewControllerContextTransitioning) {
+        guard let fromController = context.viewController(forKey: .from),
+              let toController = context.viewController(forKey: .to)
+        else {
+            context.completeTransition(false)
+            return
+        }
+        let container = context.containerView
+        let fromView = context.view(forKey: .from) ?? fromController.view!
+        let toView = context.view(forKey: .to) ?? toController.view!
+        let finalFrame = context.finalFrame(for: toController)
+        toView.frame = finalFrame.isEmpty ? container.bounds : finalFrame
+
+        let sceneFrame = sceneFrameInWindow.map { container.convert($0, from: nil) }
+            ?? container.bounds.insetBy(dx: 12, dy: 12)
+        let sourcePoint = container.convert(sourcePointInWindow, from: nil)
+
+        switch direction {
+        case .forward:
+            toView.alpha = 0
+            container.addSubview(toView)
+            container.bringSubviewToFront(fromView)
+            animateScene(
+                in: container, frame: sceneFrame, sourcePoint: sourcePoint,
+                reverse: false, outgoingView: nil,
+                atZenith: {
+                    container.bringSubviewToFront(toView)
+                    UIView.animate(withDuration: 0.14) { toView.alpha = 1 }
+                },
+                completion: {
+                    context.completeTransition(!context.transitionWasCancelled)
+                })
+        case .reverse:
+            toView.alpha = 1
+            if toView.window == nil, toView.superview == nil {
+                container.insertSubview(toView, belowSubview: fromView)
+            }
+            animateScene(
+                in: container, frame: sceneFrame, sourcePoint: sourcePoint,
+                reverse: true, outgoingView: fromView,
+                atZenith: {},
+                completion: {
+                    fromView.alpha = 1
+                    context.completeTransition(!context.transitionWasCancelled)
+                })
+        }
+    }
+
+    private func animateScene(
+        in container: UIView,
+        frame: CGRect,
+        sourcePoint: CGPoint,
+        reverse: Bool,
+        outgoingView: UIView?,
+        atZenith: @escaping () -> Void,
+        completion: @escaping () -> Void
+    ) {
+        let surface = UIView(frame: frame)
+        surface.isUserInteractionEnabled = false
+        surface.clipsToBounds = false
+        container.addSubview(surface)
+
+        let corona = CardEclipseTransition.makeCorona(frame: surface.bounds)
+        corona.alpha = reverse ? 1 : 0
+        surface.addSubview(corona)
+
+        let clipped = UIView(frame: surface.bounds)
+        clipped.clipsToBounds = true
+        clipped.layer.cornerRadius = CardSurfaceView.cornerRadius
+        clipped.layer.cornerCurve = .continuous
+        surface.addSubview(clipped)
+
+        let localPoint = CGPoint(
+            x: min(max(sourcePoint.x - frame.minX, 0), frame.width),
+            y: min(max(sourcePoint.y - frame.minY, 0), frame.height))
+        let circle = UIView(frame: CGRect(x: 0, y: 0, width: 2, height: 2))
+        circle.center = localPoint
+        circle.backgroundColor = .black
+        circle.layer.cornerRadius = 1
+        clipped.addSubview(circle)
+
+        let eclipse = UIView(frame: surface.bounds)
+        eclipse.backgroundColor = .black
+        eclipse.layer.cornerRadius = reverse ? 0 : 30
+        eclipse.layer.cornerCurve = .continuous
+        eclipse.transform = reverse
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: surface.bounds.height * 0.34)
+        eclipse.alpha = reverse ? 1 : 0
+        clipped.addSubview(eclipse)
+
+        let flare = EclipseFlareView(frame: CGRect(x: 0, y: 0, width: 130, height: 130))
+        flare.center = CGPoint(x: eclipse.bounds.midX, y: 0)
+        flare.alpha = reverse ? 1 : 0
+        flare.transform = reverse
+            ? .identity
+            : CGAffineTransform(scaleX: 0.45, y: 0.45)
+        eclipse.addSubview(flare)
+
+        let farthestX = max(localPoint.x, surface.bounds.width - localPoint.x)
+        let farthestY = max(localPoint.y, surface.bounds.height - localPoint.y)
+        let diameter = hypot(farthestX, farthestY) * 2 + 8
+
+        if reverse {
+            circle.transform = CGAffineTransform(scaleX: diameter / 2, y: diameter / 2)
+            container.bringSubviewToFront(outgoingView ?? surface)
+            UIView.animate(
+                withDuration: UIAccessibility.isReduceMotionEnabled ? 0.1 : 0.15,
+                animations: { outgoingView?.alpha = 0 }
+            ) { _ in
+                container.bringSubviewToFront(surface)
+                atZenith()
+                UIView.animate(
+                    withDuration: UIAccessibility.isReduceMotionEnabled
+                        ? 0.1 : CardEclipseTransition.duration * 0.66,
+                    animations: {
+                        corona.alpha = 0
+                        flare.alpha = 0
+                        circle.transform = .identity
+                        eclipse.transform = CGAffineTransform(
+                            translationX: 0, y: surface.bounds.height * 0.34)
+                        eclipse.alpha = 0
+                        eclipse.layer.cornerRadius = 30
+                    },
+                    completion: { _ in surface.removeFromSuperview(); completion() })
+            }
+            return
+        }
+
+        UIView.animateKeyframes(
+            withDuration: UIAccessibility.isReduceMotionEnabled
+                ? 0.2 : CardEclipseTransition.duration * 0.66,
+            delay: 0,
+            options: [.calculationModeCubic, .beginFromCurrentState],
+            animations: {
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
+                    circle.transform = CGAffineTransform(
+                        scaleX: diameter / 2, y: diameter / 2)
+                    eclipse.transform = .identity
+                    eclipse.alpha = 1
+                    eclipse.layer.cornerRadius = 0
+                }
+                UIView.addKeyframe(withRelativeStartTime: 0.8, relativeDuration: 0.2) {
+                    corona.alpha = 1
+                    flare.alpha = 1
+                    flare.transform = .identity
+                }
+            },
+            completion: { _ in
+                atZenith()
+                UIView.animate(
+                    withDuration: UIAccessibility.isReduceMotionEnabled
+                        ? 0.1 : CardEclipseTransition.duration * 0.34,
+                    animations: {
+                        corona.alpha = 0
+                        flare.alpha = 0
+                        eclipse.alpha = 0
+                        circle.alpha = 0
+                    },
+                    completion: { _ in surface.removeFromSuperview(); completion() })
+            })
     }
 }

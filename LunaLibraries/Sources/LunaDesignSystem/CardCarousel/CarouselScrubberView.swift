@@ -226,6 +226,12 @@ public final class CarouselScrubberView: UIView {
         itemViews[index].setBadge(badge)
     }
 
+    /// Artwork layered over a `.miniCards` chip without replacing its thumbnail.
+    public func setAccessoryImage(_ image: UIImage?, at index: Int) {
+        guard itemViews.indices.contains(index) else { return }
+        itemViews[index].setAccessoryImage(image)
+    }
+
     public func setSelectedIndex(_ index: Int, animated: Bool) {
         guard itemViews.indices.contains(index) else { return }
         selectedIndex = index
@@ -401,6 +407,7 @@ private final class GradientMaskView: UIView {
 private final class ScrubberItemView: UIView {
     let imageView = UIImageView()
     private let badgeView = CarouselSourceBadgeView()
+    private let accessoryImageView = UIImageView()
     private let style: CarouselScrubberView.Style
     /// The mini card's own furniture (badge + skeleton bars), hidden while the
     /// chip shows a full-bleed still instead. Empty in `.thumbnails`.
@@ -429,6 +436,15 @@ private final class ScrubberItemView: UIView {
             // covers the furniture, one without keeps showing it.
             installImageView(cornerRadius: 9)
             imageView.isHidden = true
+            accessoryImageView.frame = CGRect(
+                x: size.width - 25, y: size.height - 25, width: 20, height: 20)
+            accessoryImageView.contentMode = .scaleAspectFit
+            accessoryImageView.isUserInteractionEnabled = false
+            accessoryImageView.layer.shadowColor = UIColor.black.cgColor
+            accessoryImageView.layer.shadowOpacity = 0.45
+            accessoryImageView.layer.shadowRadius = 2
+            accessoryImageView.layer.shadowOffset = CGSize(width: 0, height: 1)
+            addSubview(accessoryImageView)
         }
         setSelected(false)
     }
@@ -490,6 +506,12 @@ private final class ScrubberItemView: UIView {
         guard style == .miniCards else { return }
         imageView.isHidden = image == nil
         for view in miniCardFurniture { view.isHidden = image != nil }
+    }
+
+    func setAccessoryImage(_ image: UIImage?) {
+        accessoryImageView.image = image
+        accessoryImageView.isHidden = image == nil
+        if image != nil { bringSubviewToFront(accessoryImageView) }
     }
 
     func setSelected(_ selected: Bool) {

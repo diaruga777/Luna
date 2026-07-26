@@ -57,6 +57,12 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void)
+    /// Optional artwork pinned over the bottom-trailing corner of a `.miniCards`
+    /// thumbnail chip. Unlike the source badge, this never replaces the thumbnail.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadMiniCarouselAccessoryForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void)
     /// Whether this card's `.miniCards` chip should be its full-bleed still
     /// (`loadThumbnailForCardAt`) rather than a mini card with a source badge.
     /// True for a save whose card IS a picture — a media download in the
@@ -96,6 +102,12 @@ public extension CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void
+    ) { completion(nil) }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadMiniCarouselAccessoryForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
     ) { completion(nil) }
 
     func carousel(
@@ -1085,6 +1097,7 @@ public final class CardCarouselViewController: UIViewController {
                 } else {
                     loadBadgeChip(at: index, generation: generation)
                 }
+                loadMiniCarouselAccessory(at: index, generation: generation)
             }
         }
     }
@@ -1110,6 +1123,17 @@ public final class CardCarouselViewController: UIViewController {
             DispatchQueue.main.async {
                 guard let self, self.stripLoadGeneration == generation else { return }
                 self.scrubber.setBadge(badge, at: index)
+            }
+        }
+    }
+
+    private func loadMiniCarouselAccessory(at index: Int, generation: Int) {
+        dataSource?.carousel(
+            self, loadMiniCarouselAccessoryForCardAt: index
+        ) { [weak self] image in
+            DispatchQueue.main.async {
+                guard let self, self.stripLoadGeneration == generation else { return }
+                self.scrubber.setAccessoryImage(image, at: index)
             }
         }
     }

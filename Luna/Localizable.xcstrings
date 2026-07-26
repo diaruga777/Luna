@@ -23,6 +23,12 @@
     "%@ Button" : {
 
     },
+    "%lld wpm" : {
+
+    },
+    "1×" : {
+
+    },
     "A screenshot of the current app's screen." : {
 
     },
@@ -30,6 +36,21 @@
 
     },
     "Add" : {
+
+    },
+    "Add Sender" : {
+
+    },
+    "Add Sender…" : {
+
+    },
+    "Add Subject Filter" : {
+
+    },
+    "Add Subject Filter…" : {
+
+    },
+    "Add tracked site" : {
 
     },
     "All Articles" : {
@@ -44,6 +65,12 @@
     "Allow Photos access to play this archived item." : {
 
     },
+    "Also import any email whose subject contains one of these phrases, regardless of sender." : {
+
+    },
+    "Also Send to Kindle" : {
+
+    },
     "App" : {
 
     },
@@ -51,6 +78,9 @@
 
     },
     "Appearance" : {
+
+    },
+    "Apple Intelligence" : {
 
     },
     "Apply Luna in Safari" : {
@@ -68,10 +98,28 @@
     "Article" : {
 
     },
+    "Articles are emailed from your connected Luna email account. That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings)." : {
+
+    },
+    "Articles you save appear here as cards." : {
+
+    },
     "As %@" : {
 
     },
     "Asking Apple Intelligence…" : {
+
+    },
+    "Audio" : {
+
+    },
+    "Autoplay next article" : {
+
+    },
+    "Autoplay Next Article" : {
+
+    },
+    "Back" : {
 
     },
     "Bump to Top" : {
@@ -89,10 +137,19 @@
     "Check the address and app password and try again." : {
 
     },
+    "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list." : {
+
+    },
     "Checking URL" : {
 
     },
     "Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away." : {
+
+    },
+    "Choose which saves %@ receives automatically." : {
+
+    },
+    "Clean Up Articles for Listening" : {
 
     },
     "Clear" : {
@@ -102,6 +159,15 @@
 
     },
     "Close email setup" : {
+
+    },
+    "Connect" : {
+
+    },
+    "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you." : {
+
+    },
+    "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next." : {
 
     },
     "Connect Email" : {
@@ -117,6 +183,9 @@
 
     },
     "Copy Link" : {
+
+    },
+    "Couldn't fetch this article" : {
 
     },
     "Couldn't find a matching post or page to save." : {
@@ -229,22 +298,67 @@
     "Edit List" : {
 
     },
+    "Email" : {
+
+    },
+    "Email whose subject contains this phrase will be imported, regardless of sender." : {
+
+    },
+    "Emails from this address will be imported." : {
+
+    },
+    "Enhanced voices installed" : {
+
+    },
     "Enter an app-specific password for this account." : {
 
     },
     "Enter the address Luna should use to send and import links." : {
 
     },
+    "Enter your Kindle address first." : {
+
+    },
     "Export Failed" : {
+
+    },
+    "Fetching…" : {
+
+    },
+    "Filter Active" : {
 
     },
     "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, or requires a screenshot." : {
 
     },
+    "Font" : {
+
+    },
+    "Forwarding Settings" : {
+
+    },
+    "Forwarding settings: %@" : {
+
+    },
+    "From %@" : {
+
+    },
     "Handle On-Screen URLs" : {
 
     },
+    "Highlight Color" : {
+
+    },
     "https://…" : {
+
+    },
+    "Import from Email" : {
+
+    },
+    "Inbox Filter" : {
+
+    },
+    "Install Enhanced Voices" : {
 
     },
     "Install shortcut" : {
@@ -259,6 +373,18 @@
     "Invalid URL" : {
 
     },
+    "Keep Luna mail out of your inbox" : {
+
+    },
+    "Kindle" : {
+
+    },
+    "Kindle forwarding settings" : {
+
+    },
+    "L" : {
+
+    },
     "Last visited Safari URL (%@): %@" : {
       "localizations" : {
         "en" : {
@@ -268,6 +394,15 @@
           }
         }
       }
+    },
+    "Listening" : {
+
+    },
+    "Loading Paste" : {
+
+    },
+    "Locked — tap to unlock" : {
+
     },
     "Locked Only" : {
 
@@ -290,6 +425,9 @@
     "Luna needs permission to save media to your photo library." : {
 
     },
+    "Luna reads aloud with enhanced Apple voices when they're installed, otherwise the built-in system voice. Install enhanced voices in iOS Settings → Accessibility → Spoken Content → Voices." : {
+
+    },
     "Luna saved the link but couldn't download its media." : {
 
     },
@@ -297,6 +435,12 @@
 
     },
     "Luna saved this link but couldn't fetch the page. Try again from the app." : {
+
+    },
+    "Luna set up an inbox rule automatically for this account." : {
+
+    },
+    "M" : {
 
     },
     "Media" : {
@@ -308,10 +452,25 @@
     "Media is still downloading." : {
 
     },
+    "name@example.com" : {
+
+    },
+    "name@kindle.com" : {
+
+    },
     "Never" : {
 
     },
+    "New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight." : {
+
+    },
     "Next" : {
+
+    },
+    "Next article" : {
+
+    },
+    "Next paragraph" : {
 
     },
     "No diagnostics recorded yet." : {
@@ -323,16 +482,40 @@
     "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page." : {
 
     },
+    "No Saved Articles" : {
+
+    },
     "No Saved Media" : {
+
+    },
+    "No Tracked Products" : {
 
     },
     "No URL to paste" : {
 
     },
+    "Not Configured" : {
+
+    },
+    "Not installed" : {
+
+    },
     "Not Now" : {
 
     },
+    "off" : {
+
+    },
+    "Off" : {
+
+    },
     "OK" : {
+
+    },
+    "on" : {
+
+    },
+    "On" : {
 
     },
     "On-Screen URLs" : {
@@ -345,6 +528,9 @@
 
     },
     "Open" : {
+
+    },
+    "Open Filter Settings" : {
 
     },
     "Open in Photos" : {
@@ -360,6 +546,9 @@
 
     },
     "Opens item" : {
+
+    },
+    "Opens this tracked site" : {
 
     },
     "Opens when this tray is opened" : {
@@ -380,6 +569,9 @@
     "Paste Link" : {
 
     },
+    "Paste or share a product page to start tracking its price." : {
+
+    },
     "Paste setting" : {
 
     },
@@ -395,16 +587,58 @@
     "Pasted Media" : {
 
     },
+    "Pause" : {
+
+    },
     "Photos Access Needed" : {
 
     },
+    "Phrases" : {
+
+    },
+    "Play" : {
+
+    },
+    "Playback speed" : {
+
+    },
+    "Preload Depth" : {
+
+    },
+    "Preload Links" : {
+
+    },
+    "Preload the content of links in a saved article (and links on those pages, up to this depth) in the background, so tapping a link opens instantly. 0 turns preloading off. Preloading uses any network by default; turn on Wi-Fi Only to restrict it to Wi-Fi." : {
+
+    },
+    "Preparing a temporary reader card…" : {
+
+    },
+    "Previous paragraph" : {
+
+    },
+    "Price History" : {
+
+    },
+    "Price unavailable" : {
+
+    },
     "Provide Context" : {
+
+    },
+    "Read Aloud" : {
 
     },
     "Read Article" : {
 
     },
     "Read in Luna" : {
+
+    },
+    "Read-Aloud Voice" : {
+
+    },
+    "Reader" : {
 
     },
     "Reading %@." : {
@@ -419,10 +653,16 @@
     "Refresh Last Visited Website" : {
 
     },
+    "Remove %@" : {
+
+    },
     "Requires Screenshot" : {
 
     },
     "Rescue as %@" : {
+
+    },
+    "S" : {
 
     },
     "Save" : {
@@ -504,6 +744,9 @@
     "Send articles and import links · Tap to continue" : {
 
     },
+    "Send Test to Kindle" : {
+
+    },
     "Send to Contact…" : {
 
     },
@@ -528,6 +771,9 @@
     "Share Current Media" : {
 
     },
+    "Share Current Product" : {
+
+    },
     "Share eBook…" : {
 
     },
@@ -537,22 +783,61 @@
     "Share Link…" : {
 
     },
+    "Share Sheet & Paste" : {
+
+    },
+    "Sharing Account" : {
+
+    },
     "Shortcut & Safari" : {
 
     },
     "Sign In" : {
 
     },
+    "Sign Out" : {
+
+    },
     "Sign-in failed" : {
 
     },
+    "Skip photo captions, bylines, related-link lists, and other non-article text when reading aloud. Uses Apple Intelligence on this device — nothing leaves your iPhone — and falls back to Luna's built-in cleanup automatically when it isn't available." : {
+
+    },
     "Source" : {
+
+    },
+    "Speed Reader" : {
+
+    },
+    "Speed Reading & Appearance" : {
 
     },
     "Starts reading a saved article out loud in the background." : {
 
     },
     "Storage" : {
+
+    },
+    "Subject contains…" : {
+
+    },
+    "Subject Filters" : {
+
+    },
+    "Tap to open" : {
+
+    },
+    "Tap to see price history" : {
+
+    },
+    "Test Failed" : {
+
+    },
+    "Test Sent" : {
+
+    },
+    "Text Size" : {
 
     },
     "That article isn't ready to read yet." : {
@@ -588,6 +873,9 @@
     "Track in Luna" : {
 
     },
+    "Tracked Sites" : {
+
+    },
     "Tried %lld times · last %@" : {
       "localizations" : {
         "en" : {
@@ -616,10 +904,28 @@
     "unknown time" : {
 
     },
+    "Untitled" : {
+
+    },
+    "Up Next · %@" : {
+
+    },
+    "When an article finishes, mark it read and continue with the next unread article — after a chime and a short “Now Reading” announcement." : {
+
+    },
     "When browsing in Safari (with the Luna extension enabled), show the \"%@\" button when it applies. Choose when it appears." : {
 
     },
     "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling." : {
+
+    },
+    "Wi-Fi Only" : {
+
+    },
+    "Words" : {
+
+    },
+    "XL" : {
 
     },
     "You don't have any unread articles to read." : {

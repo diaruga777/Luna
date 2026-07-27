@@ -86,7 +86,14 @@ let package = Package(
         // URLSessionStreamTask (implicit TLS + STARTTLS for iCloud) — no external
         // deps. Reuses LunaMail's MIME parsers. Linked by the app, not extensions.
         .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaMail", "LunaSend", "LunaAppConfig", "LunaHTMLClassification", "LunaModels", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaDesignSystem", dependencies: ["LunaAppConfig", "LunaModels"]),
+        // Resources: every Luna app's icon artwork (`LunaAppIconImage`). A target
+        // only gets its OWN appiconset at runtime, and the unsupported-save card
+        // has to show whichever SIBLING app owns a dropped link — so the four
+        // icons ship here, on every app's and extension's link path.
+        .target(
+            name: "LunaDesignSystem",
+            dependencies: ["LunaAppConfig", "LunaModels"],
+            resources: [.process("Resources")]),
         // LunaMediaDownload: the media ingest handler (`PlatformItemIngestor`)
         // hands recognized items to the auto-download pipeline.
         .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem", "LunaAppConfig", "LunaPriceMetadata", "LunaMediaDownload", .product(name: "SwiftSoup", package: "SwiftSoup")]),

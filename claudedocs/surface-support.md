@@ -43,16 +43,47 @@ it's installed.
    holds: **dropped means nothing remains** — the placeholder row (and any copied
    document file) is deleted before any store write.
 
-Drop presentation: in-app interactive saves show a generic alert
-(`ReadingListIngestor.unsupportedSavePresenter`, installed by AppDelegate);
-extensions present `UnsupportedSaveViewController` (never a "Saved" checkmark);
-App Intents throw an error dialog (`IntentIngestHelper.unsupportedDialogText`) —
-including the on-screen-URL path, whose pre-check (`IntentURLPrecheck`) skips
-links this app doesn't own BEFORE saving, so a drop that still happens is a
-mis-prediction worth reporting rather than a fall-through (see
-`app-intents.md`, "Error reporting").
-The copy is generic for now — the owning app's App Store upsell slots into
-`SurfaceSupport.unsupportedMessage` once those store pages exist.
+## Drop presentation — ONE card, everywhere
+
+Every surface that can draw shows the SAME screen,
+`UnsupportedSaveCardViewController` (**LunaDesignSystem** — below both the app
+shell and LunaShareSurface, so all three hosts present one type): the in-app
+interactive save (`ReadingListIngestor.unsupportedSavePresenter`, installed by
+AppDelegate, presented full screen), the share extension, and the action
+extension. Never a "Saved" checkmark — nothing was saved — and its only action
+is its own glass Done pill (it hides a host's navigation bar so the app's bare
+presentation and the extensions' wrapped one look identical).
+
+It is dressed as the root card deck, because that is what a Luna app looks
+like: `StarfieldView` behind, one 9:16 `CardSurfaceView` with the Liquid Glass
+rim at the carousel's own `CardCarouselMetrics` geometry, both tinted per app
+by `LunaSurfacePalette` (which resolves from the bundle id, so an extension
+inherits its host app's colour). Content is two statements:
+
+- the **header**, shown for EVERY drop — "Unable to save this link in
+  \<current app>";
+- when a sibling Luna app owns the kind, **that app's real icon** and "You can
+  get the \<owner> app for this type of link" underneath. A drop with no
+  sibling owner (defensive; today's gate always names one) shows the header
+  alone.
+
+The wording lives once, in `UnsupportedSaveCopy` (**LunaModels**).
+`SurfaceSupport.unsupportedMessage` is now just its `sentence(owner:current:)`
+flattening, for the one surface that can't draw: App Intents throw an error
+dialog (`IntentIngestHelper.unsupportedDialogText`) — including the
+on-screen-URL path, whose pre-check (`IntentURLPrecheck`) skips links this app
+doesn't own BEFORE saving, so a drop that still happens is a mis-prediction
+worth reporting rather than a fall-through (see `app-intents.md`, "Error
+reporting").
+
+**Every app bundles every app's icon.** A target's own `AppIcon*` appiconset
+only yields its own artwork at runtime, so the four icons ship separately as
+96pt PNG trios in LunaDesignSystem's resource bundle
+(`LunaAppIconImage` / `LunaAppIconView`), downscaled from the same committed
+1024px masters the appiconsets use. LunaDesignSystem is on every app's and
+extension's link path, so any app can show whichever sibling owns a dropped
+link. The Safari extensions need none of this: they never inject a pill for a
+kind their host doesn't handle, so they have no drop UI to show.
 
 ## Composition roots (how "which kinds" is wired)
 
@@ -115,6 +146,9 @@ Tests register production-shaped presenters explicitly in `setUp`
 invariants incl. email/friend-share), `ShareSurfaceDriverSurfaceTests`
 (extension drop UI + wrapper-dedup edge), `IntentIngestSurfaceTests` (intent
 error mapping + save verification), `IntentURLPrecheckTests` (per-app kind
-prediction), and `SurfaceParityTests` (presentation parity across surfaces).
+prediction), `UnsupportedSaveCardTests` (the shared card's copy, the
+sibling-app icons resolving from LunaDesignSystem's bundle in every target, the
+carousel dress, and the header-only fallback), and `SurfaceParityTests`
+(presentation parity across surfaces).
 Keep the "dropped means nothing remains" invariant explicit when adding a
 capture source or a new direct-write path.

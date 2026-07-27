@@ -27,16 +27,6 @@
         }
       }
     },
-    "%@ can't save this type of link — it belongs in %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ can't save this type of link — it belongs in %2$@."
-          }
-        }
-      }
-    },
     "%@ send failed" : {
 
     },
@@ -282,9 +272,6 @@
 
     },
     "By default you're notified only the first time this contact shares with you." : {
-
-    },
-    "Can't Save This Link" : {
 
     },
     "Cancel" : {
@@ -1621,6 +1608,9 @@
     "Turn on 2-Step Verification, then create an app password for \"Mail\" and paste the 16-character code here." : {
 
     },
+    "Unable to save this link in %@" : {
+
+    },
     "Unable to preview media" : {
 
     },
@@ -1697,6 +1687,9 @@
 
     },
     "XL" : {
+
+    },
+    "You can get the %@ app for this type of link" : {
 
     },
     "Yahoo" : {

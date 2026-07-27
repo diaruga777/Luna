@@ -61,11 +61,12 @@ public enum SurfaceSupport {
         evaluate(owner: owner, current: .current)
     }
 
-    /// The generic drop explanation shown by every surface (alert body, intent
-    /// dialog, extension error). When the sibling apps ship, the App Store
-    /// upsell for `owner` slots in here — until then the link is unset and the
-    /// copy stays informational.
+    /// The drop explanation for surfaces that can only speak one string (the
+    /// App Intents' thrown dialog). It says the same two things
+    /// `UnsupportedSaveCardViewController` shows — the header naming this app,
+    /// then the sibling app that does handle the link — flattened into a
+    /// sentence, from the one copy source in LunaModels.
     public static func unsupportedMessage(owner: LunaApp, current: LunaApp = .current) -> String {
-        L10n.string("\(current.displayName) can't save this type of link — it belongs in \(owner.displayName).")
+        UnsupportedSaveCopy.sentence(owner: owner, current: current)
     }
 }

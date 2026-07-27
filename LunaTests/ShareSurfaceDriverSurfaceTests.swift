@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaDesignSystem
 import LunaIngest
 import LunaModels
 import LunaStorage
@@ -13,7 +14,7 @@ import XCTest
 /// The per-app content gate inside `ShareSurfaceDriver.present`
 /// (`SurfaceSupport`): an
 /// unsupported cross-app save deletes the pending row (and any copied document
-/// file) and presents `UnsupportedSaveViewController`; a same-app outcome and
+/// file) and presents `UnsupportedSaveCardViewController`; a same-app outcome and
 /// `.failed` are byte-identical to today. Uses a fake host + scratch store —
 /// same seams the driver was built around (the real `NSExtensionContext` has
 /// none).
@@ -87,7 +88,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         XCTAssertNil(store.item(forURLString: socialURL.absoluteString),
                      "an unsupported save must leave NOTHING in the store")
         XCTAssertEqual(host.presented.count, 1)
-        let error = host.presented.first as? UnsupportedSaveViewController
+        let error = host.presented.first as? UnsupportedSaveCardViewController
         XCTAssertNotNil(error, "unsupported saves present the unsupported-kind error")
         XCTAssertEqual(host.confirmedSaved, 0, "never a 'Saved' checkmark for an unsupported save")
         XCTAssertEqual(host.autoDownloads, [])
@@ -108,7 +109,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         driver.present(.article(content, html: "<html></html>"), url: url)
 
         XCTAssertNil(store.item(forURLString: url.absoluteString))
-        XCTAssertTrue(host.presented.first is UnsupportedSaveViewController)
+        XCTAssertTrue(host.presented.first is UnsupportedSaveCardViewController)
         XCTAssertEqual(host.completedSilently, 0, "waits for the error card's Done")
     }
 
@@ -128,7 +129,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         XCTAssertNil(store.item(forURLString: "lunadoc://ABC"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceFile.path),
                        "the copied document file must be cleaned up with the row")
-        XCTAssertTrue(host.presented.first is UnsupportedSaveViewController)
+        XCTAssertTrue(host.presented.first is UnsupportedSaveCardViewController)
     }
 
     func testUnsupportedResolvedWrapperDoesNotDeletePreexistingCanonicalItem() async {
@@ -155,7 +156,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
                      "wrapper placeholder is removed by canonical dedup")
         XCTAssertEqual(store.item(forURLString: canonicalURL.absoluteString)?.id, existing.id,
                        "unsupported cleanup must preserve the older canonical save")
-        XCTAssertTrue(host.presented.first is UnsupportedSaveViewController)
+        XCTAssertTrue(host.presented.first is UnsupportedSaveCardViewController)
     }
 
     // MARK: - Same-app outcome — byte-identical to today

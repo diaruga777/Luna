@@ -461,7 +461,8 @@ open class ShareViewController: UIViewController {
                 "dropped foreign-kind document save", category: "share")
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                let error = UnsupportedSaveViewController(owner: owner, currentApp: .current)
+                let error = UnsupportedSaveCardViewController(
+                    owner: owner, currentApp: .current)
                 error.onDone = { [weak self] in self?.completeSilently() }
                 self.presentModally(error)
             }

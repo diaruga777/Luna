@@ -71,15 +71,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaReadingList can't present UI, so the app shell installs the
         // presenter (same injected-closure pattern as defaultSaveAsArticle
-        // above). Presents over whatever is frontmost.
+        // above). Presents over whatever is frontmost — the SAME card the
+        // share/action extensions show, full screen so it reads as one of the
+        // deck's own cards rather than a system alert.
         ReadingListIngestor.unsupportedSavePresenter = { owner in
             guard let presenter = Self.frontmostViewController() else { return }
-            let alert = UIAlertController(
-                title: L10n.string("Can't Save This Link"),
-                message: SurfaceSupport.unsupportedMessage(owner: owner),
-                preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
-            presenter.present(alert, animated: true)
+            let card = UnsupportedSaveCardViewController(owner: owner)
+            card.modalPresentationStyle = .fullScreen
+            card.onDone = { [weak card] in card?.dismiss(animated: true) }
+            presenter.present(card, animated: true)
         }
 
         // Diagnostics export header shows the connected email account (which lives

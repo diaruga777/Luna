@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import LunaDesignSystem
 import LunaStorage
 import LunaIngest
 import LunaModels
@@ -242,11 +243,12 @@ public final class ShareSurfaceDriver {
         store.delete(item)
     }
 
-    /// Presents the generic unsupported-kind error in the host's modal chrome.
-    /// Done completes silently — nothing was saved, never a "Saved" checkmark.
+    /// Presents the shared unsupported-kind card — the same one the app shows —
+    /// in the host's modal chrome. Done completes silently: nothing was saved,
+    /// so never a "Saved" checkmark.
     private func presentUnsupportedError(owner: LunaApp) {
         guard let host else { return }
-        let error = UnsupportedSaveViewController(owner: owner, currentApp: currentApp)
+        let error = UnsupportedSaveCardViewController(owner: owner, currentApp: currentApp)
         error.onDone = { [weak host] in host?.completeSilently() }
         host.presentModally(error)
     }

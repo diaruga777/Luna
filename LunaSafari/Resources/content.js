@@ -590,6 +590,12 @@
         if (hasStructuralListingShape()) { return true; }
         return declaresListingPage() && headlineLinkCount() >= 5;
     }
+    // Exposed for the bare-WKWebView harness, and specifically so
+    // `SafariIndexVetoParityTests` can hold this against its Swift twin,
+    // `ListingPage.isNonContentPage` (LunaHTMLClassification). The app used to have
+    // no index veto at all, which is how pages that never earn a pill here still
+    // reached the recents tray and the archive reader.
+    window.__lunaLooksLikeNonArticleIndex = looksLikeNonArticleIndex;
 
     function declaresListingPage() {
         var scripts = document.querySelectorAll('script[type="application/ld+json"]');

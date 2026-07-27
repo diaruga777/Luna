@@ -127,6 +127,23 @@ final class UnsupportedSaveCardTests: XCTestCase {
         XCTAssertEqual(doneCount, 1)
     }
 
+    // MARK: - Appearance
+
+    /// The whole point of the redesign is what it LOOKS like, so pin it. (The
+    /// test host is the central Luna app, so these record the Luna palette; the
+    /// per-app tint is `LunaSurfacePalette`'s own contract, covered there.)
+    func testCardSnapshotWithSiblingOwner() {
+        SnapshotTesting.assertSnapshot(
+            of: UnsupportedSaveCardViewController(owner: .downloader, currentApp: .reader),
+            named: "UnsupportedSaveCard-Owned")
+    }
+
+    func testCardSnapshotHeaderOnly() {
+        SnapshotTesting.assertSnapshot(
+            of: UnsupportedSaveCardViewController(owner: nil, currentApp: .priceTracker),
+            named: "UnsupportedSaveCard-HeaderOnly")
+    }
+
     // MARK: - Hierarchy helpers
 
     private static func labelTexts(in view: UIView) -> [String] {

@@ -96,14 +96,21 @@ public final class UnsupportedSaveCardViewController: UIViewController {
         header.textAlignment = .center
         header.numberOfLines = 0
 
+        // `.fill`, not `.center`: a centered stack sizes a multi-line label to
+        // its own ambiguous intrinsic width, which wrapped the header
+        // differently on every screen. The labels span the stack and centre
+        // their TEXT instead; only the fixed-size icon needs a centring wrapper.
         contentStack.axis = .vertical
-        contentStack.alignment = .center
+        contentStack.alignment = .fill
         contentStack.spacing = 24
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         contentStack.addArrangedSubview(header)
 
         if let owner {
             let icon = LunaAppIconView(app: owner, side: Self.iconSide)
+            let iconRow = UIView()
+            iconRow.addSubview(icon)
+
             let upsell = UILabel()
             upsell.text = UnsupportedSaveCopy.upsell(owner: owner)
             upsell.textColor = LunaColors.secondaryText
@@ -113,13 +120,15 @@ public final class UnsupportedSaveCardViewController: UIViewController {
             upsell.numberOfLines = 0
 
             // Icon and its line are one unit, tighter than the gap to the header.
-            let owned = UIStackView(arrangedSubviews: [icon, upsell])
+            let owned = UIStackView(arrangedSubviews: [iconRow, upsell])
             owned.axis = .vertical
-            owned.alignment = .center
+            owned.alignment = .fill
             owned.spacing = 16
             contentStack.addArrangedSubview(owned)
             NSLayoutConstraint.activate([
-                upsell.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
+                icon.centerXAnchor.constraint(equalTo: iconRow.centerXAnchor),
+                icon.topAnchor.constraint(equalTo: iconRow.topAnchor),
+                icon.bottomAnchor.constraint(equalTo: iconRow.bottomAnchor),
             ])
         }
 

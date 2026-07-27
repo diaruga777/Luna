@@ -40,6 +40,9 @@ public final class UnsupportedSaveCardViewController: UIViewController {
     private let cardView = CardSurfaceView()
     private let contentStack = UIStackView()
     private let doneButton = UIButton(type: .system)
+    /// Held so `viewDidLayoutSubviews` can hand them the width they wrap at —
+    /// the card's own frame is only known then. See `applyLabelWrapWidth`.
+    private var wrappingLabels: [UILabel] = []
 
     /// Matches the carousel's own card geometry so this reads as one of the
     /// deck's cards rather than a dialog: same peek/gap insets, same 9:16.
@@ -95,6 +98,7 @@ public final class UnsupportedSaveCardViewController: UIViewController {
         header.adjustsFontForContentSizeCategory = true
         header.textAlignment = .center
         header.numberOfLines = 0
+        wrappingLabels.append(header)
 
         // `.fill`, not `.center`: a centered stack sizes a multi-line label to
         // its own ambiguous intrinsic width, which wrapped the header
@@ -118,6 +122,7 @@ public final class UnsupportedSaveCardViewController: UIViewController {
             upsell.adjustsFontForContentSizeCategory = true
             upsell.textAlignment = .center
             upsell.numberOfLines = 0
+            wrappingLabels.append(upsell)
 
             // Icon and its line are one unit, tighter than the gap to the header.
             let owned = UIStackView(arrangedSubviews: [iconRow, upsell])
@@ -177,5 +182,21 @@ public final class UnsupportedSaveCardViewController: UIViewController {
             fit: .aspectCentered)
         cardView.frame = metrics.centeredCardFrame().offsetBy(
             dx: safe.minX, dy: safe.minY)
+        applyLabelWrapWidth(cardWidth: cardView.bounds.width)
+    }
+
+    /// The card's content view is installed by autoresizing into a container
+    /// whose width is zero until the frame above is set, so a `numberOfLines =
+    /// 0` label can resolve its intrinsic size against nothing and never be
+    /// asked again — on a cold-launched app that hyphenated the header down a
+    /// six-line column ("Luna Down-/loader"). Handing both labels the width
+    /// they actually get removes the guess. Only written when it CHANGES: the
+    /// invalidation it triggers would otherwise loop.
+    private func applyLabelWrapWidth(cardWidth: CGFloat) {
+        let width = cardWidth - Self.contentInset * 2
+        guard width > 0 else { return }
+        for label in wrappingLabels where label.preferredMaxLayoutWidth != width {
+            label.preferredMaxLayoutWidth = width
+        }
     }
 }

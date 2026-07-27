@@ -126,6 +126,17 @@ Article flow:
    link density above 0.5, or explicit landing/collection/search/site JSON-LD paired
    with at least five distinct headline-sized destination links.
 
+   **The app has this veto too now.** `ListingPage` (LunaHTMLClassification) is the
+   Swift twin of `looksLikeNonArticleIndex`, added because the pipeline had no index
+   test at all: a page that got no pill here could still be offered by the recents
+   tray and sent to the archive reader (`claudedocs/url-pipeline.md`).
+   `SafariIndexVetoParityTests` runs one fixture set through both — the production
+   `content.js` in a bare `WKWebView` (via `window.__lunaLooksLikeNonArticleIndex`)
+   and `ListingPage` directly — and fails if they disagree, the same drift guard
+   `ProductPageJSFixtureParityTests` gives the product detector. Only the HTML half
+   is comparable: the Swift side adds a URL-only search-results shape, since it
+   classifies URLs the extension only ever sees as a loaded document.
+
    **A page that declares an article is exempt from every purely STRUCTURAL veto, on
    every host.** The two shapes live in one shared `hasStructuralListingShape()` (4+
    `<article>`, link density > 0.5) which returns false outright for a declaring page,

@@ -377,6 +377,57 @@ A classified kind with no registered processor returns
 (see `claudedocs/surface-support.md`, incl. the per-target composition files
 that do the registering — `#if canImport` is NOT target-reliable here).
 
+## Pages that aren't content at all (`ListingPage`)
+
+The pipeline used to have no way to say **"this URL is not a saveable thing"**.
+`Classifier` names a KIND from the URL table and, failing that, hands everything
+left to article extraction — so a Google search page, a publisher front page, and
+a site homepage were all article candidates. Two consequences, both reported:
+
+- **Every titled page parked for archive.today.** `ArticleResolver.resolution`
+  returned `.paywalled(title:)` for any unreadable page carrying a non-placeholder
+  `<title>` — which every page has — and `ArticleIngestProcessor` mapped
+  `.paywalled` to `.needsArchive` with no paywall check. So saving `google.com`
+  opened the archive.today CAPTCHA reader, and the Safari recents tray
+  (`RecentURLMatcher`, which reads `.needsArchive` as an article preview) filled
+  with pages Safari itself had declined to offer a pill for.
+- **An index that extracted past 1200 characters became a real `.article`.**
+
+`.paywalled` now requires `BypassPlan.allowsArchiveToday` — i.e. `BypassGate`
+found actual paywall evidence (a declared lock, a gate marker, a hard-paywall
+host, an archive URL, or a fetch that never returned). A `<title>` is not
+evidence.
+
+`LunaHTMLClassification/ListingPage.swift` is the **Swift twin of the Safari
+extension's index veto** (`content.js`'s `looksLikeNonArticleIndex`, which is why
+these pages never got a pill). Same signals, deliberately: `declaresArticle`
+(og:type / JSON-LD Article) exempts a page from every structural test on every
+host; otherwise 4+ sibling `<article>`s or whole-page link density > 0.5, or a
+declared listing type (`CollectionPage`/`SearchResultsPage`/`ItemList`/`WebSite`,
+`landing_homepage`) paired with ≥5 substantial non-chrome destination links. It
+adds one thing the extension has no need for — a **URL-only search-results
+shape** (a leading `search`/`results` path segment, or a search term on a bare
+root), so a directly shared search page fails before any network round-trip.
+`SafariIndexVetoParityTests` runs one fixture set through both implementations
+(the real `content.js` in a bare `WKWebView`) and fails if they disagree.
+
+**Where it's applied matters more than the signals**, because a false positive
+silently drops a real save:
+
+| Site | Check | Why there |
+| --- | --- | --- |
+| `IngestPipeline.processWeb`, before the fetch | search-results URL, plus `urlIsMultiProductListing` for a page the shop table already claimed | Fails fast, no round-trip. The commerce half is scoped to a `.product` classification because `.product(.knownShopHost)` SKIPS `ProductPageDetector.detect`, so `amazon.com/s?k=…` used to reach price extraction, find no price, and fall through to the article path. Scoping also keeps `medium.com/s/<publication>` out of it. |
+| `IngestPipeline.processWeb`, before article resolution | the full `isNonContentPage` | The HTML is already in hand and the outcome is a save, not an unlock. |
+| `BypassGate`, step 2b | the URL half ONLY | The HTML shapes describe a metered article cut back to headline links just as well as a real index; consulting them here would disable the unlock the Reader exists for. Nothing is lost at the archive reader's own entry point, which builds its plan with `directHTML: nil`. |
+
+**A page showing paywall evidence is exempt** from the HTML half
+(`PaywallDetector.htmlDeclaresLocked`, a gate marker, or a hard-paywall host).
+That is the whole difference between "we can't read this yet" and "there is
+nothing here to read". Likewise a page that never came back is never vetoed — a
+bot-blocked article keeps its browser/archive tier.
+
+The result is `Outcome.failed(.notContent)` — see `claudedocs/failed-saves.md`.
+
 ## Publisher subscribe interstitials (`WrapperHandler.interstitial`)
 
 A paywalled article on several publishers does not serve a paywall stub at its own

@@ -59,6 +59,17 @@ the current newest-first trail. Reader matches articles/documents, Downloader
 matches media, and central Luna matches every supported kind. At most five
 unsaved matches are shown.
 
+The trail itself is unfiltered — `background.js` reports every http(s) tab,
+whether or not the page earned a Luna pill — so `RecentURLMatcher.evaluate`'s
+real `IngestPipeline.processResolved` call is the ONLY filter between "a page you
+visited" and "a row". That is why the tray was the first place the pipeline's
+missing index veto showed: the pipeline answered `.needsArchive` for any titled
+page and `.article` for any index that extracted past the readable threshold, so
+homepages and search results queued up as things to read. Both now come back
+`.failed(.notContent)`, which the matcher already drops — see `ListingPage` in
+`claudedocs/url-pipeline.md`. The tray inherits the fix; it holds no
+classification of its own, and deliberately shouldn't.
+
 Tray rows are previews only. Selecting one runs the normal full ingest/save
 path, closes the tray, centers the resulting card, and animates a snapshot into
 the card deck. Long-press offers Open and Share without saving.

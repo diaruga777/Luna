@@ -142,8 +142,18 @@ policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
   sentence a reader can do something about: `offline`, `timedOut`,
   `httpStatus(Int)`, `network(String)`, `notReadable`, `notHTML`, `tooLarge`,
   `unsupportedDocument(String)`, `noMediaFound`, `couldNotSave`,
-  `subscribeRedirect`, `unknown`. Each owns its `headline`, `suggestion`, and
-  `isWorthRetrying`. `subscribeRedirect` is the site answering an article request
+  `subscribeRedirect`, `notContent`, `unknown`. Each owns its `headline`,
+  `suggestion`, and `isWorthRetrying`.
+  `notContent` is the page not being a piece of content at all — a search-results
+  page, a homepage, a section index (`ListingPage`, see
+  `claudedocs/url-pipeline.md`). It is the **one reason the AI rescue stands down
+  for**, via `isWorthRescuing`: every other failure means "we couldn't GET the
+  article", which a model reading the page can sometimes fix, whereas a search
+  page has no article to find and a rescue would spend the version's single
+  attempt proving it. Both the trigger (`ReadingListIngestor`) and the card's
+  chin (`FailedSaveCardFactory`'s `canRescue`) consult it, so the card shows the
+  terminal apology instead of an offer it can't keep.
+  `subscribeRedirect` is the site answering an article request
   with its own subscribe page (`ArticleFetcher.FetchError.subscribeRedirect` — see
   `claudedocs/url-pipeline.md`); it is not worth retrying, and a hard-paywall host
   parks for the archive tier rather than failing at all.

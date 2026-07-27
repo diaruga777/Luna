@@ -233,6 +233,23 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   reach local-package task planning, so it can't be fixed by editing project files
   and must be passed on the command line (or via `-xcconfig`) instead. Omitting it
   is harmless — the warnings don't fail the build — but this keeps output clean.
+  Re-verified 2026-07-28 by diffing the 90 flagged pairs against `Package.swift`:
+  6 looked undeclared, and all 6 turn out to have **no direct `import`** in the
+  flagged target's sources at all (`LunaReadingList`→`SwiftSoup`,
+  `LunaPriceIngest`→`LunaFetch`, …) — the scanner reports modules it loads
+  transitively, so there is nothing to declare and adding the edges would be noise.
+- **A build that fails with "cannot find type `LunaApp` in scope" in files you did
+  not touch is a swift-build flake — RE-RUN, don't wipe.** Seen 2026-07-28 after
+  editing `LunaModels`: three runs failed naming types that plainly exist
+  (`LunaDeepLink`/`PlatformRecognizer` twice, `LunaReaderEngine/RSVPEngine` once —
+  a *different* consumer each time), then the next identical invocation succeeded
+  and has every time since. It is NOT the stale-module case that a derived-data
+  wipe fixes: it reproduced immediately after `rm -rf "$DD"`, and afterwards five
+  deliberate reproduction attempts all passed — touching `LunaModels`, adding a
+  public type to it, three cold builds on fresh `-derivedDataPath`s, a populated
+  `LunaLibraries/.build` from a macOS `swift build`, and brand-new source files in
+  two package targets. Tell the two apart by whether the failing FILES change
+  between runs; if they do, just run the command again.
 - **The `Embedded binary is not signed with the same certificate as the parent app`
   error is permanently fixed.** The Luna app target has a **"Re-sign embedded
   extensions (debug)"** build phase (after Embed Foundation Extensions) that re-signs

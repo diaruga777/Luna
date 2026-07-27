@@ -471,6 +471,22 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         footerContentFade.setFadeHeight(Self.contentEdgeFade)
     }
 
+    /// The centered card's URL when that card is a LOCKED save — the one case
+    /// where the deck's Share pill has something to offer with no reader behind
+    /// it. Derived rather than stored: `readerForChrome` is assigned from six
+    /// places, and a stored twin would only have to be remembered at each of
+    /// them. Nil for every other card, which is also what hides the pill.
+    private var lockedShareURLString: String? {
+        if renderedPasteboardState != nil, carousel.currentIndex == 0 { return nil }
+        guard let index = articleIndex(forCarouselIndex: carousel.currentIndex),
+              items.indices.contains(index)
+        else { return nil }
+        let item = items[index]
+        guard item.state == .needsCaptcha, !item.isPriceTracker, item.contentPlatform == nil
+        else { return nil }
+        return item.urlString
+    }
+
     private func updateReaderChrome() {
         let state = readerForChrome?.chromeState
         readerChromeRow.isHidden = state == nil
@@ -478,7 +494,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         guard let state else {
             readerAudioButton.isHidden = true
             readerModeControl.isHidden = true
-            readerShareButton.isHidden = true
+            // A locked card has no reader to drive the chrome, but it does have a
+            // URL — and sharing the link is the one thing that still works before
+            // the article is unlocked, so the Share pill stays.
+            readerShareButton.isHidden = lockedShareURLString == nil
             return
         }
         readerAudioButton.setImage(
@@ -498,6 +517,30 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         updateBottomModeSwitcher(immersed: carousel.isImmersed, animated: false)
         readerAudioButton.isHidden = !state.isArticle
         readerShareButton.isHidden = !state.offersSaveShare
+    }
+
+    /// The locked card's single share verb. A locked save has no extracted text,
+    /// no eBook and no audio, so the reader's richer share ladder has nothing to
+    /// offer — the link is the whole of it (the same reasoning as the failed
+    /// card's menu in `claudedocs/failed-saves.md`).
+    private func lockedShareMenu() -> UIMenu? {
+        guard lockedShareURLString != nil else { return nil }
+        return UIMenu(children: [
+            UIAction(
+                title: L10n.string("Share Link…"),
+                image: UIImage(systemName: "square.and.arrow.up")
+            ) { [weak self] _ in self?.shareLockedCardLink() },
+        ])
+    }
+
+    private func shareLockedCardLink() {
+        guard let urlString = lockedShareURLString else { return }
+        // Straight to the SYSTEM sheet, not `AppReaderShareProvider`'s ladder: a
+        // locked save has no extracted text and no eBook, so that ladder's "Send
+        // as email" and "Share .epub" rows would offer to send nothing. Same
+        // reasoning, same call, as the failed card (`FailedSaveCardFactory`).
+        SendToFriendSheet.shareLink(
+            urlString: urlString, from: self, sourceView: readerShareButton)
     }
 
     @objc private func readerBackTapped() { readerForChrome?.chromeBack(); updateReaderChrome() }
@@ -524,10 +567,19 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             providesMenu: true,
             build: { [weak self] in
                 guard let self else { return nil }
-                return self.readerForChrome?.chromeShareMenu(from: self.readerShareButton)
+                if let menu = self.readerForChrome?.chromeShareMenu(from: self.readerShareButton) {
+                    return menu
+                }
+                // No reader: the only card that still shows this pill is a locked
+                // save, and the only thing it can share is its link.
+                return self.lockedShareMenu()
             },
             fallback: { [weak self] in
                 guard let self else { return }
+                guard self.readerForChrome != nil else {
+                    self.shareLockedCardLink()
+                    return
+                }
                 self.readerForChrome?.chromeShare(from: self.readerShareButton)
             })
         mountBottomControls(leading: settingsButton, trailing: readerShareButton)
@@ -1558,6 +1610,13 @@ private final class ReaderCardContentViewController: CardContentViewController,
         reader as? LunaReaderUI.RabbitHoleReaderViewController
     }
 
+    /// An ARTICLE parked behind a paywall, awaiting the archive unlock flow. A
+    /// price tracker or a platform save can also sit in a non-`.ready` state but
+    /// has its own card and its own tap, so neither wears the lock.
+    var isLockedSave: Bool {
+        item.state == .needsCaptcha && !item.isPriceTracker && item.contentPlatform == nil
+    }
+
     init(item: ReadingListItem, senderName: String?, knownContent: ArticleContent? = nil) {
         self.item = item
         self.knownContent = knownContent
@@ -1643,7 +1702,23 @@ private final class ReaderCardContentViewController: CardContentViewController,
         embedReaderIfPossible()
         mountTitleHeader()
 
-        if reader == nil {
+        // A locked save wears the lock rather than a line of apology text: the
+        // card has no body to show, and "Locked — tap to unlock" on its own read
+        // like a failure instead of an invitation. The overlay takes no touches,
+        // so the card's tap (unlock flow) and long-press (Archive / Delete) are
+        // untouched — see `LockedCardOverlayView`.
+        if reader == nil, isLockedSave {
+            let overlay = LockedCardOverlayView(caption: L10n.string("Locked — tap to unlock"))
+            overlay.translatesAutoresizingMaskIntoConstraints = false
+            // Below the title header, so the article's title still crowns the card.
+            view.insertSubview(overlay, belowSubview: titleHeader)
+            NSLayoutConstraint.activate([
+                overlay.topAnchor.constraint(equalTo: view.topAnchor),
+                overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            ])
+        } else if reader == nil {
             statusLabel.font = .preferredFont(forTextStyle: .subheadline)
             statusLabel.textColor = LunaColors.secondaryText
             statusLabel.textAlignment = .center
@@ -1656,7 +1731,9 @@ private final class ReaderCardContentViewController: CardContentViewController,
                 switch item.state {
                 case .pending: statusLabel.text = L10n.string("Fetching…")
                 case .failed: statusLabel.text = L10n.string("Couldn't fetch this article")
-                case .needsCaptcha: statusLabel.text = L10n.string("Locked — tap to unlock")
+                // Unreachable for an article — `isLockedSave` took that above and
+                // the card wears `LockedCardOverlayView` instead of a line of text.
+                case .needsCaptcha: statusLabel.text = nil
                 case .ready: statusLabel.text = nil
                 }
             }

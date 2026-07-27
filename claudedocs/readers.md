@@ -472,6 +472,25 @@ Third-party service request formats (owner-required fallbacks): `1ft.io/<raw url
 - `.paywalled(title)` → `.needsCaptcha`.
 - `.unreadable` → `.failed` **only for ordinary sites**. For a **hard-paywall host** (`ArticleFetcher.isHardPaywallHost` — WSJ/FT/NYT/Economist/Bloomberg/…) **or an archive.today URL** (`isArchiveTodayURL`), it parks as `.needsCaptcha` with a humanized placeholder title (`articleTitleGuess`, slug-derived, archive URLs unwrapped to the original via `originalURL(fromArchiveURL:)`). So a blocked WSJ/FT save offers the archive path instead of dropping into failed imports.
 
+**The card wears a lock while it waits.** A `.needsCaptcha` article has no body, so its
+card used to be a bare centred "Locked — tap to unlock", which read as a card that had
+FAILED rather than one waiting on a tap. It now carries
+`LockedCardOverlayView` (LunaDesignSystem): a large `lock.fill` in
+`GlassStyle.lunaBrandAccent` over a wash of the same colour, both under 1.0 alpha — the
+card is dimmed and watermarked, not replaced — with the caption beneath and the title
+header still crowning it. The overlay sets `isUserInteractionEnabled = false`, which is
+the load-bearing part: it covers the whole card, and the card's own **tap** (→
+`unlockCurrentCardIfNeeded` → the archive reader) and **long-press** (→ Archive /
+Delete, `cardContextMenu` — a locked save is not a failed save, so it keeps both verbs)
+must pass straight through. An overlay that swallowed them would look perfectly right
+and break both gestures; `LockedCardOverlayViewTests` hit-tests for exactly that.
+The deck's **Share pill stays visible** too — `updateReaderChrome` normally hides it
+along with the rest of the chrome when there's no reader, but a locked card still has a
+URL and sharing it is the one thing that works before the unlock. It goes straight to
+the SYSTEM sheet (`SendToFriendSheet.shareLink`), not `AppReaderShareProvider`'s ladder,
+because a locked save has no extracted text and no eBook — the same reasoning as the
+failed card's share (`claudedocs/failed-saves.md`).
+
 Opening a `.needsCaptcha` item (`ArticleCardsViewController.presentArchiveReader`) presents the WKWebView **`ArchiveWebReaderViewController`** (NOT SFSafariViewController — the host app can't read SFSafari's DOM, so it could never extract). It loads the exact snapshot when the saved URL is already archive.today, else `archive.is/newest/<canonical>`; persistent cookie store + device-matched Safari UA so a solved Cloudflare `cf_clearance` sticks. On `didFinish` with innerText > 1500 (and not the challenge page) it reads its own `outerHTML`, extracts, `saveContent`, and fires `onExtracted` → the host dismisses and reopens the now-`.ready` item in the native reader. An **"Open in Safari"** button (`onOpenInBrowser` → `SFSafariViewController`) is the escape hatch when the embedded view can't clear the gate. Tests: `ArticleFetcherTests` (host detection, archive-URL unwrap, title guess).
 
 **Ordered WKWebView pre-stage list.** Before any archive.today navigation, the reader walks an ordered list of WKWebView pre-stage URLs — `ArchiveWebReaderViewController.webPreStageURLs(for:)` (pure, static, tested by `ArchiveWebPreStageTests`): the `BypassPlan.make(for:directHTML:nil).webPreStages` leg mapped to loadable URLs via `BypassURLs.loadURL`. The plan only includes a `.trailingDotHost` pre-stage when it did NOT run silently (it doesn't `benefitsFromJSRetry` — a pure origin trick returns the same wall in a browser), so a host like NYT whose rule leads with a silent trailing-dot goes silent-trailing-dot → (fail) → third-party pages → archive.today, skipping the ~9s redundant trailing-dot pre-stage (the speed fix). `.thirdPartyWeb` → smry.ai/removepaywall(s).com page URLs. archive.today (the terminal flow) is excluded; an archive.today URL yields no pre-stages. `checkStage` routes to `checkDirectBypassStage` while `isAttemptingDirectBypass`: poll the page's text length and `extractAndSave` (baseURL stays the canonical article URL); a readable extraction from ANY pre-stage finishes via the normal `onExtracted` path (no archive.today at all). If the current pre-stage doesn't yield a readable article within `bypassPollLimit` (≈9s), `advanceToNextPreStage` loads the next one; when the list is exhausted, `fallBackToArchiveFromBypass` switches to the standard archive.today flow (`loadArchive` + `resolveSnapshotInParallel`). The trailing-dot transform is the former NYT pre-stage, now emitted by the selector for any host with a `.trailingDotHost` strategy (NYT/WaPo/LAT/… per the rule table + the generic metered branch). Unit-tested (`TrailingDotBypassTests`, `ArchiveWebPreStageTests`).

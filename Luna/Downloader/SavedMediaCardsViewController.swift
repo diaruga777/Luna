@@ -98,7 +98,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private var isReconcilingPhotos = false
     private var pasteboardState: PasteboardCardState?
     private var renderedPasteboardState: PasteboardCardState?
-    private var consumedPasteboardChangeCount: Int?
+    private let pasteboardProbe = PasteboardLinkProbe()
     private var pendingPasteboardDownloadURLString: String?
     private var pasteboardDownloadTask: Task<Void, Never>?
     private var pasteboardExpiryWorkItem: DispatchWorkItem?
@@ -487,32 +487,23 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     }
 
     @objc private func refreshPasteboardURL() {
-        let pasteboard = UIPasteboard.general
-        if consumedPasteboardChangeCount == pasteboard.changeCount {
-            clearPasteboardCard(removingTemporaryFile: true)
-            return
-        }
-        guard pasteboardState?.changeCount != pasteboard.changeCount else { return }
-        pasteboardDownloadTask?.cancel()
-        clearPasteboardCard(removingTemporaryFile: true)
-        let changeCount = pasteboard.changeCount
-        // Privacy-preserving pre-validation only. The URL value is not read
-        // until the user reaches this synthetic leading card.
-        pasteboard.detectPatterns(for: [\.probableWebURL]) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self, UIPasteboard.general.changeCount == changeCount else { return }
-                let hasLink = (try? result.get())?.contains(\.probableWebURL) == true
-                self.pasteboardState = hasLink ? .placeholder(changeCount: changeCount) : nil
-                self.reload()
-            }
-        }
+        pasteboardProbe.probe(
+            stateChangeCount: pasteboardState?.changeCount,
+            clear: { [weak self] in
+                self?.pasteboardDownloadTask?.cancel()
+                self?.clearPasteboardCard(removingTemporaryFile: true)
+            },
+            offer: { [weak self] changeCount in
+                self?.pasteboardState = .placeholder(changeCount: changeCount)
+                self?.reload()
+            })
     }
 
     /// The value the card's `UIPasteControl` handed over — an implicitly
     /// authorized read, so nothing here touches `UIPasteboard` for content.
     private func handlePastedValue(_ value: String) {
         guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        guard UIPasteboard.general.changeCount == expectedChangeCount,
+        guard pasteboardProbe.isStillCurrent(expectedChangeCount),
               let url = URLUnwrapper.ingestURL(from: value, allowBareHost: true),
               MediaDownloadablePlatform.supports(url.absoluteString),
               store.matchingItem(forURLString: url.absoluteString) == nil
@@ -633,7 +624,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             await MainActor.run {
                 self.isCommittingPasteboardMedia = false
                 self.pendingPasteboardDownloadURLString = url.absoluteString
-                self.consumedPasteboardChangeCount = changeCount
+                self.pasteboardProbe.consume(changeCount)
                 let pasteboardChanged = UIPasteboard.general.changeCount != changeCount
                 if PasteboardCommitPolicy.shouldClearCommittedCard(
                     committedChangeCount: changeCount,
@@ -685,7 +676,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         guard case .ready(let count, _, _, _, let expiry) = pasteboardState,
               PasteboardTemporaryMediaPolicy.isExpired(expiresAt: expiry, now: now)
         else { return }
-        consumedPasteboardChangeCount = count
+        pasteboardProbe.consume(count)
         clearPasteboardCard(removingTemporaryFile: true)
     }
 

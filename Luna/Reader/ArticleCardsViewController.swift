@@ -149,7 +149,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// Kept separate from the latest probe state so reload can map the centered
     /// saved article through the old index space when a leading card appears.
     private var renderedPasteboardState: PasteboardCardState?
-    private var consumedPasteboardChangeCount: Int?
+    private let pasteboardProbe = PasteboardLinkProbe()
     private var pasteboardEvaluationTask: Task<Void, Never>?
     private var isCommittingPasteboardCandidate = false
     private var pendingPasteboardSavedID: UUID?
@@ -566,25 +566,15 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     // MARK: - Data
 
     @objc private func refreshPasteboardURL() {
-        let pasteboard = UIPasteboard.general
-        if consumedPasteboardChangeCount == pasteboard.changeCount {
-            setPasteboardState(nil)
-            return
-        }
-        guard pasteboardState?.changeCount != pasteboard.changeCount else { return }
-        pasteboardEvaluationTask?.cancel()
-        setPasteboardState(nil)
-        let changeCount = pasteboard.changeCount
-        // Pattern detection reveals only that a probable URL exists and does not
-        // notify the user. The value itself is read only after this card is paged
-        // onto (or tapped when it is the sole card).
-        pasteboard.detectPatterns(for: [\.probableWebURL]) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self, UIPasteboard.general.changeCount == changeCount else { return }
-                let hasLink = (try? result.get())?.contains(\.probableWebURL) == true
-                self.setPasteboardState(hasLink ? .placeholder(changeCount: changeCount) : nil)
-            }
-        }
+        pasteboardProbe.probe(
+            stateChangeCount: pasteboardState?.changeCount,
+            clear: { [weak self] in
+                self?.pasteboardEvaluationTask?.cancel()
+                self?.setPasteboardState(nil)
+            },
+            offer: { [weak self] changeCount in
+                self?.setPasteboardState(.placeholder(changeCount: changeCount))
+            })
     }
 
     private func setPasteboardState(_ state: PasteboardCardState?) {
@@ -596,7 +586,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// authorized read, so nothing here touches `UIPasteboard` for content.
     private func handlePastedValue(_ value: String) {
         guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        guard UIPasteboard.general.changeCount == expectedChangeCount,
+        guard pasteboardProbe.isStillCurrent(expectedChangeCount),
               let url = URLUnwrapper.ingestURL(from: value)
         else {
             setPasteboardState(.invalid(changeCount: expectedChangeCount))
@@ -613,7 +603,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 guard let self,
                       case .loading(let count, let currentURL) = self.pasteboardState,
                       count == expectedChangeCount, currentURL == urlString,
-                      UIPasteboard.general.changeCount == expectedChangeCount
+                      self.pasteboardProbe.isStillCurrent(expectedChangeCount)
                 else { return }
                 guard let candidate, candidate.platform == nil,
                       candidate.content != nil || candidate.requiresUnlock
@@ -664,7 +654,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 self.isCommittingPasteboardCandidate = false
                 guard let saved else { return }
                 self.pendingPasteboardSavedID = saved.id
-                self.consumedPasteboardChangeCount = changeCount
+                self.pasteboardProbe.consume(changeCount)
                 let pasteboardChanged = UIPasteboard.general.changeCount != changeCount
                 if PasteboardCommitPolicy.shouldClearCommittedCard(
                     committedChangeCount: changeCount,

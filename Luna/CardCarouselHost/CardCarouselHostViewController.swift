@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import LunaModels
+import LunaSocial
 import UniformTypeIdentifiers
 import UIKit
 
@@ -103,6 +104,19 @@ class CardCarouselHostViewController: UIViewController {
     ) {
         guard cardCount > 0, index != cardCount - 1 else { return }
         archiveTray?.setPullAvailable(false, animated: animated)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Reaching the app's main screen (on launch or by navigating back) clears
+        // the "open the app" follow-up share notifications; first-share prompts
+        // that deep-link to settings are left intact.
+        //
+        // This lived on the sectioned list's `viewDidAppear`. When that screen was
+        // deleted the call went with it and nothing cleared the notifications, so
+        // it belongs here instead — on the base class every app's root inherits,
+        // rather than on one deck.
+        NotificationManager.clearShareNotifications()
     }
 
     override func viewDidLayoutSubviews() {

@@ -6,390 +6,472 @@
 import LunaDesignSystem
 import LunaModels
 import UIKit
+import WebKit
 
 /// Everything a failed save's card shows and can do. Assembled by the app shell
-/// (which alone can reach the failure sidecar, the favicon cache, the rescue
-/// coordinator, and the share provider) and rendered by
-/// `FailedSaveCardViewController` here, so the Reader and Downloader roots draw
-/// the SAME error card instead of each inventing one.
+/// (which alone can reach the failure sidecar, the rescue coordinator, and the
+/// share provider) and rendered by `FailedSaveCardViewController` here, so every
+/// app draws the SAME error card instead of each inventing one.
 public struct FailedSaveCardModel {
 
-    /// Best-effort headline — a fetched title, the stored one, a slug guess, or
-    /// the host. Never empty (see `FailedSaveNaming.displayTitle`).
-    public var title: String
-    /// Publisher / site name shown beside the favicon.
-    public var siteName: String?
-    /// The URL that failed, scheme stripped. Shown in full: which link broke is
-    /// the first thing the user needs.
+    /// The reading-list item this card stands for. The card watches
+    /// `.rescueProgressChanged` for this id so the eclipse bar advances without
+    /// the host reloading its whole carousel several times a second.
+    public var itemID: UUID
+    /// The URL that failed. The card's whole content area is this page, loaded in
+    /// a real `WKWebView` — a page that a background `URLSession` couldn't read
+    /// very often renders fine in a web view with the user's own cookies, so
+    /// showing it is both the explanation and the consolation prize.
+    public var url: URL?
+    /// The same URL as display text for the bar under the web view, scheme
+    /// stripped. Shown in full: which link broke is the point.
     public var urlText: String
-    /// One sentence naming the failure, from `SaveFailureReason.headline`.
-    public var detail: String
-    /// An optional second sentence suggesting what to do about it.
-    public var suggestion: String?
-    /// "Tried 3 times · 2 days ago"-style provenance, or nil when there's only
-    /// been the one attempt.
-    public var attemptFooter: String?
-    /// Whether a rescue is running right now — the card shows a spinner and
-    /// disables its buttons instead of offering the same tap again.
+    /// Whether a rescue is running right now — the web view goes under a dimming
+    /// overlay with the eclipse progress bar over it.
     public var isRescuing: Bool
-    /// Hints the user may pick from before invoking the LLM. Empty means the
-    /// running app implies the hint (single-content apps) and the card just
-    /// shows one button; more than one means the central Luna app is asking.
-    public var hintChoices: [RescueHint]
+    /// The running rescue's fraction, 0…1. Ignored unless `isRescuing`.
+    public var progress: Double
     /// Whether the LLM rescue path is available at all (Apple Intelligence
-    /// present, engine installed). False hides the button entirely rather than
-    /// offering a no-op.
+    /// present, engine installed). False hides the button rather than offering a
+    /// no-op.
     public var canRescue: Bool
-    /// Whether a plain re-fetch is worth offering next to the LLM path.
-    public var canRetry: Bool
+    /// Whether this item's one Apple Intelligence attempt for THIS app version is
+    /// already spent. True replaces the button with the apology and a Delete —
+    /// the card has nothing left to offer until Luna itself changes.
+    public var hasSpentAIAttempt: Bool
 
     public init(
-        title: String, siteName: String? = nil, urlText: String,
-        detail: String, suggestion: String? = nil, attemptFooter: String? = nil,
-        isRescuing: Bool = false, hintChoices: [RescueHint] = [],
-        canRescue: Bool = true, canRetry: Bool = false
+        itemID: UUID, url: URL?, urlText: String,
+        isRescuing: Bool = false, progress: Double = 0,
+        canRescue: Bool = true, hasSpentAIAttempt: Bool = false
     ) {
-        self.title = title
-        self.siteName = siteName
+        self.itemID = itemID
+        self.url = url
         self.urlText = urlText
-        self.detail = detail
-        self.suggestion = suggestion
-        self.attemptFooter = attemptFooter
         self.isRescuing = isRescuing
-        self.hintChoices = hintChoices
+        self.progress = progress
         self.canRescue = canRescue
-        self.canRetry = canRetry
+        self.hasSpentAIAttempt = hasSpentAIAttempt
     }
 }
 
-/// What the card's buttons do. Injected closures, not a delegate: each root
-/// wires them to its own store/share/rescue plumbing and the view stays free of
-/// every tier above LunaDesignSystem.
+/// What the card's buttons do. Injected closures, not a delegate: each root wires
+/// them to its own store/share/rescue plumbing and the view stays free of every
+/// tier above LunaDesignSystem.
 public struct FailedSaveCardActions {
-    /// Run the LLM rescue with this hint (nil = let the app imply it).
-    public var rescue: (RescueHint?) -> Void
-    /// Open the failing URL in the full-screen in-app web view.
-    public var openInBrowser: () -> Void
-    /// Share the URL (a failed save has nothing else to share).
+    /// Run the LLM rescue. Takes no hint — the model classifies the page itself
+    /// (`RescueRequest.ContentHint.auto`), which is why the card has no picker.
+    public var rescue: () -> Void
+    /// Share the raw URL (a failed save has nothing else to share).
     public var share: (UIView) -> Void
-    /// Re-run the ordinary background fetch.
-    public var retry: (() -> Void)?
+    /// Delete the item. Offered only in the terminal state, where it's the only
+    /// thing left to do.
+    public var delete: () -> Void
 
     public init(
-        rescue: @escaping (RescueHint?) -> Void,
-        openInBrowser: @escaping () -> Void,
+        rescue: @escaping () -> Void,
         share: @escaping (UIView) -> Void,
-        retry: (() -> Void)? = nil
+        delete: @escaping () -> Void
     ) {
         self.rescue = rescue
-        self.openInBrowser = openInBrowser
         self.share = share
-        self.retry = retry
+        self.delete = delete
     }
 }
 
-/// The error state of a saved link, as a carousel card: favicon + real title,
-/// the URL that failed, what went wrong, and the three things worth doing about
-/// it (ask Apple Intelligence, open it in a browser, share it elsewhere).
+/// The error state of a saved link, as a carousel card: the page itself in a
+/// near-full-bleed web view, a URL bar with reload and share under it, and in the
+/// chin the one thing worth trying — "Retry with AI".
 ///
 /// Deliberately NOT playable and NOT tappable-through: a failed card's only
-/// interactions are its own buttons, so the carousel's tap/scrub gestures don't
-/// fight them.
+/// interactions are its own controls, so the carousel's tap/scrub gestures don't
+/// fight them. Link taps inside the web view are also refused and re-presented
+/// full screen, so the URL bar never lies about which page this card is.
 public final class FailedSaveCardViewController: CardContentViewController {
+
+    /// The web view is inset by just enough to clear the card's 22pt corner
+    /// radius without any visible gutter — "almost full bleed".
+    private static let webInset: CGFloat = 8
+    private static let webCornerRadius: CGFloat = 14
+    /// How dark the overlay gets while the rescue runs.
+    private static let overlayOpacity: CGFloat = 0.4
 
     private var model: FailedSaveCardModel
     private let actions: FailedSaveCardActions
-    /// Injected so the app's favicon cache (which lives in the app shell) stays
-    /// out of this tier. Called on the main queue, possibly twice: a fallback
-    /// glyph first, then the fetched icon.
-    private let loadIcon: (@escaping (UIImage?) -> Void) -> Void
+    /// The live rescue fraction for this item, or nil when nothing is running.
+    /// Injected because the coordinator that knows it lives a tier above this one.
+    private let progressProvider: () -> Double?
 
-    private let scrollView = UIScrollView()
-    private let iconView = UIImageView()
-    private let iconContainer = UIView()
-    private let titleLabel = UILabel()
-    private let siteLabel = UILabel()
+    private var progressObserver: NSObjectProtocol?
+    /// The rescue reports ~7 stages over up to 90 seconds; the provider
+    /// interpolates between them, so the bar needs its own tick to show that.
+    private var progressTicker: Timer?
+
+    /// Created lazily: a carousel mounts the centered card plus its two peeks, and
+    /// a `WKWebView` per mounted card is the expensive part of this design.
+    private var webView: WKWebView?
+    private let webContainer = UIView()
+    /// Covers ONLY the web view while a rescue runs — the URL bar and its share
+    /// button stay lit and usable underneath, per the card's contract.
+    private let dimmingView = UIView()
+    private let progressBar = EclipseProgressBar()
+
+    private let urlBar = UIView()
+    private let reloadButton = UIButton(type: .system)
     private let urlLabel = UILabel()
-    private let detailLabel = UILabel()
-    private let suggestionLabel = UILabel()
-    private let footerLabel = UILabel()
-    private let spinner = DotMatrixSpinnerView(dimension: 3, side: 18)
-    private let hintControl = LunaSegmentedControl()
-    private let rescueButton = UIButton(type: .system)
-    private let browserButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
-    private let retryButton = UIButton(type: .system)
-    private let buttonStack = UIStackView()
-    /// The three lesser actions share one line as compact pills, so the card
-    /// reads as "one thing to try, plus the usual escapes" rather than a list.
-    private let secondaryButtonRow = UIStackView()
-    private let contentStack = UIStackView()
+
+    /// The chin: either the AI button, or (terminally) the apology + Delete.
+    private let chinStack = UIStackView()
+    private let rescueButton = UIButton(type: .system)
+    private let apologyLabel = UILabel()
+    private let deleteButton = UIButton(type: .system)
+
+    private var hasStartedLoad = false
 
     public init(
         model: FailedSaveCardModel,
         actions: FailedSaveCardActions,
-        loadIcon: @escaping (@escaping (UIImage?) -> Void) -> Void = { $0(nil) }
+        progressProvider: @escaping () -> Double? = { nil }
     ) {
         self.model = model
         self.actions = actions
-        self.loadIcon = loadIcon
+        self.progressProvider = progressProvider
         super.init()
     }
 
-    /// The card's own interactions are its buttons; a stray card tap would
+    deinit {
+        progressTicker?.invalidate()
+        if let progressObserver {
+            NotificationCenter.default.removeObserver(progressObserver)
+        }
+    }
+
+    /// The card's own interactions are its controls; a stray card tap would
     /// otherwise page or toggle playback under the user's finger.
     public override func allowsCardTap(at point: CGPoint) -> Bool { false }
+
+    /// A long press over the page belongs to the web view (link previews, text
+    /// selection); the card's own Share/Delete menu still lives on its chrome.
+    public override func longPressSelectsContent(at point: CGPoint) -> Bool {
+        webContainer.frame.contains(point)
+    }
 
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
         buildHierarchy()
+        observeProgress()
         apply(model)
-        loadIcon { [weak self] image in
-            guard let image else { return }
-            self?.setIcon(image)
-        }
     }
 
-    /// Re-renders in place (a rescue started/finished, a metadata read landed) so
-    /// the host doesn't have to tear the card down and rebuild it mid-carousel.
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadPageIfNeeded()
+    }
+
+    /// Re-renders in place (a rescue started, advanced, or finished) so the host
+    /// doesn't have to tear the card down and rebuild it mid-carousel.
     public func update(_ model: FailedSaveCardModel) {
+        let urlChanged = model.url != self.model.url
         self.model = model
         guard isViewLoaded else { return }
+        if urlChanged {
+            hasStartedLoad = false
+            loadPageIfNeeded()
+        }
         apply(model)
-    }
-
-    public func setIcon(_ image: UIImage) {
-        iconView.image = image
-        iconView.tintColor = nil
-        iconView.contentMode = .scaleAspectFit
     }
 
     // MARK: - Hierarchy
 
     private func buildHierarchy() {
-        // A tall error card with a long URL and two paragraphs can outgrow a
-        // short card on a small device — scroll rather than clip.
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.alwaysBounceVertical = false
-        scrollView.showsVerticalScrollIndicator = false
-        view.addSubview(scrollView)
+        webContainer.backgroundColor = LunaColors.tertiaryBackground
+        webContainer.layer.cornerRadius = Self.webCornerRadius
+        webContainer.layer.cornerCurve = .continuous
+        webContainer.clipsToBounds = true
+        webContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        iconContainer.backgroundColor = LunaColors.tertiaryBackground
-        iconContainer.layer.cornerRadius = 12
-        iconContainer.layer.cornerCurve = .continuous
-        iconContainer.clipsToBounds = true
-        iconContainer.translatesAutoresizingMaskIntoConstraints = false
-        // A site with no reachable icon gets a question mark, not a blank box.
-        iconView.image = UIImage(systemName: "questionmark")
-        iconView.tintColor = LunaColors.tertiaryText
-        iconView.contentMode = .scaleAspectFit
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconContainer.addSubview(iconView)
+        dimmingView.backgroundColor = UIColor.black.withAlphaComponent(Self.overlayOpacity)
+        dimmingView.isHidden = true
+        dimmingView.translatesAutoresizingMaskIntoConstraints = false
+        // Swallows touches so the page can't be poked at mid-extraction, while the
+        // URL bar below it — outside this view — stays live.
+        dimmingView.isUserInteractionEnabled = true
 
-        titleLabel.font = .preferredFont(forTextStyle: .title3)
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.textColor = LunaColors.primaryText
-        titleLabel.numberOfLines = 3
+        progressBar.translatesAutoresizingMaskIntoConstraints = false
+        dimmingView.addSubview(progressBar)
+        webContainer.addSubview(dimmingView)
 
-        siteLabel.font = .preferredFont(forTextStyle: .footnote)
-        siteLabel.adjustsFontForContentSizeCategory = true
-        siteLabel.textColor = LunaColors.secondaryText
-        siteLabel.numberOfLines = 1
+        buildURLBar()
+        buildChin()
 
-        urlLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        urlLabel.textColor = LunaColors.tertiaryText
-        urlLabel.numberOfLines = 3
-        urlLabel.lineBreakMode = .byCharWrapping
+        let stack = UIStackView(arrangedSubviews: [webContainer, urlBar, chinStack])
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
 
-        // What went wrong is stated, not shouted: the card's red lives entirely
-        // in the rim glow the carousel draws around it (`setEdgeGlow`), so the
-        // content stays in the app's ordinary text hierarchy.
-        detailLabel.font = .preferredFont(forTextStyle: .subheadline)
-        detailLabel.adjustsFontForContentSizeCategory = true
-        detailLabel.textColor = LunaColors.primaryText
-        detailLabel.numberOfLines = 0
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: Self.webInset),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.webInset),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Self.webInset),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -14),
 
-        suggestionLabel.font = .preferredFont(forTextStyle: .footnote)
-        suggestionLabel.adjustsFontForContentSizeCategory = true
-        suggestionLabel.textColor = LunaColors.secondaryText
-        suggestionLabel.numberOfLines = 0
+            dimmingView.topAnchor.constraint(equalTo: webContainer.topAnchor),
+            dimmingView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+            dimmingView.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+            dimmingView.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+            progressBar.centerYAnchor.constraint(equalTo: dimmingView.centerYAnchor),
+            progressBar.leadingAnchor.constraint(equalTo: dimmingView.leadingAnchor, constant: 32),
+            progressBar.trailingAnchor.constraint(equalTo: dimmingView.trailingAnchor, constant: -32),
+        ])
+    }
 
-        footerLabel.font = .preferredFont(forTextStyle: .caption2)
-        footerLabel.adjustsFontForContentSizeCategory = true
-        footerLabel.textColor = LunaColors.quaternaryText
-        footerLabel.numberOfLines = 1
+    private func buildURLBar() {
+        urlBar.translatesAutoresizingMaskIntoConstraints = false
 
-        spinner.color = LunaColors.secondaryText
-        spinner.hidesWhenStopped = true
+        configureBarButton(reloadButton, symbol: "arrow.clockwise",
+                           label: L10n.string("Reload page"))
+        reloadButton.addAction(UIAction { [weak self] _ in self?.reload() },
+                               for: .touchUpInside)
 
-        hintControl.addAction(UIAction { [weak self] _ in
-            self?.updateRescueTitle()
-        }, for: .valueChanged)
-
-        applyRescueTitle()
-        configure(browserButton, title: L10n.string("Browser"), symbol: "globe")
-        configure(shareButton, title: L10n.string("Share"), symbol: "square.and.arrow.up")
-        configure(retryButton, title: L10n.string("Retry"), symbol: "arrow.clockwise")
-
-        rescueButton.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.actions.rescue(self.selectedHint())
-        }, for: .touchUpInside)
-        browserButton.addAction(UIAction { [weak self] _ in
-            self?.actions.openInBrowser()
-        }, for: .touchUpInside)
+        configureBarButton(shareButton, symbol: "square.and.arrow.up",
+                           label: L10n.string("Share link"))
         shareButton.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             self.actions.share(self.shareButton)
         }, for: .touchUpInside)
-        retryButton.addAction(UIAction { [weak self] _ in
-            self?.actions.retry?()
-        }, for: .touchUpInside)
 
-        secondaryButtonRow.axis = .horizontal
-        secondaryButtonRow.spacing = 8
-        secondaryButtonRow.distribution = .fillEqually
-        for button in [browserButton, shareButton, retryButton] {
-            secondaryButtonRow.addArrangedSubview(button)
-        }
-        buttonStack.axis = .vertical
-        buttonStack.spacing = 10
-        buttonStack.addArrangedSubview(rescueButton)
-        buttonStack.addArrangedSubview(secondaryButtonRow)
+        urlLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        urlLabel.textColor = LunaColors.secondaryText
+        urlLabel.numberOfLines = 1
+        // The tail of a URL (the slug) identifies the page; the head is mostly the
+        // host, which the page itself is already showing.
+        urlLabel.lineBreakMode = .byTruncatingMiddle
+        urlLabel.textAlignment = .center
 
-        let header = UIStackView(arrangedSubviews: [iconContainer, headerTextStack()])
-        header.axis = .horizontal
-        header.spacing = 12
-        header.alignment = .top
-
-        contentStack.axis = .vertical
-        contentStack.spacing = 12
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-        for subview in [header, urlLabel, detailLabel, suggestionLabel,
-                        spinner, hintControl, buttonStack, footerLabel] {
-            contentStack.addArrangedSubview(subview)
-        }
-        contentStack.setCustomSpacing(6, after: header)
-        contentStack.setCustomSpacing(4, after: detailLabel)
-        contentStack.setCustomSpacing(18, after: suggestionLabel)
-        scrollView.addSubview(contentStack)
+        let row = UIStackView(arrangedSubviews: [reloadButton, urlLabel, shareButton])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        urlBar.addSubview(row)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-
-            contentStack.leadingAnchor.constraint(
-                equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 22),
-            contentStack.trailingAnchor.constraint(
-                equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -22),
-            contentStack.widthAnchor.constraint(
-                equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -44),
-            // Vertically centered while it fits, top-aligned once it doesn't.
-            contentStack.topAnchor.constraint(
-                greaterThanOrEqualTo: scrollView.contentLayoutGuide.topAnchor, constant: 28),
-            contentStack.bottomAnchor.constraint(
-                lessThanOrEqualTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -28),
-            contentStack.centerYAnchor.constraint(
-                equalTo: scrollView.contentLayoutGuide.centerYAnchor),
-            scrollView.contentLayoutGuide.heightAnchor.constraint(
-                greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor),
-
-            iconContainer.widthAnchor.constraint(equalToConstant: 40),
-            iconContainer.heightAnchor.constraint(equalToConstant: 40),
-            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 26),
-            iconView.heightAnchor.constraint(equalToConstant: 26),
+            row.topAnchor.constraint(equalTo: urlBar.topAnchor),
+            row.bottomAnchor.constraint(equalTo: urlBar.bottomAnchor),
+            row.leadingAnchor.constraint(equalTo: urlBar.leadingAnchor, constant: 6),
+            row.trailingAnchor.constraint(equalTo: urlBar.trailingAnchor, constant: -6),
         ])
     }
 
-    private func headerTextStack() -> UIStackView {
-        let stack = UIStackView(arrangedSubviews: [titleLabel, siteLabel])
-        stack.axis = .vertical
-        stack.spacing = 2
-        return stack
+    private func buildChin() {
+        rescueButton.configuration = Self.rescueConfiguration()
+        rescueButton.contentHorizontalAlignment = .center
+        rescueButton.addAction(UIAction { [weak self] _ in
+            self?.beginRescue()
+        }, for: .touchUpInside)
+
+        apologyLabel.text = L10n.string("Sorry, Luna was unable to save this page.")
+        apologyLabel.font = .preferredFont(forTextStyle: .footnote)
+        apologyLabel.adjustsFontForContentSizeCategory = true
+        apologyLabel.textColor = LunaColors.secondaryText
+        apologyLabel.textAlignment = .center
+        apologyLabel.numberOfLines = 2
+
+        deleteButton.configuration = GlassStyle.actionButtonConfiguration(
+            title: L10n.string("Delete"), symbol: "trash", compact: true)
+        deleteButton.tintColor = LunaColors.errorAccent
+        deleteButton.contentHorizontalAlignment = .center
+        deleteButton.addAction(UIAction { [weak self] _ in
+            self?.actions.delete()
+        }, for: .touchUpInside)
+
+        chinStack.axis = .vertical
+        chinStack.spacing = 8
+        chinStack.alignment = .fill
+        for subview in [rescueButton, apologyLabel, deleteButton] {
+            chinStack.addArrangedSubview(subview)
+        }
     }
 
-    /// One of the compact glass pills sharing the secondary row.
-    private func configure(_ button: UIButton, title: String, symbol: String) {
-        button.configuration = GlassStyle.actionButtonConfiguration(
-            title: title, symbol: symbol, compact: true)
-        button.contentHorizontalAlignment = .center
+    /// A hairline-glass circular button for the URL bar's two ends.
+    private func configureBarButton(_ button: UIButton, symbol: String, label: String) {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: symbol)
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 13, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: 6, leading: 6, bottom: 6, trailing: 6)
+        button.configuration = config
+        button.tintColor = LunaColors.secondaryText
+        button.accessibilityLabel = label
+        button.setContentHuggingPriority(.required, for: .horizontal)
+    }
+
+    /// "Retry with AI ✦" — the Apple Intelligence glyph reads as the mark of the
+    /// feature, so it sits AFTER the words as a sigil rather than as a leading
+    /// icon. `apple.intelligence` arrived in SF Symbols 6.2 (iOS 18.4) and the
+    /// deployment target is 18.0, so the sparkle is a real fallback, not
+    /// belt-and-braces.
+    private static func rescueConfiguration() -> UIButton.Configuration {
+        var config = GlassStyle.actionButtonConfiguration(
+            title: L10n.string("Retry with AI"), symbol: "sparkles", prominent: true)
+        if let intelligence = UIImage(systemName: "apple.intelligence") {
+            config.image = intelligence
+        }
+        config.imagePlacement = .trailing
+        return config
+    }
+
+    // MARK: - Web view
+
+    private func loadPageIfNeeded() {
+        guard !hasStartedLoad, let url = model.url else { return }
+        hasStartedLoad = true
+        let web = makeWebView()
+        web.load(URLRequest(url: url))
+    }
+
+    private func makeWebView() -> WKWebView {
+        if let webView { return webView }
+        let configuration = WebJunkBlocker.makeConfiguration()
+        // The user's own cookie store, deliberately: a page behind a wall the user
+        // is already through is exactly the case where a background fetch failed
+        // and a real web view succeeds.
+        configuration.websiteDataStore = .default()
+        let web = WKWebView(frame: webContainer.bounds, configuration: configuration)
+        web.navigationDelegate = self
+        web.isOpaque = false
+        web.backgroundColor = .clear
+        web.scrollView.backgroundColor = .clear
+        web.scrollView.showsVerticalScrollIndicator = false
+        // The carousel pages horizontally; a bouncing web view would fight it.
+        web.scrollView.alwaysBounceHorizontal = false
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.translatesAutoresizingMaskIntoConstraints = false
+        webContainer.insertSubview(web, belowSubview: dimmingView)
+        NSLayoutConstraint.activate([
+            web.topAnchor.constraint(equalTo: webContainer.topAnchor),
+            web.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+            web.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+            web.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+        ])
+        webView = web
+        return web
+    }
+
+    private func reload() {
+        guard !model.isRescuing else { return }
+        guard let webView, webView.url != nil else {
+            hasStartedLoad = false
+            loadPageIfNeeded()
+            return
+        }
+        webView.reload()
+    }
+
+    // MARK: - Rescue
+
+    /// The overlay goes up on the TAP, not on the first progress report: the
+    /// coordinator's work starts on a background executor and the user needs to
+    /// see the press land immediately.
+    private func beginRescue() {
+        guard !model.isRescuing else { return }
+        model.isRescuing = true
+        model.progress = RescueStage.queued.fraction
+        progressBar.setProgress(Float(model.progress), animated: false)
+        apply(model)
+        actions.rescue()
+    }
+
+    /// Stage reports are per-item, so the card filters on its own id. Cheap
+    /// enough to leave installed for the card's whole life — the notification
+    /// only fires while some rescue is actually running.
+    private func observeProgress() {
+        progressObserver = NotificationCenter.default.addObserver(
+            forName: .rescueProgressChanged, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  note.userInfo?[RescueProgressKey.itemID] as? UUID == self.model.itemID
+            else { return }
+            self.refreshProgress()
+        }
+    }
+
+    /// Pulls the current fraction. A nil fraction means the attempt is over —
+    /// the coordinator posts `.readingListChanged` at the same moment, so the
+    /// host is already rebuilding this card into whatever the item became.
+    private func refreshProgress() {
+        guard let fraction = progressProvider() else { return }
+        model.progress = fraction
+        model.isRescuing = true
+        apply(model)
+    }
+
+    private func updateProgressTicker(rescuing: Bool) {
+        if rescuing, progressTicker == nil {
+            let ticker = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) {
+                [weak self] _ in self?.refreshProgress()
+            }
+            ticker.tolerance = 0.1
+            progressTicker = ticker
+        } else if !rescuing {
+            progressTicker?.invalidate()
+            progressTicker = nil
+        }
     }
 
     // MARK: - Rendering
 
     private func apply(_ model: FailedSaveCardModel) {
-        titleLabel.text = model.title
-        siteLabel.text = model.siteName
-        siteLabel.isHidden = model.siteName == nil
         urlLabel.text = model.urlText
-        detailLabel.text = model.detail
-        suggestionLabel.text = model.suggestion
-        suggestionLabel.isHidden = model.suggestion == nil
-        footerLabel.text = model.attemptFooter
-        footerLabel.isHidden = model.attemptFooter == nil
 
-        applyHintChoices(model.hintChoices)
-        rescueButton.isHidden = !model.canRescue
-        retryButton.isHidden = !model.canRetry || model.isRescuing
-
-        // While the LLM is working the card says so once, and every button that
-        // would start it again goes away.
-        if model.isRescuing {
-            spinner.startAnimating()
-            detailLabel.text = L10n.string("Trying harder with Apple Intelligence…")
-            suggestionLabel.isHidden = true
-            hintControl.isHidden = true
-            rescueButton.isHidden = true
-        } else {
-            spinner.stopAnimating()
+        let rescuing = model.isRescuing
+        dimmingView.isHidden = !rescuing
+        // The reload button is the one control the overlay disables — reloading
+        // the page under a running extraction would pull the ground out from
+        // under it. Share stays live: the URL is valid either way.
+        reloadButton.isEnabled = !rescuing
+        reloadButton.alpha = rescuing ? 0.4 : 1
+        if rescuing {
+            progressBar.setProgress(Float(model.progress), animated: true)
         }
-        spinner.isHidden = !model.isRescuing
-        // An empty secondary row would still claim its stack spacing.
-        secondaryButtonRow.isHidden = secondaryButtonRow.arrangedSubviews.allSatisfy(\.isHidden)
-        updateRescueTitle()
-    }
+        updateProgressTicker(rescuing: rescuing)
 
-    private func applyHintChoices(_ choices: [RescueHint]) {
-        // One implied hint (a single-content app) needs no picker at all.
-        guard choices.count > 1 else {
-            hintControl.isHidden = true
+        // Two chin states: the offer, or (terminally) the apology + Delete.
+        // A running rescue keeps the offer's button in place and merely disables
+        // it — hiding it would collapse the chin and resize the web view under
+        // the overlay, which reads as the card breaking rather than working.
+        let terminal = model.hasSpentAIAttempt || !model.canRescue
+        rescueButton.isHidden = terminal
+        rescueButton.isEnabled = !rescuing
+        rescueButton.alpha = rescuing ? 0.5 : 1
+        apologyLabel.isHidden = !terminal
+        deleteButton.isHidden = !terminal
+    }
+}
+
+// MARK: - WKNavigationDelegate
+
+extension FailedSaveCardViewController: WKNavigationDelegate {
+
+    /// The card is a window onto ONE page — the URL bar under it names that page,
+    /// and a tapped link that navigated in place would make the bar wrong. A link
+    /// tap opens full screen instead, where there's chrome to explain where you
+    /// are and a way back.
+    public func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard navigationAction.navigationType == .linkActivated,
+              let url = navigationAction.request.url else {
+            decisionHandler(.allow)
             return
         }
-        hintControl.isHidden = false
-        guard hintControl.numberOfSegments != choices.count else { return }
-        hintControl.removeAllSegments()
-        for (index, hint) in choices.enumerated() {
-            hintControl.insertSegment(withTitle: hint.displayName, at: index, animated: false)
-        }
-        hintControl.selectedSegmentIndex = 0
-    }
-
-    private func selectedHint() -> RescueHint? {
-        guard model.hintChoices.count > 1 else { return model.hintChoices.first }
-        let index = hintControl.selectedSegmentIndex
-        guard model.hintChoices.indices.contains(index) else { return model.hintChoices.first }
-        return model.hintChoices[index]
-    }
-
-    /// With a picker up, the button names what it will attempt, so the two
-    /// controls read as one sentence ("Price Tracker" → "Extract as Price Tracker").
-    private func updateRescueTitle() {
-        guard !rescueButton.isHidden else { return }
-        applyRescueTitle()
-    }
-
-    private func applyRescueTitle() {
-        let title = model.hintChoices.count > 1
-            ? selectedHint().map { L10n.string("Extract as \($0.displayName)") }
-                ?? L10n.string("Try with Apple Intelligence")
-            : L10n.string("Try with Apple Intelligence")
-        rescueButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: title, symbol: "wand.and.stars", prominent: true)
-        rescueButton.contentHorizontalAlignment = .center
+        decisionHandler(.cancel)
+        WebPageViewController.present(url: url, from: self)
     }
 }

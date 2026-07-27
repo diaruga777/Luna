@@ -1118,9 +1118,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         let item = items[itemIndex]
         // A save that FAILED gets the shared error card instead of an empty
-        // reader with a one-line apology: real title + favicon, the URL that
-        // broke, what went wrong, and the ways out (Apple Intelligence, the
-        // in-app browser, share, retry).
+        // reader with a one-line apology: the page itself in a near-full-bleed
+        // web view, a URL bar with reload + share, and "Retry with AI" in the
+        // chin (`claudedocs/failed-saves.md`).
         if ReadingListSectioning.isFailedSave(item) {
             return FailedSaveCardFactory.makeCard(
                 for: item, host: self, onChanged: { [weak self] in self?.reload() })
@@ -1284,7 +1284,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // A failed save has no stored title; use the same fallback chain its
         // card headline does so the scrub preview and the card agree.
         if ReadingListSectioning.isFailedSave(item) {
-            return FailedSaveCardFactory.makeModel(for: item).title
+            return FailedSaveCardFactory.displayTitle(for: item)
         }
         return item.title ?? item.url?.host ?? item.urlString
     }

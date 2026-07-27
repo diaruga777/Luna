@@ -998,7 +998,7 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
     func carousel(
         _ carousel: CardCarouselViewController, titleForCardAt index: Int
     ) -> String? {
-        failedSave(atCarouselIndex: index).map { FailedSaveCardFactory.makeModel(for: $0).title }
+        failedSave(atCarouselIndex: index).map { FailedSaveCardFactory.displayTitle(for: $0) }
     }
 
     func carousel(

@@ -356,14 +356,70 @@ final class FailedSaveSurfacingTests: XCTestCase {
 
 final class FailedSaveCardFactoryTests: XCTestCase {
 
-    /// Only the central Luna app has a real question to ask — the other three
-    /// each handle exactly one kind, so their hint is implied and the card shows
-    /// no picker.
-    func testOnlyTheCentralAppOffersAHintPicker() {
-        XCTAssertEqual(FailedSaveCardFactory.hintChoices(for: .all), RescueHint.allCases)
-        XCTAssertEqual(FailedSaveCardFactory.hintChoices(for: .reader), [.article])
-        XCTAssertEqual(FailedSaveCardFactory.hintChoices(for: .downloader), [.media])
-        XCTAssertEqual(FailedSaveCardFactory.hintChoices(for: .priceTracker), [.product])
+    /// NO app asks which kind this is any more — the model classifies the page —
+    /// so the card's rescue action carries no hint in any surface, the central
+    /// Luna app included.
+    func testTheCardNeverPicksAContentHint() {
+        for surface in [AppSurface.all, .reader, .downloader, .priceTracker] {
+            let model = FailedSaveCardFactory.makeModel(for: failedItem(), surface: surface)
+            XCTAssertEqual(model.urlText, "example.com/broken")
+            XCTAssertFalse(model.isRescuing)
+        }
+    }
+
+    /// A card is terminal only while the version that spent its attempt is the
+    /// one running; an update reopens it.
+    func testTerminalStateIsScopedToTheAppVersionThatSpentTheAttempt() {
+        let store = SaveFailureStore(containerURL: temporaryDirectory())
+        let id = UUID()
+        XCTAssertFalse(store.hasSpentAIAttempt(id, version: "1.0 (1)"))
+
+        store.recordAIAttempt(id, version: "1.0 (1)")
+        XCTAssertTrue(store.hasSpentAIAttempt(id, version: "1.0 (1)"))
+        XCTAssertFalse(
+            store.hasSpentAIAttempt(id, version: "1.1 (2)"),
+            "a shipped update must offer the AI button again")
+        XCTAssertEqual(store.idsWithStaleAIAttempt(version: "1.1 (2)"), [id])
+        XCTAssertTrue(
+            store.idsWithStaleAIAttempt(version: "1.0 (1)").isEmpty,
+            "an attempt spent under the RUNNING version is not stale")
+    }
+
+    /// The ledger's 2-per-24h budget must not outlive the version that earned it,
+    /// or the automatic half of the post-update retry never runs.
+    func testResettingAttemptsReopensTheAutomaticBudget() {
+        let ledger = RescueLedgerStore(containerURL: temporaryDirectory())
+        let id = UUID()
+        ledger.recordAttempt(id, hint: nil)
+        ledger.recordAttempt(id, hint: nil)
+        XCTAssertFalse(ledger.shouldAutoRescue(id))
+
+        ledger.resetAttempts(for: [id])
+        XCTAssertTrue(ledger.shouldAutoRescue(id))
+    }
+
+    /// A succeeded item is not reopened — it's no longer failed, and clearing its
+    /// history would make the sweep re-rescue something already ready.
+    func testResettingAttemptsSkipsSucceededItems() {
+        let ledger = RescueLedgerStore(containerURL: temporaryDirectory())
+        let id = UUID()
+        ledger.recordAttempt(id, hint: nil)
+        ledger.recordSuccess(id, hint: nil)
+        ledger.resetAttempts(for: [id])
+        XCTAssertEqual(ledger.entry(id)?.attemptCount, 1)
+    }
+
+    private func temporaryDirectory() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func failedItem() -> ReadingListItem {
+        var item = ReadingListItem(urlString: "https://example.com/broken")
+        item.state = .failed
+        return item
     }
 
     func testASingleFreshFailureShowsNoAttemptHistory() {

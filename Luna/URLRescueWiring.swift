@@ -80,12 +80,16 @@ enum URLRescueWiring {
         engine: URLRescueEngine, item: ReadingListItem, hint: RescueHint?, interactive: Bool
     ) async -> Bool {
         guard let url = item.url else { return false }
-        let resolvedHint = hint ?? defaultHint(for: AppSurfaceConfig.current)
+        // No hint means the MODEL classifies the page (`.auto`) — the failed-save
+        // card sends nil, and so does every automatic path. Only a surface that
+        // genuinely knows the kind (the price editor, the media card) passes one.
         let request = RescueRequest(
             url: url, source: item.effectiveCaptureSource,
-            failureKind: failureKind(for: resolvedHint),
-            hint: contentHint(for: resolvedHint))
-        let outcome = await engine.rescue(request)
+            failureKind: failureKind(for: item, hint: hint),
+            hint: hint.map(contentHint(for:)) ?? .auto)
+        let outcome = await engine.rescue(request) { stage in
+            URLRescueCoordinator.shared.reportProgress(item.id, stage: stage)
+        }
         switch outcome {
         case .rescued(let result, _):
             return await ReadingListIngestor.shared.applyRescued(result, forItemID: item.id, interactive: interactive)
@@ -110,12 +114,26 @@ enum URLRescueWiring {
         }
     }
 
-    private static func failureKind(for hint: RescueHint) -> RescueRequest.FailureKind {
-        switch hint {
-        case .article: return .articleFailed
-        case .product: return .productNoPrice
-        case .media: return .mediaNoAssets
+    /// What already went wrong, for the prompt's diagnostic line. With an explicit
+    /// hint it follows the hint; otherwise it's read off the item — the recorded
+    /// failure reason and the item's own shape are the only true evidence of which
+    /// branch of the pipeline gave up, and under `.auto` this is a FACT handed to
+    /// the model, never a steer toward one content type.
+    private static func failureKind(
+        for item: ReadingListItem, hint: RescueHint?
+    ) -> RescueRequest.FailureKind {
+        if let hint {
+            switch hint {
+            case .article: return .articleFailed
+            case .product: return .productNoPrice
+            case .media: return .mediaNoAssets
+            }
         }
+        if SaveFailureStore.shared.record(for: item.id)?.reason == .noMediaFound {
+            return .mediaNoAssets
+        }
+        if item.isPriceTracker { return .productNoPrice }
+        return .articleFailed
     }
 
     private static func contentHint(for hint: RescueHint) -> RescueRequest.ContentHint {

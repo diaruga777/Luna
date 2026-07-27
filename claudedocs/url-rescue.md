@@ -46,6 +46,9 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   allowlist + token→UA map, JS ≤8 KiB, article relaxed-threshold + anti-
   hallucination spot-check (≥50% of block prefixes must appear in the digest),
   product price verbatim-in-digest, media URL by extension or verbatim evidence.
+  Which PAYLOAD kinds are legal comes from `ContentHint.allows` — `.auto` accepts
+  all three, a concrete hint only its own. Widening the legal set does not relax
+  any evidence rule.
 - **`RescueDirectiveApplier`** — applies a directive; re-enters the pipeline via an
   injected `runPipeline` closure defaulting to the RAW
   `IngestPipeline.processResolved`. **This is the structural "no second LLM pass"
@@ -75,9 +78,26 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   result; a `.failed` outcome fires `ReadingListIngestor.rescueTrigger`.
 - **Bookkeeping** — sidecars in `LunaStorage`, never new `ReadingListItem` fields
   (a sibling app's re-encode would drop unknown keys): `RescueLedgerStore`
-  (`rescueLedger.json`, 2 auto-attempts / 24h + success provenance) and
+  (`rescueLedger.json`, 2 auto-attempts / 24h + success provenance;
+  `resetAttempts(for:)` reopens the budget once per app update) and
   `PendingRescueRequestStore` (App-Group queue, dedupe-by-URL, take-once, 3-day
   expiry).
+- **The hint is usually `.auto`** — `RescueRequest.ContentHint` gained `.auto`,
+  and it is what an ABSENT hint now means (it used to be filled in from the
+  failure kind, which laundered a guess into an instruction). Under `.auto` the
+  plan instructions offer every payload option and open by telling the model that
+  classifying the page is ITS job; the prompt drops the hint line and states what
+  already failed as a diagnostic fact instead. The failed-save card and every
+  automatic path send nil, so **no surface asks the user for a content type any
+  more** — the central Luna app's segmented picker is gone
+  (`claudedocs/failed-saves.md`). A concrete hint remains for the surfaces that
+  genuinely know: the list row's rescue sheet, the extension hand-off, the price
+  editor, the media card.
+- **Progress** — `rescue(_:onProgress:)` reports a `RescueStage` (LunaModels) at
+  each internal boundary, always opening `.queued` and closing `.finished`.
+  `URLRescueCoordinator.reportProgress`/`rescueProgress` turn that into a
+  fraction (interpolated within a stage) and post `.rescueProgressChanged`, which
+  drives the failed card's `EclipseProgressBar`.
 - **Consent** — automatic rescue is always on (there is no setting; the former
   Settings ▸ "Failed Saves" toggle and `RescueSettings` store are gone). Its real
   gates are an available engine, an interactive failure, and the 2-attempts/24h
@@ -85,8 +105,9 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   the budget — that tap IS its own consent.
 - **In-app** — a failed reading-list row tap opens a hint-picker rescue sheet; the
   long-press menu gains a "Try with Apple Intelligence" submenu; the row subtitle
-  reads "trying harder…" while a rescue is in flight. On the Reader and Downloader
-  CARD roots the rescue button lives on the failed-save error card — see
+  reads "trying harder…" while a rescue is in flight. On the CARD roots the
+  rescue button ("Retry with AI") lives on the failed-save error card, sends no
+  hint, and is limited to ONE attempt per app version — see
   `claudedocs/failed-saves.md`.
 - **Extension handoff** — the action extension's `.failed` presents
   `RescueFailureViewController` (hint segmented control + "Finish in Luna"), which

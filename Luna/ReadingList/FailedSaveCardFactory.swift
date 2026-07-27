@@ -14,17 +14,17 @@ import UIKit
 
 /// Assembles the shared failed-save error card for whichever carousel root asks
 /// for it. Universal (compiled into every app target): it names no kind-specific
-/// symbol, and the rescue hint it passes is implied by the running app's
-/// surface — except in the central Luna app, which shows the picker because a
-/// failed link there could legitimately have been any of the three kinds.
+/// symbol, and it passes NO rescue hint — the model classifies the page itself,
+/// which is why the card has no content-type picker in any app, central one
+/// included.
 ///
-/// This is the ONE place the card's copy, naming fallback chain, favicon load,
-/// and action wiring live, so the Reader and Downloader roots can't drift.
+/// This is the ONE place the card's copy, action wiring, and terminal-state
+/// policy live, so the Reader and Downloader roots can't drift.
 enum FailedSaveCardFactory {
 
     /// The card for `item`, with its actions bound to `host`.
     /// - Parameter onChanged: called after an action that mutates the store
-    ///   (delete/retry/rescue start), so the host can reload its carousel.
+    ///   (delete, rescue start), so the host can reload its carousel.
     static func makeCard(
         for item: ReadingListItem,
         host: UIViewController,
@@ -32,51 +32,45 @@ enum FailedSaveCardFactory {
         onChanged: @escaping () -> Void
     ) -> FailedSaveCardViewController {
         let card = FailedSaveCardViewController(
-            model: makeModel(for: item, surface: surface),
+            model: makeModel(for: item),
             actions: makeActions(for: item, host: host, onChanged: onChanged),
-            loadIcon: { completion in loadIcon(for: item, completion: completion) })
-        // A page Luna never read has no title of its own. Ask the site for one
-        // (a cheap head-only read, plus its homepage for a publisher name) and
-        // re-render in place when it lands.
-        resolveNaming(for: item) { [weak card] in
-            guard let card else { return }
-            card.update(makeModel(for: item, surface: surface))
-        }
+            progressProvider: { URLRescueCoordinator.shared.rescueProgress(item.id) })
+        // The page has no title of its own (that's WHY it failed), and the deck's
+        // chrome above the card wants one. A cheap head-only read gets it, cached
+        // into the failure sidecar so a cold launch shows the same words.
+        resolveNaming(for: item) { onChanged() }
         return card
     }
 
     /// The rendered model — also used on its own by the hosts' in-place updates
-    /// (a rescue starting or finishing re-posts `.readingListChanged`).
+    /// (a rescue starting, advancing, or finishing).
     static func makeModel(
         for item: ReadingListItem, surface: AppSurface = AppSurfaceConfig.current
     ) -> FailedSaveCardModel {
-        let record = SaveFailureStore.shared.record(for: item.id)
-        let reason = record?.reason
-        return FailedSaveCardModel(
-            title: FailedSaveNaming.displayTitle(
-                url: item.url, itemTitle: item.title, resolvedTitle: record?.resolvedTitle),
-            siteName: FailedSaveNaming.displaySiteName(
-                url: item.url, siteName: record?.siteName),
+        FailedSaveCardModel(
+            itemID: item.id,
+            url: item.url,
             urlText: FailedSaveNaming.displayURL(item.url, rawURLString: item.urlString),
-            detail: reason?.headline ?? SaveFailureReason.unknown.headline,
-            suggestion: reason?.suggestion,
-            attemptFooter: attemptFooter(record),
             isRescuing: URLRescueCoordinator.shared.isRescuing(item.id),
-            hintChoices: hintChoices(for: surface),
+            progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0,
             canRescue: URLRescueCoordinator.engine?.isAvailable() == true,
-            canRetry: reason?.isWorthRetrying ?? true)
+            hasSpentAIAttempt: SaveFailureStore.shared.hasSpentAIAttempt(item.id))
     }
 
-    /// Every app implies its own hint; only the central Luna app — which handles
-    /// all three kinds — has a genuine question to ask, so only it gets a picker.
-    static func hintChoices(for surface: AppSurface) -> [RescueHint] {
-        surface == .all
-            ? RescueHint.allCases
-            : [URLRescueWiring.defaultHint(for: surface)]
+    /// The deck's title for a failed card. The card body no longer shows a
+    /// headline (it shows the live page), but the carousel chrome above it and the
+    /// scrub preview both still need words, and they must agree — so both come
+    /// through here.
+    static func displayTitle(for item: ReadingListItem) -> String {
+        let record = SaveFailureStore.shared.record(for: item.id)
+        return FailedSaveNaming.displayTitle(
+            url: item.url, itemTitle: item.title, resolvedTitle: record?.resolvedTitle)
     }
 
     /// "Tried 3 times · 2 days ago" — provenance that makes a stubborn failure
     /// legible. Suppressed for a single fresh attempt, which needs no history.
+    /// No longer on the card (the page itself is the explanation now), but the
+    /// list rows still show it.
     static func attemptFooter(_ record: SaveFailureRecord?, now: Date = Date()) -> String? {
         guard let record, record.failureCount > 1 else { return nil }
         let formatter = RelativeDateTimeFormatter()
@@ -91,48 +85,32 @@ enum FailedSaveCardFactory {
         for item: ReadingListItem, host: UIViewController, onChanged: @escaping () -> Void
     ) -> FailedSaveCardActions {
         FailedSaveCardActions(
-            rescue: { hint in
-                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: hint)
+            rescue: {
+                // No hint: `RescueRequest.ContentHint.auto`, so the model decides
+                // whether this page is an article, a product, or media.
+                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: nil)
                 onChanged()
             },
-            openInBrowser: {
-                guard let url = item.url else { return }
-                WebPageViewController.present(url: url, from: host)
-            },
             share: { sourceView in
-                // A failed save has no content, no eBook, no media — the URL is
+                // A failed save has no content, no eBook, no media — the raw URL is
                 // the only thing there is to share, so this goes straight to the
                 // system sheet instead of the reader's richer share ladder (which
                 // isn't compiled into the Downloader/Price Tracker targets anyway).
                 SendToFriendSheet.shareLink(
                     urlString: item.urlString, from: host, sourceView: sourceView)
             },
-            retry: {
-                Task {
-                    await ReadingListIngestor.shared.ingest(item)
-                    await MainActor.run { onChanged() }
-                }
+            delete: {
+                ReadingListStore.shared.delete(item)
                 onChanged()
             })
     }
 
-    // MARK: - Naming + icon
-
-    /// Loads the site's favicon, falling back to nothing (the card shows a
-    /// question mark of its own). Same cache the mini-card badges use, so a warm
-    /// icon resolves synchronously.
-    private static func loadIcon(
-        for item: ReadingListItem, completion: @escaping (UIImage?) -> Void
-    ) {
-        guard let url = item.url else {
-            completion(nil)
-            return
-        }
-        SourceIconCache.shared.icon(forPageURL: url, completion: completion)
-    }
+    // MARK: - Naming
 
     /// One light metadata read per failed item per launch, persisted into the
     /// failure sidecar so a cold launch shows the same words without refetching.
+    /// Feeds the deck's card TITLE (`FailedSaveNaming.displayTitle`), not the card
+    /// body — the card body is the live page.
     private static func resolveNaming(
         for item: ReadingListItem, completion: @escaping () -> Void
     ) {

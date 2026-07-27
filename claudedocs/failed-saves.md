@@ -1,72 +1,122 @@
 # Failed saves — the error card
 
-When a saved URL can't be ingested it lands in `.failed`. It used to render as an
-empty reader card headed by whatever title the store happened to hold, with one
-line of apology ("Couldn't fetch this article") and a long-press menu offering
-Archive. Now it gets a card that explains itself and offers every way forward.
+When a saved URL can't be ingested it lands in `.failed`. The card that stands in
+for it doesn't describe the page Luna couldn't read — it **shows** the page, in a
+real web view, and offers the one thing that might still work.
 
 ## What the card shows
 
 `FailedSaveCardViewController` (`LunaReadingListUI`), assembled by
 `FailedSaveCardFactory` (`Luna/ReadingList/`, universal — compiled into all four
-app targets):
+app targets), top to bottom:
 
-1. **Favicon + title + site name.** A failed page has no title *by construction*:
-   `ArticleResolver` only returns `.unreadable` when it couldn't get even a
-   `<title>`, so anything with one parks in `.needsCaptcha` instead. The title
-   therefore comes from a fallback chain (`FailedSaveNaming.displayTitle`):
-   a title recovered by a light head-only read → the stored title (never the
-   `"Untitled"` placeholder) → `ArticleFetcher.articleTitleGuess` on the URL slug
-   → the bare host. Site name is `og:site_name` → host without `www.`. The icon is
-   `SourceIconCache` (the same cache the mini-card badges use); a site with no
-   reachable icon shows a **question mark**, not a blank box.
-2. **The URL that failed**, in full, scheme stripped — path and query kept,
-   because *which* link broke is the point.
-3. **Why**, from `SaveFailureReason.headline`, plus a `suggestion` line where
-   there's something to suggest ("Opening it in the browser often works where a
-   background fetch can't").
-4. **Attempt provenance** — "Tried 3 times · last 2 hours ago" once there's been
-   more than one attempt (the retry sweep runs on every launch/foreground, so this
-   climbs on its own).
-5. **Four actions, in two ranks.** The LLM rescue is the one thing worth trying,
-   so it takes a full-width prominent glass capsule
-   (`GlassStyle.actionButtonConfiguration(prominent:)`, Luna brand indigo); the
-   escapes — Browser, Share, Retry — share one line below it as compact plain-glass
-   pills. Retry appears only for a reason where re-running the same background
-   fetch could plausibly differ (`isWorthRetrying`: offline, timeout, transport,
-   429, 5xx — never a 403 or an unreadable page).
-6. **A subtle red rim** (`CardSurfaceView.setEdgeGlow`, tint
+1. **The page itself**, in a `WKWebView` inset 8pt from the card's edges (almost
+   full bleed; just enough to clear the 22pt corner radius). It uses
+   `WebJunkBlocker.makeConfiguration()` and the **default** website data store —
+   the user's own cookies — because that is exactly the case where a background
+   `URLSession` fetch failed and a real web view renders fine: a JS-gated page, a
+   bot-blocked front door, a wall the user is already through. Seeing the page is
+   both the explanation and the consolation prize.
+   Link taps are **refused** and re-presented full screen in
+   `WebPageViewController`: the card is a window onto ONE page, and a tapped link
+   navigating in place would make the URL bar below it a lie.
+2. **A URL bar** — reload on the left, the URL (scheme stripped, middle-truncated
+   so the identifying slug survives) in the middle, share on the right. Share goes
+   straight to the system sheet with the **raw URL**: a failed save has no content,
+   no eBook, no media, so there is nothing else to share, and the reader's richer
+   share ladder isn't compiled into the Downloader/Price Tracker targets anyway.
+3. **The chin** — a full-width prominent glass capsule, **"Retry with AI"** with
+   the Apple Intelligence glyph trailing the words as a sigil rather than leading
+   as an icon. `apple.intelligence` arrived in SF Symbols 6.2 (iOS 18.4) and the
+   deployment target is 18.0, so `sparkles` is a real fallback, not
+   belt-and-braces.
+4. **A red glass border.** `CardSurfaceView.setEdgeGlow` (tint
    `LunaColors.errorAccent`), supplied per card through the
-   `CardCarouselDataSource.edgeGlowColorForCardAt` hook. `CardSurfaceView` clips
-   (the letterbox tone and corner radius both need it), so an outward
-   `layer.shadow` would be swallowed — the glow is a tinted ring stroked just
-   INSIDE the edge whose shadow blooms inward, reading as a lit rim.
-   **The rim is the ONLY red on the card**: the failure line and the spinner use
-   the ordinary text hierarchy, so a broken save reads as a card with a lit edge
-   rather than a red warning panel.
+   `CardCarouselDataSource.edgeGlowColorForCardAt` hook. The rim STROKE takes the
+   tint and its shadow blooms inward — `CardSurfaceView` clips, so an outward
+   `layer.shadow` would be swallowed. A failed card reads as a card with a red
+   border, not a white-bordered card lit red from inside.
 
-While a rescue is in flight the card says "Trying harder with Apple
-Intelligence…" with a spinner and hides every button that would start another;
-`URLRescueCoordinator` posts `.readingListChanged` on start and finish, which
-both roots already observe.
+There is **no hint picker in any app**, central Luna included: the model
+classifies the page itself (see below). There is no title, favicon, failure
+sentence, suggestion, or attempt count on the card either — the live page says
+more than any of them did. `FailedSaveNaming.displayTitle` still feeds the
+carousel's chrome and scrub preview through `FailedSaveCardFactory.displayTitle`,
+so a light head-only metadata read is still worth doing.
 
-**No Archive.** Filing an empty shell away where the user can't act on it is
-worse than nothing, so the card menus on both roots offer only **Share Link** and
-destructive **Delete** — matching what the list row's failed-item menu already
-did (`ReadingListRowMenuFactory`).
+## Retrying: overlay, progress, terminal state
 
-## The rescue hint
+Tapping **Retry with AI** immediately covers the web view with a 40%-opacity black
+overlay carrying an `EclipseProgressBar` — on the tap, not on the first progress
+report, because the coordinator's work starts on a background executor and the
+press has to land visibly. Under the overlay:
 
-Implied by the running app: Reader → `.article`, Downloader → `.media`, Price
-Tracker → `.product` (`URLRescueWiring.defaultHint(for:)`), so those apps show
-one button and no picker. The **central Luna app** handles all three kinds and
-therefore has a real question to ask — it shows a segmented `RescueHint` picker,
-and the button renames itself to match ("Extract as Price Tracker").
+- the **URL bar stays uncovered and live** (the overlay is a subview of the web
+  container only), so share still works;
+- **reload is disabled** — reloading the page under a running extraction would
+  pull the ground out from under it;
+- the AI button stays in place, disabled and dimmed, rather than disappearing.
+  Hiding it would collapse the chin and resize the web view mid-rescue, which
+  reads as the card breaking rather than working.
+
+**Progress is real**, not a timer. `URLRescueEngine.rescue` takes an `onProgress`
+callback and reports a `RescueStage` as it crosses each of its own boundaries
+(`queued → replayingRule → fetching → digesting → thinking → reading → applying →
+finished`); the app shell's engine bridge forwards each one to
+`URLRescueCoordinator.reportProgress`. The stage fractions are deliberately NOT
+evenly spaced — the model call dominates a 90-second budget — and
+`rescueProgress(_:)` interpolates within a stage (ease-out, capped short of the
+next stage's fraction) so a 22-second model call creeps instead of freezing. The
+card watches `.rescueProgressChanged` filtered on its own item id, plus a 0.3s
+ticker to render the interpolation; that notification is separate from
+`.readingListChanged` because progress fires many times per rescue and
+`.readingListChanged` reloads every deck and list.
+
+On completion the card either becomes an ordinary card (the item advanced) or
+returns to the error state — and that state is **terminal**: the AI button is
+replaced by "Sorry, Luna was unable to save this page." and a **Delete** button.
+
+**Terminal is scoped to the app version**, one attempt per shipped build.
+`SaveFailureRecord.aiAttemptVersion` records `AppConfig.appVersion` (short version
+*and* build — a TestFlight bump carries new extraction code too) when a
+user-initiated rescue finishes without recovering the item. While that equals the
+running version the card is terminal; after an update it doesn't match, so the
+item is eligible again, and `URLRescueCoordinator.reopenStaleVersionAttempts()`
+clears its ledger budget at install so the launch sweep retries it automatically.
+`ReadingListIngestor.ingestAllPending` already re-runs ordinary ingestion for
+every `.failed` item on launch, so an update gets **both** paths with no extra
+scheduling. Storing the version rather than a bool is what makes that automatic —
+no migration, no "clear all" pass to remember to run.
+
+Only **user-initiated** rescues spend the attempt (`requestManualRescue`). The
+background sweep must not burn the one thing the card has left to offer. An
+unavailable engine (`canRescue == false`) shows the same terminal chin, since
+there is genuinely nothing to offer.
+
+**No Archive.** Filing an empty shell away where the user can't act on it is worse
+than nothing, so the card menus on both roots offer only **Share Link** and
+destructive **Delete** — matching the list row's failed-item menu
+(`ReadingListRowMenuFactory`).
+
+## The rescue hint: there isn't one
+
+Every app used to imply a hint (Reader → `.article`, Downloader → `.media`, Price
+Tracker → `.product`) and the central Luna app showed a segmented picker. Both are
+gone from the card. `RescueRequest.ContentHint.auto` is now what an **absent** hint
+means, and the card always sends nil: the plan instructions offer every payload
+option and open by telling the model that classifying the page is its job, and the
+prompt states what already failed as a *diagnostic fact* instead of naming a
+content type. See `claudedocs/url-rescue.md`.
+
+`URLRescueWiring.defaultHint(for:)` survives for the surfaces that genuinely know
+the kind — the list row's rescue sheet, the extension hand-off, the price editor's
+"Ask Apple Intelligence", the media card's no-assets retry — and a concrete hint
+still constrains the validator.
 
 ## Why the reason exists at all
 
-`Outcome.failed` used to carry no payload and `markFailed` wrote only the state,
-so no surface could say anything specific. Now:
+The card no longer prints a failure sentence, but the reason still drives the retry
+policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
 
 - **`SaveFailureReason`** (`LunaModels`) — coarse and actionable, one case per
   sentence a reader can do something about: `offline`, `timedOut`,
@@ -87,12 +137,12 @@ so no surface could say anything specific. Now:
   stale transport error; only a page that never came back carries the fetch's own
   reason.
 - **`SaveFailureStore`** (`saveFailures.json`, App Group) — reason, failure count,
-  last failure date, and the recovered title/site name. A **sidecar**, never new
-  `ReadingListItem` fields: an older sibling app decoding and re-encoding the
-  shared `readingList.json` would silently drop unknown keys (the same reasoning
-  as `RescueLedgerStore` and the imageRefs / preloads sidecars). Cleared whenever
-  an item reaches `.ready` or `.needsCaptcha`, so a later failure starts from a
-  clean count.
+  last failure date, the recovered title/site name, and the AI-attempt version. A
+  **sidecar**, never new `ReadingListItem` fields: an older sibling app decoding
+  and re-encoding the shared `readingList.json` would silently drop unknown keys
+  (the same reasoning as `RescueLedgerStore` and the imageRefs / preloads
+  sidecars). Cleared whenever an item reaches `.ready` or `.needsCaptcha`, so a
+  later failure starts from a clean count *and* a fresh AI attempt.
 
 ## Failed saves surface in EVERY app
 
@@ -101,28 +151,33 @@ surface gate never drops it. It was nonetheless only *visible* in the Reader,
 because `rendersAsReader` is true for anything with no platform and no tracker.
 So a Downloader link that failed was stored and invisible.
 
-`ReadingListSectioning.ListFilter.includes` now short-circuits on
-`isFailedSave(_:)` and every filter shows it. The app the user saved the link in
-is where they expect to see it break, and any app can offer the rescue that gives
-it a kind — after which it classifies and settles into its own app. On the
-Downloader root, failed saves occupy the carousel slots after the media cards
-(`failedIndex(forCarouselIndex:)`); a `.failed` platform item is excluded, since
-it kept its kind and has its own download-failure UI.
+`ReadingListSectioning.ListFilter.includes` short-circuits on `isFailedSave(_:)`
+and every filter shows it. The app the user saved the link in is where they expect
+to see it break, and any app can offer the rescue that gives it a kind — after
+which it classifies and settles into its own app. On the Downloader root, failed
+saves occupy the carousel slots after the media cards
+(`failedIndex(forCarouselIndex:)`); a `.failed` platform item is excluded, since it
+kept its kind and has its own download-failure UI (a separate card, untouched by
+this design — see `claudedocs/media-download.md`).
 
-## Open in Browser
+## Cost of a web view per card
 
-`WebPageViewController` (`LunaDesignSystem`) — a plain full-screen `WKWebView`
-with the unlock flow's chrome: **Done** top-left, **Open in Safari** top-right,
-presented in its own navigation controller via `present(url:from:)`. Distinct from
-`InAppBrowser` (an `SFSafariViewController` sheet) on purpose: a real web view
-using the user's own cookie store frequently renders what a background
-`URLSession` fetch could not — a JS-gated page, a bot-blocked front door, a wall
-the user is already through — so seeing the page is often the whole answer to
-"why did this fail".
+The carousel mounts the centered card plus its two peeks, so up to three
+`WKWebView`s exist at once. Each is created **lazily** on `viewWillAppear` and
+loaded once; a rescue-driven rebuild reloads the page *behind* the overlay, where
+it's dimmed anyway. `scrollView.alwaysBounceHorizontal` is off so the web view's
+scrolling doesn't fight the carousel's horizontal paging, `allowsCardTap` is false
+so a stray tap can't page or toggle playback, and `longPressSelectsContent` is true
+over the page so link previews and text selection belong to the web view while the
+card's own Share/Delete menu stays on its chrome.
 
 ## Tests
 
-`LunaTests/FailedSaveTests.swift` — reason classification, the copy contract,
-the naming chain, `<head>` metadata parsing, the sidecar's accumulation rules,
-surface inclusion, and the hint-picker policy. The `.unreadable` reason rule is
-pinned in `ArticleResolverTests`.
+`LunaTests/FailedSaveTests.swift` — the naming chain, `<head>` metadata parsing,
+the sidecar's accumulation rules, surface inclusion, the version-scoped terminal
+state, and the ledger reset. `LunaTests/URLRescueCoordinatorTests.swift` — stage
+progress, its notification, the monotonic fraction table, and which rescues spend
+the version's attempt. `LunaTests/URLRescueEngineTests.swift` — that progress
+always opens `.queued` and closes `.finished`, and never claims a fetch it didn't
+perform. `LunaTests/RescueDirectiveValidatorTests.swift` — the `.auto` payload
+policy. The `.unreadable` reason rule is pinned in `ArticleResolverTests`.

@@ -26,7 +26,6 @@ enum KindWiring {
     static func install() {
         IngestKindProcessors.article = ArticleIngestProcessor()
         IngestorKindHandlers.article = ArticleKindHandler()
-        ListKindSupport.article = ArticleListSupport()
 
         // A completion written before a force-quit never received the normal
         // background callback. Promote it before constructing the Reader UI.

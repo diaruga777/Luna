@@ -36,9 +36,6 @@ enum KindWiring {
         IngestorKindHandlers.article = ArticleKindHandler()
         IngestorKindHandlers.media = MediaKindHandler()
         IngestorKindHandlers.product = ProductKindHandler()
-        ListKindSupport.article = ArticleListSupport()
-        ListKindSupport.media = MediaListSupport()
-        ListKindSupport.product = ProductListSupport()
         PasteboardSuggester.platformPreviewArt = { platform, itemID, urlString in
             await PlatformItemIngestor.shared.pasteboardPreviewArtData(
                 platform: platform, itemID: itemID, urlString: urlString)

@@ -104,12 +104,6 @@
     "Articles you save appear here as cards." : {
 
     },
-    "As %@" : {
-
-    },
-    "Asking Apple Intelligence…" : {
-
-    },
     "Audio" : {
 
     },
@@ -195,9 +189,6 @@
 
     },
     "Couldn't keep the pasted media." : {
-
-    },
-    "Couldn't load this page" : {
 
     },
     "Couldn't prepare this media for sharing." : {
@@ -410,7 +401,7 @@
     "Luna" : {
 
     },
-    "Luna can try harder with Apple Intelligence. Choose what this save should become." : {
+    "Luna can try harder with Apple Intelligence — once per update." : {
 
     },
     "Luna can't save from this app." : {
@@ -659,7 +650,7 @@
     "Requires Screenshot" : {
 
     },
-    "Rescue as %@" : {
+    "Retry with AI" : {
 
     },
     "S" : {
@@ -886,10 +877,7 @@
         }
       }
     },
-    "Try Apple Intelligence" : {
-
-    },
-    "Try with Apple Intelligence" : {
+    "Trying harder with Apple Intelligence…" : {
 
     },
     "Unarchive" : {

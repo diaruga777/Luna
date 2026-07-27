@@ -104,17 +104,8 @@ enum UITestSeeder {
     /// and pins the sectioning clock to the fixture base date.
     static func seed(_ state: UITestState, into store: ReadingListStore) {
         sectioningNow = UITestFixtures.baseDate
-        resetReadingListDefaults()
         let fixture = state.fixture
         store.seedForTesting(items: fixture.items, contents: fixture.contents)
-    }
-
-    /// Resets the persisted reading-list UI prefs (filter segment, collapsed
-    /// sections) so a seeded launch always starts on the All filter with the default
-    /// collapsed set — neither a prior run nor a prior test can carry state in.
-    static func resetReadingListDefaults() {
-        UserDefaults.standard.removeObject(forKey: ReadingListViewController.filterDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: ReadingListViewController.collapsedDefaultsKey)
     }
 
     /// The value following `key` in the launch arguments (`-key value`), or nil.

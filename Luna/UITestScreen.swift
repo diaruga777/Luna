@@ -88,7 +88,7 @@ enum UITestScreenBuilder {
                 return UINavigationController(
                     rootViewController: PriceTrackingViewController(itemID: tracker.id))
             }
-            return UINavigationController(rootViewController: ReadingListViewController())
+            return KindWiring.makeRootViewController()
 
         case .readerScroll:
             return UINavigationController(rootViewController: reader(forceMode: .scroll))
@@ -101,7 +101,7 @@ enum UITestScreenBuilder {
             guard let item = store.items().first(where: {
                 $0.state == .ready && $0.canHaveOriginalArchive
             }), let content = store.content(for: item) else {
-                return UINavigationController(rootViewController: ReadingListViewController())
+                return KindWiring.makeRootViewController()
             }
             let reader = ReaderViewController(
                 item: item, content: content, forceMode: .original,
@@ -136,7 +136,7 @@ enum UITestScreenBuilder {
             // The share/action extension article reader, hosted in-app (the real
             // share sheet can't be driven on a simulator). URL is provably valid.
             guard let url = URL(string: "https://example.com/article") else {
-                return UINavigationController(rootViewController: ReadingListViewController())
+                return KindWiring.makeRootViewController()
             }
             let reader = ShareReaderViewController(url: url, mode: .reader, onDone: {})
             return UINavigationController(rootViewController: reader)
@@ -152,7 +152,7 @@ enum UITestScreenBuilder {
             // screen whose layout is worth checking (it mirrors the in-app failed
             // card, so the two must be comparable side by side).
             guard let url = URL(string: "https://example.com/broken") else {
-                return UINavigationController(rootViewController: ReadingListViewController())
+                return KindWiring.makeRootViewController()
             }
             let card = RescueFailureViewController(
                 url: url, rescueURL: URL(string: "luna://rescue"),

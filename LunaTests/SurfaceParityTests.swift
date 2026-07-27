@@ -219,7 +219,7 @@ final class SurfaceParityTests: XCTestCase {
     }
 
     /// The main-app surface's presentation intent for an `Outcome` (mirrors
-    /// `IngestorOutcomePresenter` + `ReadingListViewController.open`).
+    /// `IngestorOutcomePresenter` + each app card deck's tap routing).
     private func mainAppIntent(for outcome: Outcome) -> SurfaceIntent {
         switch outcome {
         case .article: return .reader

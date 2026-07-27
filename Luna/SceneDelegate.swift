@@ -203,9 +203,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
            let root = KindWiring.uiTestRootViewController(named: name) {
             return root
         }
-        if UITestSeeder.isActive {
-            return UINavigationController(rootViewController: ReadingListViewController())
-        }
+        // A bare `-uiTestState` seed used to force the sectioned table list as the
+        // root. That list had no other caller left, so it was deleted — a seeded
+        // launch now falls through to the app's REAL root (its card deck), which is
+        // what a screenshot run wants anyway.
         #endif
         return nil
     }

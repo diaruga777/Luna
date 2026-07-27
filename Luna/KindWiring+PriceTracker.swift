@@ -23,7 +23,6 @@ enum KindWiring {
     static func install() {
         IngestKindProcessors.product = ProductIngestProcessor()
         IngestorKindHandlers.product = ProductKindHandler()
-        ListKindSupport.product = ProductListSupport()
         // No price-graph email snapshot: Price Tracker shares a tracker as its
         // product link, never as a Luna email (see `AppSurface.sharesByEmail`).
 

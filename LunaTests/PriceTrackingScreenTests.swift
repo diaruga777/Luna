@@ -97,15 +97,15 @@ final class PriceTrackingScreenTests: XCTestCase {
 
     // MARK: - Exit (Back / Read instead)
 
-    /// Existing mode shows a Back chevron that pops back to the reading list, and NO
+    /// Existing mode shows a Back chevron that pops back to the pushing root, and NO
     /// "Read instead" button (just viewing a saved tracker).
     func testExistingModeBackPopsAndNoReadInstead() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
-        let list = ReadingListViewController()
-        let nav = UINavigationController(rootViewController: list)
+        let root = UIViewController()   // stands in for whatever pushed the editor
+        let nav = UINavigationController(rootViewController: root)
         let window = UITestSupport.host(nav)
         let editor = PriceTrackingViewController(itemID: tracker.id)
         nav.pushViewController(editor, animated: false)
@@ -115,7 +115,7 @@ final class PriceTrackingScreenTests: XCTestCase {
         // exercise the same back action seam by its selector.
         editor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        XCTAssertTrue(nav.topViewController === list, "Back should pop back to the reading list")
+        XCTAssertTrue(nav.topViewController === root, "Back should pop back to the pushing root")
         XCTAssertNotNil(ReadingListStore.shared.item(withID: tracker.id),
                         "Back must not delete the tracker")
         _ = window
@@ -123,14 +123,14 @@ final class PriceTrackingScreenTests: XCTestCase {
 
     /// The price editor uses a custom Back item, which otherwise disables UIKit's
     /// stock interactive-pop recognizer. A left-edge swipe must still return a
-    /// tracker opened from the root reading list to that root controller.
+    /// tracker opened from a root screen back to that root controller.
     func testExistingModeEnablesInteractivePopBackToReadingList() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
-        let list = ReadingListViewController()
-        let nav = UINavigationController(rootViewController: list)
+        let root = UIViewController()   // stands in for whatever pushed the editor
+        let nav = UINavigationController(rootViewController: root)
         let window = UITestSupport.host(nav)
         let editor = PriceTrackingViewController(itemID: tracker.id)
         nav.pushViewController(editor, animated: false)
@@ -153,8 +153,8 @@ final class PriceTrackingScreenTests: XCTestCase {
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
-        let list = ReadingListViewController()
-        let nav = UINavigationController(rootViewController: list)
+        let root = UIViewController()   // stands in for whatever pushed the editor
+        let nav = UINavigationController(rootViewController: root)
         let window = UITestSupport.host(nav)
         let editor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
         nav.pushViewController(editor, animated: false)
@@ -165,10 +165,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         // The pop is an animated `popViewController`; under full-suite load it can need
         // more than one run-loop turn to settle, so poll (bounded) instead of a fixed wait.
         let popDeadline = Date().addingTimeInterval(2.0)
-        while nav.topViewController !== list && Date() < popDeadline {
+        while nav.topViewController !== root && Date() < popDeadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
-        XCTAssertTrue(nav.topViewController === list, "Read instead should pop back to the reading list")
+        XCTAssertTrue(nav.topViewController === root, "Read instead should pop back to the pushing root")
         XCTAssertNil(ReadingListStore.shared.item(withID: tracker.id),
                      "Read instead (creation) should drop the whole tracker save")
         _ = window
@@ -188,8 +188,8 @@ final class PriceTrackingScreenTests: XCTestCase {
             urlString: addedURL, lastPrice: 10, currency: tracker.initialCurrency, lastRefreshed: Date()))
         ReadingListStore.shared.updatePriceTracker(tracker, for: item.id)
 
-        let list = ReadingListViewController()
-        let nav = UINavigationController(rootViewController: list)
+        let root = UIViewController()   // stands in for whatever pushed the editor
+        let nav = UINavigationController(rootViewController: root)
         let window = UITestSupport.host(nav)
         let editor = PriceTrackingViewController(
             mode: .merge(itemID: item.id, addedStoreURLString: addedURL, host: .inApp))
@@ -218,18 +218,18 @@ final class PriceTrackingScreenTests: XCTestCase {
             XCTFail("no price tracker seeded"); return
         }
         // In-app: left control pops the nav stack.
-        let list = ReadingListViewController()
-        let nav = UINavigationController(rootViewController: list)
+        let root = UIViewController()   // stands in for whatever pushed the editor
+        let nav = UINavigationController(rootViewController: root)
         let window = UITestSupport.host(nav)
         let inAppEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
         nav.pushViewController(inAppEditor, animated: false)
         inAppEditor.loadViewIfNeeded()
         inAppEditor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
         let popDeadline = Date().addingTimeInterval(2.0)
-        while nav.topViewController !== list && Date() < popDeadline {
+        while nav.topViewController !== root && Date() < popDeadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
-        XCTAssertTrue(nav.topViewController === list, "in-app Back pops to the reading list")
+        XCTAssertTrue(nav.topViewController === root, "in-app Back pops to the pushing root")
 
         // Extension host: left control hands off to the `onDone` completion.
         let extEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
@@ -249,10 +249,15 @@ final class PriceTrackingScreenTests: XCTestCase {
         }) else {
             XCTFail("no unviewed-alerting tracker seeded"); return
         }
-        let list = ReadingListViewController()
-        let nav = UINavigationController(rootViewController: list)
+        // The behavior moved with the surface: the sectioned list's row tap is gone,
+        // and the central app's deck routes non-article cards through
+        // `NonArticleCardOpening` (the Price Tracker app's deck does the same in
+        // `PriceTrackerCardsViewController`). Drive the live seam.
+        NonArticleCardOpening.install()
+        let root = UIViewController()
+        let nav = UINavigationController(rootViewController: root)
         let window = UITestSupport.host(nav)
-        list.open(alerting, presenter: list)
+        ArticleCardsViewController.nonArticleOpener?(alerting, root)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         let refreshed = ReadingListStore.shared.item(withID: alerting.id)?.priceTracker
         XCTAssertEqual(refreshed?.isAlerting, true, "still alerting after viewing")

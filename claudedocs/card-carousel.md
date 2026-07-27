@@ -239,7 +239,15 @@ The Reader app's root (`Luna/Reader/ArticleCardsViewController.swift`) replaces
 `ReadingListViewController` for `.reader` only (Price Tracker kept the list at the time). **Since superseded:** every app roots on a deck and that list has been deleted.
 Differences from the Downloader, via `CardCarouselStyle`:
 
-- `fillsVertically` (aspect ignored — cards take all height), `edgeGap` 10
+- `cardFit = .aspectFromBottom` (the card is exactly 9:16 — the
+  Shorts/Reels/TikTok portrait shape the media cards already use — at the full
+  width the peeks leave, which is TALLER than the room between the header row
+  and the scrub strip: the card's bottom edge stays on the strip and the extra
+  height is added at the top, growing up through `cardTopOverflow` points of
+  header-row clearance to the safe-area top and no further. On a 402×874pt
+  screen that's a 354×629 card whose top sits at y≈95, so the header row's
+  buttons float over the card's (fade-masked) top edge. A container too wide for
+  the allowance — iPad — keeps the aspect exact by narrowing instead), `edgeGap` 10
   (card closer to the screen edges), `pagesOnInCardSwipes` (horizontal swipes
   inside the card page — readers have no timeline to scrub; the page pan
   recognizes simultaneously with the reader's own gestures, gated to

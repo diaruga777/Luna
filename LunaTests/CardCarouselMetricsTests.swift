@@ -91,6 +91,75 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertEqual(progressFrame.maxX, cardFrame.maxX - 18, accuracy: 0.01)
     }
 
+    func testFillIgnoresAspectAndTakesEveryPoint() {
+        let metrics = CardCarouselMetrics.resolve(
+            containerSize: CGSize(width: 400, height: 600),
+            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
+        XCTAssertEqual(metrics.cardSize.width, 400 - 2 * (14 + 10), accuracy: 0.01)
+        XCTAssertEqual(metrics.cardSize.height, 600 - 24, accuracy: 0.01)
+        XCTAssertEqual(metrics.centerY(), 300, accuracy: 0.01)
+    }
+
+    func testAspectFromBottomAddsItsExtraHeightAtTheTop() {
+        // The article deck's container: too SHORT for a 9:16 card at its width,
+        // so the card overflows the container's top — and only its top. Compared
+        // against `.fill`, which is what the same container used to yield.
+        let container = CGSize(width: 402, height: 626)
+        let filled = CardCarouselMetrics.resolve(
+            containerSize: container,
+            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
+        let metrics = CardCarouselMetrics.resolve(
+            containerSize: container,
+            peek: 14, edgeGap: 10, verticalPadding: 12,
+            fit: .aspectFromBottom, topOverflow: 48)
+
+        // Same width; exactly 9:16, so taller than the container's usable height.
+        XCTAssertEqual(metrics.cardSize.width, filled.cardSize.width, accuracy: 0.01)
+        XCTAssertEqual(
+            metrics.cardSize.width / metrics.cardSize.height,
+            CardCarouselMetrics.cardAspectRatio,
+            accuracy: 0.0001)
+        XCTAssertGreaterThan(metrics.cardSize.height, filled.cardSize.height)
+
+        // Bottom edge unmoved; the whole gain is above the old top edge.
+        let frame = metrics.centeredCardFrame()
+        let filledFrame = filled.centeredCardFrame()
+        XCTAssertEqual(frame.maxY, filledFrame.maxY, accuracy: 0.01)
+        XCTAssertEqual(
+            filledFrame.minY - frame.minY,
+            metrics.cardSize.height - filled.cardSize.height,
+            accuracy: 0.01)
+        XCTAssertLessThan(frame.minY, 0)   // above the container's own top
+    }
+
+    func testAspectFromBottomNeverOverflowsMoreThanAllowed() {
+        // A container far too wide for its height (iPad-ish): the card can't have
+        // the full width at 9:16 within the overflow allowance, so it narrows —
+        // the aspect stays exact and the overflow stops at the allowance.
+        let metrics = CardCarouselMetrics.resolve(
+            containerSize: CGSize(width: 820, height: 900),
+            peek: 14, edgeGap: 10, verticalPadding: 12,
+            fit: .aspectFromBottom, topOverflow: 48)
+        XCTAssertEqual(
+            metrics.cardSize.width / metrics.cardSize.height,
+            CardCarouselMetrics.cardAspectRatio,
+            accuracy: 0.0001)
+        XCTAssertLessThan(metrics.cardSize.width, 820 - 2 * (14 + 10))
+        XCTAssertEqual(metrics.cardSize.height, 900 - 24 + 48, accuracy: 0.01)
+        // Clamped: the card's top stops one `verticalPadding` inside the
+        // allowance — 36pt above the container, not the full 48.
+        XCTAssertEqual(metrics.centeredCardFrame().minY, -(48 - 12), accuracy: 0.01)
+    }
+
+    func testAspectFromBottomWithNoAllowanceStaysInsideTheContainer() {
+        let metrics = CardCarouselMetrics.resolve(
+            containerSize: CGSize(width: 402, height: 626),
+            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .aspectFromBottom)
+        let frame = metrics.centeredCardFrame()
+        XCTAssertEqual(frame.minY, 12, accuracy: 0.01)
+        XCTAssertEqual(frame.maxY, 614, accuracy: 0.01)
+    }
+
     func testTinyContainerDegradesGracefully() {
         let metrics = CardCarouselMetrics.resolve(containerSize: CGSize(width: 10, height: 10))
         XCTAssertGreaterThan(metrics.cardSize.width, 0)

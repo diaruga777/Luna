@@ -16,18 +16,45 @@ public struct CardCarouselMetrics: Equatable {
     /// Width : height of a card. Cards are portrait ("16:9 taller than wide").
     public static let cardAspectRatio: CGFloat = 9.0 / 16.0
 
+    /// How a card's size comes out of the room the container leaves it.
+    public enum CardFit: Equatable {
+        /// The 9:16 card, as large as fits, centered in the container.
+        case aspectCentered
+        /// All available width AND height — the aspect is ignored, for content
+        /// that wants every vertical point (the Price Tracker's graph card).
+        case fill
+        /// All available width at the exact 9:16 aspect, anchored to the
+        /// container's bottom padding. The card comes out TALLER than the
+        /// container's usable height, so the extra height extends ABOVE the
+        /// container's top — through at most `topOverflow` points of host chrome
+        /// floating there, never past it. A container too wide for that
+        /// allowance (iPad) keeps the aspect exact by narrowing instead.
+        case aspectFromBottom
+    }
+
     public var containerSize: CGSize
     public var cardSize: CGSize
     /// Points of a neighboring card visibly inside the container edge.
     public var peek: CGFloat
     /// Resting scale of the non-centered (peeking) cards.
     public var sideScale: CGFloat
+    /// Vertical center shared by every slot. The container's midpoint for the
+    /// centered fits; below it for `.aspectFromBottom`, whose card overflows the
+    /// container's top.
+    public var cardCenterY: CGFloat
 
-    public init(containerSize: CGSize, cardSize: CGSize, peek: CGFloat, sideScale: CGFloat) {
+    public init(
+        containerSize: CGSize,
+        cardSize: CGSize,
+        peek: CGFloat,
+        sideScale: CGFloat,
+        cardCenterY: CGFloat? = nil
+    ) {
         self.containerSize = containerSize
         self.cardSize = cardSize
         self.peek = peek
         self.sideScale = sideScale
+        self.cardCenterY = cardCenterY ?? containerSize.height / 2
     }
 
     /// Fits a card into `containerSize`, leaving at least `peek + edgeGap`
@@ -36,37 +63,55 @@ public struct CardCarouselMetrics: Equatable {
     /// `peek` points inside the screen edge regardless), giving the insets
     /// beside the card enough width for paging swipes.
     ///
-    /// By default the card keeps the 9:16 portrait aspect. With
-    /// `fillsVertically` the aspect is ignored: the card takes all available
-    /// height AND width (Reader cards, where the embedded article wants every
-    /// vertical point). Small containers degrade gracefully (never a
-    /// negative/zero size).
+    /// `fit` decides how the card fills that room — see `CardFit`. Small
+    /// containers degrade gracefully (never a negative/zero size).
+    ///
+    /// `topOverflow` applies to `.aspectFromBottom` only: how much extra height
+    /// above the container's usable height the card may claim for its exact
+    /// aspect. Since that height is spent from the card's own bottom padding
+    /// upward, a clamped card's top edge stops `verticalPadding` short of the
+    /// allowance rather than flush against it.
     public static func resolve(
         containerSize: CGSize,
         peek: CGFloat = 14,
         edgeGap: CGFloat = 30,
         sideScale: CGFloat = 0.92,
         verticalPadding: CGFloat = 12,
-        fillsVertically: Bool = false
+        fit: CardFit = .aspectCentered,
+        topOverflow: CGFloat = 0
     ) -> CardCarouselMetrics {
         let availableHeight = max(40, containerSize.height - verticalPadding * 2)
         let availableWidth = max(40, containerSize.width - (peek + edgeGap) * 2)
         var height = availableHeight
         var width: CGFloat
-        if fillsVertically {
+        var centerY = containerSize.height / 2
+        switch fit {
+        case .fill:
             width = availableWidth
-        } else {
+        case .aspectCentered:
             width = height * cardAspectRatio
             if width > availableWidth {
                 width = availableWidth
                 height = width / cardAspectRatio
             }
+        case .aspectFromBottom:
+            width = availableWidth
+            height = width / cardAspectRatio
+            let maxHeight = availableHeight + max(0, topOverflow)
+            if height > maxHeight {
+                height = maxHeight
+                width = height * cardAspectRatio
+            }
+            // The bottom edge stays exactly where a `.fill` card's was: every
+            // extra point of height is added at the TOP.
+            centerY = containerSize.height - verticalPadding - height / 2
         }
         return CardCarouselMetrics(
             containerSize: containerSize,
             cardSize: CGSize(width: width, height: height),
             peek: peek,
-            sideScale: sideScale)
+            sideScale: sideScale,
+            cardCenterY: centerY)
     }
 
     /// Resting scale for the slot `offset` cards away from center (0 = centered).
@@ -90,7 +135,7 @@ public struct CardCarouselMetrics: Equatable {
 
     /// Vertical center shared by every slot.
     public func centerY() -> CGFloat {
-        containerSize.height / 2
+        cardCenterY
     }
 
     /// The centered card's frame at rest (scale 1).

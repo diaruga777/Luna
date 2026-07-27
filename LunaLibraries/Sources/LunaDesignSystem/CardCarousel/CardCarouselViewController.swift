@@ -135,8 +135,13 @@ public struct CardCarouselStyle {
     public var edgeGap: CGFloat = 30
     public var sideScale: CGFloat = 0.92
     public var verticalPadding: CGFloat = 12
-    /// Ignore the 9:16 aspect and take all available height and width.
-    public var fillsVertically = false
+    /// How the card's size comes out of the room between the host's top inset
+    /// and the scrub strip.
+    public var cardFit: CardCarouselMetrics.CardFit = .aspectCentered
+    /// `.aspectFromBottom` only: points of floating host chrome above the card
+    /// area that the card may grow up into for its exact aspect. Hosts pass
+    /// their own top-inset clearance, which keeps the card below the safe area.
+    public var cardTopOverflow: CGFloat = 0
     /// Horizontal swipes INSIDE the centered card page too (for content that
     /// doesn't scrub, e.g. embedded readers). Recognized simultaneously with
     /// the content's own gestures, gated to strongly-horizontal drags.
@@ -404,7 +409,8 @@ public final class CardCarouselViewController: UIViewController {
                 edgeGap: style.edgeGap,
                 sideScale: style.sideScale,
                 verticalPadding: style.verticalPadding,
-                fillsVertically: style.fillsVertically)
+                fit: style.cardFit,
+                topOverflow: style.cardTopOverflow)
         }
         // Render the eclipse corona for this exact card geometry now, in the
         // background, rather than on whichever tap first starts a transition.

@@ -38,7 +38,7 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
 
         var style = CardCarouselStyle()
         style.edgeGap = 10
-        style.fillsVertically = true
+        style.cardFit = .fill
         style.pagesOnInCardSwipes = true
         style.pageSwipeMovementMultiplier = 1.5
         style.scrubberStyle = .miniCards

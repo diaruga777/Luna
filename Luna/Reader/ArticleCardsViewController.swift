@@ -170,7 +170,13 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
         var style = CardCarouselStyle()
         style.edgeGap = 10
-        style.fillsVertically = true
+        // Cards are phone-shaped: exactly the 9:16 portrait aspect, at the full
+        // width the peeks leave. That's taller than the room between the header
+        // row and the scrub strip, so the extra height is added at the TOP — the
+        // card's bottom edge stays put and its top slides up under the floating
+        // header row, never past the safe area (see `carouselTopInset`).
+        style.cardFit = .aspectFromBottom
+        style.cardTopOverflow = Self.carouselTopInset
         style.pagesOnInCardSwipes = true
         style.pageSwipeMovementMultiplier = 1.5
         style.scrubberStyle = .miniCards
@@ -319,22 +325,28 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
-        // Cards rest fully below the header row — the card frames only the
-        // reader content; the buttons and controls float over the screen background.
-        applyCarouselTopInset(4 + Self.topChromeClearance)
+        // The card AREA rests below the header row; the phone-shaped card then
+        // grows back up into that clearance for its exact aspect (`cardFit`
+        // above), so the row's buttons float over the card's faded top edge
+        // rather than over the screen background.
+        applyCarouselTopInset(Self.carouselTopInset)
         updateExternalReaderInsets()
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset(4 + Self.topChromeClearance)
+        applyCarouselTopInset(Self.carouselTopInset)
         updateExternalReaderInsets()
     }
 
     /// The height of the screen-level chrome row: it spans safeTop+4 …
-    /// safeTop+48; the carousel's top inset plus its own 12pt vertical padding
-    /// then rest the card top 12pt below the row.
+    /// safeTop+48.
     private static let topChromeClearance: CGFloat = 44
+
+    /// The carousel's own top inset: the header row plus the 4pt gap above it.
+    /// Doubles as the card's upward overflow allowance — growing by exactly this
+    /// much puts the card's top edge at the safe-area top, never above it.
+    private static var carouselTopInset: CGFloat { topChromeClearance + 4 }
 
     /// The depth of the dissolve at the card's top and bottom edges: scrolled
     /// content fades out over this run instead of hitting a hard clip. The

@@ -34,7 +34,7 @@ enum FailedSaveCardFactory {
         let card = FailedSaveCardViewController(
             model: makeModel(for: item),
             actions: makeActions(for: item, host: host, onChanged: onChanged),
-            progressProvider: { URLRescueCoordinator.shared.rescueProgress(item.id) })
+            stateProvider: { makeModel(for: item, surface: surface) })
         // The page has no title of its own (that's WHY it failed), and the deck's
         // chrome above the card wants one. A cheap head-only read gets it, cached
         // into the failure sidecar so a cold launch shows the same words.

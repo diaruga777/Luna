@@ -98,14 +98,29 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
     private var model: FailedSaveCardModel
     private let actions: FailedSaveCardActions
-    /// The live rescue fraction for this item, or nil when nothing is running.
-    /// Injected because the coordinator that knows it lives a tier above this one.
-    private let progressProvider: () -> Double?
+    /// The item's CURRENT state, recomputed on demand. Injected because the
+    /// rescue coordinator and the failure sidecar both live a tier above this one.
+    ///
+    /// The card polls this rather than waiting to be rebuilt: neither carousel
+    /// host rebuilds a card whose item didn't change identity or state, and a
+    /// rescue that ends still-failed changes neither — so a card that relied on
+    /// its host would keep the overlay up forever.
+    private let stateProvider: () -> FailedSaveCardModel?
 
     private var progressObserver: NSObjectProtocol?
-    /// The rescue reports ~7 stages over up to 90 seconds; the provider
-    /// interpolates between them, so the bar needs its own tick to show that.
+    /// The rescue reports ~7 stages over up to 90 seconds and the coordinator
+    /// interpolates between them, so the bar needs its own tick to show that —
+    /// and it's what notices the attempt ending.
     private var progressTicker: Timer?
+    /// Set on the tap that starts a rescue and cleared once the coordinator
+    /// confirms the attempt in flight. Between those two moments the provider
+    /// still reports "not rescuing" (the coordinator starts on a task hop), and
+    /// without this latch the next tick would tear the overlay straight back down.
+    private var pendingRescueStart: Date?
+    private var sawRescueInFlight = false
+    /// How long the latch waits for confirmation before concluding the rescue
+    /// never started (an unavailable engine declines synchronously and silently).
+    private static let rescueStartGrace: TimeInterval = 6
 
     /// Created lazily: a carousel mounts the centered card plus its two peeks, and
     /// a `WKWebView` per mounted card is the expensive part of this design.
@@ -132,11 +147,11 @@ public final class FailedSaveCardViewController: CardContentViewController {
     public init(
         model: FailedSaveCardModel,
         actions: FailedSaveCardActions,
-        progressProvider: @escaping () -> Double? = { nil }
+        stateProvider: @escaping () -> FailedSaveCardModel? = { nil }
     ) {
         self.model = model
         self.actions = actions
-        self.progressProvider = progressProvider
+        self.stateProvider = stateProvider
         super.init()
     }
 
@@ -379,6 +394,8 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// see the press land immediately.
     private func beginRescue() {
         guard !model.isRescuing else { return }
+        pendingRescueStart = Date()
+        sawRescueInFlight = false
         model.isRescuing = true
         model.progress = RescueStage.queued.fraction
         progressBar.setProgress(Float(model.progress), animated: false)
@@ -396,24 +413,40 @@ public final class FailedSaveCardViewController: CardContentViewController {
             guard let self,
                   note.userInfo?[RescueProgressKey.itemID] as? UUID == self.model.itemID
             else { return }
-            self.refreshProgress()
+            self.refreshState()
         }
     }
 
-    /// Pulls the current fraction. A nil fraction means the attempt is over —
-    /// the coordinator posts `.readingListChanged` at the same moment, so the
-    /// host is already rebuilding this card into whatever the item became.
-    private func refreshProgress() {
-        guard let fraction = progressProvider() else { return }
-        model.progress = fraction
-        model.isRescuing = true
+    /// Re-reads the item's state and re-renders. This is how the overlay comes
+    /// DOWN as well as how the bar advances: when the attempt ends the provider
+    /// stops reporting a rescue, and the same read brings back whether the
+    /// version's AI attempt is now spent — which is the terminal chin.
+    private func refreshState() {
+        guard var latest = stateProvider() else { return }
+        if latest.isRescuing {
+            sawRescueInFlight = true
+            pendingRescueStart = nil
+        } else if let started = pendingRescueStart {
+            let gaveUp = sawRescueInFlight
+                || Date().timeIntervalSince(started) > Self.rescueStartGrace
+            if gaveUp {
+                pendingRescueStart = nil
+                sawRescueInFlight = false
+            } else {
+                // Still waiting for the coordinator to pick the attempt up; hold
+                // the overlay the tap put there rather than flickering it away.
+                latest.isRescuing = true
+                latest.progress = max(model.progress, RescueStage.queued.fraction)
+            }
+        }
+        model = latest
         apply(model)
     }
 
     private func updateProgressTicker(rescuing: Bool) {
         if rescuing, progressTicker == nil {
             let ticker = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) {
-                [weak self] _ in self?.refreshProgress()
+                [weak self] _ in self?.refreshState()
             }
             ticker.tolerance = 0.1
             progressTicker = ticker

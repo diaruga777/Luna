@@ -111,12 +111,17 @@ public class CardSurfaceView: UIView {
             cornerRadius: Self.cornerRadius - 0.5).cgPath
 
         let glowInset = Self.glowLineWidth / 2
-        let glowPath = UIBezierPath(
+        glowLayer.frame = bounds
+        glowLayer.path = UIBezierPath(
             roundedRect: bounds.insetBy(dx: glowInset, dy: glowInset),
             cornerRadius: max(0, Self.cornerRadius - glowInset)).cgPath
-        glowLayer.frame = bounds
-        glowLayer.path = glowPath
-        glowLayer.shadowPath = glowPath
+        // Deliberately NO `shadowPath`. A shadowPath is FILLED, so handing it this
+        // closed rounded rect casts a card-sized blob of tint — invisible over the
+        // near-black content this started with, but a solid wash over a card whose
+        // content is a white web page. With shadowPath nil, CALayer derives the
+        // shadow from what the layer actually draws (the stroke), so the bloom
+        // hugs the rim, which is the whole intent.
+        glowLayer.shadowPath = nil
     }
 
     /// Installs a content view controller's view, filling the card.

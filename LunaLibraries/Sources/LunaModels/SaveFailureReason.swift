@@ -59,6 +59,12 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     case network(String)
     /// The page loaded but carried no article text and not even a usable title.
     case notReadable
+    /// The page isn't a piece of content at all — a search-results page, a site
+    /// homepage, or a section index. Distinct from `.notReadable`: nothing was
+    /// missed and nothing can be recovered, because there is no single item on
+    /// the page to save. The one reason that must never reach the archive tier
+    /// or the LLM rescue (see `ListingPage`).
+    case notContent
     /// The response wasn't decodable as text/HTML (a binary body, or an
     /// encoding we can't read).
     case notHTML
@@ -96,6 +102,8 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return detail
         case .notReadable:
             return L10n.string("Nothing readable was found on the page")
+        case .notContent:
+            return L10n.string("There's nothing on this page to save")
         case .notHTML:
             return L10n.string("The link isn't a readable web page")
         case .tooLarge:
@@ -137,6 +145,8 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             }
         case .notReadable, .notHTML:
             return L10n.string("Apple Intelligence can sometimes pull an article out anyway.")
+        case .notContent:
+            return L10n.string("Search results and index pages hold no single item — open one from the page and save that instead.")
         case .subscribeRedirect:
             return L10n.string("Open it in the browser below to read it there.")
         case .tooLarge, .unsupportedDocument, .noMediaFound, .couldNotSave, .unknown:
@@ -152,9 +162,18 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return true
         case let .httpStatus(code):
             return code == 429 || (500...599).contains(code)
-        case .notReadable, .notHTML, .tooLarge, .unsupportedDocument, .noMediaFound,
-             .subscribeRedirect, .unknown:
+        case .notReadable, .notContent, .notHTML, .tooLarge, .unsupportedDocument,
+             .noMediaFound, .subscribeRedirect, .unknown:
             return false
         }
+    }
+
+    /// Whether the LLM rescue has anything to work with. False for `.notContent`
+    /// alone: every other failure is "we couldn't GET the article", which a model
+    /// reading the page can sometimes fix, whereas a search-results or index page
+    /// has no article to find and a rescue would spend the version's single
+    /// attempt proving it (`claudedocs/failed-saves.md`).
+    public var isWorthRescuing: Bool {
+        self != .notContent
     }
 }

@@ -120,7 +120,11 @@ public final class ReadingListIngestor {
         // no-ops unless it's still `.failed` and rescue is eligible — so a
         // surface-dropped or already-existing item never triggers one. The rescue
         // engine re-enters the RAW pipeline (not this method), so it can't recurse.
-        if case .failed = result.outcome {
+        // `.notContent` is the one failure a rescue cannot help with — there is no
+        // article on a search-results or index page for the model to find, and the
+        // attempt is rationed per app version (`claudedocs/failed-saves.md`).
+        if case let .failed(reason) = result.outcome,
+           reason?.isWorthRescuing ?? true {
             let interactive = allowsInteractivePrompt && isInteractivePromptSource(item.effectiveCaptureSource)
             Self.rescueTrigger?(item.id, result.url, item.effectiveCaptureSource, interactive)
         }

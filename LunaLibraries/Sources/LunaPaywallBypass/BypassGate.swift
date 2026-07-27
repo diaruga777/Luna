@@ -67,6 +67,10 @@ public enum BypassGate {
         /// A short, non-article page with no paywall evidence (a JS shell / landing
         /// page that isn't actually walled).
         case notPaywalled
+        /// A search-results / index / front page (`ListingPage`) — there is no
+        /// single article behind it, so no strategy could unlock one and the
+        /// archive.today CAPTCHA flow must never be offered for it.
+        case nonContentPage
     }
 
     /// Whether a bypass may be attempted for `url`, given the direct page's `html`
@@ -79,6 +83,7 @@ public enum BypassGate {
     /// 2. Product page → block (routed to price tracking), except that a
     ///    deterministic news-host classification is authoritative over commerce
     ///    furniture embedded in the publisher page.
+    /// 2b. A search-results URL → block (nothing to unlock).
     /// 3. A readable, non-paywalled article body → block (already have the article).
     /// 4. A machine-readable lock declaration → attempt.
     /// 5. A gate marker in the page text → attempt.
@@ -111,6 +116,21 @@ public enum BypassGate {
         if heuristicsMayDecideProduct, let html,
            ProductPageDetector().detect(urlString: url.absoluteString, html: html) != nil {
             return .block(.productPage)
+        }
+
+        // (2b) A search-results URL has no single article behind it, so every
+        // strategy below is pointless — and the last one is archive.today, which
+        // would put a CAPTCHA in front of a Google search page.
+        //
+        // Deliberately the URL-ONLY half of `ListingPage`: the HTML listing shapes
+        // (link density, repeated `<article>`s) describe a metered article whose
+        // body has been cut back to headline links just as well as a real index, so
+        // consulting them HERE would disable the unlock the Reader exists for. They
+        // are applied one level up, in `IngestPipeline`, where a locked page is
+        // exempt. Nothing is lost at the archive reader's own entry point either:
+        // it builds its plan with `directHTML: nil`, so only this half could fire.
+        if ListingPage.isSearchResultsURL(url) {
+            return .block(.nonContentPage)
         }
 
         // (3) A fully-readable, non-paywalled article needs no bypass. Judged by the

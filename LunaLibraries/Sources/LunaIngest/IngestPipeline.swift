@@ -260,6 +260,14 @@ public enum IngestPipeline {
         productProcessor: ProductIngestProcessing?,
         render: ((URL) async -> String?)?
     ) async -> Outcome {
+        // (2c) A search-results URL is decided BEFORE the fetch: there is no single
+        // item on it for any kind to own, so a direct share fails immediately
+        // instead of spending a round-trip (and, for a shop host, a price scrape)
+        // discovering it. `forceArticle` is the user overriding us on purpose.
+        if !input.forceArticle, isMultiItemListingURL(url, classifiedKind: classifiedKind) {
+            return .failed(.notContent)
+        }
+
         // Fetch the direct HTML once (reusing the surface's prefetch) — shared by
         // product detection and article resolution so we never double-fetch.
         let directHTML: String?
@@ -305,6 +313,25 @@ public enum IngestPipeline {
             // an article processor then reports the article kind unsupported).
         }
 
+        // (3a½) An index / front / listing page has no single article on it. The
+        // Safari extension has always applied this veto before offering its pill
+        // (`content.js`'s `looksLikeNonArticleIndex`); without the Swift twin, an
+        // index that happened to extract past the readable threshold became a real
+        // `.article`, and one that didn't parked for the archive reader — which is
+        // why pages Safari itself declined to offer filled the recents tray.
+        //
+        // A page showing paywall evidence is EXEMPT. A metered body cut back to
+        // headline links is genuinely link-dense, and a hard-paywall host serves a
+        // stub with nothing but navigation on it; vetoing those would disable the
+        // unlock the Reader exists for. That is the whole difference between "we
+        // can't read this yet" and "there is nothing here to read".
+        if !input.forceArticle, !input.trustsPrefetchedHTML,
+           !ArticleFetcher.isHardPaywallHost(url),
+           !(directHTML.map(declaresPaywall) ?? false),
+           ListingPage.isNonContentPage(url: url, html: directHTML) {
+            return .failed(.notContent)
+        }
+
         // (3b) Resolve the article: direct fetch (reusing `directHTML`), then the
         // silent bypass strategies the gate allows — article-kind processing,
         // present only in article-handling apps.
@@ -312,5 +339,33 @@ public enum IngestPipeline {
         return await articleProcessor.process(
             url: url, directHTML: directHTML,
             trustsPrefetchedHTML: input.trustsPrefetchedHTML, fetcher: fetcher)
+    }
+
+    /// A URL that names a set of items rather than one — a search-results page on
+    /// any site, plus (for a page the shop table already claimed) a commerce
+    /// search / browse / category grid.
+    ///
+    /// The commerce half is scoped to a product classification on purpose:
+    /// `ProductPageDetector.urlIsMultiProductListing` treats a leading `s` segment
+    /// as a search, which is right for `amazon.com/s?k=…` and wrong for
+    /// `medium.com/s/<publication>`. It matters here because a deterministic
+    /// `.product(.knownShopHost)` SKIPS `ProductPageDetector.detect`, so an Amazon
+    /// search URL used to reach price extraction, find no price, and fall through
+    /// to the article path.
+    private static func isMultiItemListingURL(
+        _ url: URL, classifiedKind: ContentKind
+    ) -> Bool {
+        if ListingPage.isSearchResultsURL(url) { return true }
+        guard case .product = classifiedKind else { return false }
+        return ProductPageDetector.urlIsMultiProductListing(url)
+    }
+
+    /// Whether the page itself says it is locked — a publisher lock declaration or
+    /// a gate marker in the raw markup. The same two signals `BypassGate` treats as
+    /// paywall evidence, checked here without depending on the bypass module.
+    private static func declaresPaywall(_ html: String) -> Bool {
+        if PaywallDetector.htmlDeclaresLocked(html) { return true }
+        let lowered = html.lowercased()
+        return PaywallDetector.gateMarkers.contains { lowered.contains($0) }
     }
 }

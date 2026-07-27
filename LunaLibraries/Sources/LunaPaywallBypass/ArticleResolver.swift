@@ -19,6 +19,9 @@ public enum ArticleResolution: Equatable {
     case readable(ArticleContent, html: String)
     /// Only a paywall stub was reachable, but it carried a real title. The item
     /// can be parked for a user-solved archive CAPTCHA under this title.
+    ///
+    /// This case means "a wall stands between us and a real article", NOT merely
+    /// "unreadable but titled" — see `resolution(direct:archived:...)`.
     case paywalled(title: String)
     /// Nothing usable — not even a title. Carries WHY when the direct fetch's
     /// error was captured (403 / offline / timeout / not-HTML), so the failed
@@ -159,7 +162,14 @@ public enum ArticleResolver {
         // and `archive.ph/newest` belongs to the bounded WKWebView terminal flow,
         // not a silent fetch — removing the duplicate Wayback hit + near-always-failing
         // archive.ph GET is the NYT/WSJ "no silent strategy worked" speed fix.)
-        return resolution(direct: direct, archived: nil, directFailure: directFailure)
+        // `plan.allowsArchiveToday` is the gate's verdict, already computed: it is
+        // true only when `BypassGate` found real paywall evidence (a declared lock,
+        // a gate marker, a hard-paywall host, an archive URL, or a fetch that never
+        // came back) or a site rule applies. Handing it to `resolution` is what stops
+        // EVERY titled-but-unreadable page from parking for the archive reader.
+        return resolution(
+            direct: direct, archived: nil, directFailure: directFailure,
+            parksForArchive: plan.allowsArchiveToday)
     }
 
     /// Runs `work`, abandoning it when `deadline` passes — so the silent chain can never
@@ -206,9 +216,19 @@ public enum ArticleResolver {
     /// - Parameter directFailure: why the direct fetch threw, when it did. Only
     ///   reaches the result in the `.unreadable` case — a page that yielded a
     ///   title or a body wasn't a failure at all.
+    /// - Parameter parksForArchive: whether the archive tier is a legitimate next
+    ///   step for this page — `BypassPlan.allowsArchiveToday`, i.e. `BypassGate`
+    ///   found paywall evidence. A `<title>` is NOT that evidence: every web page
+    ///   has one, so returning `.paywalled` on a title alone sent Google's
+    ///   homepage, a search-results page, and every JS shell into the
+    ///   archive.today CAPTCHA reader (and, via `.needsArchive`, into the Safari
+    ///   recents tray as a would-be article). Defaults to true so the pure
+    ///   title-preference tests below can exercise it in isolation; the one
+    ///   production caller always passes the plan's verdict.
     public static func resolution(
         direct: ExtractedArticle?, archived: ExtractedArticle?,
-        directFailure: SaveFailureReason? = nil
+        directFailure: SaveFailureReason? = nil,
+        parksForArchive: Bool = true
     ) -> ArticleResolution {
         if let direct, ArticleExtraction.isReadableArticle(direct) {
             return .readable(direct.content, html: direct.sourceHTML)
@@ -219,7 +239,7 @@ public enum ArticleResolver {
         let title = [direct?.content.title, archived?.content.title]
             .compactMap { $0 }
             .first { !$0.isEmpty && $0 != "Untitled" }
-        if let title { return .paywalled(title: title) }
+        if parksForArchive, let title { return .paywalled(title: title) }
         // Reached the page but found no article and no title: that's a readable-
         // content failure, not a transport one, whatever the fetch reported.
         return .unreadable(direct == nil ? directFailure : .notReadable)

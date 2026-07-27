@@ -30,15 +30,28 @@ public struct SaveFailureRecord: Codable, Equatable, Sendable {
     public var resolvedTitle: String?
     /// The publisher/site name (`og:site_name`, else the bare host).
     public var siteName: String?
+    /// The app version under which this item's Apple Intelligence rescue was
+    /// spent and did not recover it (`AppConfig.appVersion`). Nil ⇒ the rescue
+    /// has never been tried from the card.
+    ///
+    /// This is the failed card's **terminal gate**: one AI attempt per shipped
+    /// version. While it equals the running version the card shows its apology
+    /// and a Delete button instead of the button; an app update no longer
+    /// matches, so the item becomes eligible again and the launch sweep retries
+    /// it with both ordinary ingestion and AI. Storing the version rather than a
+    /// bool is what makes that automatic — there's no migration step and no
+    /// "clear all" pass to remember to run.
+    public var aiAttemptVersion: String?
 
     public init(reason: SaveFailureReason? = nil, lastFailureDate: Date = Date(),
                 failureCount: Int = 1, resolvedTitle: String? = nil,
-                siteName: String? = nil) {
+                siteName: String? = nil, aiAttemptVersion: String? = nil) {
         self.reason = reason
         self.lastFailureDate = lastFailureDate
         self.failureCount = failureCount
         self.resolvedTitle = resolvedTitle
         self.siteName = siteName
+        self.aiAttemptVersion = aiAttemptVersion
     }
 }
 
@@ -86,6 +99,32 @@ public final class SaveFailureStore {
             if let title, !title.isEmpty { record.resolvedTitle = title }
             if let siteName, !siteName.isEmpty { record.siteName = siteName }
         }
+    }
+
+    /// Marks this item's one-per-version Apple Intelligence attempt as spent.
+    /// Called when a card-initiated rescue finishes WITHOUT recovering the item;
+    /// a success clears the whole record instead.
+    public func recordAIAttempt(_ itemID: UUID, version: String = AppConfig.appVersion) {
+        mutate(itemID) { record in record.aiAttemptVersion = version }
+    }
+
+    /// Whether the card should be terminal: an AI attempt was already spent
+    /// under the version that's running now.
+    public func hasSpentAIAttempt(
+        _ itemID: UUID, version: String = AppConfig.appVersion
+    ) -> Bool {
+        record(for: itemID)?.aiAttemptVersion == version
+    }
+
+    /// Item IDs whose AI attempt was spent under some OTHER (older) version —
+    /// the set an app update has just made eligible again. Read by the rescue
+    /// coordinator at launch so it can clear their attempt budget.
+    public func idsWithStaleAIAttempt(version: String = AppConfig.appVersion) -> Set<UUID> {
+        lock.lock(); defer { lock.unlock() }
+        return Set(records.compactMap { key, record in
+            guard let spent = record.aiAttemptVersion, spent != version else { return nil }
+            return UUID(uuidString: key)
+        })
     }
 
     /// Clears an item's record — called when it stops being failed (a rescue or

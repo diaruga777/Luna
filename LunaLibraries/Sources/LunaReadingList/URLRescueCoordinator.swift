@@ -45,7 +45,9 @@ public final class URLRescueCoordinator {
     private let store: ReadingListStore
     private let ledger: RescueLedgerStore
     private let pending: PendingRescueRequestStore
+    private let failures: SaveFailureStore
     private let debounceInterval: TimeInterval
+    private let now: () -> Date
     private let workQueue = DispatchQueue(label: "com.hsanabria.luna.urlRescueCoordinator", qos: .utility)
 
     private var installed = false
@@ -54,6 +56,10 @@ public final class URLRescueCoordinator {
     private var isForeground = true
     private let inFlightLock = NSLock()
     private var inFlightItemIDs: Set<UUID> = []
+    /// The most recent stage reported for each in-flight rescue, with the time it
+    /// was reported. Process-local and never persisted: the eclipse bar on a
+    /// failed card reads it, and it dies with the attempt.
+    private var stages: [UUID: (stage: RescueStage, at: Date)] = [:]
 
     private var notificationObserver: NSObjectProtocol?
     private var foregroundObserver: NSObjectProtocol?
@@ -66,12 +72,16 @@ public final class URLRescueCoordinator {
         store: ReadingListStore = .shared,
         ledger: RescueLedgerStore = .shared,
         pending: PendingRescueRequestStore = .shared,
-        debounceInterval: TimeInterval = 1.5
+        failures: SaveFailureStore = .shared,
+        debounceInterval: TimeInterval = 1.5,
+        now: @escaping () -> Date = Date.init
     ) {
         self.store = store
         self.ledger = ledger
         self.pending = pending
+        self.failures = failures
         self.debounceInterval = debounceInterval
+        self.now = now
     }
 
     deinit {
@@ -103,8 +113,27 @@ public final class URLRescueCoordinator {
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.isForeground = false }
         #endif
+        reopenStaleVersionAttempts()
         drainPendingRequests()
         scheduleSweep(debounced: false)
+    }
+
+    /// One free retry per shipped version. A failed save whose Apple Intelligence
+    /// attempt was spent under an EARLIER version has its ledger budget cleared
+    /// here, so this launch's sweep tries it again — and because
+    /// `ReadingListIngestor.ingestAllPending` already re-runs ordinary ingestion
+    /// for every `.failed` item on launch, the item gets both paths without any
+    /// extra scheduling.
+    ///
+    /// Nothing needs to clear `aiAttemptVersion` itself: the card compares it to
+    /// the running version, so an update makes every stale mark non-terminal at
+    /// once, and a fresh failure under this version overwrites it.
+    @discardableResult
+    public func reopenStaleVersionAttempts() -> Set<UUID> {
+        let stale = failures.idsWithStaleAIAttempt()
+        guard !stale.isEmpty else { return [] }
+        ledger.resetAttempts(for: stale)
+        return stale
     }
 
     // MARK: - Inline trigger (from ReadingListIngestor)
@@ -122,17 +151,70 @@ public final class URLRescueCoordinator {
         Task { [weak self] in await self?.runRescue(itemID: itemID, hint: nil, interactive: true, countsAgainstBudget: true) }
     }
 
-    /// A user-consented one-shot rescue (failed-row tap, extension hand-off).
-    /// Bypasses the auto-attempt budget — the tap IS consent.
+    /// A user-consented one-shot rescue (the failed card's button, a failed-row
+    /// tap, the extension hand-off). Bypasses the auto-attempt budget — the tap
+    /// IS consent — and spends the item's one Apple Intelligence attempt for this
+    /// app version, so a card that comes back still failed goes terminal.
     public func requestManualRescue(itemID: UUID, hint: RescueHint?) {
         guard let engine = Self.engine, engine.isAvailable() else { return }
-        Task { [weak self] in await self?.runRescue(itemID: itemID, hint: hint, interactive: true, countsAgainstBudget: false) }
+        Task { [weak self] in
+            await self?.runRescue(
+                itemID: itemID, hint: hint, interactive: true,
+                countsAgainstBudget: false, spendsVersionAttempt: true)
+        }
     }
 
     /// Whether `itemID` is being rescued right now (for the "trying harder…" row).
     public func isRescuing(_ itemID: UUID) -> Bool {
         inFlightLock.lock(); defer { inFlightLock.unlock() }
         return inFlightItemIDs.contains(itemID)
+    }
+
+    // MARK: - Progress
+
+    /// Called by the app shell's engine bridge as the rescue crosses each stage.
+    /// Cheap and lock-scoped: it stores the stage and posts
+    /// `.rescueProgressChanged` for the one card that cares, NOT
+    /// `.readingListChanged` (which would reload every deck several times per
+    /// rescue).
+    public func reportProgress(_ itemID: UUID, stage: RescueStage) {
+        inFlightLock.lock()
+        stages[itemID] = (stage, now())
+        inFlightLock.unlock()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .rescueProgressChanged, object: nil,
+                userInfo: [RescueProgressKey.itemID: itemID])
+        }
+    }
+
+    /// How far along `itemID`'s rescue is, 0…1, or nil when nothing is running.
+    ///
+    /// Interpolates from the last reported stage toward the next one using that
+    /// stage's expected duration, so the bar keeps creeping through a 22-second
+    /// model call instead of freezing. It never reaches the next stage's fraction
+    /// on interpolation alone — only a real stage report gets it there.
+    public func rescueProgress(_ itemID: UUID) -> Double? {
+        inFlightLock.lock(); defer { inFlightLock.unlock() }
+        guard let entry = stages[itemID] else { return nil }
+        let start = entry.stage.fraction
+        guard let next = Self.stageAfter(entry.stage) else { return start }
+        let duration = entry.stage.expectedDuration
+        guard duration > 0 else { return start }
+        let elapsed = max(0, now().timeIntervalSince(entry.at))
+        // Ease out: 63% of the gap by the expected duration, asymptotic after —
+        // an overrunning stage slows down rather than stalling or overshooting.
+        let eased = 1 - exp(-elapsed / duration)
+        return start + (next.fraction - start) * eased * 0.9
+    }
+
+    private static func stageAfter(_ stage: RescueStage) -> RescueStage? {
+        // The article-payload stage is skipped on every non-PCC path, so the
+        // stage list is walked in declaration order rather than assuming each
+        // stage is followed by the next one that actually ran.
+        guard let index = RescueStage.allCases.firstIndex(of: stage),
+              index + 1 < RescueStage.allCases.count else { return nil }
+        return RescueStage.allCases[index + 1]
     }
 
     // MARK: - Pending hand-off drain
@@ -187,7 +269,10 @@ public final class URLRescueCoordinator {
 
     // MARK: - Run
 
-    private func runRescue(itemID: UUID, hint: RescueHint?, interactive: Bool, countsAgainstBudget: Bool) async {
+    private func runRescue(
+        itemID: UUID, hint: RescueHint?, interactive: Bool,
+        countsAgainstBudget: Bool, spendsVersionAttempt: Bool = false
+    ) async {
         guard let engine = Self.engine else { return }
         // Re-read: the item may have advanced or been deleted since we scheduled.
         // Rescue anything not-yet-ready — the "only .failed" gating for AUTOMATIC
@@ -204,7 +289,14 @@ public final class URLRescueCoordinator {
         postReadingListChanged() // flip row to "trying harder…"
 
         let succeeded = await engine.perform(item, hint, interactive)
-        if succeeded { ledger.recordSuccess(itemID, hint: hint) }
+        if succeeded {
+            ledger.recordSuccess(itemID, hint: hint)
+        } else if spendsVersionAttempt {
+            // The user asked for AI and AI didn't recover it. Record WHICH version
+            // spent the attempt, so the card can say so plainly now and offer
+            // itself again after the next update.
+            failures.recordAIAttempt(itemID)
+        }
     }
 
     /// `.readingListChanged` is a UI-refresh notification, and its list/deck
@@ -230,5 +322,6 @@ public final class URLRescueCoordinator {
     private func endInFlight(_ id: UUID) {
         inFlightLock.lock(); defer { inFlightLock.unlock() }
         inFlightItemIDs.remove(id)
+        stages[id] = nil
     }
 }

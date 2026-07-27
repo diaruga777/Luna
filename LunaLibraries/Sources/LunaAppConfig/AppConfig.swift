@@ -29,6 +29,21 @@ public enum AppConfig {
         string(forInfoKey: appGroupInfoKey) != nil
     }
 
+    /// This build's identity, `"<short version> (<build>)"` — e.g. `"1.4 (208)"`.
+    ///
+    /// Used as a *generation marker* for work that should be retried exactly once
+    /// per shipped version: a failed save whose Apple Intelligence rescue was
+    /// already spent under this version stays terminal, and an app update makes
+    /// every one of them eligible again (`SaveFailureRecord.aiAttemptVersion`).
+    /// Both components matter — a TestFlight build bump with no version change
+    /// still carries new extraction code.
+    public static let appVersion: String = {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
+    }()
+
     // MARK: - Internals
 
     static let appGroupInfoKey = "LunaAppGroupID"

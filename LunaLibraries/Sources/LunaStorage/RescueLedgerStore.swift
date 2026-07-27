@@ -91,6 +91,24 @@ public final class RescueLedgerStore {
         return entries[itemID.uuidString]
     }
 
+    /// Forgets these items' attempt history, so the automatic sweep may try them
+    /// again immediately. Called once per app update for items whose Apple
+    /// Intelligence attempt was spent under an older version: the extraction code
+    /// has changed, so the 2-attempts/24h budget shouldn't hold a stale verdict.
+    public func resetAttempts(for ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        var changed = false
+        for id in ids {
+            guard var entry = entries[id.uuidString], !entry.succeeded else { continue }
+            entry.attemptCount = 0
+            entry.lastAttemptDate = nil
+            entries[id.uuidString] = entry
+            changed = true
+        }
+        if changed { persistLocked() }
+    }
+
     /// Drops ledger rows for items no longer present (called from the sweep).
     public func prune(keeping ids: Set<UUID>) {
         lock.lock(); defer { lock.unlock() }

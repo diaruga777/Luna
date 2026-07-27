@@ -134,6 +134,152 @@ final class URLRescueCoordinatorTests: XCTestCase {
         XCTAssertNotNil(store.item(forURLString: "https://new.example.com/x"),
                         "a pending URL not yet in the store should be added")
     }
+
+    // MARK: - Stage progress
+
+    /// Nothing running ⇒ no fraction. The card uses nil to mean "no overlay".
+    func testProgressIsNilBeforeAnyStageIsReported() {
+        XCTAssertNil(makeCoordinator().rescueProgress(UUID()))
+    }
+
+    func testProgressFollowsTheReportedStage() {
+        let coordinator = makeCoordinator()
+        let id = UUID()
+        coordinator.reportProgress(id, stage: .queued)
+        let queued = coordinator.rescueProgress(id)
+        coordinator.reportProgress(id, stage: .thinking)
+        let thinking = coordinator.rescueProgress(id)
+
+        XCTAssertNotNil(queued)
+        XCTAssertNotNil(thinking)
+        XCTAssertGreaterThan(thinking!, queued!)
+        XCTAssertGreaterThanOrEqual(thinking!, RescueStage.thinking.fraction)
+    }
+
+    /// The bar must keep creeping through a long model call rather than freezing
+    /// at the stage's own fraction — but never past the next stage.
+    func testProgressCreepsWithinAStageWithoutOvershooting() {
+        var clock = Date(timeIntervalSince1970: 1_000_000_000)
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, now: { clock })
+        let id = UUID()
+        coordinator.reportProgress(id, stage: .thinking)
+        let atStart = coordinator.rescueProgress(id)!
+
+        clock = clock.addingTimeInterval(10)
+        let after10s = coordinator.rescueProgress(id)!
+        clock = clock.addingTimeInterval(600)
+        let wayLater = coordinator.rescueProgress(id)!
+
+        XCTAssertEqual(atStart, RescueStage.thinking.fraction, accuracy: 0.001)
+        XCTAssertGreaterThan(after10s, atStart)
+        XCTAssertLessThan(wayLater, RescueStage.reading.fraction,
+                          "creep must never reach the next stage on its own")
+    }
+
+    func testProgressReachesOneWhenFinished() {
+        let coordinator = makeCoordinator()
+        let id = UUID()
+        coordinator.reportProgress(id, stage: .finished)
+        XCTAssertEqual(coordinator.rescueProgress(id), 1.0)
+    }
+
+    /// The card listens for this rather than `.readingListChanged`, which would
+    /// make every deck reload several times per rescue.
+    func testProgressPostsItsOwnNotificationCarryingTheItemID() {
+        let coordinator = makeCoordinator()
+        let id = UUID()
+        let exp = expectation(forNotification: .rescueProgressChanged, object: nil) { note in
+            note.userInfo?[RescueProgressKey.itemID] as? UUID == id
+        }
+        coordinator.reportProgress(id, stage: .digesting)
+        wait(for: [exp], timeout: 2)
+    }
+
+    /// The stage table has to stay monotonic, or the bar walks backwards.
+    func testStageFractionsAreMonotonic() {
+        let fractions = RescueStage.allCases.map(\.fraction)
+        XCTAssertEqual(fractions, fractions.sorted())
+        XCTAssertEqual(RescueStage.finished.fraction, 1.0)
+    }
+
+    // MARK: - Once-per-version AI attempt
+
+    /// An update reopens every card whose AI attempt was spent under an older
+    /// version, by clearing the ledger budget that would otherwise block the
+    /// automatic half of the retry.
+    func testStaleVersionAttemptsAreReopenedAtInstall() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let item = failedItem()
+        failures.recordAIAttempt(item.id, version: "0.9 (1)")
+        ledger.recordAttempt(item.id, hint: nil)
+        ledger.recordAttempt(item.id, hint: nil)
+        XCTAssertFalse(ledger.shouldAutoRescue(item.id))
+
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        XCTAssertEqual(coordinator.reopenStaleVersionAttempts(), [item.id])
+        XCTAssertTrue(ledger.shouldAutoRescue(item.id))
+    }
+
+    /// An attempt spent under the RUNNING version stays spent — that's the whole
+    /// point of the terminal state.
+    func testCurrentVersionAttemptsAreNotReopened() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let item = failedItem()
+        failures.recordAIAttempt(item.id)
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        XCTAssertTrue(coordinator.reopenStaleVersionAttempts().isEmpty)
+    }
+
+    /// A card-initiated rescue that fails spends the version's attempt; one that
+    /// succeeds leaves nothing behind (the record is cleared when the item
+    /// reaches `.ready`).
+    func testAFailedManualRescueSpendsTheVersionAttempt() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let exp = expectation(description: "perform")
+        let fake = RecordingEngine(succeed: false, expectation: exp)
+        URLRescueCoordinator.engine = fake.engine()
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        let item = failedItem()
+
+        coordinator.requestManualRescue(itemID: item.id, hint: nil)
+        wait(for: [exp], timeout: 2)
+        XCTAssertTrueEventually { failures.hasSpentAIAttempt(item.id) }
+    }
+
+    func testASucceedingManualRescueDoesNotSpendTheVersionAttempt() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let exp = expectation(description: "perform")
+        let fake = RecordingEngine(succeed: true, expectation: exp)
+        URLRescueCoordinator.engine = fake.engine()
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        let item = failedItem()
+
+        coordinator.requestManualRescue(itemID: item.id, hint: nil)
+        wait(for: [exp], timeout: 2)
+        XCTAssertTrueEventually { self.ledger.wasRescued(item.id) }
+        XCTAssertFalse(failures.hasSpentAIAttempt(item.id))
+    }
+
+    /// The AUTOMATIC sweep must not burn the user's one visible attempt — the
+    /// button is theirs to press.
+    func testAnAutomaticRescueDoesNotSpendTheVersionAttempt() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let exp = expectation(description: "perform")
+        let fake = RecordingEngine(succeed: false, expectation: exp)
+        URLRescueCoordinator.engine = fake.engine()
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        let item = failedItem()
+
+        coordinator.itemJustFailed(item.id, source: .shareSheet, interactive: true)
+        wait(for: [exp], timeout: 2)
+        XCTAssertFalse(failures.hasSpentAIAttempt(item.id))
+    }
 }
 
 // MARK: - Test helpers

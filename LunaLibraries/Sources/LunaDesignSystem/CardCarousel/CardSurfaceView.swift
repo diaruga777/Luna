@@ -150,22 +150,27 @@ public class CardSurfaceView: UIView {
     private static let glowLineWidth: CGFloat = 1.5
     private static let glowRadius: CGFloat = 9
 
-    /// Tints the card's edge with a soft inward glow — how a card says "this
-    /// save failed" without a badge or a banner. `nil` removes it.
+    /// Tints the card's edge — the glass rim itself takes the colour, and a soft
+    /// inward glow blooms off it. How a card says "this save failed" without a
+    /// badge or a banner. `nil` restores the plain glass rim.
     public func setEdgeGlow(_ color: UIColor?) {
         glowColor = color
         glowLayer.isHidden = color == nil
-        guard color != nil else { return }
         glowLayer.lineWidth = Self.glowLineWidth
         glowLayer.shadowRadius = Self.glowRadius
         glowLayer.shadowOpacity = 1
-        applyGlowColor()
+        // Resolves both the rim stroke and the bloom, in either direction.
+        applyBorderColor()
         setNeedsLayout()
     }
 
     private func applyBorderColor() {
-        borderHighlight.strokeColor =
-            GlassStyle.glassBorderColor.resolvedColor(with: traitCollection).cgColor
+        // With a glow set, the glass rim itself takes the tint rather than staying
+        // white under a coloured bloom: a failed card should read as a card with a
+        // RED border, not a white-bordered card that happens to be lit red.
+        let border = glowColor?.resolvedColor(with: traitCollection).withAlphaComponent(0.5)
+            ?? GlassStyle.glassBorderColor.resolvedColor(with: traitCollection)
+        borderHighlight.strokeColor = border.cgColor
         applyGlowColor()
     }
 

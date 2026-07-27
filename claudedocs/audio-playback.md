@@ -246,7 +246,7 @@ a way to pick up where an extension left off.
   `window.rootViewController`, wrapping the main `UINavigationController` as
   a child. **Luna Reader only** — read-aloud is a Reader-exclusive feature, so
   `makeMainRootViewController()` wraps in this host only when
-  `AppSurfaceConfig.current == .reader`; the Downloader / Price Tracker apps
+  `LunaApp.current == .reader`; the Downloader / Price Tracker apps
   install a bare nav controller (and skip `AudioPlaybackWiring.install()`
   entirely, so `ReaderAudioLauncher.center` stays nil there). Hidden while idle, animates in on first play, persists across
   push/pop; presented view controllers cover it (playback continues

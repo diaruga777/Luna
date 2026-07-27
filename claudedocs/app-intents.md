@@ -93,7 +93,7 @@ evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 | Unrecognized | — | **unhandled** |
 
 Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
-`handlesMediaKind` = `AppSurfaceConfig.current.handlesMedia` (Downloader or the
+`handlesMediaKind` = `LunaApp.current.handlesMedia` (Downloader or the
 central Luna app — a sibling never hands off cross-app anymore);
 `visionModelAvailable` = `ScreenCaptureModelSessionFactory.makeDefault()
 .isAvailable`. The immediate Safari save (1) goes through

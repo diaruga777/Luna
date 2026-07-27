@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 import LunaAppConfig
 import LunaURLClassification
 
@@ -21,7 +22,7 @@ public struct RescueLearnedRule: Codable, Equatable {
     }
 
     public let host: String          // HostMatching.normalizedHost
-    public let hint: String          // RescueRequest.ContentHint.rawValue
+    public let hint: String          // RescueHint.rawValue, or "auto"
     public let rewrite: URLRewrite
     public let userAgentToken: String?
     public let refererString: String?
@@ -61,9 +62,9 @@ public struct RescueLearnedRule: Codable, Equatable {
 
 public protocol RescueRuleStoring: AnyObject {
     var isEnabled: Bool { get set }
-    func rule(forHost host: String, hint: RescueRequest.ContentHint) -> RescueLearnedRule?
+    func rule(forHost host: String, hint: RescueHint?) -> RescueLearnedRule?
     func recordSuccess(_ rule: RescueLearnedRule)
-    func recordFailure(forHost host: String, hint: RescueRequest.ContentHint)
+    func recordFailure(forHost host: String, hint: RescueHint?)
     func store(_ rule: RescueLearnedRule)
 }
 
@@ -81,9 +82,9 @@ public final class InMemoryRescueRuleStore: RescueRuleStoring {
 
     public static func key(host: String, hint: String) -> String { "\(host)|\(hint)" }
 
-    public func rule(forHost host: String, hint: RescueRequest.ContentHint) -> RescueLearnedRule? {
+    public func rule(forHost host: String, hint: RescueHint?) -> RescueLearnedRule? {
         lock.lock(); defer { lock.unlock() }
-        let key = Self.key(host: HostMatching.normalizedHost(host), hint: hint.rawValue)
+        let key = Self.key(host: HostMatching.normalizedHost(host), hint: hint?.rawValue ?? "auto")
         guard let rule = rules[key] else { return nil }
         if now().timeIntervalSince(rule.lastSuccessAt) > RescueRuleStore.expiry {
             rules[key] = nil
@@ -101,9 +102,9 @@ public final class InMemoryRescueRuleStore: RescueRuleStoring {
         rules[Self.key(host: rule.host, hint: rule.hint)] = updated
     }
 
-    public func recordFailure(forHost host: String, hint: RescueRequest.ContentHint) {
+    public func recordFailure(forHost host: String, hint: RescueHint?) {
         lock.lock(); defer { lock.unlock() }
-        let key = Self.key(host: HostMatching.normalizedHost(host), hint: hint.rawValue)
+        let key = Self.key(host: HostMatching.normalizedHost(host), hint: hint?.rawValue ?? "auto")
         guard var rule = rules[key] else { return }
         rule.consecutiveFailures += 1
         if rule.consecutiveFailures >= RescueRuleStore.maxConsecutiveFailures {
@@ -171,7 +172,7 @@ public final class RescueRuleStore: RescueRuleStoring {
         set { defaults.set(newValue, forKey: Self.killSwitchKey) }
     }
 
-    public func rule(forHost host: String, hint: RescueRequest.ContentHint) -> RescueLearnedRule? {
+    public func rule(forHost host: String, hint: RescueHint?) -> RescueLearnedRule? {
         guard isEnabled else { return nil }
         return memory.rule(forHost: host, hint: hint)
     }
@@ -181,7 +182,7 @@ public final class RescueRuleStore: RescueRuleStoring {
         persist()
     }
 
-    public func recordFailure(forHost host: String, hint: RescueRequest.ContentHint) {
+    public func recordFailure(forHost host: String, hint: RescueHint?) {
         memory.recordFailure(forHost: host, hint: hint)
         persist()
     }

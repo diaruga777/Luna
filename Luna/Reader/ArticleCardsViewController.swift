@@ -79,7 +79,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// reader articles: media and price-tracker items get their own kind's
     /// card through `cardProvider`, or a title/badge card whose tap routes
     /// through `nonArticleOpener` when that kind has nothing to render yet.
-    private let includesAllKinds = AppSurfaceConfig.current == .all
+    private let includesAllKinds = LunaApp.current == .luna
 
     /// Opens a non-article item (price tracker / platform post) from its card,
     /// mirroring the list rows' tap routing. Installed at launch by the app

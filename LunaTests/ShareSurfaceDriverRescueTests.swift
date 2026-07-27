@@ -76,7 +76,7 @@ final class ShareSurfaceDriverRescueTests: XCTestCase {
     /// The extension no longer asks what the save should become — the model
     /// classifies the page when the app drains the queue — so the queued record
     /// must carry NO hint. A hint here would silently pin the answer and undo the
-    /// classification (`RescueRequest.ContentHint.auto`).
+    /// classification (a nil hint).
     func testQueuedRescueRequestCarriesNoContentHint() {
         _ = PendingRescueRequestStore.shared.takeAll()   // start from a clean queue
         let host = FakeHost(isActionExtension: true)

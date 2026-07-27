@@ -58,7 +58,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         // Auto-Download for media apps), then the universal tail. Contacts is
         // email sharing's address book, so it appears only where email exists.
         KindWiring.settingsCategories()
-        + (AppSurfaceConfig.current.sharesByEmail
+        + (LunaApp.current.sharesByEmail
             ? [SettingsCategory(title: L10n.string("Contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
         + [
@@ -166,8 +166,8 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
     private var safariButtonName: String {
-        switch AppSurfaceConfig.current {
-        case .all: return L10n.string("Luna")
+        switch LunaApp.current {
+        case .luna: return L10n.string("Luna")
         case .reader: return L10n.string("Read in Luna")
         case .downloader: return L10n.string("Download")
         case .priceTracker: return L10n.string("Track in Luna")

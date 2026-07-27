@@ -41,7 +41,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// (and its scheduling) the same way `schedulesPriceRefresh` gates the price
     /// job. Downloader and Price Tracker connect no account, so there is nothing
     /// for a mail fetch to read.
-    private var sharesByEmail: Bool { AppSurfaceConfig.current.sharesByEmail }
+    private var sharesByEmail: Bool { LunaApp.current.sharesByEmail }
 
     func application(
         _ application: UIApplication,

@@ -11,7 +11,7 @@ app handles exactly one:
 | Luna Downloader | `<prefix>.downloader` | social / video media | no — URL sharing only |
 | Luna Price Tracker | `<prefix>.pricetracker` | product price trackers | no — URL sharing only |
 
-Email is a second, independent per-app capability, `AppSurface.sharesByEmail`:
+Email is a second, independent per-app capability, `LunaApp.sharesByEmail`:
 connecting an account, sending saves to contacts, and importing shares/newsletters
 from a mailbox. It is a runtime property of the surface rather than a link-set
 decision, because the shell files that offer those affordances are universal —

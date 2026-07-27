@@ -25,7 +25,7 @@ action extension / Safari extension / mail import), trigger a configurable actio
   match even if the intent trims tracking params differently. Verify during recon;
   fall back to raw-string equality if there is no canonical form at intent time.
 - Scope: Reader surface only (setting shown only in Reader's Settings; detection
-  gated on `AppSurfaceConfig.current` == reader).
+  gated on `LunaApp.current` == reader).
 - The 7s window + last-URL memory lives in App Group defaults so it survives the
   intent running before the app is foregrounded.
 

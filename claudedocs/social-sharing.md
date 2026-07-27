@@ -5,7 +5,7 @@ system). A contact is
 just an email address; sharing an item sends a nicely-formatted email that a
 recipient's Luna app recognizes and imports.
 
-**Only the apps that do email have it**: `AppSurface.sharesByEmail` — the central
+**Only the apps that do email have it**: `LunaApp.sharesByEmail` — the central
 **Luna** app and **Luna Reader**. **Downloader** and **Price Tracker** share a save
 as a plain URL through the system share sheet instead, so they show no Contacts
 button or settings row, offer no "Send to Contact…" row action, connect no account,

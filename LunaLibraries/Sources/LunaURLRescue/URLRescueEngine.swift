@@ -70,7 +70,7 @@ public final class URLRescueEngine {
         onProgress: @escaping (RescueStage) -> Void = { _ in }
     ) async -> RescueOutcome {
         let host = request.url.host ?? "?"
-        log("start host=\(host) hint=\(request.hint.rawValue)")
+        log("start host=\(host) hint=\(request.hintKey)")
         onProgress(.queued)
 
         // Bound the whole attempt.
@@ -243,7 +243,7 @@ public final class URLRescueEngine {
         case let .reroute(reroute):
             guard let rewrite = Self.rewrite(from: request.url, to: reroute.url) else { return nil }
             return RescueLearnedRule(
-                host: host, hint: request.hint.rawValue, rewrite: rewrite,
+                host: host, hint: request.hintKey, rewrite: rewrite,
                 refererString: reroute.headers.referer?.absoluteString,
                 acceptLanguage: reroute.headers.acceptLanguage,
                 xForwardedFor: reroute.headers.xForwardedFor,
@@ -251,7 +251,7 @@ public final class URLRescueEngine {
         case let .webJS(script):
             let rewrite = Self.rewrite(from: request.url, to: script.pageURL) ?? .none
             return RescueLearnedRule(
-                host: host, hint: request.hint.rawValue, rewrite: rewrite,
+                host: host, hint: request.hintKey, rewrite: rewrite,
                 refererString: script.headers.referer?.absoluteString,
                 acceptLanguage: script.headers.acceptLanguage,
                 xForwardedFor: script.headers.xForwardedFor,

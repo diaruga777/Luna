@@ -1,7 +1,7 @@
 # Email login flow
 
 `Luna/Mail/` implements email-account sign-in for the two apps that do email
-(`Luna` and `LunaReader` — `AppSurface.sharesByEmail`; the app target is
+(`Luna` and `LunaReader` — `LunaApp.sharesByEmail`; the app target is
 filesystem-synchronized, so no project-file edits are needed when files are added
 here).
 

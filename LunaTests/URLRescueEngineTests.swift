@@ -11,7 +11,7 @@ import LunaModels
 final class URLRescueEngineTests: XCTestCase {
     private let url = URL(string: "https://www.example.com/story")!
 
-    private func request(hint: RescueRequest.ContentHint = .article,
+    private func request(hint: RescueHint? = .article,
                          failure: RescueRequest.FailureKind = .articleFailed,
                          html: String? = "<html><body>digest body content here for reroute example with 129.99 price</body></html>") -> RescueRequest {
         RescueRequest(url: url, source: .manual, failureKind: failure, hint: hint, fetchedHTML: html)

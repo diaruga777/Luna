@@ -13,8 +13,8 @@ import LunaURLRescue
 
 /// The ONLY place the app links `LunaURLRescue`. Installs the engine bridge into
 /// `URLRescueCoordinator`, plus the rescue trigger the ingestor calls. Runs in
-/// all three apps (rescue is universal); the default hint differs by surface,
-/// and the media/product LEGS are per-kind seams filled by the `KindWiring`
+/// all four apps (rescue is universal); no surface supplies a content hint any
+/// more — the model classifies the page — and the media/product LEGS are per-kind seams filled by the `KindWiring`
 /// variants (`mediaRescueStarter`; `rescueProductInfo` consumed by product
 /// wirings for the price editor's "Ask Apple Intelligence" resolver). See
 /// `claudedocs/url-rescue.md`.
@@ -80,13 +80,13 @@ enum URLRescueWiring {
         engine: URLRescueEngine, item: ReadingListItem, hint: RescueHint?, interactive: Bool
     ) async -> Bool {
         guard let url = item.url else { return false }
-        // No hint means the MODEL classifies the page (`.auto`) — the failed-save
+        // No hint means the MODEL classifies the page — the failed-save
         // card sends nil, and so does every automatic path. Only a surface that
         // genuinely knows the kind (the price editor, the media card) passes one.
         let request = RescueRequest(
             url: url, source: item.effectiveCaptureSource,
             failureKind: failureKind(for: item, hint: hint),
-            hint: hint.map(contentHint(for:)) ?? .auto)
+            hint: hint)
         let outcome = await engine.rescue(request) { stage in
             URLRescueCoordinator.shared.reportProgress(item.id, stage: stage)
         }
@@ -105,14 +105,6 @@ enum URLRescueWiring {
     }
 
     // MARK: - Hint mapping
-
-    static func defaultHint(for surface: AppSurface) -> RescueHint {
-        switch surface {
-        case .all, .reader: return .article
-        case .downloader: return .media
-        case .priceTracker: return .product
-        }
-    }
 
     /// What already went wrong, for the prompt's diagnostic line. With an explicit
     /// hint it follows the hint; otherwise it's read off the item — the recorded
@@ -134,13 +126,5 @@ enum URLRescueWiring {
         }
         if item.isPriceTracker { return .productNoPrice }
         return .articleFailed
-    }
-
-    private static func contentHint(for hint: RescueHint) -> RescueRequest.ContentHint {
-        switch hint {
-        case .article: return .article
-        case .product: return .product
-        case .media: return .media
-        }
     }
 }

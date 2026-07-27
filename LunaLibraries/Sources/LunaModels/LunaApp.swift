@@ -48,6 +48,21 @@ public enum LunaApp: CaseIterable, Equatable {
         }
     }
 
+    /// Per-kind capability. The central Luna app handles everything; each
+    /// single-content app handles exactly one kind. This is the runtime mirror of
+    /// a build-time fact (which per-kind SwiftPM products the target links), and
+    /// the same three-way split `SurfaceSupport` gates on.
+    public var handlesArticles: Bool { self == .luna || self == .reader }
+    public var handlesMedia: Bool { self == .luna || self == .downloader }
+    public var handlesProducts: Bool { self == .luna || self == .priceTracker }
+
+    /// Whether this app does email at all: connecting an account, sending saves to
+    /// contacts, and importing shares/newsletters from a mailbox. Downloader and
+    /// Price Tracker share by plain URL through the system share sheet instead, so
+    /// they have no account to connect, no Contacts screen, and no mail import —
+    /// see `claudedocs/social-sharing.md`.
+    public var sharesByEmail: Bool { self == .luna || self == .reader }
+
     /// App-Group marker key recording that this app has run on this device.
     /// The Safari extensions' native handlers read these raw strings (they
     /// don't share a framework), so the format is part of the App-Group

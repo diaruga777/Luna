@@ -393,7 +393,7 @@ Differences from the Downloader, via `CardCarouselStyle`:
 ## The central app's all-kinds deck
 
 The same `ArticleCardsViewController` is the central Luna app's root, where
-`AppSurfaceConfig.current == .all` turns on `includesAllKinds`: one deck over
+`LunaApp.current == .all` turns on `includesAllKinds`: one deck over
 every app's saves, **most recent first**. It deliberately drops the Reader's
 read-vs-unread grouping — "read" is an article-only notion, and it would file a
 just-watched video behind everything else.

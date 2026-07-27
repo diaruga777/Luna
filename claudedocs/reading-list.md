@@ -2,14 +2,27 @@
 
 Luna is a weblink reader: links saved from Safari (extension + intent) or pasted in-app are downloaded, stripped to readable text, and read in two reader modes.
 
-## Surface list presentation
+## Surface presentation — decks, not a list
 
-Luna Reader and Luna Price Tracker use card-carousel home screens rather than the
-shared sectioned list. An empty Reader explains how to save reading material; an
-empty Price Tracker prompts the user to track a product. The sectioned
-`ReadingListViewController` still renders price rows in the central Luna/test
-surface, but the standalone Price Tracker root is
-`PriceTrackerCardsViewController` with the shared left/right arc trays.
+> **The sectioned table list is GONE.** `ReadingListViewController` and everything
+> that served only it (the row cell, the row-menu factory, the group builder, the
+> `ListKindSupport` registry, the list's pasteboard controller, the diff, the
+> subtitle formatter) were deleted once every app rooted on a card deck. Older
+> sections of this file and of `card-carousel.md` / `price-tracking.md` /
+> `safari-extension.md` still narrate list rows; read those as history. Anything
+> below that names a list row means the equivalent card affordance today.
+
+Every app's home screen is a card deck: `ArticleCardsViewController` (central Luna
+and Reader), `SavedMediaCardsViewController` (Downloader),
+`PriceTrackerCardsViewController` (Price Tracker), all with the shared left/right
+arc trays. An empty Reader explains how to save reading material; an empty Price
+Tracker prompts the user to track a product.
+
+Which items an app shows is `LunaApp.includes` (in `LunaReadingListUI`, alongside
+the `ReadingListSectioning` predicates it needs); what an app ACCEPTS is
+`SurfaceSupport`, the ingest gate. Both key off `LunaApp.current`. There is no
+longer a second enum shadowing it — `AppSurface` and `AppSurfaceConfig` were folded
+into `LunaApp`.
 
 > **Note:** the reader-shared models + ingest helpers moved to `ReaderKit/`
 > (shared with the LunaShare target): `ReadingListItem`, `ReadingListStore`,

@@ -64,7 +64,7 @@ final class RecentURLMatcher {
     private var refreshTask: Task<Void, Never>?
     private(set) var matches: [RecentURLPreview] = []
 
-    private var surface: AppSurface { AppSurfaceConfig.current }
+    private var surface: LunaApp { LunaApp.current }
     private var cacheKey: String {
         "recentURLChecks.\(surface.storageIdentifier).v1"
     }
@@ -148,7 +148,7 @@ final class RecentURLMatcher {
     }
 
     static func evaluate(
-        urlString: String, surface: AppSurface
+        urlString: String, surface: LunaApp
     ) async -> RecentURLPreview? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let result = await IngestPipeline.processResolved(

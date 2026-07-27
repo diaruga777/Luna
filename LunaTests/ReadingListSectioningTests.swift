@@ -212,95 +212,54 @@ final class ReadingListSectioningTests: XCTestCase {
             unviewedSmall.id)
     }
 
-    func testHasPriceTrackersIgnoresArchived() {
-        XCTAssertFalse(ReadingListSectioning.hasPriceTrackers(items: [priceTracker(archived: true)]))
-        XCTAssertTrue(ReadingListSectioning.hasPriceTrackers(items: [priceTracker()]))
-    }
+    // MARK: - Which app shows which item (`LunaApp.includes`)
 
-    func testPriceFilterSegmentIncludesOnlyTrackers() {
-        XCTAssertTrue(ReadingListSectioning.ListFilter.priceTrackers.includes(priceTracker()))
-        XCTAssertFalse(ReadingListSectioning.ListFilter.priceTrackers.includes(article()))
-        XCTAssertFalse(ReadingListSectioning.ListFilter.mediaAndLinks.includes(priceTracker()))
-    }
-
-    func testFilterShownWithReaderAndPriceTracker() {
-        XCTAssertTrue(ReadingListSectioning.shouldShowFilter(items: [article(), priceTracker()]))
-    }
-
-    func testFilterHiddenWithOnlyPriceTrackers() {
-        XCTAssertFalse(ReadingListSectioning.shouldShowFilter(
-            items: [priceTracker(), priceTracker()]))
-    }
-
-    // MARK: - shouldShowFilter
-
-    func testFilterHiddenWhenOnlyArticles() {
-        XCTAssertFalse(ReadingListSectioning.shouldShowFilter(items: [article(), article()]))
-    }
-
-    func testFilterHiddenWhenOnlyMedia() {
-        XCTAssertFalse(ReadingListSectioning.shouldShowFilter(items: [platformItem(), platformItem()]))
-    }
-
-    func testFilterShownWithMixOfReaderAndMedia() {
-        XCTAssertTrue(ReadingListSectioning.shouldShowFilter(items: [article(), platformItem()]))
-    }
-
-    func testFilterHiddenWhenEmpty() {
-        XCTAssertFalse(ReadingListSectioning.shouldShowFilter(items: []))
-    }
-
-    // MARK: - ListFilter.includes
-
-    func testListFilterAllIncludesEverything() {
-        XCTAssertTrue(ReadingListSectioning.ListFilter.all.includes(article()))
-        XCTAssertTrue(ReadingListSectioning.ListFilter.all.includes(platformItem()))
-    }
-
-    func testListFilterArticlesOnlyIncludesReaders() {
-        XCTAssertTrue(ReadingListSectioning.ListFilter.articles.includes(article()))
-        XCTAssertFalse(ReadingListSectioning.ListFilter.articles.includes(platformItem()))
-    }
-
-    func testListFilterMediaExcludesReaders() {
-        XCTAssertFalse(ReadingListSectioning.ListFilter.mediaAndLinks.includes(article()))
-        XCTAssertTrue(ReadingListSectioning.ListFilter.mediaAndLinks.includes(platformItem()))
-    }
-
-    // MARK: - Section ordering / identity
-
-    func testSectionRawValuesAreStable() {
-        // Persisted in the collapsed-sections key — must not drift.
-        XCTAssertEqual(ReadingListSectioning.Section.reading.rawValue, 0)
-        XCTAssertEqual(ReadingListSectioning.Section.archive.rawValue, 2)
-        XCTAssertEqual(ReadingListSectioning.Section.error.rawValue, 3)
-        XCTAssertEqual(ReadingListSectioning.Section.pasteboard.rawValue, 4)
-        XCTAssertEqual(ReadingListSectioning.Section.priceTracking.rawValue, 5)
-        XCTAssertEqual(ReadingListSectioning.Section.priceAlert.rawValue, 6)
-    }
-
-    func testDisplayOrderPutsPriceTrackingBelowReading() {
-        // Price tracking sits BELOW Reading; the floating price-alert row is the very
-        // top of the whole list (ahead of the pasteboard suggestion).
-        XCTAssertEqual(
-            ReadingListSectioning.displayOrder,
-            [.priceAlert, .pasteboard, .reading, .priceTracking, .archive, .error])
-        let order = ReadingListSectioning.displayOrder
-        guard let readingIndex = order.firstIndex(of: .reading),
-              let priceIndex = order.firstIndex(of: .priceTracking),
-              let alertIndex = order.firstIndex(of: .priceAlert) else {
-            XCTFail("expected reading, priceTracking, priceAlert in display order"); return
+    /// The display counterpart to `SurfaceSupport`'s ingest gate. This used to be
+    /// a second enum (`AppSurface` + `ListFilter`) that shadowed `LunaApp`; the
+    /// rules are unchanged, they just live on the one enum now.
+    func testCentralAppShowsEveryKind() {
+        for item in [article(), platformItem(), priceTracker()] {
+            XCTAssertTrue(LunaApp.luna.includes(item))
         }
-        XCTAssertLessThan(readingIndex, priceIndex, "price tracking must be below reading")
-        XCTAssertEqual(alertIndex, 0, "the floated price alert must be the very top section")
     }
 
-    func testOnlyArchiveAndErrorAreCollapsible() {
-        XCTAssertFalse(ReadingListSectioning.Section.reading.isCollapsible)
-        XCTAssertFalse(ReadingListSectioning.Section.pasteboard.isCollapsible)
-        XCTAssertFalse(ReadingListSectioning.Section.priceTracking.isCollapsible)
-        XCTAssertFalse(ReadingListSectioning.Section.priceAlert.isCollapsible)
-        XCTAssertTrue(ReadingListSectioning.Section.archive.isCollapsible)
-        XCTAssertTrue(ReadingListSectioning.Section.error.isCollapsible)
+    func testReaderShowsOnlyItemsThatReadAsText() {
+        XCTAssertTrue(LunaApp.reader.includes(article()))
+        XCTAssertFalse(LunaApp.reader.includes(platformItem()))
+        XCTAssertFalse(LunaApp.reader.includes(priceTracker()))
+    }
+
+    func testDownloaderShowsMediaButNeitherArticlesNorTrackers() {
+        XCTAssertTrue(LunaApp.downloader.includes(platformItem()))
+        XCTAssertFalse(LunaApp.downloader.includes(article()))
+        XCTAssertFalse(LunaApp.downloader.includes(priceTracker()))
+    }
+
+    func testPriceTrackerShowsOnlyTrackers() {
+        XCTAssertTrue(LunaApp.priceTracker.includes(priceTracker()))
+        XCTAssertFalse(LunaApp.priceTracker.includes(article()))
+        XCTAssertFalse(LunaApp.priceTracker.includes(platformItem()))
+    }
+
+    /// A kind-less failed save has no owner, so EVERY app shows it — the app the
+    /// user saved the link in is where they expect to see it break.
+    func testEveryAppShowsAKindLessFailedSave() {
+        var failed = article()
+        failed.state = .failed
+        for app in LunaApp.allCases {
+            XCTAssertTrue(app.includes(failed), "\(app) must show a failed save")
+        }
+    }
+
+    /// The capability flags are the same three-way split, and the central app is
+    /// the only one that answers yes to all of them.
+    func testCapabilityFlagsMatchTheKindSplit() {
+        XCTAssertTrue(LunaApp.luna.handlesArticles)
+        XCTAssertTrue(LunaApp.luna.handlesMedia)
+        XCTAssertTrue(LunaApp.luna.handlesProducts)
+        XCTAssertEqual(LunaApp.allCases.filter(\.handlesArticles), [.luna, .reader])
+        XCTAssertEqual(LunaApp.allCases.filter(\.handlesMedia), [.luna, .downloader])
+        XCTAssertEqual(LunaApp.allCases.filter(\.handlesProducts), [.luna, .priceTracker])
+        XCTAssertEqual(LunaApp.allCases.filter(\.sharesByEmail), [.luna, .reader])
     }
 }

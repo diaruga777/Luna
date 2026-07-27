@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// Static instruction texts + prompt assembly. Following the
 /// `AudioTrimIntelligence` rule: the task contract lives ENTIRELY in the
@@ -48,7 +49,7 @@ enum RescuePrompts {
     page, an oEmbed endpoint, or a direct file URL.
     """
 
-    /// What `.auto` adds: the model owns the classification, so it needs to be
+    /// What an absent hint adds: the model owns the classification, so it needs to be
     /// told that it owns it. Without this the payload options read as a menu of
     /// equals and the model picks whichever the digest happens to mention first.
     private static let classifyInstruction = """
@@ -71,14 +72,14 @@ enum RescuePrompts {
     /// The plan-call instructions for a hint and tier. `allowsArticlePayload`
     /// gates the "article" option (on-device can't emit a full article).
     ///
-    /// `.auto` — what the failed-save card always sends — offers every payload
+    /// No hint — what the failed-save card always sends — offers every payload
     /// option and hands the classification to the model. A concrete hint keeps
     /// the old single-option form, so a surface that already knows the kind
     /// (the price screen, the media card) still constrains the answer.
-    static func planInstructions(hint: RescueRequest.ContentHint, allowsArticlePayload: Bool) -> String {
+    static func planInstructions(hint: RescueHint?, allowsArticlePayload: Bool) -> String {
         var parts = [planPreamble]
         switch hint {
-        case .auto:
+        case .none:
             parts.append(classifyInstruction)
             if allowsArticlePayload { parts.append(articleOption) }
             parts.append(productOption)
@@ -98,16 +99,16 @@ enum RescuePrompts {
 
     /// The plan-call prompt: URL + what already failed + fenced untrusted digest.
     ///
-    /// Under `.auto` the hint line is replaced by the failure fact, because
+    /// With no hint the hint line is replaced by the failure fact, because
     /// naming a content type here would undo the classification the instructions
     /// just asked for.
     static func planPrompt(
-        url: URL, hint: RescueRequest.ContentHint,
+        url: URL, hint: RescueHint?,
         failureKind: RescueRequest.FailureKind, digest: String
     ) -> String {
-        let context = hint == .auto
+        let context = hint == nil
             ? "What already failed: \(failureDescription(failureKind))"
-            : "Content hint: \(hint.rawValue)"
+            : "Content hint: \(hint?.rawValue ?? "")"
         return """
         URL: \(url.absoluteString)
         \(context)

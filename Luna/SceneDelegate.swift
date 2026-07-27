@@ -8,6 +8,7 @@
 //  sent to a Kindle.
 //
 
+import LunaModels
 import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
@@ -51,7 +52,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// UI exists. Pending contact requests arrive by email, so only the apps that
     /// do email have this screen to route to.
     private func applyPendingNotificationRoute() {
-        guard Self.pendingRequestsRoute, AppSurfaceConfig.current.sharesByEmail,
+        guard Self.pendingRequestsRoute, LunaApp.current.sharesByEmail,
               let nav = mainNavigationController else { return }
         Self.pendingRequestsRoute = false
         nav.dismiss(animated: false)
@@ -183,7 +184,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()
-        if AppSurfaceConfig.current.sharesByEmail {
+        if LunaApp.current.sharesByEmail {
             Task { await IncomingMailImporter.shared.importNewMail() }
         }
         // Kind-specific foreground work: saved-media purge + deferred Wi-Fi

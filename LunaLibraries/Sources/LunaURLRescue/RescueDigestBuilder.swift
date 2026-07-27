@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 import LunaHTMLClassification
 import SwiftSoup
 
@@ -31,14 +32,14 @@ public struct RescueDigestBudget: Equatable {
 /// Section order + proportional budgets (unused budget rolls forward):
 ///   1. head metadata (10%)   — title, description, og/twitter, canonical, amp, alternate
 ///   2. JSON-LD (30%)         — Product/Article/VideoObject ranked first
-///   3. embedded app JSON (20%) — __NEXT_DATA__ / application/json; media hint also greps media URLs
+///   3. embedded app JSON (20%) — __NEXT_DATA__ / application/json; media hint — and no hint — also greps media URLs
 ///   4. visible text (30%)    — body text minus script/style/nav/footer/header/aside/form
 ///   5. candidate URLs (10%)  — canonical/amp/og:video/iframe/video/source + same-host amp|print|embed|oembed links
 public struct RescueDigestBuilder {
     public init() {}
 
     public func buildDigest(
-        url: URL, html: String, hint: RescueRequest.ContentHint, budget: RescueDigestBudget
+        url: URL, html: String, hint: RescueHint?, budget: RescueDigestBudget
     ) -> String {
         guard let document = try? SwiftSoup.parse(html, url.absoluteString) else {
             return String(html.prefix(budget.maxCharacters))
@@ -124,11 +125,11 @@ public struct RescueDigestBuilder {
         return 3
     }
 
-    private func embeddedJSON(_ document: Document, html: String, hint: RescueRequest.ContentHint) -> String {
+    private func embeddedJSON(_ document: Document, html: String, hint: RescueHint?) -> String {
         var parts: [String] = []
-        if hint == .media || hint == .auto {
+        if hint == .media || hint == nil {
             // Surface likely media URLs first — grep the raw HTML for the tokens
-            // public downloaders key on. Included under `.auto` too: the model
+            // public downloaders key on. Included with no hint too: the model
             // can't classify a page as media if the digest never shows it the
             // media, and the lines are cheap (capped at 20).
             let mediaLines = html.split(whereSeparator: { $0 == "\n" || $0 == "," })

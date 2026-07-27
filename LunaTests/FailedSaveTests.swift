@@ -326,13 +326,10 @@ final class FailedSaveSurfacingTests: XCTestCase {
     /// saved the link in is where they expect to see it break.
     func testEverySurfaceShowsAKindLessFailedSave() {
         let item = failedItem()
-        for filter in ReadingListSectioning.ListFilter.allCases {
+        for app in LunaApp.allCases {
             XCTAssertTrue(
-                filter.includes(item),
-                "\(filter) must show a failed save — it belongs to no single app")
-        }
-        for surface in [AppSurface.all, .reader, .downloader, .priceTracker] {
-            XCTAssertTrue(surface.includes(item), "\(surface) must show a failed save")
+                app.includes(item),
+                "\(app) must show a failed save — it belongs to no single app")
         }
     }
 
@@ -342,15 +339,15 @@ final class FailedSaveSurfacingTests: XCTestCase {
         XCTAssertFalse(
             ReadingListSectioning.isFailedSave(item),
             "a platform item that failed a later step is not a kind-less failed save")
-        XCTAssertFalse(ReadingListSectioning.ListFilter.articles.includes(item))
+        XCTAssertFalse(LunaApp.reader.includes(item))
     }
 
     func testAReadyItemIsUnaffected() {
         var item = failedItem()
         item.state = .ready
         XCTAssertFalse(ReadingListSectioning.isFailedSave(item))
-        XCTAssertTrue(ReadingListSectioning.ListFilter.articles.includes(item))
-        XCTAssertFalse(ReadingListSectioning.ListFilter.mediaAndLinks.includes(item))
+        XCTAssertTrue(LunaApp.reader.includes(item))
+        XCTAssertFalse(LunaApp.downloader.includes(item))
     }
 }
 
@@ -360,7 +357,7 @@ final class FailedSaveCardFactoryTests: XCTestCase {
     /// so the card's rescue action carries no hint in any surface, the central
     /// Luna app included.
     func testTheCardNeverPicksAContentHint() {
-        for surface in [AppSurface.all, .reader, .downloader, .priceTracker] {
+        for surface in [LunaApp.luna, .reader, .downloader, .priceTracker] {
             let model = FailedSaveCardFactory.makeModel(for: failedItem(), surface: surface)
             XCTAssertEqual(model.urlText, "example.com/broken")
             XCTAssertFalse(model.isRescuing)

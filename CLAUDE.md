@@ -34,10 +34,12 @@ the Info.plist key `LunaAppGroupID` read by the `LunaAppConfig` library (`AppCon
 **Shared store + surfacing.** Any link saved through ANY app (share sheet, action
 extension, App Intents, Safari extension) is classified by the shared
 `LunaIngest.IngestPipeline` into a `ContentKind` and written to the one shared
-`readingList.json`. Each app shows only its category: `ReadingListViewController(surface:)`
-takes an `AppSurface` (in `LunaReadingListUI`) chosen at launch from the bundle-id suffix
-via `AppSurfaceConfig.current`. Items of other categories are stored but surface only in
-their own app. Feature docs live in `claudedocs/` — keep them current when changing features.
+`readingList.json`. Each app shows only its category: every app's root is a CARD
+DECK, and `LunaApp.current` — derived from the bundle-id suffix — decides both what
+it shows (`LunaApp.includes`, in `LunaReadingListUI`) and what it accepts
+(`SurfaceSupport`, the ingest gate). Items of other categories are stored but
+surface only in their own app. There is no sectioned table list: it was deleted
+once every app rooted on a deck. Feature docs live in `claudedocs/` — keep them current when changing features.
 
 **Targets.** Four app targets (`Luna`/central, `LunaReader`, `LunaDownloader`,
 `LunaPriceTracker`) each share the `Luna/` app-shell sources via the same synchronized
@@ -63,7 +65,7 @@ stable Xcode 26.2.
 
 > **Surface gating.** There is NO onboarding flow — every app opens straight into its
 > main UI, and notification authorization is requested at launch. Email is a
-> per-surface capability, `AppSurface.sharesByEmail` (true for `Luna` and
+> per-app capability, `LunaApp.sharesByEmail` (true for `Luna` and
 > `LunaReader` only): those two connect an account, send saves to contacts
 > (`claudedocs/social-sharing.md`) and import shares/newsletters from a mailbox
 > (`claudedocs/incoming-mail.md`) — each still KEEPING only its own kinds from those
@@ -117,8 +119,7 @@ Almost all code lives in the local SwiftPM package `LunaLibraries/` (layered: co
 orchestration/intents; `LunaAppConfig` at the bottom is the App-Group id source of
 truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared app shell
 (AppDelegate/SceneDelegate), per-app Settings, the main-screen composition
-(ReadingListViewController), composition wiring (AppReaderProviders/
-AppSurfaceConfig), the App Intent **definitions** (`Luna/Mail/Intents/*` —
+(each app's card deck), composition wiring (AppReaderProviders), the App Intent **definitions** (`Luna/Mail/Intents/*` —
 business logic is in the `LunaIntents` library) — and is shared by ALL
 FOUR app targets (each picks its surface from its bundle id; per-app kind wiring
 comes from the one `KindWiring+*.swift` variant each target compiles). `KindWiring` is
@@ -127,9 +128,7 @@ also each app's static composition API: AppDelegate/SceneDelegate call
 plus fixed lifecycle points (`appDidLaunch/appDidEnterBackground/sceneDidForeground/
 readingListDidChange/wifiBecameAvailable/retryPendingArticleSends/
 resumeUnfinishedMediaDownloads/attachBackgroundURLSessionHandler/priceRefreshRunner`), so
-the universal shell never names a foreign kind's symbols. The shared list UI consults the
-`ListKindSupport` registry (`ArticleListSupport`/`MediaListSupport`/`ProductListSupport`,
-per-target-compiled like the wiring); the Action Button intents' media handoff goes through
+the universal shell never names a foreign kind's symbols. The Action Button intents' media handoff goes through
 `ActionButtonIntentSupport.mediaHandoff` (installed by `MediaIntentHandoff`), read-aloud via
 `ReadArticleIntent.playArticle`, and URL Rescue's kind legs via
 `URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
@@ -169,8 +168,8 @@ LunaModels and the rescue engine takes an injected resolver
 intent post-search machinery (`SocialPostFinder`/`DuckDuckGoSearch`/
 `Bluesky|RedditSearchClient`) moved into LunaIntents (URL search is
 kind-neutral); `BlueskyLink` moved to LunaURLClassification. Correctness never
-depended on the link graph — it comes from the surface filter + registry
-gating — but the graph now matches it.
+depended on the link graph — it comes from the `SurfaceSupport` ingest gate
+plus `LunaApp.includes` — but the graph now matches it.
 
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 

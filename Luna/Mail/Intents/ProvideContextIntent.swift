@@ -81,7 +81,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
         LunaSetupStatusStore.shared.recordShortcutRun(
-            isCentral: AppSurfaceConfig.current == .all)
+            isCentral: LunaApp.current == .luna)
         let reporter = IntentProgressReporter()
         // Which background runtime this is, and whether the system shows its own
         // progress, is decided by target membership — see `CaptureIntentRuntime`.
@@ -128,7 +128,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             safariURLFresh: safariURLFresh,
             // A recognized-platform save is media, so only media-handling apps
             // (Downloader, the central Luna app) proceed to a screenshot save.
-            handlesMediaKind: AppSurfaceConfig.current.handlesMedia,
+            handlesMediaKind: LunaApp.current.handlesMedia,
             visionModelAvailable: visionAvailable)
 
         // An `.unsupported` decision ends the intent instantly, having saved
@@ -138,7 +138,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             "provide context: decision=\(decision) app=\(app ?? "nil") safari=\(isSafari) "
                 + "safariURLFresh=\(safariURLFresh) tracked=\(trackedURLString ?? "nil") "
                 + "plan=\(plan) vision=\(visionAvailable) "
-                + "handlesMedia=\(AppSurfaceConfig.current.handlesMedia)",
+                + "handlesMedia=\(LunaApp.current.handlesMedia)",
             category: "intents")
 
         switch decision {
@@ -233,7 +233,7 @@ enum ActionButtonIntentSupport {
     /// 7 s) is armed only for the Reader app's Action Button saves — every other
     /// surface and save path keeps the plain save behavior.
     static var doubleSaveSurface: String? {
-        guard AppSurfaceConfig.current == .reader else { return nil }
-        return AppSurfaceConfig.current.storageIdentifier
+        guard LunaApp.current == .reader else { return nil }
+        return LunaApp.current.storageIdentifier
     }
 }

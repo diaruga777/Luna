@@ -28,7 +28,7 @@ enum FailedSaveCardFactory {
     static func makeCard(
         for item: ReadingListItem,
         host: UIViewController,
-        surface: AppSurface = AppSurfaceConfig.current,
+        surface: LunaApp = LunaApp.current,
         onChanged: @escaping () -> Void
     ) -> FailedSaveCardViewController {
         let card = FailedSaveCardViewController(
@@ -45,7 +45,7 @@ enum FailedSaveCardFactory {
     /// The rendered model — also used on its own by the hosts' in-place updates
     /// (a rescue starting, advancing, or finishing).
     static func makeModel(
-        for item: ReadingListItem, surface: AppSurface = AppSurfaceConfig.current
+        for item: ReadingListItem, surface: LunaApp = LunaApp.current
     ) -> FailedSaveCardModel {
         FailedSaveCardModel(
             itemID: item.id,

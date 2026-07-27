@@ -89,7 +89,7 @@ enum AudioQueueRule {
         // the surface filter, then `assignSections`, then the sections'
         // display order (for reader items only Reading, Archive, and Error
         // can be non-empty; Error items never pass the readability check).
-        let surfaceItems = items.filter { AppSurface.reader.includes($0) }
+        let surfaceItems = items.filter { LunaApp.reader.includes($0) }
         let buckets = ReadingListSectioning.assignSections(items: surfaceItems, now: now)
         let ordered = buckets.reading + buckets.archive + buckets.failed
 

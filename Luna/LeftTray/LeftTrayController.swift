@@ -389,7 +389,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         // from a background thread".
         pasteEvaluationTask = Task { @MainActor [weak self] in
             let preview = await RecentURLMatcher.evaluate(
-                urlString: url.absoluteString, surface: AppSurfaceConfig.current)
+                urlString: url.absoluteString, surface: LunaApp.current)
             guard let self, !Task.isCancelled,
                   UIPasteboard.general.changeCount == changeCount else { return }
             pasteState = preview.map { .preview(changeCount: changeCount, $0) }
@@ -406,8 +406,8 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private func makeRows() -> [LeftTrayRow] {
         var next: [LeftTrayRow] = []
         let setup = LunaSetupStatusStore.shared
-        let isCentral = AppSurfaceConfig.current == .all
-        if AppSurfaceConfig.current.sharesByEmail, !EmailAccountStore.shared.isConfigured {
+        let isCentral = LunaApp.current == .luna
+        if LunaApp.current.sharesByEmail, !EmailAccountStore.shared.isConfigured {
             next.append(.setup(.email))
         }
         if !setup.shortcutHasRun(isCentral: isCentral) {
@@ -1199,7 +1199,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         setupStack.isHidden = false
         switch kind {
         case .safari:
-            setupTitleLabel.text = AppSurfaceConfig.current.handlesArticles
+            setupTitleLabel.text = LunaApp.current.handlesArticles
                 ? L10n.string("Apply Luna in Safari")
                 : L10n.string("Save From Safari")
             setupSubtitleLabel.isHidden = true

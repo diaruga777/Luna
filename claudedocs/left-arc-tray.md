@@ -55,7 +55,21 @@ central app is installed. Revisiting an identical raw URL moves it to the front.
 On foreground, each app reads that trail and evaluates only URL strings absent
 from its per-surface `recentURLChecks.<surface>.v1` cache. Positive and negative
 results are cached, fallen-out URLs are pruned, and presentation always follows
-the current newest-first trail. Reader matches articles/documents, Downloader
+the current newest-first trail.
+
+**The cache is stamped with `AppConfig.appVersion` and discarded when that
+changes.** Every entry is a verdict DERIVED by the pipeline, and because only
+URLs *absent* from the cache are evaluated, a pipeline change would otherwise
+never reach the ones already in it — a Google search page kept its row after the
+classifier learned to reject search-results URLs, because the tray was replaying
+a verdict recorded by an older build. Tying the cache to the version (short
+version *and* build, the same key `SaveFailureRecord.aiAttemptVersion` uses for
+the same reasoning) makes every future classification change self-healing, with
+no bump to remember and at most 20 re-checks per install. `publish` additionally
+re-applies the URL-only half of the veto (`RecentURLMatcher.isObviouslyNonContent`)
+to each cached match on the way to the screen — free, since it reads no HTML, and
+it closes the same window inside a single build. Pinned by
+`RecentURLMatcherTests`. Reader matches articles/documents, Downloader
 matches media, and central Luna matches every supported kind. At most five
 unsaved matches are shown.
 

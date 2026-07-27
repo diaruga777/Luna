@@ -59,17 +59,32 @@ public final class URLRescueEngine {
     public var isAvailable: Bool { session.isAvailable }
 
     /// Attempts to rescue a failed save. Never throws.
-    public func rescue(_ request: RescueRequest) async -> RescueOutcome {
+    ///
+    /// `onProgress` is called as each internal stage begins, on whatever executor
+    /// the engine happens to be running on — the UI-facing observer
+    /// (`URLRescueCoordinator`) is responsible for hopping to the main queue. It
+    /// always ends with `.finished`, whatever the outcome, so a progress bar can
+    /// close itself out without also inspecting the return value.
+    public func rescue(
+        _ request: RescueRequest,
+        onProgress: @escaping (RescueStage) -> Void = { _ in }
+    ) async -> RescueOutcome {
         let host = request.url.host ?? "?"
         log("start host=\(host) hint=\(request.hint.rawValue)")
+        onProgress(.queued)
 
         // Bound the whole attempt.
-        return await withTimeout(seconds: Self.totalBudget, fallback: .failed(.timedOut)) {
-            await self.runRescue(request, host: host)
+        let outcome = await withTimeout(seconds: Self.totalBudget, fallback: .failed(.timedOut)) {
+            await self.runRescue(request, host: host, onProgress: onProgress)
         }
+        onProgress(.finished)
+        return outcome
     }
 
-    private func runRescue(_ request: RescueRequest, host: String) async -> RescueOutcome {
+    private func runRescue(
+        _ request: RescueRequest, host: String,
+        onProgress: @escaping (RescueStage) -> Void
+    ) async -> RescueOutcome {
         // This engine outlives every attempt, so the model session must not:
         // start from a clean one rather than inheriting the previous rescue's
         // transcript (or a response our own timeout cancelled mid-flight).
@@ -79,6 +94,7 @@ public final class URLRescueEngine {
         if let cached = ruleStore.rule(forHost: host, hint: request.hint) {
             log("cachedRule hit host=\(host)")
             if let directive = directiveFromRule(cached, request: request) {
+                onProgress(.replayingRule)
                 let outcome = await applier.apply(directive, request: request)
                 if outcome.succeeded {
                     ruleStore.recordSuccess(cached)
@@ -98,6 +114,7 @@ public final class URLRescueEngine {
         if let prefetched = request.fetchedHTML {
             html = prefetched
         } else {
+            onProgress(.fetching)
             html = try? await fetcher.fetchHTML(from: request.url)
         }
         guard let html, !html.isEmpty else {
@@ -113,10 +130,14 @@ public final class URLRescueEngine {
 
         var plan: RescuePlanResponse?
         for attempt in 0..<2 {
+            onProgress(.digesting)
             let digest = digestBuilder.buildDigest(url: request.url, html: html, hint: request.hint, budget: budget)
             log("digest chars=\(digest.count) est-tokens=\(RescueDigestBudget.estimatedTokens(forCharacters: digest.count)) attempt=\(attempt)")
-            let prompt = RescuePrompts.planPrompt(url: request.url, hint: request.hint, digest: digest)
+            let prompt = RescuePrompts.planPrompt(
+                url: request.url, hint: request.hint,
+                failureKind: request.failureKind, digest: digest)
             do {
+                onProgress(.thinking)
                 plan = try await callPlan(instructions: instructions, prompt: prompt)
                 break
             } catch let error as RescueModelError {
@@ -164,6 +185,7 @@ public final class URLRescueEngine {
         case .success(.directive(let d)):
             directive = d
         case .success(.needsArticlePayload):
+            onProgress(.reading)
             guard let payloadDirective = await requestArticlePayload(
                 request: request, digest: digestForValidation, host: host) else {
                 return .unrescuable
@@ -172,6 +194,7 @@ public final class URLRescueEngine {
         }
 
         // (6) Apply.
+        onProgress(.applying)
         let outcome = await applier.apply(directive, request: request)
         log("apply outcome=\(outcomeLabel(outcome)) host=\(host)")
 

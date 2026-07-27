@@ -51,6 +51,46 @@ final class URLRescueEngineTests: XCTestCase {
         guard case .quotaExhausted = outcome else { return XCTFail("quota → quotaExhausted") }
     }
 
+    // MARK: - Stage progress
+
+    /// The card's eclipse bar is driven entirely by these reports, so the engine
+    /// must always open with `.queued` and always close with `.finished` — even
+    /// on the paths that bail early.
+    func testProgressAlwaysStartsQueuedAndEndsFinished() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        var stages: [RescueStage] = []
+        _ = await engine.rescue(request()) { stages.append($0) }
+        XCTAssertEqual(stages.first, .queued)
+        XCTAssertEqual(stages.last, .finished)
+        XCTAssertTrue(stages.contains(.thinking), "the model call must be announced")
+    }
+
+    func testProgressFinishesEvenWhenTheSessionIsUnavailable() async {
+        let (engine, _) = makeEngine(session: FakeRescueModelSession(available: false))
+        var stages: [RescueStage] = []
+        _ = await engine.rescue(request()) { stages.append($0) }
+        XCTAssertEqual(stages, [.queued, .finished])
+    }
+
+    /// The digest is built from HTML the failing pass already had, so no fetch
+    /// stage should be claimed — a bar that shows work nobody did is a lie.
+    func testProgressSkipsFetchingWhenHTMLWasHandedOver() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        var stages: [RescueStage] = []
+        _ = await engine.rescue(request()) { stages.append($0) }
+        XCTAssertFalse(stages.contains(.fetching))
+    }
+
+    func testProgressReportsFetchingWhenItHasToRefetch() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        var stages: [RescueStage] = []
+        _ = await engine.rescue(request(html: nil)) { stages.append($0) }
+        XCTAssertTrue(stages.contains(.fetching))
+    }
+
     func testPrewarmedOnce() async {
         let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
         let (engine, _) = makeEngine(session: session)

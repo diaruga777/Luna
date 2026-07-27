@@ -166,32 +166,27 @@ public final class ShareSurfaceDriver {
         }
     }
 
-    /// The action-extension failure card: pick a hint, write a pending-rescue
+    /// The action-extension failure card: show the page, write a pending-rescue
     /// record, best-effort open the containing app. The extension links NO rescue
     /// engine — only the pending-record store + the deep link.
+    ///
+    /// The record carries NO hint: the model classifies the page when the app
+    /// drains the queue, so there is nothing for this card to ask (it used to show
+    /// a three-way content-type picker).
     private func presentRescueFailure(url: URL) {
         guard let host else { return }
         let app = currentApp
         let card = RescueFailureViewController(
-            defaultHint: Self.defaultHint(for: app),
+            url: url,
             rescueURL: LunaDeepLink.rescueLink(scheme: app.deepLinkScheme),
             openApp: { [weak host] in host?.openURL($0) },
-            onFinish: { chosen in
+            onFinish: {
                 PendingRescueRequestStore.shared.append(PendingRescueRequest(
-                    urlString: url.absoluteString, hint: chosen, dateWritten: Date(),
+                    urlString: url.absoluteString, hint: nil, dateWritten: Date(),
                     sourceSurface: app.storageIdentifier))
             },
             onDone: { [weak host] in host?.completeSilently() })
         host.presentModally(card)
-    }
-
-    /// The natural rescue hint for an app (matches the app-shell mapping).
-    public static func defaultHint(for app: LunaApp) -> RescueHint {
-        switch app {
-        case .luna, .reader: return .article
-        case .downloader: return .media
-        case .priceTracker: return .product
-        }
     }
 
     // MARK: - Per-kind presenter lookup

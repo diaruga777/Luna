@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaModels
 import UIKit
 
 /// The quiet focus bridge around RSVP's optimal-recognition-position letter.
@@ -147,6 +148,34 @@ public enum GlassStyle {
         config.baseForegroundColor = LunaColors.primaryText
         config.contentInsets = NSDirectionalEdgeInsets(
             top: padding, leading: padding, bottom: padding, trailing: padding)
+        return config
+    }
+
+    /// The Apple Intelligence mark. `apple.intelligence` arrived in SF Symbols 6.2
+    /// (iOS 18.4) and the deployment target is 18.0, so `sparkles` is a real
+    /// fallback rather than belt-and-braces.
+    public static var appleIntelligenceImage: UIImage? {
+        UIImage(systemName: "apple.intelligence") ?? UIImage(systemName: "sparkles")
+    }
+
+    /// The ONE styling of "Retry with AI" — the Apple Intelligence glyph trailing
+    /// the words as a sigil rather than leading as an icon.
+    ///
+    /// Shared so every error surface that offers the rescue reads identically: the
+    /// in-app failed card, the Downloader's failed-download card, and the
+    /// extension's failure card. They had drifted to three labels ("Try with
+    /// Apple Intelligence", "Try Apple Intelligence", "Ask Apple Intelligence")
+    /// and two icons; a user who sees the offer in two places should not have to
+    /// work out whether it's the same offer.
+    public static func retryWithAIConfiguration(
+        title: String = L10n.string("Retry with AI"),
+        prominent: Bool = true,
+        compact: Bool = false
+    ) -> UIButton.Configuration {
+        var config = actionButtonConfiguration(
+            title: title, symbol: "sparkles", prominent: prominent, compact: compact)
+        if let intelligence = appleIntelligenceImage { config.image = intelligence }
+        config.imagePlacement = .trailing
         return config
     }
 

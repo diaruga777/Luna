@@ -481,14 +481,17 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     }
 
 
-    /// The no-price alert, plus an "Ask Apple Intelligence" action (only shown
-    /// when the resolver is installed — i.e. the main app, never extensions).
+    /// The no-price alert, plus a "Retry with AI" action (only shown when the
+    /// resolver is installed — i.e. the main app, never extensions). The label
+    /// matches every other error surface's offer
+    /// (`GlassStyle.retryWithAIConfiguration`); an alert can't carry the failed
+    /// card's chrome, but it can at least call the same thing the same name.
     private func presentNoPriceWithRescueOption(urlString: String) {
         let alert = UIAlertController(
             title: L10n.string("No price found"),
             message: L10n.string("We couldn't read a price on that page. Apple Intelligence can try to find it."),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Ask Apple Intelligence"), style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Retry with AI"), style: .default) { [weak self] _ in
             self?.askIntelligenceForPrice(urlString: urlString)
         })
         alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))

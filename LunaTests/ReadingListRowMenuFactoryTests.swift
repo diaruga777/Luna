@@ -206,4 +206,31 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
         XCTAssertEqual(editIndex, result.count - 1)
         XCTAssertLessThan(deleteIndex, editIndex)
     }
+
+    // MARK: - A failed row offers the rescue, not a content-type submenu
+
+    /// The three-hint submenu is gone: the model classifies the page itself, so a
+    /// failed row's menu is one flat action plus Delete. Flat matters — a submenu
+    /// would still read as "there's a question to answer here".
+    func testFailedRowOffersOneFlatRetryActionAndDelete() {
+        var rowActions = actions()
+        rowActions.canRescue = true
+        let menu = ReadingListRowMenuFactory.menu(
+            for: article(state: .failed), actions: rowActions)
+
+        XCTAssertEqual(titles(menu), ["Retry with AI", "Delete"])
+        XCTAssertTrue(
+            menu.children.allSatisfy { !($0 is UIMenu) },
+            "no submenu should survive on a failed row")
+    }
+
+    /// With the attempt spent (or no model), the row matches the card's terminal
+    /// state: Delete and nothing else — never an offer that can't be honoured.
+    func testFailedRowWithoutARescueOffersOnlyDelete() {
+        var rowActions = actions()
+        rowActions.canRescue = false
+        let menu = ReadingListRowMenuFactory.menu(
+            for: article(state: .failed), actions: rowActions)
+        XCTAssertEqual(titles(menu), ["Delete"])
+    }
 }

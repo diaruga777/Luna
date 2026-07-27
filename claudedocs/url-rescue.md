@@ -89,10 +89,12 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   classifying the page is ITS job; the prompt drops the hint line and states what
   already failed as a diagnostic fact instead. The failed-save card and every
   automatic path send nil, so **no surface asks the user for a content type any
-  more** — the central Luna app's segmented picker is gone
-  (`claudedocs/failed-saves.md`). A concrete hint remains for the surfaces that
-  genuinely know: the list row's rescue sheet, the extension hand-off, the price
-  editor, the media card.
+  more**: the card's segmented picker, the failed row's three-way action sheet,
+  its long-press submenu, and the extension card's segmented control are all gone
+  (`claudedocs/failed-saves.md`). `RescueHint` is no longer user-facing at all —
+  it has no `displayName` — and remains only for the two programmatic callers
+  that know the kind from where the user pressed: the price editor and the media
+  card.
 - **Progress** — `rescue(_:onProgress:)` reports a `RescueStage` (LunaModels) at
   each internal boundary, always opening `.queued` and closing `.finished`.
   `URLRescueCoordinator.reportProgress`/`rescueProgress` turn that into a
@@ -110,13 +112,14 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   hint, and is limited to ONE attempt per app version — see
   `claudedocs/failed-saves.md`.
 - **Extension handoff** — the action extension's `.failed` presents
-  `RescueFailureViewController` (hint segmented control + "Finish in Luna"), which
-  writes a `PendingRescueRequest` and best-effort opens the containing app via
+  `RescueFailureViewController`, now the same red-rimmed web-view card as the
+  in-app failed save (no hint picker; "Retry with AI"), which
+  writes a hint-less `PendingRescueRequest` and best-effort opens the containing app via
   `<scheme>://rescue` (`host.openURL`); the main app drains it on launch /
   foreground / the deep link. Extensions link NO rescue engine.
 - **Price / media** — `PriceTrackingViewController.intelligentPriceResolver` powers
-  an "Ask Apple Intelligence" action on the no-price alert;
-  `DownloaderJobSnapshot.failureKind == .noMedia` gates a "Try Apple Intelligence"
+  a "Retry with AI" action on the no-price alert;
+  `DownloaderJobSnapshot.failureKind == .noMedia` gates a "Retry with AI"
   button on a failed download card, applied via
   `LiveMediaDownloadManager.startWithResolvedAssets`.
 

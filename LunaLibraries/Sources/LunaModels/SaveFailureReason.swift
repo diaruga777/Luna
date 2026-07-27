@@ -5,6 +5,37 @@
 
 import Foundation
 
+/// The copy every failed-save surface shares, so the in-app card, the extension
+/// failure card, the list row, and the Downloader's failed-download card can't
+/// drift into four different apologies for the same thing.
+public enum FailedSaveCopy {
+    /// The terminal line: the rescue is spent for this app version and there is
+    /// nothing left to offer but Delete.
+    public static var terminal: String {
+        L10n.string("Sorry, Luna was unable to save this page.")
+    }
+
+    /// The headline a surface uses when it has to name the failure in words
+    /// (the card doesn't — it shows the page).
+    public static var couldNotLoad: String {
+        L10n.string("Couldn't load this page.")
+    }
+
+    /// The URL as the error card's URL bar shows it: scheme stripped, path and
+    /// query kept, because *which* link broke is the point.
+    ///
+    /// Lives here rather than in `FailedSaveNaming` (LunaFetch) so the extension
+    /// failure card can show the identical string without an extension linking
+    /// the fetch tier. `FailedSaveNaming.displayURL` forwards to it.
+    public static func displayURL(_ url: URL?, rawURLString: String? = nil) -> String {
+        let text = url?.absoluteString ?? rawURLString ?? ""
+        for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {
+            return String(text.dropFirst(prefix.count))
+        }
+        return text
+    }
+}
+
 /// WHY a saved URL ended `.failed` — the detail a failed card shows under its
 /// title so "Couldn't fetch this" stops being the whole story.
 ///

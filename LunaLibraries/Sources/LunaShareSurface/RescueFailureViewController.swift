@@ -6,39 +6,60 @@
 import LunaDesignSystem
 import LunaModels
 import UIKit
+import WebKit
 
 /// The extension failure card shown when a share/action save can't be loaded.
-/// Instead of a dead-end red triangle, it offers to finish the save with Apple
-/// Intelligence in the main app: pick what the save should become, then tap
-/// "Finish in Luna" (writes a pending-rescue record + best-effort opens the
-/// containing app). No LLM code here — the extension only records the request.
+///
+/// Deliberately the SAME card as the in-app failed save
+/// (`FailedSaveCardViewController`, see `claudedocs/failed-saves.md`): a red-rimmed
+/// card surface, the page itself in a near-full-bleed web view, a URL bar under it,
+/// and "Retry with AI ✦" in the chin. A user who hits this in the share sheet and
+/// then opens Luna should recognise the same object, not meet two different
+/// apologies for one failure.
+///
+/// The one honest difference: an extension links NO rescue engine, so the button
+/// can't run anything. It records a pending-rescue request and best-effort opens
+/// the containing app — hence no progress overlay here, and a reassurance line in
+/// place of a result. There is no content-type picker in either card; the model
+/// classifies the page itself.
 public final class RescueFailureViewController: UIViewController {
-    private let defaultHint: RescueHint
+    private let url: URL?
     private let rescueURL: URL?
     private let openApp: (URL) -> Void
-    private let onFinish: (RescueHint) -> Void
+    private let onFinish: () -> Void
     private let onDone: () -> Void
 
-    private let segmented = UISegmentedControl(items: RescueHint.allCases.map(\.displayName))
-    private lazy var primaryButton = UIButton(type: .system)
+    /// Matches the in-app card's geometry so the two read as one design.
+    private static let webInset: CGFloat = 8
+    private static let webCornerRadius: CGFloat = 14
+
+    private let cardView = CardSurfaceView()
+    private var webView: WKWebView?
+    private let webContainer = UIView()
+    private let urlLabel = UILabel()
+    private let reloadButton = UIButton(type: .system)
+    private let shareButton = UIButton(type: .system)
+    private lazy var rescueButton = UIButton(type: .system)
     private let manualLabel = UILabel()
     private lazy var doneButton = UIButton(type: .system)
+    private let chinStack = UIStackView()
 
+    /// - url: the page that failed. Nil ⇒ the card shows its chrome with no page.
     /// - rescueURL: this app's `<scheme>://rescue` deep link (built by the driver);
     ///   nil ⇒ only the manual "Open Luna" instruction is shown.
     /// - openApp: best-effort deep-link open (host.openURL — extensions can't
     ///   observe whether it succeeded, so the card always then shows the manual
     ///   "Open Luna to finish saving" reassurance; the app's foreground drain
     ///   picks the record up regardless).
-    /// - onFinish: records the pending rescue for the chosen hint.
+    /// - onFinish: records the pending rescue.
     public init(
-        defaultHint: RescueHint,
+        url: URL?,
         rescueURL: URL?,
         openApp: @escaping (URL) -> Void,
-        onFinish: @escaping (RescueHint) -> Void,
+        onFinish: @escaping () -> Void,
         onDone: @escaping () -> Void
     ) {
-        self.defaultHint = defaultHint
+        self.url = url
         self.rescueURL = rescueURL
         self.openApp = openApp
         self.onFinish = onFinish
@@ -50,86 +71,209 @@ public final class RescueFailureViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
+        // An extension lives in someone else's window, so the appearance has to be
+        // applied to the view controller rather than a window we don't own
+        // (`claudedocs/visual-effects.md`).
+        AppearanceSettings.apply(to: self)
+        navigationItem.title = FailedSaveCopy.couldNotLoad
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 
-        let icon = UIImageView(image: UIImage(
-            systemName: "exclamationmark.triangle.fill",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 40, weight: .semibold)))
-        icon.tintColor = .systemOrange
-        icon.contentMode = .center
+        buildCard()
+        loadPage()
+    }
 
-        let title = UILabel()
-        title.text = L10n.string("Couldn't load this page.")
-        title.textColor = LunaColors.primaryText
-        title.font = .preferredFont(forTextStyle: .headline)
-        title.textAlignment = .center
-        title.numberOfLines = 0
+    // MARK: - Hierarchy
 
-        let body = UILabel()
-        body.text = L10n.string("Luna can try again with Apple Intelligence the next time you open it. What should this save become?")
-        body.textColor = LunaColors.secondaryText
-        body.font = .preferredFont(forTextStyle: .subheadline)
-        body.textAlignment = .center
-        body.numberOfLines = 0
+    private func buildCard() {
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.setBorderEnabled(true)
+        // The same red rim the in-app card carries, from the same source.
+        cardView.setEdgeGlow(LunaColors.errorAccent)
+        view.addSubview(cardView)
 
-        segmented.selectedSegmentIndex = RescueHint.allCases.firstIndex(of: defaultHint) ?? 0
+        webContainer.backgroundColor = LunaColors.tertiaryBackground
+        webContainer.layer.cornerRadius = Self.webCornerRadius
+        webContainer.layer.cornerCurve = .continuous
+        webContainer.clipsToBounds = true
+        webContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        primaryButton.setTitle(L10n.string("Finish in Luna"), for: .normal)
-        primaryButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
-        primaryButton.addTarget(self, action: #selector(finishTapped), for: .touchUpInside)
+        let urlBar = buildURLBar()
+        buildChin()
+
+        let stack = UIStackView(arrangedSubviews: [webContainer, urlBar, chinStack])
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cardView.installContentView(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            cardView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            cardView.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            cardView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            cardView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+
+            stack.topAnchor.constraint(
+                equalTo: cardView.contentContainer.topAnchor, constant: Self.webInset),
+            stack.leadingAnchor.constraint(
+                equalTo: cardView.contentContainer.leadingAnchor, constant: Self.webInset),
+            stack.trailingAnchor.constraint(
+                equalTo: cardView.contentContainer.trailingAnchor, constant: -Self.webInset),
+            stack.bottomAnchor.constraint(
+                equalTo: cardView.contentContainer.bottomAnchor, constant: -14),
+        ])
+    }
+
+    private func buildURLBar() -> UIView {
+        let bar = UIView()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+
+        configureBarButton(reloadButton, symbol: "arrow.clockwise",
+                           label: L10n.string("Reload page"))
+        reloadButton.addAction(UIAction { [weak self] _ in self?.webView?.reload() },
+                               for: .touchUpInside)
+        configureBarButton(shareButton, symbol: "square.and.arrow.up",
+                           label: L10n.string("Share link"))
+        shareButton.addAction(UIAction { [weak self] _ in self?.shareTapped() },
+                              for: .touchUpInside)
+
+        urlLabel.text = url.map { FailedSaveCopy.displayURL($0) }
+        urlLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        urlLabel.textColor = LunaColors.secondaryText
+        urlLabel.numberOfLines = 1
+        urlLabel.lineBreakMode = .byTruncatingMiddle
+        urlLabel.textAlignment = .center
+
+        let row = UIStackView(arrangedSubviews: [reloadButton, urlLabel, shareButton])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: bar.topAnchor),
+            row.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+            row.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 6),
+            row.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -6),
+        ])
+        return bar
+    }
+
+    private func buildChin() {
+        rescueButton.configuration = GlassStyle.retryWithAIConfiguration()
+        rescueButton.contentHorizontalAlignment = .center
+        rescueButton.addTarget(self, action: #selector(finishTapped), for: .touchUpInside)
+        rescueButton.isHidden = rescueURL == nil
 
         manualLabel.text = L10n.string("Open Luna to finish saving this.")
         manualLabel.textColor = LunaColors.secondaryText
         manualLabel.font = .preferredFont(forTextStyle: .footnote)
         manualLabel.textAlignment = .center
-        manualLabel.numberOfLines = 0
+        manualLabel.numberOfLines = 2
         manualLabel.isHidden = true
 
-        doneButton.setTitle(L10n.string("Done"), for: .normal)
-        doneButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        doneButton.configuration = GlassStyle.actionButtonConfiguration(
+            title: L10n.string("Done"), symbol: "checkmark", compact: true)
+        doneButton.contentHorizontalAlignment = .center
         doneButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         doneButton.isHidden = true
 
-        let notNow = UIButton(type: .system)
-        notNow.setTitle(L10n.string("Not Now"), for: .normal)
-        notNow.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
-
-        let stack = UIStackView(arrangedSubviews: [icon, title, body, segmented, primaryButton, manualLabel, doneButton, notNow])
-        stack.axis = .vertical
-        stack.spacing = 16
-        stack.alignment = .center
-        stack.setCustomSpacing(24, after: body)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-        ])
+        chinStack.axis = .vertical
+        chinStack.spacing = 8
+        chinStack.alignment = .fill
+        for subview in [rescueButton, manualLabel, doneButton] {
+            chinStack.addArrangedSubview(subview)
+        }
     }
 
-    private var selectedHint: RescueHint {
-        RescueHint.allCases[safe: segmented.selectedSegmentIndex] ?? defaultHint
+    /// The same hairline circular button the in-app card's URL bar uses.
+    private func configureBarButton(_ button: UIButton, symbol: String, label: String) {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: symbol)
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 13, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: 6, leading: 6, bottom: 6, trailing: 6)
+        button.configuration = config
+        button.tintColor = LunaColors.secondaryText
+        button.accessibilityLabel = label
+        button.setContentHuggingPriority(.required, for: .horizontal)
+    }
+
+    // MARK: - Web view
+
+    private func loadPage() {
+        guard let url else {
+            reloadButton.isEnabled = false
+            return
+        }
+        let configuration = WebJunkBlocker.makeConfiguration()
+        // The user's own cookies — the same reason the in-app card uses them: a
+        // page a background fetch couldn't read often renders here.
+        configuration.websiteDataStore = .default()
+        let web = WKWebView(frame: webContainer.bounds, configuration: configuration)
+        web.navigationDelegate = self
+        web.isOpaque = false
+        web.backgroundColor = .clear
+        web.scrollView.backgroundColor = .clear
+        web.scrollView.showsVerticalScrollIndicator = false
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.translatesAutoresizingMaskIntoConstraints = false
+        webContainer.addSubview(web)
+        NSLayoutConstraint.activate([
+            web.topAnchor.constraint(equalTo: webContainer.topAnchor),
+            web.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+            web.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+            web.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+        ])
+        webView = web
+        web.load(URLRequest(url: url))
+    }
+
+    // MARK: - Actions
+
+    private func shareTapped() {
+        guard let url else { return }
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        sheet.popoverPresentationController?.sourceView = shareButton
+        present(sheet, animated: true)
     }
 
     @objc private func finishTapped() {
-        onFinish(selectedHint)   // record the pending request first — so the open never loses it
+        onFinish()   // record the pending request first — so the open never loses it
         if let url = rescueURL { openApp(url) }
         // We can't observe whether the deep-link open succeeded from an extension,
         // so always leave the manual instruction (the app's foreground drain is the
         // real guarantee).
-        segmented.isEnabled = false
-        primaryButton.isHidden = true
+        rescueButton.isHidden = true
         manualLabel.isHidden = false
         doneButton.isHidden = false
     }
 
     @objc private func cancelTapped() { onDone() }
+
+    #if DEBUG
+    /// Test seam: fires the same record-the-request path the button does, without
+    /// synthesizing a touch on a card that was never put in a window.
+    public func recordPendingRescueForTesting() { onFinish() }
+    #endif
 }
 
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
+// MARK: - WKNavigationDelegate
+
+extension RescueFailureViewController: WKNavigationDelegate {
+
+    /// The card is a window onto ONE page and the URL bar names it, so a tapped
+    /// link is refused rather than navigating in place. There's no full-screen
+    /// browser to hand off to inside an extension, so this simply declines.
+    public func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        decisionHandler(navigationAction.navigationType == .linkActivated ? .cancel : .allow)
     }
 }

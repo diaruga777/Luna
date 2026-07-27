@@ -43,11 +43,11 @@ public enum FailedSaveNaming {
     /// a one-line label) but path and query kept, because WHICH url failed is
     /// the point.
     public static func displayURL(_ url: URL?, rawURLString: String? = nil) -> String {
-        let text = url?.absoluteString ?? rawURLString ?? ""
-        for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {
-            return String(text.dropFirst(prefix.count))
-        }
-        return text
+        // The implementation moved down to LunaModels (`FailedSaveCopy`) so the
+        // extension failure card can render the identical string without an
+        // extension linking the fetch tier. Kept here so existing call sites and
+        // the naming chain's tests read as one API.
+        FailedSaveCopy.displayURL(url, rawURLString: rawURLString)
     }
 
     private static func nonEmpty(_ value: String?) -> String? {

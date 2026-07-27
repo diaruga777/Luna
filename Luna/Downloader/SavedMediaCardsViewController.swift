@@ -987,12 +987,21 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         loadThumbnail(for: items[mediaIndex], completion: completion)
     }
 
-    /// A failed save's card carries a soft red rim — the only card chrome that
-    /// says "this one is broken" without a badge or a banner.
+    /// A broken card carries a red rim — the only card chrome that says "this one
+    /// is broken" without a badge or a banner. Two kinds of broken get it: a
+    /// failed SAVE (the shared error card) and a media item whose DOWNLOAD failed.
+    /// The second was missing, so the two failures looked nothing alike despite
+    /// sitting in the same deck.
     func carousel(
         _ carousel: CardCarouselViewController, edgeGlowColorForCardAt index: Int
     ) -> UIColor? {
-        failedSave(atCarouselIndex: index) != nil ? LunaColors.errorAccent : nil
+        if failedSave(atCarouselIndex: index) != nil { return LunaColors.errorAccent }
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index),
+              items.indices.contains(mediaIndex),
+              LiveMediaDownloadManager.shared.currentDownloadSnapshot(
+                forSourceURLString: items[mediaIndex].sourceURLString)?.phase == .failed
+        else { return nil }
+        return LunaColors.errorAccent
     }
 
     func carousel(
@@ -1340,18 +1349,16 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
 
-        // "Try Apple Intelligence" — shown only on a no-media failure when a model
-        // is available. Runs a one-shot URL rescue with the media hint.
-        var rescueConfig = UIButton.Configuration.tinted()
-        rescueConfig.image = UIImage(systemName: "wand.and.stars")
-        rescueConfig.title = L10n.string("Try Apple Intelligence")
-        rescueConfig.imagePadding = 6
-        rescueConfig.cornerStyle = .capsule
-        rescueButton.configuration = rescueConfig
+        // "Retry with AI ✦" — shown only on a no-media failure when a model is
+        // available. Styled by the one shared definition
+        // (`GlassStyle.retryWithAIConfiguration`) so this card's offer is visibly
+        // the SAME offer as the failed-save card's, which it wasn't when it read
+        // "Try Apple Intelligence" over a `wand.and.stars`.
+        rescueButton.configuration = GlassStyle.retryWithAIConfiguration(compact: true)
         rescueButton.isHidden = true
         rescueButton.addAction(UIAction { [weak self] _ in
             self?.rescueButton.isHidden = true
-            self?.statusLabel.text = L10n.string("Asking Apple Intelligence…")
+            self?.statusLabel.text = L10n.string("Trying harder with Apple Intelligence…")
             self?.rescue?()
         }, for: .touchUpInside)
         rescueButton.translatesAutoresizingMaskIntoConstraints = false

@@ -1089,22 +1089,46 @@ final class ReadingListViewController: UITableViewController {
         return result
     }
 
-    /// Offers a one-shot URL-rescue with a hint picker for a `.failed` row. The
-    /// surface's natural hint is listed first. Each action bypasses the auto-rescue
-    /// toggle + attempt budget (a deliberate user request).
+    /// Offers a one-shot URL-rescue for a `.failed` row. There is no content-type
+    /// question any more — the model classifies the page itself — so this is a
+    /// single confirm, not a picker.
+    ///
+    /// It stays a confirm rather than rescuing on the bare tap because the rescue
+    /// is now rationed to ONE attempt per app version: a mis-tap on a row would
+    /// otherwise spend the only thing the item has left. The confirm bypasses the
+    /// automatic attempt budget — that tap IS the consent.
     private func presentRescueSheet(for item: ReadingListItem, presenter: UIViewController) {
         let alert = UIAlertController(
-            title: L10n.string("Couldn't load this page"),
-            message: L10n.string("Luna can try harder with Apple Intelligence. Choose what this save should become."),
+            title: FailedSaveCopy.couldNotLoad,
+            message: L10n.string("Luna can try harder with Apple Intelligence — once per update."),
             preferredStyle: .actionSheet)
-        let defaultHint = URLRescueWiring.defaultHint(for: AppSurfaceConfig.current)
-        let ordered = [defaultHint] + RescueHint.allCases.filter { $0 != defaultHint }
-        for hint in ordered {
-            alert.addAction(UIAlertAction(title: L10n.string("Rescue as \(hint.displayName)"), style: .default) { _ in
-                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: hint)
-            })
-        }
+        alert.addAction(UIAlertAction(title: L10n.string("Retry with AI"), style: .default) { _ in
+            URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: nil)
+        })
         alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        present(alert, centeredOn: presenter)
+    }
+
+    /// The row form of the card's terminal state: the same apology, and Delete as
+    /// the only action. Shown instead of the rescue confirm once this version's
+    /// attempt is spent, so a failed row is never a tap that does nothing.
+    private func presentTerminalFailureSheet(
+        for item: ReadingListItem, presenter: UIViewController
+    ) {
+        let alert = UIAlertController(
+            title: FailedSaveCopy.couldNotLoad,
+            message: FailedSaveCopy.terminal,
+            preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: L10n.string("Delete"), style: .destructive) {
+            [weak self] _ in self?.deleteItemAnimated(item)
+        })
+        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        present(alert, centeredOn: presenter)
+    }
+
+    /// Presents an action sheet, anchored to the presenter's centre on iPad (a
+    /// `.actionSheet` without a popover anchor crashes there).
+    private func present(_ alert: UIAlertController, centeredOn presenter: UIViewController) {
         if let popover = alert.popoverPresentationController {
             popover.sourceView = presenter.view
             popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY,
@@ -1162,12 +1186,16 @@ final class ReadingListViewController: UITableViewController {
             store.markReadState(.opened, for: item.id)
             return
         }
-        // A failed save can be rescued with Apple Intelligence: offer a one-shot
-        // opt-in with a hint picker (works regardless of the auto-rescue toggle —
-        // the tap IS the consent). Only when a model is actually usable; otherwise
-        // fall through to today's no-op tap.
+        // A failed save offers the rescue on tap — one confirm, no content-type
+        // question. Once this version's attempt is spent the row says so and
+        // offers Delete, matching the card's terminal state; without a usable
+        // model there is nothing to offer at all, so the tap stays a no-op.
         if item.state == .failed, URLRescueCoordinator.engine?.isAvailable() == true {
-            presentRescueSheet(for: item, presenter: presenter)
+            if SaveFailureStore.shared.hasSpentAIAttempt(item.id) {
+                presentTerminalFailureSheet(for: item, presenter: presenter)
+            } else {
+                presentRescueSheet(for: item, presenter: presenter)
+            }
             return
         }
         guard item.state == .ready, let content = store.content(for: item),
@@ -1299,9 +1327,10 @@ final class ReadingListViewController: UITableViewController {
             unarchive: { [weak self] in self?.store.markUnread(item.id) },
             delete: { [weak self] in self?.deleteItemAnimated(item) },
             editList: { [weak self] in self?.setEditing(true, animated: true) },
-            canRescue: URLRescueCoordinator.engine?.isAvailable() == true,
-            rescue: { hint in
-                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: hint)
+            canRescue: URLRescueCoordinator.engine?.isAvailable() == true
+                && !SaveFailureStore.shared.hasSpentAIAttempt(item.id),
+            rescue: {
+                URLRescueCoordinator.shared.requestManualRescue(itemID: item.id, hint: nil)
             })
         return ReadingListRowMenuFactory.menu(for: item, actions: actions)
     }

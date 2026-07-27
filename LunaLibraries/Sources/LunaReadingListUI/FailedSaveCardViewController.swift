@@ -288,7 +288,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
             self?.beginRescue()
         }, for: .touchUpInside)
 
-        apologyLabel.text = L10n.string("Sorry, Luna was unable to save this page.")
+        apologyLabel.text = FailedSaveCopy.terminal
         apologyLabel.font = .preferredFont(forTextStyle: .footnote)
         apologyLabel.adjustsFontForContentSizeCategory = true
         apologyLabel.textColor = LunaColors.secondaryText
@@ -325,19 +325,10 @@ public final class FailedSaveCardViewController: CardContentViewController {
         button.setContentHuggingPriority(.required, for: .horizontal)
     }
 
-    /// "Retry with AI ✦" — the Apple Intelligence glyph reads as the mark of the
-    /// feature, so it sits AFTER the words as a sigil rather than as a leading
-    /// icon. `apple.intelligence` arrived in SF Symbols 6.2 (iOS 18.4) and the
-    /// deployment target is 18.0, so the sparkle is a real fallback, not
-    /// belt-and-braces.
+    /// "Retry with AI ✦", styled by the one shared definition every error surface
+    /// uses (`GlassStyle.retryWithAIConfiguration`).
     private static func rescueConfiguration() -> UIButton.Configuration {
-        var config = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Retry with AI"), symbol: "sparkles", prominent: true)
-        if let intelligence = UIImage(systemName: "apple.intelligence") {
-            config.image = intelligence
-        }
-        config.imagePlacement = .trailing
-        return config
+        GlassStyle.retryWithAIConfiguration()
     }
 
     // MARK: - Web view

@@ -46,6 +46,7 @@ enum UITestScreen: String, CaseIterable {
     case shareReaderArticle
     case shareMediaPlatform
     case actionReaderArticle
+    case actionRescueFailure
 }
 
 /// Builds the forced root view controller for a deep-linked UI-test screen. Some
@@ -144,6 +145,19 @@ enum UITestScreenBuilder {
             let screen = SavedNonTextualViewController(
                 articleURLString: "https://x.com/user/status/123", onDone: {})
             return UINavigationController(rootViewController: screen)
+
+        case .actionRescueFailure:
+            // The extension's failure card, hosted in-app — the real share sheet
+            // can't be driven on a simulator, and this card is the one extension
+            // screen whose layout is worth checking (it mirrors the in-app failed
+            // card, so the two must be comparable side by side).
+            guard let url = URL(string: "https://example.com/broken") else {
+                return UINavigationController(rootViewController: ReadingListViewController())
+            }
+            let card = RescueFailureViewController(
+                url: url, rescueURL: URL(string: "luna://rescue"),
+                openApp: { _ in }, onFinish: {}, onDone: {})
+            return UINavigationController(rootViewController: card)
 
         }
     }

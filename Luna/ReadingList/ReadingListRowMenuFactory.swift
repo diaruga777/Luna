@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import LunaModels
 import UIKit
 
@@ -34,11 +35,11 @@ struct RowMenuActions {
     let unarchive: () -> Void
     let delete: () -> Void
     let editList: () -> Void
-    /// True when a `.failed` item can be rescued (a model is usable). Gates the
-    /// "Try with Apple Intelligence" submenu.
+    /// True when a `.failed` item can be rescued: a model is usable AND this app
+    /// version's one attempt hasn't been spent. Gates the "Retry with AI" action.
     var canRescue: Bool = false
-    /// Runs a one-shot rescue for the chosen hint.
-    var rescue: (RescueHint) -> Void = { _ in }
+    /// Runs the one-shot rescue. Takes no hint — the model classifies the page.
+    var rescue: () -> Void = {}
 }
 
 /// The long-press row-menu policy: which actions apply to `item`'s shape
@@ -91,18 +92,20 @@ enum ReadingListRowMenuFactory {
         }
 
         var children: [UIAction] = []
-        // A failed save can be rescued with Apple Intelligence — a submenu with the
-        // three content hints (surfaced first for the failed row, above the rest).
+        // A failed save can be rescued with Apple Intelligence. One action, not a
+        // submenu of content hints: the model classifies the page itself now, so
+        // there is nothing left to ask. Suppressed once this version's attempt is
+        // spent — the row then offers only Delete, matching the card's terminal
+        // state.
         if item.state == .failed, actions.canRescue {
-            let hintActions = RescueHint.allCases.map { hint in
-                UIAction(title: L10n.string("As \(hint.displayName)")) { _ in actions.rescue(hint) }
-            }
-            let rescueMenu = UIMenu(
-                title: L10n.string("Try with Apple Intelligence"),
-                image: UIImage(systemName: "wand.and.stars"),
-                children: hintActions)
-            // A failed row's menu is just the rescue submenu + delete.
-            return UIMenu(children: [rescueMenu, delete])
+            let rescue = UIAction(
+                title: L10n.string("Retry with AI"),
+                image: GlassStyle.appleIntelligenceImage
+            ) { _ in actions.rescue() }
+            return UIMenu(children: [rescue, delete])
+        }
+        if item.state == .failed {
+            return UIMenu(children: [delete])
         }
         // Reading-section items only: jump an item to the top of the list.
         if actions.isInReadingSection {

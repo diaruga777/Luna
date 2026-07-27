@@ -98,20 +98,41 @@ than nothing, so the card menus on both roots offer only **Share Link** and
 destructive **Delete** — matching the list row's failed-item menu
 (`ReadingListRowMenuFactory`).
 
-## The rescue hint: there isn't one
+## The rescue hint: there isn't one, anywhere
 
 Every app used to imply a hint (Reader → `.article`, Downloader → `.media`, Price
-Tracker → `.product`) and the central Luna app showed a segmented picker. Both are
-gone from the card. `RescueRequest.ContentHint.auto` is now what an **absent** hint
-means, and the card always sends nil: the plan instructions offer every payload
-option and open by telling the model that classifying the page is its job, and the
-prompt states what already failed as a *diagnostic fact* instead of naming a
-content type. See `claudedocs/url-rescue.md`.
+Tracker → `.product`), the central Luna app showed a segmented picker on the card,
+the list row's tap opened a three-way action sheet, the row's long-press menu
+opened a three-child submenu, and the extension's failure card had its own
+segmented control. **All four are gone.** `RescueRequest.ContentHint.auto` is what
+an **absent** hint means, and every user-facing surface sends nil: the plan
+instructions offer every payload option and open by telling the model that
+classifying the page is its job, while the prompt states what already failed as a
+*diagnostic fact* instead of naming a content type. See
+`claudedocs/url-rescue.md`.
 
-`URLRescueWiring.defaultHint(for:)` survives for the surfaces that genuinely know
-the kind — the list row's rescue sheet, the extension hand-off, the price editor's
-"Ask Apple Intelligence", the media card's no-assets retry — and a concrete hint
-still constrains the validator.
+`RescueHint` survives, but is **never user-facing** — no `displayName` exists,
+because nothing displays it. It remains for the two PROGRAMMATIC callers that
+genuinely know the kind from where the user pressed: the price editor's no-price
+retry (`.product`) and the media card's no-assets retry (`.media`). A concrete
+hint still constrains the validator.
+
+## One design across every error surface
+
+The offer used to appear under three labels ("Try with Apple Intelligence", "Try
+Apple Intelligence", "Ask Apple Intelligence") and two icons. A user who meets it
+twice shouldn't have to work out whether it's the same offer, so there is now ONE
+definition — `GlassStyle.retryWithAIConfiguration` (label "Retry with AI", the
+`apple.intelligence` glyph trailing as a sigil) — and one place for the shared
+words, `FailedSaveCopy` in LunaModels.
+
+| Surface | What it shows |
+| --- | --- |
+| **In-app card** (`FailedSaveCardViewController`) | The full design: red rim, web view, URL bar, Retry with AI, eclipse overlay, terminal apology + Delete. |
+| **Extension failure card** (`RescueFailureViewController`) | The SAME card — red rim, web view, URL bar, Retry with AI. One honest difference: an extension links no rescue engine, so the button queues a `PendingRescueRequest` (hint nil) and opens the app, and there is no progress overlay to show. |
+| **Downloader's failed-download card** | Now carries the red rim too (it didn't, so two failures in one deck looked unrelated), and its rescue button takes the shared styling. |
+| **Failed list row** | Tap → a single "Retry with AI" confirm; long-press → one flat action + Delete. Once the version's attempt is spent, both become the card's terminal state: the apology and Delete. It stays a *confirm* rather than rescuing on the bare tap because the attempt is rationed — a mis-tap would spend the only thing the item has left. |
+| **Price editor's no-price alert** | An alert can't carry card chrome, but it calls the same thing the same name. |
 
 ## Why the reason exists at all
 
@@ -180,4 +201,8 @@ progress, its notification, the monotonic fraction table, and which rescues spen
 the version's attempt. `LunaTests/URLRescueEngineTests.swift` — that progress
 always opens `.queued` and closes `.finished`, and never claims a fetch it didn't
 perform. `LunaTests/RescueDirectiveValidatorTests.swift` — the `.auto` payload
-policy. The `.unreadable` reason rule is pinned in `ArticleResolverTests`.
+policy. `LunaTests/ReadingListRowMenuFactoryTests.swift` — the failed row's flat
+action and its terminal Delete-only form.
+`LunaTests/ShareSurfaceDriverRescueTests.swift` — that the queued extension
+request carries no hint. The `.unreadable` reason rule is pinned in
+`ArticleResolverTests`.

@@ -73,9 +73,26 @@ final class ShareSurfaceDriverRescueTests: XCTestCase {
         XCTAssertEqual(store.item(withID: item.id)?.state, .failed)
     }
 
-    func testDefaultHintMapping() {
-        XCTAssertEqual(ShareSurfaceDriver.defaultHint(for: .reader), .article)
-        XCTAssertEqual(ShareSurfaceDriver.defaultHint(for: .downloader), .media)
-        XCTAssertEqual(ShareSurfaceDriver.defaultHint(for: .priceTracker), .product)
+    /// The extension no longer asks what the save should become — the model
+    /// classifies the page when the app drains the queue — so the queued record
+    /// must carry NO hint. A hint here would silently pin the answer and undo the
+    /// classification (`RescueRequest.ContentHint.auto`).
+    func testQueuedRescueRequestCarriesNoContentHint() {
+        _ = PendingRescueRequestStore.shared.takeAll()   // start from a clean queue
+        let host = FakeHost(isActionExtension: true)
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
+        let url = URL(string: "https://example.com/broken")!
+        _ = store.add(urlString: url.absoluteString)
+
+        driver.present(.failed(nil), url: url)
+        guard let card = host.presented.compactMap({ $0 as? RescueFailureViewController }).first
+        else { return XCTFail("expected the rescue card") }
+        card.recordPendingRescueForTesting()
+
+        let queued = PendingRescueRequestStore.shared.takeAll()
+        guard let request = queued.first(where: { $0.urlString == url.absoluteString }) else {
+            return XCTFail("expected a queued rescue request")
+        }
+        XCTAssertNil(request.hint)
     }
 }

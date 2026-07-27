@@ -95,8 +95,7 @@ there is genuinely nothing to offer.
 
 **No Archive.** Filing an empty shell away where the user can't act on it is worse
 than nothing, so the card menus on both roots offer only **Share Link** and
-destructive **Delete** — matching the list row's failed-item menu
-(`ReadingListRowMenuFactory`).
+destructive **Delete**.
 
 ## The rescue hint: there isn't one, anywhere
 
@@ -201,8 +200,6 @@ progress, its notification, the monotonic fraction table, and which rescues spen
 the version's attempt. `LunaTests/URLRescueEngineTests.swift` — that progress
 always opens `.queued` and closes `.finished`, and never claims a fetch it didn't
 perform. `LunaTests/RescueDirectiveValidatorTests.swift` — the `.auto` payload
-policy. `LunaTests/ReadingListRowMenuFactoryTests.swift` — the failed row's flat
-action and its terminal Delete-only form.
-`LunaTests/ShareSurfaceDriverRescueTests.swift` — that the queued extension
+policy. `LunaTests/ShareSurfaceDriverRescueTests.swift` — that the queued extension
 request carries no hint. The `.unreadable` reason rule is pinned in
 `ArticleResolverTests`.

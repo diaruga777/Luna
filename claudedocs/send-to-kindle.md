@@ -50,7 +50,7 @@ Each item records where it came from: `ReadingListItem.captureSource`
 - **`.shareSheet`** — the share extension's `SharedReadingListAppender` writes
   `"captureSource":"shareSheet"` as a raw string (the extension doesn't link
   `LunaModels`).
-- **`.paste`** — pasteboard-URL saves (`ReadingListViewController`,
+- **`.paste`** — pasteboard-URL saves (the decks' synthetic leading paste card + the left tray,
   `ArticleCardsViewController`, `SavedMediaCardsViewController`).
 - **`.manual`** — the default: typed URL, reader save button, deep links.
 - **`.friendShare`** — declared in `CaptureSource` and handled by
@@ -195,7 +195,7 @@ generation, delivery, and per-destination per-item state:
 - `AutoSendBySourceScreen` — three rows today: App Intents mode
   (off/all-saves/double-save) and on/off for email and for share-sheet-&-paste.
   There is no row for friend shares (see the capture-source caveat above).
-- `ReadingListViewController` — a per-destination row in the item's
+- the deck's card menu — a per-destination entry in the item's
   long-press context menu (`sendToEreader`, gated on
   `ArticleSendCoordinator.isConfigured(destinationID:)`), and a bottom pill
   for a terminal send failure.

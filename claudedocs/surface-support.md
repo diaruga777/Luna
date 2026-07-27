@@ -72,7 +72,7 @@ one variant, and the variants reference the kind modules' symbols directly
   SceneDelegate invoke at fixed points (media purge/Live-Activity resume,
   article send-retry/preload resume, the price-refresh BGTask's
   `priceRefreshRunner` — nil ⇒ the task is never registered). The shared list
-  UI consults a third shell registry, `ListKindSupport`
+  UI consulted a third shell registry, `ListKindSupport` (DELETED — it served only the removed sectioned list; nothing ever read it from the decks)
   (`ArticleListSupport` / `MediaListSupport` / `ProductListSupport`, per-target
   compiled like the wiring); kind-specific shell FILES (article card deck +
   mini-player + audio wiring + reader/email settings screens; saved-media deck +

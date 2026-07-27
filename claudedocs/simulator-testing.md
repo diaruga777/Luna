@@ -33,7 +33,7 @@ verify via the harness. NEVER ship these on device.
 
 ### Existing hooks
 
-- **Reading list row context menu** — `ReadingListItemCell.setSimulatorMenu(_:)` adds
+- ~~**Reading list row context menu**~~ — REMOVED with the sectioned list. Was `ReadingListItemCell.setSimulatorMenu(_:)`, which added
   a small bottom-left "Row actions" button (`ellipsis.circle`) whose `.menu` is the
   same `ReadingListViewController.rowMenu(for:at:)`; a plain tap opens it. Wired in
   `cellForRowAt` only when `AppEnvironment.isSimulator`.

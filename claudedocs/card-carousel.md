@@ -236,7 +236,7 @@ deleted with this change (the carousel replaces both).
 ## Reader adoption (ArticleCardsViewController)
 
 The Reader app's root (`Luna/Reader/ArticleCardsViewController.swift`) replaces
-`ReadingListViewController` for `.reader` only (Price Tracker keeps the list).
+`ReadingListViewController` for `.reader` only (Price Tracker kept the list at the time). **Since superseded:** every app roots on a deck and that list has been deleted.
 Differences from the Downloader, via `CardCarouselStyle`:
 
 - `fillsVertically` (aspect ignored — cards take all height), `edgeGap` 10
@@ -371,7 +371,7 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - Settings and Share flank the mini-card scrubber in Liquid Glass circles instead of
   consuming header space. Friends is reached from Settings. The card begins
   directly below the safe area, so the reader's own header pills own the top row.
-- SceneDelegate's two `as? ReadingListViewController` casts now handle both
+- SceneDelegate's two root casts (then `as? ReadingListViewController`, now the `ExternalItemOpening` protocol) handle both
   roots (deep-link `openReader` → `openExternally(_:)`; friend prompt presents
   from whatever the root is). needsCaptcha cards route through the same
   archive.today modal flow as the old list.
@@ -393,7 +393,7 @@ Differences from the Downloader, via `CardCarouselStyle`:
 ## The central app's all-kinds deck
 
 The same `ArticleCardsViewController` is the central Luna app's root, where
-`LunaApp.current == .all` turns on `includesAllKinds`: one deck over
+`LunaApp.current == .luna` turns on `includesAllKinds`: one deck over
 every app's saves, **most recent first**. It deliberately drops the Reader's
 read-vs-unread grouping — "read" is an article-only notion, and it would file a
 just-watched video behind everything else.

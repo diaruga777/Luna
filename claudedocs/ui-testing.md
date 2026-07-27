@@ -109,7 +109,7 @@ the reference for inspection.
 - `LayoutAssertions.assertVisibleAndInBounds(view, in: container)` — not hidden,
   non-zero, intersects container bounds.
 - `LayoutAssertions.assertNoOverlap(a, b)`.
-- Routing is asserted by invoking the **real** seam: `ReadingListViewController.open(_:presenter:)`
+- Routing is asserted by invoking the **real** seam: the deck's tap routing (`ArticleCardsViewController.nonArticleOpener` for non-article cards)
   / `openItem(_:presentingFrom:)`, a table's `didSelectRowAt`, a control's
   `sendActions(for:)`, or a private `@objc` handler via `perform(Selector(("…")))`,
   then checking `nav.topViewController is X` / `presentedViewController is X`.

@@ -81,7 +81,7 @@ Local only (`UNUserNotificationCenter`, no APNs/remote push — the old CloudKit
 silent-push wake-up is gone). `NotificationManager.requestAuthorization()` is
 called at launch. Tapping a "share received" notification just opens the app;
 these are cleared once the user reaches the reading list
-(`ReadingListViewController` → `NotificationManager.clearShareNotifications()`).
+(`CardCarouselHostViewController.viewDidAppear` → `NotificationManager.clearShareNotifications()`, so every app's deck root clears them).
 Tapping a "pending request" notification should route to
 `PendingRequestsViewController` (see `AppDelegate`/`SceneDelegate` routing).
 

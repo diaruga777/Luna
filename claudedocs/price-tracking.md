@@ -289,7 +289,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
 
-## Central-list integration (`ReadingListSectioning` / `ReadingListViewController`)
+## Deck integration (`ReadingListSectioning` / the card roots)
 
 The sectioned rows below remain for central Luna and test/extension navigation.
 The standalone Price Tracker app uses the card root above.
@@ -307,7 +307,7 @@ The standalone Price Tracker app uses the card root above.
   AND **not yet viewed** (`hasUnviewedAlert`), greatest discount (ties by id),
   **at most one**. It floats to the very **top** of the whole list (rendered by the VC
   as the one row of the `.priceAlert` section), badged **red**. Once the user opens it,
-  `markAlertViewed` is called (in `ReadingListViewController.open`), `hasUnviewedAlert`
+  `markAlertViewed` is called (in `NonArticleCardOpening` for the central app, `PriceTrackerCardsViewController` for the standalone one), `hasUnviewedAlert`
   becomes false, and the row rejoins the `priceTracking` section below Reading. A later
   strictly-lower price clears the ack so a genuinely fresh drop re-floats.
 - `shouldShowFilter` = ≥2 of {reader, media/link, price-tracker} kinds present.

@@ -242,7 +242,7 @@ the four schemes (the OS only delivers what the running app registered);
 reopen the current app (e.g. the Live Activity photos-permission action URL).
 
 App side: `SceneDelegate.openReader` ingests the URL (`handleSavePress`) then opens it via
-`ReadingListViewController.open(_:presenter:)` — so a paywalled article opens straight into
+the deck's tap routing (`ArticleCardsViewController`) — so a paywalled article opens straight into
 the in-app archive reader, a ready article into the native reader. The "Locked Only" mode and
 the in-app paywall handling share one detector (`PaywallDetector`), so a reader logged in via
 their browser sees a full article and isn't flagged.

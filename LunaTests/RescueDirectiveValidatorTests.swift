@@ -232,4 +232,116 @@ final class RescueDirectiveValidatorTests: XCTestCase {
             return XCTFail()
         }
     }
+
+    // MARK: - Auto (model-chosen) content type
+
+    /// `.auto` is what the failed-save card sends: the model decides the content
+    /// type, so a product payload must be ACCEPTED rather than downgraded, even
+    /// though the failing pass was the article branch.
+    func testAutoHintAcceptsAProductPayload() {
+        let plan = RescuePlanResponse(
+            kind: "product", productName: "Widget",
+            productPriceAmount: "129.99", productCurrency: "USD")
+        guard case .success(.directive(.productPayload(let info))) = validate(
+            plan, request: request(hint: .auto), digest: "price 129.99 USD") else {
+            return XCTFail("auto must let the model choose product")
+        }
+        XCTAssertEqual(info.name, "Widget")
+    }
+
+    func testAutoHintAcceptsAMediaPayload() {
+        let plan = RescuePlanResponse(kind: "media_url", mediaURLString: "https://cdn.example.com/v.mp4")
+        guard case .success(.directive(.mediaURL(let url))) = validate(
+            plan, request: request(hint: .auto)) else {
+            return XCTFail("auto must let the model choose media")
+        }
+        XCTAssertEqual(url.lastPathComponent, "v.mp4")
+    }
+
+    func testAutoHintAcceptsAnArticlePayloadOnPCC() {
+        let plan = RescuePlanResponse(kind: "article")
+        guard case .success(.needsArticlePayload) = validate(
+            plan, request: request(hint: .auto), supportsArticle: true) else {
+            return XCTFail("auto must let the model choose article")
+        }
+    }
+
+    /// A CONCRETE hint still constrains the answer — the price editor's "Ask Apple
+    /// Intelligence" shouldn't come back with a video.
+    func testAConcreteHintStillRejectsAForeignPayload() {
+        let plan = RescuePlanResponse(kind: "media_url", mediaURLString: "https://cdn.example.com/v.mp4")
+        guard case .failure(.illegalKind) = validate(plan, request: request(hint: .product)) else {
+            return XCTFail("a product-hinted rescue must not accept media")
+        }
+    }
+
+    /// `.auto` widens which payloads are legal; it does not weaken any evidence
+    /// rule. A price the digest never mentions is still a fabrication.
+    func testAutoHintDoesNotRelaxTheEvidenceRules() {
+        let plan = RescuePlanResponse(
+            kind: "product", productName: "Widget",
+            productPriceAmount: "8888.00", productCurrency: "USD")
+        guard case .failure(.priceNotEvidenced) = validate(
+            plan, request: request(hint: .auto), digest: "nothing numeric here") else {
+            return XCTFail("auto must still require a verbatim price")
+        }
+    }
+}
+
+final class RescuePromptAutoClassificationTests: XCTestCase {
+
+    /// Under `.auto` every payload option is on the table AND the model is told
+    /// the classification is its job — without that, the options read as a menu
+    /// and it picks whatever the digest mentions first.
+    func testAutoInstructionsOfferEveryOptionAndAskForClassification() {
+        let instructions = RescuePrompts.planInstructions(hint: .auto, allowsArticlePayload: true)
+        XCTAssertTrue(instructions.contains("FIRST decide what kind of content"))
+        XCTAssertTrue(instructions.contains("\"article\""))
+        XCTAssertTrue(instructions.contains("\"product\""))
+        XCTAssertTrue(instructions.contains("\"media_url\""))
+    }
+
+    /// On-device can't reproduce a whole article, so the article option stays
+    /// gated by tier even under `.auto`.
+    func testAutoInstructionsStillGateArticleByTier() {
+        let onDevice = RescuePrompts.planInstructions(hint: .auto, allowsArticlePayload: false)
+        XCTAssertFalse(onDevice.contains("you will be asked for the full text next"))
+        XCTAssertTrue(onDevice.contains("\"product\""), "the other options remain")
+    }
+
+    /// A concrete hint keeps the old single-option form.
+    func testAConcreteHintOffersOnlyItsOwnOption() {
+        let product = RescuePrompts.planInstructions(hint: .product, allowsArticlePayload: true)
+        XCTAssertTrue(product.contains("\"product\""))
+        XCTAssertFalse(product.contains("\"media_url\""))
+        XCTAssertFalse(product.contains("FIRST decide what kind of content"))
+    }
+
+    /// The prompt must not name a content type under `.auto` — that would undo
+    /// the classification the instructions just asked for. What it names instead
+    /// is the failure that already happened.
+    func testAutoPromptStatesTheFailureRatherThanAHint() {
+        let prompt = RescuePrompts.planPrompt(
+            url: URL(string: "https://example.com/x")!, hint: .auto,
+            failureKind: .articleFailed, digest: "digest")
+        XCTAssertFalse(prompt.contains("Content hint:"))
+        XCTAssertTrue(prompt.contains("What already failed:"))
+        XCTAssertTrue(prompt.contains("no usable text"))
+    }
+
+    func testConcretePromptStillCarriesTheHint() {
+        let prompt = RescuePrompts.planPrompt(
+            url: URL(string: "https://example.com/x")!, hint: .media,
+            failureKind: .mediaNoAssets, digest: "digest")
+        XCTAssertTrue(prompt.contains("Content hint: media"))
+    }
+
+    /// No hint at all means `.auto`, not "guess from the failure kind" — this is
+    /// the default every automatic path and the card now take.
+    func testAnAbsentHintDefaultsToAuto() {
+        let request = RescueRequest(
+            url: URL(string: "https://example.com/x")!, source: .manual,
+            failureKind: .productNoPrice)
+        XCTAssertEqual(request.hint, .auto)
+    }
 }

@@ -68,15 +68,15 @@ public struct RescueDirectiveValidator {
             return validateWebJS(plan, request: request).map { .directive($0) }
 
         case "media_url":
-            guard request.hint == .media else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
+            guard request.hint.allows(.media) else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
             return validateMediaURL(plan, digest: digest).map { .directive($0) }
 
         case "product":
-            guard request.hint == .product else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
+            guard request.hint.allows(.product) else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
             return validateProduct(plan, digest: digest).map { .directive($0) }
 
         case "article":
-            guard request.hint == .article else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
+            guard request.hint.allows(.article) else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
             guard supportsArticlePayload else {
                 // On-device can't produce a full article — try to salvage a
                 // reroute/JS from the same plan, else reject.

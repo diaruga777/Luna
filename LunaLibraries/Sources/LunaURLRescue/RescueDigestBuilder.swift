@@ -126,9 +126,11 @@ public struct RescueDigestBuilder {
 
     private func embeddedJSON(_ document: Document, html: String, hint: RescueRequest.ContentHint) -> String {
         var parts: [String] = []
-        if hint == .media {
+        if hint == .media || hint == .auto {
             // Surface likely media URLs first — grep the raw HTML for the tokens
-            // public downloaders key on.
+            // public downloaders key on. Included under `.auto` too: the model
+            // can't classify a page as media if the digest never shows it the
+            // media, and the lines are cheap (capped at 20).
             let mediaLines = html.split(whereSeparator: { $0 == "\n" || $0 == "," })
                 .map { String($0) }
                 .filter { line in

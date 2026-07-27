@@ -20,21 +20,26 @@ public struct RescueRequest {
         case mediaNoAssets
     }
 
-    /// What the user (or the failing surface) expects this save to become.
-    /// Mirrors `RescueHint` in `LunaModels` one tier down; the engine keeps its
-    /// own copy so it stays constructible without the coordinator types.
+    /// What this save should be rescued into. Mirrors `RescueHint` in
+    /// `LunaModels` one tier down; the engine keeps its own copy so it stays
+    /// constructible without the coordinator types.
+    ///
+    /// `.auto` is the DEFAULT and what the failed-save card always sends: the
+    /// model is shown every payload option and asked to decide the content type
+    /// itself. The three concrete cases remain for the surfaces that genuinely
+    /// know (the price screen's "Ask Apple Intelligence", the media card's
+    /// no-assets retry) and would rather not have the answer relitigated.
     public enum ContentHint: String {
+        case auto
         case article
         case product
         case media
 
-        /// The natural hint for a failure kind, when the user didn't pick one.
-        public init(failureKind: FailureKind) {
-            switch failureKind {
-            case .articleFailed: self = .article
-            case .productNoPrice: self = .product
-            case .mediaNoAssets: self = .media
-            }
+        /// Whether a plan of this payload kind is legal. `.auto` accepts all
+        /// three; a concrete hint accepts only its own (anything else is
+        /// downgraded to a reroute/JS salvage by the validator).
+        public func allows(_ other: ContentHint) -> Bool {
+            self == .auto || self == other
         }
     }
 
@@ -60,7 +65,10 @@ public struct RescueRequest {
         self.url = url
         self.source = source
         self.failureKind = failureKind
-        self.hint = hint ?? ContentHint(failureKind: failureKind)
+        // No hint means no hint — the model classifies the page. The failure kind
+        // still travels into the prompt as a FACT about what already went wrong,
+        // which is context rather than an instruction to keep the same kind.
+        self.hint = hint ?? .auto
         self.fetchedHTML = fetchedHTML
     }
 }

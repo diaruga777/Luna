@@ -1,16 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "  %@ (%lld)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "  %1$@ (%2$lld)"
-          }
-        }
-      }
-    },
     "%@" : {
 
     },
@@ -92,9 +82,6 @@
     "Archive" : {
 
     },
-    "Archive Tracker" : {
-
-    },
     "Article" : {
 
     },
@@ -114,12 +101,6 @@
 
     },
     "Back" : {
-
-    },
-    "Bump to Top" : {
-
-    },
-    "Can't Save This Link" : {
 
     },
     "Cancel" : {
@@ -176,9 +157,6 @@
     "Context Result" : {
 
     },
-    "Copy Link" : {
-
-    },
     "Couldn't fetch this article" : {
 
     },
@@ -200,26 +178,10 @@
     "Couldn't save this media to Photos." : {
 
     },
-    "Couldn't save to your photo library." : {
-
-    },
-    "Couldn't send to %@%@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Couldn't send to %1$@%2$@"
-          }
-        }
-      }
-    },
     "Couldn't sign in" : {
 
     },
     "Couldn't start Outlook sign-in." : {
-
-    },
-    "Couldn't start the media download." : {
 
     },
     "Couldn't write the log file." : {
@@ -234,26 +196,7 @@
     "Delete" : {
 
     },
-    "Delete %lld archived item%@?" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Delete %1$lld archived item%2$@?"
-          }
-        }
-      }
-    },
-    "Delete All" : {
-
-    },
-    "Delete Selected" : {
-
-    },
     "Diagnostics" : {
-
-    },
-    "Document" : {
 
     },
     "Done" : {
@@ -271,9 +214,6 @@
     "Download media" : {
 
     },
-    "Download started" : {
-
-    },
     "Downloading" : {
 
     },
@@ -284,9 +224,6 @@
 
     },
     "Downloads item" : {
-
-    },
-    "Edit List" : {
 
     },
     "Email" : {
@@ -338,9 +275,6 @@
 
     },
     "Highlight Color" : {
-
-    },
-    "https://…" : {
 
     },
     "Import from Email" : {
@@ -401,9 +335,6 @@
     "Luna" : {
 
     },
-    "Luna can try harder with Apple Intelligence — once per update." : {
-
-    },
     "Luna can't save from this app." : {
 
     },
@@ -435,12 +366,6 @@
 
     },
     "Media" : {
-
-    },
-    "Media is no longer available locally." : {
-
-    },
-    "Media is still downloading." : {
 
     },
     "name@example.com" : {
@@ -638,9 +563,6 @@
     "Reading articles aloud isn't available in this app." : {
 
     },
-    "Reading List" : {
-
-    },
     "Refresh Last Visited Website" : {
 
     },
@@ -650,22 +572,10 @@
     "Requires Screenshot" : {
 
     },
-    "Retry with AI" : {
-
-    },
     "S" : {
 
     },
     "Save" : {
-
-    },
-    "Save a Link" : {
-
-    },
-    "Save articles, documents, and links to read them here." : {
-
-    },
-    "Save articles, media, and products to see them here." : {
 
     },
     "Save Failed" : {
@@ -729,16 +639,10 @@
     "Second step of the Action Button shortcut. Pass the current app (from Get Current App) and a screenshot of it; Luna reads the screen with an on-device/Private Cloud Compute model and saves the matching post or page." : {
 
     },
-    "Select All" : {
-
-    },
     "Send articles and import links · Tap to continue" : {
 
     },
     "Send Test to Kindle" : {
-
-    },
-    "Send to Contact…" : {
 
     },
     "Send to Kindle" : {
@@ -763,9 +667,6 @@
 
     },
     "Share Current Product" : {
-
-    },
-    "Share eBook…" : {
 
     },
     "Share Failed" : {
@@ -858,9 +759,6 @@
     "Title" : {
 
     },
-    "Track a product to see its price here." : {
-
-    },
     "Track in Luna" : {
 
     },
@@ -881,9 +779,6 @@
 
     },
     "Unarchive" : {
-
-    },
-    "Unarchive Tracker" : {
 
     },
     "Unhandled" : {

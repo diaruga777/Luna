@@ -2224,8 +2224,8 @@ extension ArticleCardsViewController: ExternalItemOpening {}
 // Every Reader launch exits totality into the real resting card geometry. The
 // carousel owns that geometry, so the launch transition asks it instead of
 // duplicating safe-area/scrubber math in SceneDelegate.
-extension ArticleCardsViewController: ReaderLaunchTransitionTarget {
-    func readerLaunchTargetFrame(in window: UIWindow) -> CGRect? {
+extension ArticleCardsViewController: AppLaunchTransitionTarget {
+    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
         view.layoutIfNeeded()
         guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
         return view.convert(frame, to: window)

@@ -23,23 +23,15 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
+    private static let onboardingDemoSave = OnboardingTemporarySave(
+        install: { BundledLunaArticle.installTemporary() },
+        cleanup: { BundledLunaArticle.cleanupTemporary() })
+
     @MainActor
     static func install() {
         #if DEBUG
-        ReaderOnboardingStore.shared.resetIfRequested()
+        AppOnboardingStore.shared.resetIfRequested()
         #endif
-        ReaderOnboardingWiring.installLaunchTransition = { window in
-            ReaderLaunchTransition.install(in: window)
-        }
-        ReaderOnboardingWiring.makeCompletedRootViewController = {
-            makeCompletedRootViewController()
-        }
-        ReaderOnboardingWiring.installTemporaryDemoSave = {
-            ReaderBundledLunaArticle.installTemporary()
-        }
-        ReaderOnboardingWiring.cleanupTemporaryDemoSave = {
-            ReaderBundledLunaArticle.cleanupTemporary()
-        }
 
         IngestKindProcessors.article = ArticleIngestProcessor()
         IngestorKindHandlers.article = ArticleKindHandler()
@@ -98,9 +90,12 @@ enum KindWiring {
     /// host (read-aloud is a Reader feature; the bar floats above the bottom
     /// safe area, survives every push/pop, and hides while idle).
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = ReaderOnboardingStore.shared.isCompleted
+        let content: UIViewController = AppOnboardingStore.shared.isCompleted
             ? ArticleCardsViewController()
-            : ReaderOnboardingViewController()
+            : AppOnboardingViewController(
+                completion: AppOnboardingCompletion(
+                    temporarySave: onboardingDemoSave,
+                    makeCompletedRootViewController: makeCompletedRootViewController))
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
     }
@@ -141,12 +136,12 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
-        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
+        onboardingDemoSave.cleanup()
         ArticleSendCoordinator.shared.retryPendingSends()
     }
 
     static func appDidEnterBackground() {
-        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
+        onboardingDemoSave.cleanup()
         // A finished-reading completion recorded during this session becomes an
         // archive move now, so the next launch starts settled.
         ReadingListStore.shared.archivePendingFinishedItems()

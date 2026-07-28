@@ -266,8 +266,8 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
 }
 
 // The launch totality exits into this deck's real resting card geometry.
-extension PriceTrackerCardsViewController: ReaderLaunchTransitionTarget {
-    func readerLaunchTargetFrame(in window: UIWindow) -> CGRect? {
+extension PriceTrackerCardsViewController: AppLaunchTransitionTarget {
+    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
         view.layoutIfNeeded()
         guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
         return view.convert(frame, to: window)

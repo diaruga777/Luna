@@ -599,6 +599,7 @@
 				"KindWiring+Reader.swift",
 				MiniPlayer/AudioMiniPlayerView.swift,
 				MiniPlayer/MiniPlayerHostViewController.swift,
+				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
 				PriceTracker/PriceTrackerCardsViewController.swift,
 				Reader/AllKindsCardProvider.swift,
 				Reader/ArticleCardsViewController.swift,
@@ -619,6 +620,7 @@
 			membershipExceptions = (
 				AudioPlaybackWiring.swift,
 				AudioScriptPipelineWiring.swift,
+				Downloader/DownloaderOnboardingDemoSave.swift,
 				Downloader/MediaCardFactory.swift,
 				Downloader/SavedMediaCardsViewController.swift,
 				Info.plist,
@@ -681,6 +683,7 @@
 		AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Downloader/DownloaderOnboardingDemoSave.swift,
 				Downloader/MediaCardFactory.swift,
 				Downloader/SavedMediaCardsViewController.swift,
 				Info.plist,
@@ -689,6 +692,7 @@
 				"KindWiring+PriceTracker.swift",
 				"Mail/Intents/CaptureIntentRuntime+LongRunning.swift",
 				Mail/Intents/MediaIntentHandoff.swift,
+				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
 				PriceTracker/PriceTrackerCardsViewController.swift,
 				Reader/AllKindsCardProvider.swift,
 				Reader/NonArticleCardOpening.swift,
@@ -744,10 +748,12 @@
 		EA354A2407FE8182155F337B /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Downloader/DownloaderOnboardingDemoSave.swift,
 				Info.plist,
 				"KindWiring+Downloader.swift",
 				"KindWiring+PriceTracker.swift",
 				"KindWiring+Reader.swift",
+				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
 			);
 			target = F73C67777995F8F752A0056A /* Luna */;
 		};

@@ -15,8 +15,8 @@ final class ReaderOnboardingTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let reader = ReaderOnboardingStore(app: .reader, defaults: defaults)
-        let downloader = ReaderOnboardingStore(app: .downloader, defaults: defaults)
+        let reader = AppOnboardingStore(app: .reader, defaults: defaults)
+        let downloader = AppOnboardingStore(app: .downloader, defaults: defaults)
         XCTAssertFalse(reader.isCompleted)
         XCTAssertFalse(downloader.isCompleted)
         reader.markCompleted()
@@ -32,14 +32,14 @@ final class ReaderOnboardingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = ReadingListStore(containerURL: directory)
-        let first = ReaderBundledLunaArticle.install(in: store)
-        let second = ReaderBundledLunaArticle.install(in: store)
+        let first = BundledLunaArticle.install(in: store)
+        let second = BundledLunaArticle.install(in: store)
         let content = try XCTUnwrap(store.content(for: first.item))
 
         XCTAssertTrue(first.wasCreated)
         XCTAssertFalse(second.wasCreated)
         XCTAssertEqual(first.item.id, second.item.id)
-        XCTAssertEqual(first.item.urlString, ReaderBundledLunaArticle.urlString)
+        XCTAssertEqual(first.item.urlString, BundledLunaArticle.urlString)
         XCTAssertEqual(first.item.state, .ready)
         XCTAssertEqual(content.title, "Luna")
         XCTAssertEqual(content.author, "Wikipedia contributors")
@@ -63,23 +63,23 @@ final class ReaderOnboardingTests: XCTestCase {
         }
 
         let contentStore = ReadingListStore(containerURL: directory)
-        let registry = ReaderOnboardingStore(app: .luna, defaults: defaults)
+        let registry = AppOnboardingStore(app: .luna, defaults: defaults)
         let temporaryURL = "https://en.wikipedia.org/wiki/Luna?test=temporary"
-        ReaderBundledLunaArticle.installTemporary(
-            urlString: temporaryURL, registry: registry, in: contentStore)
+        XCTAssertTrue(BundledLunaArticle.installTemporary(
+            urlString: temporaryURL, registry: registry, in: contentStore))
         let temporaryID = try XCTUnwrap(registry.temporarySaveIdentifier)
         XCTAssertNotNil(contentStore.item(withID: temporaryID))
 
-        ReaderBundledLunaArticle.cleanupTemporary(
+        BundledLunaArticle.cleanupTemporary(
             registry: registry, in: contentStore)
         XCTAssertNil(contentStore.item(withID: temporaryID))
         XCTAssertNil(registry.temporarySaveIdentifier)
 
         let existing = contentStore.add(urlString: temporaryURL)
-        ReaderBundledLunaArticle.installTemporary(
-            urlString: temporaryURL, registry: registry, in: contentStore)
+        XCTAssertTrue(BundledLunaArticle.installTemporary(
+            urlString: temporaryURL, registry: registry, in: contentStore))
         XCTAssertNil(registry.temporarySaveIdentifier)
-        ReaderBundledLunaArticle.cleanupTemporary(
+        BundledLunaArticle.cleanupTemporary(
             registry: registry, in: contentStore)
         XCTAssertEqual(contentStore.item(withID: existing.id)?.id, existing.id)
     }
@@ -121,8 +121,8 @@ final class ReaderOnboardingTests: XCTestCase {
 
         for size in sizes {
             let bounds = CGRect(origin: .zero, size: size)
-            let body = ReaderLaunchGeometry.totalityCardFrame(in: bounds)
-            let reach = body.width * ReaderLaunchGeometry.coronaReachRatio
+            let body = AppLaunchGeometry.totalityCardFrame(in: bounds)
+            let reach = body.width * AppLaunchGeometry.coronaReachRatio
             let entireCorona = body.insetBy(dx: -reach, dy: -reach)
 
             XCTAssertGreaterThanOrEqual(
@@ -136,6 +136,31 @@ final class ReaderOnboardingTests: XCTestCase {
             XCTAssertEqual(body.midX, bounds.midX, accuracy: 0.001)
             XCTAssertEqual(body.midY, bounds.midY, accuracy: 0.001)
         }
+    }
+
+    func testOnboardingLayoutStartsAtOneThirdOfItsContainer() {
+        let bounds = CGRect(x: 10, y: 20, width: 300, height: 600)
+        XCTAssertEqual(AppOnboardingLayout.contentTop(in: bounds), 220)
+    }
+
+    func testAnimationClockParsesAndClampsDebugScales() {
+        XCTAssertEqual(OnboardingAnimationClock.resolvedScale(arguments: []), 1)
+        XCTAssertEqual(
+            OnboardingAnimationClock.resolvedScale(
+                arguments: ["Luna", "-slowOnboardingAnimations"]),
+            6)
+        XCTAssertEqual(
+            OnboardingAnimationClock.resolvedScale(
+                arguments: ["Luna", "-onboardingAnimationScale", "3.5"]),
+            3.5)
+        XCTAssertEqual(
+            OnboardingAnimationClock.resolvedScale(
+                arguments: ["Luna", "-onboardingAnimationScale", "99"]),
+            12)
+        XCTAssertEqual(
+            OnboardingAnimationClock.resolvedScale(
+                arguments: ["Luna", "-onboardingAnimationScale", "0.2"]),
+            1)
     }
 
     func testOfflineWikipediaPageIsBundledWithoutRemoteSubresources() throws {

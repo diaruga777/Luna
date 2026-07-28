@@ -84,7 +84,7 @@ All four Luna apps use the production card eclipse as their launch surface.
 Their static `ReaderLaunchScreen.storyboard` is recorded from the same fixed
 star table, `EclipseCoronaView`, and blank black `CardSurfaceView` used by the
 first live frame. The entire corona is centered and visible; no content or app
-chrome is present. `ReaderLaunchTransition` then plays only the egress into the
+chrome is present. `AppLaunchTransition` then plays only the egress into the
 destination carousel, fading in contents, peeks, and chrome. This happens on
 every launch, not only onboarding, and each `KindWiring` composition root
 installs the shared transition.

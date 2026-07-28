@@ -28,24 +28,18 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
+    private static let onboardingDemoSave = OnboardingTemporarySave(
+        install: {
+            BundledLunaArticle.installTemporary(
+                urlString: "https://en.wikipedia.org/wiki/Luna?onboarding=luna")
+        },
+        cleanup: { BundledLunaArticle.cleanupTemporary() })
+
     @MainActor
     static func install() {
         #if DEBUG
-        ReaderOnboardingStore.shared.resetIfRequested()
+        AppOnboardingStore.shared.resetIfRequested()
         #endif
-        ReaderOnboardingWiring.installLaunchTransition = { window in
-            ReaderLaunchTransition.install(in: window)
-        }
-        ReaderOnboardingWiring.makeCompletedRootViewController = {
-            makeCompletedRootViewController()
-        }
-        ReaderOnboardingWiring.installTemporaryDemoSave = {
-            ReaderBundledLunaArticle.installTemporary(
-                urlString: "https://en.wikipedia.org/wiki/Luna?onboarding=luna")
-        }
-        ReaderOnboardingWiring.cleanupTemporaryDemoSave = {
-            ReaderBundledLunaArticle.cleanupTemporary()
-        }
 
         IngestKindProcessors.article = ArticleIngestProcessor()
         IngestKindProcessors.product = ProductIngestProcessor()
@@ -155,9 +149,12 @@ enum KindWiring {
     /// host (read-aloud is an article-app feature; the bar floats above the
     /// bottom safe area, survives every push/pop, and hides while idle).
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = ReaderOnboardingStore.shared.isCompleted
+        let content: UIViewController = AppOnboardingStore.shared.isCompleted
             ? ArticleCardsViewController()
-            : ReaderOnboardingViewController()
+            : AppOnboardingViewController(
+                completion: AppOnboardingCompletion(
+                    temporarySave: onboardingDemoSave,
+                    makeCompletedRootViewController: makeCompletedRootViewController))
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
     }
@@ -201,7 +198,7 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
-        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
+        onboardingDemoSave.cleanup()
         // The all-kinds deck draws real media cards, so it needs the same
         // cross-process bridge the Downloader has: a save or delete made by an
         // extension is a different process, and only a Darwin notification
@@ -220,7 +217,7 @@ enum KindWiring {
     }
 
     static func appDidEnterBackground() {
-        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
+        onboardingDemoSave.cleanup()
         ArticleSendCoordinator.shared.retryPendingSends()
         LiveMediaDownloadManager.shared.resumeLiveActivities()
     }

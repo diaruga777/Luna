@@ -1,8 +1,8 @@
 # Luna launch and onboarding
 
 The central Luna app and all three faceted apps use one launch/onboarding
-engine. Each composition root installs it through `ReaderOnboardingWiring`;
-surface copy and offline demo pages come from
+engine. Each composition root injects an immutable
+`AppOnboardingCompletion`; surface copy and offline demo pages come from
 `OnboardingSurfaceConfiguration`.
 
 ## Every app launch
@@ -10,15 +10,16 @@ surface copy and offline demo pages come from
 `ReaderLaunchScreen.storyboard` is a static rendering of the production eclipse
 at totality: a blank black `CardSurfaceView`, its real glass rim and complete
 `EclipseCorona`, centered over the fixed starfield. There is no app chrome or
-content. `ReaderLaunchTransition` replaces the storyboard with the same live
-hierarchy and plays only the egress: the corona and opaque moon resolve into the
-real resting center-card frame while contents, side peeks, scrubber, and chrome
+content. `AppLaunchTransition` installs the exact storyboard raster layers over
+the registered live production hierarchy, hands off before geometry changes,
+and plays only the egress: the corona and opaque moon resolve into the real
+resting center-card frame while contents, side peeks, scrubber, and chrome
 appear.
 
 This happens after onboarding is complete too. The transition asks the
 destination carousel for its real resting frame through
-`ReaderLaunchTransitionTarget`; launch code must not duplicate carousel layout
-math. `ReaderLaunchGeometry` fits the full corona group on both axes.
+`AppLaunchTransitionTarget`; launch code must not duplicate carousel layout
+math. `AppLaunchGeometry` fits the full corona group on both axes.
 
 The static images are generated from production views. To regenerate them after
 changing the corona, rim, tint, or star table, run
@@ -43,7 +44,7 @@ asymmetric “eyePhone”.
 
 ## Incomplete first run
 
-`ReaderOnboardingStore` persists one standard-defaults completion key per app;
+`AppOnboardingStore` persists one standard-defaults completion key per app;
 Reader retains its shipped `reader.onboarding.completed.v1` key. These markers
 are not in the App Group: setup evidence and saves are shared, while every app
 owns its onboarding completion independently.
@@ -52,7 +53,8 @@ The root uses the production `CardCarouselViewController`:
 
 1. The first black card reveals both surface-specific lines. A black circular
    occluder translates down each line; exposed text passes through a narrow
-   white bloom before resolving. “Show me how” appears only after both lines.
+   white bloom before resolving. The text starts one third of the way down the
+   card. “Show me how” appears only after both lines.
 2. The button pages through the production `CardEclipseTransition`. The next
    card expands to the display and becomes `SafariReplicaViewController`.
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
@@ -61,7 +63,8 @@ The root uses the production `CardCarouselViewController`:
 4. An Action Button cue plays beside the physical button. A moving
    `CIBumpDistortionLinear` strip deforms every pixel of a whole-window snapshot
    before removing itself after the pixels settle.
-5. The setup overlay offers Safari setup, then the same `BundledShortcut`
+5. A window-filling near-black overlay aligns its content to the same one-third
+   vertical anchor. It offers Safari setup, then the same `BundledShortcut`
    installer and `SystemSettingsLink.openActionButton()` paths used elsewhere.
    Existing Safari and Action Button PiP guides play during external hops.
 6. After Settings return, a real App Intent invocation completes the flow
@@ -86,7 +89,10 @@ inferred from merely opening a destination.
 Debug launches accept `-resetOnboarding` (`-resetReaderOnboarding` remains a
 Reader alias). `-onboardingStage prompt|setup|waiting` moves through the real
 card eclipse and expansion but begins at a deterministic overlay stage;
-`-readerOnboardingStage` remains an alias.
+`-readerOnboardingStage` remains an alias. Add `-slowOnboardingAnimations` for
+a 6× inspection timeline, or `-onboardingAnimationScale <1...12>` for an
+explicit factor. The clock slows Core Animation, timers, and the display-link
+liquid wave together.
 
 `ReaderOnboardingTests` covers independent per-app completion, exact surface
 copy/page mapping, temporary-save ownership, idempotent offline article

@@ -23,12 +23,12 @@ final class ReaderLaunchArtRecorderTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: outputURL, withIntermediateDirectories: true)
 
-        let reference = ReaderLaunchGeometry.referenceSize
-        let starfield = ReaderLaunchTransition.makeStaticStarfieldView(
+        let reference = AppLaunchGeometry.referenceSize
+        let starfield = AppLaunchTransition.makeStaticStarfieldView(
             frame: CGRect(origin: .zero, size: reference))
-        let bodyWidth = ReaderLaunchGeometry.totalityCardFrame(
+        let bodyWidth = AppLaunchGeometry.totalityCardFrame(
             in: CGRect(origin: .zero, size: reference)).width
-        let coronaCard = ReaderLaunchTransition.makeStaticCoronaCardView(
+        let coronaCard = AppLaunchTransition.makeStaticCoronaCardView(
             bodyWidth: bodyWidth)
 
         for scale in [2, 3] {

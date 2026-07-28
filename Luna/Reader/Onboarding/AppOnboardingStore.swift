@@ -1,5 +1,5 @@
 //
-//  ReaderOnboardingStore.swift
+//  AppOnboardingStore.swift
 //  Luna
 //
 
@@ -11,10 +11,8 @@ import Foundation
 /// This deliberately uses standard defaults, not the App Group: all Luna apps
 /// share their content stores and setup evidence, but each host owns its own
 /// onboarding and must only remove the demonstration item it created.
-final class ReaderOnboardingStore {
-    static var shared: ReaderOnboardingStore {
-        ReaderOnboardingStore(app: .current)
-    }
+final class AppOnboardingStore {
+    static let shared = AppOnboardingStore(app: .current)
 
     let app: LunaApp
 

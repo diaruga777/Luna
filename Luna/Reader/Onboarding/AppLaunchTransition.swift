@@ -1,12 +1,12 @@
 //
-//  ReaderLaunchTransition.swift
+//  AppLaunchTransition.swift
 //  Luna
 //
 
 import LunaDesignSystem
 import UIKit
 
-enum ReaderLaunchGeometry {
+enum AppLaunchGeometry {
     static let referenceSize = CGSize(width: 402, height: 874)
     static let coronaReachRatio: CGFloat = 0.42
     static var totalityGroupAspectRatio: CGFloat {
@@ -36,12 +36,12 @@ enum ReaderLaunchGeometry {
     }
 }
 
-/// The live first frame of every Luna Reader launch. It begins at the exact
+/// The live first frame of every Luna app launch. It begins at the exact
 /// totality composition represented by ReaderLaunchScreen.storyboard, then
 /// plays only the egress: corona down, black moon out, real card/content and
 /// surrounding chrome in.
-enum ReaderLaunchTransition {
-    static let didFinish = Notification.Name("ReaderLaunchTransition.didFinish")
+enum AppLaunchTransition {
+    static let didFinish = Notification.Name("AppLaunchTransition.didFinish")
     static let duration: TimeInterval = 0.78
 
     static func install(in window: UIWindow) {
@@ -57,39 +57,49 @@ enum ReaderLaunchTransition {
         rootView?.alpha = 0
         rootView?.layoutIfNeeded()
 
-        let target = window.rootViewController?.readerLaunchTransitionTarget()
-        let targetFrame = target?.readerLaunchTargetFrame(in: window)
+        OnboardingAnimationClock.installSlowMotionIfRequested(in: window)
+        let target = window.rootViewController?.appLaunchTransitionTarget()
+        let targetFrame = target?.appLaunchTargetFrame(in: window)
             ?? fallbackTargetFrame(in: window)
         let body = overlay.viewWithTag(Tags.body)!
         let corona = overlay.viewWithTag(Tags.corona)!
         let sky = overlay.viewWithTag(Tags.sky)!
+        let launchReplica = overlay.viewWithTag(Tags.launchReplica)
 
         // Preserve the launch frame for a beat. UIKit has just replaced the
         // static storyboard with this pixel-matched live hierarchy; moving it
         // synchronously would expose that handoff.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(0.08)
+        ) {
             guard overlay.window != nil else { return }
             UIView.animateKeyframes(
                 withDuration: UIAccessibility.isReduceMotionEnabled ? 0.22 : duration,
                 delay: 0,
                 options: [.calculationModeCubic, .beginFromCurrentState]
             ) {
-                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.18) {
+                    launchReplica?.alpha = 0
+                }
+                UIView.addKeyframe(withRelativeStartTime: 0.12, relativeDuration: 0.66) {
                     body.frame = targetFrame
                     corona.frame = targetFrame
                     corona.alpha = 0
                 }
-                UIView.addKeyframe(withRelativeStartTime: 0.22, relativeDuration: 0.78) {
+                UIView.addKeyframe(withRelativeStartTime: 0.36, relativeDuration: 0.64) {
                     sky.alpha = 0
                     rootView?.alpha = 1
                 }
-                UIView.addKeyframe(withRelativeStartTime: 0.48, relativeDuration: 0.52) {
+                UIView.addKeyframe(withRelativeStartTime: 0.72, relativeDuration: 0.28) {
                     body.alpha = 0
                 }
             } completion: { _ in
                 rootView?.alpha = 1
                 overlay.removeFromSuperview()
-                target?.readerLaunchTransitionDidFinish()
+                target?.appLaunchTransitionDidFinish()
+                if target?.keepsOnboardingSlowMotionAfterLaunch != true {
+                    OnboardingAnimationClock.restoreNormalSpeed(in: window)
+                }
                 NotificationCenter.default.post(name: didFinish, object: nil)
             }
         }
@@ -103,12 +113,12 @@ enum ReaderLaunchTransition {
         overlay.backgroundColor = .black
         overlay.isUserInteractionEnabled = false
 
-        let sky = ReaderLaunchStarfieldView(frame: overlay.bounds)
+        let sky = AppLaunchStarfieldView(frame: overlay.bounds)
         sky.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         sky.tag = Tags.sky
         overlay.addSubview(sky)
 
-        let bodyFrame = ReaderLaunchGeometry.totalityCardFrame(in: overlay.bounds)
+        let bodyFrame = AppLaunchGeometry.totalityCardFrame(in: overlay.bounds)
         let corona = EclipseCoronaView(
             bodySize: bodyFrame.size,
             cornerRadius: CardSurfaceView.cornerRadius,
@@ -119,7 +129,12 @@ enum ReaderLaunchTransition {
 
         let body = CardSurfaceView(frame: bodyFrame)
         body.backgroundColor = .black
-        body.setBorderEnabled(true)
+        // The exact glass rim is present in the launch-raster replica above.
+        // CardSurfaceView recomputes its mask path at the destination bounds;
+        // resizing it live would expose that final-width path for one frame.
+        // The corona carries the edge through the move, then the destination
+        // card's real glass rim crossfades in with the rest of the chrome.
+        body.setBorderEnabled(false)
         let black = UIView(frame: body.bounds)
         black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         black.backgroundColor = .black
@@ -128,6 +143,9 @@ enum ReaderLaunchTransition {
         overlay.addSubview(body)
         body.layoutIfNeeded()
         corona.layoutIfNeeded()
+        let launchReplica = makeLaunchScreenReplica(frame: overlay.bounds)
+        launchReplica.tag = Tags.launchReplica
+        overlay.addSubview(launchReplica)
         return overlay
     }
 
@@ -138,7 +156,7 @@ enum ReaderLaunchTransition {
         let bodySize = CGSize(
             width: bodyWidth,
             height: bodyWidth / CardCarouselMetrics.cardAspectRatio)
-        let reach = bodyWidth * ReaderLaunchGeometry.coronaReachRatio
+        let reach = bodyWidth * AppLaunchGeometry.coronaReachRatio
         let group = UIView(frame: CGRect(
             origin: .zero,
             size: CGSize(
@@ -172,7 +190,7 @@ enum ReaderLaunchTransition {
     }
 
     static func makeStaticStarfieldView(frame: CGRect) -> UIView {
-        ReaderLaunchStarfieldView(frame: frame)
+        AppLaunchStarfieldView(frame: frame)
     }
 
     private static func fallbackTargetFrame(in window: UIWindow) -> CGRect {
@@ -188,17 +206,42 @@ enum ReaderLaunchTransition {
             height: height)
     }
 
+    /// The uppermost runtime layer uses the exact launch-screen assets with
+    /// the storyboard's content modes and five-point inset. It guarantees that
+    /// UIKit's first committed frame is pixel-identical to the cached static
+    /// splash. The live production views sit registered beneath it and take
+    /// over before any geometry changes.
+    private static func makeLaunchScreenReplica(frame: CGRect) -> UIView {
+        let replica = UIView(frame: frame)
+        replica.backgroundColor = .black
+        replica.isUserInteractionEnabled = false
+
+        let stars = UIImageView(frame: replica.bounds)
+        stars.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        stars.contentMode = .scaleToFill
+        stars.image = UIImage(named: "ReaderLaunchStarfield")
+        replica.addSubview(stars)
+
+        let coronaCard = UIImageView(frame: replica.bounds.insetBy(dx: 5, dy: 5))
+        coronaCard.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        coronaCard.contentMode = .scaleAspectFit
+        coronaCard.image = UIImage(named: "ReaderLaunchCoronaCard")
+        replica.addSubview(coronaCard)
+        return replica
+    }
+
     private enum Tags {
         static let sky = 8_101
         static let corona = 8_102
         static let body = 8_103
+        static let launchReplica = 8_104
     }
 }
 
-/// Launch-safe fixed Reader starfield. It intentionally mirrors StarfieldView
-/// but resolves the Reader tint explicitly so artwork recorded under the
-/// central Luna unit-test host remains identical to the Reader target.
-private final class ReaderLaunchStarfieldView: UIView {
+/// Launch-safe fixed starfield. It intentionally mirrors StarfieldView but
+/// resolves the launch tint explicitly so artwork recorded under the central
+/// Luna unit-test host remains identical in every target.
+private final class AppLaunchStarfieldView: UIView {
     private struct Star {
         let x: CGFloat
         let y: CGFloat

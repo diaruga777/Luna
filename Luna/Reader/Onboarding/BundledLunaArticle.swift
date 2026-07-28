@@ -1,5 +1,5 @@
 //
-//  ReaderBundledLunaArticle.swift
+//  BundledLunaArticle.swift
 //  Luna
 //
 
@@ -12,7 +12,7 @@ import Foundation
 /// `LunaWikipedia.html` is the Safari-shaped page.  This extracted form is
 /// stored through the ordinary ReadingListStore so the final reveal is a real
 /// Reader card with the same persistence and offline behavior as any save.
-enum ReaderBundledLunaArticle {
+enum BundledLunaArticle {
     static let urlString = "https://en.wikipedia.org/wiki/Luna"
 
     struct InstallResult {
@@ -37,9 +37,9 @@ enum ReaderBundledLunaArticle {
 
     static func installTemporary(
         urlString: String = urlString,
-        registry: ReaderOnboardingStore = .shared,
+        registry: AppOnboardingStore = .shared,
         in store: ReadingListStore = .shared
-    ) {
+    ) -> Bool {
         let result = install(urlString: urlString, in: store)
         if result.wasCreated {
             registry.recordTemporarySave(identifier: result.item.id)
@@ -47,10 +47,11 @@ enum ReaderBundledLunaArticle {
             // Never claim ownership of a save the user already had.
             registry.clearTemporarySaveIdentifier()
         }
+        return result.item.state == .ready && store.content(for: result.item) != nil
     }
 
     static func cleanupTemporary(
-        registry: ReaderOnboardingStore = .shared,
+        registry: AppOnboardingStore = .shared,
         in store: ReadingListStore = .shared
     ) {
         defer { registry.clearTemporarySaveIdentifier() }

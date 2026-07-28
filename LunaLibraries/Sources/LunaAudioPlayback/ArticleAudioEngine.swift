@@ -98,15 +98,19 @@ public final class ArticleAudioEngine {
         self.format = format
         engine.attach(playerNode)
         engine.attach(timePitch)
-        engine.connect(playerNode, to: timePitch, format: format)
-        engine.connect(timePitch, to: engine.mainMixerNode, format: format)
         if manualRendering {
             do {
+                // Enter offline mode before asking for the main mixer. The
+                // mixer lazily creates the output node; doing that first can
+                // make deterministic tests depend on the host's live Core
+                // Audio service even though no hardware output is needed.
                 try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
             } catch {
                 throw ArticleAudioEngineError.engineStartFailed
             }
         }
+        engine.connect(playerNode, to: timePitch, format: format)
+        engine.connect(timePitch, to: engine.mainMixerNode, format: format)
         engine.prepare()
         do {
             try engine.start()
@@ -256,9 +260,7 @@ public final class ArticleAudioEngine {
     /// real audio output device.
     @discardableResult
     public func renderOffline(maxFrames: AVAudioFrameCount = 4096) throws -> AVAudioEngineManualRenderingStatus {
-        guard engine.manualRenderingMode == .offline else {
-            throw ArticleAudioEngineError.manualRenderingNotEnabled
-        }
+        try Self.validateOfflineRenderingMode(engine.manualRenderingMode)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: maxFrames) else {
             throw ArticleAudioEngineError.manualRenderingFailed
         }
@@ -266,6 +268,15 @@ public final class ArticleAudioEngine {
             return try engine.renderOffline(maxFrames, to: buffer)
         } catch {
             throw ArticleAudioEngineError.manualRenderingFailed
+        }
+    }
+
+    /// Kept as a small testable seam so validating the offline-rendering guard
+    /// never requires a live hardware output node.
+    @_spi(Testing)
+    public static func validateOfflineRenderingMode(_ mode: AVAudioEngineManualRenderingMode) throws {
+        guard mode == .offline else {
+            throw ArticleAudioEngineError.manualRenderingNotEnabled
         }
     }
 }

@@ -4,7 +4,7 @@
 //
 
 import AVFoundation
-import LunaAudioPlayback
+@_spi(Testing) import LunaAudioPlayback
 import XCTest
 
 /// `ArticleAudioEngine` tests run entirely in `AVAudioEngine`'s offline
@@ -194,8 +194,11 @@ final class ArticleAudioEngineTests: XCTestCase {
 
     // MARK: - Manual rendering guard
 
-    func testRenderOfflineThrowsWhenNotInManualRenderingMode() throws {
-        let engine = try ArticleAudioEngine(format: canonicalFormat, manualRendering: false)
-        XCTAssertThrowsError(try engine.renderOffline())
+    func testRenderOfflineThrowsWhenNotInManualRenderingMode() {
+        XCTAssertThrowsError(
+            try ArticleAudioEngine.validateOfflineRenderingMode(.realtime)
+        ) { error in
+            XCTAssertEqual(error as? ArticleAudioEngineError, .manualRenderingNotEnabled)
+        }
     }
 }

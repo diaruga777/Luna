@@ -54,8 +54,8 @@ public final class EmailShareCenter {
         }
     }
 
-    /// Whether an email account is connected (required to send).
-    public var isConfigured: Bool { accountStore.isConfigured }
+    /// Whether an email account is connected and does not need recovery.
+    public var isConfigured: Bool { accountStore.isReady }
 
     /// Sends a reading-list item to the given email addresses.
     @MainActor

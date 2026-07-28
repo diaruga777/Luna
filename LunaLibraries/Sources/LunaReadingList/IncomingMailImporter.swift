@@ -43,8 +43,8 @@ public final class IncomingMailImporter {
         self.accountStore = accountStore
     }
 
-    /// Can run when an email account is connected.
-    public var isConfigured: Bool { accountStore.isConfigured }
+    /// Can run when an email account is connected and does not need recovery.
+    public var isConfigured: Bool { accountStore.isReady }
 
     /// Fetches and processes new mail. Safe to call repeatedly; coalesces overlaps.
     public func importNewMail() async {

@@ -13,6 +13,18 @@ public enum MailCredential: Equatable {
     case oauth(OAuthTokens)
 }
 
+/// A connected account whose saved secret can no longer authenticate.
+///
+/// The account metadata and Keychain item deliberately remain in place so the
+/// UI can show which account needs attention and restart the correct provider's
+/// sign-in flow. Saving a replacement credential clears the issue.
+public enum EmailAuthenticationIssue: String, Codable, Equatable {
+    /// An IMAP/SMTP provider rejected the saved address/app password.
+    case credentialsRejected
+    /// An OAuth provider rejected both the access token and refresh path.
+    case authorizationExpired
+}
+
 /// Persistence for the connected `EmailAccount`.
 ///
 /// Account **metadata** (provider, address, display name, resolved servers)
@@ -30,6 +42,7 @@ public final class EmailAccountStore {
     public static let shared = EmailAccountStore()
 
     private let accountKey = "lunaEmailAccount"
+    private let authenticationIssueKey = "lunaEmailAuthenticationIssue"
     private let defaults: UserDefaults
     private let credentialStorage: MailCredentialStorage
     private let service = "com.hsanabria.luna.mailaccount"
@@ -56,9 +69,26 @@ public final class EmailAccountStore {
         return try? JSONDecoder().decode(EmailAccount.self, from: data)
     }
 
-    /// True when an account is connected and has a usable credential.
+    /// True when account metadata and a credential are present.
+    ///
+    /// This remains true while `authenticationIssue` is set: retaining that
+    /// distinction lets recovery reuse the affected address/provider. Call
+    /// `isReady` when deciding whether a mail operation may begin.
     public var isConfigured: Bool {
         account != nil && credential != nil
+    }
+
+    /// A definite provider rejection recorded by the mail transport.
+    public var authenticationIssue: EmailAuthenticationIssue? {
+        guard let rawValue = defaults.string(forKey: authenticationIssueKey) else {
+            return nil
+        }
+        return EmailAuthenticationIssue(rawValue: rawValue)
+    }
+
+    /// True only when the connected account may currently be used for mail.
+    public var isReady: Bool {
+        isConfigured && authenticationIssue == nil
     }
 
     // MARK: - Save / clear
@@ -70,6 +100,7 @@ public final class EmailAccountStore {
             defaults.set(data, forKey: accountKey)
         }
         setCredential(credential)
+        defaults.removeObject(forKey: authenticationIssueKey)
         NotificationCenter.default.post(name: Self.accountChanged, object: nil)
     }
 
@@ -78,9 +109,25 @@ public final class EmailAccountStore {
         setCredential(.oauth(tokens))
     }
 
+    /// Records that the provider definitively rejected the connected account.
+    /// Repeating the same failure is silent so background retries do not churn UI.
+    public func markAuthenticationIssue(_ issue: EmailAuthenticationIssue) {
+        guard authenticationIssue != issue else { return }
+        defaults.set(issue.rawValue, forKey: authenticationIssueKey)
+        NotificationCenter.default.post(name: Self.accountChanged, object: nil)
+    }
+
+    /// Clears a stale issue after an authenticated mail operation succeeds.
+    public func clearAuthenticationIssue() {
+        guard authenticationIssue != nil else { return }
+        defaults.removeObject(forKey: authenticationIssueKey)
+        NotificationCenter.default.post(name: Self.accountChanged, object: nil)
+    }
+
     /// Removes the account and its credential, then posts `accountChanged`.
     public func clear() {
         defaults.removeObject(forKey: accountKey)
+        defaults.removeObject(forKey: authenticationIssueKey)
         credentialStorage.delete(service: service, account: appPasswordAccount)
         credentialStorage.delete(service: service, account: oauthAccount)
         NotificationCenter.default.post(name: Self.accountChanged, object: nil)

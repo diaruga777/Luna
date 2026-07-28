@@ -43,6 +43,6 @@ public enum KindleSendSettings {
     /// True when everything needed to actually send is present: a Kindle address
     /// and a connected email account to send it through.
     public static var isConfigured: Bool {
-        !kindleAddress.isEmpty && EmailAccountStore.shared.isConfigured
+        !kindleAddress.isEmpty && EmailAccountStore.shared.isReady
     }
 }

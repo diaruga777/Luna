@@ -5,6 +5,24 @@
 
 import Foundation
 
+/// A provider response that definitively means the saved login must be renewed.
+///
+/// Network timeouts, DNS failures, server outages, and ordinary API failures
+/// must keep their original errors so they never put the account into recovery.
+public struct EmailAuthenticationError: Error, CustomStringConvertible {
+    public let issue: EmailAuthenticationIssue
+    public let detail: String
+
+    public init(issue: EmailAuthenticationIssue, detail: String) {
+        self.issue = issue
+        self.detail = detail
+    }
+
+    public var description: String {
+        "Email authentication failed (\(issue.rawValue)): \(detail)"
+    }
+}
+
 /// A composed, ready-to-send message. `rawMIME` is the full RFC 5322 message
 /// (headers + body); both backends consume it — SMTP writes it in `DATA`, and
 /// Graph sends it base64-encoded via `/me/sendMail`.

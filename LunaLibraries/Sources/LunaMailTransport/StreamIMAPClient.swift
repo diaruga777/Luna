@@ -156,8 +156,17 @@ struct StreamIMAPClient {
         }
 
         func login(username: String, password: String) async throws {
-            try await run("LOGIN \(GmailIMAPClient.quoted(username)) \(GmailIMAPClient.quoted(password))",
-                          step: "login")
+            do {
+                try await run(
+                    "LOGIN \(GmailIMAPClient.quoted(username)) \(GmailIMAPClient.quoted(password))",
+                    step: "login")
+            } catch let error as IMAPError {
+                // Reaching a tagged NO/BAD reply proves the network and TLS
+                // connection worked; a rejected LOGIN is therefore a saved
+                // credential problem, not a transient connectivity failure.
+                throw EmailAuthenticationError(
+                    issue: .credentialsRejected, detail: error.description)
+            }
         }
 
         func close() { stream.close() }

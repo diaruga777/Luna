@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaMailAccount
 
 /// Minimal ESMTP submission over `MailStream`. Handles both implicit TLS (465)
 /// and STARTTLS (587), AUTH PLAIN with an AUTH LOGIN fallback, multiple
@@ -83,17 +84,22 @@ struct StreamSMTPClient {
         try await stream.writeLine("AUTH LOGIN")
         let login = try await readReply(stream)
         guard login.code == "334" else {
-            throw SMTPError(step: "AUTH", reply: login.lastLine)
+            throw EmailAuthenticationError(
+                issue: .credentialsRejected, detail: "SMTP AUTH: \(login.lastLine)")
         }
         try await stream.writeLine(Data(username.utf8).base64EncodedString())
         let user = try await readReply(stream)
         guard user.code == "334" else {
-            throw SMTPError(step: "AUTH LOGIN username", reply: user.lastLine)
+            throw EmailAuthenticationError(
+                issue: .credentialsRejected,
+                detail: "SMTP AUTH LOGIN username: \(user.lastLine)")
         }
         try await stream.writeLine(Data(password.utf8).base64EncodedString())
         let pass = try await readReply(stream)
         guard pass.code == "235" else {
-            throw SMTPError(step: "AUTH LOGIN password", reply: pass.lastLine)
+            throw EmailAuthenticationError(
+                issue: .credentialsRejected,
+                detail: "SMTP AUTH LOGIN password: \(pass.lastLine)")
         }
     }
 

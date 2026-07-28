@@ -193,6 +193,12 @@ public struct GraphMailTransport: EmailTransport {
             MicrosoftOAuth.refreshParameters(clientID: clientID, refreshToken: tokens.refreshToken))
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            if let http = response as? HTTPURLResponse,
+               Self.authenticationFailure(statusCode: http.statusCode, body: data) {
+                throw EmailAuthenticationError(
+                    issue: .authorizationExpired,
+                    detail: "Microsoft token refresh was rejected.")
+            }
             throw GraphError(detail: "Token refresh failed.")
         }
         let wire = try JSONDecoder().decode(TokenWire.self, from: data)
@@ -217,6 +223,12 @@ public struct GraphMailTransport: EmailTransport {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            if let http = response as? HTTPURLResponse,
+               Self.authenticationFailure(statusCode: http.statusCode, body: data) {
+                throw EmailAuthenticationError(
+                    issue: .authorizationExpired,
+                    detail: "Microsoft Graph rejected the saved authorization.")
+            }
             throw GraphError(detail: "Graph GET failed: \(String(decoding: data, as: UTF8.self).prefix(200))")
         }
         return data
@@ -228,9 +240,30 @@ public struct GraphMailTransport: EmailTransport {
             throw GraphError(detail: "\(step): no response")
         }
         guard http.statusCode == status || (200..<300).contains(http.statusCode) else {
+            if Self.authenticationFailure(statusCode: http.statusCode, body: data) {
+                throw EmailAuthenticationError(
+                    issue: .authorizationExpired,
+                    detail: "Microsoft Graph rejected the saved authorization.")
+            }
             throw GraphError(detail: "\(step) failed (\(http.statusCode)): "
                 + "\(String(decoding: data, as: UTF8.self).prefix(200))")
         }
+    }
+
+    /// Only responses that explicitly describe an authentication/authorization
+    /// rejection are eligible to revive recovery UI. Rate limits and 5xx
+    /// responses intentionally remain transient.
+    static func authenticationFailure(statusCode: Int, body: Data) -> Bool {
+        if statusCode == 401 { return true }
+        guard statusCode == 400 || statusCode == 403 else { return false }
+        let detail = String(decoding: body, as: UTF8.self).lowercased()
+        return [
+            "invalid_grant",
+            "interaction_required",
+            "invalidauthenticationtoken",
+            "authenticationfailure",
+            "erroraccessdenied",
+        ].contains(where: detail.contains)
     }
 
     // MARK: - Wire types

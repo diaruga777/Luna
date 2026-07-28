@@ -59,6 +59,43 @@ final class EmailAccountStoreTests: XCTestCase {
         store.save(account, credential: .oauth(tokens))
         XCTAssertEqual(store.credential, .oauth(tokens))
         XCTAssertTrue(store.isConfigured)
+        XCTAssertTrue(store.isReady)
+    }
+
+    func testAuthenticationIssueKeepsAccountForRecoveryButMakesItNotReady() {
+        let account = makeAccount()
+        store.save(account, credential: .appPassword("secret"))
+
+        store.markAuthenticationIssue(.credentialsRejected)
+
+        XCTAssertEqual(store.account, account)
+        XCTAssertEqual(store.credential, .appPassword("secret"))
+        XCTAssertEqual(store.authenticationIssue, .credentialsRejected)
+        XCTAssertTrue(store.isConfigured)
+        XCTAssertFalse(store.isReady)
+    }
+
+    func testSavingReplacementCredentialClearsAuthenticationIssue() {
+        let account = makeAccount()
+        store.save(account, credential: .appPassword("old-secret"))
+        store.markAuthenticationIssue(.credentialsRejected)
+
+        store.save(account, credential: .appPassword("new-secret"))
+
+        XCTAssertNil(store.authenticationIssue)
+        XCTAssertEqual(store.credential, .appPassword("new-secret"))
+        XCTAssertTrue(store.isReady)
+    }
+
+    func testAuthenticationIssuePersistsAcrossStoreInstances() {
+        store.save(makeAccount(), credential: .appPassword("secret"))
+        store.markAuthenticationIssue(.authorizationExpired)
+
+        let secondStore = EmailAccountStore(
+            defaults: defaults, credentialStorage: credentialStorage)
+
+        XCTAssertEqual(secondStore.authenticationIssue, .authorizationExpired)
+        XCTAssertFalse(secondStore.isReady)
     }
 
     func testIsConfiguredRequiresBothMetadataAndCredential() {
@@ -68,6 +105,7 @@ final class EmailAccountStoreTests: XCTestCase {
         }
         XCTAssertNotNil(store.account)
         XCTAssertNil(store.credential)
+        XCTAssertNil(store.authenticationIssue)
         XCTAssertFalse(store.isConfigured)
     }
 

@@ -603,7 +603,14 @@
 				Reader/AllKindsCardProvider.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/NonArticleCardOpening.swift,
+				Reader/Onboarding/ReaderBundledLunaArticle.swift,
+				Reader/Onboarding/ReaderLaunchTransition.swift,
+				Reader/Onboarding/ReaderOnboardingStore.swift,
+				Reader/Onboarding/ReaderOnboardingViewController.swift,
+				Reader/Onboarding/SafariReplicaViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
+				ReaderLaunchScreen.storyboard,
+				Resources/LunaWikipedia.html,
 				Settings/AudioSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
 				Settings/EmailAndKindleSettingsScreen.swift,
@@ -632,7 +639,14 @@
 				Reader/AllKindsCardProvider.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/NonArticleCardOpening.swift,
+				Reader/Onboarding/ReaderBundledLunaArticle.swift,
+				Reader/Onboarding/ReaderLaunchTransition.swift,
+				Reader/Onboarding/ReaderOnboardingStore.swift,
+				Reader/Onboarding/ReaderOnboardingViewController.swift,
+				Reader/Onboarding/SafariReplicaViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
+				ReaderLaunchScreen.storyboard,
+				Resources/LunaWikipedia.html,
 				Settings/AudioSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
 				Settings/DownloadsSettingsScreen.swift,
@@ -3715,6 +3729,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -3746,6 +3762,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;

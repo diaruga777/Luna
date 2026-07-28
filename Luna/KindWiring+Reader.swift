@@ -23,7 +23,18 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
+    @MainActor
     static func install() {
+        #if DEBUG
+        ReaderOnboardingStore.shared.resetIfRequested()
+        #endif
+        ReaderOnboardingWiring.installLaunchTransition = { window in
+            ReaderLaunchTransition.install(in: window)
+        }
+        ReaderOnboardingWiring.makeCompletedRootViewController = {
+            makeCompletedRootViewController()
+        }
+
         IngestKindProcessors.article = ArticleIngestProcessor()
         IngestorKindHandlers.article = ArticleKindHandler()
 
@@ -81,6 +92,14 @@ enum KindWiring {
     /// host (read-aloud is a Reader feature; the bar floats above the bottom
     /// safe area, survives every push/pop, and hides while idle).
     static func makeRootViewController() -> UIViewController {
+        let content: UIViewController = ReaderOnboardingStore.shared.isCompleted
+            ? ArticleCardsViewController()
+            : ReaderOnboardingViewController()
+        let nav = UINavigationController(rootViewController: content)
+        return MiniPlayerHostViewController(content: nav)
+    }
+
+    private static func makeCompletedRootViewController() -> UIViewController {
         let nav = UINavigationController(rootViewController: ArticleCardsViewController())
         return MiniPlayerHostViewController(content: nav)
     }

@@ -93,6 +93,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
         window.makeKeyAndVisible()
         mainNavigationController?.installLunarEclipseTransition()
+        ReaderOnboardingWiring.installLaunchTransition?(window)
 
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)

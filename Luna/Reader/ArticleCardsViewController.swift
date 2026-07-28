@@ -2220,3 +2220,14 @@ private final class ReaderFooterContentFadeView: UIView {
 /// `openExternally(_:)` itself is defined above; this just marks the deck as a
 /// root `SceneDelegate` can hand items to without a kind-specific downcast.
 extension ArticleCardsViewController: ExternalItemOpening {}
+
+// Every Reader launch exits totality into the real resting card geometry. The
+// carousel owns that geometry, so the launch transition asks it instead of
+// duplicating safe-area/scrubber math in SceneDelegate.
+extension ArticleCardsViewController: ReaderLaunchTransitionTarget {
+    func readerLaunchTargetFrame(in window: UIWindow) -> CGRect? {
+        view.layoutIfNeeded()
+        guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
+        return view.convert(frame, to: window)
+    }
+}

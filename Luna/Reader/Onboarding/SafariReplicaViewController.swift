@@ -154,23 +154,25 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
         window.addSubview(cue)
         cue.layout(in: window)
         cue.play { [weak self, weak cue] in
+            let origin = cue?.waveOrigin
+                ?? CGPoint(x: 0, y: window.safeAreaInsets.top + 107)
             cue?.removeFromSuperview()
             self?.actionCue = nil
-            self?.playLiquidWave()
+            self?.playLiquidWave(origin: origin)
         }
     }
 
-    private func playLiquidWave() {
+    private func playLiquidWave(origin: CGPoint) {
         guard let window = view.window else {
             showSafariPrompt()
             return
         }
         let animator = LiquidScreenWaveAnimator(window: window)
         waveAnimator = animator
-        animator.play(originY: window.safeAreaInsets.top + 104) { [weak self] in
-            self?.waveAnimator = nil
-            self?.showSafariPrompt()
-        }
+        animator.play(
+            origin: origin,
+            midpoint: { [weak self] in self?.showSafariPrompt() },
+            completion: { [weak self] in self?.waveAnimator = nil })
     }
 
     func showSafariPrompt() {

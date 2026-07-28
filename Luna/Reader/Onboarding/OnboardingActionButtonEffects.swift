@@ -7,6 +7,11 @@ import CoreImage
 import LunaDesignSystem
 import UIKit
 
+enum OnboardingActionButtonTiming {
+    static let waveDuration: CFTimeInterval = 0.78
+    static let instructionRevealProgress: CGFloat = 0.5
+}
+
 final class ActionButtonPressCue: UIVisualEffectView {
     private let rim = CAShapeLayer()
     private let glow = UIView()
@@ -54,6 +59,10 @@ final class ActionButtonPressCue: UIVisualEffectView {
             cornerRadius: bounds.width / 2).cgPath
     }
 
+    var waveOrigin: CGPoint {
+        CGPoint(x: 0, y: frame.midY)
+    }
+
     func play(completion: @escaping () -> Void) {
         UIView.animateKeyframes(
             withDuration: UIAccessibility.isReduceMotionEnabled ? 0.25 : 0.82,
@@ -79,7 +88,8 @@ final class ActionButtonPressCue: UIVisualEffectView {
     }
 }
 
-/// A moving Core Image displacement strip over a whole-window snapshot.
+/// A circular Core Image displacement wave over a whole-window snapshot,
+/// expanding from the physical Action Button cue at the screen's leading edge.
 @MainActor
 final class LiquidScreenWaveAnimator {
     private weak var window: UIWindow?
@@ -88,22 +98,32 @@ final class LiquidScreenWaveAnimator {
     private var source: CIImage?
     private var displayLink: CADisplayLink?
     private var startedAt: CFTimeInterval = 0
+    private var midpoint: (() -> Void)?
     private var completion: (() -> Void)?
-    private var originY: CGFloat = 0
-    private let duration = OnboardingAnimationClock.displayLinkDuration(1.18)
+    private var didReachMidpoint = false
+    private var origin: CGPoint = .zero
+    private let duration = OnboardingAnimationClock.displayLinkDuration(
+        OnboardingActionButtonTiming.waveDuration)
 
     init(window: UIWindow) {
         self.window = window
     }
 
-    func play(originY: CGFloat, completion: @escaping () -> Void) {
+    func play(
+        origin: CGPoint,
+        midpoint: @escaping () -> Void,
+        completion: @escaping () -> Void
+    ) {
         guard let window, let snapshot = snapshot(window: window),
               let cgImage = snapshot.cgImage else {
+            midpoint()
             completion()
             return
         }
-        self.originY = originY
+        self.origin = origin
+        self.midpoint = midpoint
         self.completion = completion
+        didReachMidpoint = false
         source = CIImage(cgImage: cgImage)
 
         let imageView = UIImageView(frame: window.bounds)
@@ -140,23 +160,29 @@ final class LiquidScreenWaveAnimator {
         let progress = min(max((link.timestamp - startedAt) / duration, 0), 1)
         let pixelScale = window.screen.scale
         let extent = source.extent
-        let front = CGFloat(-0.15 + progress * 1.30) * extent.width
+        let center = CGPoint(
+            x: origin.x * pixelScale,
+            y: extent.height - origin.y * pixelScale)
+        let farthestCornerDistance = [
+            hypot(center.x - extent.minX, center.y - extent.minY),
+            hypot(center.x - extent.maxX, center.y - extent.minY),
+            hypot(center.x - extent.minX, center.y - extent.maxY),
+            hypot(center.x - extent.maxX, center.y - extent.maxY),
+        ].max() ?? extent.width
+        let radius = max(1, CGFloat(progress) * (farthestCornerDistance + 24 * pixelScale))
         let envelope = sin(CGFloat(progress) * .pi)
         // Core Image's scale is a unit scalar (-1...1), not a pixel distance.
-        // Driving it with screen pixels creates a torn, over-amplified frame on
-        // 3× devices. Radius owns the physical wave width; scale owns its bend.
+        // Radius owns the expanding circular front; scale owns its bend and
+        // falls back to zero as the last pixels settle.
         let distortionScale = envelope * 0.62
-        let radius = (58 + envelope * 10) * pixelScale
-        let centerY = extent.height - originY * pixelScale
 
         guard let filter = CIFilter(
-            name: "CIBumpDistortionLinear",
+            name: "CIBumpDistortion",
             parameters: [
                 kCIInputImageKey: source.clampedToExtent(),
-                kCIInputCenterKey: CIVector(x: front, y: centerY),
+                kCIInputCenterKey: CIVector(x: center.x, y: center.y),
                 kCIInputRadiusKey: radius,
                 kCIInputScaleKey: distortionScale,
-                kCIInputAngleKey: CGFloat.pi / 2,
             ]),
             let output = filter.outputImage?.cropped(to: extent),
             let rendered = context.createCGImage(output, from: extent)
@@ -166,6 +192,13 @@ final class LiquidScreenWaveAnimator {
         }
         overlay.image = UIImage(
             cgImage: rendered, scale: pixelScale, orientation: .up)
+        if !didReachMidpoint,
+           progress >= Double(OnboardingActionButtonTiming.instructionRevealProgress) {
+            didReachMidpoint = true
+            let midpoint = midpoint
+            self.midpoint = nil
+            midpoint?()
+        }
         if progress >= 1 { finish() }
     }
 
@@ -175,6 +208,10 @@ final class LiquidScreenWaveAnimator {
         overlay?.removeFromSuperview()
         overlay = nil
         source = nil
+        if !didReachMidpoint {
+            midpoint?()
+        }
+        midpoint = nil
         let completion = completion
         self.completion = nil
         completion?()

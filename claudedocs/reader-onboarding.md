@@ -50,18 +50,25 @@ owns its onboarding completion independently.
 
 The root uses the production `CardCarouselViewController`:
 
-1. The first black card reveals both surface-specific lines. A black circular
-   occluder translates down each line; exposed text passes through a narrow
-   white bloom before resolving. The text starts one third of the way down the
-   card. “Show me how” appears only after both lines.
+1. The first black card shows its surface-specific first line immediately. It
+   holds for 1.45 seconds, then a completely borderless black circle moves
+   slowly down across only the second line. Four narrow illumination rings are
+   clipped to the actual glyph pixels: their brightness falls steeply with
+   distance from the circle edge, and the hottest pixels cast a brief white
+   bloom into their neighbors before resolving to ordinary text. The copy
+   starts one third of the way down the card. “Show me how” appears only after
+   the second line finishes, with a restrained 24% wash of the current app
+   surface tint in its glass background.
 2. The button pages through the production `CardEclipseTransition`. The next
    card expands to the display and becomes `SafariReplicaViewController`.
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.
-4. An Action Button cue plays beside the physical button. A moving
-   `CIBumpDistortionLinear` strip deforms every pixel of a whole-window snapshot
-   before removing itself after the pixels settle.
+4. An Action Button cue plays beside the physical button. A
+   `CIBumpDistortion` wave expands circularly from that cue across a whole-window
+   snapshot and settles in 0.78 seconds. The “Press the Action Button…” overlay
+   begins fading in at the wave's midpoint instead of waiting for the last
+   distorted pixels to settle.
 5. A window-filling near-black overlay aligns its content to the same one-third
    vertical anchor. It offers Safari setup, then the same `BundledShortcut`
    installer and `SystemSettingsLink.openActionButton()` paths used elsewhere.

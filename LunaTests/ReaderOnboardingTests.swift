@@ -111,6 +111,48 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(luna.demoPages, [.wikipedia, .instaTok, .amayzon])
     }
 
+    @MainActor
+    func testIntroShowsFirstLineImmediatelyAndStagesOnlyTheSecondReveal() throws {
+        let intro = OnboardingIntroCardContentViewController(
+            firstLine: "You wish you read more.",
+            secondLine: "Let’s make that happen.")
+        intro.loadViewIfNeeded()
+        intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
+        intro.view.layoutIfNeeded()
+
+        let lines = intro.view.subviews.compactMap { $0 as? MoonRevealLineView }
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[0].isFullyRevealed)
+        XCTAssertFalse(lines[1].isFullyRevealed)
+        XCTAssertFalse(lines[1].occluderHasVisibleChrome)
+        XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
+
+        let button = try XCTUnwrap(
+            intro.view.subviews.compactMap { $0 as? UIButton }.first)
+        let tintAlpha = try XCTUnwrap(
+            button.configuration?.baseBackgroundColor?.cgColor.alpha)
+        XCTAssertEqual(tintAlpha, 0.24, accuracy: 0.001)
+    }
+
+    func testIntroAndActionButtonTimingsUseTheFasterOverlappedSequence() {
+        XCTAssertGreaterThan(OnboardingIntroTiming.secondLineDelay, 1.08)
+        XCTAssertGreaterThan(OnboardingIntroTiming.secondLineRevealDuration, 0.82)
+        XCTAssertLessThan(OnboardingActionButtonTiming.waveDuration, 1.18)
+        XCTAssertEqual(
+            OnboardingActionButtonTiming.instructionRevealProgress,
+            0.5,
+            accuracy: 0.001)
+    }
+
+    @MainActor
+    func testActionButtonWaveStartsAtThePhysicalScreenEdgeCue() {
+        let cue = ActionButtonPressCue()
+        cue.frame = CGRect(x: 0, y: 92, width: 44, height: 56)
+
+        XCTAssertEqual(cue.waveOrigin.x, 0, accuracy: 0.001)
+        XCTAssertEqual(cue.waveOrigin.y, cue.frame.midY, accuracy: 0.001)
+    }
+
     func testLaunchArtworkUsesTheReferenceRootCardsExactSize() {
         let card = AppLaunchGeometry.referenceRootCardFrame
 

@@ -6,6 +6,15 @@
 import LunaDesignSystem
 import UIKit
 
+enum OnboardingIntroTiming {
+    /// The first line is already present when the launch fade clears. Leave it
+    /// alone long enough to read before the answer begins revealing.
+    static let secondLineDelay: TimeInterval = 1.45
+    /// Slow enough that the circle edge can be read as a deliberate top-down
+    /// sweep, while each pixel's hot band remains spatially narrow and brief.
+    static let secondLineRevealDuration: TimeInterval = 1.55
+}
+
 final class OnboardingIntroCardContentViewController: CardContentViewController {
     var onContinue: (() -> Void)?
 
@@ -15,7 +24,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     private var didStart = false
 
     init(firstLine: String, secondLine: String) {
-        self.firstLine = MoonRevealLineView(text: firstLine)
+        self.firstLine = MoonRevealLineView(text: firstLine, initiallyRevealed: true)
         self.secondLine = MoonRevealLineView(text: secondLine)
         super.init()
     }
@@ -33,6 +42,10 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             title: "Show me how",
             symbol: "arrow.right",
             prominent: true)
+        // Carry this app's identity into the glass, but keep it a quiet wash
+        // rather than the stronger shared prominent-action fill.
+        button.configuration?.baseBackgroundColor =
+            LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
         button.configuration?.imagePlacement = .trailing
         button.accessibilityLabel = "Show me how"
         button.alpha = 0
@@ -66,26 +79,27 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     func start() {
         guard !didStart else { return }
         didStart = true
-        firstLine.reveal(duration: 0.70) { [weak self] in
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(
+                OnboardingIntroTiming.secondLineDelay)
+        ) { [weak self] in
             guard let self else { return }
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + OnboardingAnimationClock.delay(0.38)
-            ) {
-                self.secondLine.reveal(duration: 0.82) { [weak self] in
-                    guard let self else { return }
-                    UIView.animate(
-                        withDuration: 0.38,
-                        delay: 0.16,
-                        options: [.curveEaseOut, .beginFromCurrentState]
-                    ) {
-                        self.button.alpha = 1
-                        self.button.transform = .identity
-                    } completion: { _ in
-                        self.button.isUserInteractionEnabled = true
-                        UIAccessibility.post(
-                            notification: .layoutChanged,
-                            argument: self.button)
-                    }
+            self.secondLine.reveal(
+                duration: OnboardingIntroTiming.secondLineRevealDuration
+            ) { [weak self] in
+                guard let self else { return }
+                UIView.animate(
+                    withDuration: 0.38,
+                    delay: 0.16,
+                    options: [.curveEaseOut, .beginFromCurrentState]
+                ) {
+                    self.button.alpha = 1
+                    self.button.transform = .identity
+                } completion: { _ in
+                    self.button.isUserInteractionEnabled = true
+                    UIAccessibility.post(
+                        notification: .layoutChanged,
+                        argument: self.button)
                 }
             }
         }
@@ -110,49 +124,78 @@ final class OnboardingBrowserSeedCardContentViewController: CardContentViewContr
     }
 }
 
-/// A black circular occluder moves down over a line. Newly exposed pixels pass
-/// through a narrow white bloom before resolving to the ordinary glyphs.
-private final class MoonRevealLineView: UIView {
-    private let finalLabel = UILabel()
-    private let glowLabel = UILabel()
-    private let moon = UIView()
-    private let glowMask = CAGradientLayer()
-    private var didReveal = false
+/// A borderless black circle hides the unrevealed text against the black card.
+/// Its exact outer edge also drives four narrow illumination rings, clipped to
+/// the glyph alpha: each newly exposed letter pixel becomes a tiny white light
+/// source, blooms into its neighbors, then falls rapidly back to normal white
+/// as the edge moves away.
+final class MoonRevealLineView: UIView {
+    private static let edgeFalloff: [(inner: CGFloat, outer: CGFloat, alpha: CGFloat)] = [
+        (0, 1.25, 1.00),
+        (1.25, 3.00, 0.56),
+        (3.00, 5.50, 0.18),
+        (5.50, 8.50, 0.045),
+    ]
 
-    init(text: String) {
+    private let clippedContent = UIView()
+    private let finalLabel = UILabel()
+    private let illuminationMaskLabel = UILabel()
+    private let moonLayer = CAShapeLayer()
+    private let illuminationLayer = CALayer()
+    private let illuminationRings = CALayer()
+    private var didStartReveal = false
+    private(set) var isFullyRevealed: Bool
+
+    var occluderHasVisibleChrome: Bool {
+        moonLayer.borderWidth > 0
+            || moonLayer.lineWidth > 0
+            || moonLayer.strokeColor != nil
+            || moonLayer.shadowOpacity > 0
+    }
+
+    var usesGlyphEdgeIllumination: Bool {
+        illuminationLayer.mask === illuminationMaskLabel.layer
+            && illuminationRings.sublayers?.count == Self.edgeFalloff.count
+    }
+
+    init(text: String, initiallyRevealed: Bool = false) {
+        self.isFullyRevealed = initiallyRevealed
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         clipsToBounds = false
-        for label in [finalLabel, glowLabel] {
+        isAccessibilityElement = initiallyRevealed
+        accessibilityLabel = text
+
+        clippedContent.clipsToBounds = true
+        clippedContent.isUserInteractionEnabled = false
+        addSubview(clippedContent)
+
+        for label in [finalLabel, illuminationMaskLabel] {
             label.text = text
             label.font = .systemFont(ofSize: 25, weight: .semibold)
             label.textColor = .white
             label.textAlignment = .center
             label.adjustsFontSizeToFitWidth = true
             label.minimumScaleFactor = 0.72
-            addSubview(label)
+            label.isAccessibilityElement = false
         }
-        glowLabel.layer.shadowColor = UIColor.white.cgColor
-        glowLabel.layer.shadowRadius = 18
-        glowLabel.layer.shadowOpacity = 1
-        glowLabel.layer.shadowOffset = .zero
-        glowMask.colors = [
-            UIColor.clear.cgColor,
-            UIColor.white.cgColor,
-            UIColor.white.cgColor,
-            UIColor.clear.cgColor,
-        ]
-        glowMask.locations = [0, 0.34, 0.58, 1]
-        glowMask.startPoint = CGPoint(x: 0.5, y: 0)
-        glowMask.endPoint = CGPoint(x: 0.5, y: 1)
-        glowLabel.layer.mask = glowMask
+        clippedContent.addSubview(finalLabel)
 
-        moon.backgroundColor = .black
-        moon.layer.shadowColor = UIColor.white.cgColor
-        moon.layer.shadowRadius = 7
-        moon.layer.shadowOpacity = 0.16
-        moon.layer.shadowOffset = CGSize(width: 0, height: -2)
-        addSubview(moon)
+        guard !initiallyRevealed else { return }
+
+        moonLayer.fillColor = UIColor.black.cgColor
+        moonLayer.strokeColor = nil
+        moonLayer.lineWidth = 0
+        moonLayer.shadowOpacity = 0
+        clippedContent.layer.addSublayer(moonLayer)
+
+        illuminationLayer.shadowColor = UIColor.white.cgColor
+        illuminationLayer.shadowRadius = 13
+        illuminationLayer.shadowOpacity = 1
+        illuminationLayer.shadowOffset = .zero
+        illuminationLayer.addSublayer(illuminationRings)
+        illuminationLayer.mask = illuminationMaskLabel.layer
+        layer.addSublayer(illuminationLayer)
     }
 
     @available(*, unavailable)
@@ -160,46 +203,106 @@ private final class MoonRevealLineView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        clippedContent.frame = bounds
         finalLabel.frame = bounds
-        glowLabel.frame = bounds
-        glowMask.frame = CGRect(
-            x: 0, y: -bounds.height * 0.48,
-            width: bounds.width, height: bounds.height * 0.58)
-        if !didReveal {
-            let diameter = max(bounds.width + 40, 240)
-            moon.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
-            moon.center = CGPoint(x: bounds.midX, y: bounds.midY)
-            moon.layer.cornerRadius = diameter / 2
-        }
+        guard !isFullyRevealed, !didStartReveal, bounds.width > 0, bounds.height > 0
+        else { return }
+        prepareRevealLayers()
     }
 
     func reveal(duration: TimeInterval, completion: @escaping () -> Void) {
-        guard !didReveal else {
+        guard !isFullyRevealed else {
             completion()
             return
         }
-        didReveal = true
+        guard !didStartReveal else { return }
+        didStartReveal = true
         layoutIfNeeded()
-        let moonTravel = moon.bounds.height / 2 + bounds.height + 12
-        let glowTravel = bounds.height * 1.9
-        let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.18 : duration
+        let initialTop = moonFrame.minY
+        let travel = bounds.maxY + 6 - initialTop
+        let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
+        let transform = CATransform3DMakeTranslation(0, travel, 0)
 
-        UIView.animate(
-            withDuration: resolvedDuration,
-            delay: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState]
-        ) {
-            self.moon.transform = CGAffineTransform(translationX: 0, y: moonTravel)
-        } completion: { _ in
-            self.moon.removeFromSuperview()
-            self.glowLabel.removeFromSuperview()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        moonLayer.transform = transform
+        illuminationRings.transform = transform
+        CATransaction.commit()
+
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = CATransform3DIdentity
+        animation.toValue = transform
+        animation.duration = resolvedDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        animation.isRemovedOnCompletion = true
+        let start = moonLayer.convertTime(CACurrentMediaTime(), from: nil)
+        animation.beginTime = start
+        moonLayer.add(animation, forKey: "moonReveal")
+
+        let ringAnimation = animation.copy() as! CABasicAnimation
+        ringAnimation.beginTime = illuminationRings.convertTime(
+            CACurrentMediaTime(), from: nil)
+        illuminationRings.add(ringAnimation, forKey: "pixelIllumination")
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
+        ) { [weak self] in
+            guard let self else { return }
+            self.isFullyRevealed = true
+            self.isAccessibilityElement = true
+            self.moonLayer.removeFromSuperlayer()
+            self.illuminationLayer.removeFromSuperlayer()
             completion()
         }
-        let animation = CABasicAnimation(keyPath: "transform.translation.y")
-        animation.fromValue = 0
-        animation.toValue = glowTravel
-        animation.duration = resolvedDuration
-        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        glowMask.add(animation, forKey: "revealBand")
+    }
+
+    private var moonFrame: CGRect {
+        guard let pathBounds = moonLayer.path?.boundingBoxOfPath else { return .zero }
+        return pathBounds
+    }
+
+    private func prepareRevealLayers() {
+        // A very large circle makes the segment crossing the text nearly
+        // horizontal while preserving a real circular distance field.
+        let diameter = max(bounds.width * 8, 1_200)
+        let radius = diameter / 2
+        let halfWidth = bounds.width / 2
+        let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
+        // At the line's extreme left/right the edge begins four points above
+        // the glyph cap, ensuring no antialiased text pixel leaks out early.
+        let initialTop = 4 - sagitta
+        let circleFrame = CGRect(
+            x: bounds.midX - radius,
+            y: initialTop,
+            width: diameter,
+            height: diameter)
+        let circlePath = UIBezierPath(ovalIn: circleFrame).cgPath
+
+        moonLayer.frame = bounds
+        moonLayer.path = circlePath
+        moonLayer.transform = CATransform3DIdentity
+
+        illuminationLayer.frame = bounds
+        illuminationRings.frame = bounds
+        illuminationRings.transform = CATransform3DIdentity
+        illuminationMaskLabel.frame = bounds
+        illuminationMaskLabel.layer.contentsScale = traitCollection.displayScale
+
+        illuminationRings.sublayers?.forEach { $0.removeFromSuperlayer() }
+        for band in Self.edgeFalloff.reversed() {
+            let ring = CAShapeLayer()
+            let path = UIBezierPath(
+                ovalIn: circleFrame.insetBy(dx: -band.outer, dy: -band.outer))
+            path.append(UIBezierPath(
+                ovalIn: circleFrame.insetBy(dx: -band.inner, dy: -band.inner)))
+            path.usesEvenOddFillRule = true
+            ring.frame = bounds
+            ring.path = path.cgPath
+            ring.fillRule = .evenOdd
+            ring.fillColor = UIColor.white.withAlphaComponent(band.alpha).cgColor
+            ring.strokeColor = nil
+            ring.shadowOpacity = 0
+            illuminationRings.addSublayer(ring)
+        }
     }
 }

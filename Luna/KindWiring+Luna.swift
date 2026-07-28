@@ -14,6 +14,7 @@ import LunaArticleIngest
 import LunaAudioPlayback
 import LunaHTMLClassification
 import LunaIngest
+import LunaMailAccount
 import LunaMailTransport
 import LunaMediaDownload
 import LunaModels
@@ -59,6 +60,9 @@ enum KindWiring {
         // redirects to the screen that connects it (its Sharing Account section is
         // the sign-in form until then). Only the email-sending apps install this.
         SendToFriendSheet.accountSetupLauncher = { presenter in
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+        }
+        LeftTrayController.emailRecoveryLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
         // The central Luna app is the only surface whose card deck contains
@@ -175,9 +179,14 @@ enum KindWiring {
         [
             SettingsCategory(title: L10n.string("Reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
             SettingsCategory(title: L10n.string("Audio"), symbol: "headphones") { AudioSettingsScreen() },
-            SettingsCategory(title: L10n.string("Email"), symbol: "envelope") {
-                EmailAndKindleSettingsScreen()
-            },
+            SettingsCategory(
+                title: L10n.string("Email"),
+                symbol: "envelope",
+                detail: {
+                    EmailAccountStore.shared.authenticationIssue == nil
+                        ? nil : L10n.string("Sign-in required")
+                }
+            ) { EmailAndKindleSettingsScreen() },
             SettingsCategory(
                 title: L10n.string("Kindle"), symbol: "book.closed",
                 requiresEmail: true,

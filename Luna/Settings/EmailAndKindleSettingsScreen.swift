@@ -21,6 +21,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         case lunaAccount, importMail, subjectFilters
     }
 
+    private enum ConnectedAccountRow {
+        case account, issue, reconnect, inboxFilter, signOut
+    }
+
     /// Set by a caller that sent the user here to connect an account (the
     /// unconfigured-send redirect), so the address field takes the keyboard as
     /// soon as the screen appears. One-shot.
@@ -40,6 +44,14 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     /// tests can exercise the inline sign-in form without touching the App Group
     /// Keychain; every caller in the app uses the shared store.
     private let accountStore: EmailAccountStore
+
+    private var connectedAccountRows: [ConnectedAccountRow] {
+        guard accountStore.isConfigured else { return [] }
+        if accountStore.authenticationIssue != nil {
+            return [.account, .issue, .reconnect, .signOut]
+        }
+        return [.account, .inboxFilter, .signOut]
+    }
 
     init(accountStore: EmailAccountStore = .shared) {
         self.accountStore = accountStore
@@ -65,6 +77,9 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         headerTitle = L10n.string("Email")
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(accountStatusChanged),
+            name: EmailAccountStore.accountChanged, object: nil)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -98,9 +113,9 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .lunaAccount:
-            // Connected: address, inbox filter, sign out. Otherwise the inline
-            // sign-in form: address field + Connect.
-            return accountStore.isConfigured ? 3 : 2
+            // Connected: account status/actions. Otherwise the inline sign-in
+            // form: address field + Connect.
+            return accountStore.isConfigured ? connectedAccountRows.count : 2
         case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
         case .subjectFilters: return IncomingMailSettings.subjectFilters.count + 1 /* add */
         }
@@ -119,6 +134,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         case .lunaAccount:
             let base = L10n.string(
                 "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.")
+            if accountStore.authenticationIssue != nil {
+                return L10n.string(
+                    "Your saved account is still here, but its login was rejected by the provider. Reconnect to resume sending and importing email.")
+            }
             guard !accountStore.isConfigured else { return base }
             return L10n.string(
                 "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next.")
@@ -141,16 +160,37 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: indexPath.section)! {
         case .lunaAccount:
             if accountStore.isConfigured {
-                switch indexPath.row {
-                case 0:
+                switch connectedAccountRows[indexPath.row] {
+                case .account:
                     content.text = accountStore.account?.address
-                    content.secondaryText = accountStore.account?.provider.displayName
-                case 1:
+                    content.secondaryText = accountStore.authenticationIssue == nil
+                        ? accountStore.account?.provider.displayName
+                        : L10n.string("Sign-in required")
+                case .issue:
+                    content.text = L10n.string("Email login needs attention")
+                    content.secondaryText = authenticationIssueMessage
+                    content.image = UIImage(systemName: "exclamationmark.triangle.fill")
+                    content.imageProperties.tintColor = .systemOrange
+                    content.textProperties.color = .systemOrange
+                case .reconnect:
+                    content.text = L10n.string("Reconnect Email")
+                    content.secondaryText = L10n.string("Sign in again with this account")
+                    content.image = UIImage(systemName: "person.badge.key")
+                    content.textProperties.color = view.tintColor ?? .systemBlue
+                    cell.selectionStyle = isConnecting ? .none : .default
+                    if isConnecting {
+                        let spinner = DotMatrixSpinnerView(dimension: 4, side: 20)
+                        spinner.startAnimating()
+                        cell.accessoryView = spinner
+                    } else {
+                        cell.accessoryType = .disclosureIndicator
+                    }
+                case .inboxFilter:
                     content.text = L10n.string("Inbox Filter")
                     content.secondaryText = L10n.string("Keep Luna mail out of your inbox")
                     cell.accessoryType = .disclosureIndicator
                     cell.selectionStyle = .default
-                default:
+                case .signOut:
                     content.text = L10n.string("Sign Out")
                     content.textProperties.color = .systemRed
                     cell.selectionStyle = .default
@@ -209,12 +249,16 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: indexPath.section)! {
         case .lunaAccount:
             if accountStore.isConfigured {
-                switch indexPath.row {
-                case 1: presentFilterGuide()
-                case 2:
+                switch connectedAccountRows[indexPath.row] {
+                case .reconnect:
+                    reconnectAccount()
+                case .inboxFilter:
+                    presentFilterGuide()
+                case .signOut:
                     accountStore.clear()
                     tableView.reloadData()
-                default: break
+                default:
+                    break
                 }
             } else if indexPath.row == 1 {
                 connectAccount()
@@ -261,6 +305,17 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     /// Whether the address as typed is worth a network round trip.
     private var canConnect: Bool {
         !isConnecting && EmailAccountSetup.isValidAddress(addressField.text ?? "")
+    }
+
+    private var authenticationIssueMessage: String {
+        switch accountStore.authenticationIssue {
+        case .credentialsRejected:
+            return L10n.string("The provider rejected the saved app password.")
+        case .authorizationExpired:
+            return L10n.string("The provider authorization expired or was revoked.")
+        case nil:
+            return ""
+        }
     }
 
     private func makeAddressField() -> UITextField {
@@ -343,6 +398,15 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         tableView.reloadRows(at: [IndexPath(row: 1, section: section)], with: .none)
     }
 
+    @objc private func accountStatusChanged() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.accountStatusChanged() }
+            return
+        }
+        guard isViewLoaded else { return }
+        tableView.reloadData()
+    }
+
     @objc private func connectAccount() {
         guard !isConnecting else { return }
         guard EmailAccountSetup.isValidAddress(addressField.text ?? "") else {
@@ -351,19 +415,49 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             return
         }
         addressField.resignFirstResponder()
+        beginAccountSetup(address: addressField.text ?? "", clearsAddressOnSuccess: true)
+    }
+
+    private func reconnectAccount() {
+        guard !isConnecting, let account = accountStore.account else { return }
+        beginAccountSetup(
+            address: account.address,
+            existingAccount: account,
+            clearsAddressOnSuccess: false)
+    }
+
+    private func beginAccountSetup(
+        address: String,
+        existingAccount: EmailAccount? = nil,
+        clearsAddressOnSuccess: Bool
+    ) {
         let setup = EmailAccountSetup(
             presenter: self,
             accountStore: accountStore,
             onBusyChange: { [weak self] busy in
-                self?.isConnecting = busy
-                self?.reloadConnectRow()
+                guard let self else { return }
+                self.isConnecting = busy
+                if self.accountStore.isConfigured {
+                    self.tableView.reloadSections(
+                        IndexSet(integer: Section.lunaAccount.rawValue), with: .none)
+                } else {
+                    self.reloadConnectRow()
+                }
             },
             completion: { [weak self] connected in
                 guard let self else { return }
                 self.isConnecting = false
                 self.accountSetup = nil
-                guard connected else { self.reloadConnectRow(); return }
-                self.addressField.text = ""
+                guard connected || self.accountStore.isReady else {
+                    if self.accountStore.isConfigured {
+                        self.tableView.reloadSections(
+                            IndexSet(integer: Section.lunaAccount.rawValue), with: .none)
+                    } else {
+                        self.reloadConnectRow()
+                    }
+                    return
+                }
+                if clearsAddressOnSuccess { self.addressField.text = "" }
                 // The credential screen stays on screen through its success
                 // checkmark; come back to the (now connected) settings rows.
                 if self.navigationController?.topViewController !== self {
@@ -372,7 +466,16 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 self.tableView.reloadData()
             })
         accountSetup = setup
-        setup.start(address: addressField.text ?? "")
+        let didStart: Bool
+        if let existingAccount {
+            didStart = setup.start(account: existingAccount)
+        } else {
+            didStart = setup.start(address: address)
+        }
+        if !didStart {
+            accountSetup = nil
+            isConnecting = false
+        }
     }
 
     // MARK: - Import & filters

@@ -25,6 +25,15 @@ so transformed cards retain visible separation rather than overlapping.
   presents Outlook OAuth or the existing app-password credential controller as
   needed. Success shrinks/fades the expanded card, removes its row, and
   recenters the tray.
+  If a previously connected provider rejects its saved credential, the row is
+  revived as an orange **Email login needs attention** card with provider-path
+  detail and a **Reconnect in Settings** action. Tapping either the card or its
+  action opens Settings → Email directly; it does not show the new-account
+  address card over an account that still exists. Reconnecting removes the row
+  again. The route is installed through
+  `LeftTrayController.emailRecoveryLauncher` by the Luna/Reader `KindWiring`
+  variants, so the shared tray source still compiles in Downloader and Price
+  Tracker without naming their unlinked Email settings controller.
 - Shortcut starts with “Save to Luna with your Action Button” and an Install
   shortcut button. Opening the bundled shortcut persists the assumed-installed
   intermediate state; the row becomes the per-app Action Button instruction
@@ -42,7 +51,9 @@ guide:
 - Safari is complete after the containing Safari extension's native handler has
   run.
 - Shortcut is complete after any Luna App Intent has run.
-- Email is complete whenever the shared email account is configured.
+- Email is complete whenever the shared email account is configured and ready.
+  A persisted `EmailAccountStore.authenticationIssue` makes it incomplete until
+  the user reconnects or signs out.
 
 Reader, Downloader, and Price Tracker share Safari/Shortcut completion through
 the App Group. The central Luna bundle uses independent completion keys for its

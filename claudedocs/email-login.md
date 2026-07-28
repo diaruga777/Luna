@@ -16,6 +16,19 @@ with the address field already focused (`focusesAddressField`, honored in
 `viewDidAppear`). An app extension, which can't navigate the app's settings,
 explains in an alert instead.
 
+An account whose saved credential is later rejected stays present for recovery
+rather than being silently deleted. `EmailAccountStore.authenticationIssue`
+persists either `.credentialsRejected` (IMAP/SMTP) or
+`.authorizationExpired` (Outlook OAuth) in the shared App Group. In that state
+`isConfigured` remains true (metadata + Keychain secret still exist) while
+`isReady` becomes false, so sending/importing pauses and prerequisite redirects
+lead back here. Settings shows the affected address, an orange provider-specific
+error row, **Reconnect Email**, and Sign Out. Reconnect reuses the address and
+stored provider/server configuration (it does not re-infer or rediscover a
+custom domain): Outlook launches OAuth again; app-password providers push the
+normal credential controller. Saving the replacement credential clears the
+issue.
+
 ## Steps
 
 1. **The inline address row** (`EmailAndKindleSettingsScreen`) — the same rounded
@@ -187,6 +200,29 @@ This is a pragmatic domain check, not exhaustive: a `MailStream.StreamError`
 domain and currently reads as a credential failure. Left as a known,
 acceptable simplification rather than trying to enumerate every internal
 error type from outside `LunaMailTransport`.
+
+## Detecting a login that stopped working
+
+Runtime mail calls come from `MailTransportFactory`, which wraps the concrete
+transport in `AuthenticationStateTrackingTransport`. The concrete transports
+emit the typed `EmailAuthenticationError` only for definite provider rejection:
+
+- an IMAP tagged failure at `LOGIN`, or SMTP rejection during `AUTH`, records
+  `.credentialsRejected`;
+- a Microsoft token refresh rejected as `invalid_grant` /
+  `interaction_required`, Graph `401`, or a Graph authorization error records
+  `.authorizationExpired`.
+
+The wrapper persists that issue and posts
+`EmailAccountStore.accountChanged`. DNS, timeout, offline, rate-limit, generic
+400, and 5xx failures keep their original errors and never trigger recovery UI.
+After an issue is recorded `MailTransportFactory` stops background sends/imports
+until recovery succeeds; saving new credentials clears it. A successful
+authenticated wrapper call also clears a stale issue defensively.
+
+The top-level Settings Email row shows “Sign-in required.” The Email screen
+observes `accountChanged`, so it updates even if a foreground mail operation
+discovers the rejection while Settings is already visible.
 
 ## AutoFill invariants (do not regress)
 

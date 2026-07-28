@@ -126,6 +126,43 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertEqual(addressRow.accessoryType, .none)
     }
 
+    func testRejectedCredentialShowsAccountErrorAndReconnectRows() throws {
+        let store = EmailAccountStore(
+            defaults: defaults, credentialStorage: InMemoryCredentialStorage())
+        store.save(
+            EmailAccount(providerID: .gmail, address: "person@gmail.com"),
+            credential: .appPassword("expired"))
+        store.markAuthenticationIssue(.credentialsRejected)
+        let screen = EmailAndKindleSettingsScreen(accountStore: store)
+        window = UITestSupport.host(screen)
+
+        XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 4)
+        XCTAssertEqual(contentText(in: screen, row: 0), "person@gmail.com")
+        XCTAssertEqual(contentSecondaryText(in: screen, row: 0), "Sign-in required")
+        XCTAssertEqual(contentText(in: screen, row: 1), "Email login needs attention")
+        XCTAssertEqual(
+            contentSecondaryText(in: screen, row: 1),
+            "The provider rejected the saved app password.")
+        XCTAssertEqual(contentText(in: screen, row: 2), "Reconnect Email")
+        XCTAssertEqual(contentText(in: screen, row: 3), "Sign Out")
+    }
+
+    func testExpiredOAuthShowsAuthorizationSpecificError() throws {
+        let store = EmailAccountStore(
+            defaults: defaults, credentialStorage: InMemoryCredentialStorage())
+        store.save(
+            EmailAccount(providerID: .outlook, address: "person@outlook.com"),
+            credential: .oauth(OAuthTokens(
+                accessToken: "expired", refreshToken: "revoked", expiry: .distantPast)))
+        store.markAuthenticationIssue(.authorizationExpired)
+        let screen = EmailAndKindleSettingsScreen(accountStore: store)
+        window = UITestSupport.host(screen)
+
+        XCTAssertEqual(
+            contentSecondaryText(in: screen, row: 1),
+            "The provider authorization expired or was revoked.")
+    }
+
     // MARK: - Sign In button enablement (CredentialViewController)
 
     private var suiteName: String!
@@ -186,6 +223,27 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertEqual(completion, false)
     }
 
+    func testRecoveryReusesStoredProviderInsteadOfReinferringAddress() throws {
+        let store = EmailAccountStore(
+            defaults: defaults, credentialStorage: InMemoryCredentialStorage())
+        let root = UIViewController()
+        let nav = UINavigationController(rootViewController: root)
+        window = UITestSupport.host(nav)
+        let setup = EmailAccountSetup(
+            presenter: root, accountStore: store, completion: { _ in })
+        let storedAccount = EmailAccount(
+            providerID: .gmail,
+            address: "reader@custom-domain.example",
+            server: MailProvider.provider(for: .gmail).server)
+
+        XCTAssertTrue(setup.start(account: storedAccount))
+        let credentialScreen = try XCTUnwrap(
+            nav.topViewController as? CredentialViewController)
+        credentialScreen.loadViewIfNeeded()
+        let labels = allViews(of: UILabel.self, in: credentialScreen.view)
+        XCTAssertTrue(labels.contains(where: { $0.text == "Gmail" }))
+    }
+
     // MARK: - Helpers
 
     /// The Email screen with a scratch (empty) account store, hosted in
@@ -206,6 +264,22 @@ final class EmailLoginTests: XCTestCase {
         return cell.selectionStyle != .none
     }
 
+    private func contentText(
+        in screen: EmailAndKindleSettingsScreen, row: Int
+    ) -> String? {
+        let cell = screen.tableView(
+            screen.tableView, cellForRowAt: IndexPath(row: row, section: 0))
+        return (cell.contentConfiguration as? UIListContentConfiguration)?.text
+    }
+
+    private func contentSecondaryText(
+        in screen: EmailAndKindleSettingsScreen, row: Int
+    ) -> String? {
+        let cell = screen.tableView(
+            screen.tableView, cellForRowAt: IndexPath(row: row, section: 0))
+        return (cell.contentConfiguration as? UIListContentConfiguration)?.secondaryText
+    }
+
     private func findBadge(in screen: EmailAndKindleSettingsScreen) throws -> ProviderBadgeView {
         let row = try XCTUnwrap(screen.tableView.cellForRow(at: IndexPath(row: 0, section: 0)))
         return try XCTUnwrap(findView(of: ProviderBadgeView.self, in: row.contentView))
@@ -217,5 +291,13 @@ final class EmailLoginTests: XCTestCase {
             if let found = findView(of: type, in: subview) { return found }
         }
         return nil
+    }
+
+    private func allViews<T: UIView>(of type: T.Type, in view: UIView) -> [T] {
+        var matches = (view as? T).map { [$0] } ?? []
+        for subview in view.subviews {
+            matches.append(contentsOf: allViews(of: type, in: subview))
+        }
+        return matches
     }
 }

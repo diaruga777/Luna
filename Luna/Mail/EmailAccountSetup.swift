@@ -96,6 +96,34 @@ final class EmailAccountSetup {
         return true
     }
 
+    /// Restarts authentication for an existing account without re-inferring its
+    /// provider or rediscovering custom server settings. Recovery must preserve
+    /// the configuration that worked when the account was originally connected.
+    @discardableResult
+    func start(account: EmailAccount) -> Bool {
+        guard !isResolving, Self.isValidAddress(account.address) else { return false }
+        if account.providerID == .outlook {
+            startOutlookOAuth(address: account.address)
+            return true
+        }
+        guard account.server != nil,
+              let presenter,
+              let navigationController = presenter.navigationController,
+              navigationController.topViewController === presenter
+        else {
+            // Corrupt/legacy metadata with no resolved app-password server can
+            // still recover through the normal inference/autodiscovery path.
+            return start(address: account.address)
+        }
+        navigationController.pushViewController(
+            CredentialViewController(
+                account: account,
+                accountStore: accountStore,
+                completion: { [weak self] connected in self?.completion(connected) }),
+            animated: true)
+        return true
+    }
+
     /// Resolves IMAP/SMTP settings: the registry entry for known providers, or
     /// ISPDB autodiscovery (falling back to Gmail-like defaults) for custom domains.
     private func resolveServer(
@@ -197,7 +225,7 @@ final class EmailAccountSetup {
             let account = EmailAccount(providerID: .outlook, address: address, displayName: nil, server: nil)
             accountStore.save(account, credential: .oauth(tokens))
             // Best-effort: install the inbox filter.
-            if let transport = MailTransportFactory.make() {
+            if let transport = MailTransportFactory.make(store: accountStore) {
                 _ = try? await transport.createLunaFilter()
             }
             cover.resolveToCheckmark { [weak self] in

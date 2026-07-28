@@ -13,6 +13,7 @@ import LunaArchiveReader
 import LunaArticleIngest
 import LunaAudioPlayback
 import LunaIngest
+import LunaMailAccount
 import LunaMailTransport
 import LunaModels
 import LunaReaderUI
@@ -82,6 +83,9 @@ enum KindWiring {
         SendToFriendSheet.accountSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
+        LeftTrayController.emailRecoveryLauncher = { presenter in
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+        }
     }
 
     // MARK: - Root UI shape
@@ -116,9 +120,14 @@ enum KindWiring {
         [
             SettingsCategory(title: L10n.string("Reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
             SettingsCategory(title: L10n.string("Audio"), symbol: "headphones") { AudioSettingsScreen() },
-            SettingsCategory(title: L10n.string("Email"), symbol: "envelope") {
-                EmailAndKindleSettingsScreen()
-            },
+            SettingsCategory(
+                title: L10n.string("Email"),
+                symbol: "envelope",
+                detail: {
+                    EmailAccountStore.shared.authenticationIssue == nil
+                        ? nil : L10n.string("Sign-in required")
+                }
+            ) { EmailAndKindleSettingsScreen() },
             SettingsCategory(
                 title: L10n.string("Kindle"), symbol: "book.closed",
                 requiresEmail: true,

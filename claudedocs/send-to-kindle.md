@@ -35,6 +35,12 @@ a static closure, `ArticleEmailTransportProvider.make`, set once at launch in
 never send (extensions) it stays `{ nil }`, so email sends there fail as
 not-configured rather than crash.
 
+`KindleSendSettings.isConfigured` requires
+`EmailAccountStore.shared.isReady`, not merely stored metadata. A definite
+provider authentication rejection therefore pauses new/retried Kindle mail and
+routes the user to Email recovery instead of repeatedly retrying a known-invalid
+credential.
+
 ## Auto-send by capture source
 
 Each item records where it came from: `ReadingListItem.captureSource`

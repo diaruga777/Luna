@@ -67,7 +67,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         ]
 
     init(emailIsConfigured: @escaping () -> Bool = {
-        EmailAccountStore.shared.isConfigured
+        EmailAccountStore.shared.isReady
     }) {
         self.emailIsConfigured = emailIsConfigured
         super.init(style: .insetGrouped)
@@ -83,6 +83,9 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         diagnosticsGesture.cancelsTouchesInView = false
         diagnosticsGesture.delegate = self
         tableView.addGestureRecognizer(diagnosticsGesture)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(emailAccountStatusChanged),
+            name: EmailAccountStore.accountChanged, object: nil)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -138,6 +141,15 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
 
     @objc private func openDiagnostics() {
         navigationController?.pushViewController(DiagnosticsViewController(), animated: true)
+    }
+
+    @objc private func emailAccountStatusChanged() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.emailAccountStatusChanged() }
+            return
+        }
+        guard isViewLoaded else { return }
+        tableView.reloadData()
     }
 
     private func presentEmailRequiredAlert(for category: SettingsCategory) {

@@ -4,6 +4,7 @@
 //
 
 import LunaReadingListUI
+import LunaMailAccount
 import LunaSocialUI
 import LunaShareSurface
 import LunaMediaDownload
@@ -32,6 +33,7 @@ enum UITestScreen: String, CaseIterable {
     case friends
     case friendDetail
     case settings
+    case emailRecovery
     case priceTrackingEditor
 
     // Readers (built from a deterministic fixture article).
@@ -72,6 +74,19 @@ enum UITestScreenBuilder {
         switch screen {
         case .settings:
             return UINavigationController(rootViewController: SettingsViewController())
+
+        case .emailRecovery:
+            let suiteName = "UITestScreen.emailRecovery"
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.removePersistentDomain(forName: suiteName)
+            let store = EmailAccountStore(
+                defaults: defaults, credentialStorage: InMemoryCredentialStorage())
+            store.save(
+                EmailAccount(providerID: .gmail, address: "reader@example.com"),
+                credential: .appPassword("fixture-password"))
+            store.markAuthenticationIssue(.credentialsRejected)
+            return UINavigationController(
+                rootViewController: EmailAndKindleSettingsScreen(accountStore: store))
 
         case .friends:
             return UINavigationController(rootViewController: FriendsViewController())

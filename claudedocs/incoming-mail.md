@@ -70,8 +70,12 @@ still KEEPS only its own kinds from what it imports.
   `ArticleSendCoordinator.articleBecameReady` per the destination's
   email-source setting (Kindle's reuses `autoSendToKindle`; see
   send-to-kindle.md → "Auto-send by capture source"). Advances the cursor.
-  Coalesces overlapping runs. `isConfigured` = enabled + (senders OR subject
-  filters) + Gmail account + app password.
+  Coalesces overlapping runs. Its `isConfigured` gate means the shared account
+  is connected and ready (`EmailAccountStore.isReady`).
+  A definite IMAP/Graph authentication rejection is persisted by the transport
+  as `EmailAccountStore.authenticationIssue`; subsequent background imports
+  pause (`accountStore.isReady == false`) until Settings → Email reconnects the
+  account. Connectivity and server failures do not mark the login invalid.
 
 ## Settings
 
@@ -81,6 +85,11 @@ and Send to Kindle. "Import from Email" section: on/off toggle, **"Also Send to
 Kindle"** toggle (`autoSendToKindle`), add/remove allowed senders (swipe to
 delete). A separate **"Subject Filters"** section adds/removes fuzzy subject
 phrases (swipe to delete).
+
+If that account's credential expires or is revoked, the Sharing Account section
+keeps the address visible and adds the authentication error plus **Reconnect
+Email**. The top-level Email settings row also says “Sign-in required,” and the
+left tray revives its Email card as a recovery shortcut.
 
 ## Background delivery
 

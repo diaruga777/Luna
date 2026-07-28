@@ -114,6 +114,11 @@ private final class LeftArcLayout: UICollectionViewLayout {
 
 /// The left-of-first-card arc shared by central Luna, Reader, and Downloader.
 final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
+    /// Installed only by article-capable app variants, whose target membership
+    /// includes the Email settings controller. The shared tray source also
+    /// compiles into Downloader/Price Tracker, so it must not name that type.
+    static var emailRecoveryLauncher: ((UIViewController) -> Void)?
+
     private weak var host: UIViewController?
     private let shiftedViews: () -> [UIView]
     private let canPull: () -> Bool
@@ -226,6 +231,9 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             self, selector: #selector(setupStatusChanged),
             name: LunaSetupStatusStore.didChange, object: nil)
         NotificationCenter.default.addObserver(
+            self, selector: #selector(contentChanged),
+            name: EmailAccountStore.accountChanged, object: nil)
+        NotificationCenter.default.addObserver(
             self, selector: #selector(keyboardWillChange(_:)),
             name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(
@@ -287,7 +295,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         safariGuide.stopPictureInPicture()
         detectPasteboard()
         RecentURLMatcher.shared.refresh()
-        if EmailAccountStore.shared.isConfigured, let card = activeEmailCard {
+        if EmailAccountStore.shared.isReady, let card = activeEmailCard {
             dismissExpandedEmailCard(
                 card, completed: true, destination: emailRowFrame() ?? card.frame)
             return
@@ -407,7 +415,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         var next: [LeftTrayRow] = []
         let setup = LunaSetupStatusStore.shared
         let isCentral = LunaApp.current == .luna
-        if LunaApp.current.sharesByEmail, !EmailAccountStore.shared.isConfigured {
+        if LunaApp.current.sharesByEmail, !EmailAccountStore.shared.isReady {
             next.append(.setup(.email))
         }
         if !setup.shortcutHasRun(isCentral: isCentral) {
@@ -562,7 +570,11 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private func performSetupAction(_ kind: LeftTraySetupKind, from sourceView: UIView) {
         switch kind {
         case .email:
-            presentExpandedEmailCard(from: sourceView)
+            if EmailAccountStore.shared.authenticationIssue != nil {
+                openEmailRecoverySettings()
+            } else {
+                presentExpandedEmailCard(from: sourceView)
+            }
         case .shortcut:
             if assumesShortcutInstalled {
                 shortcutGuide.startPictureInPicture()
@@ -588,6 +600,12 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
                 UIApplication.shared.open(url)
             }
         }
+    }
+
+    private func openEmailRecoverySettings() {
+        guard let host else { return }
+        setOpen(false, animated: true)
+        Self.emailRecoveryLauncher?(host)
     }
 
     private func presentExpandedEmailCard(from sourceView: UIView) {
@@ -631,7 +649,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
                 guard let self, let card else { return }
                 self.emailAccountSetup = nil
                 card.setBusy(false)
-                if connected || EmailAccountStore.shared.isConfigured {
+                if connected || EmailAccountStore.shared.isReady {
                     let finish = {
                         let destination = self.emailRowFrame() ?? card.frame
                         self.dismissExpandedEmailCard(
@@ -879,7 +897,7 @@ private final class ExpandedEmailSetupCard: UIView {
     required init?(coder: NSCoder) { nil }
 
     func focusAddress() {
-        guard !EmailAccountStore.shared.isConfigured else { return }
+        guard !EmailAccountStore.shared.isReady else { return }
         addressField.becomeFirstResponder()
     }
 
@@ -961,6 +979,8 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
                 kind: kind,
                 assumesShortcutInstalled: assumesShortcutInstalled,
                 appName: LunaApp.current.displayName,
+                emailIssue: kind == .email
+                    ? EmailAccountStore.shared.authenticationIssue : nil,
                 tint: LunaSurfacePalette.baseColor,
                 action: { [weak self, weak cell] in
                     guard let self, let cell else { return }
@@ -1144,6 +1164,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         titleLabel.isHidden = false
         subtitleLabel.isHidden = false
         setupTitleLabel.text = nil
+        setupTitleLabel.textColor = Self.primaryCardText
         setupSubtitleLabel.text = nil
         setupSubtitleLabel.isHidden = false
         setupButton.configuration = nil
@@ -1190,6 +1211,7 @@ private final class LeftTrayCell: UICollectionViewCell {
         kind: LeftTraySetupKind,
         assumesShortcutInstalled: Bool,
         appName: String,
+        emailIssue: EmailAuthenticationIssue?,
         tint: UIColor,
         action: @escaping () -> Void
     ) {
@@ -1215,14 +1237,26 @@ private final class LeftTrayCell: UICollectionViewCell {
                     : L10n.string("Install shortcut"),
                 tint: tint)
         case .email:
-            setupTitleLabel.text = L10n.string("Connect Email")
-            setupSubtitleLabel.text = L10n.string("Send articles and import links · Tap to continue")
-            setupButton.isHidden = true
+            if let emailIssue {
+                setupTitleLabel.text = L10n.string("Email login needs attention")
+                setupTitleLabel.textColor = .systemOrange
+                setupSubtitleLabel.text = emailIssue == .authorizationExpired
+                    ? L10n.string("Authorization expired or was revoked")
+                    : L10n.string("The saved app password was rejected")
+                configureSetupButton(
+                    title: L10n.string("Reconnect in Settings"), tint: .systemOrange)
+            } else {
+                setupTitleLabel.text = L10n.string("Connect Email")
+                setupSubtitleLabel.text = L10n.string(
+                    "Send articles and import links · Tap to continue")
+                setupButton.isHidden = true
+            }
         }
         setupAction = action
+        let effectiveTint: UIColor = emailIssue == nil ? tint : .systemOrange
         contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = tint.withAlphaComponent(0.55).cgColor
-        contentView.layer.shadowColor = tint.cgColor
+        contentView.layer.borderColor = effectiveTint.withAlphaComponent(0.55).cgColor
+        contentView.layer.shadowColor = effectiveTint.cgColor
         contentView.layer.shadowOffset = .zero
         contentView.layer.shadowRadius = 9
         contentView.layer.shadowOpacity = 0.18
@@ -1234,7 +1268,9 @@ private final class LeftTrayCell: UICollectionViewCell {
         pulse.repeatCount = .infinity
         contentView.layer.add(pulse, forKey: "setupPulse")
         accessibilityLabel = setupTitleLabel.text
-        accessibilityHint = setupSubtitleLabel.text
+        accessibilityHint = emailIssue == nil
+            ? setupSubtitleLabel.text
+            : L10n.string("Opens Email settings to reconnect")
         if kind == .email {
             isAccessibilityElement = true
             accessibilityTraits = .button

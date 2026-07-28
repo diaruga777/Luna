@@ -9,40 +9,60 @@ import UIKit
 enum AppLaunchGeometry {
     static let referenceSize = CGSize(width: 402, height: 874)
     static let coronaReachRatio: CGFloat = 0.42
-    static var totalityGroupAspectRatio: CGFloat {
-        let width = 1 + coronaReachRatio * 2
-        let height = 1 / CardCarouselMetrics.cardAspectRatio + coronaReachRatio * 2
-        return width / height
+    static let rootCardHorizontalInset: CGFloat = 24
+    static let rootCardBottomClearanceFromSafeArea: CGFloat = 116
+    static let referenceSafeAreaBottomInset: CGFloat = 34
+
+    /// The production Reader/onboarding card at rest on the launch-art
+    /// recorder's reference iPhone. The launch storyboard constrains the black
+    /// card to this same 24pt side inset, 9:16 aspect, and safe-area-relative
+    /// bottom edge; only the corona is allowed to crop outside the display.
+    static var referenceRootCardFrame: CGRect {
+        let width = referenceSize.width - rootCardHorizontalInset * 2
+        let height = width / CardCarouselMetrics.cardAspectRatio
+        let bottom = referenceSize.height
+            - referenceSafeAreaBottomInset
+            - rootCardBottomClearanceFromSafeArea
+        return CGRect(
+            x: rootCardHorizontalInset,
+            y: bottom - height,
+            width: width,
+            height: height)
     }
 
-    /// The largest centered card whose entire 42%-of-body corona is on screen.
-    /// Both axes participate so the launch composition stays intact in iPad
-    /// landscape as well as every supported iPhone portrait size.
-    static func totalityCardFrame(in bounds: CGRect) -> CGRect {
-        let availableWidth = max(1, bounds.width - 10)
-        let availableHeight = max(1, bounds.height - 10)
-        let groupWidthFactor = 1 + coronaReachRatio * 2
-        let groupHeightFactor = 1 / CardCarouselMetrics.cardAspectRatio
-            + coronaReachRatio * 2
-        let width = min(
-            availableWidth / groupWidthFactor,
-            availableHeight / groupHeightFactor)
-        let height = width / CardCarouselMetrics.cardAspectRatio
+    /// Launch-safe approximation used only when a root has not yet exposed its
+    /// real carousel frame. Width wins on phones; available safe-area height
+    /// wins on compact-height and iPad layouts.
+    static func fallbackRootCardFrame(
+        in bounds: CGRect,
+        safeAreaInsets: UIEdgeInsets
+    ) -> CGRect {
+        let preferredWidth = max(
+            40, bounds.width - rootCardHorizontalInset * 2)
+        let bottom = bounds.maxY
+            - safeAreaInsets.bottom
+            - rootCardBottomClearanceFromSafeArea
+        let maximumHeight = max(
+            40, bottom - bounds.minY - safeAreaInsets.top - 12)
+        let height = min(
+            preferredWidth / CardCarouselMetrics.cardAspectRatio,
+            maximumHeight)
+        let width = height * CardCarouselMetrics.cardAspectRatio
         return CGRect(
             x: bounds.midX - width / 2,
-            y: bounds.midY - height / 2,
+            y: bottom - height,
             width: width,
             height: height)
     }
 }
 
-/// The live first frame of every Luna app launch. It begins at the exact
-/// totality composition represented by ReaderLaunchScreen.storyboard, then
-/// plays only the egress: corona down, black moon out, real card/content and
-/// surrounding chrome in.
+/// The live first frame of every Luna app launch. The splash card is already
+/// laid out at the destination deck's exact resting frame, so launch needs no
+/// staged hold, resize, or eclipse egress—only one brief crossfade to the live
+/// root hierarchy.
 enum AppLaunchTransition {
     static let didFinish = Notification.Name("AppLaunchTransition.didFinish")
-    static let duration: TimeInterval = 0.78
+    static let fadeDuration: TimeInterval = 0.18
 
     static func install(in window: UIWindow) {
         window.layoutIfNeeded()
@@ -51,101 +71,60 @@ enum AppLaunchTransition {
             return
         }
 
-        let overlay = makeTotalityView(frame: window.bounds)
-        window.addSubview(overlay)
         let rootView = window.rootViewController?.view
-        rootView?.alpha = 0
         rootView?.layoutIfNeeded()
 
         OnboardingAnimationClock.installSlowMotionIfRequested(in: window)
         let target = window.rootViewController?.appLaunchTransitionTarget()
         let targetFrame = target?.appLaunchTargetFrame(in: window)
             ?? fallbackTargetFrame(in: window)
-        let body = overlay.viewWithTag(Tags.body)!
-        let corona = overlay.viewWithTag(Tags.corona)!
-        let sky = overlay.viewWithTag(Tags.sky)!
-        let launchReplica = overlay.viewWithTag(Tags.launchReplica)
+        let overlay = makeLaunchView(frame: window.bounds, cardFrame: targetFrame)
+        window.addSubview(overlay)
 
-        // Preserve the launch frame for a beat. UIKit has just replaced the
-        // static storyboard with this pixel-matched live hierarchy; moving it
-        // synchronously would expose that handoff.
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(0.08)
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
         ) {
-            guard overlay.window != nil else { return }
-            UIView.animateKeyframes(
-                withDuration: UIAccessibility.isReduceMotionEnabled ? 0.22 : duration,
-                delay: 0,
-                options: [.calculationModeCubic, .beginFromCurrentState]
-            ) {
-                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.18) {
-                    launchReplica?.alpha = 0
-                }
-                UIView.addKeyframe(withRelativeStartTime: 0.12, relativeDuration: 0.66) {
-                    body.frame = targetFrame
-                    corona.frame = targetFrame
-                    corona.alpha = 0
-                }
-                UIView.addKeyframe(withRelativeStartTime: 0.36, relativeDuration: 0.64) {
-                    sky.alpha = 0
-                    rootView?.alpha = 1
-                }
-                UIView.addKeyframe(withRelativeStartTime: 0.72, relativeDuration: 0.28) {
-                    body.alpha = 0
-                }
-            } completion: { _ in
-                rootView?.alpha = 1
-                overlay.removeFromSuperview()
-                target?.appLaunchTransitionDidFinish()
-                if target?.keepsOnboardingSlowMotionAfterLaunch != true {
-                    OnboardingAnimationClock.restoreNormalSpeed(in: window)
-                }
-                NotificationCenter.default.post(name: didFinish, object: nil)
+            overlay.alpha = 0
+        } completion: { _ in
+            overlay.removeFromSuperview()
+            target?.appLaunchTransitionDidFinish()
+            if target?.keepsOnboardingSlowMotionAfterLaunch != true {
+                OnboardingAnimationClock.restoreNormalSpeed(in: window)
             }
+            NotificationCenter.default.post(name: didFinish, object: nil)
         }
     }
 
-    /// Also used by the launch-art recorder test. The star table, corona tint,
-    /// black body, geometry, and rim are therefore one source of truth for the
-    /// static launch screen and the first live UIKit frame.
-    static func makeTotalityView(frame: CGRect) -> UIView {
+    /// The first live splash frame. Its card frame comes directly from the
+    /// destination carousel, making the fade geometrically stationary.
+    static func makeLaunchView(frame: CGRect, cardFrame: CGRect) -> UIView {
         let overlay = UIView(frame: frame)
         overlay.backgroundColor = .black
         overlay.isUserInteractionEnabled = false
 
         let sky = AppLaunchStarfieldView(frame: overlay.bounds)
         sky.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        sky.tag = Tags.sky
         overlay.addSubview(sky)
 
-        let bodyFrame = AppLaunchGeometry.totalityCardFrame(in: overlay.bounds)
         let corona = EclipseCoronaView(
-            bodySize: bodyFrame.size,
+            bodySize: cardFrame.size,
             cornerRadius: CardSurfaceView.cornerRadius,
             tint: LunaSurfacePalette.atmosphereTint(for: .reader))
-        corona.frame = bodyFrame
-        corona.tag = Tags.corona
+        corona.frame = cardFrame
         overlay.addSubview(corona)
 
-        let body = CardSurfaceView(frame: bodyFrame)
+        let body = CardSurfaceView(frame: cardFrame)
         body.backgroundColor = .black
-        // The exact glass rim is present in the launch-raster replica above.
-        // CardSurfaceView recomputes its mask path at the destination bounds;
-        // resizing it live would expose that final-width path for one frame.
-        // The corona carries the edge through the move, then the destination
-        // card's real glass rim crossfades in with the rest of the chrome.
-        body.setBorderEnabled(false)
+        body.setBorderEnabled(true)
         let black = UIView(frame: body.bounds)
         black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         black.backgroundColor = .black
         body.installContentView(black)
-        body.tag = Tags.body
         overlay.addSubview(body)
         body.layoutIfNeeded()
         corona.layoutIfNeeded()
-        let launchReplica = makeLaunchScreenReplica(frame: overlay.bounds)
-        launchReplica.tag = Tags.launchReplica
-        overlay.addSubview(launchReplica)
         return overlay
     }
 
@@ -194,47 +173,9 @@ enum AppLaunchTransition {
     }
 
     private static func fallbackTargetFrame(in window: UIWindow) -> CGRect {
-        let width = max(40, window.bounds.width - 48)
-        let height = min(
-            width / CardCarouselMetrics.cardAspectRatio,
-            window.bounds.height - window.safeAreaInsets.top - window.safeAreaInsets.bottom - 92)
-        let resolvedWidth = height * CardCarouselMetrics.cardAspectRatio
-        return CGRect(
-            x: window.bounds.midX - resolvedWidth / 2,
-            y: window.bounds.midY - height / 2,
-            width: resolvedWidth,
-            height: height)
-    }
-
-    /// The uppermost runtime layer uses the exact launch-screen assets with
-    /// the storyboard's content modes and five-point inset. It guarantees that
-    /// UIKit's first committed frame is pixel-identical to the cached static
-    /// splash. The live production views sit registered beneath it and take
-    /// over before any geometry changes.
-    private static func makeLaunchScreenReplica(frame: CGRect) -> UIView {
-        let replica = UIView(frame: frame)
-        replica.backgroundColor = .black
-        replica.isUserInteractionEnabled = false
-
-        let stars = UIImageView(frame: replica.bounds)
-        stars.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        stars.contentMode = .scaleToFill
-        stars.image = UIImage(named: "ReaderLaunchStarfield")
-        replica.addSubview(stars)
-
-        let coronaCard = UIImageView(frame: replica.bounds.insetBy(dx: 5, dy: 5))
-        coronaCard.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        coronaCard.contentMode = .scaleAspectFit
-        coronaCard.image = UIImage(named: "ReaderLaunchCoronaCard")
-        replica.addSubview(coronaCard)
-        return replica
-    }
-
-    private enum Tags {
-        static let sky = 8_101
-        static let corona = 8_102
-        static let body = 8_103
-        static let launchReplica = 8_104
+        AppLaunchGeometry.fallbackRootCardFrame(
+            in: window.bounds,
+            safeAreaInsets: window.safeAreaInsets)
     }
 }
 

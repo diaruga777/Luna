@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaDesignSystem
 import LunaStorage
 import XCTest
 @testable import Luna
@@ -110,32 +111,32 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(luna.demoPages, [.wikipedia, .instaTok, .amayzon])
     }
 
-    func testLaunchTotalityKeepsTheEntireCoronaVisibleAcrossSupportedShapes() {
-        let sizes = [
-            CGSize(width: 320, height: 568),
-            CGSize(width: 402, height: 874),
-            CGSize(width: 440, height: 956),
-            CGSize(width: 1_024, height: 1_366),
-            CGSize(width: 1_366, height: 1_024),
-        ]
+    func testLaunchArtworkUsesTheReferenceRootCardsExactSize() {
+        let card = AppLaunchGeometry.referenceRootCardFrame
 
-        for size in sizes {
-            let bounds = CGRect(origin: .zero, size: size)
-            let body = AppLaunchGeometry.totalityCardFrame(in: bounds)
-            let reach = body.width * AppLaunchGeometry.coronaReachRatio
-            let entireCorona = body.insetBy(dx: -reach, dy: -reach)
+        XCTAssertEqual(card.minX, 24, accuracy: 0.001)
+        XCTAssertEqual(card.width, 354, accuracy: 0.001)
+        XCTAssertEqual(
+            card.height,
+            card.width / CardCarouselMetrics.cardAspectRatio,
+            accuracy: 0.001)
+        XCTAssertEqual(card.maxY, 724, accuracy: 0.001)
+    }
 
-            XCTAssertGreaterThanOrEqual(
-                entireCorona.minX, bounds.minX + 4.9, "width \(size)")
-            XCTAssertLessThanOrEqual(
-                entireCorona.maxX, bounds.maxX - 4.9, "width \(size)")
-            XCTAssertGreaterThanOrEqual(
-                entireCorona.minY, bounds.minY + 4.9, "height \(size)")
-            XCTAssertLessThanOrEqual(
-                entireCorona.maxY, bounds.maxY - 4.9, "height \(size)")
-            XCTAssertEqual(body.midX, bounds.midX, accuracy: 0.001)
-            XCTAssertEqual(body.midY, bounds.midY, accuracy: 0.001)
+    func testLiveLaunchViewPlacesItsCardAtTheDestinationFrame() {
+        let bounds = CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize)
+        let target = AppLaunchGeometry.referenceRootCardFrame
+        let launch = AppLaunchTransition.makeLaunchView(
+            frame: bounds,
+            cardFrame: target)
+        guard let card = launch.subviews.compactMap({ $0 as? CardSurfaceView }).first
+        else {
+            XCTFail("Launch view should contain its production card surface")
+            return
         }
+
+        XCTAssertEqual(card.frame, target)
+        XCTAssertLessThanOrEqual(AppLaunchTransition.fadeDuration, 0.2)
     }
 
     func testOnboardingLayoutStartsAtOneThirdOfItsContainer() {

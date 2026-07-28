@@ -26,7 +26,9 @@ enum AppOnboardingCompletionTransition {
 
         let target = root.appLaunchTransitionTarget()
         let targetFrame = target?.appLaunchTargetFrame(in: window)
-            ?? AppLaunchGeometry.totalityCardFrame(in: bounds)
+            ?? AppLaunchGeometry.fallbackRootCardFrame(
+                in: bounds,
+                safeAreaInsets: window.safeAreaInsets)
 
         let stage = UIView(frame: bounds)
         stage.backgroundColor = .clear

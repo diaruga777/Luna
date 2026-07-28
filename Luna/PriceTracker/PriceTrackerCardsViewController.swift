@@ -265,7 +265,7 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
     }
 }
 
-// The launch totality exits into this deck's real resting card geometry.
+// The launch splash crossfades from this deck's real resting card geometry.
 extension PriceTrackerCardsViewController: AppLaunchTransitionTarget {
     func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
         view.layoutIfNeeded()

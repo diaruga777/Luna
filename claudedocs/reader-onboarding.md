@@ -7,19 +7,18 @@ engine. Each composition root injects an immutable
 
 ## Every app launch
 
-`ReaderLaunchScreen.storyboard` is a static rendering of the production eclipse
-at totality: a blank black `CardSurfaceView`, its real glass rim and complete
-`EclipseCorona`, centered over the fixed starfield. There is no app chrome or
-content. `AppLaunchTransition` installs the exact storyboard raster layers over
-the registered live production hierarchy, hands off before geometry changes,
-and plays only the egress: the corona and opaque moon resolve into the real
-resting center-card frame while contents, side peeks, scrubber, and chrome
-appear.
+`ReaderLaunchScreen.storyboard` is a static rendering of a blank black
+`CardSurfaceView`, its real glass rim, and `EclipseCorona` over the fixed
+starfield. The black card uses the production root deck's exact 24-point side
+insets and 9:16 resting size; the much wider corona is deliberately cropped at
+the display edges instead of shrinking the card to keep every ray visible.
+There is no app chrome or content.
 
 This happens after onboarding is complete too. The transition asks the
 destination carousel for its real resting frame through
-`AppLaunchTransitionTarget`; launch code must not duplicate carousel layout
-math. `AppLaunchGeometry` fits the full corona group on both axes.
+`AppLaunchTransitionTarget`, draws the live splash card at that frame, and
+crossfades the single splash layer into the fully laid-out root in 0.18 seconds.
+There is no launch hold, card resize, or staged eclipse egress.
 
 The static images are generated from production views. To regenerate them after
 changing the corona, rim, tint, or star table, run

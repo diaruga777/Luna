@@ -26,8 +26,7 @@ final class ReaderLaunchArtRecorderTests: XCTestCase {
         let reference = AppLaunchGeometry.referenceSize
         let starfield = AppLaunchTransition.makeStaticStarfieldView(
             frame: CGRect(origin: .zero, size: reference))
-        let bodyWidth = AppLaunchGeometry.totalityCardFrame(
-            in: CGRect(origin: .zero, size: reference)).width
+        let bodyWidth = AppLaunchGeometry.referenceRootCardFrame.width
         let coronaCard = AppLaunchTransition.makeStaticCoronaCardView(
             bodyWidth: bodyWidth)
 

@@ -2221,7 +2221,7 @@ private final class ReaderFooterContentFadeView: UIView {
 /// root `SceneDelegate` can hand items to without a kind-specific downcast.
 extension ArticleCardsViewController: ExternalItemOpening {}
 
-// Every Reader launch exits totality into the real resting card geometry. The
+// Every Reader launch crossfades from the real resting card geometry. The
 // carousel owns that geometry, so the launch transition asks it instead of
 // duplicating safe-area/scrubber math in SceneDelegate.
 extension ArticleCardsViewController: AppLaunchTransitionTarget {

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>eyePhone — amayzon</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #f6f7f8; color: #101820; }
+    body { font: 15px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+    header {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      padding: 0 15px;
+      color: white;
+      background: #172432;
+    }
+    .brand {
+      font-size: 23px;
+      font-weight: 850;
+      letter-spacing: -1.5px;
+    }
+    .brand em { color: #ffb53e; font-style: normal; }
+    .search {
+      flex: 1;
+      height: 38px;
+      border-radius: 8px;
+      background: white;
+      color: #7a8188;
+      padding: 10px 13px;
+    }
+    nav {
+      padding: 10px 15px;
+      color: white;
+      background: #26384a;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    main { background: white; padding: 18px 18px 90px; }
+    .crumb { color: #68747d; font-size: 12px; margin-bottom: 16px; }
+    .product-art {
+      height: 310px;
+      display: grid;
+      place-items: center;
+      margin: 0 -18px 18px;
+      background: linear-gradient(145deg, #f8fafc, #e4e8ec);
+      overflow: hidden;
+    }
+    .phone {
+      position: relative;
+      width: 158px;
+      height: 286px;
+      border-radius: 35px 39px 34px 37px;
+      background: linear-gradient(135deg, #d7dbe0, #7b8289 45%, #dfe2e4);
+      border: 5px solid #656b70;
+      box-shadow: 0 22px 38px rgba(20,31,40,.24);
+      transform: rotate(-7deg);
+    }
+    .phone::before {
+      content: "";
+      position: absolute;
+      inset: 7px;
+      border-radius: 27px 31px 26px 29px;
+      background:
+        radial-gradient(circle at 68% 27%, rgba(255,255,255,.68), transparent 16%),
+        linear-gradient(155deg, #94e4d8, #638bd8 45%, #4c337f 76%, #12131d);
+    }
+    .island {
+      position: absolute;
+      z-index: 2;
+      top: 15px;
+      left: 50%;
+      width: 49px;
+      height: 13px;
+      transform: translateX(-44%);
+      border-radius: 9px 12px 8px 10px;
+      background: #08090b;
+    }
+    .camera {
+      position: absolute;
+      z-index: 3;
+      right: 19px;
+      bottom: 20px;
+      width: 16px;
+      height: 16px;
+      border: 3px solid rgba(255,255,255,.52);
+      border-radius: 48% 52% 45% 55%;
+      background: #171c22;
+      box-shadow: -21px 3px 0 -1px #171c22;
+    }
+    .rating { color: #cf6800; letter-spacing: 1px; margin-bottom: 7px; }
+    h1 { font-size: 22px; line-height: 1.25; font-weight: 600; margin: 0 0 9px; }
+    .store { color: #26708e; margin-bottom: 14px; }
+    .deal {
+      display: inline-block;
+      padding: 6px 9px;
+      border-radius: 4px;
+      background: #c93131;
+      color: white;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .price { margin-top: 9px; font-size: 30px; font-weight: 520; }
+    .price sup { font-size: 14px; vertical-align: 11px; }
+    .was { color: #6b737b; font-size: 13px; text-decoration: line-through; }
+    .stock { color: #16723b; font-size: 17px; margin: 20px 0 12px; }
+    .buy {
+      height: 48px;
+      display: grid;
+      place-items: center;
+      border-radius: 24px;
+      background: #ffd45a;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">amay<em>zon</em></div>
+    <div class="search">Search amayzon</div>
+  </header>
+  <nav>☰ &nbsp; Today’s Deals &nbsp;&nbsp; Best Sellers &nbsp;&nbsp; Devices &nbsp;&nbsp; Help</nav>
+  <main>
+    <div class="crumb">Electronics › Pocket communicators › Unlocked</div>
+    <div class="product-art">
+      <div class="phone"><div class="island"></div><div class="camera"></div></div>
+    </div>
+    <div class="rating">★★★★☆ <span style="color:#26708e;letter-spacing:0">4,128 ratings</span></div>
+    <h1>eyePhone Air — 256 GB, Moonmist, unlocked pocket communicator</h1>
+    <div class="store">Visit the Pearless Devices Store</div>
+    <span class="deal">Limited time deal</span>
+    <div class="price"><sup>$</sup>799<sup>00</sup></div>
+    <div class="was">List price: $999.00</div>
+    <div class="stock">In stock</div>
+    <div class="buy">Add to basket</div>
+  </main>
+</body>
+</html>

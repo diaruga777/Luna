@@ -1,0 +1,15 @@
+Lunar eclipse onboarding video
+
+Source: NASA Scientific Visualization Studio
+Title: "March 3, 2026 Total Lunar Eclipse: Telescopic View (UmbraCam)"
+Asset: umbracam_plain_202603_360p30.mp4 ("Just the Moon")
+Visualizer: Ernie Wright (USRA)
+Source page: https://svs.gsfc.nasa.gov/5604/
+Downloaded: 2026-07-28
+SHA-256: 277b5911d17fb54c30f96e2f4b9737f2fb8ea5e19a488f7be8df45b275985c8a
+
+NASA media usage guidance:
+https://www.nasa.gov/nasa-brand-center/images-and-media/
+
+The clip is bundled unchanged and used for factual/educational demonstration.
+No NASA endorsement is stated or implied.

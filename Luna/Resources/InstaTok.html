@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>InstaTok</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #050505; }
+    body {
+      color: white;
+      font: 15px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+    video {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      filter: saturate(.82) contrast(1.12) brightness(.74);
+    }
+    .shade {
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(to bottom, rgba(0,0,0,.55), transparent 25%),
+        linear-gradient(to top, rgba(0,0,0,.8), transparent 38%);
+    }
+    header {
+      position: fixed;
+      z-index: 2;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 800;
+      letter-spacing: -.7px;
+      font-size: 24px;
+      text-shadow: 0 2px 15px black;
+    }
+    .mark {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border: 3px solid #ffb13b;
+      border-radius: 50% 50% 50% 14%;
+      margin-right: 7px;
+      transform: rotate(-20deg);
+      vertical-align: 1px;
+    }
+    .video-copy {
+      position: fixed;
+      z-index: 2;
+      left: 20px;
+      right: 76px;
+      bottom: 84px;
+      text-shadow: 0 2px 12px black;
+    }
+    .handle { font-weight: 760; margin-bottom: 7px; }
+    .caption { line-height: 1.35; color: rgba(255,255,255,.92); }
+    .rail {
+      position: fixed;
+      z-index: 2;
+      right: 18px;
+      bottom: 88px;
+      display: grid;
+      gap: 19px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .rail b {
+      display: grid;
+      place-items: center;
+      width: 43px;
+      height: 43px;
+      margin-bottom: 4px;
+      border-radius: 50%;
+      background: rgba(12,12,12,.52);
+      border: 1px solid rgba(255,255,255,.2);
+      backdrop-filter: blur(10px);
+      font-size: 20px;
+    }
+    .blocker {
+      position: fixed;
+      z-index: 4;
+      left: 22px;
+      right: 22px;
+      top: 50%;
+      transform: translateY(-52%);
+      padding: 26px 22px 22px;
+      border-radius: 26px;
+      background: rgba(19,19,22,.92);
+      border: 1px solid rgba(255,255,255,.2);
+      box-shadow: 0 28px 90px rgba(0,0,0,.72);
+      backdrop-filter: blur(24px) saturate(1.4);
+      text-align: center;
+    }
+    .blocker h1 {
+      margin: 0 0 10px;
+      font-size: 25px;
+      letter-spacing: -.8px;
+    }
+    .blocker p {
+      margin: 0 auto 20px;
+      max-width: 270px;
+      color: rgba(255,255,255,.68);
+      line-height: 1.42;
+    }
+    .button {
+      height: 49px;
+      display: grid;
+      place-items: center;
+      border-radius: 15px;
+      background: #ffb13b;
+      color: #15100a;
+      font-weight: 800;
+      font-size: 16px;
+    }
+    .login {
+      margin-top: 13px;
+      font-weight: 650;
+      color: rgba(255,255,255,.78);
+    }
+  </style>
+</head>
+<body>
+  <video autoplay muted loop playsinline preload="auto" poster="">
+    <source src="LunaEclipse.mp4" type="video/mp4">
+  </video>
+  <div class="shade"></div>
+  <header><span><i class="mark"></i>InstaTok</span><span>•••</span></header>
+  <div class="video-copy">
+    <div class="handle">@moonwatch</div>
+    <div class="caption">Earth’s shadow crossing the Moon 🌘 #eclipse #night</div>
+  </div>
+  <div class="rail">
+    <span><b>♡</b>84K</span>
+    <span><b>◌</b>912</span>
+    <span><b>↗</b>Share</span>
+  </div>
+  <section class="blocker">
+    <h1>Sign up to keep watching</h1>
+    <p>Create an account to see the full video, follow creators, and share with friends.</p>
+    <div class="button">Create account</div>
+    <div class="login">Already have an account? Log in</div>
+  </section>
+</body>
+</html>

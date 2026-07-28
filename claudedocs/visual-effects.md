@@ -78,16 +78,16 @@ outnumber bright ones as in a real magnitude distribution; every 19th star also 
 bloom. Stars carry the app's `atmosphereTint` washed 55% toward white — present as a cast,
 still starlight. The central app's sky is plain moonlight.
 
-## Reader launch totality
+## App launch totality
 
-Luna Reader alone uses the production card eclipse as its launch surface. Its
-static `ReaderLaunchScreen.storyboard` is recorded from the same Reader-specific
+All four Luna apps use the production card eclipse as their launch surface.
+Their static `ReaderLaunchScreen.storyboard` is recorded from the same fixed
 star table, `EclipseCoronaView`, and blank black `CardSurfaceView` used by the
 first live frame. The entire corona is centered and visible; no content or app
 chrome is present. `ReaderLaunchTransition` then plays only the egress into the
-destination carousel, fading in its contents, peeks, and chrome. This happens on
-every Reader launch, not only onboarding, and is installed only by
-`KindWiring+Reader`.
+destination carousel, fading in contents, peeks, and chrome. This happens on
+every launch, not only onboarding, and each `KindWiring` composition root
+installs the shared transition.
 
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.

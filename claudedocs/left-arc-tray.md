@@ -11,10 +11,9 @@ Rows are ordered top-to-bottom as email setup (where supported), Shortcut setup,
 Safari setup, pasteboard, then up to five recent Safari matches. This makes the
 pasteboard row the opening focal point, with setup above and recent links below.
 Setup rows pulse until complete and own their actions directly; there is no
-generic tray-level setup-step controller. Luna Reader additionally introduces
-the same Safari/Shortcut/Action Button actions during its Reader-only first-run
-experience (see `reader-onboarding.md`); Downloader, Price Tracker, and central
-Luna do not.
+generic tray-level setup-step controller. All four apps also introduce the same
+Safari/Shortcut/Action Button actions during their surface-specific first-run
+experience (see `reader-onboarding.md`).
 Every tray card uses a barely off-black surface. Setup rows contain no leading
 glyph: their copy and standard Liquid Glass button are centered as a single
 stack. Arc positioning preserves each row's vertical center and limits rotation,

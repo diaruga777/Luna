@@ -15,10 +15,13 @@ final class ReaderOnboardingTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let store = ReaderOnboardingStore(defaults: defaults)
-        XCTAssertFalse(store.isCompleted)
-        store.markCompleted()
-        XCTAssertTrue(store.isCompleted)
+        let reader = ReaderOnboardingStore(app: .reader, defaults: defaults)
+        let downloader = ReaderOnboardingStore(app: .downloader, defaults: defaults)
+        XCTAssertFalse(reader.isCompleted)
+        XCTAssertFalse(downloader.isCompleted)
+        reader.markCompleted()
+        XCTAssertTrue(reader.isCompleted)
+        XCTAssertFalse(downloader.isCompleted)
     }
 
     func testBundledLunaArticleInstallsAsARealIdempotentOfflineSave() throws {
@@ -31,17 +34,80 @@ final class ReaderOnboardingTests: XCTestCase {
         let store = ReadingListStore(containerURL: directory)
         let first = ReaderBundledLunaArticle.install(in: store)
         let second = ReaderBundledLunaArticle.install(in: store)
-        let content = try XCTUnwrap(store.content(for: first))
+        let content = try XCTUnwrap(store.content(for: first.item))
 
-        XCTAssertEqual(first.id, second.id)
-        XCTAssertEqual(first.urlString, ReaderBundledLunaArticle.urlString)
-        XCTAssertEqual(first.state, .ready)
+        XCTAssertTrue(first.wasCreated)
+        XCTAssertFalse(second.wasCreated)
+        XCTAssertEqual(first.item.id, second.item.id)
+        XCTAssertEqual(first.item.urlString, ReaderBundledLunaArticle.urlString)
+        XCTAssertEqual(first.item.state, .ready)
         XCTAssertEqual(content.title, "Luna")
         XCTAssertEqual(content.author, "Wikipedia contributors")
         XCTAssertGreaterThan(content.blocks.count, 10)
         XCTAssertTrue(content.blocks.contains {
             $0.text.contains("Creative Commons Attribution-ShareAlike 4.0")
         })
+    }
+
+    func testTemporaryArticleCleanupDeletesOnlyTheSaveOnboardingCreated() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReaderOnboardingTests-\(UUID().uuidString)")
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defaults.removePersistentDomain(forName: suite)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        let contentStore = ReadingListStore(containerURL: directory)
+        let registry = ReaderOnboardingStore(app: .luna, defaults: defaults)
+        let temporaryURL = "https://en.wikipedia.org/wiki/Luna?test=temporary"
+        ReaderBundledLunaArticle.installTemporary(
+            urlString: temporaryURL, registry: registry, in: contentStore)
+        let temporaryID = try XCTUnwrap(registry.temporarySaveIdentifier)
+        XCTAssertNotNil(contentStore.item(withID: temporaryID))
+
+        ReaderBundledLunaArticle.cleanupTemporary(
+            registry: registry, in: contentStore)
+        XCTAssertNil(contentStore.item(withID: temporaryID))
+        XCTAssertNil(registry.temporarySaveIdentifier)
+
+        let existing = contentStore.add(urlString: temporaryURL)
+        ReaderBundledLunaArticle.installTemporary(
+            urlString: temporaryURL, registry: registry, in: contentStore)
+        XCTAssertNil(registry.temporarySaveIdentifier)
+        ReaderBundledLunaArticle.cleanupTemporary(
+            registry: registry, in: contentStore)
+        XCTAssertEqual(contentStore.item(withID: existing.id)?.id, existing.id)
+    }
+
+    func testEverySurfaceHasItsExactCopyAndDemoPage() {
+        let reader = OnboardingSurfaceConfiguration.configuration(for: .reader)
+        XCTAssertEqual(reader.firstLine, "You wish you read more.")
+        XCTAssertEqual(reader.secondLine, "Let’s make that happen.")
+        XCTAssertEqual(reader.saveBenefit, "Read offline later")
+        XCTAssertEqual(reader.demoPages, [.wikipedia])
+
+        let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
+        XCTAssertEqual(downloader.firstLine, "App signup required? So annoying.")
+        XCTAssertEqual(downloader.secondLine, "Watch and share instantly instead.")
+        XCTAssertEqual(downloader.saveBenefit, "Watch or share")
+        XCTAssertEqual(downloader.demoPages, [.instaTok])
+
+        let price = OnboardingSurfaceConfiguration.configuration(for: .priceTracker)
+        XCTAssertEqual(price.firstLine, "Overpaid? Missed a sale?")
+        XCTAssertEqual(price.secondLine, "Never miss out again.")
+        XCTAssertEqual(price.saveBenefit, "Never miss a sale")
+        XCTAssertEqual(price.demoPages, [.amayzon])
+
+        let luna = OnboardingSurfaceConfiguration.configuration(for: .luna)
+        XCTAssertEqual(luna.firstLine, "All your Luna saves.")
+        XCTAssertEqual(luna.secondLine, "In a single app.")
+        XCTAssertEqual(luna.saveBenefit, "Read, watch, track, anything")
+        XCTAssertEqual(luna.demoPages, [.wikipedia, .instaTok, .amayzon])
     }
 
     func testLaunchTotalityKeepsTheEntireCoronaVisibleAcrossSupportedShapes() {
@@ -82,5 +148,36 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertFalse(html.contains("<script"))
         XCTAssertFalse(html.contains("src=\"http"))
         XCTAssertFalse(html.contains("href=\"http"))
+    }
+
+    func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {
+        let instaTokURL = try XCTUnwrap(
+            Bundle.main.url(forResource: "InstaTok", withExtension: "html"))
+        let instaTok = try String(contentsOf: instaTokURL, encoding: .utf8)
+        XCTAssertTrue(instaTok.contains("InstaTok"))
+        XCTAssertTrue(instaTok.contains("Sign up to keep watching"))
+        XCTAssertTrue(instaTok.contains("LunaEclipse.mp4"))
+        XCTAssertFalse(instaTok.contains("src=\"http"))
+
+        let amayzonURL = try XCTUnwrap(
+            Bundle.main.url(forResource: "Amayzon", withExtension: "html"))
+        let amayzon = try String(contentsOf: amayzonURL, encoding: .utf8)
+        XCTAssertTrue(amayzon.contains("amay<em>zon</em>"))
+        XCTAssertTrue(amayzon.contains("eyePhone Air"))
+        XCTAssertFalse(amayzon.contains("Apple"))
+        XCTAssertFalse(amayzon.contains("src=\"http"))
+
+        let videoURL = try XCTUnwrap(
+            Bundle.main.url(forResource: "LunaEclipse", withExtension: "mp4"))
+        let attributes = try FileManager.default.attributesOfItem(atPath: videoURL.path)
+        let byteCount = try XCTUnwrap(attributes[.size] as? NSNumber).intValue
+        XCTAssertEqual(byteCount, 509_683)
+
+        let attributionURL = try XCTUnwrap(
+            Bundle.main.url(
+                forResource: "LunaEclipseAttribution", withExtension: "txt"))
+        let attribution = try String(contentsOf: attributionURL, encoding: .utf8)
+        XCTAssertTrue(attribution.contains("NASA Scientific Visualization Studio"))
+        XCTAssertTrue(attribution.contains("https://svs.gsfc.nasa.gov/5604/"))
     }
 }

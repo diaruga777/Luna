@@ -1,86 +1,94 @@
-# Luna Reader onboarding
+# Luna launch and onboarding
 
-Luna Reader has a launch and first-run sequence that is intentionally absent
-from Downloader and Price Tracker. `KindWiring+Reader` is the only composition
-root that installs it.
+The central Luna app and all three faceted apps use one launch/onboarding
+engine. Each composition root installs it through `ReaderOnboardingWiring`;
+surface copy and offline demo pages come from
+`OnboardingSurfaceConfiguration`.
 
-## Every Reader launch
+## Every app launch
 
-The Reader launch storyboard is a static rendering of the production eclipse at
-totality: a blank black `CardSurfaceView`, its real glass rim and complete
-`EclipseCorona`, centered over the fixed Reader-tinted starfield. There is no app
-chrome or content at this point. `ReaderLaunchTransition` immediately replaces
-the storyboard with the same live hierarchy, then plays only the egress:
-the corona and opaque moon resolve into the real resting center-card frame while
-the card contents, side peeks, scrubber, and other chrome appear.
+`ReaderLaunchScreen.storyboard` is a static rendering of the production eclipse
+at totality: a blank black `CardSurfaceView`, its real glass rim and complete
+`EclipseCorona`, centered over the fixed starfield. There is no app chrome or
+content. `ReaderLaunchTransition` replaces the storyboard with the same live
+hierarchy and plays only the egress: the corona and opaque moon resolve into the
+real resting center-card frame while contents, side peeks, scrubber, and chrome
+appear.
 
-This runs on completed launches too. The transition asks the destination
-carousel for its real resting frame through `ReaderLaunchTransitionTarget`;
-launch code must not duplicate the carousel's safe-area or layout math.
-`ReaderLaunchGeometry` fits the corona group on both axes so its 42%-of-body
-reach remains visible in iPhone portrait and iPad landscape.
+This happens after onboarding is complete too. The transition asks the
+destination carousel for its real resting frame through
+`ReaderLaunchTransitionTarget`; launch code must not duplicate carousel layout
+math. `ReaderLaunchGeometry` fits the full corona group on both axes.
 
-The two launch-screen images are generated from the production views rather
-than maintained by eye. To regenerate them after changing the corona, rim, tint,
-or star table, run
+The static images are generated from production views. To regenerate them after
+changing the corona, rim, tint, or star table, run
 `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested` with
 `TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then replace the PNGs in
 `ReaderLaunchStarfield.imageset` and `ReaderLaunchCoronaCard.imageset`.
 
+## Per-app configuration
+
+| App | Intro lines | Demonstration | Save benefit |
+|---|---|---|---|
+| Reader | “You wish you read more.” / “Let’s make that happen.” | bundled Luna Wikipedia page | “Read offline later” |
+| Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | bundled InstaTok page and eclipse video | “Watch or share” |
+| Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | bundled amayzon eyePhone page | “Never miss a sale” |
+| Luna | “All your Luna saves.” / “In a single app.” | continually rotates through all three pages | “Read, watch, track, anything” |
+
+The InstaTok page is a deliberately fictional full-bleed video site whose
+signup modal blocks a bundled NASA SVS lunar-eclipse clip. The source, SHA-256,
+and NASA media guidance URL live in `LunaEclipseAttribution.txt`. The amayzon
+page and final product image use a deliberately fictional, logo-free,
+asymmetric “eyePhone”.
+
 ## Incomplete first run
 
-`ReaderOnboardingStore` persists
-`reader.onboarding.completed.v1` in Reader's standard defaults. It deliberately
-does not use the shared App Group: the setup evidence and reading list are
-shared, but Reader owns this experience. Until the marker is written, the
-Reader root is `ReaderOnboardingViewController`; the other apps keep their
-ordinary roots.
+`ReaderOnboardingStore` persists one standard-defaults completion key per app;
+Reader retains its shipped `reader.onboarding.completed.v1` key. These markers
+are not in the App Group: setup evidence and saves are shared, while every app
+owns its onboarding completion independently.
 
-The onboarding root uses the production `CardCarouselViewController`:
+The root uses the production `CardCarouselViewController`:
 
-1. The first black card reveals “You wish you read more.” and, after a short
-   pause, “Let’s make that happen.” A black circular occluder translates down
-   each line. The newly exposed text passes through a narrow white bloom before
-   resolving to the final glyphs. “Show me how” appears at the card bottom only
-   after both lines complete.
-2. “Show me how” pages to the second card through the production
-   `CardEclipseTransition`. After egress, that card expands to the display and
-   becomes `SafariReplicaViewController`.
-3. The Safari replica is a noninteractive `WKWebView` plus iOS 26 compact-bottom
-   Safari chrome. It loads `LunaWikipedia.html` from the app bundle with a
-   nonpersistent data store and JavaScript disabled; no network request is
-   required. The page and the final extracted article both carry the Wikipedia
-   revision and CC BY-SA attribution.
-4. An Action Button press cue plays beside the physical button. A moving
-   `CIBumpDistortionLinear` strip then deforms a snapshot of the whole window,
-   including the browser and system chrome, and removes itself after the pixels
-   settle.
-5. The dark setup overlay first offers Safari setup. It reuses
-   `SetupGuideVideo(.safariExtension)` and the same Safari hop as the left tray.
-   On return it offers the same `BundledShortcut` installer and
-   `SystemSettingsLink.openActionButton()` path already used in the app, with
-   the existing Action Button PiP guide.
-6. After the Settings return, the overlay says “Press the action button to
-   finish” and offers “Set up later.” A real App Intent invocation completes the
-   flow through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
+1. The first black card reveals both surface-specific lines. A black circular
+   occluder translates down each line; exposed text passes through a narrow
+   white bloom before resolving. “Show me how” appears only after both lines.
+2. The button pages through the production `CardEclipseTransition`. The next
+   card expands to the display and becomes `SafariReplicaViewController`.
+3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
+   bundled files with a nonpersistent data store and JavaScript disabled.
+   Central Luna changes the local page and displayed host every 3.4 seconds.
+4. An Action Button cue plays beside the physical button. A moving
+   `CIBumpDistortionLinear` strip deforms every pixel of a whole-window snapshot
+   before removing itself after the pixels settle.
+5. The setup overlay offers Safari setup, then the same `BundledShortcut`
+   installer and `SystemSettingsLink.openActionButton()` paths used elsewhere.
+   Existing Safari and Action Button PiP guides play during external hops.
+6. After Settings return, a real App Intent invocation completes the flow
+   through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
-7. Completion installs `ReaderBundledLunaArticle` through the ordinary
-   `ReadingListStore`, writes the onboarding marker, and eclipses into a normal
-   `ArticleCardsViewController`. Both the extracted Reader content and the
-   Safari-shaped HTML are bundled for offline use.
+7. Completion installs the surface's real save and eclipses into its normal
+   deck: Wikipedia article for Reader and central Luna, local video for
+   Downloader, and a real price-tracker payload for Price Tracker.
 
-If iOS terminates Reader while Safari or Settings is foreground, the next
-launch starts the incomplete onboarding from its first card, as required; no
-completion marker is inferred from merely opening a setup destination.
+The demonstration save is temporary. Its exact UUID is recorded only when
+onboarding created a new item. The owning app deletes that exact save and its
+local media/image on the first background callback, then clears the UUID. A
+pre-existing matching user save is never claimed or removed. Launch also sweeps
+a marker left by a process terminated during a background transition.
+
+If iOS terminates an app while Safari or Settings is foreground, the next
+launch starts incomplete onboarding from its first card; completion is not
+inferred from merely opening a destination.
 
 ## Validation
 
-Debug launches accept `-resetReaderOnboarding`. For deterministic visual checks,
-`-readerOnboardingStage prompt|setup|waiting` moves through the real card eclipse
-and expansion but begins the Safari replica at that overlay stage. These flags
-do not exist in Release behavior.
+Debug launches accept `-resetOnboarding` (`-resetReaderOnboarding` remains a
+Reader alias). `-onboardingStage prompt|setup|waiting` moves through the real
+card eclipse and expansion but begins at a deterministic overlay stage;
+`-readerOnboardingStage` remains an alias.
 
-`ReaderOnboardingTests` covers per-app completion persistence, idempotent real
-store installation of the offline article, launch geometry on supported screen
-shapes, and the local-only HTML contract. The launch-art recorder is skipped in
-ordinary test runs.
+`ReaderOnboardingTests` covers independent per-app completion, exact surface
+copy/page mapping, temporary-save ownership, idempotent offline article
+installation, launch geometry, local-only HTML, bundled MP4 size, and
+attribution. The launch-art recorder remains skipped in ordinary test runs.

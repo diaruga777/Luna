@@ -34,6 +34,12 @@ enum KindWiring {
         ReaderOnboardingWiring.makeCompletedRootViewController = {
             makeCompletedRootViewController()
         }
+        ReaderOnboardingWiring.installTemporaryDemoSave = {
+            ReaderBundledLunaArticle.installTemporary()
+        }
+        ReaderOnboardingWiring.cleanupTemporaryDemoSave = {
+            ReaderBundledLunaArticle.cleanupTemporary()
+        }
 
         IngestKindProcessors.article = ArticleIngestProcessor()
         IngestorKindHandlers.article = ArticleKindHandler()
@@ -135,10 +141,12 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
+        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
         ArticleSendCoordinator.shared.retryPendingSends()
     }
 
     static func appDidEnterBackground() {
+        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
         // A finished-reading completion recorded during this session becomes an
         // archive move now, so the next launch starts settled.
         ReadingListStore.shared.archivePendingFinishedItems()

@@ -17,7 +17,26 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
+    private static let onboardingVideoURL = "https://instatok.local/@moonwatch/eclipse"
+
+    @MainActor
     static func install() {
+        #if DEBUG
+        ReaderOnboardingStore.shared.resetIfRequested()
+        #endif
+        ReaderOnboardingWiring.installLaunchTransition = { window in
+            ReaderLaunchTransition.install(in: window)
+        }
+        ReaderOnboardingWiring.makeCompletedRootViewController = {
+            makeCompletedRootViewController()
+        }
+        ReaderOnboardingWiring.installTemporaryDemoSave = {
+            installTemporaryDemoVideo()
+        }
+        ReaderOnboardingWiring.cleanupTemporaryDemoSave = {
+            cleanupTemporaryDemoVideo()
+        }
+
         // Media needs no web-processing pipeline stage (platform recognition
         // is URL-only classification), but its post-save ingestion — metadata,
         // thumbnail, auto-download handoff — is the media ingestor handler.
@@ -42,6 +61,13 @@ enum KindWiring {
     /// The saved-media card deck in a bare nav controller — no audio
     /// mini-player host (read-aloud is an article-app feature).
     static func makeRootViewController() -> UIViewController {
+        let content: UIViewController = ReaderOnboardingStore.shared.isCompleted
+            ? SavedMediaCardsViewController()
+            : ReaderOnboardingViewController()
+        return UINavigationController(rootViewController: content)
+    }
+
+    private static func makeCompletedRootViewController() -> UIViewController {
         UINavigationController(rootViewController: SavedMediaCardsViewController())
     }
 
@@ -60,6 +86,7 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
+        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
         // Sweep any downloaded-but-never-saved media preview files orphaned by a
         // previous run that was killed before its preview screen could clean up.
         // Also apply the saved-media retention policy. Safe at launch (no
@@ -72,6 +99,7 @@ enum KindWiring {
     }
 
     static func appDidEnterBackground() {
+        ReaderOnboardingWiring.cleanupTemporaryDemoSave?()
         LiveMediaDownloadManager.shared.resumeLiveActivities()
     }
 
@@ -114,6 +142,48 @@ enum KindWiring {
     /// Downloader handles no products — no runner ⇒ AppDelegate never registers
     /// or schedules the price-refresh BGTask.
     static let priceRefreshRunner: (() async -> Int)? = nil
+
+    // MARK: - Onboarding demonstration save
+
+    private static func installTemporaryDemoVideo() {
+        let registry = ReaderOnboardingStore.shared
+        let store = SavedMediaStore.shared
+        guard store.item(forURLString: onboardingVideoURL) == nil else {
+            // A non-onboarding save with this URL is not ours to remove.
+            registry.clearTemporarySaveIdentifier()
+            return
+        }
+        guard let bundled = Bundle.main.url(
+            forResource: "LunaEclipse", withExtension: "mp4")
+        else { return }
+
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("luna-onboarding-\(UUID().uuidString).mp4")
+        do {
+            try FileManager.default.copyItem(at: bundled, to: staging)
+            let item = try store.addDownloadedFile(
+                staging,
+                kind: .video,
+                sourceURLString: onboardingVideoURL,
+                title: "Total Lunar Eclipse",
+                creator: "@moonwatch",
+                fileExtension: "mp4")
+            registry.recordTemporarySave(identifier: item.id)
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+        }
+    }
+
+    private static func cleanupTemporaryDemoVideo() {
+        let registry = ReaderOnboardingStore.shared
+        defer { registry.clearTemporarySaveIdentifier() }
+        guard let identifier = registry.temporarySaveIdentifier,
+              let item = SavedMediaStore.shared.items().first(where: {
+                  $0.id == identifier
+              })
+        else { return }
+        SavedMediaStore.shared.delete(item)
+    }
 
     #if DEBUG
     /// `-openArchive` is an article-app debug tool.

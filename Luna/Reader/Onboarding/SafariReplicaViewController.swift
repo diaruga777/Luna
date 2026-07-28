@@ -8,21 +8,24 @@ import LunaDesignSystem
 import UIKit
 import WebKit
 
-/// A deliberately noninteractive Safari facsimile used only by Reader
-/// onboarding. The real page bytes are local; the browser chrome remains
-/// native UIKit so it has the current OS's typography, glass, safe-area and
-/// status-bar behavior.
+/// A deliberately noninteractive Safari facsimile used by each app's
+/// onboarding. The page bytes are local; the browser chrome remains native
+/// UIKit so it has the current OS's typography, glass, safe-area and status-bar
+/// behavior.
 @MainActor
-final class SafariReplicaViewController: UIViewController {
+final class SafariReplicaViewController: UIViewController, WKNavigationDelegate {
     var onSetUpSafari: (() -> Void)?
     var onInstallShortcut: (() -> Void)?
     var onSetActionButton: (() -> Void)?
     var onSetUpLater: (() -> Void)?
 
+    private let onboardingConfiguration: OnboardingSurfaceConfiguration
     private let webView: WKWebView = {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.isUserInteractionEnabled = false
         view.scrollView.isScrollEnabled = false
@@ -37,14 +40,36 @@ final class SafariReplicaViewController: UIViewController {
     private var actionCue: ActionButtonPressCue?
     private var waveAnimator: LiquidScreenWaveAnimator?
     private var didBeginDemonstration = false
+    private var pageIndex = 0
+    private var pageTimer: Timer?
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
+
+    init(configuration: OnboardingSurfaceConfiguration = .current) {
+        self.onboardingConfiguration = configuration
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .white
         configureBrowser()
-        loadOfflinePage()
+        webView.navigationDelegate = self
+        loadOfflinePage(at: 0)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        startPageRotationIfNeeded()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        pageTimer?.invalidate()
+        pageTimer = nil
     }
 
     private func configureBrowser() {
@@ -66,14 +91,48 @@ final class SafariReplicaViewController: UIViewController {
         ])
     }
 
-    private func loadOfflinePage() {
+    private func loadOfflinePage(at index: Int) {
+        let pages = onboardingConfiguration.demoPages
+        guard !pages.isEmpty else {
+            webView.loadHTMLString(Self.fallbackHTML, baseURL: nil)
+            return
+        }
+        pageIndex = index % pages.count
+        let page = pages[pageIndex]
+        browserBar.setHost(page.displayedHost)
         guard let url = Bundle.main.url(
-            forResource: "LunaWikipedia", withExtension: "html")
+            forResource: page.resourceName, withExtension: "html")
         else {
             webView.loadHTMLString(Self.fallbackHTML, baseURL: nil)
             return
         }
         webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+    }
+
+    private func startPageRotationIfNeeded() {
+        guard onboardingConfiguration.demoPages.count > 1, pageTimer == nil else { return }
+        pageTimer = Timer.scheduledTimer(
+            withTimeInterval: 3.4,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                UIView.animate(
+                    withDuration: 0.18,
+                    animations: { self.webView.alpha = 0.12 },
+                    completion: { _ in
+                        self.loadOfflinePage(at: self.pageIndex + 1)
+                    })
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.28
+        ) {
+            webView.alpha = 1
+        }
     }
 
     /// Starts only after the incoming card has expanded to the screen. Keeping
@@ -115,7 +174,7 @@ final class SafariReplicaViewController: UIViewController {
 
     func showSafariPrompt() {
         setInstruction(
-            title: "Press the Action Button to save\nRead offline later",
+            title: "Press the Action Button to save\n\(onboardingConfiguration.saveBenefit)",
             actions: [
                 .init(
                     title: "Set up Safari",
@@ -227,6 +286,7 @@ private final class SafariBottomBar: UIView {
     private let backForward = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let address = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let more = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private let hostLabel = UILabel()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -259,13 +319,14 @@ private final class SafariBottomBar: UIView {
         backForward.contentView.addSubview(nav)
 
         let page = icon("text.justify.leading", alpha: 0.86)
-        let host = UILabel()
-        host.text = "en.wikipedia.org"
-        host.font = .systemFont(ofSize: 16, weight: .semibold)
-        host.textColor = UIColor(white: 0.10, alpha: 1)
-        host.textAlignment = .center
+        hostLabel.text = "en.wikipedia.org"
+        hostLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        hostLabel.textColor = UIColor(white: 0.10, alpha: 1)
+        hostLabel.textAlignment = .center
+        hostLabel.adjustsFontSizeToFitWidth = true
+        hostLabel.minimumScaleFactor = 0.72
         let reload = icon("arrow.clockwise", alpha: 0.82)
-        let addressStack = UIStackView(arrangedSubviews: [page, host, reload])
+        let addressStack = UIStackView(arrangedSubviews: [page, hostLabel, reload])
         addressStack.axis = .horizontal
         addressStack.alignment = .center
         addressStack.spacing = 9
@@ -318,6 +379,10 @@ private final class SafariBottomBar: UIView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    func setHost(_ host: String) {
+        hostLabel.text = host
+    }
 
     private func icon(_ symbol: String, alpha: CGFloat) -> UIImageView {
         let view = UIImageView(image: UIImage(
@@ -447,8 +512,7 @@ private final class ActionButtonPressCue: UIVisualEffectView {
         alpha = 0
         transform = CGAffineTransform(scaleX: 0.62, y: 0.62)
 
-        glow.backgroundColor = LunaSurfacePalette.baseColor(for: .reader)
-            .withAlphaComponent(0.88)
+        glow.backgroundColor = LunaSurfacePalette.baseColor.withAlphaComponent(0.88)
         glow.layer.cornerRadius = 3
         contentView.addSubview(glow)
 
@@ -456,7 +520,7 @@ private final class ActionButtonPressCue: UIVisualEffectView {
         rim.strokeColor = UIColor.white.withAlphaComponent(0.72).cgColor
         rim.lineWidth = 1
         layer.addSublayer(rim)
-        layer.shadowColor = LunaSurfacePalette.baseColor(for: .reader).cgColor
+        layer.shadowColor = LunaSurfacePalette.baseColor.cgColor
         layer.shadowOpacity = 0
         layer.shadowRadius = 14
         layer.shadowOffset = .zero

@@ -7,10 +7,10 @@ import LunaDesignSystem
 import LunaStorage
 import UIKit
 
-/// Reader's guided first-run deck. It intentionally uses the production
+/// The shared guided first-run deck. It intentionally uses the production
 /// CardCarousel rather than a look-alike: peeks, glass rim, and the transition
 /// from the intro card to Safari are the same views and CardEclipseTransition
-/// used by saved articles.
+/// used by the app's normal saved cards.
 final class ReaderOnboardingViewController: UIViewController {
     private enum ExternalReturn {
         case none
@@ -19,8 +19,9 @@ final class ReaderOnboardingViewController: UIViewController {
         case actionButton
     }
 
+    private let configuration: OnboardingSurfaceConfiguration
     private let carousel = CardCarouselViewController()
-    private let intro = ReaderOnboardingIntroCardContentViewController()
+    private let intro: ReaderOnboardingIntroCardContentViewController
     private let safariSeed = ReaderOnboardingSafariSeedCardContentViewController()
     private let safariGuide = SetupGuideVideo(guide: .safariExtension)
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
@@ -33,6 +34,17 @@ final class ReaderOnboardingViewController: UIViewController {
     #if DEBUG
     private var debugSafariStage: String?
     #endif
+
+    init(configuration: OnboardingSurfaceConfiguration = .current) {
+        self.configuration = configuration
+        self.intro = ReaderOnboardingIntroCardContentViewController(
+            firstLine: configuration.firstLine,
+            secondLine: configuration.secondLine)
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 
     override var childForStatusBarStyle: UIViewController? {
         safariReplica
@@ -149,7 +161,7 @@ final class ReaderOnboardingViewController: UIViewController {
         else { return }
         didExpandSafari = true
 
-        let safari = SafariReplicaViewController()
+        let safari = SafariReplicaViewController(configuration: configuration)
         safari.onSetUpSafari = { [weak self] in self?.openSafariSetup() }
         safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
         safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
@@ -245,7 +257,8 @@ final class ReaderOnboardingViewController: UIViewController {
     private func setupStatusChanged() {
         guard didExpandSafari,
               externalReturn == .none,
-              LunaSetupStatusStore.shared.shortcutHasRun(isCentral: false)
+              LunaSetupStatusStore.shared.shortcutHasRun(
+                isCentral: configuration.isCentralApp)
         else { return }
         finishOnboarding()
     }
@@ -261,7 +274,7 @@ final class ReaderOnboardingViewController: UIViewController {
     }
 
     private func commitBundledSaveAndTransition() {
-        _ = ReaderBundledLunaArticle.install()
+        ReaderOnboardingWiring.installTemporaryDemoSave?()
         ReaderOnboardingStore.shared.markCompleted()
         guard let window = view.window,
               let root = ReaderOnboardingWiring.makeCompletedRootViewController?()
@@ -272,7 +285,9 @@ final class ReaderOnboardingViewController: UIViewController {
     #if DEBUG
     private static var requestedDebugStage: String? {
         let arguments = ProcessInfo.processInfo.arguments
-        guard let flag = arguments.firstIndex(of: "-readerOnboardingStage"),
+        let flag = arguments.firstIndex(of: "-onboardingStage")
+            ?? arguments.firstIndex(of: "-readerOnboardingStage")
+        guard let flag,
               arguments.indices.contains(flag + 1)
         else { return nil }
         return arguments[flag + 1]
@@ -304,7 +319,7 @@ extension ReaderOnboardingViewController: CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String? {
-        index == 0 ? "Read more" : "Luna"
+        index == 0 ? "Luna" : configuration.seedTitle
     }
 
     func carousel(
@@ -312,7 +327,9 @@ extension ReaderOnboardingViewController: CardCarouselDataSource {
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
-        completion(index == 1 ? .symbol("safari.fill") : .symbol("book.fill"))
+        completion(index == 1
+            ? .symbol(configuration.seedSymbol)
+            : .symbol("moon.stars.fill"))
     }
 }
 
@@ -347,10 +364,19 @@ extension ReaderOnboardingViewController: ReaderLaunchTransitionTarget {
 private final class ReaderOnboardingIntroCardContentViewController: CardContentViewController {
     var onContinue: (() -> Void)?
 
-    private let firstLine = MoonRevealLineView(text: "You wish you read more.")
-    private let secondLine = MoonRevealLineView(text: "Let’s make that happen.")
+    private let firstLine: MoonRevealLineView
+    private let secondLine: MoonRevealLineView
     private let button = UIButton(type: .system)
     private var didStart = false
+
+    init(firstLine: String, secondLine: String) {
+        self.firstLine = MoonRevealLineView(text: firstLine)
+        self.secondLine = MoonRevealLineView(text: secondLine)
+        super.init()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -557,7 +583,7 @@ private enum ReaderOnboardingCompletionTransition {
         let corona = EclipseCoronaView(
             bodySize: targetFrame.size,
             cornerRadius: CardSurfaceView.cornerRadius,
-            tint: LunaSurfacePalette.atmosphereTint(for: .reader))
+            tint: LunaSurfacePalette.atmosphereTint)
         corona.frame = startFrame
         corona.alpha = 0.08
         stage.addSubview(corona)

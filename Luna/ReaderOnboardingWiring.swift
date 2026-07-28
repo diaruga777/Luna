@@ -2,9 +2,9 @@
 //  ReaderOnboardingWiring.swift
 //  Luna
 //
-//  The app shell is compiled into every Luna surface, while the special
-//  onboarding is selected only by KindWiring+Reader.  These closures keep the
-//  shared SceneDelegate free of a Reader-only root decision.
+//  The app shell and onboarding engine are compiled into every Luna surface.
+//  KindWiring supplies each target's root and demo-save implementation without
+//  making the shared controller import unavailable feature modules.
 //
 
 import UIKit
@@ -12,6 +12,8 @@ import UIKit
 enum ReaderOnboardingWiring {
     static var installLaunchTransition: ((UIWindow) -> Void)?
     static var makeCompletedRootViewController: (() -> UIViewController)?
+    static var installTemporaryDemoSave: (() -> Void)?
+    static var cleanupTemporaryDemoSave: (() -> Void)?
 }
 
 protocol ReaderLaunchTransitionTarget: AnyObject {

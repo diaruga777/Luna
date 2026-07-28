@@ -15,13 +15,49 @@ import Foundation
 enum ReaderBundledLunaArticle {
     static let urlString = "https://en.wikipedia.org/wiki/Luna"
 
+    struct InstallResult {
+        let item: ReadingListItem
+        let wasCreated: Bool
+    }
+
     @discardableResult
-    static func install(in store: ReadingListStore = .shared) -> ReadingListItem {
+    static func install(
+        urlString: String = urlString,
+        in store: ReadingListStore = .shared
+    ) -> InstallResult {
+        let wasCreated = store.item(forURLString: urlString) == nil
         let item = store.add(urlString: urlString, source: .manual)
         if item.state == .ready, store.content(for: item) != nil {
-            return item
+            return InstallResult(item: item, wasCreated: wasCreated)
         }
-        return store.saveContent(content, for: item)
+        return InstallResult(
+            item: store.saveContent(content, for: item),
+            wasCreated: wasCreated)
+    }
+
+    static func installTemporary(
+        urlString: String = urlString,
+        registry: ReaderOnboardingStore = .shared,
+        in store: ReadingListStore = .shared
+    ) {
+        let result = install(urlString: urlString, in: store)
+        if result.wasCreated {
+            registry.recordTemporarySave(identifier: result.item.id)
+        } else {
+            // Never claim ownership of a save the user already had.
+            registry.clearTemporarySaveIdentifier()
+        }
+    }
+
+    static func cleanupTemporary(
+        registry: ReaderOnboardingStore = .shared,
+        in store: ReadingListStore = .shared
+    ) {
+        defer { registry.clearTemporarySaveIdentifier() }
+        guard let identifier = registry.temporarySaveIdentifier,
+              let item = store.item(withID: identifier)
+        else { return }
+        store.delete(item)
     }
 
     static let content = ArticleContent(

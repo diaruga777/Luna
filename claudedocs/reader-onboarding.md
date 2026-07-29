@@ -36,12 +36,12 @@ corona, rim, tint, or star table, run
 
 ## Per-app configuration
 
-| App | Intro lines | Demonstration | Save benefit |
-|---|---|---|---|
-| Reader | “You want to read more.” / “Let’s make that happen.” | bundled Luna Wikipedia page | “Read offline later” |
-| Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | bundled InstaTok page and eclipse video | “Watch or share” |
-| Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | bundled amayzon eyePhone page | “Never miss a sale” |
-| Luna | “All your Luna saves.” / “In a single app.” | continually rotates through all three pages | “Read, watch, track, anything” |
+| App | Intro lines | Supporting lines | Demonstration | Save benefit |
+|---|---|---|---|---|
+| Reader | “You want to read more.” / “Let’s make that happen.” | “Save onscreen links with one click.” / “Unlock or read offline later.” | bundled Luna Wikipedia page | “Read offline later” |
+| Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | “Download any video link in one click,” / “no signup required.” | bundled InstaTok page and eclipse video | “Watch or share” |
+| Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | “Track sales for any link” / “in one click.” | bundled amayzon eyePhone page | “Never miss a sale” |
+| Luna | “All your Luna saves.” / “In a single app.” | “Save any link on your screen” / “with one click.” | continually rotates through all three pages | “Read, watch, track, anything” |
 
 The InstaTok page is a deliberately fictional full-bleed video site whose
 signup modal blocks a bundled NASA SVS lunar-eclipse clip. The source, SHA-256,
@@ -70,9 +70,11 @@ The root uses the production `CardCarouselViewController`:
    brightness falls steeply with distance from the circle edge, the clipped
    white core briefly overwhelms legibility, and each pixel's bloom illuminates
    its neighbors before resolving to ordinary text. The copy
-   starts one third of the way down the card. “Show me how” appears only after
-   the second line finishes, with a restrained 24% wash of the current app
-   surface tint in its glass background.
+   starts one third of the way down the card. After the second line finishes,
+   the surface-specific two-line supporting copy fades in halfway between the
+   headline and the “Show me how” button, which gives it equal breathing room
+   above and below. The button appears with it, using a restrained 24% wash of
+   the current app surface tint in its glass background.
 2. “Show me how” does not page or invoke `CardEclipseTransition`. The centered
    intro card grows directly to the display edges while its contents crossfade
    into `SafariReplicaViewController`. Once it is full-screen, the hidden

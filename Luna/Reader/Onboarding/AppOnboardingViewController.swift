@@ -71,7 +71,8 @@ final class AppOnboardingViewController: UIViewController {
         self.completion = completion
         self.intro = OnboardingIntroCardContentViewController(
             firstLine: configuration.firstLine,
-            secondLine: configuration.secondLine)
+            secondLine: configuration.secondLine,
+            supportingText: configuration.supportingText)
         super.init(nibName: nil, bundle: nil)
     }
 

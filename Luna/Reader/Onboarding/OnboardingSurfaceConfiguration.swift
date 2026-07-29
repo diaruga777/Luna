@@ -33,6 +33,7 @@ struct OnboardingSurfaceConfiguration {
     let app: LunaApp
     let firstLine: String
     let secondLine: String
+    let supportingText: String
     let saveBenefit: String
     let demoPages: [OnboardingDemoPage]
     let seedTitle: String
@@ -51,6 +52,8 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 firstLine: "You want to read more.",
                 secondLine: "Let’s make that happen.",
+                supportingText:
+                    "Save onscreen links with one click.\nUnlock or read offline later.",
                 saveBenefit: "Read offline later",
                 demoPages: [.wikipedia],
                 seedTitle: "Luna",
@@ -60,6 +63,8 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 firstLine: "App signup required? So annoying.",
                 secondLine: "Watch and share instantly instead.",
+                supportingText:
+                    "Download any video link in one click,\nno signup required.",
                 saveBenefit: "Watch or share",
                 demoPages: [.instaTok],
                 seedTitle: "InstaTok",
@@ -69,6 +74,8 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 firstLine: "Overpaid? Missed a sale?",
                 secondLine: "Never miss out again.",
+                supportingText:
+                    "Track sales for any link\nin one click.",
                 saveBenefit: "Never miss a sale",
                 demoPages: [.amayzon],
                 seedTitle: "eyePhone",
@@ -78,6 +85,8 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 firstLine: "All your Luna saves.",
                 secondLine: "In a single app.",
+                supportingText:
+                    "Save any link on your screen\nwith one click.",
                 saveBenefit: "Read, watch, track, anything",
                 demoPages: OnboardingDemoPage.allCases,
                 seedTitle: "Anything",

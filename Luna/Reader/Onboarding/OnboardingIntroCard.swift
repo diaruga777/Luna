@@ -21,12 +21,14 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     private let firstLine: MoonRevealLineView
     private let secondLine: MoonRevealLineView
+    private let supportingLabel = UILabel()
     private let button = UIButton(type: .system)
     private var didStart = false
 
-    init(firstLine: String, secondLine: String) {
+    init(firstLine: String, secondLine: String, supportingText: String) {
         self.firstLine = MoonRevealLineView(text: firstLine)
         self.secondLine = MoonRevealLineView(text: secondLine)
+        self.supportingLabel.text = supportingText
         super.init()
     }
 
@@ -38,6 +40,16 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         view.backgroundColor = .black
         view.addSubview(firstLine)
         view.addSubview(secondLine)
+
+        supportingLabel.font = .systemFont(ofSize: 17, weight: .medium)
+        supportingLabel.textColor = UIColor.white.withAlphaComponent(0.78)
+        supportingLabel.textAlignment = .center
+        supportingLabel.numberOfLines = 2
+        supportingLabel.lineBreakMode = .byWordWrapping
+        supportingLabel.alpha = 0
+        supportingLabel.isAccessibilityElement = false
+        supportingLabel.accessibilityIdentifier = "onboarding.intro.supportingText"
+        view.addSubview(supportingLabel)
 
         button.configuration = GlassStyle.actionButtonConfiguration(
             title: "Show me how",
@@ -75,6 +87,13 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             y: view.bounds.height - max(54, buttonSize.height) - 24,
             width: max(170, buttonSize.width),
             height: max(54, buttonSize.height))
+        let supportingHeight: CGFloat = 52
+        let availableCenterY = (secondLine.frame.maxY + button.frame.minY) / 2
+        supportingLabel.frame = CGRect(
+            x: inset,
+            y: availableCenterY - supportingHeight / 2,
+            width: view.bounds.width - inset * 2,
+            height: supportingHeight)
     }
 
     func start() {
@@ -103,13 +122,15 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                             delay: 0.16,
                             options: [.curveEaseOut, .beginFromCurrentState]
                         ) {
+                            self.supportingLabel.alpha = 1
                             self.button.alpha = 1
                             self.button.transform = .identity
                         } completion: { _ in
+                            self.supportingLabel.isAccessibilityElement = true
                             self.button.isUserInteractionEnabled = true
                             UIAccessibility.post(
                                 notification: .layoutChanged,
-                                argument: self.button)
+                                argument: self.supportingLabel)
                         }
                     }
                 }

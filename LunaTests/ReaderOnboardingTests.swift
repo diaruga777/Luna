@@ -90,24 +90,36 @@ final class ReaderOnboardingTests: XCTestCase {
         let reader = OnboardingSurfaceConfiguration.configuration(for: .reader)
         XCTAssertEqual(reader.firstLine, "You want to read more.")
         XCTAssertEqual(reader.secondLine, "Let’s make that happen.")
+        XCTAssertEqual(
+            reader.supportingText,
+            "Save onscreen links with one click.\nUnlock or read offline later.")
         XCTAssertEqual(reader.saveBenefit, "Read offline later")
         XCTAssertEqual(reader.demoPages, [.wikipedia])
 
         let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
         XCTAssertEqual(downloader.firstLine, "App signup required? So annoying.")
         XCTAssertEqual(downloader.secondLine, "Watch and share instantly instead.")
+        XCTAssertEqual(
+            downloader.supportingText,
+            "Download any video link in one click,\nno signup required.")
         XCTAssertEqual(downloader.saveBenefit, "Watch or share")
         XCTAssertEqual(downloader.demoPages, [.instaTok])
 
         let price = OnboardingSurfaceConfiguration.configuration(for: .priceTracker)
         XCTAssertEqual(price.firstLine, "Overpaid? Missed a sale?")
         XCTAssertEqual(price.secondLine, "Never miss out again.")
+        XCTAssertEqual(
+            price.supportingText,
+            "Track sales for any link\nin one click.")
         XCTAssertEqual(price.saveBenefit, "Never miss a sale")
         XCTAssertEqual(price.demoPages, [.amayzon])
 
         let luna = OnboardingSurfaceConfiguration.configuration(for: .luna)
         XCTAssertEqual(luna.firstLine, "All your Luna saves.")
         XCTAssertEqual(luna.secondLine, "In a single app.")
+        XCTAssertEqual(
+            luna.supportingText,
+            "Save any link on your screen\nwith one click.")
         XCTAssertEqual(luna.saveBenefit, "Read, watch, track, anything")
         XCTAssertEqual(luna.demoPages, [.wikipedia, .instaTok, .amayzon])
     }
@@ -116,7 +128,9 @@ final class ReaderOnboardingTests: XCTestCase {
     func testIntroStagesTheSameRevealAcrossBothLines() throws {
         let intro = OnboardingIntroCardContentViewController(
             firstLine: "You want to read more.",
-            secondLine: "Let’s make that happen.")
+            secondLine: "Let’s make that happen.",
+            supportingText:
+                "Save onscreen links with one click.\nUnlock or read offline later.")
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
         intro.view.layoutIfNeeded()
@@ -132,8 +146,22 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(lines[1].occluderIsFullyOpaque)
         XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
 
+        let supportingLabel = try XCTUnwrap(
+            intro.view.subviews.compactMap { $0 as? UILabel }.first {
+                $0.accessibilityIdentifier == "onboarding.intro.supportingText"
+            })
         let button = try XCTUnwrap(
             intro.view.subviews.compactMap { $0 as? UIButton }.first)
+        XCTAssertEqual(supportingLabel.numberOfLines, 2)
+        XCTAssertEqual(supportingLabel.alpha, 0)
+        XCTAssertEqual(
+            supportingLabel.frame.minY - lines[1].frame.maxY,
+            button.frame.minY - supportingLabel.frame.maxY,
+            accuracy: 0.001)
+        XCTAssertEqual(
+            button.configuration?.title,
+            "Show me how")
+        XCTAssertEqual(button.accessibilityLabel, "Show me how")
         let tintAlpha = try XCTUnwrap(
             button.configuration?.baseBackgroundColor?.cgColor.alpha)
         XCTAssertEqual(tintAlpha, 0.24, accuracy: 0.001)

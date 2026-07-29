@@ -62,7 +62,14 @@ copies could never fire and were removed; do not re-add one to an app that does 
 link `LunaMediaDownload`. Per-target COMPOSITION uses synchronized-group
 membership exceptions (exactly one `KindWiring+*.swift` / `ShareEntry+*.swift` /
 `ActionEntry+*.swift` variant compiles per target — `#if canImport` is NOT target-reliable
-here, never use it for gating). **DELETING a file that carries a membership exception
+here, never use it for gating). **An app has SEVERAL composition roots, and a new
+`IngestKindProcessors` / presenter registration must be added to every one of them** —
+`KindWiring+<App>` (the app), `ShareEntry+<App>`, `ActionEntry+<App>`, and the App Clip's
+own `AppDelegate` — because each runs in a different process and shares no wiring code.
+Registering in `KindWiring` alone yields the confusing split where a link saved inside the
+app works but the same link through the share sheet is dropped as another app's kind.
+`SocialTextCompositionRootTests` enforces this for the article/social-text pair by reading
+the composition-root source; extend it when a kind grows a second processor. **DELETING a file that carries a membership exception
 means editing `project.pbxproj` too.** The synchronized group picks up added files by
 itself, but each exception is a by-name entry under
 `PBXFileSystemSynchronizedBuildFileExceptionSet.membershipExceptions`, and one naming a
@@ -279,7 +286,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 1903 tests, 9 skipped, 0 failures**
+- **Current suite state on the iOS 26.x sim: 1907 tests, 9 skipped, 0 failures**
   (measured 2026-07-29, full run with nothing skipped on the command line). The
   long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
   snapshot set was re-recorded for the predawn palette, and the harness now pins the

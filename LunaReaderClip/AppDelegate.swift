@@ -16,6 +16,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         // The clip reads articles, so it registers the article-kind pipeline
         // processor (same composition contract as the apps' KindWiring).
         IngestKindProcessors.article = ArticleIngestProcessor()
+        // Article-kind processing includes reading a long-form X post / self-thread
+        // (claudedocs/x-posts.md) — required on every article-handling surface.
+        IngestKindProcessors.socialText = XPostIngestProcessor()
         return true
     }
 

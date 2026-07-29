@@ -21,6 +21,9 @@ import LunaStorage
 final class ActionEntry: ShareViewController {
     override init(nibName: String?, bundle: Bundle?) {
         IngestKindProcessors.article = ArticleIngestProcessor()
+        // Article-kind processing includes reading a long-form X post / self-thread
+        // (claudedocs/x-posts.md) — required on every article-handling surface.
+        IngestKindProcessors.socialText = XPostIngestProcessor()
         ShareKindPresenters.article = ArticlePresenterAdapter()
         super.init(nibName: nibName, bundle: bundle)
     }

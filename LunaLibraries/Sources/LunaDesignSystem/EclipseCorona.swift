@@ -24,9 +24,6 @@ import UIKit
 ///   rounded-rect drop shadow.
 /// * **Pearl, not white.** Warm-white near the limb, cooling to a faint blue in
 ///   the outer streamers, with a whisper of the app's own tint mixed in.
-/// * **Prominences.** Two or three tiny magenta arcs hugging the limb. Small,
-///   easy to miss, and unmistakably solar when noticed.
-///
 /// Everything is baked into a cached `UIImage` per geometry: the drawing is
 /// hundreds of stroked offset curves plus a gradient per streamer, far too much
 /// to run inside a `draw(_:)` on every frame. Card geometry is constant within a
@@ -48,9 +45,6 @@ public enum EclipseCorona {
     private static let inner = UIColor(red: 1.00, green: 0.982, blue: 0.945, alpha: 1)
     /// Cool pearl: the outer streamers, which photograph distinctly bluer.
     private static let outer = UIColor(red: 0.878, green: 0.910, blue: 1.00, alpha: 1)
-    /// Prominence pink — hydrogen-alpha, as it lands on a sensor.
-    private static let prominence = UIColor(red: 1.00, green: 0.36, blue: 0.47, alpha: 1)
-
     /// The outer corona carries a whisper of the app's identity so each app's
     /// eclipse is subtly its own. The central Luna app's tint is white, so its
     /// corona stays pure pearl.
@@ -211,8 +205,6 @@ public enum EclipseCorona {
             drawStreamers(
                 context: context, silhouette: silhouette, reach: reach, tint: tint)
             context.restoreGState()
-
-            drawProminences(context: context, silhouette: silhouette)
         }
     }
 
@@ -325,41 +317,6 @@ public enum EclipseCorona {
                 context.restoreGState()
             }
         }
-    }
-
-    /// Prominences: small hydrogen-alpha arcs on the limb. Drawn in normal blend
-    /// so the pink survives instead of being screened into the white rim.
-    private static func drawProminences(context: CGContext, silhouette: CGRect) {
-        let center = CGPoint(x: silhouette.midX, y: silhouette.midY)
-        // Kept off the equator, where the bright streamers would swallow them.
-        let angles: [CGFloat] = [1.18, 2.62, 4.36]
-        let scales: [CGFloat] = [1.0, 0.62, 0.78]
-        context.saveGState()
-        context.setBlendMode(.plusLighter)
-        for (index, angle) in angles.enumerated() {
-            let limb = limbDistance(from: silhouette, angle: angle)
-            let height = 7 * scales[index]
-            let origin = CGPoint(
-                x: center.x + cos(angle) * (limb - 1),
-                y: center.y + sin(angle) * (limb - 1))
-            context.saveGState()
-            context.translateBy(x: origin.x, y: origin.y)
-            context.rotate(by: angle)
-            // A stubby loop rising off the surface, wider than it is tall.
-            let path = CGMutablePath()
-            path.move(to: CGPoint(x: 0, y: -height * 0.9))
-            path.addQuadCurve(
-                to: CGPoint(x: 0, y: height * 0.9),
-                control: CGPoint(x: height * 1.5, y: 0))
-            path.addQuadCurve(
-                to: CGPoint(x: 0, y: -height * 0.9),
-                control: CGPoint(x: height * 0.55, y: 0))
-            context.addPath(path)
-            context.setFillColor(prominence.withAlphaComponent(0.5).cgColor)
-            context.fillPath()
-            context.restoreGState()
-        }
-        context.restoreGState()
     }
 
     // MARK: - Interior corona (light falling inward from the frame edges)

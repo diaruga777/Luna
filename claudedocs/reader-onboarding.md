@@ -82,6 +82,10 @@ The root uses the production `CardCarouselViewController`:
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.
+   The second source is a native UIKit iMessage facsimile headed **Johnny
+   Appleseed**. It shows two earlier messages in each direction as neutral
+   gradient privacy blocks; the newest incoming bubble is the only readable
+   message and carries the exact URL currently shown by Safari.
 4. A solid-black, tall rounded deformation stretches continuously out of the
    physical Action Button screen edge and smoothly retracts, matching the
    system's on-screen press silhouette. In the same run-loop turn, a custom
@@ -92,21 +96,26 @@ The root uses the production `CardCarouselViewController`:
 5. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
    `AppOnboardingCompletion`. As the wave advances, its wavefront crossfades
-   Safari into that root carousel's exact centered card state; the live
-   hierarchy is committed under the final composited frame. Reader, Downloader,
-   Price Tracker, and central Luna
+   either mock source into that root carousel's exact centered card state; the
+   live hierarchy is committed under the final composited frame. Reader,
+   Downloader, Price Tracker, and central Luna
    therefore show their ordinary saved-card UI, chrome, scrubber, controls, and
    placement—not an onboarding remake or a Safari view clipped smaller.
-6. The first saved card remains completely unobscured for 1.35 seconds. The
-   window-filling near-black setup overlay then eases its scrim in and follows
-   with a subtly rising content fade aligned to the same one-third vertical
-   anchor. Behind it, the
-   saved card resets to full-screen Safari, pauses briefly, and replays the
-   complete Action Button press + wave + saved-card transformation. The loop
-   pauses during external hops and resumes behind each updated instruction
-   stage. The overlay offers Safari setup, then the same `BundledShortcut`
-   installer and `SystemSettingsLink.openActionButton()` paths used elsewhere;
-   existing Safari and Action Button PiP guides play during those hops.
+6. The initial demonstration completes one whole **Safari → saved card →
+   iMessage → saved card** loop before showing setup. The final saved card then
+   remains completely unobscured for 1.35 seconds. The window-filling near-black
+   setup overlay eases its scrim in and follows with a subtly rising content
+   fade aligned to the same one-third vertical anchor. Behind it, the loop keeps
+   alternating Safari and iMessage, pausing briefly on each source and replaying
+   the complete Action Button press + wave + saved-card transformation. At the
+   start of each press, the source URL gains a bright app-tint highlight. That
+   highlight persists in the source pixels until the wavefront replaces them
+   with the saved view; it is cleared only when the source is prepared for its
+   next appearance. The loop pauses during external hops and resumes behind
+   each updated instruction stage. The overlay offers Safari setup, then the
+   same `BundledShortcut` installer and
+   `SystemSettingsLink.openActionButton()` paths used elsewhere; existing Safari
+   and Action Button PiP guides play during those hops.
 7. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
@@ -134,6 +143,8 @@ inferred from merely opening a destination.
 Debug launches accept `-resetOnboarding` (`-resetReaderOnboarding` remains a
 Reader alias). `-onboardingStage prompt|setup|waiting` moves through the real
 direct card expansion and first shrink but begins at a deterministic overlay stage;
+`-onboardingStage messages` holds on the unobscured Messages replica for visual
+inspection.
 `-readerOnboardingStage` remains an alias. Add `-slowOnboardingAnimations` for
 a 6× inspection timeline, or `-onboardingAnimationScale <1...12>` for an
 explicit factor. The clock slows Core Animation, timers, and the display-link

@@ -12,13 +12,14 @@ import WebKit
 /// UIKit so it has the current OS's typography, glass, safe-area and status-bar
 /// behavior.
 @MainActor
-final class SafariReplicaViewController: UIViewController, WKNavigationDelegate {
+final class SafariReplicaViewController:
+    OnboardingSaveSourceViewController,
+    WKNavigationDelegate
+{
     var onSetUpSafari: (() -> Void)?
     var onInstallShortcut: (() -> Void)?
     var onSetActionButton: (() -> Void)?
     var onSetUpLater: (() -> Void)?
-    var onActionButtonWaveFinished: (() -> Void)?
-    var makeActionButtonDestinationSnapshot: (() -> UIImage?)?
 
     private let onboardingConfiguration: OnboardingSurfaceConfiguration
     private let webView: WKWebView = {
@@ -38,13 +39,16 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
 
     private let browserBar = SafariBottomBar()
     private var instructionOverlay: DemoInstructionOverlay?
-    private var actionCue: ActionButtonPressCue?
-    private var waveAnimator: LiquidScreenWaveAnimator?
     private var didBeginDemonstration = false
     private var pageIndex = 0
     private var pageTimer: Timer?
 
     var hasInstructions: Bool { instructionOverlay != nil }
+    override var sharedURLString: String {
+        let pages = onboardingConfiguration.demoPages
+        guard !pages.isEmpty else { return OnboardingDemoPage.wikipedia.sharedURLString }
+        return pages[pageIndex % pages.count].sharedURLString
+    }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
 
@@ -102,7 +106,9 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
         }
         pageIndex = index % pages.count
         let page = pages[pageIndex]
-        browserBar.setHost(page.displayedHost)
+        browserBar.setURL(
+            page.sharedURLString,
+            displayedHost: page.displayedHost)
         guard let url = Bundle.main.url(
             forResource: page.resourceName, withExtension: "html")
         else {
@@ -147,49 +153,15 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(0.75)
         ) { [weak self] in
-            self?.playActionButtonSaveEffect()
+            self?.replayActionButtonSaveEffect()
         }
     }
 
-    /// Replays the complete save gesture. The wave animator is installed first
-    /// so its snapshot contains the untouched page, then the solid bezel cue is
-    /// added above that snapshot. Both animations begin in the same run-loop
-    /// turn instead of making the wave wait for the press to finish.
-    func replayActionButtonSaveEffect() {
-        playActionButtonSaveEffect()
+    override func setURLHighlighted(_ highlighted: Bool) {
+        browserBar.setURLHighlighted(highlighted)
     }
 
-    private func playActionButtonSaveEffect() {
-        guard actionCue == nil, waveAnimator == nil,
-              let window = view.window
-        else { return }
-        let cue = ActionButtonPressCue()
-        actionCue = cue
-        cue.layout(in: window)
-        let origin = cue.waveOrigin
-
-        let animator = LiquidScreenWaveAnimator(
-            window: window,
-            hostView: view.superview ?? window)
-        waveAnimator = animator
-        animator.play(
-            origin: origin,
-            destinationSnapshot: { [weak self] in
-                self?.makeActionButtonDestinationSnapshot?()
-            },
-            completion: { [weak self, weak cue] in
-                cue?.removeFromSuperview()
-                self?.actionCue = nil
-                self?.waveAnimator = nil
-                self?.onActionButtonWaveFinished?()
-            })
-
-        window.addSubview(cue)
-        cue.play { [weak self, weak cue] in
-            cue?.removeFromSuperview()
-            self?.actionCue = nil
-        }
-    }
+    override var isURLHighlighted: Bool { browserBar.isURLHighlighted }
 
     func showSafariPrompt() {
         setInstruction(

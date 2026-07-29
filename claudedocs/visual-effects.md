@@ -98,20 +98,26 @@ egress. This happens on every launch, not only onboarding, and each
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.
 
-## Onboarding Safari/card loop
+## Onboarding Safari/Messages/card loop
 
 The onboarding card-to-browser demonstration deliberately does not use an
 eclipse. “Show me how” grows the intro card to the screen edges and crossfades
-its content into the local Safari facsimile. A solid-black deformation stretches
-from the screen edge while a thicker annular Action Button wave begins at the
-same point. The advancing wavefront crossfades Safari into the target app's
-complete production root at its exact centered card state, including its normal
-card chrome and carousel. The live hierarchy is committed beneath the final
-composited frame. The first saved state remains clear for a
-reading beat before the instruction scrim and content fade in separately. Each
-loop then resets to full-screen Safari and replays the
-press, wave, and save transformation—not geometry alone. Completion settles on
-the card and performs a short stationary crossfade into the completed root card.
+its content into the local Safari facsimile. The second source is a mock
+iMessage thread with Johnny Appleseed: earlier messages in both directions are
+grey gradient blocks and the newest incoming bubble contains Safari's current
+mock URL. A solid-black deformation stretches from the screen edge while a
+thicker annular Action Button wave begins at the same point. At that press, the
+visible URL gains a bright wash of the current app tint and stays highlighted
+inside the source snapshot until the wave replaces those pixels. The advancing
+wavefront crossfades either source into the target app's complete production
+root at its exact centered card state, including its normal card chrome and
+carousel. The live hierarchy is committed beneath the final composited frame.
+The first Safari → save → iMessage → save loop completes before the final saved
+state remains clear for a reading beat and the instruction scrim/content fade
+appear separately. Later loops keep the same alternation behind the overlay and
+replay the press, highlight, wave, and save transformation—not geometry alone.
+Completion settles on the card and performs a short stationary crossfade into
+the completed root card.
 
 ## Loading spinner (`DotMatrixSpinnerView`)
 

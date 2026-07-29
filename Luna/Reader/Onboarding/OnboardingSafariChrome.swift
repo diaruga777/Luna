@@ -15,6 +15,7 @@ final class SafariBottomBar: UIView {
     private let address = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let more = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let hostLabel = UILabel()
+    private let urlHighlight = OnboardingURLHighlightView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -59,6 +60,8 @@ final class SafariBottomBar: UIView {
         addressStack.alignment = .center
         addressStack.spacing = 9
         addressStack.translatesAutoresizingMaskIntoConstraints = false
+        urlHighlight.translatesAutoresizingMaskIntoConstraints = false
+        address.contentView.addSubview(urlHighlight)
         address.contentView.addSubview(addressStack)
         page.widthAnchor.constraint(equalToConstant: 21).isActive = true
         reload.widthAnchor.constraint(equalToConstant: 21).isActive = true
@@ -96,6 +99,10 @@ final class SafariBottomBar: UIView {
             addressStack.trailingAnchor.constraint(
                 equalTo: address.contentView.trailingAnchor, constant: -13),
             addressStack.bottomAnchor.constraint(equalTo: address.contentView.bottomAnchor),
+            urlHighlight.topAnchor.constraint(equalTo: address.contentView.topAnchor),
+            urlHighlight.leadingAnchor.constraint(equalTo: address.contentView.leadingAnchor),
+            urlHighlight.trailingAnchor.constraint(equalTo: address.contentView.trailingAnchor),
+            urlHighlight.bottomAnchor.constraint(equalTo: address.contentView.bottomAnchor),
             ellipsis.centerXAnchor.constraint(equalTo: more.contentView.centerXAnchor),
             ellipsis.centerYAnchor.constraint(equalTo: more.contentView.centerYAnchor),
             ellipsis.widthAnchor.constraint(equalToConstant: 24),
@@ -106,7 +113,9 @@ final class SafariBottomBar: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    func setHost(_ host: String) {
+    func setURL(_ urlString: String, displayedHost host: String) {
+        accessibilityIdentifier = "onboarding.safari.urlBar"
+        accessibilityValue = urlString
         UIView.transition(
             with: hostLabel,
             duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18,
@@ -115,6 +124,12 @@ final class SafariBottomBar: UIView {
             self.hostLabel.text = host
         }
     }
+
+    func setURLHighlighted(_ highlighted: Bool) {
+        urlHighlight.setHighlighted(highlighted)
+    }
+
+    var isURLHighlighted: Bool { urlHighlight.isHighlighted }
 
     private func icon(_ symbol: String, alpha: CGFloat) -> UIImageView {
         let view = UIImageView(image: UIImage(

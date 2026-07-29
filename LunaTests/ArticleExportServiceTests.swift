@@ -63,4 +63,65 @@ final class ArticleExportServiceTests: XCTestCase {
             XCTAssertEqual(error as? ArticleExportService.ExportError, .noContent)
         }
     }
+
+    // MARK: - Every format
+
+    /// Each format writes a non-empty file under its own extension, off the same
+    /// sanitized title stem.
+    func testEveryFormatWritesItsOwnExtension() throws {
+        let item = readyItem(title: "Hello: World?", url: "https://example.com/d")
+        let service = ArticleExportService(store: store)
+        for format in ArticleExportFormat.allCases {
+            let url = try service.write(format, for: item)
+            XCTAssertEqual(url.pathExtension, format.fileExtension, "\(format)")
+            XCTAssertFalse(try Data(contentsOf: url).isEmpty, "\(format)")
+            XCTAssertTrue(url.lastPathComponent.hasPrefix("Hello World"), "\(format)")
+        }
+    }
+
+    func testPDFExportProducesPDFBytes() throws {
+        let item = readyItem(title: "Doc", url: "https://example.com/e")
+        let url = try ArticleExportService(store: store).write(.pdf, for: item)
+        let data = try Data(contentsOf: url)
+        XCTAssertEqual(String(decoding: data.prefix(4), as: UTF8.self), "%PDF")
+    }
+
+    func testMarkdownExportIsUTF8MarkdownWithSource() throws {
+        let item = readyItem(title: "Doc", url: "https://example.com/f")
+        let url = try ArticleExportService(store: store).write(.markdown, for: item)
+        let text = try XCTUnwrap(String(data: try Data(contentsOf: url), encoding: .utf8))
+        XCTAssertTrue(text.hasPrefix("# Doc"))
+        XCTAssertTrue(text.contains("https://example.com/f"))
+        XCTAssertTrue(text.contains("Body text."))
+    }
+
+    func testPlainTextExportCarriesNoMarkup() throws {
+        let item = readyItem(title: "Doc", url: "https://example.com/g")
+        let url = try ArticleExportService(store: store).write(.plainText, for: item)
+        let text = try XCTUnwrap(String(data: try Data(contentsOf: url), encoding: .utf8))
+        XCTAssertTrue(text.hasPrefix("Doc\n"))
+        XCTAssertFalse(text.contains("# "))
+        XCTAssertTrue(text.contains("Body text."))
+    }
+
+    func testItemProviderAdvertisesRequestedFormatType() throws {
+        let item = readyItem(title: "Doc", url: "https://example.com/h")
+        let service = ArticleExportService(store: store)
+        XCTAssertTrue(try service.itemProvider(.pdf, for: item)
+            .hasItemConformingToTypeIdentifier(UTType.pdf.identifier))
+        XCTAssertTrue(try service.itemProvider(.plainText, for: item)
+            .hasItemConformingToTypeIdentifier(UTType.plainText.identifier))
+    }
+
+    /// A still-locked or media item has no stored content, so NO format can be
+    /// exported — one gate covers all four.
+    func testEveryFormatThrowsWithoutContent() {
+        let pending = store.add(urlString: "https://example.com/i")
+        let service = ArticleExportService(store: store)
+        for format in ArticleExportFormat.allCases {
+            XCTAssertThrowsError(try service.write(format, for: pending), "\(format)") { error in
+                XCTAssertEqual(error as? ArticleExportService.ExportError, .noContent)
+            }
+        }
+    }
 }

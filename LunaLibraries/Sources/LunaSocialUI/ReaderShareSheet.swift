@@ -9,7 +9,7 @@ import UIKit
 import LunaModels
 
 /// The reader's share options: copy the link, share the link, mail it to a
-/// contact, or export the article as an EPUB.
+/// contact, or export the article as a file (EPUB / PDF / Markdown / text).
 ///
 /// `menu(rows:)` is the primary presentation — a native `UIMenu` hung off the
 /// share button, so the system renders it as a Liquid Glass popover and gives the
@@ -18,30 +18,55 @@ import LunaModels
 /// own (a context-menu action, the archive tray). Both are built from the same
 /// `rows`, so the wording never diverges. The actions are injected so this stays
 /// UI-only; `AppReaderShareProvider` wires them to the social / export stack.
+///
+/// A row with `children` is a submenu: the four export formats hang off one
+/// "Export as…" row rather than flattening into the top level, which would
+/// double the option list for a choice most shares never touch. In the menu the
+/// system draws it as a nested popover; in the fallback sheet it presents a
+/// second sheet — see `rowTapped`.
 public final class ReaderShareSheet: UIViewController {
 
-    /// One tappable option.
+    /// One tappable option, or — when `children` is non-empty — a submenu of them.
     public struct Row {
         public let title: String
         public let systemImage: String
         public let isPrimary: Bool
         public let action: () -> Void
+        /// Nested options. When non-empty, `action` is not used.
+        public let children: [Row]
 
-        public init(title: String, systemImage: String, isPrimary: Bool, action: @escaping () -> Void) {
+        public init(title: String, systemImage: String, isPrimary: Bool,
+                    children: [Row] = [], action: @escaping () -> Void = {}) {
             self.title = title
             self.systemImage = systemImage
             self.isPrimary = isPrimary
+            self.children = children
             self.action = action
+        }
+    }
+
+    /// Title of the nested export sheet/submenu. Public so a caller presenting
+    /// the export options on their own (an article with no link to share) labels
+    /// them identically.
+    public static var exportTitle: String { L10n.string("Export as…") }
+
+    /// The export-format options, in `ArticleExportFormat` order.
+    public static func exportRows(
+        onExport: @escaping (ArticleExportFormat) -> Void
+    ) -> [Row] {
+        ArticleExportFormat.allCases.map { format in
+            Row(title: format.displayName, systemImage: format.systemImage,
+                isPrimary: false, action: { onExport(format) })
         }
     }
 
     /// Builds the ordered rows.
     public static func rows(
-        includeEbook: Bool,
+        includeExport: Bool,
         onPickFriend: @escaping () -> Void,
         onShareLink: @escaping () -> Void,
         onCopyLink: @escaping () -> Void,
-        onShareEbook: @escaping () -> Void
+        onExport: @escaping (ArticleExportFormat) -> Void
     ) -> [Row] {
         var rows: [Row] = []
         rows.append(Row(
@@ -53,11 +78,11 @@ public final class ReaderShareSheet: UIViewController {
         rows.append(Row(
             title: L10n.string("Send as email"), systemImage: "envelope",
             isPrimary: false, action: onPickFriend))
-        // eBook export only applies to readable articles, not media / platform posts.
-        if includeEbook {
+        // File export only applies to readable articles, not media / platform posts.
+        if includeExport {
             rows.append(Row(
-                title: L10n.string("Share .epub"), systemImage: "book",
-                isPrimary: false, action: onShareEbook))
+                title: exportTitle, systemImage: "square.and.arrow.down.on.square",
+                isPrimary: false, children: exportRows(onExport: onExport)))
         }
         return rows
     }
@@ -67,17 +92,26 @@ public final class ReaderShareSheet: UIViewController {
     /// list reads top-to-bottom exactly as `rows` builds it, whichever edge of the
     /// screen the popover opens toward.
     public static func menu(rows: [Row]) -> UIMenu {
-        UIMenu(children: rows.map { row in
-            UIAction(title: row.title, image: UIImage(systemName: row.systemImage)) { _ in
-                row.action()
-            }
-        })
+        UIMenu(children: rows.map(menuElement(for:)))
+    }
+
+    private static func menuElement(for row: Row) -> UIMenuElement {
+        guard row.children.isEmpty else {
+            return UIMenu(
+                title: row.title, image: UIImage(systemName: row.systemImage),
+                children: row.children.map(menuElement(for:)))
+        }
+        return UIAction(title: row.title, image: UIImage(systemName: row.systemImage)) { _ in
+            row.action()
+        }
     }
 
     private let rows: [Row]
+    private let sheetTitle: String
 
-    public init(rows: [Row]) {
+    public init(rows: [Row], title: String = L10n.string("Share")) {
         self.rows = rows
+        self.sheetTitle = title
         super.init(nibName: nil, bundle: nil)
         if let sheet = sheetPresentationController {
             // Just tall enough for the title + buttons + a bottom inset (no
@@ -98,8 +132,10 @@ public final class ReaderShareSheet: UIViewController {
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Convenience: build the sheet and present it from `presenter`.
-    public static func present(from presenter: UIViewController, rows: [Row]) {
-        presenter.present(ReaderShareSheet(rows: rows), animated: true)
+    public static func present(
+        from presenter: UIViewController, rows: [Row], title: String = L10n.string("Share")
+    ) {
+        presenter.present(ReaderShareSheet(rows: rows, title: title), animated: true)
     }
 
     public override func viewDidLoad() {
@@ -107,7 +143,7 @@ public final class ReaderShareSheet: UIViewController {
         view.backgroundColor = LunaColors.background
 
         let titleLabel = UILabel()
-        titleLabel.text = L10n.string("Share")
+        titleLabel.text = sheetTitle
         titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
         titleLabel.textAlignment = .center
 
@@ -155,9 +191,21 @@ public final class ReaderShareSheet: UIViewController {
 
     @objc private func rowTapped(_ sender: UIButton) {
         guard rows.indices.contains(sender.tag) else { return }
-        let action = rows[sender.tag].action
-        // Dismiss first so the action can present its own sheet on the original
-        // presenter without a "already presenting" conflict.
+        let row = rows[sender.tag]
+        // Dismiss first so whatever comes next can present on the original
+        // presenter without an "already presenting" conflict — which is also why
+        // a submenu row has to capture that presenter before dismissing.
+        guard row.children.isEmpty else {
+            let presenter = presentingViewController
+            let children = row.children
+            let title = row.title
+            dismiss(animated: true) {
+                guard let presenter else { return }
+                Self.present(from: presenter, rows: children, title: title)
+            }
+            return
+        }
+        let action = row.action
         dismiss(animated: true) { action() }
     }
 }

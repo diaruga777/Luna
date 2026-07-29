@@ -43,6 +43,7 @@ final class AppOnboardingViewController: UIViewController {
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
     private var safariReplica: SafariReplicaViewController?
     private var savedRootViewController: UIViewController?
+    private var savedCardWaveSnapshot: UIImage?
     private var temporarySaveInstallResult: Bool?
     private var externalReturn = ExternalReturn.none
     private var didExpandSafari = false
@@ -196,6 +197,7 @@ final class AppOnboardingViewController: UIViewController {
             presentSavePreparationFailure()
             return
         }
+        savedCardWaveSnapshot = captureSavedCardWaveSnapshot()
         didExpandSafari = true
 
         let safari = SafariReplicaViewController(configuration: configuration)
@@ -203,6 +205,9 @@ final class AppOnboardingViewController: UIViewController {
         safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
         safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
         safari.onSetUpLater = { [weak self] in self?.finishOnboarding() }
+        safari.makeActionButtonDestinationSnapshot = { [weak self] in
+            self?.makeSavedCardSnapshot()
+        }
         safari.onActionButtonWaveFinished = { [weak self] in
             self?.actionButtonWaveDidFinish()
         }
@@ -263,6 +268,7 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func actionButtonWaveDidFinish() {
+        commitWaveDrivenCardPresentation()
         let isFirstSave = safariReplica?.hasInstructions != true
         presentInstructionsAfterShrinking(
             instructionDelay: isFirstSave
@@ -273,6 +279,54 @@ final class AppOnboardingViewController: UIViewController {
             if self.safariReplica?.hasInstructions != true {
                 self.safariReplica?.showSafariPrompt()
             }
+        }
+    }
+
+    /// The wave's final rendered frame is already the saved-card screen. Commit
+    /// the matching live hierarchy before its overlay is removed, avoiding a
+    /// flash or a second, disconnected geometry animation.
+    private func commitWaveDrivenCardPresentation() {
+        guard let safari = safariReplica else { return }
+        safariTransitionGeneration += 1
+        isSafariGeometryTransitioning = false
+        safariPresentation = .card
+        applySafariPresentation(.card, safari: safari)
+        safari.view.isHidden = true
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    /// Returns the production saved-card snapshot captured before the Safari
+    /// replica was mounted. Avoiding a live hierarchy swap here keeps the press
+    /// animation responsive even when the Safari WKWebView is active.
+    private func makeSavedCardSnapshot() -> UIImage? {
+        savedCardWaveSnapshot
+    }
+
+    private func captureSavedCardWaveSnapshot() -> UIImage? {
+        guard let savedRootViewController else { return nil }
+        let carouselAlpha = carousel.view.alpha
+        let rootAlpha = savedRootViewController.view.alpha
+        var snapshot: UIImage?
+        UIView.performWithoutAnimation {
+            carousel.view.alpha = 0
+            savedRootViewController.view.alpha = 1
+            view.layoutIfNeeded()
+            snapshot = renderSnapshot(of: view)
+            carousel.view.alpha = carouselAlpha
+            savedRootViewController.view.alpha = rootAlpha
+        }
+        return snapshot
+    }
+
+    private func renderSnapshot(of targetView: UIView) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = OnboardingActionButtonTiming.waveRasterScale
+        format.opaque = true
+        return UIGraphicsImageRenderer(
+            bounds: targetView.bounds,
+            format: format
+        ).image { rendererContext in
+            targetView.layer.render(in: rendererContext.cgContext)
         }
     }
 

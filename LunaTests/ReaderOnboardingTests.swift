@@ -152,12 +152,18 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThan(
             OnboardingSafariCardTiming.firstSavedCardHoldDuration,
             OnboardingSafariCardTiming.cardHoldDuration)
-        XCTAssertLessThanOrEqual(
+        XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.wavefrontHalfWidth,
-            20)
-        XCTAssertGreaterThan(
+            28)
+        XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.maximumDisplacement,
-            14)
+            24)
+        XCTAssertLessThan(
+            OnboardingActionButtonTiming.revealHalfWidth,
+            OnboardingActionButtonTiming.wavefrontHalfWidth)
+        XCTAssertLessThanOrEqual(
+            OnboardingActionButtonTiming.waveRasterScale,
+            2)
         XCTAssertLessThanOrEqual(
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
@@ -173,15 +179,17 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testActionButtonCueMatchesTheIlluminatedInsetSideRail() {
+    func testActionButtonCueMatchesTheSystemBlackEdgeDeformation() {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         let cue = ActionButtonPressCue()
         cue.layout(in: window)
 
-        XCTAssertEqual(cue.bounds.width, 13, accuracy: 0.001)
-        XCTAssertEqual(cue.bounds.height, 82, accuracy: 0.001)
-        XCTAssertEqual(cue.layer.position.x, 2, accuracy: 0.001)
-        XCTAssertTrue(cue.subviews.isEmpty, "The side rail is rendered entirely with layers")
+        XCTAssertEqual(cue.bounds.width, 30, accuracy: 0.001)
+        XCTAssertEqual(cue.bounds.height, 164, accuracy: 0.001)
+        XCTAssertEqual(cue.layer.position.x, 0, accuracy: 0.001)
+        XCTAssertEqual(cue.layer.anchorPoint.x, 0, accuracy: 0.001)
+        XCTAssertTrue(cue.subviews.isEmpty, "The edge silhouette is rendered entirely with layers")
+        XCTAssertEqual(cue.layer.sublayers?.count, 1)
     }
 
     @MainActor

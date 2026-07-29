@@ -80,17 +80,19 @@ The root uses the production `CardCarouselViewController`:
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.
-4. A narrow dark side rail with a warm illuminated core plays just inside the
-   physical Action Button edge, matching the system's on-screen press response.
-   In the same run-loop turn, a custom Core Image warp sends a wider, stronger,
-   two-lobed annular wavefront from that point across a whole-window snapshot;
-   it settles in 0.74 seconds. This keeps the wavefront slim and pronounced
-   instead of bending every pixel inside one growing `CIBumpDistortion` radius.
+4. A solid-black, tall rounded deformation stretches continuously out of the
+   physical Action Button screen edge and smoothly retracts, matching the
+   system's on-screen press silhouette. In the same run-loop turn, a custom
+   Core Image warp sends a thick, pronounced two-lobed annular wavefront from
+   that point across paired onboarding-surface snapshots; it settles in 0.74
+   seconds. This keeps the effect concentrated at the moving wavefront instead
+   of bending every pixel inside one growing `CIBumpDistortion` radius.
 5. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
-   `AppOnboardingCompletion`. Only after the last distorted pixels settle does
-   Safari shrink into that root carousel's exact centered card frame while
-   dissolving away. Reader, Downloader, Price Tracker, and central Luna
+   `AppOnboardingCompletion`. As the wave advances, its wavefront crossfades
+   Safari into that root carousel's exact centered card state; the live
+   hierarchy is committed under the final composited frame. Reader, Downloader,
+   Price Tracker, and central Luna
    therefore show their ordinary saved-card UI, chrome, scrubber, controls, and
    placement—not an onboarding remake or a Safari view clipped smaller.
 6. The first saved card remains completely unobscured for 1.35 seconds. The

@@ -18,6 +18,7 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
     var onSetActionButton: (() -> Void)?
     var onSetUpLater: (() -> Void)?
     var onActionButtonWaveFinished: (() -> Void)?
+    var makeActionButtonDestinationSnapshot: (() -> UIImage?)?
 
     private let onboardingConfiguration: OnboardingSurfaceConfiguration
     private let webView: WKWebView = {
@@ -167,10 +168,15 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
         cue.layout(in: window)
         let origin = cue.waveOrigin
 
-        let animator = LiquidScreenWaveAnimator(window: window)
+        let animator = LiquidScreenWaveAnimator(
+            window: window,
+            hostView: view.superview ?? window)
         waveAnimator = animator
         animator.play(
             origin: origin,
+            destinationSnapshot: { [weak self] in
+                self?.makeActionButtonDestinationSnapshot?()
+            },
             completion: { [weak self, weak cue] in
                 cue?.removeFromSuperview()
                 self?.actionCue = nil

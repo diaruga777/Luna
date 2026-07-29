@@ -8,11 +8,9 @@ import UIKit
 
 enum OnboardingActionButtonTiming {
     static let pressDuration: TimeInterval = 0.68
-    /// The first wave begins exactly as the fully formed edge bulge starts
-    /// retracting, leaving a distinct press beat before any screen distortion.
-    static let pressRecessionStartFraction: Double = 0.42
     static let firstWaveDuration: CFTimeInterval = 0.82
-    static let waveDuration: CFTimeInterval = 0.74
+    static let blackoutWaveDuration: CFTimeInterval = 0.72
+    static let saveRevealWaveDuration: CFTimeInterval = 0.74
     /// Matches the small bezel intrusion of the system button-press response.
     static let pressCueSize = CGSize(width: 7, height: 120)
     /// Centers the cue on the iPhone 17 Pro Action Button's physical position.
@@ -21,23 +19,25 @@ enum OnboardingActionButtonTiming {
     static let firstWavefrontHalfWidth: CGFloat = 46
     static let firstMaximumDisplacement: CGFloat = 30
     static let firstWaveLightingStrength: CGFloat = 0.20
-    /// The trailing wave retains the previous visual and reveals the save card.
-    static let wavefrontHalfWidth: CGFloat = 30
-    static let maximumDisplacement: CGFloat = 26
-    /// The Safari/card crossfade is confined to the distorted wavefront.
-    static let revealHalfWidth: CGFloat = 14
+    /// The second wave starts at the highlighted link's outside edge and
+    /// replaces only the pixels beyond it with black.
+    static let blackoutWavefrontHalfWidth: CGFloat = 30
+    static let blackoutMaximumDisplacement: CGFloat = 24
+    static let blackoutRevealHalfWidth: CGFloat = 12
+    /// The third wave starts at the highlighted link's center and converts the
+    /// isolated link plus its black surroundings into the saved-card screen.
+    static let saveRevealWavefrontHalfWidth: CGFloat = 30
+    static let saveRevealMaximumDisplacement: CGFloat = 26
+    static let saveRevealHalfWidth: CGFloat = 14
     /// A transient motion raster; lower than the 3× display scale so Core Image
     /// can sustain a smooth wave instead of presenting only a few heavy frames.
     static let waveRasterScale: CGFloat = 1.5
+}
 
-    static func secondWaveStartProgress(
-        screenWidth: CGFloat,
-        firstTravelDistance: CGFloat
-    ) -> CGFloat {
-        min(
-            max((screenWidth * 0.5) / max(firstTravelDistance, 1), 0),
-            1)
-    }
+struct OnboardingHighlightedLinkRegion: Equatable {
+    /// Frame in the source view controller's root-view coordinate space.
+    var frame: CGRect
+    var cornerRadius: CGFloat
 }
 
 /// A full-screen mock source that can demonstrate saving its visible URL with
@@ -67,6 +67,10 @@ class OnboardingSaveSourceViewController: UIViewController {
 
     var isURLHighlighted: Bool { false }
 
+    /// The highlighted URL UI that remains visible while the second wave turns
+    /// every pixel beyond its rounded boundary black.
+    var highlightedLinkRegion: OnboardingHighlightedLinkRegion? { nil }
+
     /// Plays the same complete save gesture for every mock source. The URL is
     /// highlighted before the source snapshot is captured, so it remains lit
     /// until the advancing wave replaces it with the saved-card view.
@@ -77,6 +81,10 @@ class OnboardingSaveSourceViewController: UIViewController {
 
         setURLHighlighted(true)
         view.layoutIfNeeded()
+        guard let sourceLinkRegion = highlightedLinkRegion else {
+            setURLHighlighted(false)
+            return
+        }
 
         let cue = ActionButtonPressCue()
         actionCue = cue
@@ -84,39 +92,28 @@ class OnboardingSaveSourceViewController: UIViewController {
         let origin = cue.waveOrigin
 
         let hostView = view.superview ?? window
+        let linkRegion = OnboardingHighlightedLinkRegion(
+            frame: hostView.convert(sourceLinkRegion.frame, from: view),
+            cornerRadius: sourceLinkRegion.cornerRadius)
         let animator = LiquidScreenWaveAnimator(window: window, hostView: hostView)
         waveAnimator = animator
 
         window.addSubview(cue)
+        animator.play(
+            origin: origin,
+            highlightedLinkRegion: linkRegion,
+            destinationSnapshot: { [weak self] in
+                self?.makeActionButtonDestinationSnapshot?()
+            },
+            completion: { [weak self, weak cue] in
+                cue?.removeFromSuperview()
+                self?.actionCue = nil
+                self?.waveAnimator = nil
+                self?.onActionButtonWaveFinished?()
+            })
         cue.play { [weak self, weak cue] in
             cue?.removeFromSuperview()
             self?.actionCue = nil
-        }
-
-        let resolvedPressDuration = UIAccessibility.isReduceMotionEnabled
-            ? 0.20
-            : OnboardingActionButtonTiming.pressDuration
-        let waveDelay = resolvedPressDuration
-            * OnboardingActionButtonTiming.pressRecessionStartFraction
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(waveDelay)
-        ) { [weak self, weak cue, weak animator] in
-            guard let self,
-                  let animator,
-                  self.waveAnimator === animator,
-                  self.actionCue === cue
-            else { return }
-            animator.play(
-                origin: origin,
-                destinationSnapshot: { [weak self] in
-                    self?.makeActionButtonDestinationSnapshot?()
-                },
-                completion: { [weak self, weak cue] in
-                    cue?.removeFromSuperview()
-                    self?.actionCue = nil
-                    self?.waveAnimator = nil
-                    self?.onActionButtonWaveFinished?()
-                })
         }
     }
 }
@@ -210,37 +207,68 @@ final class ActionButtonPressCue: UIView {
     }
 }
 
-/// An annular Core Image displacement wave over onboarding-surface before/after
-/// snapshots. The advancing wavefront reveals the saved-card screen as it
-/// distorts the pixels, so the content transformation and wave are one effect.
+/// A three-stage Core Image transition: an in-place Action Button ripple, a
+/// rounded wave that isolates the highlighted link against black, then a
+/// center-origin wave that reveals the saved-card screen.
 @MainActor
 final class LiquidScreenWaveAnimator {
-    private static let waveKernel = CIWarpKernel(source: """
-        kernel vec2 lunaOverlappingWaves(
-            vec2 center,
-            float firstRadius, float firstHalfWidth, float firstAmplitude,
-            float secondRadius, float secondHalfWidth, float secondAmplitude
+    private static let radialWaveKernel = CIWarpKernel(source: """
+        kernel vec2 lunaRadialWave(
+            vec2 center, float radius, float halfWidth, float amplitude
         ) {
             vec2 destination = destCoord();
             vec2 delta = destination - center;
             float distanceFromCenter = length(delta);
-            float firstNormalized =
-                (distanceFromCenter - firstRadius) / firstHalfWidth;
-            float firstBand =
-                1.0 - smoothstep(0.0, 1.0, abs(firstNormalized));
-            float firstCompression =
-                sin(firstNormalized * 3.14159265359);
-            float secondNormalized =
-                (distanceFromCenter - secondRadius) / secondHalfWidth;
-            float secondBand =
-                1.0 - smoothstep(0.0, 1.0, abs(secondNormalized));
-            float secondCompression =
-                sin(secondNormalized * 3.14159265359);
-            float displacement =
-                firstBand * firstCompression * firstAmplitude
-                + secondBand * secondCompression * secondAmplitude;
+            float normalized = (distanceFromCenter - radius) / halfWidth;
+            float band = 1.0 - smoothstep(0.0, 1.0, abs(normalized));
+            float compression = sin(normalized * 3.14159265359);
             vec2 direction = delta / max(distanceFromCenter, 1.0);
-            return destination - direction * displacement;
+            return destination - direction * (band * compression * amplitude);
+        }
+        """)
+
+    private static let roundedRectWaveKernel = CIWarpKernel(source: """
+        kernel vec2 lunaRoundedRectWave(
+            vec2 center, vec2 halfSize, float cornerRadius,
+            float radius, float halfWidth, float amplitude
+        ) {
+            vec2 destination = destCoord();
+            vec2 local = destination - center;
+            vec2 innerHalfSize = max(
+                halfSize - vec2(cornerRadius), vec2(0.0));
+            vec2 nearestDelta =
+                local - clamp(local, -innerHalfSize, innerHalfSize);
+            float nearestLength = length(nearestDelta);
+            float signedDistance = nearestLength - cornerRadius;
+            float normalized = (signedDistance - radius) / halfWidth;
+            float band = 1.0 - smoothstep(0.0, 1.0, abs(normalized));
+            float compression = sin(normalized * 3.14159265359);
+            float outside = smoothstep(-1.0, 1.0, signedDistance);
+            vec2 direction = nearestDelta / max(nearestLength, 1.0);
+            return destination
+                - direction * (band * compression * amplitude * outside);
+        }
+        """)
+
+    private static let blackoutKernel = CIColorKernel(source: """
+        kernel vec4 lunaBlackOutsideHighlightedLink(
+            __sample displaced, __sample original,
+            vec2 center, vec2 halfSize, float cornerRadius,
+            float radius, float halfWidth
+        ) {
+            vec2 local = destCoord() - center;
+            vec2 innerHalfSize = max(
+                halfSize - vec2(cornerRadius), vec2(0.0));
+            vec2 nearestDelta =
+                local - clamp(local, -innerHalfSize, innerHalfSize);
+            float signedDistance = length(nearestDelta) - cornerRadius;
+            float outside = smoothstep(-1.0, 1.0, signedDistance);
+            float outsideDistance = max(signedDistance, 0.0);
+            float coverage = 1.0 - smoothstep(
+                radius - halfWidth, radius + halfWidth, outsideDistance);
+            vec4 blackened = mix(
+                displaced, vec4(0.0, 0.0, 0.0, 1.0), coverage);
+            return mix(original, blackened, outside);
         }
         """)
 
@@ -282,10 +310,15 @@ final class LiquidScreenWaveAnimator {
     private var startedAt: CFTimeInterval = 0
     private var completion: (() -> Void)?
     private var origin: CGPoint = .zero
+    private var highlightedLinkRegion = OnboardingHighlightedLinkRegion(
+        frame: .zero,
+        cornerRadius: 0)
     private let firstWaveDuration = OnboardingAnimationClock.displayLinkDuration(
         OnboardingActionButtonTiming.firstWaveDuration)
-    private let secondWaveDuration = OnboardingAnimationClock.displayLinkDuration(
-        OnboardingActionButtonTiming.waveDuration)
+    private let blackoutWaveDuration = OnboardingAnimationClock.displayLinkDuration(
+        OnboardingActionButtonTiming.blackoutWaveDuration)
+    private let saveRevealWaveDuration = OnboardingAnimationClock.displayLinkDuration(
+        OnboardingActionButtonTiming.saveRevealWaveDuration)
 
     init(window: UIWindow, hostView: UIView) {
         self.window = window
@@ -294,6 +327,7 @@ final class LiquidScreenWaveAnimator {
 
     func play(
         origin: CGPoint,
+        highlightedLinkRegion: OnboardingHighlightedLinkRegion,
         destinationSnapshot: @escaping () -> UIImage?,
         completion: @escaping () -> Void
     ) {
@@ -309,6 +343,7 @@ final class LiquidScreenWaveAnimator {
             return
         }
         self.origin = hostView.convert(origin, from: window)
+        self.highlightedLinkRegion = highlightedLinkRegion
         self.completion = completion
         source = CIImage(cgImage: sourceImage)
         destination = CIImage(cgImage: destinationImage)
@@ -346,102 +381,309 @@ final class LiquidScreenWaveAnimator {
         }
         let elapsed = max(link.timestamp - startedAt, 0)
         let extent = source.extent
-        let pixelScale = extent.width / max(hostView?.bounds.width ?? window.bounds.width, 1)
-        let center = CGPoint(
+        let pixelScale = extent.width
+            / max(hostView?.bounds.width ?? window.bounds.width, 1)
+        let actionButtonCenter = CGPoint(
             x: origin.x * pixelScale,
             y: extent.height - origin.y * pixelScale)
-        let farthestCornerDistance = [
-            hypot(center.x - extent.minX, center.y - extent.minY),
-            hypot(center.x - extent.maxX, center.y - extent.minY),
-            hypot(center.x - extent.minX, center.y - extent.maxY),
-            hypot(center.x - extent.maxX, center.y - extent.maxY),
-        ].max() ?? extent.width
+        let linkFrame = CGRect(
+            x: highlightedLinkRegion.frame.minX * pixelScale,
+            y: extent.height - highlightedLinkRegion.frame.maxY * pixelScale,
+            width: highlightedLinkRegion.frame.width * pixelScale,
+            height: highlightedLinkRegion.frame.height * pixelScale)
+        let linkCenter = CGPoint(x: linkFrame.midX, y: linkFrame.midY)
+        let linkHalfSize = CGSize(
+            width: linkFrame.width / 2,
+            height: linkFrame.height / 2)
+        let linkCornerRadius = min(
+            highlightedLinkRegion.cornerRadius * pixelScale,
+            min(linkHalfSize.width, linkHalfSize.height))
+
         let firstHalfWidth =
             OnboardingActionButtonTiming.firstWavefrontHalfWidth * pixelScale
-        let secondHalfWidth =
-            OnboardingActionButtonTiming.wavefrontHalfWidth * pixelScale
-        let firstTravelDistance = farthestCornerDistance + firstHalfWidth
-        let secondTravelDistance = farthestCornerDistance + secondHalfWidth
-        let secondStartProgress =
-            OnboardingActionButtonTiming.secondWaveStartProgress(
-                screenWidth: extent.width,
-                firstTravelDistance: firstTravelDistance)
-        let secondStartedAt = firstWaveDuration
-            * CFTimeInterval(secondStartProgress)
+        let blackoutHalfWidth =
+            OnboardingActionButtonTiming.blackoutWavefrontHalfWidth * pixelScale
+        let blackoutRevealHalfWidth =
+            OnboardingActionButtonTiming.blackoutRevealHalfWidth * pixelScale
+        let saveRevealHalfWidth =
+            OnboardingActionButtonTiming.saveRevealWavefrontHalfWidth * pixelScale
+        let saveCrossfadeHalfWidth =
+            OnboardingActionButtonTiming.saveRevealHalfWidth * pixelScale
 
-        let firstProgress = min(max(elapsed / firstWaveDuration, 0), 1)
-        let secondProgress = min(
-            max((elapsed - secondStartedAt) / secondWaveDuration, 0),
-            1)
-        let hasSecondWaveStarted = elapsed >= secondStartedAt
-        let firstRadius = max(
-            1,
-            CGFloat(firstProgress) * firstTravelDistance)
-        let secondRadius = hasSecondWaveStarted
-            ? max(1, CGFloat(secondProgress) * secondTravelDistance)
-            : -secondTravelDistance
-        let firstEnvelope = temporalEnvelope(for: firstProgress)
-        let secondEnvelope = hasSecondWaveStarted
-            ? temporalEnvelope(for: secondProgress)
-            : 0
-        let firstDisplacement =
-            OnboardingActionButtonTiming.firstMaximumDisplacement
-            * pixelScale
-            * firstEnvelope
-        let secondDisplacement =
-            OnboardingActionButtonTiming.maximumDisplacement
-            * pixelScale
-            * secondEnvelope
-        let roiPadding =
-            abs(firstDisplacement) + abs(secondDisplacement) + 2
+        let firstTravelDistance = radialTravelDistance(
+            from: actionButtonCenter,
+            through: extent,
+            padding: firstHalfWidth)
+        let blackoutTravelDistance = roundedRectTravelDistance(
+            from: linkCenter,
+            halfSize: linkHalfSize,
+            cornerRadius: linkCornerRadius,
+            through: extent,
+            padding: max(blackoutHalfWidth, blackoutRevealHalfWidth))
+        let saveRevealTravelDistance = radialTravelDistance(
+            from: linkCenter,
+            through: extent,
+            padding: max(saveRevealHalfWidth, saveCrossfadeHalfWidth))
 
-        guard let waveKernel = Self.waveKernel,
-            let revealKernel = Self.revealKernel,
-            let lightingKernel = Self.lightingKernel,
-            let revealedFrame = revealKernel.apply(
+        let blackoutStartedAt = firstWaveDuration
+        let saveRevealStartedAt = blackoutStartedAt + blackoutWaveDuration
+        let output: CIImage?
+        let isComplete: Bool
+
+        if elapsed < blackoutStartedAt {
+            let progress = clampedProgress(elapsed / firstWaveDuration)
+            let envelope = temporalEnvelope(for: progress)
+            output = renderFirstWave(
+                source: source,
                 extent: extent,
-                arguments: [
-                    source,
-                    destination,
-                    CIVector(x: center.x, y: center.y),
-                    NSNumber(value: Double(secondRadius)),
-                    NSNumber(value: Double(
-                        OnboardingActionButtonTiming.revealHalfWidth * pixelScale)),
-                ])?.cropped(to: extent),
-            let displacedFrame = waveKernel.apply(
+                center: actionButtonCenter,
+                radius: max(1, CGFloat(progress) * firstTravelDistance),
+                halfWidth: firstHalfWidth,
+                displacement:
+                    OnboardingActionButtonTiming.firstMaximumDisplacement
+                        * pixelScale
+                        * envelope,
+                lightingStrength:
+                    OnboardingActionButtonTiming.firstWaveLightingStrength
+                        * envelope)
+            isComplete = false
+        } else if elapsed < saveRevealStartedAt {
+            let progress = clampedProgress(
+                (elapsed - blackoutStartedAt) / blackoutWaveDuration)
+            let envelope = temporalEnvelope(for: progress)
+            output = renderBlackoutWave(
+                source: source,
                 extent: extent,
-                roiCallback: { _, rect in
-                    rect.insetBy(dx: -roiPadding, dy: -roiPadding)
-                },
-                image: revealedFrame.clampedToExtent(),
-                arguments: [
-                    CIVector(x: center.x, y: center.y),
-                    NSNumber(value: Double(firstRadius)),
-                    NSNumber(value: Double(firstHalfWidth)),
-                    NSNumber(value: Double(firstDisplacement)),
-                    NSNumber(value: Double(secondRadius)),
-                    NSNumber(value: Double(secondHalfWidth)),
-                    NSNumber(value: Double(secondDisplacement)),
-                ])?.cropped(to: extent),
-            let output = lightingKernel.apply(
+                center: linkCenter,
+                halfSize: linkHalfSize,
+                cornerRadius: linkCornerRadius,
+                radius: max(1, CGFloat(progress) * blackoutTravelDistance),
+                waveHalfWidth: blackoutHalfWidth,
+                revealHalfWidth: blackoutRevealHalfWidth,
+                displacement:
+                    OnboardingActionButtonTiming.blackoutMaximumDisplacement
+                        * pixelScale
+                        * envelope)
+            isComplete = false
+        } else {
+            let progress = clampedProgress(
+                (elapsed - saveRevealStartedAt) / saveRevealWaveDuration)
+            output = renderSaveRevealWave(
+                source: source,
+                destination: destination,
                 extent: extent,
-                arguments: [
-                    displacedFrame,
-                    CIVector(x: center.x, y: center.y),
-                    NSNumber(value: Double(firstRadius)),
-                    NSNumber(value: Double(firstHalfWidth)),
-                    NSNumber(value: Double(
-                        OnboardingActionButtonTiming.firstWaveLightingStrength
-                            * firstEnvelope)),
-                ])?.cropped(to: extent),
-            let rendered = context.createCGImage(output, from: extent)
+                linkCenter: linkCenter,
+                linkHalfSize: linkHalfSize,
+                linkCornerRadius: linkCornerRadius,
+                blackoutRadius: blackoutTravelDistance,
+                blackoutHalfWidth: blackoutRevealHalfWidth,
+                revealRadius: max(
+                    1,
+                    CGFloat(progress) * saveRevealTravelDistance),
+                revealHalfWidth: saveCrossfadeHalfWidth,
+                waveHalfWidth: saveRevealHalfWidth,
+                displacement:
+                    OnboardingActionButtonTiming.saveRevealMaximumDisplacement
+                        * pixelScale
+                        * temporalEnvelope(for: progress))
+            isComplete = progress >= 1
+        }
+
+        guard let output,
+              let rendered = context.createCGImage(output, from: extent)
         else {
             finish()
             return
         }
         overlay.image = UIImage(
             cgImage: rendered, scale: pixelScale, orientation: .up)
-        if firstProgress >= 1, secondProgress >= 1 { finish() }
+        if isComplete { finish() }
+    }
+
+    private func renderFirstWave(
+        source: CIImage,
+        extent: CGRect,
+        center: CGPoint,
+        radius: CGFloat,
+        halfWidth: CGFloat,
+        displacement: CGFloat,
+        lightingStrength: CGFloat
+    ) -> CIImage? {
+        guard let displaced = radialDisplacement(
+            image: source,
+            extent: extent,
+            center: center,
+            radius: radius,
+            halfWidth: halfWidth,
+            displacement: displacement),
+            let lightingKernel = Self.lightingKernel
+        else { return nil }
+        return lightingKernel.apply(
+            extent: extent,
+            arguments: [
+                displaced,
+                CIVector(x: center.x, y: center.y),
+                NSNumber(value: Double(radius)),
+                NSNumber(value: Double(halfWidth)),
+                NSNumber(value: Double(lightingStrength)),
+            ])?.cropped(to: extent)
+    }
+
+    private func renderBlackoutWave(
+        source: CIImage,
+        extent: CGRect,
+        center: CGPoint,
+        halfSize: CGSize,
+        cornerRadius: CGFloat,
+        radius: CGFloat,
+        waveHalfWidth: CGFloat,
+        revealHalfWidth: CGFloat,
+        displacement: CGFloat
+    ) -> CIImage? {
+        guard let roundedRectWaveKernel = Self.roundedRectWaveKernel,
+              let blackoutKernel = Self.blackoutKernel,
+              let displaced = roundedRectWaveKernel.apply(
+                extent: extent,
+                roiCallback: { _, rect in
+                    rect.insetBy(
+                        dx: -(abs(displacement) + 2),
+                        dy: -(abs(displacement) + 2))
+                },
+                image: source.clampedToExtent(),
+                arguments: [
+                    CIVector(x: center.x, y: center.y),
+                    CIVector(x: halfSize.width, y: halfSize.height),
+                    NSNumber(value: Double(cornerRadius)),
+                    NSNumber(value: Double(radius)),
+                    NSNumber(value: Double(waveHalfWidth)),
+                    NSNumber(value: Double(displacement)),
+                ])?.cropped(to: extent)
+        else { return nil }
+        return blackoutKernel.apply(
+            extent: extent,
+            arguments: [
+                displaced,
+                source,
+                CIVector(x: center.x, y: center.y),
+                CIVector(x: halfSize.width, y: halfSize.height),
+                NSNumber(value: Double(cornerRadius)),
+                NSNumber(value: Double(radius)),
+                NSNumber(value: Double(revealHalfWidth)),
+            ])?.cropped(to: extent)
+    }
+
+    private func renderSaveRevealWave(
+        source: CIImage,
+        destination: CIImage,
+        extent: CGRect,
+        linkCenter: CGPoint,
+        linkHalfSize: CGSize,
+        linkCornerRadius: CGFloat,
+        blackoutRadius: CGFloat,
+        blackoutHalfWidth: CGFloat,
+        revealRadius: CGFloat,
+        revealHalfWidth: CGFloat,
+        waveHalfWidth: CGFloat,
+        displacement: CGFloat
+    ) -> CIImage? {
+        guard let blackoutKernel = Self.blackoutKernel,
+              let revealKernel = Self.revealKernel,
+              let blackenedSource = blackoutKernel.apply(
+                extent: extent,
+                arguments: [
+                    source,
+                    source,
+                    CIVector(x: linkCenter.x, y: linkCenter.y),
+                    CIVector(
+                        x: linkHalfSize.width,
+                        y: linkHalfSize.height),
+                    NSNumber(value: Double(linkCornerRadius)),
+                    NSNumber(value: Double(blackoutRadius)),
+                    NSNumber(value: Double(blackoutHalfWidth)),
+                ])?.cropped(to: extent),
+              let revealed = revealKernel.apply(
+                extent: extent,
+                arguments: [
+                    blackenedSource,
+                    destination,
+                    CIVector(x: linkCenter.x, y: linkCenter.y),
+                    NSNumber(value: Double(revealRadius)),
+                    NSNumber(value: Double(revealHalfWidth)),
+                ])?.cropped(to: extent)
+        else { return nil }
+        return radialDisplacement(
+            image: revealed,
+            extent: extent,
+            center: linkCenter,
+            radius: revealRadius,
+            halfWidth: waveHalfWidth,
+            displacement: displacement)
+    }
+
+    private func radialDisplacement(
+        image: CIImage,
+        extent: CGRect,
+        center: CGPoint,
+        radius: CGFloat,
+        halfWidth: CGFloat,
+        displacement: CGFloat
+    ) -> CIImage? {
+        Self.radialWaveKernel?.apply(
+            extent: extent,
+            roiCallback: { _, rect in
+                rect.insetBy(
+                    dx: -(abs(displacement) + 2),
+                    dy: -(abs(displacement) + 2))
+            },
+            image: image.clampedToExtent(),
+            arguments: [
+                CIVector(x: center.x, y: center.y),
+                NSNumber(value: Double(radius)),
+                NSNumber(value: Double(halfWidth)),
+                NSNumber(value: Double(displacement)),
+            ])?.cropped(to: extent)
+    }
+
+    private func radialTravelDistance(
+        from center: CGPoint,
+        through extent: CGRect,
+        padding: CGFloat
+    ) -> CGFloat {
+        let farthestCorner = [
+            hypot(center.x - extent.minX, center.y - extent.minY),
+            hypot(center.x - extent.maxX, center.y - extent.minY),
+            hypot(center.x - extent.minX, center.y - extent.maxY),
+            hypot(center.x - extent.maxX, center.y - extent.maxY),
+        ].max() ?? extent.width
+        return farthestCorner + padding
+    }
+
+    private func roundedRectTravelDistance(
+        from center: CGPoint,
+        halfSize: CGSize,
+        cornerRadius: CGFloat,
+        through extent: CGRect,
+        padding: CGFloat
+    ) -> CGFloat {
+        let innerHalfSize = CGSize(
+            width: max(halfSize.width - cornerRadius, 0),
+            height: max(halfSize.height - cornerRadius, 0))
+        let corners = [
+            CGPoint(x: extent.minX, y: extent.minY),
+            CGPoint(x: extent.maxX, y: extent.minY),
+            CGPoint(x: extent.minX, y: extent.maxY),
+            CGPoint(x: extent.maxX, y: extent.maxY),
+        ]
+        let farthestCorner = corners.map { point in
+            let dx = max(abs(point.x - center.x) - innerHalfSize.width, 0)
+            let dy = max(abs(point.y - center.y) - innerHalfSize.height, 0)
+            return max(hypot(dx, dy) - cornerRadius, 0)
+        }.max() ?? extent.width
+        return farthestCorner + padding
+    }
+
+    private func clampedProgress(_ progress: CFTimeInterval) -> CFTimeInterval {
+        min(max(progress, 0), 1)
     }
 
     private func temporalEnvelope(for progress: CFTimeInterval) -> CGFloat {

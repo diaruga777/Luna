@@ -163,6 +163,14 @@ final class SafariReplicaViewController:
 
     override var isURLHighlighted: Bool { browserBar.isURLHighlighted }
 
+    override var highlightedLinkRegion: OnboardingHighlightedLinkRegion? {
+        guard isViewLoaded else { return nil }
+        let browserRegion = browserBar.highlightedURLRegion
+        return OnboardingHighlightedLinkRegion(
+            frame: view.convert(browserRegion.frame, from: browserBar),
+            cornerRadius: browserRegion.cornerRadius)
+    }
+
     func showSafariPrompt() {
         setInstruction(
             title: "Press the Action Button to save\n\(onboardingConfiguration.saveBenefit)",

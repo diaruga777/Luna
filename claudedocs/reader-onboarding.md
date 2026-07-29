@@ -90,23 +90,26 @@ The root uses the production `CardCarouselViewController`:
    physical Action Button screen edge and smoothly retracts, matching the
    system's on-screen press silhouette. Its system-scale footprint is 7 points
    deep by 120 points tall and is centered on the Action Button's physical
-   position. The bulge reaches its full size before any screen distortion
-   begins. As it starts retracting, a custom Core Image warp sends a thick,
-   pronounced displacement-only annular wavefront through the source pixels.
-   Once that first wave reaches halfway across the display width, a second wave
-   begins behind it and replaces the mock source with the saved-card snapshot.
-   The first wave has the longer wavelength; both stay concentrated at their
-   moving wavefronts instead of bending every pixel inside one growing
-   `CIBumpDistortion` radius.
-5. Before Safari opens, onboarding installs the target's temporary save and
+   position. The bulge and a custom Core Image warp begin together. This first,
+   thick wave is displacement-only: it passes through the source pixels without
+   replacing them, and finishes before the next phase starts.
+5. A second wave then expands from the rounded outside boundary of the
+   highlighted Safari URL bar or iMessage link bubble. It turns every pixel
+   outside that boundary black while preserving the highlighted link itself.
+   After the screen is black except for that link, a third wave expands from
+   the link's center and transforms the complete frame into the saved-card
+   snapshot. All three effects stay concentrated at their moving wavefronts
+   instead of bending every pixel inside one growing `CIBumpDistortion` radius.
+6. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
-   `AppOnboardingCompletion`. As the second wave advances, its wavefront
-   crossfades either mock source into that root carousel's exact centered card
-   state; the live hierarchy is committed under the final composited frame.
+   `AppOnboardingCompletion`. As the third wave advances, its wavefront
+   crossfades the isolated highlighted link and black frame into that root
+   carousel's exact centered card state; the live hierarchy is committed under
+   the final composited frame.
    Reader, Downloader, Price Tracker, and central Luna therefore show their
    ordinary saved-card UI, chrome, scrubber, controls, and placement—not an
    onboarding remake or a Safari view clipped smaller.
-6. The initial demonstration completes one whole **Safari → saved card →
+7. The initial demonstration completes one whole **Safari → saved card →
    iMessage → saved card** loop before showing setup. The final saved card then
    remains completely unobscured for 1.35 seconds. The window-filling near-black
    setup overlay eases its scrim in and follows with a subtly rising content
@@ -114,17 +117,18 @@ The root uses the production `CardCarouselViewController`:
    alternating Safari and iMessage, pausing briefly on each source and replaying
    the complete Action Button press + wave + saved-card transformation. At the
    start of each press, the source URL gains a bright app-tint highlight. That
-   highlight persists in the source pixels until the wavefront replaces them
-   with the saved view; it is cleared only when the source is prepared for its
-   next appearance. The loop pauses during external hops and resumes behind
-   each updated instruction stage. The overlay offers Safari setup, then the
+   highlighted element survives the blackout wave and remains visible until the
+   third wave replaces it with the saved view; it is cleared only when the
+   source is prepared for its next appearance. The loop pauses during external
+   hops and resumes behind each updated instruction stage. The overlay offers
+   Safari setup, then the
    same `BundledShortcut` installer and
    `SystemSettingsLink.openActionButton()` paths used elsewhere; existing Safari
    and Action Button PiP guides play during those hops.
-7. After Settings return, a real App Intent invocation completes the flow
+8. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
-8. Completion stops the loop and, unless it is already there, shrinks to the
+9. Completion stops the loop and, unless it is already there, shrinks to the
    card once more. The real save and production root are already present, so it
    marks onboarding complete and crossfades the stationary production card into
    the fresh completed root—no eclipse or second geometry change. The payload

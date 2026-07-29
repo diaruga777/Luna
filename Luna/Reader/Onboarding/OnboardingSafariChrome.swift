@@ -131,6 +131,12 @@ final class SafariBottomBar: UIView {
 
     var isURLHighlighted: Bool { urlHighlight.isHighlighted }
 
+    var highlightedURLRegion: OnboardingHighlightedLinkRegion {
+        OnboardingHighlightedLinkRegion(
+            frame: address.frame,
+            cornerRadius: address.bounds.height / 2)
+    }
+
     private func icon(_ symbol: String, alpha: CGFloat) -> UIImageView {
         let view = UIImageView(image: UIImage(
             systemName: symbol,

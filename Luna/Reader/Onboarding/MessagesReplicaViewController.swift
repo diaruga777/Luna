@@ -49,6 +49,13 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
 
     override var isURLHighlighted: Bool { urlBubble.isURLHighlighted }
 
+    override var highlightedLinkRegion: OnboardingHighlightedLinkRegion? {
+        guard isViewLoaded else { return nil }
+        return OnboardingHighlightedLinkRegion(
+            frame: view.convert(urlBubble.bounds, from: urlBubble),
+            cornerRadius: urlBubble.layer.cornerRadius)
+    }
+
     private func configureHeader() {
         let header = UIView()
         header.translatesAutoresizingMaskIntoConstraints = false

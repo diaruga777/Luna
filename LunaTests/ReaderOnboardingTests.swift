@@ -183,7 +183,12 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertLessThan(
             OnboardingActionButtonTiming.firstWaveDuration,
             1.18)
-        XCTAssertLessThan(OnboardingActionButtonTiming.waveDuration, 1.18)
+        XCTAssertLessThan(
+            OnboardingActionButtonTiming.blackoutWaveDuration,
+            1.18)
+        XCTAssertLessThan(
+            OnboardingActionButtonTiming.saveRevealWaveDuration,
+            1.18)
         XCTAssertGreaterThan(OnboardingDemoLoopTiming.geometryDuration, 0.45)
         XCTAssertLessThan(OnboardingDemoLoopTiming.geometryDuration, 0.70)
         XCTAssertGreaterThan(
@@ -193,38 +198,32 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingDemoLoopTiming.firstLoopSavedCardHoldDuration,
             OnboardingDemoLoopTiming.savedCardHoldDuration)
         XCTAssertGreaterThanOrEqual(
-            OnboardingActionButtonTiming.wavefrontHalfWidth,
+            OnboardingActionButtonTiming.blackoutWavefrontHalfWidth,
             28)
         XCTAssertGreaterThan(
             OnboardingActionButtonTiming.firstWavefrontHalfWidth,
-            OnboardingActionButtonTiming.wavefrontHalfWidth)
+            OnboardingActionButtonTiming.blackoutWavefrontHalfWidth)
         XCTAssertGreaterThan(
             OnboardingActionButtonTiming.firstMaximumDisplacement,
-            OnboardingActionButtonTiming.maximumDisplacement)
+            OnboardingActionButtonTiming.blackoutMaximumDisplacement)
         XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.firstWaveLightingStrength,
             0.18)
         XCTAssertGreaterThanOrEqual(
-            OnboardingActionButtonTiming.maximumDisplacement,
+            OnboardingActionButtonTiming.blackoutMaximumDisplacement,
+            22)
+        XCTAssertGreaterThanOrEqual(
+            OnboardingActionButtonTiming.saveRevealMaximumDisplacement,
             24)
         XCTAssertLessThan(
-            OnboardingActionButtonTiming.revealHalfWidth,
-            OnboardingActionButtonTiming.wavefrontHalfWidth)
+            OnboardingActionButtonTiming.blackoutRevealHalfWidth,
+            OnboardingActionButtonTiming.blackoutWavefrontHalfWidth)
+        XCTAssertLessThan(
+            OnboardingActionButtonTiming.saveRevealHalfWidth,
+            OnboardingActionButtonTiming.saveRevealWavefrontHalfWidth)
         XCTAssertLessThanOrEqual(
             OnboardingActionButtonTiming.waveRasterScale,
             2)
-        XCTAssertEqual(
-            OnboardingActionButtonTiming.secondWaveStartProgress(
-                screenWidth: 400,
-                firstTravelDistance: 800),
-            0.25,
-            accuracy: 0.001)
-        XCTAssertGreaterThan(
-            OnboardingActionButtonTiming.pressRecessionStartFraction,
-            0.3)
-        XCTAssertLessThan(
-            OnboardingActionButtonTiming.pressRecessionStartFraction,
-            0.5)
         XCTAssertLessThanOrEqual(
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
@@ -278,13 +277,18 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testSafariAndMessagesShareTheSamePersistentURLHighlightState() {
+    func testSafariAndMessagesShareTheSamePersistentURLHighlightState() throws {
         let configuration = OnboardingSurfaceConfiguration.configuration(for: .reader)
         let safari = SafariReplicaViewController(configuration: configuration)
         safari.loadViewIfNeeded()
         let messages = MessagesReplicaViewController(
             urlString: safari.sharedURLString)
         messages.loadViewIfNeeded()
+        let frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        safari.view.frame = frame
+        messages.view.frame = frame
+        safari.view.layoutIfNeeded()
+        messages.view.layoutIfNeeded()
 
         XCTAssertEqual(messages.sharedURLString, safari.sharedURLString)
         XCTAssertFalse(safari.isURLHighlighted)
@@ -294,6 +298,16 @@ final class ReaderOnboardingTests: XCTestCase {
         messages.setURLHighlighted(true)
         XCTAssertTrue(safari.isURLHighlighted)
         XCTAssertTrue(messages.isURLHighlighted)
+
+        let safariRegion = try XCTUnwrap(safari.highlightedLinkRegion)
+        XCTAssertEqual(safariRegion.frame.height, 46, accuracy: 0.001)
+        XCTAssertEqual(safariRegion.cornerRadius, 23, accuracy: 0.001)
+        XCTAssertTrue(frame.contains(safariRegion.frame))
+
+        let messagesRegion = try XCTUnwrap(messages.highlightedLinkRegion)
+        XCTAssertEqual(messagesRegion.frame.width, 280, accuracy: 0.001)
+        XCTAssertEqual(messagesRegion.cornerRadius, 18, accuracy: 0.001)
+        XCTAssertTrue(frame.contains(messagesRegion.frame))
 
         safari.prepareForPresentation()
         messages.prepareForPresentation()

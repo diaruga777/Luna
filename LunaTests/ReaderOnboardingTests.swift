@@ -316,9 +316,14 @@ final class ReaderOnboardingTests: XCTestCase {
         let cue = ActionButtonPressCue()
         cue.layout(in: window)
 
-        XCTAssertEqual(cue.bounds.width, 30, accuracy: 0.001)
-        XCTAssertEqual(cue.bounds.height, 252, accuracy: 0.001)
+        XCTAssertEqual(cue.bounds.width, 7, accuracy: 0.001)
+        XCTAssertEqual(cue.bounds.height, 120, accuracy: 0.001)
         XCTAssertEqual(cue.layer.position.x, 0, accuracy: 0.001)
+        XCTAssertEqual(
+            cue.layer.position.y,
+            window.safeAreaInsets.top
+                + OnboardingActionButtonTiming.actionButtonCenterBelowSafeArea,
+            accuracy: 0.001)
         XCTAssertEqual(cue.layer.anchorPoint.x, 0, accuracy: 0.001)
         XCTAssertTrue(cue.subviews.isEmpty, "The edge silhouette is rendered entirely with layers")
         XCTAssertEqual(cue.layer.sublayers?.count, 1)

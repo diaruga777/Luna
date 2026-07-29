@@ -13,6 +13,10 @@ enum OnboardingActionButtonTiming {
     static let pressRecessionStartFraction: Double = 0.42
     static let firstWaveDuration: CFTimeInterval = 0.82
     static let waveDuration: CFTimeInterval = 0.74
+    /// Matches the small bezel intrusion of the system button-press response.
+    static let pressCueSize = CGSize(width: 7, height: 120)
+    /// Centers the cue on the iPhone 17 Pro Action Button's physical position.
+    static let actionButtonCenterBelowSafeArea: CGFloat = 129
     /// The displacement-only wave has the longer wavelength.
     static let firstWavefrontHalfWidth: CGFloat = 46
     static let firstMaximumDisplacement: CGFloat = 30
@@ -167,11 +171,12 @@ final class ActionButtonPressCue: UIView {
     }
 
     func layout(in window: UIWindow) {
-        let size = CGSize(width: 30, height: 252)
+        let size = OnboardingActionButtonTiming.pressCueSize
         bounds = CGRect(origin: .zero, size: size)
         layer.position = CGPoint(
             x: 0,
-            y: window.safeAreaInsets.top + 46 + size.height / 2)
+            y: window.safeAreaInsets.top
+                + OnboardingActionButtonTiming.actionButtonCenterBelowSafeArea)
         setNeedsLayout()
         layoutIfNeeded()
     }

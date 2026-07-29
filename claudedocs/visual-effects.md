@@ -106,14 +106,15 @@ its content into the local Safari facsimile. The second source is a mock
 iMessage thread with Johnny Appleseed: earlier messages in both directions are
 grey gradient blocks and the newest incoming bubble contains Safari's current
 mock URL. A tall solid-black deformation first stretches from the screen edge
-into the same long, flat-sided bulge as the system Action Button response. As
-the bulge retracts, a thick displacement-only wave begins. A second wave starts
-when the first reaches halfway across the display and crossfades either source
-into the target app's complete production root at its exact centered card
-state, including its normal card chrome and carousel. The first wave has the
-longer wavelength. At the press, the visible URL gains a bright wash of the
-current app tint and stays highlighted until the second wave replaces those
-pixels. The live hierarchy is committed beneath the final composited frame.
+into the same narrow, flat-sided bulge as the system Action Button response,
+centered at the button's physical height. As the bulge retracts, a thick
+displacement-only wave begins. A second wave starts when the first reaches
+halfway across the display and crossfades either source into the target app's
+complete production root at its exact centered card state, including its normal
+card chrome and carousel. The first wave has the longer wavelength. At the
+press, the visible URL gains a bright wash of the current app tint and stays
+highlighted until the second wave replaces those pixels. The live hierarchy is
+committed beneath the final composited frame.
 The first Safari → save → iMessage → save loop completes before the final saved
 state remains clear for a reading beat and the instruction scrim/content fade
 appear separately. Later loops keep the same alternation behind the overlay and

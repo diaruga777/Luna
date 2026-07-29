@@ -88,14 +88,16 @@ The root uses the production `CardCarouselViewController`:
    message and carries the exact URL currently shown by Safari.
 4. A solid-black, tall rounded deformation stretches continuously out of the
    physical Action Button screen edge and smoothly retracts, matching the
-   system's on-screen press silhouette. The bulge reaches its full 252-point
-   height before any screen distortion begins. As it starts retracting, a
-   custom Core Image warp sends a thick, pronounced displacement-only annular
-   wavefront through the source pixels. Once that first wave reaches halfway
-   across the display width, a second wave begins behind it and replaces the
-   mock source with the saved-card snapshot. The first wave has the longer
-   wavelength; both stay concentrated at their moving wavefronts instead of
-   bending every pixel inside one growing `CIBumpDistortion` radius.
+   system's on-screen press silhouette. Its system-scale footprint is 7 points
+   deep by 120 points tall and is centered on the Action Button's physical
+   position. The bulge reaches its full size before any screen distortion
+   begins. As it starts retracting, a custom Core Image warp sends a thick,
+   pronounced displacement-only annular wavefront through the source pixels.
+   Once that first wave reaches halfway across the display width, a second wave
+   begins behind it and replaces the mock source with the saved-card snapshot.
+   The first wave has the longer wavelength; both stay concentrated at their
+   moving wavefronts instead of bending every pixel inside one growing
+   `CIBumpDistortion` radius.
 5. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
    `AppOnboardingCompletion`. As the second wave advances, its wavefront

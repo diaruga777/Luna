@@ -50,11 +50,16 @@ public final class AppReaderShareProvider: ReaderShareProviding {
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) -> [ReaderShareSheet.Row]? {
         let item = ReadingListStore.shared.item(forURLString: urlString)
-        // File export is for readable articles/documents only — never media posts.
+        // File export is for readable articles/documents only — never media posts,
+        // and only once the text is actually extracted: a pending, failed or
+        // still-locked save has nothing any format could carry, so offering the
+        // formats there would lead to a "Couldn't Export Article" alert every
+        // time. `state` is the cheap signal — reading the content back to check
+        // would decode the whole article just to build a menu.
         let isArticle = item.map { !$0.isPlatformItem } ?? false
         if let item, isArticle, !item.isShareable { return nil }
         return ReaderShareSheet.rows(
-            includeExport: isArticle,
+            includeExport: isArticle && item?.state == .ready,
             onPickFriend: { [weak presenter] in
                 guard let presenter else { return }
                 SendToFriendSheet.present(

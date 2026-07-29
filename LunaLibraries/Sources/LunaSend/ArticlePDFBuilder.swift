@@ -186,9 +186,14 @@ public struct ArticlePDFBuilder {
 
     // MARK: - Styles
 
+    /// `lineHeightMultiple` is for prose only. Applying it to the figure style
+    /// would inflate the image's line fragment by 20% — TextKit puts the extra
+    /// height ABOVE the baseline, so the image gets a fat gap over it and can be
+    /// bumped to the next page while a fifth of the current one sits empty.
     private static func paragraphStyle(
         spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 10,
-        indent: CGFloat = 0, alignment: NSTextAlignment = .natural
+        indent: CGFloat = 0, alignment: NSTextAlignment = .natural,
+        lineHeightMultiple: CGFloat = 1.2
     ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.paragraphSpacingBefore = spacingBefore
@@ -196,7 +201,7 @@ public struct ArticlePDFBuilder {
         style.firstLineHeadIndent = indent
         style.headIndent = indent
         style.alignment = alignment
-        style.lineHeightMultiple = 1.2
+        style.lineHeightMultiple = lineHeightMultiple
         return style
     }
 
@@ -248,6 +253,7 @@ public struct ArticlePDFBuilder {
     private static let figure: [NSAttributedString.Key: Any] = [
         .font: UIFont.systemFont(ofSize: 12),
         .foregroundColor: ink,
-        .paragraphStyle: paragraphStyle(spacingBefore: 6, spacingAfter: 12, alignment: .center),
+        .paragraphStyle: paragraphStyle(
+            spacingBefore: 6, spacingAfter: 12, alignment: .center, lineHeightMultiple: 1),
     ]
 }

@@ -101,17 +101,17 @@ The root uses the production `CardCarouselViewController`:
    position. The bulge and a custom Core Image warp begin together. This first,
    thick wave is displacement-only: it passes through the source pixels without
    replacing them, and finishes before the next phase starts.
-5. A second wave then expands from the rounded outside boundary of the
-   highlighted Safari URL bar or iMessage link bubble. It turns every pixel
-   outside that boundary black while preserving the highlighted link itself.
-   After the screen is black except for that link, a third wave expands from
-   the link's center and transforms the complete frame into the saved-card
-   snapshot. All three effects stay concentrated at their moving wavefronts
-   instead of bending every pixel inside one growing `CIBumpDistortion` radius.
+5. A second wave then creeps in from the display edges, closing in on the
+   rounded boundary of the highlighted Safari URL bar or iMessage link bubble.
+   Every pixel behind its inward-travelling front turns black while the
+   highlighted link itself is preserved, until only that link is visible on
+   black. Both waves stay concentrated at their moving wavefronts instead of
+   bending every pixel inside one growing `CIBumpDistortion` radius. There is
+   no third wave: the isolated-link frame then simply crossfades, uniformly
+   across the whole screen, into the saved-card snapshot.
 6. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
-   `AppOnboardingCompletion`. As the third wave advances, its wavefront
-   crossfades the isolated highlighted link and black frame into that root
+   `AppOnboardingCompletion`. The final crossfade lands on that root
    carousel's exact centered card state; the live hierarchy is committed under
    the final composited frame.
    Reader, Downloader, Price Tracker, and central Luna therefore show their
@@ -125,8 +125,8 @@ The root uses the production `CardCarouselViewController`:
    alternating Safari and iMessage, pausing briefly on each source and replaying
    the complete Action Button press + wave + saved-card transformation. At the
    start of each press, the source URL gains a bright app-tint highlight. That
-   highlighted element survives the blackout wave and remains visible until the
-   third wave replaces it with the saved view; it is cleared only when the
+   highlighted element survives the blackout wave and remains visible until
+   the crossfade replaces it with the saved view; it is cleared only when the
    source is prepared for its next appearance. The loop pauses during external
    hops and resumes behind each updated instruction stage. The overlay offers
    Safari setup, then the

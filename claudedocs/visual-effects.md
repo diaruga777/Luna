@@ -116,13 +116,13 @@ mock URL. A tall solid-black deformation first stretches from the screen edge
 into the same narrow, flat-sided bulge as the system Action Button response,
 centered at the button's physical height. The bulge and the first, thick
 displacement-only wave begin simultaneously; that wave finishes without
-replacing any content. A second wave then expands from the outside boundary of
-the highlighted Safari URL bar or iMessage link bubble, turning the rest of the
-screen black while leaving that element visible. Once it finishes, a third wave
-expands from the highlighted element's center and crossfades the black frame
-into the target app's complete production root at its exact centered card
-state, including its normal card chrome and carousel. The live hierarchy is
-committed beneath the final composited frame.
+replacing any content. A second wave then creeps in from the display edges,
+closing in on the highlighted Safari URL bar or iMessage link bubble and
+turning everything behind its inward front black while leaving that element
+visible. Once it finishes, there is no third wave: the whole isolated-link
+frame simply crossfades into the target app's complete production root at its
+exact centered card state, including its normal card chrome and carousel. The
+live hierarchy is committed beneath the final composited frame.
 The first Safari → save → iMessage → save loop completes before the final saved
 state remains clear for a reading beat and the instruction scrim/content fade
 appear separately. Later loops keep the same alternation behind the overlay and

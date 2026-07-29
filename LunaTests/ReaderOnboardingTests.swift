@@ -187,8 +187,9 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingActionButtonTiming.blackoutWaveDuration,
             1.18)
         XCTAssertLessThan(
-            OnboardingActionButtonTiming.saveRevealWaveDuration,
-            1.18)
+            OnboardingActionButtonTiming.saveCrossfadeDuration,
+            OnboardingActionButtonTiming.blackoutWaveDuration,
+            "The final crossfade is deliberately simpler and quicker than the waves")
         XCTAssertGreaterThan(OnboardingDemoLoopTiming.geometryDuration, 0.45)
         XCTAssertLessThan(OnboardingDemoLoopTiming.geometryDuration, 0.70)
         XCTAssertGreaterThan(
@@ -212,15 +213,9 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.blackoutMaximumDisplacement,
             22)
-        XCTAssertGreaterThanOrEqual(
-            OnboardingActionButtonTiming.saveRevealMaximumDisplacement,
-            24)
         XCTAssertLessThan(
             OnboardingActionButtonTiming.blackoutRevealHalfWidth,
             OnboardingActionButtonTiming.blackoutWavefrontHalfWidth)
-        XCTAssertLessThan(
-            OnboardingActionButtonTiming.saveRevealHalfWidth,
-            OnboardingActionButtonTiming.saveRevealWavefrontHalfWidth)
         XCTAssertLessThanOrEqual(
             OnboardingActionButtonTiming.waveRasterScale,
             2)

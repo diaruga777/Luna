@@ -10,7 +10,7 @@ enum OnboardingActionButtonTiming {
     static let pressDuration: TimeInterval = 0.68
     static let firstWaveDuration: CFTimeInterval = 0.82
     static let blackoutWaveDuration: CFTimeInterval = 0.72
-    static let saveRevealWaveDuration: CFTimeInterval = 0.74
+    static let saveCrossfadeDuration: CFTimeInterval = 0.52
     /// Matches the small bezel intrusion of the system button-press response.
     static let pressCueSize = CGSize(width: 7, height: 120)
     /// Centers the cue on the iPhone 17 Pro Action Button's physical position.
@@ -19,16 +19,12 @@ enum OnboardingActionButtonTiming {
     static let firstWavefrontHalfWidth: CGFloat = 46
     static let firstMaximumDisplacement: CGFloat = 30
     static let firstWaveLightingStrength: CGFloat = 0.20
-    /// The second wave starts at the highlighted link's outside edge and
-    /// replaces only the pixels beyond it with black.
+    /// The second wave sweeps in from the display edges, blackening every
+    /// pixel behind its inward-travelling front until only the highlighted
+    /// link is left visible on black.
     static let blackoutWavefrontHalfWidth: CGFloat = 30
     static let blackoutMaximumDisplacement: CGFloat = 24
     static let blackoutRevealHalfWidth: CGFloat = 12
-    /// The third wave starts at the highlighted link's center and converts the
-    /// isolated link plus its black surroundings into the saved-card screen.
-    static let saveRevealWavefrontHalfWidth: CGFloat = 30
-    static let saveRevealMaximumDisplacement: CGFloat = 26
-    static let saveRevealHalfWidth: CGFloat = 14
     /// A transient motion raster; lower than the 3× display scale so Core Image
     /// can sustain a smooth wave instead of presenting only a few heavy frames.
     static let waveRasterScale: CGFloat = 1.5
@@ -228,9 +224,10 @@ final class ActionButtonPressCue: UIView {
     }
 }
 
-/// A three-stage Core Image transition: an in-place Action Button ripple, a
-/// rounded wave that isolates the highlighted link against black, then a
-/// center-origin wave that reveals the saved-card screen.
+/// A three-beat Core Image transition: an in-place Action Button ripple, a
+/// rounded wave that closes in from the display edges to isolate the
+/// highlighted link against black, then a plain crossfade into the saved-card
+/// screen.
 @MainActor
 final class LiquidScreenWaveAnimator {
     private static let radialWaveKernel = CIWarpKernel(source: """
@@ -285,7 +282,7 @@ final class LiquidScreenWaveAnimator {
             float signedDistance = length(nearestDelta) - cornerRadius;
             float outside = smoothstep(-1.0, 1.0, signedDistance);
             float outsideDistance = max(signedDistance, 0.0);
-            float coverage = 1.0 - smoothstep(
+            float coverage = smoothstep(
                 radius - halfWidth, radius + halfWidth, outsideDistance);
             vec4 blackened = mix(
                 displaced, vec4(0.0, 0.0, 0.0, 1.0), coverage);
@@ -293,15 +290,11 @@ final class LiquidScreenWaveAnimator {
         }
         """)
 
-    private static let revealKernel = CIColorKernel(source: """
-        kernel vec4 lunaWaveReveal(
-            __sample source, __sample destination,
-            vec2 center, float radius, float halfWidth
+    private static let crossfadeKernel = CIColorKernel(source: """
+        kernel vec4 lunaSaveCrossfade(
+            __sample source, __sample destination, float progress
         ) {
-            float distanceFromCenter = length(destCoord() - center);
-            float reveal = 1.0 - smoothstep(
-                radius - halfWidth, radius + halfWidth, distanceFromCenter);
-            return mix(source, destination, reveal);
+            return mix(source, destination, progress);
         }
         """)
 
@@ -343,8 +336,8 @@ final class LiquidScreenWaveAnimator {
         OnboardingActionButtonTiming.firstWaveDuration)
     private let blackoutWaveDuration = OnboardingAnimationClock.displayLinkDuration(
         OnboardingActionButtonTiming.blackoutWaveDuration)
-    private let saveRevealWaveDuration = OnboardingAnimationClock.displayLinkDuration(
-        OnboardingActionButtonTiming.saveRevealWaveDuration)
+    private let saveCrossfadeDuration = OnboardingAnimationClock.displayLinkDuration(
+        OnboardingActionButtonTiming.saveCrossfadeDuration)
 
     init(window: UIWindow, hostView: UIView) {
         self.window = window
@@ -444,10 +437,6 @@ final class LiquidScreenWaveAnimator {
             OnboardingActionButtonTiming.blackoutWavefrontHalfWidth * pixelScale
         let blackoutRevealHalfWidth =
             OnboardingActionButtonTiming.blackoutRevealHalfWidth * pixelScale
-        let saveRevealHalfWidth =
-            OnboardingActionButtonTiming.saveRevealWavefrontHalfWidth * pixelScale
-        let saveCrossfadeHalfWidth =
-            OnboardingActionButtonTiming.saveRevealHalfWidth * pixelScale
 
         let firstTravelDistance = radialTravelDistance(
             from: actionButtonCenter,
@@ -459,13 +448,9 @@ final class LiquidScreenWaveAnimator {
             cornerRadius: linkCornerRadius,
             through: extent,
             padding: max(blackoutHalfWidth, blackoutRevealHalfWidth))
-        let saveRevealTravelDistance = radialTravelDistance(
-            from: linkCenter,
-            through: extent,
-            padding: max(saveRevealHalfWidth, saveCrossfadeHalfWidth))
 
         let blackoutStartedAt = firstWaveDuration
-        let saveRevealStartedAt = blackoutStartedAt + blackoutWaveDuration
+        let crossfadeStartedAt = blackoutStartedAt + blackoutWaveDuration
         let output: CIImage?
         let isComplete: Bool
 
@@ -486,17 +471,22 @@ final class LiquidScreenWaveAnimator {
                     OnboardingActionButtonTiming.firstWaveLightingStrength
                         * envelope)
             isComplete = false
-        } else if elapsed < saveRevealStartedAt {
+        } else if elapsed < crossfadeStartedAt {
             let progress = clampedProgress(
                 (elapsed - blackoutStartedAt) / blackoutWaveDuration)
             let envelope = temporalEnvelope(for: progress)
+            // The front starts just past the display corners and finishes at
+            // -revealHalfWidth so the feathered edge fully clears the link
+            // boundary, leaving everything outside it solid black.
             output = renderBlackoutWave(
                 source: source,
                 extent: extent,
                 center: linkCenter,
                 halfSize: linkHalfSize,
                 cornerRadius: linkCornerRadius,
-                radius: max(1, CGFloat(progress) * blackoutTravelDistance),
+                radius: blackoutTravelDistance
+                    - CGFloat(progress)
+                        * (blackoutTravelDistance + blackoutRevealHalfWidth),
                 waveHalfWidth: blackoutHalfWidth,
                 revealHalfWidth: blackoutRevealHalfWidth,
                 displacement:
@@ -506,25 +496,16 @@ final class LiquidScreenWaveAnimator {
             isComplete = false
         } else {
             let progress = clampedProgress(
-                (elapsed - saveRevealStartedAt) / saveRevealWaveDuration)
-            output = renderSaveRevealWave(
+                (elapsed - crossfadeStartedAt) / saveCrossfadeDuration)
+            output = renderSaveCrossfade(
                 source: source,
                 destination: destination,
                 extent: extent,
                 linkCenter: linkCenter,
                 linkHalfSize: linkHalfSize,
                 linkCornerRadius: linkCornerRadius,
-                blackoutRadius: blackoutTravelDistance,
                 blackoutHalfWidth: blackoutRevealHalfWidth,
-                revealRadius: max(
-                    1,
-                    CGFloat(progress) * saveRevealTravelDistance),
-                revealHalfWidth: saveCrossfadeHalfWidth,
-                waveHalfWidth: saveRevealHalfWidth,
-                displacement:
-                    OnboardingActionButtonTiming.saveRevealMaximumDisplacement
-                        * pixelScale
-                        * temporalEnvelope(for: progress))
+                progress: CGFloat(progress))
             isComplete = progress >= 1
         }
 
@@ -611,22 +592,22 @@ final class LiquidScreenWaveAnimator {
             ])?.cropped(to: extent)
     }
 
-    private func renderSaveRevealWave(
+    /// The final beat: the isolated highlighted link and its black
+    /// surroundings dissolve uniformly into the saved-card screen. The
+    /// blackened frame is rebuilt at the blackout wave's exact end state
+    /// (radius parked at -halfWidth) so the crossfade picks up seamlessly.
+    private func renderSaveCrossfade(
         source: CIImage,
         destination: CIImage,
         extent: CGRect,
         linkCenter: CGPoint,
         linkHalfSize: CGSize,
         linkCornerRadius: CGFloat,
-        blackoutRadius: CGFloat,
         blackoutHalfWidth: CGFloat,
-        revealRadius: CGFloat,
-        revealHalfWidth: CGFloat,
-        waveHalfWidth: CGFloat,
-        displacement: CGFloat
+        progress: CGFloat
     ) -> CIImage? {
         guard let blackoutKernel = Self.blackoutKernel,
-              let revealKernel = Self.revealKernel,
+              let crossfadeKernel = Self.crossfadeKernel,
               let blackenedSource = blackoutKernel.apply(
                 extent: extent,
                 arguments: [
@@ -637,26 +618,18 @@ final class LiquidScreenWaveAnimator {
                         x: linkHalfSize.width,
                         y: linkHalfSize.height),
                     NSNumber(value: Double(linkCornerRadius)),
-                    NSNumber(value: Double(blackoutRadius)),
+                    NSNumber(value: Double(-blackoutHalfWidth)),
                     NSNumber(value: Double(blackoutHalfWidth)),
-                ])?.cropped(to: extent),
-              let revealed = revealKernel.apply(
-                extent: extent,
-                arguments: [
-                    blackenedSource,
-                    destination,
-                    CIVector(x: linkCenter.x, y: linkCenter.y),
-                    NSNumber(value: Double(revealRadius)),
-                    NSNumber(value: Double(revealHalfWidth)),
                 ])?.cropped(to: extent)
         else { return nil }
-        return radialDisplacement(
-            image: revealed,
+        let eased = progress * progress * (3 - 2 * progress)
+        return crossfadeKernel.apply(
             extent: extent,
-            center: linkCenter,
-            radius: revealRadius,
-            halfWidth: waveHalfWidth,
-            displacement: displacement)
+            arguments: [
+                blackenedSource,
+                destination,
+                NSNumber(value: Double(eased)),
+            ])?.cropped(to: extent)
     }
 
     private func radialDisplacement(

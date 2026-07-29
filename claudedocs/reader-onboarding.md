@@ -20,7 +20,11 @@ destination carousel for its real resting frame through
 keeps it visible for 0.10 seconds before crossfading the single splash layer
 into the fully laid-out root over 0.20 seconds. The first live frame cannot skip
 the eclipse even on a warm launch. There is no card resize or staged eclipse
-egress. On an incomplete first run only, a separate `EclipseCoronaView`
+egress. The target is told the moment the fade BEGINS
+(`appLaunchTransitionWillReveal`) — the splash and the content beneath are
+pixel-identical, so onboarding starts its first lunar reveal right then
+instead of waiting out the crossfade; `appLaunchTransitionDidFinish` still
+fires at completion. On an incomplete first run only, a separate `EclipseCoronaView`
 reconstructs the identical static peak behind the intro card, so the corona
 remains stationary and fully visible after the launch layer is discarded.
 Completed roots do not retain it.
@@ -62,7 +66,8 @@ owns its onboarding completion independently.
 
 The root uses the production `CardCarouselViewController`:
 
-1. After the launch transition settles, a completely borderless black circle
+1. The instant the launch splash begins its fade, with no settling delay, a
+   completely borderless black circle
    moves slowly down across the surface-specific first line. After a brief
    0.32-second reading beat, the same reveal plays across the second line. The
    circle is fully opaque, while
@@ -87,12 +92,14 @@ The root uses the production `CardCarouselViewController`:
    grows directly to the display edges while its contents crossfade into
    `SafariReplicaViewController`. Once it is full-screen, the hidden carousel
    prepares the saved-content slot without animating between cards. Everything
-   the demonstration needs — the temporary save, the mounted production root,
-   the saved-card wave raster, and both source replicas (hidden, so Safari's
+   the demonstration needs — the setup guide players (AVFoundation, kept off
+   the launch frame), the temporary save, the mounted production root, the
+   saved-card wave raster, and both source replicas (hidden, so Safari's
    WKWebView loads its bundled page early) — is preloaded one run-loop turn
-   after the intro reveal starts, so the button press pays only for the
-   expansion animation itself. A failed temporary-save install stays silent at
-   preload; the press retries it and surfaces the failure alert.
+   after the first appearance commits, while the static launch splash still
+   covers the screen, so the stall is invisible and the button press pays only
+   for the expansion animation itself. A failed temporary-save install stays
+   silent at preload; the press retries it and surfaces the failure alert.
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.

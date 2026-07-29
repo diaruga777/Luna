@@ -7,9 +7,9 @@ import LunaDesignSystem
 import UIKit
 
 enum OnboardingIntroTiming {
-    /// Let the launch transition settle before the first lunar reveal begins.
-    static let firstLineDelay: TimeInterval = 0.34
-    /// Both sentences use the same deliberate top-down lunar sweep.
+    /// Both sentences use the same deliberate top-down lunar sweep. The first
+    /// begins the instant `start()` is called — at the launch splash's fade
+    /// start — with no settling delay.
     static let lineRevealDuration: TimeInterval = 1.55
     /// A short reading beat keeps the two sentences distinct without making the
     /// second feel like a separate stage.
@@ -99,39 +99,34 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     func start() {
         guard !didStart else { return }
         didStart = true
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(
-                OnboardingIntroTiming.firstLineDelay)
+        view.layoutIfNeeded()
+        firstLine.reveal(
+            duration: OnboardingIntroTiming.lineRevealDuration
         ) { [weak self] in
             guard let self else { return }
-            self.firstLine.reveal(
-                duration: OnboardingIntroTiming.lineRevealDuration
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + OnboardingAnimationClock.delay(
+                    OnboardingIntroTiming.interLineDelay)
             ) { [weak self] in
                 guard let self else { return }
-                DispatchQueue.main.asyncAfter(
-                    deadline: .now() + OnboardingAnimationClock.delay(
-                        OnboardingIntroTiming.interLineDelay)
+                self.secondLine.reveal(
+                    duration: OnboardingIntroTiming.lineRevealDuration
                 ) { [weak self] in
                     guard let self else { return }
-                    self.secondLine.reveal(
-                        duration: OnboardingIntroTiming.lineRevealDuration
-                    ) { [weak self] in
-                        guard let self else { return }
-                        UIView.animate(
-                            withDuration: 0.38,
-                            delay: 0.16,
-                            options: [.curveEaseOut, .beginFromCurrentState]
-                        ) {
-                            self.supportingLabel.alpha = 1
-                            self.button.alpha = 1
-                            self.button.transform = .identity
-                        } completion: { _ in
-                            self.supportingLabel.isAccessibilityElement = true
-                            self.button.isUserInteractionEnabled = true
-                            UIAccessibility.post(
-                                notification: .layoutChanged,
-                                argument: self.supportingLabel)
-                        }
+                    UIView.animate(
+                        withDuration: 0.38,
+                        delay: 0.16,
+                        options: [.curveEaseOut, .beginFromCurrentState]
+                    ) {
+                        self.supportingLabel.alpha = 1
+                        self.button.alpha = 1
+                        self.button.transform = .identity
+                    } completion: { _ in
+                        self.supportingLabel.isAccessibilityElement = true
+                        self.button.isUserInteractionEnabled = true
+                        UIAccessibility.post(
+                            notification: .layoutChanged,
+                            argument: self.supportingLabel)
                     }
                 }
             }

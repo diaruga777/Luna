@@ -44,11 +44,17 @@ enum AppOnboardingLayout {
 protocol AppLaunchTransitionTarget: AnyObject {
     /// The resting center-card frame in window coordinates.
     func appLaunchTargetFrame(in window: UIWindow) -> CGRect?
+    /// The splash's crossfade into the live hierarchy is starting. The splash
+    /// and the content beneath it are pixel-identical, so work that should
+    /// read as immediate — the intro's first lunar reveal — starts here
+    /// rather than waiting out the fade.
+    func appLaunchTransitionWillReveal()
     func appLaunchTransitionDidFinish()
     var keepsOnboardingSlowMotionAfterLaunch: Bool { get }
 }
 
 extension AppLaunchTransitionTarget {
+    func appLaunchTransitionWillReveal() {}
     func appLaunchTransitionDidFinish() {}
     var keepsOnboardingSlowMotionAfterLaunch: Bool { false }
 }

@@ -91,6 +91,7 @@ enum AppLaunchTransition {
                 minimumVisibleDuration)
         ) {
             guard overlay.window != nil else { return }
+            target?.appLaunchTransitionWillReveal()
             UIView.animate(
                 withDuration: UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration,
                 delay: 0,

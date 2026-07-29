@@ -62,6 +62,7 @@ final class AppOnboardingViewController: UIViewController {
     private var keepsIntroCorona = true
     private var temporarySaveInstallResult: Bool?
     private var externalReturn = ExternalReturn.none
+    private var didConfigureGuides = false
     private var isDemonstrationPreloaded = false
     private var didExpandSafari = false
     private var demoPresentation = DemoPresentation.fullScreen
@@ -113,8 +114,10 @@ final class AppOnboardingViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        // Only what the first frame needs. The guide players (AVFoundation)
+        // and the demonstration preload are deferred to `viewDidAppear`, off
+        // the launch frame.
         configureCarousel()
-        configureGuides()
         configureLifecycleObservers()
     }
 
@@ -127,6 +130,17 @@ final class AppOnboardingViewController: UIViewController {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
         applyTopInset()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // One turn later, so this frame commits first. The preload's stall
+        // then lands while the static launch splash still covers everything —
+        // invisible — and the intro reveal, which now starts the moment the
+        // splash begins fading, runs with nothing left to hitch it.
+        DispatchQueue.main.async { [weak self] in
+            self?.preloadDemonstrationIfNeeded()
+        }
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -205,7 +219,9 @@ final class AppOnboardingViewController: UIViewController {
         introCorona = nil
     }
 
-    private func configureGuides() {
+    private func configureGuidesIfNeeded() {
+        guard !didConfigureGuides else { return }
+        didConfigureGuides = true
         for guide in [safariGuide, actionGuide] {
             let player = guide.playerView
             player.frame = CGRect(x: 1, y: 1, width: 2, height: 2)
@@ -242,23 +258,23 @@ final class AppOnboardingViewController: UIViewController {
         }
         #endif
         intro.start()
-        // One run-loop turn later, so the reveal's first frame commits before
-        // the heavy preparation runs; the intro's 0.34s first-line delay
-        // absorbs the stall invisibly.
-        DispatchQueue.main.async { [weak self] in
-            self?.preloadDemonstrationIfNeeded()
-        }
+        // Normally a no-op: the viewDidAppear pass already preloaded during
+        // the splash hold. Kept as a synchronous fallback so the demonstration
+        // is always ready even if that appearance pass never ran.
+        preloadDemonstrationIfNeeded()
     }
 
-    /// Builds everything "Show me how" needs while the intro copy is still
-    /// revealing: the temporary save (disk + article parse), the complete
-    /// production root, the wave's saved-card raster, and both source replicas
-    /// (Safari's WKWebView loads its bundled page asynchronously). The button
-    /// then only has to run the expansion animation. A failed temporary-save
-    /// install is deliberately NOT surfaced here — the flag stays false and
-    /// the expansion path retries and presents the failure alert instead.
+    /// Builds everything "Show me how" needs while the launch splash and the
+    /// intro copy still cover the screen: the setup guide players, the
+    /// temporary save (disk + article parse), the complete production root,
+    /// the wave's saved-card raster, and both source replicas (Safari's
+    /// WKWebView loads its bundled page asynchronously). The button then only
+    /// has to run the expansion animation. A failed temporary-save install is
+    /// deliberately NOT surfaced here — the flag stays false and the
+    /// expansion path retries and presents the failure alert instead.
     private func preloadDemonstrationIfNeeded() {
         guard !isDemonstrationPreloaded, !didExpandSafari else { return }
+        configureGuidesIfNeeded()
         guard prepareSavedRootIfNeeded() else { return }
         isDemonstrationPreloaded = true
         savedCardWaveSnapshot = captureSavedCardWaveSnapshot()
@@ -923,7 +939,10 @@ extension AppOnboardingViewController: AppLaunchTransitionTarget {
         return view.convert(frame, to: window)
     }
 
-    func appLaunchTransitionDidFinish() {
+    /// Fired as the launch splash BEGINS its fade: the splash and this card
+    /// are pixel-identical, so the first line's reveal reads as starting the
+    /// instant the app is up instead of waiting out the crossfade.
+    func appLaunchTransitionWillReveal() {
         startAfterLaunchTransition()
     }
 }

@@ -177,7 +177,6 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     func testIntroWaveAndDemoLoopTimingsStayDeliberateButBrisk() {
-        XCTAssertGreaterThan(OnboardingIntroTiming.firstLineDelay, 0.2)
         XCTAssertLessThan(OnboardingIntroTiming.interLineDelay, 0.5)
         XCTAssertGreaterThan(OnboardingIntroTiming.lineRevealDuration, 0.82)
         XCTAssertLessThan(
@@ -488,7 +487,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchTransitionFinishPreloadsTheDemonstrationBehindTheIntro() throws {
+    func testLaunchRevealPreloadsTheDemonstrationBehindTheIntro() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -513,7 +512,7 @@ final class ReaderOnboardingTests: XCTestCase {
         onboarding.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        onboarding.appLaunchTransitionDidFinish()
+        onboarding.appLaunchTransitionWillReveal()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
         let safari = try XCTUnwrap(

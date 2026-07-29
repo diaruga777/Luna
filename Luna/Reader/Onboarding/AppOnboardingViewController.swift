@@ -183,7 +183,10 @@ final class AppOnboardingViewController: UIViewController {
 
         if introCorona?.bounds.size != cardFrame.size {
             introCorona?.removeFromSuperview()
-            let corona = AppLaunchTransition.makeCoronaView(
+            // This is a fresh UIKit reconstruction of the transition's peak
+            // corona. It visually replaces the launch raster; the splash view
+            // itself is still free to fade out and be discarded.
+            let corona = AppLaunchTransition.makePeakCoronaView(
                 cardFrame: cardFrame)
             view.insertSubview(corona, belowSubview: carousel.view)
             introCorona = corona

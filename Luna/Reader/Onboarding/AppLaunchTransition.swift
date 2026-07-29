@@ -119,7 +119,7 @@ enum AppLaunchTransition {
         sky.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         overlay.addSubview(sky)
 
-        let corona = makeCoronaView(cardFrame: cardFrame)
+        let corona = makePeakCoronaView(cardFrame: cardFrame)
         overlay.addSubview(corona)
 
         let body = CardSurfaceView(frame: cardFrame)
@@ -148,7 +148,7 @@ enum AppLaunchTransition {
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
 
-        let corona = makeCoronaView(cardFrame: cardFrame)
+        let corona = makePeakCoronaView(cardFrame: cardFrame)
         canvas.addSubview(corona)
 
         let body = CardSurfaceView(frame: cardFrame)
@@ -169,9 +169,11 @@ enum AppLaunchTransition {
         AppLaunchStarfieldView(frame: frame)
     }
 
-    /// The one corona treatment shared by the static launch art, the live
-    /// launch overlay, and the first onboarding card that receives it.
-    static func makeCoronaView(cardFrame: CGRect) -> EclipseCoronaView {
+    /// Creates a fresh UIKit reconstruction of the card transition's peak
+    /// corona. The launch overlay and onboarding each own separate instances;
+    /// no launch-screen image or launch overlay view is retained in the app
+    /// hierarchy.
+    static func makePeakCoronaView(cardFrame: CGRect) -> EclipseCoronaView {
         let corona = EclipseCoronaView(
             bodySize: cardFrame.size,
             cornerRadius: CardSurfaceView.cornerRadius,

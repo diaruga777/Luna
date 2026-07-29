@@ -20,18 +20,19 @@ destination carousel for its real resting frame through
 keeps it visible for 0.10 seconds before crossfading the single splash layer
 into the fully laid-out root over 0.20 seconds. The first live frame cannot skip
 the eclipse even on a warm launch. There is no card resize or staged eclipse
-egress. On an incomplete first run only, an identical production corona is
-already mounted behind the intro card, so the splash corona remains stationary
-and fully visible after the rest of the launch layer fades. Completed roots do
-not retain it.
+egress. On an incomplete first run only, a separate `EclipseCoronaView`
+reconstructs the identical static peak behind the intro card, so the corona
+remains stationary and fully visible after the launch layer is discarded.
+Completed roots do not retain it.
 
 The storyboard pins one standalone, opaque `LunaLaunchComposite` PNG to the
 full screen instead of asking the launch-snapshot process to resolve asset
 catalog layers. Its 402×874 reference canvas contains the real card frame and
 starfield, and does not rely on a negatively positioned image view, which iOS
 can omit from a launch snapshot. The composite and its diagnostic source layers
-are generated from production views. To regenerate them after changing the
-corona, rim, tint, or star table, run
+are generated from production views. The renderer intentionally contains no
+colored solar prominences. To regenerate the assets after changing the corona,
+rim, tint, or star table, run
 `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested` with
 `TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then replace
 `Luna/LunaLaunchComposite{,@2x,@3x}.png` and the diagnostic PNGs in
@@ -77,8 +78,10 @@ The root uses the production `CardCarouselViewController`:
    the surface-specific two-line supporting copy fades in halfway between the
    headline and the “Show me how” button, which gives it equal breathing room
    above and below. The button appears with it, using a restrained 24% wash of
-   the current app surface tint in its glass background. The splash corona
-   remains behind this initial card for the entire intro.
+   the current app surface tint in its glass background. A new UIKit corona
+   independently reconstructs the splash's static peak behind this initial card
+   for the entire intro; neither the launch raster nor its overlay hierarchy is
+   retained.
 2. “Show me how” does not page or invoke `CardEclipseTransition`. The centered
    intro corona is removed when the button advances successfully, then the card
    grows directly to the display edges while its contents crossfade into

@@ -13,7 +13,10 @@ that share one App Group, one on-disk store (`readingList.json`), and one codeba
   reader; background-playback read-aloud with autoplay-next and on-device trimming (see
   `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account);
   share-sheet export of any unlocked article as EPUB / PDF / Markdown / plain text
-  (`claudedocs/article-export.md`, shared with the central app).
+  (`claudedocs/article-export.md`, shared with the central app); long-form X posts and
+  self-threads read as articles (`claudedocs/x-posts.md`, shared with the central app —
+  X serves no post text to an unauthenticated client, so that ONE kind's text comes from
+  the keyless fxtwitter mirror instead of HTML extraction).
 - **Luna Downloader** (`com.hsanabria.luna.downloader`, target `LunaDownloader`) —
   social / video / audio links + friend-sharing (email-based; see
   `claudedocs/social-sharing.md` — no CloudKit).
@@ -276,18 +279,19 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 1812 tests, 8 skipped, 0 failures**
-  (measured 2026-07-28, full run with nothing skipped on the command line). The
+- **Current suite state on the iOS 26.x sim: 1903 tests, 9 skipped, 0 failures**
+  (measured 2026-07-29, full run with nothing skipped on the command line). The
   long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
   snapshot set was re-recorded for the predawn palette, and the harness now pins the
   same appearance the app does (dark style + `lunaSky = .predawn`, over
-  `LunaColors.background`) instead of forcing a light style. The 8 skips are
+  `LunaColors.background`) instead of forcing a light style. The 9 skips are
   intentional `XCTSkip`s —
   `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot`, two
   `SocialMediaResolverTests` live-YouTube transfers
-  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), and the four
+  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), the four
   `EclipsePreviewRecorderTests` corona/starfield preview recorders
-  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`). One class,
+  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`), and
+  `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested`. One class,
   `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
   rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
   test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a

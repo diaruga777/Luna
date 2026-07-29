@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaModels
 import LunaSocialUI
 import LunaSocial
 import UIKit
@@ -13,31 +14,48 @@ final class ReaderShareSheetTests: XCTestCase {
 
     func testRowsIncludeExplicitShareActions() {
         let rows = ReaderShareSheet.rows(
-            includeEbook: true,
-            onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onShareEbook: {})
+            includeExport: true,
+            onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onExport: { _ in })
         XCTAssertEqual(rows.count, 4)
-        XCTAssertEqual(rows.map(\.title), ["Copy link", "Share link", "Send as email", "Share .epub"])
+        XCTAssertEqual(
+            rows.map(\.title), ["Copy link", "Share link", "Send as email", "Export as…"])
         XCTAssertFalse(rows.contains { $0.isPrimary })
     }
 
-    func testEbookRowOmittedForMedia() {
+    func testExportRowOmittedForMedia() {
         let rows = ReaderShareSheet.rows(
-            includeEbook: false,
-            onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onShareEbook: {})
+            includeExport: false,
+            onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onExport: { _ in })
         XCTAssertEqual(rows.map(\.title), ["Copy link", "Share link", "Send as email"])
-        XCTAssertFalse(rows.contains { $0.title.contains("epub") })
+        XCTAssertFalse(rows.contains { !$0.children.isEmpty })
+    }
+
+    /// The export row is a submenu of every format, in `ArticleExportFormat` order,
+    /// and each child reports its own format.
+    func testExportRowOffersEveryFormatInOrder() {
+        var picked: [ArticleExportFormat] = []
+        let rows = ReaderShareSheet.rows(
+            includeExport: true,
+            onPickFriend: {}, onShareLink: {}, onCopyLink: {},
+            onExport: { picked.append($0) })
+        let children = rows.last?.children ?? []
+        XCTAssertEqual(children.count, ArticleExportFormat.allCases.count)
+        XCTAssertEqual(children.map(\.title), ["EPUB", "PDF", "Markdown", "Plain Text"])
+        for child in children { child.action() }
+        XCTAssertEqual(picked, [.epub, .pdf, .markdown, .plainText])
     }
 
     func testEachRowInvokesItsOwnAction() {
         var fired: [String] = []
         let rows = ReaderShareSheet.rows(
-            includeEbook: true,
+            includeExport: true,
             onPickFriend: { fired.append("pick") },
             onShareLink: { fired.append("link") },
             onCopyLink: { fired.append("copy") },
-            onShareEbook: { fired.append("ebook") })
+            onExport: { fired.append("export:\($0.rawValue)") })
+        // The export row is a submenu, so tapping it fires nothing itself.
         for row in rows { row.action() }
-        XCTAssertEqual(fired, ["copy", "link", "pick", "ebook"])
+        XCTAssertEqual(fired, ["copy", "link", "pick"])
     }
 
     /// The menu is what the share button actually presents, so it must carry the
@@ -46,17 +64,28 @@ final class ReaderShareSheetTests: XCTestCase {
     func testMenuMirrorsRowsInOrder() {
         var fired: [String] = []
         let rows = ReaderShareSheet.rows(
-            includeEbook: true,
+            includeExport: true,
             onPickFriend: { fired.append("pick") },
             onShareLink: { fired.append("link") },
             onCopyLink: { fired.append("copy") },
-            onShareEbook: { fired.append("ebook") })
+            onExport: { fired.append("export:\($0.rawValue)") })
         let menu = ReaderShareSheet.menu(rows: rows)
+        XCTAssertEqual(menu.children.count, 4)
+        XCTAssertEqual(menu.children.map(\.title), rows.map(\.title))
+
         let actions = menu.children.compactMap { $0 as? UIAction }
-        XCTAssertEqual(actions.count, 4)
-        XCTAssertEqual(actions.map(\.title), rows.map(\.title))
-        XCTAssertTrue(actions.allSatisfy { $0.image != nil })
+        XCTAssertEqual(actions.count, 3)
         for action in actions { action.performWithSender(nil, target: nil) }
-        XCTAssertEqual(fired, ["copy", "link", "pick", "ebook"])
+        XCTAssertEqual(fired, ["copy", "link", "pick"])
+
+        // The fourth element is the nested export submenu.
+        let submenu = menu.children.last as? UIMenu
+        XCTAssertEqual(submenu?.title, "Export as…")
+        let formatActions = (submenu?.children ?? []).compactMap { $0 as? UIAction }
+        XCTAssertEqual(formatActions.count, ArticleExportFormat.allCases.count)
+        XCTAssertTrue(formatActions.allSatisfy { $0.image != nil })
+        for action in formatActions { action.performWithSender(nil, target: nil) }
+        XCTAssertEqual(
+            fired.suffix(4), ["export:epub", "export:pdf", "export:markdown", "export:plainText"])
     }
 }

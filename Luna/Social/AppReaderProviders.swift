@@ -37,24 +37,29 @@ public final class AppReaderShareProvider: ReaderShareProviding {
         guard let rows = rows(
             urlString: urlString, title: title, from: presenter, sourceView: sourceView)
         else {
-            presentEbookOnlyShare(urlString: urlString, from: presenter, sourceView: sourceView)
+            presentExportOnlyShare(urlString: urlString, from: presenter, sourceView: sourceView)
             return
         }
         ReaderShareSheet.present(from: presenter, rows: rows)
     }
 
     /// The one option list behind both the menu and the fallback sheet. Nil means the
-    /// item is a no-url text article (email/document) whose only share is the eBook
-    /// export — see `presentEbookOnlyShare`.
+    /// item is a no-url text article (email/document) whose only share is the file
+    /// export — see `presentExportOnlyShare`.
     private func rows(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) -> [ReaderShareSheet.Row]? {
         let item = ReadingListStore.shared.item(forURLString: urlString)
-        // eBook export is for readable articles/documents only — never media posts.
+        // File export is for readable articles/documents only — never media posts,
+        // and only once the text is actually extracted: a pending, failed or
+        // still-locked save has nothing any format could carry, so offering the
+        // formats there would lead to a "Couldn't Export Article" alert every
+        // time. `state` is the cheap signal — reading the content back to check
+        // would decode the whole article just to build a menu.
         let isArticle = item.map { !$0.isPlatformItem } ?? false
         if let item, isArticle, !item.isShareable { return nil }
         return ReaderShareSheet.rows(
-            includeEbook: isArticle,
+            includeExport: isArticle && item?.state == .ready,
             onPickFriend: { [weak presenter] in
                 guard let presenter else { return }
                 SendToFriendSheet.present(
@@ -72,21 +77,27 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                 guard let presenter else { return }
                 SendToFriendSheet.copyLink(urlString: urlString, from: presenter)
             },
-            onShareEbook: { [weak presenter] in
+            onExport: { [weak presenter] format in
                 guard let presenter, let item else { return }
                 ArticleExportService().presentShareSheet(
-                    for: item, from: presenter, sourceView: sourceView)
+                    format, for: item, from: presenter, sourceView: sourceView)
             })
     }
 
-    /// A no-url text article (email/document) can only leave as an eBook, so skip
-    /// the option list and go straight to the export sheet.
-    private func presentEbookOnlyShare(
+    /// A no-url text article (email/document) can only leave as a file, so skip
+    /// the option list and go straight to the format picker.
+    private func presentExportOnlyShare(
         urlString: String, from presenter: UIViewController, sourceView: UIView
     ) {
         guard let item = ReadingListStore.shared.item(forURLString: urlString) else { return }
-        ArticleExportService().presentShareSheet(
-            for: item, from: presenter, sourceView: sourceView)
+        ReaderShareSheet.present(
+            from: presenter,
+            rows: ReaderShareSheet.exportRows { [weak presenter] format in
+                guard let presenter else { return }
+                ArticleExportService().presentShareSheet(
+                    format, for: item, from: presenter, sourceView: sourceView)
+            },
+            title: ReaderShareSheet.exportTitle)
     }
 
     public func saveLink(urlString: String) {

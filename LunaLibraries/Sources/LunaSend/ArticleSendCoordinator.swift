@@ -353,10 +353,17 @@ public final class ArticleSendCoordinator {
 
     /// A filesystem- and MIME-safe attachment name derived from the title.
     public static func epubFileName(forTitle title: String) -> String {
+        fileName(forTitle: title, extension: ArticleExportFormat.epub.fileExtension)
+    }
+
+    /// A filesystem- and MIME-safe file name derived from the title, with the
+    /// given extension — the one sanitizer behind both the emailed EPUB
+    /// attachment and every share-sheet export format.
+    public static func fileName(forTitle title: String, extension fileExtension: String) -> String {
         let disallowed = CharacterSet(charactersIn: "/\\:?%*|\"<>\r\n")
         let cleaned = title.components(separatedBy: disallowed).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let base = cleaned.isEmpty ? "Article" : String(cleaned.prefix(80))
-        return base + ".epub"
+        return base + "." + fileExtension
     }
 }

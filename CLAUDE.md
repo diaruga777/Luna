@@ -11,7 +11,9 @@ that share one App Group, one on-disk store (`readingList.json`), and one codeba
 - **Luna Reader** (`com.hsanabria.luna.reader`, target `LunaReader`) — articles,
   paywalled articles, documents. Scrolling reader (inline split-web frames) + RSVP speed
   reader; background-playback read-aloud with autoplay-next and on-device trimming (see
-  `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account).
+  `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account);
+  share-sheet export of any unlocked article as EPUB / PDF / Markdown / plain text
+  (`claudedocs/article-export.md`, shared with the central app).
 - **Luna Downloader** (`com.hsanabria.luna.downloader`, target `LunaDownloader`) —
   social / video / audio links + friend-sharing (email-based; see
   `claudedocs/social-sharing.md` — no CloudKit).

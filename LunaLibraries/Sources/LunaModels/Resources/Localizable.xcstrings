@@ -358,7 +358,7 @@
     "Copy link" : {
 
     },
-    "Couldn't Create eBook" : {
+    "Couldn't Export Article" : {
 
     },
     "Couldn't Load" : {
@@ -555,6 +555,9 @@
     "Drag vertically to edit the alert price" : {
 
     },
+    "EPUB" : {
+
+    },
     "Edit List" : {
 
     },
@@ -586,6 +589,9 @@
 
     },
     "Export Failed" : {
+
+    },
+    "Export as…" : {
 
     },
     "Extract as %@" : {
@@ -786,6 +792,9 @@
 
     },
     "M" : {
+
+    },
+    "Markdown" : {
 
     },
     "Media" : {
@@ -1005,6 +1014,9 @@
     "Outlook sign-in failed. Please try again." : {
 
     },
+    "PDF" : {
+
+    },
     "Paste" : {
 
     },
@@ -1045,6 +1057,9 @@
 
     },
     "Pink" : {
+
+    },
+    "Plain Text" : {
 
     },
     "Play" : {
@@ -1340,9 +1355,6 @@
 
     },
     "Share" : {
-
-    },
-    "Share .epub" : {
 
     },
     "Share Current Media" : {
@@ -1704,7 +1716,16 @@
     "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n•  Wait ~30 minutes\n•  Switch networks or turn on a VPN\n•  Tap Open in Safari below and view there" : {
 
     },
+    "[Image: %@]" : {
+
+    },
+    "[Image]" : {
+
+    },
     "archive" : {
+
+    },
+    "by %@" : {
 
     },
     "downloading…" : {

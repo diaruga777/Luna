@@ -44,6 +44,8 @@ final class AppOnboardingViewController: UIViewController {
     private var safariReplica: SafariReplicaViewController?
     private var savedRootViewController: UIViewController?
     private var savedCardWaveSnapshot: UIImage?
+    private var introCorona: EclipseCoronaView?
+    private var keepsIntroCorona = true
     private var temporarySaveInstallResult: Bool?
     private var externalReturn = ExternalReturn.none
     private var didExpandSafari = false
@@ -111,6 +113,11 @@ final class AppOnboardingViewController: UIViewController {
         applyTopInset()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutIntroCorona()
+    }
+
     private func configureCarousel() {
         let starfield = StarfieldView.install(behindContentsOf: view)
         carousel.chromeBackdrop = starfield
@@ -144,6 +151,34 @@ final class AppOnboardingViewController: UIViewController {
 
     private func applyTopInset() {
         carousel.setTopInset(view.safeAreaInsets.top + 48)
+    }
+
+    private func layoutIntroCorona() {
+        guard keepsIntroCorona else {
+            introCorona?.removeFromSuperview()
+            introCorona = nil
+            return
+        }
+        carousel.view.layoutIfNeeded()
+        guard let cardFrame = carousel.restingCenteredCardFrame(in: view) else {
+            return
+        }
+
+        if introCorona?.bounds.size != cardFrame.size {
+            introCorona?.removeFromSuperview()
+            let corona = AppLaunchTransition.makeCoronaView(
+                cardFrame: cardFrame)
+            view.insertSubview(corona, belowSubview: carousel.view)
+            introCorona = corona
+        } else {
+            introCorona?.frame = cardFrame
+        }
+    }
+
+    private func dismissIntroCorona() {
+        keepsIntroCorona = false
+        introCorona?.removeFromSuperview()
+        introCorona = nil
     }
 
     private func configureGuides() {
@@ -198,6 +233,7 @@ final class AppOnboardingViewController: UIViewController {
             presentSavePreparationFailure()
             return
         }
+        dismissIntroCorona()
         savedCardWaveSnapshot = captureSavedCardWaveSnapshot()
         didExpandSafari = true
 

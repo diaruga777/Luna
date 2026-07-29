@@ -20,7 +20,10 @@ destination carousel for its real resting frame through
 keeps it visible for 0.10 seconds before crossfading the single splash layer
 into the fully laid-out root over 0.20 seconds. The first live frame cannot skip
 the eclipse even on a warm launch. There is no card resize or staged eclipse
-egress.
+egress. On an incomplete first run only, an identical production corona is
+already mounted behind the intro card, so the splash corona remains stationary
+and fully visible after the rest of the launch layer fades. Completed roots do
+not retain it.
 
 The storyboard pins one standalone, opaque `LunaLaunchComposite` PNG to the
 full screen instead of asking the launch-snapshot process to resolve asset
@@ -74,11 +77,13 @@ The root uses the production `CardCarouselViewController`:
    the surface-specific two-line supporting copy fades in halfway between the
    headline and the “Show me how” button, which gives it equal breathing room
    above and below. The button appears with it, using a restrained 24% wash of
-   the current app surface tint in its glass background.
+   the current app surface tint in its glass background. The splash corona
+   remains behind this initial card for the entire intro.
 2. “Show me how” does not page or invoke `CardEclipseTransition`. The centered
-   intro card grows directly to the display edges while its contents crossfade
-   into `SafariReplicaViewController`. Once it is full-screen, the hidden
-   carousel prepares the saved-content slot without animating between cards.
+   intro corona is removed when the button advances successfully, then the card
+   grows directly to the display edges while its contents crossfade into
+   `SafariReplicaViewController`. Once it is full-screen, the hidden carousel
+   prepares the saved-content slot without animating between cards.
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.

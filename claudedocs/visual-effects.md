@@ -93,23 +93,27 @@ beat, and fades the splash away as one layer over 0.20 seconds. This avoids a
 warm launch committing only the final transparent frame while remaining far
 shorter than the former staged egress. There is no resize or multi-stage
 egress. This happens on every launch, not only onboarding, and each
-`KindWiring` composition root installs the shared transition.
+`KindWiring` composition root installs the shared transition. An incomplete
+first run places the same corona behind the intro card before this fade, keeping
+it stationary after the splash layer leaves; completed roots preserve the
+ordinary fade-away behavior.
 
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.
 
 ## Onboarding Safari/card loop
 
-The onboarding card-to-browser demonstration deliberately does not use an
-eclipse. “Show me how” grows the intro card to the screen edges and crossfades
-its content into the local Safari facsimile. A solid-black deformation stretches
-from the screen edge while a thicker annular Action Button wave begins at the
-same point. The advancing wavefront crossfades Safari into the target app's
-complete production root at its exact centered card state, including its normal
-card chrome and carousel. The live hierarchy is committed beneath the final
-composited frame. The first saved state remains clear for a
-reading beat before the instruction scrim and content fade in separately. Each
-loop then resets to full-screen Safari and replays the
+The initial onboarding card retains the launch corona until “Show me how” is
+pressed. The card-to-browser demonstration itself deliberately does not use an
+eclipse: the button removes that corona, grows the intro card to the screen
+edges, and crossfades its content into the local Safari facsimile. A solid-black
+deformation stretches from the screen edge while a thicker annular Action
+Button wave begins at the same point. The advancing wavefront crossfades Safari
+into the target app's complete production root at its exact centered card
+state, including its normal card chrome and carousel. The live hierarchy is
+committed beneath the final composited frame. The first saved state remains
+clear for a reading beat before the instruction scrim and content fade in
+separately. Each loop then resets to full-screen Safari and replays the
 press, wave, and save transformation—not geometry alone. Completion settles on
 the card and performs a short stationary crossfade into the completed root card.
 

@@ -119,11 +119,7 @@ enum AppLaunchTransition {
         sky.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         overlay.addSubview(sky)
 
-        let corona = EclipseCoronaView(
-            bodySize: cardFrame.size,
-            cornerRadius: CardSurfaceView.cornerRadius,
-            tint: LunaSurfacePalette.atmosphereTint(for: .reader))
-        corona.frame = cardFrame
+        let corona = makeCoronaView(cardFrame: cardFrame)
         overlay.addSubview(corona)
 
         let body = CardSurfaceView(frame: cardFrame)
@@ -152,11 +148,7 @@ enum AppLaunchTransition {
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
 
-        let corona = EclipseCoronaView(
-            bodySize: cardFrame.size,
-            cornerRadius: CardSurfaceView.cornerRadius,
-            tint: LunaSurfacePalette.atmosphereTint(for: .reader))
-        corona.frame = cardFrame
+        let corona = makeCoronaView(cardFrame: cardFrame)
         canvas.addSubview(corona)
 
         let body = CardSurfaceView(frame: cardFrame)
@@ -175,6 +167,17 @@ enum AppLaunchTransition {
 
     static func makeStaticStarfieldView(frame: CGRect) -> UIView {
         AppLaunchStarfieldView(frame: frame)
+    }
+
+    /// The one corona treatment shared by the static launch art, the live
+    /// launch overlay, and the first onboarding card that receives it.
+    static func makeCoronaView(cardFrame: CGRect) -> EclipseCoronaView {
+        let corona = EclipseCoronaView(
+            bodySize: cardFrame.size,
+            cornerRadius: CardSurfaceView.cornerRadius,
+            tint: LunaSurfacePalette.atmosphereTint(for: .reader))
+        corona.frame = cardFrame
+        return corona
     }
 
     private static func fallbackTargetFrame(in window: UIWindow) -> CGRect {

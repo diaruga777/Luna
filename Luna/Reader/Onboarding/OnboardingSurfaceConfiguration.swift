@@ -49,7 +49,7 @@ struct OnboardingSurfaceConfiguration {
         case .reader:
             return Self(
                 app: app,
-                firstLine: "You wish you read more.",
+                firstLine: "You want to read more.",
                 secondLine: "Let’s make that happen.",
                 saveBenefit: "Read offline later",
                 demoPages: [.wikipedia],

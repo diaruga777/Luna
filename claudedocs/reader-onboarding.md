@@ -38,7 +38,7 @@ corona, rim, tint, or star table, run
 
 | App | Intro lines | Demonstration | Save benefit |
 |---|---|---|---|
-| Reader | “You wish you read more.” / “Let’s make that happen.” | bundled Luna Wikipedia page | “Read offline later” |
+| Reader | “You want to read more.” / “Let’s make that happen.” | bundled Luna Wikipedia page | “Read offline later” |
 | Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | bundled InstaTok page and eclipse video | “Watch or share” |
 | Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | bundled amayzon eyePhone page | “Never miss a sale” |
 | Luna | “All your Luna saves.” / “In a single app.” | continually rotates through all three pages | “Read, watch, track, anything” |
@@ -58,9 +58,10 @@ owns its onboarding completion independently.
 
 The root uses the production `CardCarouselViewController`:
 
-1. The first black card shows its surface-specific first line immediately. It
-   holds for 1.45 seconds, then a completely borderless black circle moves
-   slowly down across only the second line. The circle is fully opaque, while
+1. After the launch transition settles, a completely borderless black circle
+   moves slowly down across the surface-specific first line. After a brief
+   0.32-second reading beat, the same reveal plays across the second line. The
+   circle is fully opaque, while
    the ordinary glyph layer is also geometrically excluded from its interior,
    preventing subpixel text from bleeding through. Four narrow illumination
    bands intersect a native-scale raster of the actual antialiased glyph
@@ -79,21 +80,23 @@ The root uses the production `CardCarouselViewController`:
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.
-4. A compact solid-black bezel deformation plays beside the physical Action
-   Button. In the same run-loop turn, a custom Core Image warp sends a narrow,
+4. A narrow dark side rail with a warm illuminated core plays just inside the
+   physical Action Button edge, matching the system's on-screen press response.
+   In the same run-loop turn, a custom Core Image warp sends a wider, stronger,
    two-lobed annular wavefront from that point across a whole-window snapshot;
    it settles in 0.74 seconds. This keeps the wavefront slim and pronounced
    instead of bending every pixel inside one growing `CIBumpDistortion` radius.
-5. Only after the last distorted pixels settle does Safari shrink into the
-   exact centered card frame. On Reader, Safari simultaneously dissolves away
-   to reveal a real `ReaderHostFactory`/`RabbitHoleReaderViewController`, backed
-   by the bundled article and explicitly opened in Scroll mode. The
-   target-specific reader is injected through `AppOnboardingCompletion`, so the
-   shared onboarding controller does not force Reader dependencies into the
-   Downloader or Price Tracker targets. The saved state is therefore real
-   Reader content, not the Safari facsimile clipped smaller.
-6. The window-filling near-black setup overlay appears after that first shrink
-   and aligns its content to the same one-third vertical anchor. Behind it, the
+5. Before Safari opens, onboarding installs the target's temporary save and
+   lazily mounts the complete production root returned by that app's
+   `AppOnboardingCompletion`. Only after the last distorted pixels settle does
+   Safari shrink into that root carousel's exact centered card frame while
+   dissolving away. Reader, Downloader, Price Tracker, and central Luna
+   therefore show their ordinary saved-card UI, chrome, scrubber, controls, and
+   placement—not an onboarding remake or a Safari view clipped smaller.
+6. The first saved card remains completely unobscured for 1.35 seconds. The
+   window-filling near-black setup overlay then eases its scrim in and follows
+   with a subtly rising content fade aligned to the same one-third vertical
+   anchor. Behind it, the
    saved card resets to full-screen Safari, pauses briefly, and replays the
    complete Action Button press + wave + saved-card transformation. The loop
    pauses during external hops and resumes behind each updated instruction
@@ -104,17 +107,19 @@ The root uses the production `CardCarouselViewController`:
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
 8. Completion stops the loop and, unless it is already there, shrinks to the
-   card once more. It installs the surface's real save, then crossfades the
-   stationary onboarding card directly into the completed root controller's
-   centered card—no eclipse or second geometry change. The payload is a
-   Wikipedia article for Reader and central Luna, local video for Downloader,
-   and a real price tracker for Price Tracker.
+   card once more. The real save and production root are already present, so it
+   marks onboarding complete and crossfades the stationary production card into
+   the fresh completed root—no eclipse or second geometry change. The payload
+   is a Wikipedia article for Reader and central Luna, local video for
+   Downloader, and a real price tracker for Price Tracker.
 
 The demonstration save is temporary. Its exact UUID is recorded only when
 onboarding created a new item. The owning app deletes that exact save and its
-local media/image on the first background callback, then clears the UUID. A
-pre-existing matching user save is never claimed or removed. Launch also sweeps
-a marker left by a process terminated during a background transition.
+local media/image on the first background callback after onboarding completes,
+then clears the UUID. It deliberately survives the incomplete onboarding
+background hops to Safari, Shortcuts, and Settings because the production root
+needs it for each replay. A pre-existing matching user save is never claimed or
+removed. Launch also sweeps a marker left by an abandoned or terminated run.
 
 If iOS terminates an app while Safari or Settings is foreground, the next
 launch starts incomplete onboarding from its first card; completion is not

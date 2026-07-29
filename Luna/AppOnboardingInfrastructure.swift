@@ -21,56 +21,14 @@ struct OnboardingTemporarySave {
 /// Keeping this immutable and injected avoids mutable process-wide closure slots.
 struct AppOnboardingCompletion {
     let temporarySave: OnboardingTemporarySave
-    let makeSavedCardContent: () -> CardContentViewController?
     let makeCompletedRootViewController: () -> UIViewController
 
     init(
         temporarySave: OnboardingTemporarySave,
-        makeSavedCardContent: @escaping () -> CardContentViewController? = { nil },
         makeCompletedRootViewController: @escaping () -> UIViewController
     ) {
         self.temporarySave = temporarySave
-        self.makeSavedCardContent = makeSavedCardContent
         self.makeCompletedRootViewController = makeCompletedRootViewController
-    }
-}
-
-/// Target-neutral adapter for a real surface card supplied by one app's
-/// composition root. The shared onboarding target can mount it without linking
-/// that surface's feature module into the other standalone apps.
-final class OnboardingEmbeddedCardContentViewController:
-    CardContentViewController
-{
-    private let embedded: UIViewController
-    private let onCentered: () -> Void
-
-    init(
-        embedded: UIViewController,
-        onCentered: @escaping () -> Void = {}
-    ) {
-        self.embedded = embedded
-        self.onCentered = onCentered
-        super.init()
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .clear
-        addChild(embedded)
-        embedded.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(embedded.view)
-        embedded.didMove(toParent: self)
-        NSLayoutConstraint.activate([
-            embedded.view.topAnchor.constraint(equalTo: view.topAnchor),
-            embedded.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            embedded.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            embedded.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-    }
-
-    override func cardDidBecomeCentered() {
-        super.cardDidBecomeCentered()
-        onCentered()
     }
 }
 

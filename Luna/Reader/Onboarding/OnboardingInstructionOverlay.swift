@@ -20,6 +20,7 @@ final class DemoInstructionOverlay: UIView {
     private let content = UIStackView()
     private var buttons: [UIButton] = []
     private var handlers: [() -> Void] = []
+    private var hasAnimatedIn = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -98,6 +99,38 @@ final class DemoInstructionOverlay: UIView {
             button.accessibilityLabel = action.title
             actionStack.addArrangedSubview(button)
             return button
+        }
+    }
+
+    func animateIn() {
+        guard !hasAnimatedIn else { return }
+        hasAnimatedIn = true
+
+        if UIAccessibility.isReduceMotionEnabled {
+            scrim.alpha = 1
+            content.alpha = 1
+            content.transform = .identity
+            return
+        }
+
+        scrim.alpha = 0
+        content.alpha = 0
+        content.transform = CGAffineTransform(
+            translationX: 0, y: 10).scaledBy(x: 0.985, y: 0.985)
+        UIView.animate(
+            withDuration: 0.52,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState]
+        ) {
+            self.scrim.alpha = 1
+        }
+        UIView.animate(
+            withDuration: 0.48,
+            delay: 0.11,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.content.alpha = 1
+            self.content.transform = .identity
         }
     }
 

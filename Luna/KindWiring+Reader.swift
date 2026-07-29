@@ -100,7 +100,6 @@ enum KindWiring {
             : AppOnboardingViewController(
                 completion: AppOnboardingCompletion(
                     temporarySave: onboardingDemoSave,
-                    makeSavedCardContent: makeOnboardingSavedCardContent,
                     makeCompletedRootViewController: makeCompletedRootViewController))
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
@@ -109,29 +108,6 @@ enum KindWiring {
     private static func makeCompletedRootViewController() -> UIViewController {
         let nav = UINavigationController(rootViewController: ArticleCardsViewController())
         return MiniPlayerHostViewController(content: nav)
-    }
-
-    private static func makeOnboardingSavedCardContent()
-        -> CardContentViewController
-    {
-        var item = ReadingListItem(urlString: BundledLunaArticle.urlString)
-        item.title = BundledLunaArticle.content.title
-        item.state = .ready
-        item.lastReaderMode = .scroll
-        item.wordCount = BundledLunaArticle.content.wholeText
-            .split(whereSeparator: \.isWhitespace)
-            .count
-        let reader = ReaderHostFactory.make(
-            item: item,
-            content: BundledLunaArticle.content,
-            fullContentUpFront: true,
-            includesArticleTitle: true)
-        return OnboardingEmbeddedCardContentViewController(
-            embedded: reader,
-            onCentered: {
-                (reader as? RabbitHoleReaderViewController)?
-                    .activatePrimaryContent()
-            })
     }
 
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
@@ -175,7 +151,13 @@ enum KindWiring {
     }
 
     static func appDidEnterBackground() {
-        onboardingDemoSave.cleanup()
+        // The temporary save is installed before the Safari demonstration so
+        // the reveal can use this real root. Keep it through onboarding's
+        // required Safari/Settings hops; completed onboarding removes it on the
+        // first ordinary background, while launch still sweeps abandoned runs.
+        if AppOnboardingStore.shared.isCompleted {
+            onboardingDemoSave.cleanup()
+        }
         // A finished-reading completion recorded during this session becomes an
         // archive move now, so the next launch starts settled.
         ReadingListStore.shared.archivePendingFinishedItems()

@@ -7,12 +7,13 @@ import LunaDesignSystem
 import UIKit
 
 enum OnboardingIntroTiming {
-    /// The first line is already present when the launch fade clears. Leave it
-    /// alone long enough to read before the answer begins revealing.
-    static let secondLineDelay: TimeInterval = 1.45
-    /// Slow enough that the circle edge can be read as a deliberate top-down
-    /// sweep, while each pixel's hot band remains spatially narrow and brief.
-    static let secondLineRevealDuration: TimeInterval = 1.55
+    /// Let the launch transition settle before the first lunar reveal begins.
+    static let firstLineDelay: TimeInterval = 0.34
+    /// Both sentences use the same deliberate top-down lunar sweep.
+    static let lineRevealDuration: TimeInterval = 1.55
+    /// A short reading beat keeps the two sentences distinct without making the
+    /// second feel like a separate stage.
+    static let interLineDelay: TimeInterval = 0.32
 }
 
 final class OnboardingIntroCardContentViewController: CardContentViewController {
@@ -24,7 +25,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     private var didStart = false
 
     init(firstLine: String, secondLine: String) {
-        self.firstLine = MoonRevealLineView(text: firstLine, initiallyRevealed: true)
+        self.firstLine = MoonRevealLineView(text: firstLine)
         self.secondLine = MoonRevealLineView(text: secondLine)
         super.init()
     }
@@ -81,25 +82,36 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         didStart = true
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
-                OnboardingIntroTiming.secondLineDelay)
+                OnboardingIntroTiming.firstLineDelay)
         ) { [weak self] in
             guard let self else { return }
-            self.secondLine.reveal(
-                duration: OnboardingIntroTiming.secondLineRevealDuration
+            self.firstLine.reveal(
+                duration: OnboardingIntroTiming.lineRevealDuration
             ) { [weak self] in
                 guard let self else { return }
-                UIView.animate(
-                    withDuration: 0.38,
-                    delay: 0.16,
-                    options: [.curveEaseOut, .beginFromCurrentState]
-                ) {
-                    self.button.alpha = 1
-                    self.button.transform = .identity
-                } completion: { _ in
-                    self.button.isUserInteractionEnabled = true
-                    UIAccessibility.post(
-                        notification: .layoutChanged,
-                        argument: self.button)
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + OnboardingAnimationClock.delay(
+                        OnboardingIntroTiming.interLineDelay)
+                ) { [weak self] in
+                    guard let self else { return }
+                    self.secondLine.reveal(
+                        duration: OnboardingIntroTiming.lineRevealDuration
+                    ) { [weak self] in
+                        guard let self else { return }
+                        UIView.animate(
+                            withDuration: 0.38,
+                            delay: 0.16,
+                            options: [.curveEaseOut, .beginFromCurrentState]
+                        ) {
+                            self.button.alpha = 1
+                            self.button.transform = .identity
+                        } completion: { _ in
+                            self.button.isUserInteractionEnabled = true
+                            UIAccessibility.post(
+                                notification: .layoutChanged,
+                                argument: self.button)
+                        }
+                    }
                 }
             }
         }
@@ -114,13 +126,6 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                 self.button.alpha = 0.72
             },
             completion: { [weak self] _ in self?.onContinue?() })
-    }
-}
-
-final class OnboardingBrowserSeedCardContentViewController: CardContentViewController {
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .black
     }
 }
 

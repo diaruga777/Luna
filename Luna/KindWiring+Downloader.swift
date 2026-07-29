@@ -90,7 +90,9 @@ enum KindWiring {
     }
 
     static func appDidEnterBackground() {
-        onboardingDemoSave.cleanup()
+        if AppOnboardingStore.shared.isCompleted {
+            onboardingDemoSave.cleanup()
+        }
         LiveMediaDownloadManager.shared.resumeLiveActivities()
     }
 

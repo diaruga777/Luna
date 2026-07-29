@@ -226,7 +226,9 @@ enum KindWiring {
     }
 
     static func appDidEnterBackground() {
-        onboardingDemoSave.cleanup()
+        if AppOnboardingStore.shared.isCompleted {
+            onboardingDemoSave.cleanup()
+        }
         ArticleSendCoordinator.shared.retryPendingSends()
         LiveMediaDownloadManager.shared.resumeLiveActivities()
     }

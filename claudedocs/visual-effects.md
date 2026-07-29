@@ -102,11 +102,13 @@ regeneration command, first-run sequence, and visual validation flags.
 
 The onboarding card-to-browser demonstration deliberately does not use an
 eclipse. “Show me how” grows the intro card to the screen edges and crossfades
-its content into the local Safari facsimile. A small solid-black bezel press and
-a slim annular Action Button wave begin together. When the wave finishes,
-Safari shrinks toward the exact centered card frame while Reader crossfades it
-into the production Scroll reader card. The instruction overlay appears over
-that saved state. Each loop then resets to full-screen Safari and replays the
+its content into the local Safari facsimile. An inset dark side rail with a warm
+illuminated core and a stronger annular Action Button wave begin together. When
+the wave finishes, Safari shrinks toward the exact centered card frame while
+crossfading into the target app's complete production root, including its
+normal card chrome and carousel. The first saved state remains clear for a
+reading beat before the instruction scrim and content fade in separately. Each
+loop then resets to full-screen Safari and replays the
 press, wave, and save transformation—not geometry alone. Completion settles on
 the card and performs a short stationary crossfade into the completed root card.
 

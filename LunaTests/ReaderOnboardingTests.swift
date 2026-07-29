@@ -88,7 +88,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
     func testEverySurfaceHasItsExactCopyAndDemoPage() {
         let reader = OnboardingSurfaceConfiguration.configuration(for: .reader)
-        XCTAssertEqual(reader.firstLine, "You wish you read more.")
+        XCTAssertEqual(reader.firstLine, "You want to read more.")
         XCTAssertEqual(reader.secondLine, "Let’s make that happen.")
         XCTAssertEqual(reader.saveBenefit, "Read offline later")
         XCTAssertEqual(reader.demoPages, [.wikipedia])
@@ -113,9 +113,9 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testIntroShowsFirstLineImmediatelyAndStagesOnlyTheSecondReveal() throws {
+    func testIntroStagesTheSameRevealAcrossBothLines() throws {
         let intro = OnboardingIntroCardContentViewController(
-            firstLine: "You wish you read more.",
+            firstLine: "You want to read more.",
             secondLine: "Let’s make that happen.")
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
@@ -123,8 +123,11 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let lines = intro.view.subviews.compactMap { $0 as? MoonRevealLineView }
         XCTAssertEqual(lines.count, 2)
-        XCTAssertTrue(lines[0].isFullyRevealed)
+        XCTAssertFalse(lines[0].isFullyRevealed)
         XCTAssertFalse(lines[1].isFullyRevealed)
+        XCTAssertFalse(lines[0].occluderHasVisibleChrome)
+        XCTAssertTrue(lines[0].occluderIsFullyOpaque)
+        XCTAssertTrue(lines[0].usesGlyphEdgeIllumination)
         XCTAssertFalse(lines[1].occluderHasVisibleChrome)
         XCTAssertTrue(lines[1].occluderIsFullyOpaque)
         XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
@@ -137,20 +140,24 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     func testIntroWaveAndSafariCardLoopTimingsStayDeliberateButBrisk() {
-        XCTAssertGreaterThan(OnboardingIntroTiming.secondLineDelay, 1.08)
-        XCTAssertGreaterThan(OnboardingIntroTiming.secondLineRevealDuration, 0.82)
+        XCTAssertGreaterThan(OnboardingIntroTiming.firstLineDelay, 0.2)
+        XCTAssertLessThan(OnboardingIntroTiming.interLineDelay, 0.5)
+        XCTAssertGreaterThan(OnboardingIntroTiming.lineRevealDuration, 0.82)
         XCTAssertLessThan(OnboardingActionButtonTiming.waveDuration, 1.18)
         XCTAssertGreaterThan(OnboardingSafariCardTiming.geometryDuration, 0.45)
         XCTAssertLessThan(OnboardingSafariCardTiming.geometryDuration, 0.70)
         XCTAssertGreaterThan(
             OnboardingSafariCardTiming.cardHoldDuration,
             OnboardingSafariCardTiming.browserHoldDuration)
-        XCTAssertLessThan(
+        XCTAssertGreaterThan(
+            OnboardingSafariCardTiming.firstSavedCardHoldDuration,
+            OnboardingSafariCardTiming.cardHoldDuration)
+        XCTAssertLessThanOrEqual(
             OnboardingActionButtonTiming.wavefrontHalfWidth,
-            18)
+            20)
         XCTAssertGreaterThan(
             OnboardingActionButtonTiming.maximumDisplacement,
-            8)
+            14)
         XCTAssertLessThanOrEqual(
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
@@ -166,24 +173,26 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testActionButtonCueMatchesTheCompactPhysicalBezelFootprint() {
+    func testActionButtonCueMatchesTheIlluminatedInsetSideRail() {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         let cue = ActionButtonPressCue()
         cue.layout(in: window)
 
-        XCTAssertEqual(cue.bounds.width, 24, accuracy: 0.001)
-        XCTAssertEqual(cue.bounds.height, 60, accuracy: 0.001)
-        XCTAssertEqual(cue.frame.minX, 0, accuracy: 0.001)
-        XCTAssertTrue(cue.subviews.isEmpty, "The bezel cue must not contain glass or glow views")
+        XCTAssertEqual(cue.bounds.width, 13, accuracy: 0.001)
+        XCTAssertEqual(cue.bounds.height, 82, accuracy: 0.001)
+        XCTAssertEqual(cue.layer.position.x, 2, accuracy: 0.001)
+        XCTAssertTrue(cue.subviews.isEmpty, "The side rail is rendered entirely with layers")
     }
 
     @MainActor
-    func testShowMeHowExpandsDirectlyToSafariWithoutAnEclipseView() throws {
+    func testShowMeHowPreparesTheInjectedProductionRootWithoutAnEclipseView() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
+        let productionRoot = UINavigationController(
+            rootViewController: UIViewController())
         let onboarding = AppOnboardingViewController(
             configuration: .configuration(for: .reader),
             onboardingStore: AppOnboardingStore(
@@ -192,20 +201,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 temporarySave: OnboardingTemporarySave(
                     install: { true },
                     cleanup: {}),
-                makeSavedCardContent: {
-                    var item = ReadingListItem(
-                        urlString: BundledLunaArticle.urlString)
-                    item.title = BundledLunaArticle.content.title
-                    item.state = .ready
-                    item.lastReaderMode = .scroll
-                    let reader = ReaderHostFactory.make(
-                        item: item,
-                        content: BundledLunaArticle.content,
-                        fullContentUpFront: true)
-                    return OnboardingEmbeddedCardContentViewController(
-                        embedded: reader)
-                },
-                makeCompletedRootViewController: { UIViewController() }))
+                makeCompletedRootViewController: { productionRoot }))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
             size: AppLaunchGeometry.referenceSize))
@@ -230,15 +226,12 @@ final class ReaderOnboardingTests: XCTestCase {
                 $0 as? SafariReplicaViewController
             }.first)
         XCTAssertEqual(safari.view.frame, onboarding.view.bounds)
-        onboarding.savedCardContentForTesting.loadViewIfNeeded()
-        let reader = try XCTUnwrap(
-            onboarding.savedCardContentForTesting.descendantControllers(
-                of: RabbitHoleReaderViewController.self).first,
-            "The save destination must be a live Reader card, not the Safari replica")
-        XCTAssertEqual(
-            reader.chromeState?.selectedMode,
-            .scroll,
-            "The onboarding article must open in the Scroll reader mode")
+        XCTAssertTrue(
+            onboarding.savedRootViewControllerForTesting === productionRoot,
+            "The save destination must be the app's production root controller")
+        XCTAssertTrue(
+            productionRoot.parent === onboarding,
+            "The production root must be mounted behind Safari during the save")
         XCTAssertTrue(
             onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
             "The intro must grow directly into Safari without an eclipse dressing")

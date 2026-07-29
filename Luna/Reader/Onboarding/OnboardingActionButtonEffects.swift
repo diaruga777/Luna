@@ -7,20 +7,21 @@ import CoreImage
 import UIKit
 
 enum OnboardingActionButtonTiming {
-    static let pressDuration: TimeInterval = 0.56
+    static let pressDuration: TimeInterval = 0.68
     static let waveDuration: CFTimeInterval = 0.74
     /// Half-width of the annular displacement band. The old bump filter bent
     /// everything inside the growing radius, which read as one very long wave.
-    static let wavefrontHalfWidth: CGFloat = 14
-    static let maximumDisplacement: CGFloat = 11
+    static let wavefrontHalfWidth: CGFloat = 18
+    static let maximumDisplacement: CGFloat = 17
 }
 
-/// A small piece of the black device bezel that pushes smoothly into the
-/// leading screen edge. It deliberately has no glass, highlight, or rim: the
-/// system Action Button response reads as the physical bezel deforming, not as
-/// a control floating over the page.
+/// The illuminated, inset side rail iOS shows when the physical Action Button
+/// is pressed. A dim rounded track hugs the leading display edge while a warm
+/// white core blooms inside it, matching the real device response more closely
+/// than the old solid-black bezel deformation.
 final class ActionButtonPressCue: UIView {
-    private let bezel = CAShapeLayer()
+    private let track = CAShapeLayer()
+    private let core = CAShapeLayer()
 
     init() {
         super.init(frame: .zero)
@@ -28,9 +29,21 @@ final class ActionButtonPressCue: UIView {
         backgroundColor = .clear
         layer.anchorPoint = CGPoint(x: 0, y: 0.5)
         alpha = 0
-        transform = CGAffineTransform(scaleX: 0.04, y: 0.82)
-        bezel.fillColor = UIColor.black.cgColor
-        layer.addSublayer(bezel)
+        transform = CGAffineTransform(scaleX: 0.72, y: 0.48)
+
+        track.fillColor = UIColor.black.withAlphaComponent(0.48).cgColor
+        track.strokeColor = UIColor.white.withAlphaComponent(0.16).cgColor
+        track.lineWidth = 0.75
+        layer.addSublayer(track)
+
+        core.fillColor = UIColor(
+            red: 1.0, green: 0.94, blue: 0.48, alpha: 1).cgColor
+        core.shadowColor = UIColor(
+            red: 1.0, green: 0.86, blue: 0.20, alpha: 1).cgColor
+        core.shadowOpacity = 0.92
+        core.shadowRadius = 7
+        core.shadowOffset = .zero
+        layer.addSublayer(core)
     }
 
     @available(*, unavailable)
@@ -38,38 +51,27 @@ final class ActionButtonPressCue: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        bezel.frame = bounds
-        let width = bounds.width
-        let height = bounds.height
-        let middle = height / 2
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: 0, y: 0))
-        path.addCurve(
-            to: CGPoint(x: width * 0.86, y: height * 0.30),
-            controlPoint1: CGPoint(x: width * 0.63, y: 0),
-            controlPoint2: CGPoint(x: width * 0.86, y: height * 0.13))
-        path.addCurve(
-            to: CGPoint(x: width, y: middle),
-            controlPoint1: CGPoint(x: width * 0.86, y: height * 0.40),
-            controlPoint2: CGPoint(x: width, y: height * 0.43))
-        path.addCurve(
-            to: CGPoint(x: width * 0.86, y: height * 0.70),
-            controlPoint1: CGPoint(x: width, y: height * 0.57),
-            controlPoint2: CGPoint(x: width * 0.86, y: height * 0.60))
-        path.addCurve(
-            to: CGPoint(x: 0, y: height),
-            controlPoint1: CGPoint(x: width * 0.86, y: height * 0.87),
-            controlPoint2: CGPoint(x: width * 0.63, y: height))
-        path.close()
-        bezel.path = path.cgPath
+        track.frame = bounds
+        track.path = UIBezierPath(
+            roundedRect: bounds,
+            cornerRadius: bounds.width / 2).cgPath
+
+        let coreRect = bounds.insetBy(dx: 3.5, dy: 10)
+        core.frame = bounds
+        core.path = UIBezierPath(
+            roundedRect: coreRect,
+            cornerRadius: coreRect.width / 2).cgPath
+        core.shadowPath = UIBezierPath(
+            roundedRect: coreRect,
+            cornerRadius: coreRect.width / 2).cgPath
     }
 
     func layout(in window: UIWindow) {
-        let size = CGSize(width: 24, height: 60)
+        let size = CGSize(width: 13, height: 82)
         bounds = CGRect(origin: .zero, size: size)
         layer.position = CGPoint(
-            x: 0,
-            y: window.safeAreaInsets.top + 74 + size.height / 2)
+            x: 2,
+            y: window.safeAreaInsets.top + 82 + size.height / 2)
         setNeedsLayout()
         layoutIfNeeded()
     }
@@ -80,7 +82,7 @@ final class ActionButtonPressCue: UIView {
 
     func play(completion: @escaping () -> Void) {
         alpha = 0
-        transform = CGAffineTransform(scaleX: 0.04, y: 0.82)
+        transform = CGAffineTransform(scaleX: 0.72, y: 0.48)
         UIView.animateKeyframes(
             withDuration: UIAccessibility.isReduceMotionEnabled
                 ? 0.20
@@ -88,16 +90,16 @@ final class ActionButtonPressCue: UIView {
             delay: 0,
             options: [.calculationModeCubic, .beginFromCurrentState]
         ) {
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.30) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.24) {
                 self.alpha = 1
                 self.transform = .identity
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.30, relativeDuration: 0.22) {
-                self.transform = CGAffineTransform(scaleX: 0.78, y: 0.91)
+            UIView.addKeyframe(withRelativeStartTime: 0.24, relativeDuration: 0.34) {
+                self.transform = CGAffineTransform(scaleX: 0.88, y: 0.82)
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.52, relativeDuration: 0.48) {
+            UIView.addKeyframe(withRelativeStartTime: 0.58, relativeDuration: 0.42) {
                 self.alpha = 0
-                self.transform = CGAffineTransform(scaleX: 0.04, y: 0.78)
+                self.transform = CGAffineTransform(scaleX: 0.76, y: 0.52)
             }
         } completion: { _ in
             self.alpha = 0

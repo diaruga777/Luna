@@ -275,14 +275,7 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
             overlay.frame = host.bounds
             overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             host.addSubview(overlay)
-            overlay.alpha = 0
-            UIView.animate(
-                withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.34,
-                delay: 0,
-                options: [.curveEaseOut, .beginFromCurrentState]
-            ) {
-                overlay.alpha = 1
-            }
+            overlay.animateIn()
         }
     }
 

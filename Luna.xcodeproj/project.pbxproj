@@ -2715,7 +2715,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -2776,7 +2776,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -3179,7 +3179,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -3457,7 +3457,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -3729,7 +3729,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -3762,7 +3762,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -3943,7 +3943,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -4121,7 +4121,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = ReaderLaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;

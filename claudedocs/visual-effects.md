@@ -81,15 +81,19 @@ still starlight. The central app's sky is plain moonlight.
 ## App launch fade
 
 All four Luna apps use the production card and corona as their launch surface.
-Their static `ReaderLaunchScreen.storyboard` is recorded from the same fixed
-star table, `EclipseCoronaView`, and blank black `CardSurfaceView` used by the
-first live frame. The card is already the destination root card's full resting
+Their static `LunaLaunchScreen.storyboard` contains one opaque standalone PNG
+recorded from the same fixed star table, `EclipseCoronaView`, and blank black
+`CardSurfaceView` used by the first live frame. Keeping the composite outside
+the asset catalog makes it available to the launch-snapshot process before the
+app has started. The card is already the destination root card's full resting
 size; the corona crops beyond the display instead of making the card smaller.
 No content or app chrome is present. `AppLaunchTransition` asks the destination
-carousel for its exact frame and fades the splash away as one layer in 0.18
-seconds—there is no hold, resize, or multi-stage egress. This happens on every
-launch, not only onboarding, and each `KindWiring` composition root installs the
-shared transition.
+carousel for its exact frame, guarantees the eclipse one 0.10-second visible
+beat, and fades the splash away as one layer over 0.20 seconds. This avoids a
+warm launch committing only the final transparent frame while remaining far
+shorter than the former staged egress. There is no resize or multi-stage
+egress. This happens on every launch, not only onboarding, and each
+`KindWiring` composition root installs the shared transition.
 
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.

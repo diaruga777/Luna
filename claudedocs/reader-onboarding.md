@@ -7,7 +7,7 @@ engine. Each composition root injects an immutable
 
 ## Every app launch
 
-`ReaderLaunchScreen.storyboard` is a static rendering of a blank black
+`LunaLaunchScreen.storyboard` is a static rendering of a blank black
 `CardSurfaceView`, its real glass rim, and `EclipseCorona` over the fixed
 starfield. The black card uses the production root deck's exact 24-point side
 insets and 9:16 resting size; the much wider corona is deliberately cropped at
@@ -17,13 +17,21 @@ There is no app chrome or content.
 This happens after onboarding is complete too. The transition asks the
 destination carousel for its real resting frame through
 `AppLaunchTransitionTarget`, draws the live splash card at that frame, and
-crossfades the single splash layer into the fully laid-out root in 0.18 seconds.
-There is no launch hold, card resize, or staged eclipse egress.
+keeps it visible for 0.10 seconds before crossfading the single splash layer
+into the fully laid-out root over 0.20 seconds. The first live frame cannot skip
+the eclipse even on a warm launch. There is no card resize or staged eclipse
+egress.
 
-The static images are generated from production views. To regenerate them after
-changing the corona, rim, tint, or star table, run
+The storyboard pins one standalone, opaque `LunaLaunchComposite` PNG to the
+full screen instead of asking the launch-snapshot process to resolve asset
+catalog layers. Its 402×874 reference canvas contains the real card frame and
+starfield, and does not rely on a negatively positioned image view, which iOS
+can omit from a launch snapshot. The composite and its diagnostic source layers
+are generated from production views. To regenerate them after changing the
+corona, rim, tint, or star table, run
 `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested` with
-`TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then replace the PNGs in
+`TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then replace
+`Luna/LunaLaunchComposite{,@2x,@3x}.png` and the diagnostic PNGs in
 `ReaderLaunchStarfield.imageset` and `ReaderLaunchCoronaCard.imageset`.
 
 ## Per-app configuration
@@ -52,10 +60,13 @@ The root uses the production `CardCarouselViewController`:
 
 1. The first black card shows its surface-specific first line immediately. It
    holds for 1.45 seconds, then a completely borderless black circle moves
-   slowly down across only the second line. Four narrow illumination rings are
-   clipped to the actual glyph pixels: their brightness falls steeply with
-   distance from the circle edge, and the hottest pixels cast a brief white
-   bloom into their neighbors before resolving to ordinary text. The copy
+   slowly down across only the second line. The circle is fully opaque, while
+   the ordinary glyph layer is also geometrically excluded from its interior,
+   preventing subpixel text from bleeding through. Four narrow illumination
+   rings are clipped to the actual glyph pixels, but their shadow-bearing
+   parent is deliberately unmasked: brightness falls steeply with distance
+   from the circle edge, and the hottest pixels cast a brief white bloom into
+   their neighbors before resolving to ordinary text. The copy
    starts one third of the way down the card. “Show me how” appears only after
    the second line finishes, with a restrained 24% wash of the current app
    surface tint in its glass background.

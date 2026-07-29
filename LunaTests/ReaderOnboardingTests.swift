@@ -125,6 +125,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(lines[0].isFullyRevealed)
         XCTAssertFalse(lines[1].isFullyRevealed)
         XCTAssertFalse(lines[1].occluderHasVisibleChrome)
+        XCTAssertTrue(lines[1].occluderIsFullyOpaque)
         XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
 
         let button = try XCTUnwrap(
@@ -177,8 +178,31 @@ final class ReaderOnboardingTests: XCTestCase {
             return
         }
 
+        XCTAssertNotNil(
+            launch.subviews.compactMap({ $0 as? EclipseCoronaView }).first,
+            "Launch view should visibly contain the production eclipse corona")
         XCTAssertEqual(card.frame, target)
+        XCTAssertGreaterThanOrEqual(
+            AppLaunchTransition.minimumVisibleDuration,
+            0.08,
+            "The live eclipse must survive at least one committed frame")
         XCTAssertLessThanOrEqual(AppLaunchTransition.fadeDuration, 0.2)
+        XCTAssertLessThanOrEqual(
+            AppLaunchTransition.minimumVisibleDuration
+                + AppLaunchTransition.fadeDuration,
+            0.35)
+    }
+
+    func testStaticLaunchBundlesTheCompositeUnderTheCurrentStoryboardIdentity() {
+        XCTAssertEqual(
+            Bundle.main.object(
+                forInfoDictionaryKey: "UILaunchStoryboardName") as? String,
+            "LunaLaunchScreen")
+        XCTAssertNotNil(
+            Bundle.main.url(
+                forResource: "LunaLaunchComposite",
+                withExtension: "png"),
+            "The launch storyboard's standalone composite must be copied into the app")
     }
 
     func testOnboardingLayoutStartsAtOneThirdOfItsContainer() {

@@ -7,9 +7,10 @@ import UIKit
 import XCTest
 @testable import Luna
 
-/// Records the two raster layers used by ReaderLaunchScreen.storyboard from
-/// the same production views that draw the first live frame. The test skips in
-/// normal runs; opt in with READER_LAUNCH_ART_DIR when the corona or rim changes.
+/// Records the standalone composite used by LunaLaunchScreen.storyboard, plus
+/// its two source layers, from the same production views that draw the first
+/// live frame. The test skips in normal runs; opt in with
+/// READER_LAUNCH_ART_DIR when the corona or rim changes.
 @MainActor
 final class ReaderLaunchArtRecorderTests: XCTestCase {
     func testRecordReaderLaunchArtworkWhenRequested() throws {
@@ -24,19 +25,28 @@ final class ReaderLaunchArtRecorderTests: XCTestCase {
             at: outputURL, withIntermediateDirectories: true)
 
         let reference = AppLaunchGeometry.referenceSize
+        let referenceBounds = CGRect(origin: .zero, size: reference)
         let starfield = AppLaunchTransition.makeStaticStarfieldView(
-            frame: CGRect(origin: .zero, size: reference))
-        let bodyWidth = AppLaunchGeometry.referenceRootCardFrame.width
+            frame: referenceBounds)
         let coronaCard = AppLaunchTransition.makeStaticCoronaCardView(
-            bodyWidth: bodyWidth)
+            frame: referenceBounds,
+            cardFrame: AppLaunchGeometry.referenceRootCardFrame)
+        let composite = AppLaunchTransition.makeLaunchView(
+            frame: referenceBounds,
+            cardFrame: AppLaunchGeometry.referenceRootCardFrame)
 
-        for scale in [2, 3] {
+        for scale in [1, 2, 3] {
             try render(starfield, opaque: true, scale: CGFloat(scale)).pngData()?.write(
                 to: outputURL.appendingPathComponent(
                     "ReaderLaunchStarfield@\(scale)x.png"))
             try render(coronaCard, opaque: false, scale: CGFloat(scale)).pngData()?.write(
                 to: outputURL.appendingPathComponent(
                     "ReaderLaunchCoronaCard@\(scale)x.png"))
+            let compositeName = scale == 1
+                ? "LunaLaunchComposite.png"
+                : "LunaLaunchComposite@\(scale)x.png"
+            try render(composite, opaque: true, scale: CGFloat(scale)).pngData()?.write(
+                to: outputURL.appendingPathComponent(compositeName))
         }
     }
 

@@ -8,7 +8,6 @@ import UIKit
 
 enum AppLaunchGeometry {
     static let referenceSize = CGSize(width: 402, height: 874)
-    static let coronaReachRatio: CGFloat = 0.42
     static let rootCardHorizontalInset: CGFloat = 24
     static let rootCardBottomClearanceFromSafeArea: CGFloat = 116
     static let referenceSafeAreaBottomInset: CGFloat = 34
@@ -62,7 +61,8 @@ enum AppLaunchGeometry {
 /// root hierarchy.
 enum AppLaunchTransition {
     static let didFinish = Notification.Name("AppLaunchTransition.didFinish")
-    static let fadeDuration: TimeInterval = 0.18
+    static let minimumVisibleDuration: TimeInterval = 0.10
+    static let fadeDuration: TimeInterval = 0.20
 
     static func install(in window: UIWindow) {
         window.layoutIfNeeded()
@@ -80,20 +80,31 @@ enum AppLaunchTransition {
             ?? fallbackTargetFrame(in: window)
         let overlay = makeLaunchView(frame: window.bounds, cardFrame: targetFrame)
         window.addSubview(overlay)
+        overlay.setNeedsLayout()
+        overlay.layoutIfNeeded()
 
-        UIView.animate(
-            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration,
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState]
+        // Do not begin the fade in the same run-loop turn that installs the
+        // splash. On a warm/fast launch Core Animation can otherwise commit
+        // only the final alpha, producing a plain black frame with no eclipse.
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(
+                minimumVisibleDuration)
         ) {
-            overlay.alpha = 0
-        } completion: { _ in
-            overlay.removeFromSuperview()
-            target?.appLaunchTransitionDidFinish()
-            if target?.keepsOnboardingSlowMotionAfterLaunch != true {
-                OnboardingAnimationClock.restoreNormalSpeed(in: window)
+            guard overlay.window != nil else { return }
+            UIView.animate(
+                withDuration: UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration,
+                delay: 0,
+                options: [.curveEaseOut, .beginFromCurrentState]
+            ) {
+                overlay.alpha = 0
+            } completion: { _ in
+                overlay.removeFromSuperview()
+                target?.appLaunchTransitionDidFinish()
+                if target?.keepsOnboardingSlowMotionAfterLaunch != true {
+                    OnboardingAnimationClock.restoreNormalSpeed(in: window)
+                }
+                NotificationCenter.default.post(name: didFinish, object: nil)
             }
-            NotificationCenter.default.post(name: didFinish, object: nil)
         }
     }
 
@@ -128,44 +139,38 @@ enum AppLaunchTransition {
         return overlay
     }
 
-    /// Tight transparent artwork for the launch storyboard. Keeping this
-    /// renderer beside the live transition prevents the launch asset from
-    /// drifting away from the production corona, rim, or Reader tint.
-    static func makeStaticCoronaCardView(bodyWidth: CGFloat) -> UIView {
-        let bodySize = CGSize(
-            width: bodyWidth,
-            height: bodyWidth / CardCarouselMetrics.cardAspectRatio)
-        let reach = bodyWidth * AppLaunchGeometry.coronaReachRatio
-        let group = UIView(frame: CGRect(
-            origin: .zero,
-            size: CGSize(
-                width: bodySize.width + reach * 2,
-                height: bodySize.height + reach * 2)))
-        group.backgroundColor = .clear
-        group.isOpaque = false
+    /// Full-screen transparent artwork for the launch storyboard. A prior
+    /// tight image required an oversized, negatively positioned UIImageView;
+    /// iOS rendered that launch hierarchy as plain black. Pinning this canvas
+    /// to the launch root uses the proven launch-screen path while preserving
+    /// the exact production card frame inside the raster.
+    static func makeStaticCoronaCardView(
+        frame: CGRect,
+        cardFrame: CGRect
+    ) -> UIView {
+        let canvas = UIView(frame: frame)
+        canvas.backgroundColor = .clear
+        canvas.isOpaque = false
 
-        let bodyFrame = CGRect(
-            x: reach, y: reach,
-            width: bodySize.width, height: bodySize.height)
         let corona = EclipseCoronaView(
-            bodySize: bodySize,
+            bodySize: cardFrame.size,
             cornerRadius: CardSurfaceView.cornerRadius,
             tint: LunaSurfacePalette.atmosphereTint(for: .reader))
-        corona.frame = bodyFrame
-        group.addSubview(corona)
+        corona.frame = cardFrame
+        canvas.addSubview(corona)
 
-        let body = CardSurfaceView(frame: bodyFrame)
+        let body = CardSurfaceView(frame: cardFrame)
         body.backgroundColor = .black
         body.setBorderEnabled(true)
         let black = UIView(frame: body.bounds)
         black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         black.backgroundColor = .black
         body.installContentView(black)
-        group.addSubview(body)
-        group.layoutIfNeeded()
+        canvas.addSubview(body)
+        canvas.layoutIfNeeded()
         body.layoutIfNeeded()
         corona.layoutIfNeeded()
-        return group
+        return canvas
     }
 
     static func makeStaticStarfieldView(frame: CGRect) -> UIView {

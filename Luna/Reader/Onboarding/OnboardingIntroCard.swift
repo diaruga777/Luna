@@ -141,9 +141,12 @@ final class MoonRevealLineView: UIView {
     private let finalLabel = UILabel()
     private let illuminationMaskLabel = UILabel()
     private let moonLayer = CAShapeLayer()
-    private let illuminationLayer = CALayer()
+    private let revealMaskLayer = CAShapeLayer()
+    private let bloomLayer = CALayer()
+    private let illuminatedGlyphLayer = CALayer()
     private let illuminationRings = CALayer()
     private var didStartReveal = false
+    private var initialCircleFrame = CGRect.zero
     private(set) var isFullyRevealed: Bool
 
     var occluderHasVisibleChrome: Bool {
@@ -153,8 +156,16 @@ final class MoonRevealLineView: UIView {
             || moonLayer.shadowOpacity > 0
     }
 
+    var occluderIsFullyOpaque: Bool {
+        moonLayer.opacity == 1
+            && moonLayer.fillColor?.alpha == 1
+            && revealMaskLayer.fillColor?.alpha == 1
+    }
+
     var usesGlyphEdgeIllumination: Bool {
-        illuminationLayer.mask === illuminationMaskLabel.layer
+        illuminatedGlyphLayer.mask === illuminationMaskLabel.layer
+            && bloomLayer.mask == nil
+            && bloomLayer.shadowOpacity == 1
             && illuminationRings.sublayers?.count == Self.edgeFalloff.count
     }
 
@@ -184,18 +195,31 @@ final class MoonRevealLineView: UIView {
         guard !initiallyRevealed else { return }
 
         moonLayer.fillColor = UIColor.black.cgColor
+        moonLayer.opacity = 1
         moonLayer.strokeColor = nil
         moonLayer.lineWidth = 0
         moonLayer.shadowOpacity = 0
         clippedContent.layer.addSublayer(moonLayer)
 
-        illuminationLayer.shadowColor = UIColor.white.cgColor
-        illuminationLayer.shadowRadius = 13
-        illuminationLayer.shadowOpacity = 1
-        illuminationLayer.shadowOffset = .zero
-        illuminationLayer.addSublayer(illuminationRings)
-        illuminationLayer.mask = illuminationMaskLabel.layer
-        layer.addSublayer(illuminationLayer)
+        // The ordinary text is geometrically absent inside the circle. This is
+        // stronger than painting black over subpixel-antialiased white glyphs:
+        // there is no covered glyph alpha available to bleed through.
+        revealMaskLayer.fillColor = UIColor.white.cgColor
+        revealMaskLayer.fillRule = .evenOdd
+        revealMaskLayer.opacity = 1
+        finalLabel.layer.mask = revealMaskLayer
+
+        // Keep the glyph mask on a child and the shadow on its unmasked parent.
+        // Masking the shadow-bearing layer itself clips away the very bloom that
+        // should illuminate pixels surrounding the hot edge of each letter.
+        bloomLayer.shadowColor = UIColor.white.cgColor
+        bloomLayer.shadowRadius = 15
+        bloomLayer.shadowOpacity = 1
+        bloomLayer.shadowOffset = .zero
+        illuminatedGlyphLayer.addSublayer(illuminationRings)
+        illuminatedGlyphLayer.mask = illuminationMaskLabel.layer
+        bloomLayer.addSublayer(illuminatedGlyphLayer)
+        layer.addSublayer(bloomLayer)
     }
 
     @available(*, unavailable)
@@ -218,31 +242,45 @@ final class MoonRevealLineView: UIView {
         guard !didStartReveal else { return }
         didStartReveal = true
         layoutIfNeeded()
-        let initialTop = moonFrame.minY
+        let initialTop = initialCircleFrame.minY
         let travel = bounds.maxY + 6 - initialTop
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
         let transform = CATransform3DMakeTranslation(0, travel, 0)
+        let finalCircleFrame = initialCircleFrame.offsetBy(dx: 0, dy: travel)
+        let initialRevealPath = revealPath(excluding: initialCircleFrame)
+        let finalRevealPath = revealPath(excluding: finalCircleFrame)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         moonLayer.transform = transform
         illuminationRings.transform = transform
+        revealMaskLayer.path = finalRevealPath
         CATransaction.commit()
 
-        let animation = CABasicAnimation(keyPath: "transform")
-        animation.fromValue = CATransform3DIdentity
-        animation.toValue = transform
-        animation.duration = resolvedDuration
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        animation.isRemovedOnCompletion = true
-        let start = moonLayer.convertTime(CACurrentMediaTime(), from: nil)
-        animation.beginTime = start
-        moonLayer.add(animation, forKey: "moonReveal")
+        let moonAnimation = CABasicAnimation(keyPath: "transform")
+        moonAnimation.fromValue = CATransform3DIdentity
+        moonAnimation.toValue = transform
+        moonAnimation.duration = resolvedDuration
+        moonAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
+        moonAnimation.isRemovedOnCompletion = true
+        moonAnimation.beginTime = moonLayer.convertTime(
+            CACurrentMediaTime(), from: nil)
+        moonLayer.add(moonAnimation, forKey: "moonReveal")
 
-        let ringAnimation = animation.copy() as! CABasicAnimation
+        let ringAnimation = moonAnimation.copy() as! CABasicAnimation
         ringAnimation.beginTime = illuminationRings.convertTime(
             CACurrentMediaTime(), from: nil)
         illuminationRings.add(ringAnimation, forKey: "pixelIllumination")
+
+        let revealAnimation = CABasicAnimation(keyPath: "path")
+        revealAnimation.fromValue = initialRevealPath
+        revealAnimation.toValue = finalRevealPath
+        revealAnimation.duration = resolvedDuration
+        revealAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
+        revealAnimation.isRemovedOnCompletion = true
+        revealAnimation.beginTime = revealMaskLayer.convertTime(
+            CACurrentMediaTime(), from: nil)
+        revealMaskLayer.add(revealAnimation, forKey: "opaqueGlyphReveal")
 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
@@ -250,15 +288,11 @@ final class MoonRevealLineView: UIView {
             guard let self else { return }
             self.isFullyRevealed = true
             self.isAccessibilityElement = true
+            self.finalLabel.layer.mask = nil
             self.moonLayer.removeFromSuperlayer()
-            self.illuminationLayer.removeFromSuperlayer()
+            self.bloomLayer.removeFromSuperlayer()
             completion()
         }
-    }
-
-    private var moonFrame: CGRect {
-        guard let pathBounds = moonLayer.path?.boundingBoxOfPath else { return .zero }
-        return pathBounds
     }
 
     private func prepareRevealLayers() {
@@ -276,13 +310,18 @@ final class MoonRevealLineView: UIView {
             y: initialTop,
             width: diameter,
             height: diameter)
+        initialCircleFrame = circleFrame
         let circlePath = UIBezierPath(ovalIn: circleFrame).cgPath
 
         moonLayer.frame = bounds
         moonLayer.path = circlePath
         moonLayer.transform = CATransform3DIdentity
 
-        illuminationLayer.frame = bounds
+        revealMaskLayer.frame = finalLabel.bounds
+        revealMaskLayer.path = revealPath(excluding: circleFrame)
+
+        bloomLayer.frame = bounds
+        illuminatedGlyphLayer.frame = bounds
         illuminationRings.frame = bounds
         illuminationRings.transform = CATransform3DIdentity
         illuminationMaskLabel.frame = bounds
@@ -304,5 +343,12 @@ final class MoonRevealLineView: UIView {
             ring.shadowOpacity = 0
             illuminationRings.addSublayer(ring)
         }
+    }
+
+    private func revealPath(excluding circleFrame: CGRect) -> CGPath {
+        let path = UIBezierPath(rect: bounds)
+        path.append(UIBezierPath(ovalIn: circleFrame))
+        path.usesEvenOddFillRule = true
+        return path.cgPath
     }
 }

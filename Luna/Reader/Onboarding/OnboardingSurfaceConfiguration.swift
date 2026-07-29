@@ -25,6 +25,16 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
         case .amayzon: return "amayzon.local"
         }
     }
+
+    /// One canonical mock URL is shared by Safari's address field and the
+    /// latest incoming Messages bubble during the onboarding loop.
+    var sharedURLString: String {
+        switch self {
+        case .wikipedia: return "https://en.wikipedia.org/wiki/Luna"
+        case .instaTok: return "https://instatok.local/@moonwatch/lunar-eclipse"
+        case .amayzon: return "https://amayzon.local/eyephone-air"
+        }
+    }
 }
 
 /// The animation and setup journey are shared. Only copy, demo content, final

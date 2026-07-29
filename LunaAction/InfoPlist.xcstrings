@@ -8,7 +8,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luna"
+            "value" : "Luna Reader"
           }
         }
       }
@@ -20,7 +20,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "LunaAction"
+            "value" : "LunaReaderAction"
           }
         }
       }

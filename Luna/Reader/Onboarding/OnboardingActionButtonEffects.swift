@@ -8,8 +8,16 @@ import UIKit
 
 enum OnboardingActionButtonTiming {
     static let pressDuration: TimeInterval = 0.68
+    /// The first wave begins exactly as the fully formed edge bulge starts
+    /// retracting, leaving a distinct press beat before any screen distortion.
+    static let pressRecessionStartFraction: Double = 0.42
+    static let firstWaveDuration: CFTimeInterval = 0.82
     static let waveDuration: CFTimeInterval = 0.74
-    /// Half-width of the two-lobed annular displacement band.
+    /// The displacement-only wave has the longer wavelength.
+    static let firstWavefrontHalfWidth: CGFloat = 46
+    static let firstMaximumDisplacement: CGFloat = 30
+    static let firstWaveLightingStrength: CGFloat = 0.20
+    /// The trailing wave retains the previous visual and reveals the save card.
     static let wavefrontHalfWidth: CGFloat = 30
     static let maximumDisplacement: CGFloat = 26
     /// The Safari/card crossfade is confined to the distorted wavefront.
@@ -17,6 +25,96 @@ enum OnboardingActionButtonTiming {
     /// A transient motion raster; lower than the 3× display scale so Core Image
     /// can sustain a smooth wave instead of presenting only a few heavy frames.
     static let waveRasterScale: CGFloat = 1.5
+
+    static func secondWaveStartProgress(
+        screenWidth: CGFloat,
+        firstTravelDistance: CGFloat
+    ) -> CGFloat {
+        min(
+            max((screenWidth * 0.5) / max(firstTravelDistance, 1), 0),
+            1)
+    }
+}
+
+/// A full-screen mock source that can demonstrate saving its visible URL with
+/// the physical Action Button. Safari and Messages both inherit this player so
+/// their press cue, URL highlight, wave timing, and destination transition can
+/// never drift apart.
+@MainActor
+class OnboardingSaveSourceViewController: UIViewController {
+    var onActionButtonWaveFinished: (() -> Void)?
+    var makeActionButtonDestinationSnapshot: (() -> UIImage?)?
+
+    private var actionCue: ActionButtonPressCue?
+    private var waveAnimator: LiquidScreenWaveAnimator?
+
+    /// The currently visible URL. Sources may override this when their mock
+    /// content changes while the onboarding loop is running.
+    var sharedURLString: String { "" }
+
+    /// Removes transient pressed-state decoration before this source grows back
+    /// out of the saved card.
+    func prepareForPresentation() {
+        setURLHighlighted(false)
+    }
+
+    /// Subclasses apply the bright app-tint wash to their visible URL.
+    func setURLHighlighted(_ highlighted: Bool) {}
+
+    var isURLHighlighted: Bool { false }
+
+    /// Plays the same complete save gesture for every mock source. The URL is
+    /// highlighted before the source snapshot is captured, so it remains lit
+    /// until the advancing wave replaces it with the saved-card view.
+    final func replayActionButtonSaveEffect() {
+        guard actionCue == nil, waveAnimator == nil,
+              let window = view.window
+        else { return }
+
+        setURLHighlighted(true)
+        view.layoutIfNeeded()
+
+        let cue = ActionButtonPressCue()
+        actionCue = cue
+        cue.layout(in: window)
+        let origin = cue.waveOrigin
+
+        let hostView = view.superview ?? window
+        let animator = LiquidScreenWaveAnimator(window: window, hostView: hostView)
+        waveAnimator = animator
+
+        window.addSubview(cue)
+        cue.play { [weak self, weak cue] in
+            cue?.removeFromSuperview()
+            self?.actionCue = nil
+        }
+
+        let resolvedPressDuration = UIAccessibility.isReduceMotionEnabled
+            ? 0.20
+            : OnboardingActionButtonTiming.pressDuration
+        let waveDelay = resolvedPressDuration
+            * OnboardingActionButtonTiming.pressRecessionStartFraction
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(waveDelay)
+        ) { [weak self, weak cue, weak animator] in
+            guard let self,
+                  let animator,
+                  self.waveAnimator === animator,
+                  self.actionCue === cue
+            else { return }
+            animator.play(
+                origin: origin,
+                destinationSnapshot: { [weak self] in
+                    self?.makeActionButtonDestinationSnapshot?()
+                },
+                completion: { [weak self, weak cue] in
+                    cue?.removeFromSuperview()
+                    self?.actionCue = nil
+                    self?.waveAnimator = nil
+                    self?.onActionButtonWaveFinished?()
+                })
+        }
+    }
 }
 
 /// The solid-black edge deformation iOS shows when the physical Action Button
@@ -47,34 +145,33 @@ final class ActionButtonPressCue: UIView {
         let height = bounds.height
         let path = UIBezierPath()
         path.move(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: 1, y: 0))
         path.addCurve(
-            to: CGPoint(x: width * 0.76, y: height * 0.28),
-            controlPoint1: CGPoint(x: width * 0.05, y: height * 0.11),
-            controlPoint2: CGPoint(x: width * 0.62, y: height * 0.17))
+            to: CGPoint(x: width * 0.88, y: height * 0.28),
+            controlPoint1: CGPoint(x: 0, y: height * 0.15),
+            controlPoint2: CGPoint(x: width * 0.68, y: height * 0.17))
         path.addCurve(
-            to: CGPoint(x: width, y: height * 0.50),
-            controlPoint1: CGPoint(x: width * 0.92, y: height * 0.36),
-            controlPoint2: CGPoint(x: width, y: height * 0.42))
+            to: CGPoint(x: width, y: height * 0.40),
+            controlPoint1: CGPoint(x: width * 0.97, y: height * 0.33),
+            controlPoint2: CGPoint(x: width, y: height * 0.36))
+        path.addLine(to: CGPoint(x: width, y: height * 0.60))
         path.addCurve(
-            to: CGPoint(x: width * 0.76, y: height * 0.72),
-            controlPoint1: CGPoint(x: width, y: height * 0.58),
-            controlPoint2: CGPoint(x: width * 0.92, y: height * 0.64))
+            to: CGPoint(x: width * 0.88, y: height * 0.72),
+            controlPoint1: CGPoint(x: width, y: height * 0.64),
+            controlPoint2: CGPoint(x: width * 0.97, y: height * 0.67))
         path.addCurve(
-            to: CGPoint(x: 1, y: height),
-            controlPoint1: CGPoint(x: width * 0.62, y: height * 0.83),
-            controlPoint2: CGPoint(x: width * 0.05, y: height * 0.89))
-        path.addLine(to: CGPoint(x: 0, y: height))
+            to: CGPoint(x: 0, y: height),
+            controlPoint1: CGPoint(x: width * 0.68, y: height * 0.83),
+            controlPoint2: CGPoint(x: 0, y: height * 0.85))
         path.close()
         silhouette.path = path.cgPath
     }
 
     func layout(in window: UIWindow) {
-        let size = CGSize(width: 30, height: 164)
+        let size = CGSize(width: 30, height: 252)
         bounds = CGRect(origin: .zero, size: size)
         layer.position = CGPoint(
             x: 0,
-            y: window.safeAreaInsets.top + 58 + size.height / 2)
+            y: window.safeAreaInsets.top + 46 + size.height / 2)
         setNeedsLayout()
         layoutIfNeeded()
     }
@@ -93,13 +190,13 @@ final class ActionButtonPressCue: UIView {
             delay: 0,
             options: [.calculationModeCubic, .beginFromCurrentState]
         ) {
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.38) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.32) {
                 self.transform = .identity
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.38, relativeDuration: 0.20) {
-                self.transform = CGAffineTransform(scaleX: 0.94, y: 0.98)
+            UIView.addKeyframe(withRelativeStartTime: 0.32, relativeDuration: 0.10) {
+                self.transform = .identity
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.58, relativeDuration: 0.42) {
+            UIView.addKeyframe(withRelativeStartTime: 0.42, relativeDuration: 0.58) {
                 self.transform = CGAffineTransform(scaleX: 0.01, y: 0.76)
             }
         } completion: { _ in
@@ -114,17 +211,31 @@ final class ActionButtonPressCue: UIView {
 @MainActor
 final class LiquidScreenWaveAnimator {
     private static let waveKernel = CIWarpKernel(source: """
-        kernel vec2 lunaAnnularWave(
-            vec2 center, float radius, float halfWidth, float amplitude
+        kernel vec2 lunaOverlappingWaves(
+            vec2 center,
+            float firstRadius, float firstHalfWidth, float firstAmplitude,
+            float secondRadius, float secondHalfWidth, float secondAmplitude
         ) {
             vec2 destination = destCoord();
             vec2 delta = destination - center;
             float distanceFromCenter = length(delta);
-            float normalized = (distanceFromCenter - radius) / halfWidth;
-            float band = 1.0 - smoothstep(0.0, 1.0, abs(normalized));
-            float compression = sin(normalized * 3.14159265359);
+            float firstNormalized =
+                (distanceFromCenter - firstRadius) / firstHalfWidth;
+            float firstBand =
+                1.0 - smoothstep(0.0, 1.0, abs(firstNormalized));
+            float firstCompression =
+                sin(firstNormalized * 3.14159265359);
+            float secondNormalized =
+                (distanceFromCenter - secondRadius) / secondHalfWidth;
+            float secondBand =
+                1.0 - smoothstep(0.0, 1.0, abs(secondNormalized));
+            float secondCompression =
+                sin(secondNormalized * 3.14159265359);
+            float displacement =
+                firstBand * firstCompression * firstAmplitude
+                + secondBand * secondCompression * secondAmplitude;
             vec2 direction = delta / max(distanceFromCenter, 1.0);
-            return destination - direction * (band * compression * amplitude);
+            return destination - direction * displacement;
         }
         """)
 
@@ -140,6 +251,22 @@ final class LiquidScreenWaveAnimator {
         }
         """)
 
+    private static let lightingKernel = CIColorKernel(source: """
+        kernel vec4 lunaFirstWaveLighting(
+            __sample image, vec2 center,
+            float radius, float halfWidth, float strength
+        ) {
+            float distanceFromCenter = length(destCoord() - center);
+            float normalized = (distanceFromCenter - radius) / halfWidth;
+            float band = 1.0 - smoothstep(0.0, 1.0, abs(normalized));
+            float ridge = sin(normalized * 3.14159265359) * band;
+            vec3 color = image.rgb;
+            color += max(ridge, 0.0) * strength * (vec3(1.0) - color);
+            color -= max(-ridge, 0.0) * strength * 0.72 * color;
+            return vec4(color, image.a);
+        }
+        """)
+
     private weak var window: UIWindow?
     private weak var hostView: UIView?
     private let context = CIContext(options: [.cacheIntermediates: false])
@@ -150,7 +277,9 @@ final class LiquidScreenWaveAnimator {
     private var startedAt: CFTimeInterval = 0
     private var completion: (() -> Void)?
     private var origin: CGPoint = .zero
-    private let duration = OnboardingAnimationClock.displayLinkDuration(
+    private let firstWaveDuration = OnboardingAnimationClock.displayLinkDuration(
+        OnboardingActionButtonTiming.firstWaveDuration)
+    private let secondWaveDuration = OnboardingAnimationClock.displayLinkDuration(
         OnboardingActionButtonTiming.waveDuration)
 
     init(window: UIWindow, hostView: UIView) {
@@ -210,7 +339,7 @@ final class LiquidScreenWaveAnimator {
             finish()
             return
         }
-        let progress = min(max((link.timestamp - startedAt) / duration, 0), 1)
+        let elapsed = max(link.timestamp - startedAt, 0)
         let extent = source.extent
         let pixelScale = extent.width / max(hostView?.bounds.width ?? window.bounds.width, 1)
         let center = CGPoint(
@@ -222,34 +351,59 @@ final class LiquidScreenWaveAnimator {
             hypot(center.x - extent.minX, center.y - extent.maxY),
             hypot(center.x - extent.maxX, center.y - extent.maxY),
         ].max() ?? extent.width
-        let radius = max(
+        let firstHalfWidth =
+            OnboardingActionButtonTiming.firstWavefrontHalfWidth * pixelScale
+        let secondHalfWidth =
+            OnboardingActionButtonTiming.wavefrontHalfWidth * pixelScale
+        let firstTravelDistance = farthestCornerDistance + firstHalfWidth
+        let secondTravelDistance = farthestCornerDistance + secondHalfWidth
+        let secondStartProgress =
+            OnboardingActionButtonTiming.secondWaveStartProgress(
+                screenWidth: extent.width,
+                firstTravelDistance: firstTravelDistance)
+        let secondStartedAt = firstWaveDuration
+            * CFTimeInterval(secondStartProgress)
+
+        let firstProgress = min(max(elapsed / firstWaveDuration, 0), 1)
+        let secondProgress = min(
+            max((elapsed - secondStartedAt) / secondWaveDuration, 0),
+            1)
+        let hasSecondWaveStarted = elapsed >= secondStartedAt
+        let firstRadius = max(
             1,
-            CGFloat(progress)
-                * (farthestCornerDistance
-                    + OnboardingActionButtonTiming.wavefrontHalfWidth * pixelScale))
-        let attack = min(CGFloat(progress) / 0.12, 1)
-        let release = 1 - min(max((CGFloat(progress) - 0.82) / 0.18, 0), 1)
-        let temporalEnvelope = sin(attack * .pi / 2) * release
-        let halfWidth = OnboardingActionButtonTiming.wavefrontHalfWidth * pixelScale
-        let displacement =
+            CGFloat(firstProgress) * firstTravelDistance)
+        let secondRadius = hasSecondWaveStarted
+            ? max(1, CGFloat(secondProgress) * secondTravelDistance)
+            : -secondTravelDistance
+        let firstEnvelope = temporalEnvelope(for: firstProgress)
+        let secondEnvelope = hasSecondWaveStarted
+            ? temporalEnvelope(for: secondProgress)
+            : 0
+        let firstDisplacement =
+            OnboardingActionButtonTiming.firstMaximumDisplacement
+            * pixelScale
+            * firstEnvelope
+        let secondDisplacement =
             OnboardingActionButtonTiming.maximumDisplacement
             * pixelScale
-            * temporalEnvelope
-        let roiPadding = displacement + 2
+            * secondEnvelope
+        let roiPadding =
+            abs(firstDisplacement) + abs(secondDisplacement) + 2
 
         guard let waveKernel = Self.waveKernel,
             let revealKernel = Self.revealKernel,
+            let lightingKernel = Self.lightingKernel,
             let revealedFrame = revealKernel.apply(
                 extent: extent,
                 arguments: [
                     source,
                     destination,
                     CIVector(x: center.x, y: center.y),
-                    NSNumber(value: Double(radius)),
+                    NSNumber(value: Double(secondRadius)),
                     NSNumber(value: Double(
                         OnboardingActionButtonTiming.revealHalfWidth * pixelScale)),
                 ])?.cropped(to: extent),
-            let output = waveKernel.apply(
+            let displacedFrame = waveKernel.apply(
                 extent: extent,
                 roiCallback: { _, rect in
                     rect.insetBy(dx: -roiPadding, dy: -roiPadding)
@@ -257,9 +411,23 @@ final class LiquidScreenWaveAnimator {
                 image: revealedFrame.clampedToExtent(),
                 arguments: [
                     CIVector(x: center.x, y: center.y),
-                    NSNumber(value: Double(radius)),
-                    NSNumber(value: Double(halfWidth)),
-                    NSNumber(value: Double(displacement)),
+                    NSNumber(value: Double(firstRadius)),
+                    NSNumber(value: Double(firstHalfWidth)),
+                    NSNumber(value: Double(firstDisplacement)),
+                    NSNumber(value: Double(secondRadius)),
+                    NSNumber(value: Double(secondHalfWidth)),
+                    NSNumber(value: Double(secondDisplacement)),
+                ])?.cropped(to: extent),
+            let output = lightingKernel.apply(
+                extent: extent,
+                arguments: [
+                    displacedFrame,
+                    CIVector(x: center.x, y: center.y),
+                    NSNumber(value: Double(firstRadius)),
+                    NSNumber(value: Double(firstHalfWidth)),
+                    NSNumber(value: Double(
+                        OnboardingActionButtonTiming.firstWaveLightingStrength
+                            * firstEnvelope)),
                 ])?.cropped(to: extent),
             let rendered = context.createCGImage(output, from: extent)
         else {
@@ -268,7 +436,14 @@ final class LiquidScreenWaveAnimator {
         }
         overlay.image = UIImage(
             cgImage: rendered, scale: pixelScale, orientation: .up)
-        if progress >= 1 { finish() }
+        if firstProgress >= 1, secondProgress >= 1 { finish() }
+    }
+
+    private func temporalEnvelope(for progress: CFTimeInterval) -> CGFloat {
+        let progress = CGFloat(progress)
+        let attack = min(progress / 0.12, 1)
+        let release = 1 - min(max((progress - 0.82) / 0.18, 0), 1)
+        return sin(attack * .pi / 2) * release
     }
 
     private func finish() {

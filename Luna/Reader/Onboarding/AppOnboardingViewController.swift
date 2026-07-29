@@ -7,20 +7,33 @@ import LunaDesignSystem
 import LunaStorage
 import UIKit
 
-enum OnboardingSafariCardTiming {
+enum OnboardingDemoLoopTiming {
     static let geometryDuration: TimeInterval = 0.58
-    static let cardHoldDuration: TimeInterval = 0.95
-    /// The first successful save remains completely unobscured long enough to
-    /// register before setup instructions fade over it.
-    static let firstSavedCardHoldDuration: TimeInterval = 1.35
-    /// A brief clean Safari beat before the next save gesture begins.
-    static let browserHoldDuration: TimeInterval = 0.38
+    static let savedCardHoldDuration: TimeInterval = 0.95
+    /// The first complete Safari → save → Messages → save loop remains
+    /// unobscured long enough to register before setup instructions fade in.
+    static let firstLoopSavedCardHoldDuration: TimeInterval = 1.35
+    /// A brief clean source beat before the next save gesture begins.
+    static let sourceHoldDuration: TimeInterval = 0.38
+}
+
+enum OnboardingDemoSource: CaseIterable, Equatable {
+    case safari
+    case messages
+
+    var next: Self {
+        switch self {
+        case .safari: return .messages
+        case .messages: return .safari
+        }
+    }
 }
 
 /// The shared guided first-run deck. It intentionally uses the production
 /// CardCarousel rather than a look-alike. The intro card expands directly into
-/// the Safari facsimile; after each save wave, Safari dissolves into the app's
-/// complete production root, including its ordinary card chrome and carousel.
+/// the Safari facsimile. Safari and a mock Messages conversation then alternate;
+/// after each save wave, the active source dissolves into the app's complete
+/// production root, including its ordinary card chrome and carousel.
 final class AppOnboardingViewController: UIViewController {
     private enum ExternalReturn {
         case none
@@ -29,7 +42,7 @@ final class AppOnboardingViewController: UIViewController {
         case actionButton
     }
 
-    private enum SafariPresentation {
+    private enum DemoPresentation {
         case fullScreen
         case card
     }
@@ -42,6 +55,7 @@ final class AppOnboardingViewController: UIViewController {
     private let safariGuide = SetupGuideVideo(guide: .safariExtension)
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
     private var safariReplica: SafariReplicaViewController?
+    private var messagesReplica: MessagesReplicaViewController?
     private var savedRootViewController: UIViewController?
     private var savedCardWaveSnapshot: UIImage?
     private var introCorona: EclipseCoronaView?
@@ -49,10 +63,13 @@ final class AppOnboardingViewController: UIViewController {
     private var temporarySaveInstallResult: Bool?
     private var externalReturn = ExternalReturn.none
     private var didExpandSafari = false
-    private var safariPresentation = SafariPresentation.fullScreen
-    private var safariTransitionGeneration = 0
-    private var safariLoopGeneration = 0
-    private var isSafariGeometryTransitioning = false
+    private var demoPresentation = DemoPresentation.fullScreen
+    private var activeDemoSource = OnboardingDemoSource.safari
+    private var nextDemoSource = OnboardingDemoSource.messages
+    private var completedDemonstrationSaves = 0
+    private var demoTransitionGeneration = 0
+    private var demoLoopGeneration = 0
+    private var isDemoGeometryTransitioning = false
     private var isFinishing = false
     private var foregroundObserver: NSObjectProtocol?
     private var setupObserver: NSObjectProtocol?
@@ -82,8 +99,8 @@ final class AppOnboardingViewController: UIViewController {
     required init?(coder: NSCoder) { nil }
 
     override var childForStatusBarStyle: UIViewController? {
-        safariPresentation == .fullScreen
-            ? safariReplica
+        demoPresentation == .fullScreen
+            ? sourceController(for: activeDemoSource)
             : savedRootViewController
     }
 
@@ -246,9 +263,25 @@ final class AppOnboardingViewController: UIViewController {
             self?.makeSavedCardSnapshot()
         }
         safari.onActionButtonWaveFinished = { [weak self] in
-            self?.actionButtonWaveDidFinish()
+            self?.actionButtonWaveDidFinish(from: .safari)
         }
         safariReplica = safari
+
+        let messages = MessagesReplicaViewController(
+            urlString: safari.sharedURLString)
+        messages.makeActionButtonDestinationSnapshot = { [weak self] in
+            self?.makeSavedCardSnapshot()
+        }
+        messages.onActionButtonWaveFinished = { [weak self] in
+            self?.actionButtonWaveDidFinish(from: .messages)
+        }
+        messagesReplica = messages
+        addChild(messages)
+        messages.view.frame = view.bounds
+        messages.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        messages.view.isHidden = true
+        view.addSubview(messages.view)
+        messages.didMove(toParent: self)
 
         addChild(safari)
         let startFrame = card.convert(card.bounds, to: view)
@@ -262,10 +295,13 @@ final class AppOnboardingViewController: UIViewController {
         safari.view.layoutIfNeeded()
         view.bringSubviewToFront(safari.view)
 
-        safariPresentation = .fullScreen
+        activeDemoSource = .safari
+        nextDemoSource = .messages
+        completedDemonstrationSaves = 0
+        demoPresentation = .fullScreen
         let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
             ? 0.20
-            : OnboardingSafariCardTiming.geometryDuration
+            : OnboardingDemoLoopTiming.geometryDuration
         UIView.animate(
             withDuration: duration,
             delay: 0,
@@ -295,6 +331,8 @@ final class AppOnboardingViewController: UIViewController {
                 self.presentInstructionsAfterShrinking {
                     safari.showWaitingForActionButton()
                 }
+            case "messages":
+                self.showDebugMessagesSource()
             default:
                 safari.beginDemonstration()
             }
@@ -304,18 +342,27 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
-    private func actionButtonWaveDidFinish() {
+    private func actionButtonWaveDidFinish(from source: OnboardingDemoSource) {
+        guard source == activeDemoSource else { return }
         commitWaveDrivenCardPresentation()
-        let isFirstSave = safariReplica?.hasInstructions != true
-        presentInstructionsAfterShrinking(
-            instructionDelay: isFirstSave
-                ? OnboardingSafariCardTiming.firstSavedCardHoldDuration
-                : 0
-        ) { [weak self] in
-            guard let self else { return }
-            if self.safariReplica?.hasInstructions != true {
+        completedDemonstrationSaves += 1
+        nextDemoSource = source.next
+
+        let completedFirstLoop =
+            completedDemonstrationSaves == OnboardingDemoSource.allCases.count
+        if completedFirstLoop, safariReplica?.hasInstructions != true {
+            stopDemoPresentationLoop()
+            presentInstructionsAfterShrinking(
+                instructionDelay:
+                    OnboardingDemoLoopTiming.firstLoopSavedCardHoldDuration
+            ) { [weak self] in
+                guard let self,
+                      self.safariReplica?.hasInstructions != true
+                else { return }
                 self.safariReplica?.showSafariPrompt()
             }
+        } else {
+            startDemoPresentationLoop()
         }
     }
 
@@ -323,12 +370,12 @@ final class AppOnboardingViewController: UIViewController {
     /// the matching live hierarchy before its overlay is removed, avoiding a
     /// flash or a second, disconnected geometry animation.
     private func commitWaveDrivenCardPresentation() {
-        guard let safari = safariReplica else { return }
-        safariTransitionGeneration += 1
-        isSafariGeometryTransitioning = false
-        safariPresentation = .card
-        applySafariPresentation(.card, safari: safari)
-        safari.view.isHidden = true
+        guard let source = sourceController(for: activeDemoSource) else { return }
+        demoTransitionGeneration += 1
+        isDemoGeometryTransitioning = false
+        demoPresentation = .card
+        applyDemoPresentation(.card, source: source)
+        source.view.isHidden = true
         setNeedsStatusBarAppearanceUpdate()
     }
 
@@ -371,7 +418,7 @@ final class AppOnboardingViewController: UIViewController {
         instructionDelay: TimeInterval = 0,
         _ presentInstructions: @escaping () -> Void
     ) {
-        transitionSafari(to: .card) { [weak self] in
+        transitionDemo(to: .card, source: activeDemoSource) { [weak self] in
             guard let self, !self.isFinishing else { return }
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + OnboardingAnimationClock.delay(
@@ -379,39 +426,45 @@ final class AppOnboardingViewController: UIViewController {
             ) { [weak self] in
                 guard let self, !self.isFinishing else { return }
                 presentInstructions()
-                self.startSafariPresentationLoop()
+                self.startDemoPresentationLoop()
             }
         }
     }
 
-    private func transitionSafari(
-        to target: SafariPresentation,
+    private func transitionDemo(
+        to target: DemoPresentation,
+        source sourceKind: OnboardingDemoSource,
         completion: @escaping () -> Void
     ) {
-        guard let safari = safariReplica else {
+        guard let source = sourceController(for: sourceKind) else {
             completion()
             return
         }
-        if safariPresentation == target, !isSafariGeometryTransitioning {
-            applySafariPresentation(target, safari: safari)
+        if demoPresentation == target,
+           activeDemoSource == sourceKind,
+           !isDemoGeometryTransitioning
+        {
+            applyDemoPresentation(target, source: source)
             completion()
             return
         }
 
-        safariTransitionGeneration += 1
-        let generation = safariTransitionGeneration
-        isSafariGeometryTransitioning = true
-        safariPresentation = target
+        demoTransitionGeneration += 1
+        let generation = demoTransitionGeneration
+        isDemoGeometryTransitioning = true
+        demoPresentation = target
 
         if target == .fullScreen {
-            safari.view.isHidden = false
+            prepareSourceForPresentation(sourceKind)
+            activeDemoSource = sourceKind
+            source.view.isHidden = false
         }
-        view.bringSubviewToFront(safari.view)
+        view.bringSubviewToFront(source.view)
         setNeedsStatusBarAppearanceUpdate()
 
         let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
             ? 0.20
-            : OnboardingSafariCardTiming.geometryDuration
+            : OnboardingDemoLoopTiming.geometryDuration
         UIView.animate(
             withDuration: duration,
             delay: 0,
@@ -419,73 +472,115 @@ final class AppOnboardingViewController: UIViewController {
             initialSpringVelocity: 0,
             options: [.curveEaseInOut, .beginFromCurrentState]
         ) {
-            self.applySafariPresentation(target, safari: safari)
+            self.applyDemoPresentation(target, source: source)
         } completion: { [weak self] _ in
             guard let self,
-                  generation == self.safariTransitionGeneration
+                  generation == self.demoTransitionGeneration
             else { return }
-            self.isSafariGeometryTransitioning = false
-            self.applySafariPresentation(target, safari: safari)
-            safari.view.isHidden = target == .card
+            self.isDemoGeometryTransitioning = false
+            self.applyDemoPresentation(target, source: source)
+            source.view.isHidden = target == .card
             self.setNeedsStatusBarAppearanceUpdate()
             completion()
         }
     }
 
-    private func applySafariPresentation(
-        _ presentation: SafariPresentation,
-        safari: SafariReplicaViewController
+    private func applyDemoPresentation(
+        _ presentation: DemoPresentation,
+        source: OnboardingSaveSourceViewController
     ) {
         switch presentation {
         case .fullScreen:
-            safari.view.frame = view.bounds
-            safari.view.layer.cornerRadius = 0
-            safari.view.alpha = 1
+            source.view.frame = view.bounds
+            source.view.layer.cornerRadius = 0
+            source.view.alpha = 1
             carousel.view.alpha = 0
             savedRootViewController?.view.alpha = 0
         case .card:
             view.layoutIfNeeded()
             savedRootViewController?.view.layoutIfNeeded()
-            safari.view.frame = savedCardFrame()
-            safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
-            safari.view.alpha = 0
+            source.view.frame = savedCardFrame()
+            source.view.layer.cornerRadius = CardSurfaceView.cornerRadius
+            source.view.alpha = 0
             carousel.view.alpha = 0
             savedRootViewController?.view.alpha = 1
         }
-        safari.view.layer.cornerCurve = .continuous
-        safari.view.clipsToBounds = true
+        source.view.layer.cornerCurve = .continuous
+        source.view.clipsToBounds = true
     }
 
-    private func startSafariPresentationLoop() {
-        safariLoopGeneration += 1
-        scheduleNextSafariPresentation(loopGeneration: safariLoopGeneration)
+    private func prepareSourceForPresentation(_ source: OnboardingDemoSource) {
+        if source == .messages,
+           let urlString = safariReplica?.sharedURLString
+        {
+            messagesReplica?.updateURL(urlString)
+        }
+        sourceController(for: source)?.prepareForPresentation()
+        for otherSource in OnboardingDemoSource.allCases where otherSource != source {
+            sourceController(for: otherSource)?.view.isHidden = true
+        }
+        guard let sourceView = sourceController(for: source)?.view else { return }
+        sourceView.frame = savedCardFrame()
+        sourceView.layer.cornerRadius = CardSurfaceView.cornerRadius
+        sourceView.layer.cornerCurve = .continuous
+        sourceView.clipsToBounds = true
+        sourceView.alpha = 0
     }
 
-    private func stopSafariPresentationLoop() {
-        safariLoopGeneration += 1
+    private func sourceController(
+        for source: OnboardingDemoSource
+    ) -> OnboardingSaveSourceViewController? {
+        switch source {
+        case .safari: return safariReplica
+        case .messages: return messagesReplica
+        }
     }
 
-    private func scheduleNextSafariPresentation(loopGeneration: Int) {
+    #if DEBUG
+    private func showDebugMessagesSource() {
+        prepareSourceForPresentation(.messages)
+        activeDemoSource = .messages
+        nextDemoSource = .safari
+        demoPresentation = .fullScreen
+        guard let messages = messagesReplica else { return }
+        messages.view.isHidden = false
+        applyDemoPresentation(.fullScreen, source: messages)
+        view.bringSubviewToFront(messages.view)
+        setNeedsStatusBarAppearanceUpdate()
+    }
+    #endif
+
+    private func startDemoPresentationLoop() {
+        demoLoopGeneration += 1
+        scheduleNextDemoPresentation(loopGeneration: demoLoopGeneration)
+    }
+
+    private func stopDemoPresentationLoop() {
+        demoLoopGeneration += 1
+    }
+
+    private func scheduleNextDemoPresentation(loopGeneration: Int) {
         guard !isFinishing,
-              loopGeneration == safariLoopGeneration,
+              loopGeneration == demoLoopGeneration,
               externalReturn == .none
         else { return }
 
-        if safariPresentation == .fullScreen {
+        if demoPresentation == .fullScreen {
             scheduleActionButtonReplay(loopGeneration: loopGeneration)
             return
         }
 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
-                OnboardingSafariCardTiming.cardHoldDuration)
+                OnboardingDemoLoopTiming.savedCardHoldDuration)
         ) { [weak self] in
             guard let self,
                   !self.isFinishing,
-                  loopGeneration == self.safariLoopGeneration,
+                  loopGeneration == self.demoLoopGeneration,
                   self.externalReturn == .none
             else { return }
-            self.transitionSafari(to: .fullScreen) { [weak self] in
+            let source = self.nextDemoSource
+            self.transitionDemo(to: .fullScreen, source: source) { [weak self] in
                 self?.scheduleActionButtonReplay(
                     loopGeneration: loopGeneration)
             }
@@ -495,23 +590,22 @@ final class AppOnboardingViewController: UIViewController {
     private func scheduleActionButtonReplay(loopGeneration: Int) {
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
-                OnboardingSafariCardTiming.browserHoldDuration)
+                OnboardingDemoLoopTiming.sourceHoldDuration)
         ) { [weak self] in
             guard let self,
                   !self.isFinishing,
-                  loopGeneration == self.safariLoopGeneration,
+                  loopGeneration == self.demoLoopGeneration,
                   self.externalReturn == .none,
-                  self.safariPresentation == .fullScreen
+                  self.demoPresentation == .fullScreen
             else { return }
-            // The wave completion drives the saved-card transition and schedules
-            // the next cycle. Nothing alternates geometry on its own anymore.
-            self.safariReplica?.replayActionButtonSaveEffect()
+            self.sourceController(
+                for: self.activeDemoSource)?.replayActionButtonSaveEffect()
         }
     }
 
     private func openSafariSetup() {
         guard externalReturn == .none else { return }
-        stopSafariPresentationLoop()
+        stopDemoPresentationLoop()
         externalReturn = .safari
         safariGuide.startPictureInPicture()
         if let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia") {
@@ -521,14 +615,14 @@ final class AppOnboardingViewController: UIViewController {
 
     private func installShortcut() {
         guard externalReturn == .none else { return }
-        stopSafariPresentationLoop()
+        stopDemoPresentationLoop()
         externalReturn = .shortcut
         BundledShortcut.presentInstaller(from: self, sourceView: safariReplica?.view)
     }
 
     private func openActionButtonSettings() {
         guard externalReturn == .none else { return }
-        stopSafariPresentationLoop()
+        stopDemoPresentationLoop()
         externalReturn = .actionButton
         actionGuide.startPictureInPicture()
         SystemSettingsLink.openActionButton()
@@ -543,18 +637,18 @@ final class AppOnboardingViewController: UIViewController {
         case .safari:
             safariGuide.stopPictureInPicture()
             safariReplica?.showShortcutAndActionSetup()
-            startSafariPresentationLoop()
+            startDemoPresentationLoop()
         case .shortcut:
             // Importing the signed file is an external Shortcuts hop, but the
             // setup isn't complete until the hardware Action Button is assigned.
             safariReplica?.showShortcutAndActionSetup()
-            startSafariPresentationLoop()
+            startDemoPresentationLoop()
         case .actionButton:
             actionGuide.stopPictureInPicture()
             safariReplica?.showWaitingForActionButton()
             setupStatusChanged()
             if !isFinishing {
-                startSafariPresentationLoop()
+                startDemoPresentationLoop()
             }
         }
     }
@@ -571,7 +665,7 @@ final class AppOnboardingViewController: UIViewController {
     private func finishOnboarding() {
         guard !isFinishing else { return }
         isFinishing = true
-        stopSafariPresentationLoop()
+        stopDemoPresentationLoop()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
         safariReplica?.dismissInstructions(animated: true) { [weak self] in
@@ -580,11 +674,11 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func settleOnSavedCardAndFinish() {
-        if safariPresentation == .card, !isSafariGeometryTransitioning {
+        if demoPresentation == .card, !isDemoGeometryTransitioning {
             commitBundledSaveAndTransition()
             return
         }
-        transitionSafari(to: .card) { [weak self] in
+        transitionDemo(to: .card, source: activeDemoSource) { [weak self] in
             self?.commitBundledSaveAndTransition()
         }
     }
@@ -658,7 +752,7 @@ final class AppOnboardingViewController: UIViewController {
         safariReplica?.showSaveFailure { [weak self] in
             self?.finishOnboarding()
         }
-        startSafariPresentationLoop()
+        startDemoPresentationLoop()
     }
 
     #if DEBUG

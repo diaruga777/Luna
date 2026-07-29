@@ -94,6 +94,9 @@
     "Audio" : {
 
     },
+    "Authorization expired or was revoked" : {
+
+    },
     "Autoplay next article" : {
 
     },
@@ -227,6 +230,9 @@
 
     },
     "Email" : {
+
+    },
+    "Email login needs attention" : {
 
     },
     "Email whose subject contains this phrase will be imported, regardless of sender." : {
@@ -461,6 +467,9 @@
     "Open Shortcuts" : {
 
     },
+    "Opens Email settings to reconnect" : {
+
+    },
     "Opens item" : {
 
     },
@@ -561,6 +570,12 @@
 
     },
     "Reading articles aloud isn't available in this app." : {
+
+    },
+    "Reconnect Email" : {
+
+    },
+    "Reconnect in Settings" : {
 
     },
     "Refresh Last Visited Website" : {
@@ -687,10 +702,16 @@
     "Sign In" : {
 
     },
+    "Sign in again with this account" : {
+
+    },
     "Sign Out" : {
 
     },
     "Sign-in failed" : {
+
+    },
+    "Sign-in required" : {
 
     },
     "Skip photo captions, bylines, related-link lists, and other non-article text when reading aloud. Uses Apple Intelligence on this device — nothing leaves your iPhone — and falls back to Luna's built-in cleanup automatically when it isn't available." : {
@@ -748,6 +769,15 @@
 
     },
     "The output from Get On-Screen URLs. Compatible complete values may be saved directly." : {
+
+    },
+    "The provider authorization expired or was revoked." : {
+
+    },
+    "The provider rejected the saved app password." : {
+
+    },
+    "The saved app password was rejected" : {
 
     },
     "Theme" : {
@@ -818,6 +848,9 @@
 
     },
     "you@example.com" : {
+
+    },
+    "Your saved account is still here, but its login was rejected by the provider. Reconnect to resume sending and importing email." : {
 
     }
   },

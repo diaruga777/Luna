@@ -42,12 +42,12 @@ enum KindWiring {
         AppOnboardingStore.shared.resetIfRequested()
         #endif
 
-        IngestKindProcessors.article = ArticleIngestProcessor()
-        IngestKindProcessors.product = ProductIngestProcessor()
-        // A long-form X post / self-thread reads as an article (claudedocs/x-posts.md).
-        // A short post still falls through to the media/social path below, which the
-        // central app also owns.
-        IngestKindProcessors.socialText = XPostIngestProcessor()
+        // One install per kind this app handles. WHAT each kind registers is
+        // defined once in that kind's own module and shared by every surface
+        // (app, share ext, action ext, clip) — see `ArticleKindComposition`.
+        ArticleKindComposition.install()
+        MediaKindComposition.install()
+        ProductKindComposition.install()
         // The central Luna app handles every kind, so it installs every
         // ingestor handler and every kind-specific presentation hook.
         IngestorKindHandlers.article = ArticleKindHandler()

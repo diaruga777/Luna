@@ -31,10 +31,11 @@ it's installed.
 1. **Pipeline processors (`IngestKindProcessors`, LunaIngest).** Article
    resolution (`LunaArticleIngest`) and product price extraction
    (`LunaPriceIngest`) are link-optional modules. Each target's composition root
-   registers exactly the processors its app handles; a classified kind with no
-   registered processor becomes `Outcome.unsupported(owner:)` — the page is never
-   processed at all in an app that can't handle it. Media/social recognition is
-   URL-only classification and needs no processor.
+   installs exactly the KIND PACKS its app handles (see "Kind packs" below); a
+   classified kind with no registered processor becomes
+   `Outcome.unsupported(owner:)` — the page is never processed at all in an app
+   that can't handle it. Media/social recognition is URL-only classification and
+   needs no processor.
 2. **`SurfaceSupport` (LunaIngest).** `Outcome.owningApp` maps every outcome to
    its owning app (`.unsupported` carries its owner; `.failed` has none and is
    never dropped). `SurfaceSupport.evaluate(owner:current:)`: the central Luna
@@ -118,8 +119,71 @@ one variant, and the variants reference the kind modules' symbols directly
 - Share/action extensions: `LunaShare/ShareEntry+*.swift` and
   `LunaAction/ActionEntry+*.swift` — the extension principal class
   (Info.plist names the stable @objc names `LunaShareEntry`/`LunaActionEntry`)
-  is a per-target `ShareViewController` subclass that registers processors AND
-  extension presenters in `init` before any ingest can run.
+  is a per-target `ShareViewController` subclass that installs its app's kind
+  packs in `init`, before any ingest can run.
+- App Clips: `LunaReaderClip/AppDelegate.swift` installs the article pack.
+  `LunaDownloaderClip` installs nothing — it registers no kind at all.
+
+## Kind packs — one definition per kind, shared by every surface
+
+An app has SEVERAL composition roots, one per surface, running in separate
+processes with no shared launch code: the app shell, the share extension, the
+action extension, and (for Reader) the App Clip. **Seven roots for the article
+kind alone.**
+
+Those roots used to each hand-list their `IngestKindProcessors` /
+`ShareKindPresenters` entries, and that broke exactly as you'd expect: when
+long-form X posts were added (`claudedocs/x-posts.md`), the new
+`IngestKindProcessors.socialText` entry went into the two `KindWiring+*` app roots
+only. A long X post read fine saved inside the app and was rejected from the share
+sheet as Downloader-owned. The same copy-paste also had each of the three
+`Share*Presenting` adapters duplicated across four roots — twelve near-identical
+definitions.
+
+Now each kind owns ONE pack, in the kind's own top module, holding both its
+registrations and its presenter adapter:
+
+| Kind | Pack | Module | Registers |
+| --- | --- | --- | --- |
+| article | `ArticleKindComposition` | LunaReaderUI | `IngestKindProcessors.article` + `.socialText`, `ShareKindPresenters.article` |
+| media | `MediaKindComposition` | LunaMediaDownload | `ShareKindPresenters.media` (no processor — URL-only classification) |
+| product | `ProductKindComposition` | LunaPriceUI | `IngestKindProcessors.product`, `ShareKindPresenters.product` |
+
+Every root then makes one call per kind — `ArticleKindComposition.install()` —
+and nothing else. Adding a processor to a kind is a one-line change in its pack,
+picked up by all its surfaces at once.
+
+**The per-app split does not collapse, and that is the point.** The pack lives in
+the kind's own module, so only a target that LINKS that kind can call it: the link
+set still decides what an app handles, and a single-content app still drops
+foreign kinds. What is now shared is the *definition* of a kind's wiring, not
+which apps use it.
+
+Two consequences worth knowing:
+
+- The packs became possible because `LunaShareSurface` is kind-agnostic — it
+  depends on no kind module — so a kind module can import it and own its own
+  `Share*Presenting` conformance. The old comment claiming a composition root was
+  "the one place allowed to see the surface protocol and the kind module at once"
+  was simply not true. `LunaReaderUI` gained `LunaArticleIngest` +
+  `LunaShareSurface` deps, and LunaMediaDownload/LunaPriceUI gained
+  `LunaShareSurface`.
+- An app installing a pack also sets the extension presenter it never reads.
+  That is a deliberate trade: one uniform call is worth far more than a
+  per-surface list each root can get wrong.
+
+`KindCompositionRootTests` enforces all of this by reading the composition-root
+source — no unit test can load the real roots, since each registry is set in a
+principal class's initializer in a different process. It fails when a root
+registers a kind directly, when a root's installed packs don't match its app's
+kinds (missing OR foreign), when an expected root disappears, and when a new
+unlisted root installs a pack.
+
+**Still per-root, by necessity:** `IngestorKindHandlers` (the app-shell
+persistence handlers — `ArticleKindHandler` and friends) is built from app-shell
+types the library layer can't see, so it stays in each `KindWiring+*`. Those four
+roots live in one folder and are app-only, so the surface-mismatch hazard the
+packs remove doesn't apply to it.
 
 A third registry, **`ShareKindPresenters` (LunaShareSurface)**, mirrors
 `IngestKindProcessors`/`IngestorKindHandlers` for extension PRESENTATION:
@@ -128,12 +192,10 @@ the kind-specific UI lives in the kind modules — `ExtensionArticlePresenter`
 (LunaReaderUI, in-sheet reader / archive-CAPTCHA reader / article-save extras),
 `ExtensionMediaPresenter` (LunaMediaDownload, saved-non-textual screen +
 auto-download handoff), `ExtensionProductPresenter` (LunaPriceUI, price
-editor). The implementations are protocol-free; each entry class wires them up
-through small private adapters conforming to the `Share*Presenting` protocols,
-registering exactly its app's kinds (the driver's gate has already dropped
-foreign kinds before a presenter is consulted, so a missing presenter for an
-admitted kind is a composition-root bug and asserts). The apps' `KindWiring`
-variants do NOT register extension presenters — nothing in-app runs the driver.
+editor). The implementations are protocol-free; each kind's PACK owns the one
+adapter conforming to the matching `Share*Presenting` protocol (the driver's gate
+has already dropped foreign kinds before a presenter is consulted, so a missing
+presenter for an admitted kind is a composition-root bug and asserts).
 Tests register production-shaped presenters explicitly in `setUp`
 (`ShareKindPresenterTestSupport`), like the pipeline processors.
 - The Safari extensions link no packages; the native handler derives its host's

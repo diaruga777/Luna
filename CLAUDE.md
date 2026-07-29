@@ -62,7 +62,20 @@ copies could never fire and were removed; do not re-add one to an app that does 
 link `LunaMediaDownload`. Per-target COMPOSITION uses synchronized-group
 membership exceptions (exactly one `KindWiring+*.swift` / `ShareEntry+*.swift` /
 `ActionEntry+*.swift` variant compiles per target — `#if canImport` is NOT target-reliable
-here, never use it for gating). **DELETING a file that carries a membership exception
+here, never use it for gating). **An app has SEVERAL composition roots** — `KindWiring+<App>`
+(the app), `ShareEntry+<App>`, `ActionEntry+<App>`, and the App Clip's own `AppDelegate` —
+each running in a different process with no shared wiring code. They must NEVER write
+`IngestKindProcessors` / `ShareKindPresenters` themselves: **each kind's registrations are
+defined once in a KIND PACK** (`ArticleKindComposition` in LunaReaderUI,
+`MediaKindComposition` in LunaMediaDownload, `ProductKindComposition` in LunaPriceUI), and a
+root just calls `<Kind>KindComposition.install()` for each kind its app handles. Hand-listing
+per surface is what produced the split where a long X post saved inside the app worked but the
+same link through the share sheet was dropped as another app's kind. The per-app split is
+unaffected: a pack lives in the kind's own module, so only a target that LINKS that kind can
+install it. `KindCompositionRootTests` fails the build on a direct registry write, on a root
+whose installed packs don't match its app's kinds, and on a new unlisted root.
+`IngestorKindHandlers` stays per-`KindWiring` (it is built from app-shell types). See
+`claudedocs/surface-support.md`'s "Kind packs". **DELETING a file that carries a membership exception
 means editing `project.pbxproj` too.** The synchronized group picks up added files by
 itself, but each exception is a by-name entry under
 `PBXFileSystemSynchronizedBuildFileExceptionSet.membershipExceptions`, and one naming a
@@ -279,8 +292,8 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 1903 tests, 9 skipped, 0 failures**
-  (measured 2026-07-29, full run with nothing skipped on the command line). The
+- **Current suite state on the iOS 26.x sim: 1915 tests, 9 skipped, 0 failures**
+  (measured 2026-07-29 post-merge, full run with nothing skipped on the command line). The
   long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
   snapshot set was re-recorded for the predawn palette, and the harness now pins the
   same appearance the app does (dark style + `lunaSky = .predawn`, over

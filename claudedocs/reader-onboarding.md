@@ -88,19 +88,22 @@ The root uses the production `CardCarouselViewController`:
    message and carries the exact URL currently shown by Safari.
 4. A solid-black, tall rounded deformation stretches continuously out of the
    physical Action Button screen edge and smoothly retracts, matching the
-   system's on-screen press silhouette. In the same run-loop turn, a custom
-   Core Image warp sends a thick, pronounced two-lobed annular wavefront from
-   that point across paired onboarding-surface snapshots; it settles in 0.74
-   seconds. This keeps the effect concentrated at the moving wavefront instead
-   of bending every pixel inside one growing `CIBumpDistortion` radius.
+   system's on-screen press silhouette. The bulge reaches its full 252-point
+   height before any screen distortion begins. As it starts retracting, a
+   custom Core Image warp sends a thick, pronounced displacement-only annular
+   wavefront through the source pixels. Once that first wave reaches halfway
+   across the display width, a second wave begins behind it and replaces the
+   mock source with the saved-card snapshot. The first wave has the longer
+   wavelength; both stay concentrated at their moving wavefronts instead of
+   bending every pixel inside one growing `CIBumpDistortion` radius.
 5. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
-   `AppOnboardingCompletion`. As the wave advances, its wavefront crossfades
-   either mock source into that root carousel's exact centered card state; the
-   live hierarchy is committed under the final composited frame. Reader,
-   Downloader, Price Tracker, and central Luna
-   therefore show their ordinary saved-card UI, chrome, scrubber, controls, and
-   placement—not an onboarding remake or a Safari view clipped smaller.
+   `AppOnboardingCompletion`. As the second wave advances, its wavefront
+   crossfades either mock source into that root carousel's exact centered card
+   state; the live hierarchy is committed under the final composited frame.
+   Reader, Downloader, Price Tracker, and central Luna therefore show their
+   ordinary saved-card UI, chrome, scrubber, controls, and placement—not an
+   onboarding remake or a Safari view clipped smaller.
 6. The initial demonstration completes one whole **Safari → saved card →
    iMessage → saved card** loop before showing setup. The final saved card then
    remains completely unobscured for 1.35 seconds. The window-filling near-black

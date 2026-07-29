@@ -180,6 +180,9 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThan(OnboardingIntroTiming.firstLineDelay, 0.2)
         XCTAssertLessThan(OnboardingIntroTiming.interLineDelay, 0.5)
         XCTAssertGreaterThan(OnboardingIntroTiming.lineRevealDuration, 0.82)
+        XCTAssertLessThan(
+            OnboardingActionButtonTiming.firstWaveDuration,
+            1.18)
         XCTAssertLessThan(OnboardingActionButtonTiming.waveDuration, 1.18)
         XCTAssertGreaterThan(OnboardingDemoLoopTiming.geometryDuration, 0.45)
         XCTAssertLessThan(OnboardingDemoLoopTiming.geometryDuration, 0.70)
@@ -192,6 +195,15 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.wavefrontHalfWidth,
             28)
+        XCTAssertGreaterThan(
+            OnboardingActionButtonTiming.firstWavefrontHalfWidth,
+            OnboardingActionButtonTiming.wavefrontHalfWidth)
+        XCTAssertGreaterThan(
+            OnboardingActionButtonTiming.firstMaximumDisplacement,
+            OnboardingActionButtonTiming.maximumDisplacement)
+        XCTAssertGreaterThanOrEqual(
+            OnboardingActionButtonTiming.firstWaveLightingStrength,
+            0.18)
         XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.maximumDisplacement,
             24)
@@ -201,6 +213,18 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             OnboardingActionButtonTiming.waveRasterScale,
             2)
+        XCTAssertEqual(
+            OnboardingActionButtonTiming.secondWaveStartProgress(
+                screenWidth: 400,
+                firstTravelDistance: 800),
+            0.25,
+            accuracy: 0.001)
+        XCTAssertGreaterThan(
+            OnboardingActionButtonTiming.pressRecessionStartFraction,
+            0.3)
+        XCTAssertLessThan(
+            OnboardingActionButtonTiming.pressRecessionStartFraction,
+            0.5)
         XCTAssertLessThanOrEqual(
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
@@ -287,17 +311,27 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testActionButtonCueMatchesTheSystemBlackEdgeDeformation() {
+    func testActionButtonCueMatchesTheSystemBlackEdgeDeformation() throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         let cue = ActionButtonPressCue()
         cue.layout(in: window)
 
         XCTAssertEqual(cue.bounds.width, 30, accuracy: 0.001)
-        XCTAssertEqual(cue.bounds.height, 164, accuracy: 0.001)
+        XCTAssertEqual(cue.bounds.height, 252, accuracy: 0.001)
         XCTAssertEqual(cue.layer.position.x, 0, accuracy: 0.001)
         XCTAssertEqual(cue.layer.anchorPoint.x, 0, accuracy: 0.001)
         XCTAssertTrue(cue.subviews.isEmpty, "The edge silhouette is rendered entirely with layers")
         XCTAssertEqual(cue.layer.sublayers?.count, 1)
+        let silhouette = try XCTUnwrap(cue.layer.sublayers?.first as? CAShapeLayer)
+        let path = try XCTUnwrap(silhouette.path)
+        XCTAssertEqual(
+            path.boundingBox.width,
+            cue.bounds.width,
+            accuracy: 0.001)
+        XCTAssertEqual(
+            path.boundingBox.height,
+            cue.bounds.height,
+            accuracy: 0.001)
     }
 
     @MainActor

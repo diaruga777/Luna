@@ -36,6 +36,10 @@ enum KindWiring {
         #endif
 
         IngestKindProcessors.article = ArticleIngestProcessor()
+        // A long-form X post / self-thread reads as an article here (see
+        // claudedocs/x-posts.md). Registered only by article-handling apps: without
+        // it every X link stays a social item, which is what the Downloader wants.
+        IngestKindProcessors.socialText = XPostIngestProcessor()
         IngestorKindHandlers.article = ArticleKindHandler()
 
         // A completion written before a force-quit never received the normal

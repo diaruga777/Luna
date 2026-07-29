@@ -126,11 +126,15 @@ public struct IngestResult: Equatable {
 ///      shorteners — offline-first, tracking-stripped (every surface unwraps now).
 ///   2. `Classifier.classify` — deterministic `KnownSite` table first, then HTML
 ///      heuristics. Platform/video/audio recognition is the FIRST branch, so a
-///      platform URL is decided before any fetch and can NEVER reach article
-///      extraction on any surface.
+///      platform URL is decided before any fetch and can NEVER reach *HTML*
+///      article extraction on any surface. (A social post may still become an
+///      `.article` in step 3, but only through the platform's own text API — never
+///      by scraping the platform's page.)
 ///   3. Per-kind processing — article→extract; paywalledArticle→bypass plan then
 ///      extract, else `.needsArchive`; product→`ProductMetadataExtractor`;
-///      social/video/audio→`PlatformRecognizer`; document→`.document`.
+///      social→the social-text processor (a long-form X post / self-thread becomes
+///      `.article`), else `PlatformRecognizer`; video/audio→`PlatformRecognizer`;
+///      document→`.document`.
 ///
 /// The whole call is wrapped in ONE mandatory overall timeout (`processTimeout`),
 /// so it can NEVER hang — on timeout it returns `.failed` (or `.needsArchive` for a
@@ -161,12 +165,14 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector = ProductPageDetector(),
         articleProcessor: ArticleIngestProcessing? = IngestKindProcessors.article,
         productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
+        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText,
         render: ((URL) async -> String?)? = nil
     ) async -> Outcome {
         await processResolved(
             input, timeout: timeout, session: session, fetcher: fetcher,
             productDetector: productDetector, articleProcessor: articleProcessor,
-            productProcessor: productProcessor, render: render).outcome
+            productProcessor: productProcessor, socialTextProcessor: socialTextProcessor,
+            render: render).outcome
     }
 
     /// Runs the pipeline and returns both the outcome and the canonical URL it
@@ -180,6 +186,7 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector = ProductPageDetector(),
         articleProcessor: ArticleIngestProcessing? = IngestKindProcessors.article,
         productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
+        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText,
         render: ((URL) async -> String?)? = nil
     ) async -> IngestResult {
         await withTaskGroup(of: IngestResult?.self) { group in
@@ -187,7 +194,8 @@ public enum IngestPipeline {
                 await runUnbounded(
                     input, session: session, fetcher: fetcher,
                     productDetector: productDetector, articleProcessor: articleProcessor,
-                    productProcessor: productProcessor, render: render)
+                    productProcessor: productProcessor, socialTextProcessor: socialTextProcessor,
+                    render: render)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -214,6 +222,7 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector,
         articleProcessor: ArticleIngestProcessing?,
         productProcessor: ProductIngestProcessing?,
+        socialTextProcessor: SocialTextIngestProcessing?,
         render: ((URL) async -> String?)?
     ) async -> IngestResult {
         // (1) Unwrap ONCE — every surface gets the same offline-first, tracking-
@@ -221,8 +230,9 @@ public enum IngestPipeline {
         let unwrapped = await URLUnwrapper.unwrap(input.url, session: session)
         let url = unwrapped.url
 
-        // (2) Classify deterministically (URL-only). Platform/video/document
-        // are decided here, before any fetch, so they can never reach article extraction.
+        // (2) Classify deterministically (URL-only). Platform/video/document are
+        // decided here, before any fetch, so they can never reach HTML article
+        // extraction. A social post gets one further question asked of it in (2b).
         let kind = Classifier.classify(url: url, documentType: input.documentType)
         switch kind {
         case .document(let type):
@@ -230,6 +240,20 @@ public enum IngestPipeline {
         case let .video(platform, itemID):
             return IngestResult(url: url, outcome: .video(platform, itemID: itemID))
         case let .social(platform, itemID):
+            // (2b) A social post is the one kind whose routing can't be settled from
+            // the URL: the link says "an X post", not whether the post holds a quip
+            // or an essay. Offer it to the social-text processor, which answers by
+            // reading the post; a long-form post (an X Article, a long single post,
+            // or the poster's own chained thread) becomes a real reader article,
+            // and everything else declines and stays `.social` exactly as before.
+            //
+            // Only article-handling apps register a processor, so the Downloader and
+            // Price Tracker take the unchanged path without linking any of this.
+            if let socialTextProcessor,
+               let read = await socialTextProcessor.article(
+                    platform: platform, itemID: itemID, url: url) {
+                return IngestResult(url: url, outcome: .article(read.content, html: read.html))
+            }
             return IngestResult(url: url, outcome: .social(platform, itemID: itemID))
         case .product, .article, .paywalledArticle, .undetermined:
             // Web processing: only NOW do we fetch HTML, (re)classify with the HTML

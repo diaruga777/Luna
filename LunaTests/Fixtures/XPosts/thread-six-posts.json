@@ -1,0 +1,115 @@
+{
+ "status": {
+  "id": "2082353882533867733",
+  "text": "Fable is amazing but needs to stop talking like someone who has read only pulp fantasy: \"I have shown you the way, but you must open the door. The map exists but the path is yours. The atlas of your instinct — every fact must first know itself\"\n\nPlease, just make the infographic.",
+  "is_note_tweet": true,
+  "author": {
+   "screen_name": "emollick",
+   "name": "Ethan Mollick",
+   "id": "39125788"
+  }
+ },
+ "thread": [
+  {
+   "id": "2082353882533867733",
+   "text": "Fable is amazing but needs to stop talking like someone who has read only pulp fantasy: \"I have shown you the way, but you must open the door. The map exists but the path is yours. The atlas of your instinct — every fact must first know itself\"\n\nPlease, just make the infographic.",
+   "is_note_tweet": true,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   }
+  },
+  {
+   "id": "2082354748003352875",
+   "text": "Its an infographic about types of cheese. We don't need to do all this.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   }
+  },
+  {
+   "id": "2082357204837953977",
+   "text": "This was a hypothetical example, and I then I tried it since I thought it would be funny. And I got this: forbidden cheese knowledge.\n\n(Okay, it is obviously because I wrote \"this is your goal now\" which triggered the guardrails but I like to think forbidden cheese was the cause)",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   },
+   "media": {
+    "all": [
+     {
+      "type": "photo",
+      "url": "https://pbs.twimg.com/media/HOYEagFWQAAYAjq.jpg?name=orig",
+      "width": 1126,
+      "height": 501
+     }
+    ]
+   }
+  },
+  {
+   "id": "2082362220676018386",
+   "text": "Opus is treating my cheese infographic with the seriousness of a new Erdos problem. We are a million tokens and 5 agents in.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   },
+   "media": {
+    "all": [
+     {
+      "type": "photo",
+      "url": "https://pbs.twimg.com/media/HOYI91ZWYAAA51O.png?name=orig",
+      "width": 508,
+      "height": 81
+     },
+     {
+      "type": "photo",
+      "url": "https://pbs.twimg.com/media/HOYJYJ1WYAAL69b.png?name=orig",
+      "width": 550,
+      "height": 678
+     }
+    ]
+   }
+  },
+  {
+   "id": "2082366013866213546",
+   "text": "I take that back, it is treating my dumb cheese infographic more seriously than any Erdos problem.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   },
+   "media": {
+    "all": [
+     {
+      "type": "photo",
+      "url": "https://pbs.twimg.com/media/HOYM2b0WMAACA9K.jpg?name=orig",
+      "width": 1067,
+      "height": 650
+     }
+    ]
+   }
+  },
+  {
+   "id": "2082367572989612119",
+   "text": "Here it is: https://how-to-read-a-cheese.netlify.app/\n\n\"The chart colour is a 6-step amber ramp that I ran through the dataviz validator until it passed on every check. One consequence worth noting: the chart panel stays cave-dark in both light and dark themes, because fresh cheese is white and white has no contrast on a pale ground — the light-mode ramp failed the contrast floor, and making the chart a dark inset was the honest fix rather than fudging the colours.\"\n\nThanks, Fable!",
+   "is_note_tweet": true,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   }
+  }
+ ],
+ "author": {
+  "screen_name": "emollick",
+  "name": "Ethan Mollick",
+  "id": "39125788"
+ }
+}

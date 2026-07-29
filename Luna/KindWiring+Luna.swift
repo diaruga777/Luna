@@ -44,6 +44,10 @@ enum KindWiring {
 
         IngestKindProcessors.article = ArticleIngestProcessor()
         IngestKindProcessors.product = ProductIngestProcessor()
+        // A long-form X post / self-thread reads as an article (claudedocs/x-posts.md).
+        // A short post still falls through to the media/social path below, which the
+        // central app also owns.
+        IngestKindProcessors.socialText = XPostIngestProcessor()
         // The central Luna app handles every kind, so it installs every
         // ingestor handler and every kind-specific presentation hook.
         IngestorKindHandlers.article = ArticleKindHandler()

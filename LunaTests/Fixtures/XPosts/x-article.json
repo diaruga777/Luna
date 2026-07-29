@@ -1,0 +1,429 @@
+{
+ "status": {
+  "id": "2082163285588107752",
+  "text": "To understand and empathize with how workers in many or most fields outside software experience advances in AI capabilities, I propose a little thought experiment.",
+  "is_note_tweet": false,
+  "author": {
+   "screen_name": "random_walker",
+   "name": "Arvind Narayanan",
+   "id": "10834752"
+  },
+  "article": {
+   "created_at": "2026-07-28T17:56:26.000Z",
+   "modified_at": "2026-07-28T17:56:26.000Z",
+   "id": "2082158799104659456",
+   "title": "What's gone wrong with AI & labor — a thought experiment",
+   "preview_text": "A thought experiment that I think helps explain much of what’s gone wrong with AI and labor:\nImagine an alternate universe in which — for whatever reason — no one ever published source code online.",
+   "cover_media": {
+    "id": "QXBpTWVkaWE6DAAFCgABHOVTMAyXsAAKAAIAAAAAAKVTQAAA",
+    "media_id": "2082161868563525632",
+    "media_info": {
+     "__typename": "ApiImage",
+     "color_info": {
+      "palette": [
+       {
+        "percentage": 95.85,
+        "rgb": {
+         "blue": 240,
+         "green": 247,
+         "red": 250
+        }
+       },
+       {
+        "percentage": 4.15,
+        "rgb": {
+         "blue": 121,
+         "green": 127,
+         "red": 128
+        }
+       }
+      ]
+     },
+     "original_img_height": 800,
+     "original_img_url": "https://pbs.twimg.com/media/HOVTMAyXsAAfsCD.jpg",
+     "original_img_width": 2000
+    },
+    "media_key": "3_2082161868563525632"
+   },
+   "content": {
+    "blocks": [
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "fjv5e",
+      "text": "A thought experiment that I think helps explain much of what’s gone wrong with AI and labor:",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "4ft8c",
+      "text": "Imagine an alternate universe in which — for whatever reason — no one ever published source code online. The open source movement or even the concept of open source didn’t exist. Naturally, LLMs wouldn’t be good at coding, because they wouldn’t be trained on vast code datasets.",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 8,
+        "offset": 91,
+        "style": "Italic"
+       },
+       {
+        "length": 49,
+        "offset": 352,
+        "style": "Italic"
+       }
+      ],
+      "key": "7k2d4",
+      "text": "What this alternate universe does have, just like our actual universe, are public software binaries — tens of petabytes worth, vastly greater than the scale of today’s frontier LLM training datasets. So at some point in the scaling of these LLMs, imagine that they start to get good at producing complete working applications from specifications — but skipping the source code generation step entirely. AI-generated software would be shitty and inelegant and insecure but AI companies would constantly promise that the next bigger model would make it all better.",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "99cnn",
+      "text": "In this universe, software-generating LLMs compete directly with software engineers. Binaries are not human readable. They are equally inscrutable to software engineers and non-technical people. Over time, an increasing fraction of software would be vibe-rolled (not vibe-coded — there is no code!) It is not as good as human-authored software, but it’s free to generate! Since there is no source code, having a software engineer involved in the process adds nothing (except cost). Even to the extent that AI-generated software creates new demand for labor because of its limitations, it doesn't require highly paid software engineers and can instead be handled by lower-skill workers (perhaps just repeatedly yelling at the LLM to make no mistakes).",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "drens",
+      "text": "In short, human authoring and AI generation are two parallel ways of getting to the same output. Software engineers and AI are substitutes, not complements. AI doesn’t help software engineers amplify their abilities, and software engineers bring no skills to supervise AI any more effectively than non-engineers can. In this world, AI would feel alienating and terrifying for software engineers.",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "f1rsj",
+      "text": "You probably know where I’m going with this. In our actual timeline, artists and many other professionals experience AI in a way that resembles this dystopia. In many non-software domains, the finished products of human creative endeavors are readily available to train on, but almost nothing that goes into making them. So AI tools aren’t of much help during the creative process. They merely mimic and substitute.",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 0,
+        "length": 4,
+        "offset": 394
+       },
+       {
+        "key": 1,
+        "length": 9,
+        "offset": 470
+       },
+       {
+        "key": 2,
+        "length": 10,
+        "offset": 837
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "eenlf",
+      "text": "A different outcome is possible. The positive vision that’s not widely appreciated outside the tech world is that coding agents have given software engineers superpowers. We work together with our agents; complex software is produced over the course of thousands of alternating turns between human and agent. The narrative that coding agents are replacing engineers has so far turned out to be bunk. The lived experience of using agents closely matches Simon Willison’s table saw metaphor (“Quitting programming as a career right now because of LLMs would be like quitting carpentry as a career thanks to the invention of the table saw.”). The barrier for starting to work with a new programming language, framework, or codebase has dropped a hundredfold because coding agents are also teaching agents (software developers use agents to understand code more often than to generate it).",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 7,
+        "offset": 104,
+        "style": "Italic"
+       },
+       {
+        "length": 19,
+        "offset": 191,
+        "style": "Italic"
+       },
+       {
+        "length": 16,
+        "offset": 244,
+        "style": "Italic"
+       },
+       {
+        "length": 14,
+        "offset": 309,
+        "style": "Italic"
+       },
+       {
+        "length": 21,
+        "offset": 374,
+        "style": "Italic"
+       }
+      ],
+      "key": "6736o",
+      "text": "Open-source software and culture is a historical accident. We take it for granted that not only are the outputs of software engineers’ creative work available publicly, but so are all of the intermediate steps (specifications, plans, mockups), tacit knowledge (StackOverflow, documentation culture), detailed process traces (issues, pull requests, bug fixes, code reviews), collaboration records (version control, project boards), and more broadly a culture of learning in public. This level of explicit description would be completely alien in most professions.",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "f4idj",
+      "text": "Many companies are investing heavily into capturing tacit knowledge, process traces, and other components of this missing middle. Ironically, they are doing this in the pursuit of even more automation. My thesis, contrary to seeming common sense and all the money being invested, is that this wave of AI can ultimately be more helpful for augmenting workers than for automating them away. With the right scaffolds, models trained to deeply understand how creative workers arrive at their outputs will be able to collaborate with them, empowering them and amplifying their potential. If the industry recognized this, it would be a big win both economically and politically.",
+      "type": "unstyled"
+     }
+    ],
+    "entityMap": [
+     {
+      "key": "0",
+      "value": {
+       "data": {
+        "url": "https://www.normaltech.ai/p/why-ai-hasnt-replaced-software-engineers"
+       },
+       "mutability": "Mutable",
+       "type": "LINK"
+      }
+     },
+     {
+      "key": "1",
+      "value": {
+       "data": {
+        "url": "https://simonwillison.net/2025/Jul/3/table-saws/"
+       },
+       "mutability": "Mutable",
+       "type": "LINK"
+      }
+     },
+     {
+      "key": "2",
+      "value": {
+       "data": {
+        "url": "https://arxiv.org/abs/2604.20779"
+       },
+       "mutability": "Mutable",
+       "type": "LINK"
+      }
+     }
+    ]
+   },
+   "media_entities": []
+  }
+ },
+ "thread": [
+  {
+   "id": "2082163285588107752",
+   "text": "To understand and empathize with how workers in many or most fields outside software experience advances in AI capabilities, I propose a little thought experiment.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "random_walker",
+    "name": "Arvind Narayanan",
+    "id": "10834752"
+   },
+   "article": {
+    "created_at": "2026-07-28T17:56:26.000Z",
+    "modified_at": "2026-07-28T17:56:26.000Z",
+    "id": "2082158799104659456",
+    "title": "What's gone wrong with AI & labor — a thought experiment",
+    "preview_text": "A thought experiment that I think helps explain much of what’s gone wrong with AI and labor:\nImagine an alternate universe in which — for whatever reason — no one ever published source code online.",
+    "cover_media": {
+     "id": "QXBpTWVkaWE6DAAFCgABHOVTMAyXsAAKAAIAAAAAAKVTQAAA",
+     "media_id": "2082161868563525632",
+     "media_info": {
+      "__typename": "ApiImage",
+      "color_info": {
+       "palette": [
+        {
+         "percentage": 95.85,
+         "rgb": {
+          "blue": 240,
+          "green": 247,
+          "red": 250
+         }
+        },
+        {
+         "percentage": 4.15,
+         "rgb": {
+          "blue": 121,
+          "green": 127,
+          "red": 128
+         }
+        }
+       ]
+      },
+      "original_img_height": 800,
+      "original_img_url": "https://pbs.twimg.com/media/HOVTMAyXsAAfsCD.jpg",
+      "original_img_width": 2000
+     },
+     "media_key": "3_2082161868563525632"
+    },
+    "content": {
+     "blocks": [
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [],
+       "key": "fjv5e",
+       "text": "A thought experiment that I think helps explain much of what’s gone wrong with AI and labor:",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [],
+       "key": "4ft8c",
+       "text": "Imagine an alternate universe in which — for whatever reason — no one ever published source code online. The open source movement or even the concept of open source didn’t exist. Naturally, LLMs wouldn’t be good at coding, because they wouldn’t be trained on vast code datasets.",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [
+        {
+         "length": 8,
+         "offset": 91,
+         "style": "Italic"
+        },
+        {
+         "length": 49,
+         "offset": 352,
+         "style": "Italic"
+        }
+       ],
+       "key": "7k2d4",
+       "text": "What this alternate universe does have, just like our actual universe, are public software binaries — tens of petabytes worth, vastly greater than the scale of today’s frontier LLM training datasets. So at some point in the scaling of these LLMs, imagine that they start to get good at producing complete working applications from specifications — but skipping the source code generation step entirely. AI-generated software would be shitty and inelegant and insecure but AI companies would constantly promise that the next bigger model would make it all better.",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [],
+       "key": "99cnn",
+       "text": "In this universe, software-generating LLMs compete directly with software engineers. Binaries are not human readable. They are equally inscrutable to software engineers and non-technical people. Over time, an increasing fraction of software would be vibe-rolled (not vibe-coded — there is no code!) It is not as good as human-authored software, but it’s free to generate! Since there is no source code, having a software engineer involved in the process adds nothing (except cost). Even to the extent that AI-generated software creates new demand for labor because of its limitations, it doesn't require highly paid software engineers and can instead be handled by lower-skill workers (perhaps just repeatedly yelling at the LLM to make no mistakes).",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [],
+       "key": "drens",
+       "text": "In short, human authoring and AI generation are two parallel ways of getting to the same output. Software engineers and AI are substitutes, not complements. AI doesn’t help software engineers amplify their abilities, and software engineers bring no skills to supervise AI any more effectively than non-engineers can. In this world, AI would feel alienating and terrifying for software engineers.",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [],
+       "key": "f1rsj",
+       "text": "You probably know where I’m going with this. In our actual timeline, artists and many other professionals experience AI in a way that resembles this dystopia. In many non-software domains, the finished products of human creative endeavors are readily available to train on, but almost nothing that goes into making them. So AI tools aren’t of much help during the creative process. They merely mimic and substitute.",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [
+        {
+         "key": 0,
+         "length": 4,
+         "offset": 394
+        },
+        {
+         "key": 1,
+         "length": 9,
+         "offset": 470
+        },
+        {
+         "key": 2,
+         "length": 10,
+         "offset": 837
+        }
+       ],
+       "inlineStyleRanges": [],
+       "key": "eenlf",
+       "text": "A different outcome is possible. The positive vision that’s not widely appreciated outside the tech world is that coding agents have given software engineers superpowers. We work together with our agents; complex software is produced over the course of thousands of alternating turns between human and agent. The narrative that coding agents are replacing engineers has so far turned out to be bunk. The lived experience of using agents closely matches Simon Willison’s table saw metaphor (“Quitting programming as a career right now because of LLMs would be like quitting carpentry as a career thanks to the invention of the table saw.”). The barrier for starting to work with a new programming language, framework, or codebase has dropped a hundredfold because coding agents are also teaching agents (software developers use agents to understand code more often than to generate it).",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [
+        {
+         "length": 7,
+         "offset": 104,
+         "style": "Italic"
+        },
+        {
+         "length": 19,
+         "offset": 191,
+         "style": "Italic"
+        },
+        {
+         "length": 16,
+         "offset": 244,
+         "style": "Italic"
+        },
+        {
+         "length": 14,
+         "offset": 309,
+         "style": "Italic"
+        },
+        {
+         "length": 21,
+         "offset": 374,
+         "style": "Italic"
+        }
+       ],
+       "key": "6736o",
+       "text": "Open-source software and culture is a historical accident. We take it for granted that not only are the outputs of software engineers’ creative work available publicly, but so are all of the intermediate steps (specifications, plans, mockups), tacit knowledge (StackOverflow, documentation culture), detailed process traces (issues, pull requests, bug fixes, code reviews), collaboration records (version control, project boards), and more broadly a culture of learning in public. This level of explicit description would be completely alien in most professions.",
+       "type": "unstyled"
+      },
+      {
+       "data": {},
+       "entityRanges": [],
+       "inlineStyleRanges": [],
+       "key": "f4idj",
+       "text": "Many companies are investing heavily into capturing tacit knowledge, process traces, and other components of this missing middle. Ironically, they are doing this in the pursuit of even more automation. My thesis, contrary to seeming common sense and all the money being invested, is that this wave of AI can ultimately be more helpful for augmenting workers than for automating them away. With the right scaffolds, models trained to deeply understand how creative workers arrive at their outputs will be able to collaborate with them, empowering them and amplifying their potential. If the industry recognized this, it would be a big win both economically and politically.",
+       "type": "unstyled"
+      }
+     ],
+     "entityMap": [
+      {
+       "key": "0",
+       "value": {
+        "data": {
+         "url": "https://www.normaltech.ai/p/why-ai-hasnt-replaced-software-engineers"
+        },
+        "mutability": "Mutable",
+        "type": "LINK"
+       }
+      },
+      {
+       "key": "1",
+       "value": {
+        "data": {
+         "url": "https://simonwillison.net/2025/Jul/3/table-saws/"
+        },
+        "mutability": "Mutable",
+        "type": "LINK"
+       }
+      },
+      {
+       "key": "2",
+       "value": {
+        "data": {
+         "url": "https://arxiv.org/abs/2604.20779"
+        },
+        "mutability": "Mutable",
+        "type": "LINK"
+       }
+      }
+     ]
+    },
+    "media_entities": []
+   }
+  }
+ ],
+ "author": {
+  "screen_name": "random_walker",
+  "name": "Arvind Narayanan",
+  "id": "10834752"
+ }
+}

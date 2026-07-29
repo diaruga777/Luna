@@ -1,0 +1,39 @@
+{
+ "status": {
+  "id": "2082247550103367772",
+  "text": "There's been a talk about how LLMs are only advancing in verifiable areas like math or coding, but that isn't what the data suggests.\n\nAs models have gotten better at that, they are also better at solving business cases in unbounded fields, generating ideas, medicine, law, etc.",
+  "is_note_tweet": false,
+  "author": {
+   "screen_name": "emollick",
+   "name": "Ethan Mollick",
+   "id": "39125788"
+  }
+ },
+ "thread": [
+  {
+   "id": "2082247550103367772",
+   "text": "There's been a talk about how LLMs are only advancing in verifiable areas like math or coding, but that isn't what the data suggests.\n\nAs models have gotten better at that, they are also better at solving business cases in unbounded fields, generating ideas, medicine, law, etc.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   }
+  },
+  {
+   "id": "2082248131605836258",
+   "text": "There is definitely real jaggedness both among fields (writing is an area where models improve slowly if at all) and within them, but the magic of LLMs is that they are so unreasonably effective across so many different disciplines without explicit training.",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "emollick",
+    "name": "Ethan Mollick",
+    "id": "39125788"
+   }
+  }
+ ],
+ "author": {
+  "screen_name": "emollick",
+  "name": "Ethan Mollick",
+  "id": "39125788"
+ }
+}

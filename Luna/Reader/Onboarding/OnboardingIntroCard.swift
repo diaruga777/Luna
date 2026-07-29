@@ -125,26 +125,17 @@ final class OnboardingBrowserSeedCardContentViewController: CardContentViewContr
 }
 
 /// A borderless black circle hides the unrevealed text against the black card.
-/// Its exact outer edge also drives four narrow illumination rings, clipped to
-/// the glyph alpha: each newly exposed letter pixel becomes a tiny white light
-/// source, blooms into its neighbors, then falls rapidly back to normal white
-/// as the edge moves away.
+/// Its exact outer edge also drives a raster light pass clipped to the glyph
+/// alpha. Every newly exposed antialiased glyph pixel becomes an additive white
+/// emitter with stacked near, middle, and wide halos, then cools rapidly back
+/// to normal white as the edge moves away.
 final class MoonRevealLineView: UIView {
-    private static let edgeFalloff: [(inner: CGFloat, outer: CGFloat, alpha: CGFloat)] = [
-        (0, 1.25, 1.00),
-        (1.25, 3.00, 0.56),
-        (3.00, 5.50, 0.18),
-        (5.50, 8.50, 0.045),
-    ]
-
     private let clippedContent = UIView()
     private let finalLabel = UILabel()
     private let illuminationMaskLabel = UILabel()
     private let moonLayer = CAShapeLayer()
     private let revealMaskLayer = CAShapeLayer()
-    private let bloomLayer = CALayer()
-    private let illuminatedGlyphLayer = CALayer()
-    private let illuminationRings = CALayer()
+    private let pixelBloomView = GlyphPixelBloomView()
     private var didStartReveal = false
     private var initialCircleFrame = CGRect.zero
     private(set) var isFullyRevealed: Bool
@@ -163,10 +154,8 @@ final class MoonRevealLineView: UIView {
     }
 
     var usesGlyphEdgeIllumination: Bool {
-        illuminatedGlyphLayer.mask === illuminationMaskLabel.layer
-            && bloomLayer.mask == nil
-            && bloomLayer.shadowOpacity == 1
-            && illuminationRings.sublayers?.count == Self.edgeFalloff.count
+        pixelBloomView.usesRasterizedGlyphPixels
+            && pixelBloomView.usesStackedAdditiveHalos
     }
 
     init(text: String, initiallyRevealed: Bool = false) {
@@ -209,17 +198,11 @@ final class MoonRevealLineView: UIView {
         revealMaskLayer.opacity = 1
         finalLabel.layer.mask = revealMaskLayer
 
-        // Keep the glyph mask on a child and the shadow on its unmasked parent.
-        // Masking the shadow-bearing layer itself clips away the very bloom that
-        // should illuminate pixels surrounding the hot edge of each letter.
-        bloomLayer.shadowColor = UIColor.white.cgColor
-        bloomLayer.shadowRadius = 15
-        bloomLayer.shadowOpacity = 1
-        bloomLayer.shadowOffset = .zero
-        illuminatedGlyphLayer.addSublayer(illuminationRings)
-        illuminatedGlyphLayer.mask = illuminationMaskLabel.layer
-        bloomLayer.addSublayer(illuminatedGlyphLayer)
-        layer.addSublayer(bloomLayer)
+        // This view owns a padded backing store so the light is not cropped to
+        // the label bounds. Its source image is the actual rasterized glyph
+        // alpha, not a whole-label or whole-word approximation.
+        pixelBloomView.isUserInteractionEnabled = false
+        addSubview(pixelBloomView)
     }
 
     @available(*, unavailable)
@@ -253,7 +236,6 @@ final class MoonRevealLineView: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         moonLayer.transform = transform
-        illuminationRings.transform = transform
         revealMaskLayer.path = finalRevealPath
         CATransaction.commit()
 
@@ -267,10 +249,10 @@ final class MoonRevealLineView: UIView {
             CACurrentMediaTime(), from: nil)
         moonLayer.add(moonAnimation, forKey: "moonReveal")
 
-        let ringAnimation = moonAnimation.copy() as! CABasicAnimation
-        ringAnimation.beginTime = illuminationRings.convertTime(
-            CACurrentMediaTime(), from: nil)
-        illuminationRings.add(ringAnimation, forKey: "pixelIllumination")
+        pixelBloomView.reveal(
+            circleTravel: travel,
+            duration: OnboardingAnimationClock.displayLinkDuration(
+                resolvedDuration))
 
         let revealAnimation = CABasicAnimation(keyPath: "path")
         revealAnimation.fromValue = initialRevealPath
@@ -290,7 +272,8 @@ final class MoonRevealLineView: UIView {
             self.isAccessibilityElement = true
             self.finalLabel.layer.mask = nil
             self.moonLayer.removeFromSuperlayer()
-            self.bloomLayer.removeFromSuperlayer()
+            self.pixelBloomView.stop()
+            self.pixelBloomView.removeFromSuperview()
             completion()
         }
     }
@@ -320,29 +303,20 @@ final class MoonRevealLineView: UIView {
         revealMaskLayer.frame = finalLabel.bounds
         revealMaskLayer.path = revealPath(excluding: circleFrame)
 
-        bloomLayer.frame = bounds
-        illuminatedGlyphLayer.frame = bounds
-        illuminationRings.frame = bounds
-        illuminationRings.transform = CATransform3DIdentity
         illuminationMaskLabel.frame = bounds
-        illuminationMaskLabel.layer.contentsScale = traitCollection.displayScale
+        illuminationMaskLabel.layoutIfNeeded()
 
-        illuminationRings.sublayers?.forEach { $0.removeFromSuperlayer() }
-        for band in Self.edgeFalloff.reversed() {
-            let ring = CAShapeLayer()
-            let path = UIBezierPath(
-                ovalIn: circleFrame.insetBy(dx: -band.outer, dy: -band.outer))
-            path.append(UIBezierPath(
-                ovalIn: circleFrame.insetBy(dx: -band.inner, dy: -band.inner)))
-            path.usesEvenOddFillRule = true
-            ring.frame = bounds
-            ring.path = path.cgPath
-            ring.fillRule = .evenOdd
-            ring.fillColor = UIColor.white.withAlphaComponent(band.alpha).cgColor
-            ring.strokeColor = nil
-            ring.shadowOpacity = 0
-            illuminationRings.addSublayer(ring)
-        }
+        let padding = GlyphPixelBloomView.renderPadding
+        pixelBloomView.frame = bounds.insetBy(dx: -padding, dy: -padding)
+        pixelBloomView.configure(
+            glyphLabel: illuminationMaskLabel,
+            glyphFrame: CGRect(
+                x: padding,
+                y: padding,
+                width: bounds.width,
+                height: bounds.height),
+            circleFrame: circleFrame.offsetBy(dx: padding, dy: padding),
+            scale: traitCollection.displayScale)
     }
 
     private func revealPath(excluding circleFrame: CGRect) -> CGPath {
@@ -350,5 +324,194 @@ final class MoonRevealLineView: UIView {
         path.append(UIBezierPath(ovalIn: circleFrame))
         path.usesEvenOddFillRule = true
         return path.cgPath
+    }
+}
+
+/// Draws the transient light separately from the ordinary text.
+///
+/// The emitter is rebuilt at display cadence by intersecting the descending
+/// circle's narrow trailing bands with a native-scale raster of the glyphs.
+/// Quartz shadows are then applied to that exact alpha image in additive passes.
+/// Keeping the padded result in its own view lets the glow illuminate pixels
+/// around the letters instead of being clipped back to the text mask.
+private final class GlyphPixelBloomView: UIView {
+    struct EdgeBand {
+        let inner: CGFloat
+        let outer: CGFloat
+        let alpha: CGFloat
+    }
+
+    struct HaloPass {
+        let radius: CGFloat
+        let alpha: CGFloat
+    }
+
+    static let renderPadding: CGFloat = 42
+
+    private static let edgeFalloff = [
+        EdgeBand(inner: 0, outer: 1.75, alpha: 1.00),
+        EdgeBand(inner: 1.75, outer: 4.00, alpha: 0.72),
+        EdgeBand(inner: 4.00, outer: 7.25, alpha: 0.32),
+        EdgeBand(inner: 7.25, outer: 10.50, alpha: 0.09),
+    ]
+
+    // Several optically additive passes are intentional. A single CALayer
+    // shadow reads as soft text; stacked scales produce a clipped white core,
+    // a dense local flare that erases legibility, and a broad low-frequency
+    // wash like the first visible edge of the sun.
+    private static let haloPasses = [
+        HaloPass(radius: 30, alpha: 0.72),
+        HaloPass(radius: 30, alpha: 0.72),
+        HaloPass(radius: 18, alpha: 0.90),
+        HaloPass(radius: 18, alpha: 0.90),
+        HaloPass(radius: 10, alpha: 1.00),
+        HaloPass(radius: 10, alpha: 1.00),
+        HaloPass(radius: 5, alpha: 1.00),
+        HaloPass(radius: 2, alpha: 1.00),
+    ]
+
+    private var glyphImage: UIImage?
+    private var glyphFrame = CGRect.zero
+    private var initialCircleFrame = CGRect.zero
+    private var circleTravel: CGFloat = 0
+    private var progress: CGFloat = 0
+    private var revealStartTime: CFTimeInterval = 0
+    private var revealDuration: CFTimeInterval = 0
+    private var displayLink: CADisplayLink?
+    private var emitterRenderer: UIGraphicsImageRenderer?
+
+    var usesRasterizedGlyphPixels: Bool {
+        glyphImage != nil && !glyphFrame.isEmpty
+    }
+
+    var usesStackedAdditiveHalos: Bool {
+        Self.haloPasses.count >= 3
+            && Self.haloPasses.first?.radius == 30
+            && Self.haloPasses.last?.radius == 2
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        contentMode = .redraw
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    deinit {
+        displayLink?.invalidate()
+    }
+
+    func configure(
+        glyphLabel: UILabel,
+        glyphFrame: CGRect,
+        circleFrame: CGRect,
+        scale: CGFloat
+    ) {
+        let glyphFormat = UIGraphicsImageRendererFormat()
+        glyphFormat.scale = scale
+        glyphFormat.opaque = false
+        let glyphRenderer = UIGraphicsImageRenderer(
+            size: glyphLabel.bounds.size,
+            format: glyphFormat)
+        glyphImage = glyphRenderer.image { _ in
+            glyphLabel.drawText(in: glyphLabel.bounds)
+        }
+
+        self.glyphFrame = glyphFrame
+        initialCircleFrame = circleFrame
+        progress = 0
+
+        let emitterFormat = UIGraphicsImageRendererFormat()
+        emitterFormat.scale = scale
+        emitterFormat.opaque = false
+        emitterRenderer = UIGraphicsImageRenderer(
+            size: bounds.size,
+            format: emitterFormat)
+        setNeedsDisplay()
+    }
+
+    func reveal(circleTravel: CGFloat, duration: CFTimeInterval) {
+        stop()
+        self.circleTravel = circleTravel
+        revealDuration = max(duration, 0.001)
+        revealStartTime = CACurrentMediaTime()
+        progress = 0
+        setNeedsDisplay()
+
+        let displayLink = CADisplayLink(
+            target: self,
+            selector: #selector(drawNextRevealFrame(_:)))
+        displayLink.preferredFrameRateRange = CAFrameRateRange(
+            minimum: 30,
+            maximum: 120,
+            preferred: 60)
+        displayLink.add(to: .main, forMode: .common)
+        self.displayLink = displayLink
+    }
+
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let emitter = makeEmitterImage(),
+              let context = UIGraphicsGetCurrentContext()
+        else { return }
+
+        context.saveGState()
+        context.setBlendMode(.plusLighter)
+        for halo in Self.haloPasses {
+            context.saveGState()
+            context.setShadow(
+                offset: .zero,
+                blur: halo.radius,
+                color: UIColor.white.withAlphaComponent(halo.alpha).cgColor)
+            emitter.draw(in: bounds, blendMode: .plusLighter, alpha: 1)
+            context.restoreGState()
+        }
+        context.restoreGState()
+    }
+
+    @objc private func drawNextRevealFrame(_ link: CADisplayLink) {
+        let elapsed = link.timestamp - revealStartTime
+        progress = min(max(CGFloat(elapsed / revealDuration), 0), 1)
+        setNeedsDisplay()
+        if progress >= 1 {
+            stop()
+        }
+    }
+
+    private func makeEmitterImage() -> UIImage? {
+        guard let glyphImage, let emitterRenderer else { return nil }
+        let circleFrame = initialCircleFrame.offsetBy(
+            dx: 0,
+            dy: circleTravel * progress)
+
+        return emitterRenderer.image { rendererContext in
+            let context = rendererContext.cgContext
+            for band in Self.edgeFalloff {
+                context.saveGState()
+                let ring = UIBezierPath(
+                    ovalIn: circleFrame.insetBy(
+                        dx: -band.outer,
+                        dy: -band.outer))
+                ring.append(UIBezierPath(
+                    ovalIn: circleFrame.insetBy(
+                        dx: -band.inner,
+                        dy: -band.inner)))
+                ring.usesEvenOddFillRule = true
+                context.addPath(ring.cgPath)
+                context.clip(using: .evenOdd)
+                glyphImage.draw(
+                    in: glyphFrame,
+                    blendMode: .normal,
+                    alpha: band.alpha)
+                context.restoreGState()
+            }
+        }
     }
 }

@@ -63,10 +63,12 @@ The root uses the production `CardCarouselViewController`:
    slowly down across only the second line. The circle is fully opaque, while
    the ordinary glyph layer is also geometrically excluded from its interior,
    preventing subpixel text from bleeding through. Four narrow illumination
-   rings are clipped to the actual glyph pixels, but their shadow-bearing
-   parent is deliberately unmasked: brightness falls steeply with distance
-   from the circle edge, and the hottest pixels cast a brief white bloom into
-   their neighbors before resolving to ordinary text. The copy
+   bands intersect a native-scale raster of the actual antialiased glyph
+   pixels—not a label or word-sized region. That transient emitter is rendered
+   into a padded light pass with five-scale additive near/middle/wide halos:
+   brightness falls steeply with distance from the circle edge, the clipped
+   white core briefly overwhelms legibility, and each pixel's bloom illuminates
+   its neighbors before resolving to ordinary text. The copy
    starts one third of the way down the card. “Show me how” appears only after
    the second line finishes, with a restrained 24% wash of the current app
    surface tint in its glass background.

@@ -2,73 +2,29 @@
 //  ActionEntry+Reader.swift
 //
 //  The extension's principal class (Info.plist names the stable @objc name
-//  `LunaActionEntry`). EXACTLY ONE variant is compiled into each host's
-//  extension target (per-target membership exceptions on the shared folder),
-//  registering the per-kind pipeline processors AND extension presenters that
-//  host's app handles — the registries mirror the link set.
+//  `LunaActionEntry`). EXACTLY ONE variant is compiled into each host's extension
+//  target (per-target membership exceptions on the shared folder).
+//
+//  It installs the KIND PACKS this host's app handles — one call each. What a
+//  kind registers (pipeline processors AND extension presenters) is defined once,
+//  in that kind's own module, and shared by every surface: app shell, share
+//  extension, action extension, App Clip. See `ArticleKindComposition` and
+//  claudedocs/surface-support.md.
+//
+//  Do NOT write `IngestKindProcessors` / `ShareKindPresenters` directly here —
+//  hand-listing them per surface is what let a kind be registered on some
+//  surfaces and not others (`KindCompositionRootTests` fails the build for it).
 //
 
+import LunaReaderUI
 import LunaShareSurface
 import UIKit
-import LunaArticleIngest
-import LunaHTMLClassification
-import LunaIngest
-import LunaModels
-import LunaReaderUI
-import LunaStorage
 
 @objc(LunaActionEntry)
 final class ActionEntry: ShareViewController {
     override init(nibName: String?, bundle: Bundle?) {
-        IngestKindProcessors.article = ArticleIngestProcessor()
-        // Article-kind processing includes reading a long-form X post / self-thread
-        // (claudedocs/x-posts.md) — required on every article-handling surface.
-        IngestKindProcessors.socialText = XPostIngestProcessor()
-        ShareKindPresenters.article = ArticlePresenterAdapter()
+        ArticleKindComposition.install()
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }
-}
-
-/// Adapts the protocol-free `ExtensionArticlePresenter` (LunaReaderUI) to
-/// `ShareArticlePresenting` — the composition root is the one place allowed to
-/// see the surface protocol and the kind module at once. Host side effects are
-/// handed down as weak-host closures, matching the driver's lifetime rules.
-private struct ArticlePresenterAdapter: ShareArticlePresenting {
-    private let presenter = ExtensionArticlePresenter()
-
-    func persistArticleExtras(
-        item: ReadingListItem, content: ArticleContent, html: String, url: URL,
-        store: ReadingListStore
-    ) {
-        presenter.persistArticleExtras(
-            item: item, content: content, html: html, url: url, store: store)
-    }
-
-    func presentReader(url: URL, mode: ExtensionReaderMode, outcome: Outcome, host: ExtensionHost) {
-        presenter.presentReader(
-            url: url, mode: Self.readerMode(mode), outcome: outcome,
-            onModeChange: { ActionReaderMode.last = Self.extensionMode($0) },
-            presentModally: { [weak host] in host?.presentModally($0) },
-            complete: { [weak host] in host?.confirmSavedThenComplete() })
-    }
-
-    func presentArchive(url: URL, itemID: UUID, store: ReadingListStore, host: ExtensionHost) {
-        presenter.presentArchive(
-            url: url, itemID: itemID, readerMode: host.readerMode.map(Self.readerMode),
-            store: store,
-            onModeChange: { ActionReaderMode.last = Self.extensionMode($0) },
-            presentModally: { [weak host] in host?.presentModally($0) },
-            complete: { [weak host] in host?.confirmSavedThenComplete() })
-    }
-
-    /// `ExtensionReaderMode` (surface) ↔ `ShareReaderViewController.Mode`
-    /// (article kind) share raw values by design.
-    private static func readerMode(_ mode: ExtensionReaderMode) -> ShareReaderViewController.Mode {
-        ShareReaderViewController.Mode(rawValue: mode.rawValue) ?? .reader
-    }
-
-    private static func extensionMode(_ mode: ShareReaderViewController.Mode) -> ExtensionReaderMode {
-        ExtensionReaderMode(rawValue: mode.rawValue) ?? .reader
-    }
 }

@@ -3,6 +3,7 @@
 //  LunaReaderClip
 //
 
+import LunaReaderUI
 import LunaArticleIngest
 import LunaIngest
 import UIKit
@@ -13,12 +14,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // The clip reads articles, so it registers the article-kind pipeline
-        // processor (same composition contract as the apps' KindWiring).
-        IngestKindProcessors.article = ArticleIngestProcessor()
-        // Article-kind processing includes reading a long-form X post / self-thread
-        // (claudedocs/x-posts.md) — required on every article-handling surface.
-        IngestKindProcessors.socialText = XPostIngestProcessor()
+        // The clip reads articles, so it installs the article kind pack — the
+        // same one call every other article surface makes, so the clip can never
+        // drift from them (see `ArticleKindComposition`).
+        ArticleKindComposition.install()
         return true
     }
 

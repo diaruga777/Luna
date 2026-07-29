@@ -28,7 +28,7 @@ enum KindWiring {
         AppOnboardingStore.shared.resetIfRequested()
         #endif
 
-        IngestKindProcessors.product = ProductIngestProcessor()
+        ProductKindComposition.install()
         IngestorKindHandlers.product = ProductKindHandler()
         // No price-graph email snapshot: Price Tracker shares a tracker as its
         // product link, never as a Luna email (see `LunaApp.sharesByEmail`).

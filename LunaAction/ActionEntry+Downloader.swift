@@ -2,45 +2,29 @@
 //  ActionEntry+Downloader.swift
 //
 //  The extension's principal class (Info.plist names the stable @objc name
-//  `LunaActionEntry`). EXACTLY ONE variant is compiled into each host's
-//  extension target (per-target membership exceptions on the shared folder),
-//  registering the per-kind pipeline processors AND extension presenters that
-//  host's app handles — the registries mirror the link set.
+//  `LunaActionEntry`). EXACTLY ONE variant is compiled into each host's extension
+//  target (per-target membership exceptions on the shared folder).
+//
+//  It installs the KIND PACKS this host's app handles — one call each. What a
+//  kind registers (pipeline processors AND extension presenters) is defined once,
+//  in that kind's own module, and shared by every surface: app shell, share
+//  extension, action extension, App Clip. See `ArticleKindComposition` and
+//  claudedocs/surface-support.md.
+//
+//  Do NOT write `IngestKindProcessors` / `ShareKindPresenters` directly here —
+//  hand-listing them per surface is what let a kind be registered on some
+//  surfaces and not others (`KindCompositionRootTests` fails the build for it).
 //
 
+import LunaMediaDownload
 import LunaShareSurface
 import UIKit
-import LunaMediaDownload
 
 @objc(LunaActionEntry)
 final class ActionEntry: ShareViewController {
     override init(nibName: String?, bundle: Bundle?) {
-        // Media needs no web-processing pipeline stage (URL-only classification);
-        // only the extension presenter registers.
-        ShareKindPresenters.media = MediaPresenterAdapter()
+        MediaKindComposition.install()
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }
-}
-
-/// Adapts the protocol-free `ExtensionMediaPresenter` (LunaMediaDownload) to
-/// `ShareMediaPresenting`.
-private struct MediaPresenterAdapter: ShareMediaPresenting {
-    private let presenter = ExtensionMediaPresenter()
-
-    func presentNonTextual(urlString: String, host: ExtensionHost) {
-        presenter.presentNonTextual(
-            urlString: urlString, interactive: host.readerMode != nil,
-            presentModally: { [weak host] in host?.presentModally($0) },
-            confirmSavedThenComplete: { [weak host] in host?.confirmSavedThenComplete() },
-            autoDownloadThenComplete: { [weak host] in host?.autoDownloadThenComplete(urlString: $0) })
-    }
-
-    func shouldAutoDownload(urlString: String) -> Bool {
-        presenter.shouldAutoDownload(urlString: urlString)
-    }
-
-    func startAutoDownload(urlString: String) async {
-        await presenter.startAutoDownload(urlString: urlString)
-    }
 }

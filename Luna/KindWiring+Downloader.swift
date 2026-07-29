@@ -25,9 +25,13 @@ enum KindWiring {
         AppOnboardingStore.shared.resetIfRequested()
         #endif
 
-        // Media needs no web-processing pipeline stage (platform recognition
-        // is URL-only classification), but its post-save ingestion — metadata,
-        // thumbnail, auto-download handoff — is the media ingestor handler.
+        // The media kind pack — one call, shared verbatim with the Downloader's
+        // share and action extensions (`MediaKindComposition`). Media needs no
+        // web-processing pipeline stage (platform recognition is URL-only
+        // classification), which is stated there rather than re-derived here.
+        MediaKindComposition.install()
+        // Post-save ingestion — metadata, thumbnail, auto-download handoff — is
+        // the app-shell media ingestor handler.
         IngestorKindHandlers.media = MediaKindHandler()
         PasteboardSuggester.platformPreviewArt = { platform, itemID, urlString in
             await PlatformItemIngestor.shared.pasteboardPreviewArtData(

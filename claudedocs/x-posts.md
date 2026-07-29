@@ -136,33 +136,17 @@ an X post, but not whether the post holds 40 characters or 4,000 — so
 `IngestPipeline`'s `.social` branch offers every recognized social post to the
 seam and takes an article only when one comes back.
 
-`XPostIngestProcessor` (in **LunaArticleIngest**) implements it, and is registered
-into `IngestKindProcessors.socialText` by the article-handling composition roots
-only.
-
-**Every article-handling SURFACE must register it, not just the app.** Each target
-has several separate composition roots — the app shell, the share extension, the
-action extension, the App Clip — and each is its own per-target file. Registering
-in `KindWiring+*` alone was shipped once and produced exactly the confusing split
-this warns about: a long X post saved *inside* the app read fine, while the same
-link shared through the **share sheet** classified `.social` and was dropped with
-"share media links to Luna Downloader". The seven roots:
-
-| Surface | File |
-| --- | --- |
-| Luna app | `Luna/KindWiring+Luna.swift` |
-| Reader app | `Luna/KindWiring+Reader.swift` |
-| Luna share ext | `LunaShare/ShareEntry+Luna.swift` |
-| Reader share ext | `LunaShare/ShareEntry+Reader.swift` |
-| Luna action ext | `LunaAction/ActionEntry+Luna.swift` |
-| Reader action ext | `LunaAction/ActionEntry+Reader.swift` |
-| Reader App Clip | `LunaReaderClip/AppDelegate.swift` |
-
-`SocialTextCompositionRootTests` enforces this by reading the composition-root
-source: any file registering `IngestKindProcessors.article` without
-`.socialText` fails the suite. No unit test can load the extensions themselves
-(each registry is set in a principal class's initializer in a different process),
-so the source check is the only thing tying these files together.
+`XPostIngestProcessor` (in **LunaArticleIngest**) implements it, and reaches
+`IngestKindProcessors.socialText` through the **article kind pack**,
+`ArticleKindComposition.install()` (LunaReaderUI) — the one definition every
+article surface installs with a single call. Registering it per-surface by hand
+was tried first and shipped broken: the entry went into the two `KindWiring+*` app
+roots only, so a long X post read fine inside the app but was rejected from the
+**share sheet** as Downloader-owned. Seven roots handle the article kind (app
+shell, share extension, action extension and App Clip, for two apps), and
+`KindCompositionRootTests` now fails the build if any of them registers a kind
+directly or installs the wrong set. See `claudedocs/surface-support.md`'s
+"Kind packs" for the mechanism.
 
 Per-app behavior:
 
@@ -188,10 +172,10 @@ Reader's deck.
   id-over-handle identity, dedupe, the video guard (and that a later clip does not
   disqualify), every counter-stripping rule with its false-positive guards, title
   derivation.
-- `SocialTextCompositionRootTests` (4) — the composition-root invariant above (in
-  both directions: an unguarded new root, and a deleted registration), plus that
-  X's own `?s=46` / `?t=…` share params don't break post recognition or survive
-  into the item id.
+- `KindCompositionRootTests` (6) — the kind-pack invariant (no root registers a
+  kind directly; each root installs exactly its app's kinds; no expected root
+  vanishes; no unlisted root installs a pack), plus that X's own `?s=46` / `?t=…`
+  share params don't break post recognition or survive into the item id.
 - `XPostIngestProcessorTests` (10) — endpoint order and request economy, the
   fallback path, non-X platforms and bad ids declined without fetching, and the
   pipeline branch: reroute to `.article` (Reader-owned), decline stays `.social`

@@ -35,11 +35,9 @@ enum KindWiring {
         AppOnboardingStore.shared.resetIfRequested()
         #endif
 
-        IngestKindProcessors.article = ArticleIngestProcessor()
-        // A long-form X post / self-thread reads as an article here (see
-        // claudedocs/x-posts.md). Registered only by article-handling apps: without
-        // it every X link stays a social item, which is what the Downloader wants.
-        IngestKindProcessors.socialText = XPostIngestProcessor()
+        // The article kind pack — one call, shared verbatim with Reader's share
+        // extension, action extension and App Clip (`ArticleKindComposition`).
+        ArticleKindComposition.install()
         IngestorKindHandlers.article = ArticleKindHandler()
 
         // A completion written before a force-quit never received the normal

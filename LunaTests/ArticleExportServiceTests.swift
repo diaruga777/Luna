@@ -66,17 +66,20 @@ final class ArticleExportServiceTests: XCTestCase {
 
     // MARK: - Every format
 
-    /// Each format writes a non-empty file under its own extension, off the same
-    /// sanitized title stem.
+    /// Each format writes a non-empty file under its own extension, off the one
+    /// shared sanitized stem.
     func testEveryFormatWritesItsOwnExtension() throws {
         let item = readyItem(title: "Hello: World?", url: "https://example.com/d")
         let service = ArticleExportService(store: store)
+        var stems: Set<String> = []
         for format in ArticleExportFormat.allCases {
             let url = try service.write(format, for: item)
             XCTAssertEqual(url.pathExtension, format.fileExtension, "\(format)")
             XCTAssertFalse(try Data(contentsOf: url).isEmpty, "\(format)")
-            XCTAssertTrue(url.lastPathComponent.hasPrefix("Hello World"), "\(format)")
+            XCTAssertFalse(url.lastPathComponent.contains(":"), "\(format)")
+            stems.insert(url.deletingPathExtension().lastPathComponent)
         }
+        XCTAssertEqual(stems.count, 1, "every format shares one file stem")
     }
 
     func testPDFExportProducesPDFBytes() throws {

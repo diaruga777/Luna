@@ -23,7 +23,7 @@ app targets), top to bottom:
 2. **A URL bar** — reload on the left, the URL (scheme stripped, middle-truncated
    so the identifying slug survives) in the middle, share on the right. Share goes
    straight to the system sheet with the **raw URL**: a failed save has no content,
-   no eBook, no media, so there is nothing else to share, and the reader's richer
+   nothing to export, no media, so there is nothing else to share, and the reader's richer
    share ladder isn't compiled into the Downloader/Price Tracker targets anyway.
 3. **The chin** — a full-width prominent glass capsule, **"Retry with AI"** with
    the Apple Intelligence glyph trailing the words as a sigil rather than leading

@@ -536,9 +536,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private func shareLockedCardLink() {
         guard let urlString = lockedShareURLString else { return }
         // Straight to the SYSTEM sheet, not `AppReaderShareProvider`'s ladder: a
-        // locked save has no extracted text and no eBook, so that ladder's "Send
-        // as email" and "Share .epub" rows would offer to send nothing. Same
-        // reasoning, same call, as the failed card (`FailedSaveCardFactory`).
+        // locked save has no extracted text, so that ladder's "Send as email" row
+        // would offer to send nothing (and it drops "Export as…" for exactly the
+        // same reason). Same reasoning, same call, as the failed card
+        // (`FailedSaveCardFactory`).
         SendToFriendSheet.shareLink(
             urlString: urlString, from: self, sourceView: readerShareButton)
     }

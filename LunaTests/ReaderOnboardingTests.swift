@@ -422,7 +422,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testShowMeHowPreparesTheInjectedProductionRootWithoutAnEclipseView() throws {
+    func testOnboardingKeepsLaunchCoronaUntilShowMeHowThenExpandsWithoutIt() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -445,6 +445,18 @@ final class ReaderOnboardingTests: XCTestCase {
         window.rootViewController = onboarding
         window.makeKeyAndVisible()
         onboarding.view.layoutIfNeeded()
+
+        let corona = try XCTUnwrap(
+            onboarding.view.subviews.compactMap {
+                $0 as? EclipseCoronaView
+            }.first,
+            "The initial onboarding card should retain the launch corona")
+        let launchTarget = try XCTUnwrap(
+            onboarding.appLaunchTargetFrame(in: window))
+        XCTAssertEqual(
+            corona.frame,
+            onboarding.view.convert(launchTarget, from: window),
+            "The retained corona must stay stationary at the splash card frame")
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
@@ -471,7 +483,7 @@ final class ReaderOnboardingTests: XCTestCase {
             "The production root must be mounted behind Safari during the save")
         XCTAssertTrue(
             onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
-            "The intro must grow directly into Safari without an eclipse dressing")
+            "Pressing Show me how must remove the retained corona before expansion")
     }
 
     func testLaunchArtworkUsesTheReferenceRootCardsExactSize() {

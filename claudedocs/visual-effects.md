@@ -83,7 +83,8 @@ still starlight. The central app's sky is plain moonlight.
 All four Luna apps use the production card and corona as their launch surface.
 Their static `LunaLaunchScreen.storyboard` contains one opaque standalone PNG
 recorded from the same fixed star table, `EclipseCoronaView`, and blank black
-`CardSurfaceView` used by the first live frame. Keeping the composite outside
+`CardSurfaceView` used by the first live frame. The corona intentionally omits
+colored solar prominences. Keeping the composite outside
 the asset catalog makes it available to the launch-snapshot process before the
 app has started. The card is already the destination root card's full resting
 size; the corona crops beyond the display instead of making the card smaller.
@@ -93,16 +94,22 @@ beat, and fades the splash away as one layer over 0.20 seconds. This avoids a
 warm launch committing only the final transparent frame while remaining far
 shorter than the former staged egress. There is no resize or multi-stage
 egress. This happens on every launch, not only onboarding, and each
-`KindWiring` composition root installs the shared transition.
+`KindWiring` composition root installs the shared transition. An incomplete
+first run constructs a separate static UIKit instance of the same peak corona
+behind the intro card before this fade, keeping it stationary after the splash
+layer is discarded. It does not retain the splash raster or overlay hierarchy.
+Completed roots preserve the ordinary fade-away behavior.
 
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.
 
 ## Onboarding Safari/Messages/card loop
 
-The onboarding card-to-browser demonstration deliberately does not use an
-eclipse. “Show me how” grows the intro card to the screen edges and crossfades
-its content into the local Safari facsimile. The second source is a mock
+The initial onboarding card retains the launch corona until “Show me how” is
+pressed. The card-to-browser demonstration itself deliberately does not use an
+eclipse: the button removes that corona, grows the intro card to the screen
+edges, and crossfades its content into the local Safari facsimile. The second
+source is a mock
 iMessage thread with Johnny Appleseed: earlier messages in both directions are
 grey gradient blocks and the newest incoming bubble contains Safari's current
 mock URL. A tall solid-black deformation first stretches from the screen edge
@@ -181,8 +188,6 @@ camera records at totality rather than on a soft glow:
   absorbs the ramp-up and no arc appears where the gradient began.
 - **Pearl, not white.** Warm-white at the limb cooling to faint blue outward, with 22% of
   the app's `atmosphereTint` mixed into the outer corona (a no-op for the central app).
-- **Prominences.** Three small hydrogen-alpha arcs on the limb, drawn in `plusLighter` so
-  the pink survives instead of being screened into the rim.
 
 The full-screen (interior) variant, for a source that already fills the transition
 container, is four trapezoid-clipped edge gradients — each clipped to the points nearer its

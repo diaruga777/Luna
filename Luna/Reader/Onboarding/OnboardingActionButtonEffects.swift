@@ -19,6 +19,73 @@ enum OnboardingActionButtonTiming {
     static let waveRasterScale: CGFloat = 1.5
 }
 
+/// A full-screen mock source that can demonstrate saving its visible URL with
+/// the physical Action Button. Safari and Messages both inherit this player so
+/// their press cue, URL highlight, wave timing, and destination transition can
+/// never drift apart.
+@MainActor
+class OnboardingSaveSourceViewController: UIViewController {
+    var onActionButtonWaveFinished: (() -> Void)?
+    var makeActionButtonDestinationSnapshot: (() -> UIImage?)?
+
+    private var actionCue: ActionButtonPressCue?
+    private var waveAnimator: LiquidScreenWaveAnimator?
+
+    /// The currently visible URL. Sources may override this when their mock
+    /// content changes while the onboarding loop is running.
+    var sharedURLString: String { "" }
+
+    /// Removes transient pressed-state decoration before this source grows back
+    /// out of the saved card.
+    func prepareForPresentation() {
+        setURLHighlighted(false)
+    }
+
+    /// Subclasses apply the bright app-tint wash to their visible URL.
+    func setURLHighlighted(_ highlighted: Bool) {}
+
+    var isURLHighlighted: Bool { false }
+
+    /// Plays the same complete save gesture for every mock source. The URL is
+    /// highlighted before the source snapshot is captured, so it remains lit
+    /// until the advancing wave replaces it with the saved-card view.
+    final func replayActionButtonSaveEffect() {
+        guard actionCue == nil, waveAnimator == nil,
+              let window = view.window
+        else { return }
+
+        setURLHighlighted(true)
+        view.layoutIfNeeded()
+
+        let cue = ActionButtonPressCue()
+        actionCue = cue
+        cue.layout(in: window)
+        let origin = cue.waveOrigin
+
+        let animator = LiquidScreenWaveAnimator(
+            window: window,
+            hostView: view.superview ?? window)
+        waveAnimator = animator
+        animator.play(
+            origin: origin,
+            destinationSnapshot: { [weak self] in
+                self?.makeActionButtonDestinationSnapshot?()
+            },
+            completion: { [weak self, weak cue] in
+                cue?.removeFromSuperview()
+                self?.actionCue = nil
+                self?.waveAnimator = nil
+                self?.onActionButtonWaveFinished?()
+            })
+
+        window.addSubview(cue)
+        cue.play { [weak self, weak cue] in
+            cue?.removeFromSuperview()
+            self?.actionCue = nil
+        }
+    }
+}
+
 /// The solid-black edge deformation iOS shows when the physical Action Button
 /// is pressed. It grows out of the display edge as one continuous silhouette,
 /// then smoothly retracts back into it.

@@ -95,6 +95,9 @@ final class ReaderOnboardingTests: XCTestCase {
             "Save onscreen links with one click.\nUnlock or read offline later.")
         XCTAssertEqual(reader.saveBenefit, "Read offline later")
         XCTAssertEqual(reader.demoPages, [.wikipedia])
+        XCTAssertEqual(
+            reader.demoPages.first?.sharedURLString,
+            "https://en.wikipedia.org/wiki/Luna")
 
         let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
         XCTAssertEqual(downloader.firstLine, "App signup required? So annoying.")
@@ -104,6 +107,9 @@ final class ReaderOnboardingTests: XCTestCase {
             "Download any video link in one click,\nno signup required.")
         XCTAssertEqual(downloader.saveBenefit, "Watch or share")
         XCTAssertEqual(downloader.demoPages, [.instaTok])
+        XCTAssertEqual(
+            downloader.demoPages.first?.sharedURLString,
+            "https://instatok.local/@moonwatch/lunar-eclipse")
 
         let price = OnboardingSurfaceConfiguration.configuration(for: .priceTracker)
         XCTAssertEqual(price.firstLine, "Overpaid? Missed a sale?")
@@ -113,6 +119,9 @@ final class ReaderOnboardingTests: XCTestCase {
             "Track sales for any link\nin one click.")
         XCTAssertEqual(price.saveBenefit, "Never miss a sale")
         XCTAssertEqual(price.demoPages, [.amayzon])
+        XCTAssertEqual(
+            price.demoPages.first?.sharedURLString,
+            "https://amayzon.local/eyephone-air")
 
         let luna = OnboardingSurfaceConfiguration.configuration(for: .luna)
         XCTAssertEqual(luna.firstLine, "All your Luna saves.")
@@ -167,19 +176,19 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(tintAlpha, 0.24, accuracy: 0.001)
     }
 
-    func testIntroWaveAndSafariCardLoopTimingsStayDeliberateButBrisk() {
+    func testIntroWaveAndDemoLoopTimingsStayDeliberateButBrisk() {
         XCTAssertGreaterThan(OnboardingIntroTiming.firstLineDelay, 0.2)
         XCTAssertLessThan(OnboardingIntroTiming.interLineDelay, 0.5)
         XCTAssertGreaterThan(OnboardingIntroTiming.lineRevealDuration, 0.82)
         XCTAssertLessThan(OnboardingActionButtonTiming.waveDuration, 1.18)
-        XCTAssertGreaterThan(OnboardingSafariCardTiming.geometryDuration, 0.45)
-        XCTAssertLessThan(OnboardingSafariCardTiming.geometryDuration, 0.70)
+        XCTAssertGreaterThan(OnboardingDemoLoopTiming.geometryDuration, 0.45)
+        XCTAssertLessThan(OnboardingDemoLoopTiming.geometryDuration, 0.70)
         XCTAssertGreaterThan(
-            OnboardingSafariCardTiming.cardHoldDuration,
-            OnboardingSafariCardTiming.browserHoldDuration)
+            OnboardingDemoLoopTiming.savedCardHoldDuration,
+            OnboardingDemoLoopTiming.sourceHoldDuration)
         XCTAssertGreaterThan(
-            OnboardingSafariCardTiming.firstSavedCardHoldDuration,
-            OnboardingSafariCardTiming.cardHoldDuration)
+            OnboardingDemoLoopTiming.firstLoopSavedCardHoldDuration,
+            OnboardingDemoLoopTiming.savedCardHoldDuration)
         XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.wavefrontHalfWidth,
             28)
@@ -195,6 +204,77 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
+    }
+
+    func testDemoLoopAlternatesSafariSaveThenMessagesSave() {
+        XCTAssertEqual(
+            OnboardingDemoSource.allCases,
+            [.safari, .messages])
+        XCTAssertEqual(OnboardingDemoSource.safari.next, .messages)
+        XCTAssertEqual(OnboardingDemoSource.messages.next, .safari)
+    }
+
+    @MainActor
+    func testMessagesReplicaHasJohnnyPrivacyPlaceholdersAndSafariURL() throws {
+        let urlString = OnboardingDemoPage.wikipedia.sharedURLString
+        let messages = MessagesReplicaViewController(urlString: urlString)
+        messages.loadViewIfNeeded()
+        messages.view.frame = CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize)
+        messages.view.layoutIfNeeded()
+
+        let sender = try XCTUnwrap(
+            messages.view.descendants(of: UILabel.self).first {
+                $0.accessibilityIdentifier == "onboarding.messages.senderName"
+            })
+        let latestURL = try XCTUnwrap(
+            messages.view.descendants(of: UILabel.self).first {
+                $0.accessibilityIdentifier == "onboarding.messages.latestURL"
+            })
+        let placeholders = messages.view.descendants(of: UIView.self).compactMap {
+            $0.accessibilityIdentifier
+        }
+
+        XCTAssertEqual(sender.text, "Johnny Appleseed")
+        XCTAssertEqual(latestURL.text, urlString)
+        XCTAssertEqual(
+            placeholders.filter {
+                $0 == "onboarding.messages.placeholder.incoming"
+            }.count,
+            2)
+        XCTAssertEqual(
+            placeholders.filter {
+                $0 == "onboarding.messages.placeholder.outgoing"
+            }.count,
+            2)
+        XCTAssertFalse(messages.isURLHighlighted)
+        messages.setURLHighlighted(true)
+        XCTAssertTrue(messages.isURLHighlighted)
+    }
+
+    @MainActor
+    func testSafariAndMessagesShareTheSamePersistentURLHighlightState() {
+        let configuration = OnboardingSurfaceConfiguration.configuration(for: .reader)
+        let safari = SafariReplicaViewController(configuration: configuration)
+        safari.loadViewIfNeeded()
+        let messages = MessagesReplicaViewController(
+            urlString: safari.sharedURLString)
+        messages.loadViewIfNeeded()
+
+        XCTAssertEqual(messages.sharedURLString, safari.sharedURLString)
+        XCTAssertFalse(safari.isURLHighlighted)
+        XCTAssertFalse(messages.isURLHighlighted)
+
+        safari.setURLHighlighted(true)
+        messages.setURLHighlighted(true)
+        XCTAssertTrue(safari.isURLHighlighted)
+        XCTAssertTrue(messages.isURLHighlighted)
+
+        safari.prepareForPresentation()
+        messages.prepareForPresentation()
+        XCTAssertFalse(safari.isURLHighlighted)
+        XCTAssertFalse(messages.isURLHighlighted)
     }
 
     @MainActor

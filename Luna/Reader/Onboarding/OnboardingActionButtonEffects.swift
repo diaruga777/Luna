@@ -9,7 +9,6 @@ import UIKit
 
 enum OnboardingActionButtonTiming {
     static let waveDuration: CFTimeInterval = 0.78
-    static let instructionRevealProgress: CGFloat = 0.5
 }
 
 final class ActionButtonPressCue: UIVisualEffectView {
@@ -98,9 +97,7 @@ final class LiquidScreenWaveAnimator {
     private var source: CIImage?
     private var displayLink: CADisplayLink?
     private var startedAt: CFTimeInterval = 0
-    private var midpoint: (() -> Void)?
     private var completion: (() -> Void)?
-    private var didReachMidpoint = false
     private var origin: CGPoint = .zero
     private let duration = OnboardingAnimationClock.displayLinkDuration(
         OnboardingActionButtonTiming.waveDuration)
@@ -109,21 +106,14 @@ final class LiquidScreenWaveAnimator {
         self.window = window
     }
 
-    func play(
-        origin: CGPoint,
-        midpoint: @escaping () -> Void,
-        completion: @escaping () -> Void
-    ) {
+    func play(origin: CGPoint, completion: @escaping () -> Void) {
         guard let window, let snapshot = snapshot(window: window),
               let cgImage = snapshot.cgImage else {
-            midpoint()
             completion()
             return
         }
         self.origin = origin
-        self.midpoint = midpoint
         self.completion = completion
-        didReachMidpoint = false
         source = CIImage(cgImage: cgImage)
 
         let imageView = UIImageView(frame: window.bounds)
@@ -192,13 +182,6 @@ final class LiquidScreenWaveAnimator {
         }
         overlay.image = UIImage(
             cgImage: rendered, scale: pixelScale, orientation: .up)
-        if !didReachMidpoint,
-           progress >= Double(OnboardingActionButtonTiming.instructionRevealProgress) {
-            didReachMidpoint = true
-            let midpoint = midpoint
-            self.midpoint = nil
-            midpoint?()
-        }
         if progress >= 1 { finish() }
     }
 
@@ -208,10 +191,6 @@ final class LiquidScreenWaveAnimator {
         overlay?.removeFromSuperview()
         overlay = nil
         source = nil
-        if !didReachMidpoint {
-            midpoint?()
-        }
-        midpoint = nil
         let completion = completion
         self.completion = nil
         completion?()

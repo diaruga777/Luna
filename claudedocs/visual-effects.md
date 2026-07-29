@@ -98,6 +98,16 @@ egress. This happens on every launch, not only onboarding, and each
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.
 
+## Onboarding Safari/card loop
+
+The onboarding card-to-browser demonstration deliberately does not use an
+eclipse. “Show me how” grows the intro card to the screen edges and crossfades
+its content into the local Safari facsimile. After the circular Action Button
+wave finishes, the facsimile shrinks into the exact centered card frame before
+the instruction overlay appears. It then grows and shrinks on a loop behind the
+overlay, with no repeated wave. Completion settles on the card and performs a
+short stationary crossfade into the completed root card.
+
 ## Loading spinner (`DotMatrixSpinnerView`)
 
 `LunaLibraries/Sources/LunaDesignSystem/DotMatrixSpinnerView.swift` is the shared loading

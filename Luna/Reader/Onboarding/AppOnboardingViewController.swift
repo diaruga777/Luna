@@ -7,16 +7,27 @@ import LunaDesignSystem
 import LunaStorage
 import UIKit
 
+enum OnboardingSafariCardTiming {
+    static let geometryDuration: TimeInterval = 0.58
+    static let cardHoldDuration: TimeInterval = 0.72
+    static let browserHoldDuration: TimeInterval = 1.10
+}
+
 /// The shared guided first-run deck. It intentionally uses the production
-/// CardCarousel rather than a look-alike: peeks, glass rim, and the transition
-/// from the intro card to Safari are the same views and CardEclipseTransition
-/// used by the app's normal saved cards.
+/// CardCarousel rather than a look-alike. The intro card expands directly into
+/// the Safari facsimile; after the save wave, that same view alternates between
+/// the full browser and the centered saved-card frame behind the setup overlay.
 final class AppOnboardingViewController: UIViewController {
     private enum ExternalReturn {
         case none
         case safari
         case shortcut
         case actionButton
+    }
+
+    private enum SafariPresentation {
+        case fullScreen
+        case card
     }
 
     private let configuration: OnboardingSurfaceConfiguration
@@ -30,6 +41,10 @@ final class AppOnboardingViewController: UIViewController {
     private var safariReplica: SafariReplicaViewController?
     private var externalReturn = ExternalReturn.none
     private var didExpandSafari = false
+    private var safariPresentation = SafariPresentation.fullScreen
+    private var safariTransitionGeneration = 0
+    private var safariLoopGeneration = 0
+    private var isSafariGeometryTransitioning = false
     private var isFinishing = false
     private var foregroundObserver: NSObjectProtocol?
     private var setupObserver: NSObjectProtocol?
@@ -160,12 +175,12 @@ final class AppOnboardingViewController: UIViewController {
 
     private func showSafariCard() {
         guard carousel.currentIndex == 0, !didExpandSafari else { return }
-        carousel.page(by: 1)
+        expandSafariCard()
     }
 
     private func expandSafariCard() {
         guard !didExpandSafari,
-              let card = carousel.cardView(at: 1)
+              let card = carousel.cardView(at: 0)
         else { return }
         didExpandSafari = true
 
@@ -174,6 +189,9 @@ final class AppOnboardingViewController: UIViewController {
         safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
         safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
         safari.onSetUpLater = { [weak self] in self?.finishOnboarding() }
+        safari.onActionButtonWaveFinished = { [weak self] in
+            self?.actionButtonWaveDidFinish()
+        }
         safariReplica = safari
 
         addChild(safari)
@@ -188,7 +206,10 @@ final class AppOnboardingViewController: UIViewController {
         safari.view.layoutIfNeeded()
         view.bringSubviewToFront(safari.view)
 
-        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled ? 0.2 : 0.52
+        safariPresentation = .fullScreen
+        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
+            ? 0.20
+            : OnboardingSafariCardTiming.geometryDuration
         UIView.animate(
             withDuration: duration,
             delay: 0,
@@ -202,15 +223,26 @@ final class AppOnboardingViewController: UIViewController {
             self.carousel.view.alpha = 0
         } completion: { _ in
             self.carousel.view.isHidden = true
+            // The eclipse-free intro expansion starts on card zero. Prepare
+            // the saved-content slot invisibly so the first reverse animation
+            // lands on its real centered card and mini-carousel identity.
+            self.carousel.reloadData(centeringAt: 1)
+            self.carousel.view.layoutIfNeeded()
             self.setNeedsStatusBarAppearanceUpdate()
             #if DEBUG
             switch self.debugSafariStage {
             case "prompt":
-                safari.showSafariPrompt()
+                self.presentInstructionsAfterShrinking {
+                    safari.showSafariPrompt()
+                }
             case "setup":
-                safari.showShortcutAndActionSetup()
+                self.presentInstructionsAfterShrinking {
+                    safari.showShortcutAndActionSetup()
+                }
             case "waiting":
-                safari.showWaitingForActionButton()
+                self.presentInstructionsAfterShrinking {
+                    safari.showWaitingForActionButton()
+                }
             default:
                 safari.beginDemonstration()
             }
@@ -220,8 +252,133 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    private func actionButtonWaveDidFinish() {
+        presentInstructionsAfterShrinking { [weak self] in
+            self?.safariReplica?.showSafariPrompt()
+        }
+    }
+
+    private func presentInstructionsAfterShrinking(
+        _ presentInstructions: @escaping () -> Void
+    ) {
+        transitionSafari(to: .card) { [weak self] in
+            guard let self, !self.isFinishing else { return }
+            presentInstructions()
+            self.startSafariPresentationLoop()
+        }
+    }
+
+    private func transitionSafari(
+        to target: SafariPresentation,
+        completion: @escaping () -> Void
+    ) {
+        guard let safari = safariReplica else {
+            completion()
+            return
+        }
+        if safariPresentation == target, !isSafariGeometryTransitioning {
+            applySafariPresentation(target, safari: safari)
+            carousel.view.isHidden = target == .fullScreen
+            completion()
+            return
+        }
+
+        safariTransitionGeneration += 1
+        let generation = safariTransitionGeneration
+        isSafariGeometryTransitioning = true
+        safariPresentation = target
+
+        if target == .card {
+            carousel.view.isHidden = false
+        }
+        view.bringSubviewToFront(safari.view)
+        setNeedsStatusBarAppearanceUpdate()
+
+        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
+            ? 0.20
+            : OnboardingSafariCardTiming.geometryDuration
+        UIView.animate(
+            withDuration: duration,
+            delay: 0,
+            usingSpringWithDamping: 0.96,
+            initialSpringVelocity: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState]
+        ) {
+            self.applySafariPresentation(target, safari: safari)
+        } completion: { [weak self] _ in
+            guard let self,
+                  generation == self.safariTransitionGeneration
+            else { return }
+            self.isSafariGeometryTransitioning = false
+            self.applySafariPresentation(target, safari: safari)
+            self.carousel.view.isHidden = target == .fullScreen
+            self.setNeedsStatusBarAppearanceUpdate()
+            completion()
+        }
+    }
+
+    private func applySafariPresentation(
+        _ presentation: SafariPresentation,
+        safari: SafariReplicaViewController
+    ) {
+        switch presentation {
+        case .fullScreen:
+            safari.view.frame = view.bounds
+            safari.view.layer.cornerRadius = 0
+            carousel.view.alpha = 0
+        case .card:
+            view.layoutIfNeeded()
+            carousel.view.layoutIfNeeded()
+            safari.view.frame = carousel.restingCenteredCardFrame(in: view)
+                ?? AppLaunchGeometry.fallbackRootCardFrame(
+                    in: view.bounds,
+                    safeAreaInsets: view.safeAreaInsets)
+            safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
+            carousel.view.alpha = 1
+        }
+        safari.view.alpha = 1
+        safari.view.layer.cornerCurve = .continuous
+        safari.view.clipsToBounds = true
+    }
+
+    private func startSafariPresentationLoop() {
+        safariLoopGeneration += 1
+        scheduleNextSafariPresentation(loopGeneration: safariLoopGeneration)
+    }
+
+    private func stopSafariPresentationLoop() {
+        safariLoopGeneration += 1
+    }
+
+    private func scheduleNextSafariPresentation(loopGeneration: Int) {
+        guard !isFinishing,
+              loopGeneration == safariLoopGeneration,
+              externalReturn == .none
+        else { return }
+        let delay = safariPresentation == .card
+            ? OnboardingSafariCardTiming.cardHoldDuration
+            : OnboardingSafariCardTiming.browserHoldDuration
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(delay)
+        ) { [weak self] in
+            guard let self,
+                  !self.isFinishing,
+                  loopGeneration == self.safariLoopGeneration,
+                  self.externalReturn == .none
+            else { return }
+            let next: SafariPresentation = self.safariPresentation == .card
+                ? .fullScreen
+                : .card
+            self.transitionSafari(to: next) { [weak self] in
+                self?.scheduleNextSafariPresentation(
+                    loopGeneration: loopGeneration)
+            }
+        }
+    }
+
     private func openSafariSetup() {
         guard externalReturn == .none else { return }
+        stopSafariPresentationLoop()
         externalReturn = .safari
         safariGuide.startPictureInPicture()
         if let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia") {
@@ -231,12 +388,14 @@ final class AppOnboardingViewController: UIViewController {
 
     private func installShortcut() {
         guard externalReturn == .none else { return }
+        stopSafariPresentationLoop()
         externalReturn = .shortcut
         BundledShortcut.presentInstaller(from: self, sourceView: safariReplica?.view)
     }
 
     private func openActionButtonSettings() {
         guard externalReturn == .none else { return }
+        stopSafariPresentationLoop()
         externalReturn = .actionButton
         actionGuide.startPictureInPicture()
         SystemSettingsLink.openActionButton()
@@ -251,14 +410,19 @@ final class AppOnboardingViewController: UIViewController {
         case .safari:
             safariGuide.stopPictureInPicture()
             safariReplica?.showShortcutAndActionSetup()
+            startSafariPresentationLoop()
         case .shortcut:
             // Importing the signed file is an external Shortcuts hop, but the
             // setup isn't complete until the hardware Action Button is assigned.
             safariReplica?.showShortcutAndActionSetup()
+            startSafariPresentationLoop()
         case .actionButton:
             actionGuide.stopPictureInPicture()
             safariReplica?.showWaitingForActionButton()
             setupStatusChanged()
+            if !isFinishing {
+                startSafariPresentationLoop()
+            }
         }
     }
 
@@ -274,9 +438,20 @@ final class AppOnboardingViewController: UIViewController {
     private func finishOnboarding() {
         guard !isFinishing else { return }
         isFinishing = true
+        stopSafariPresentationLoop()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
         safariReplica?.dismissInstructions(animated: true) { [weak self] in
+            self?.settleOnSavedCardAndFinish()
+        }
+    }
+
+    private func settleOnSavedCardAndFinish() {
+        if safariPresentation == .card, !isSafariGeometryTransitioning {
+            commitBundledSaveAndTransition()
+            return
+        }
+        transitionSafari(to: .card) { [weak self] in
             self?.commitBundledSaveAndTransition()
         }
     }
@@ -301,6 +476,7 @@ final class AppOnboardingViewController: UIViewController {
         safariReplica?.showSaveFailure { [weak self] in
             self?.finishOnboarding()
         }
+        startSafariPresentationLoop()
     }
 
     #if DEBUG
@@ -319,7 +495,9 @@ final class AppOnboardingViewController: UIViewController {
 // MARK: - Card carousel
 
 extension AppOnboardingViewController: CardCarouselDataSource {
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 2 }
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int {
+        didExpandSafari ? 2 : 1
+    }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -359,18 +537,6 @@ extension AppOnboardingViewController: CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         navigationTargetDidChangeTo index: Int
     ) {}
-
-    func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        guard index == 1, !didExpandSafari else { return }
-        // didCenter fires at zenith. Let CardEclipseTransition finish its egress
-        // before the now-centered card takes over the whole display.
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(
-                CardEclipseTransition.duration * 0.38)
-        ) { [weak self] in
-            self?.expandSafariCard()
-        }
-    }
 }
 
 extension AppOnboardingViewController: AppLaunchTransitionTarget {

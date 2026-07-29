@@ -17,6 +17,7 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
     var onInstallShortcut: (() -> Void)?
     var onSetActionButton: (() -> Void)?
     var onSetUpLater: (() -> Void)?
+    var onActionButtonWaveFinished: (() -> Void)?
 
     private let onboardingConfiguration: OnboardingSurfaceConfiguration
     private let webView: WKWebView = {
@@ -164,15 +165,17 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
 
     private func playLiquidWave(origin: CGPoint) {
         guard let window = view.window else {
-            showSafariPrompt()
+            onActionButtonWaveFinished?()
             return
         }
         let animator = LiquidScreenWaveAnimator(window: window)
         waveAnimator = animator
         animator.play(
             origin: origin,
-            midpoint: { [weak self] in self?.showSafariPrompt() },
-            completion: { [weak self] in self?.waveAnimator = nil })
+            completion: { [weak self] in
+                self?.waveAnimator = nil
+                self?.onActionButtonWaveFinished?()
+            })
     }
 
     func showSafariPrompt() {

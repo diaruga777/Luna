@@ -135,14 +135,18 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(tintAlpha, 0.24, accuracy: 0.001)
     }
 
-    func testIntroAndActionButtonTimingsUseTheFasterOverlappedSequence() {
+    func testIntroWaveAndSafariCardLoopTimingsStayDeliberateButBrisk() {
         XCTAssertGreaterThan(OnboardingIntroTiming.secondLineDelay, 1.08)
         XCTAssertGreaterThan(OnboardingIntroTiming.secondLineRevealDuration, 0.82)
         XCTAssertLessThan(OnboardingActionButtonTiming.waveDuration, 1.18)
-        XCTAssertEqual(
-            OnboardingActionButtonTiming.instructionRevealProgress,
-            0.5,
-            accuracy: 0.001)
+        XCTAssertGreaterThan(OnboardingSafariCardTiming.geometryDuration, 0.45)
+        XCTAssertLessThan(OnboardingSafariCardTiming.geometryDuration, 0.70)
+        XCTAssertGreaterThan(
+            OnboardingSafariCardTiming.browserHoldDuration,
+            OnboardingSafariCardTiming.cardHoldDuration)
+        XCTAssertLessThanOrEqual(
+            AppOnboardingCompletionTransition.handoffDuration,
+            0.25)
     }
 
     @MainActor
@@ -152,6 +156,51 @@ final class ReaderOnboardingTests: XCTestCase {
 
         XCTAssertEqual(cue.waveOrigin.x, 0, accuracy: 0.001)
         XCTAssertEqual(cue.waveOrigin.y, cue.frame.midY, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testShowMeHowExpandsDirectlyToSafariWithoutAnEclipseView() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: AppOnboardingStore(
+                app: .reader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                temporarySave: OnboardingTemporarySave(
+                    install: { true },
+                    cleanup: {}),
+                makeCompletedRootViewController: { UIViewController() }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+
+        let button = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == "Show me how"
+            })
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+        button.sendActions(for: .touchUpInside)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        let safari = try XCTUnwrap(
+            onboarding.children.compactMap {
+                $0 as? SafariReplicaViewController
+            }.first)
+        XCTAssertEqual(safari.view.frame, onboarding.view.bounds)
+        XCTAssertTrue(
+            onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
+            "The intro must grow directly into Safari without an eclipse dressing")
     }
 
     func testLaunchArtworkUsesTheReferenceRootCardsExactSize() {
@@ -271,5 +320,14 @@ final class ReaderOnboardingTests: XCTestCase {
         let attribution = try String(contentsOf: attributionURL, encoding: .utf8)
         XCTAssertTrue(attribution.contains("NASA Scientific Visualization Studio"))
         XCTAssertTrue(attribution.contains("https://svs.gsfc.nasa.gov/5604/"))
+    }
+}
+
+private extension UIView {
+    func descendants<View: UIView>(of type: View.Type) -> [View] {
+        subviews.flatMap { view -> [View] in
+            let matching = (view as? View).map { [$0] } ?? []
+            return matching + view.descendants(of: type)
+        }
     }
 }

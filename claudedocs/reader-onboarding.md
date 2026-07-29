@@ -70,26 +70,34 @@ The root uses the production `CardCarouselViewController`:
    starts one third of the way down the card. “Show me how” appears only after
    the second line finishes, with a restrained 24% wash of the current app
    surface tint in its glass background.
-2. The button pages through the production `CardEclipseTransition`. The next
-   card expands to the display and becomes `SafariReplicaViewController`.
+2. “Show me how” does not page or invoke `CardEclipseTransition`. The centered
+   intro card grows directly to the display edges while its contents crossfade
+   into `SafariReplicaViewController`. Once it is full-screen, the hidden
+   carousel prepares the saved-content slot without animating between cards.
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.
 4. An Action Button cue plays beside the physical button. A
    `CIBumpDistortion` wave expands circularly from that cue across a whole-window
-   snapshot and settles in 0.78 seconds. The “Press the Action Button…” overlay
-   begins fading in at the wave's midpoint instead of waiting for the last
-   distorted pixels to settle.
-5. A window-filling near-black overlay aligns its content to the same one-third
-   vertical anchor. It offers Safari setup, then the same `BundledShortcut`
-   installer and `SystemSettingsLink.openActionButton()` paths used elsewhere.
-   Existing Safari and Action Button PiP guides play during external hops.
+   snapshot and settles in 0.78 seconds. Only after the last distorted pixels
+   settle does the Safari replica shrink into the exact centered card frame.
+5. The window-filling near-black setup overlay appears after that first shrink
+   and aligns its content to the same one-third vertical anchor. Behind it, the
+   saved card expands back into the Safari mock without another wave, then
+   alternates between full-screen Safari and the centered card on a loop. The
+   loop pauses during external hops and resumes behind each updated instruction
+   stage. The overlay offers Safari setup, then the same `BundledShortcut`
+   installer and `SystemSettingsLink.openActionButton()` paths used elsewhere;
+   existing Safari and Action Button PiP guides play during those hops.
 6. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
-7. Completion installs the surface's real save and eclipses into its normal
-   deck: Wikipedia article for Reader and central Luna, local video for
-   Downloader, and a real price-tracker payload for Price Tracker.
+7. Completion stops the loop and, unless it is already there, shrinks to the
+   card once more. It installs the surface's real save, then crossfades the
+   stationary onboarding card directly into the completed root controller's
+   centered card—no eclipse or second geometry change. The payload is a
+   Wikipedia article for Reader and central Luna, local video for Downloader,
+   and a real price tracker for Price Tracker.
 
 The demonstration save is temporary. Its exact UUID is recorded only when
 onboarding created a new item. The owning app deletes that exact save and its
@@ -105,7 +113,7 @@ inferred from merely opening a destination.
 
 Debug launches accept `-resetOnboarding` (`-resetReaderOnboarding` remains a
 Reader alias). `-onboardingStage prompt|setup|waiting` moves through the real
-card eclipse and expansion but begins at a deterministic overlay stage;
+direct card expansion and first shrink but begins at a deterministic overlay stage;
 `-readerOnboardingStage` remains an alias. Add `-slowOnboardingAnimations` for
 a 6× inspection timeline, or `-onboardingAnimationScale <1...12>` for an
 explicit factor. The clock slows Core Animation, timers, and the display-link

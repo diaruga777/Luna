@@ -292,8 +292,8 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 1912 tests, 9 skipped, 0 failures**
-  (measured 2026-07-29, full run with nothing skipped on the command line). The
+- **Current suite state on the iOS 26.x sim: 1915 tests, 9 skipped, 0 failures**
+  (measured 2026-07-29 post-merge, full run with nothing skipped on the command line). The
   long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
   snapshot set was re-recorded for the predawn palette, and the harness now pins the
   same appearance the app does (dark style + `lunaSky = .predawn`, over

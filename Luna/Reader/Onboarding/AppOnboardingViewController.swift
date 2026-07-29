@@ -62,6 +62,7 @@ final class AppOnboardingViewController: UIViewController {
     private var keepsIntroCorona = true
     private var temporarySaveInstallResult: Bool?
     private var externalReturn = ExternalReturn.none
+    private var isDemonstrationPreloaded = false
     private var didExpandSafari = false
     private var demoPresentation = DemoPresentation.fullScreen
     private var activeDemoSource = OnboardingDemoSource.safari
@@ -99,7 +100,10 @@ final class AppOnboardingViewController: UIViewController {
     required init?(coder: NSCoder) { nil }
 
     override var childForStatusBarStyle: UIViewController? {
-        demoPresentation == .fullScreen
+        // Preloading mounts the replicas and production root while the intro
+        // card is still up; none of them own the status bar until then.
+        guard didExpandSafari else { return nil }
+        return demoPresentation == .fullScreen
             ? sourceController(for: activeDemoSource)
             : savedRootViewController
     }
@@ -238,25 +242,30 @@ final class AppOnboardingViewController: UIViewController {
         }
         #endif
         intro.start()
-    }
-
-    private func showSafariCard() {
-        guard carousel.currentIndex == 0, !didExpandSafari else { return }
-        expandSafariCard()
-    }
-
-    private func expandSafariCard() {
-        guard !didExpandSafari,
-              let card = carousel.cardView(at: 0)
-        else { return }
-        guard prepareSavedRootIfNeeded() else {
-            presentSavePreparationFailure()
-            return
+        // One run-loop turn later, so the reveal's first frame commits before
+        // the heavy preparation runs; the intro's 0.34s first-line delay
+        // absorbs the stall invisibly.
+        DispatchQueue.main.async { [weak self] in
+            self?.preloadDemonstrationIfNeeded()
         }
-        dismissIntroCorona()
-        savedCardWaveSnapshot = captureSavedCardWaveSnapshot()
-        didExpandSafari = true
+    }
 
+    /// Builds everything "Show me how" needs while the intro copy is still
+    /// revealing: the temporary save (disk + article parse), the complete
+    /// production root, the wave's saved-card raster, and both source replicas
+    /// (Safari's WKWebView loads its bundled page asynchronously). The button
+    /// then only has to run the expansion animation. A failed temporary-save
+    /// install is deliberately NOT surfaced here — the flag stays false and
+    /// the expansion path retries and presents the failure alert instead.
+    private func preloadDemonstrationIfNeeded() {
+        guard !isDemonstrationPreloaded, !didExpandSafari else { return }
+        guard prepareSavedRootIfNeeded() else { return }
+        isDemonstrationPreloaded = true
+        savedCardWaveSnapshot = captureSavedCardWaveSnapshot()
+        mountSourceReplicas()
+    }
+
+    private func mountSourceReplicas() {
         let safari = SafariReplicaViewController(configuration: configuration)
         safari.onSetUpSafari = { [weak self] in self?.openSafariSetup() }
         safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
@@ -286,15 +295,42 @@ final class AppOnboardingViewController: UIViewController {
         view.addSubview(messages.view)
         messages.didMove(toParent: self)
 
+        // Mounted hidden at full size so the WKWebView spins up and lays out
+        // its bundled page long before the expansion needs it.
         addChild(safari)
-        let startFrame = card.convert(card.bounds, to: view)
-        safari.view.frame = startFrame
+        safari.view.frame = view.bounds
         safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
         safari.view.layer.cornerCurve = .continuous
         safari.view.clipsToBounds = true
         safari.view.alpha = 0
+        safari.view.isHidden = true
         view.addSubview(safari.view)
         safari.didMove(toParent: self)
+        safari.view.layoutIfNeeded()
+    }
+
+    private func showSafariCard() {
+        guard carousel.currentIndex == 0, !didExpandSafari else { return }
+        expandSafariCard()
+    }
+
+    private func expandSafariCard() {
+        guard !didExpandSafari,
+              let card = carousel.cardView(at: 0)
+        else { return }
+        preloadDemonstrationIfNeeded()
+        guard isDemonstrationPreloaded, let safari = safariReplica else {
+            presentSavePreparationFailure()
+            return
+        }
+        dismissIntroCorona()
+        didExpandSafari = true
+
+        let startFrame = card.convert(card.bounds, to: view)
+        safari.view.frame = startFrame
+        safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
+        safari.view.alpha = 0
+        safari.view.isHidden = false
         safari.view.layoutIfNeeded()
         view.bringSubviewToFront(safari.view)
 
@@ -393,13 +429,18 @@ final class AppOnboardingViewController: UIViewController {
         guard let savedRootViewController else { return nil }
         let carouselAlpha = carousel.view.alpha
         let rootAlpha = savedRootViewController.view.alpha
+        // Preloading captures this while the intro card — and its corona —
+        // are still on screen; neither belongs in the saved-card raster.
+        let coronaIsHidden = introCorona?.isHidden ?? true
         var snapshot: UIImage?
         UIView.performWithoutAnimation {
             carousel.view.alpha = 0
+            introCorona?.isHidden = true
             savedRootViewController.view.alpha = 1
             view.layoutIfNeeded()
             snapshot = renderSnapshot(of: view)
             carousel.view.alpha = carouselAlpha
+            introCorona?.isHidden = coronaIsHidden
             savedRootViewController.view.alpha = rootAlpha
         }
         return snapshot

@@ -86,7 +86,13 @@ The root uses the production `CardCarouselViewController`:
    intro corona is removed when the button advances successfully, then the card
    grows directly to the display edges while its contents crossfade into
    `SafariReplicaViewController`. Once it is full-screen, the hidden carousel
-   prepares the saved-content slot without animating between cards.
+   prepares the saved-content slot without animating between cards. Everything
+   the demonstration needs — the temporary save, the mounted production root,
+   the saved-card wave raster, and both source replicas (hidden, so Safari's
+   WKWebView loads its bundled page early) — is preloaded one run-loop turn
+   after the intro reveal starts, so the button press pays only for the
+   expansion animation itself. A failed temporary-save install stays silent at
+   preload; the press retries it and surfaces the failure alert.
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.
@@ -98,17 +104,20 @@ The root uses the production `CardCarouselViewController`:
    physical Action Button screen edge and smoothly retracts, matching the
    system's on-screen press silhouette. Its system-scale footprint is 7 points
    deep by 120 points tall and is centered on the Action Button's physical
-   position. The bulge and a custom Core Image warp begin together. This first,
-   thick wave is displacement-only: it passes through the source pixels without
-   replacing them, and finishes before the next phase starts.
+   position. The screen holds still for a 0.2-second beat while the bulge
+   forms; a custom Core Image warp then sets out just as the fully grown bulge
+   starts to recede. This first, thick wave is displacement-only: it passes
+   through the source pixels without replacing them, and finishes before the
+   next phase starts.
 5. A second wave then creeps in from the display edges, closing in on the
    rounded boundary of the highlighted Safari URL bar or iMessage link bubble.
    Every pixel behind its inward-travelling front turns black while the
    highlighted link itself is preserved, until only that link is visible on
    black. Both waves stay concentrated at their moving wavefronts instead of
    bending every pixel inside one growing `CIBumpDistortion` radius. There is
-   no third wave: the isolated-link frame then simply crossfades, uniformly
-   across the whole screen, into the saved-card snapshot.
+   no third wave: the isolated link rests on black for half a second, then the
+   whole frame simply crossfades, uniformly across the screen, into the
+   saved-card snapshot.
 6. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
    `AppOnboardingCompletion`. The final crossfade lands on that root

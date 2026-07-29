@@ -190,6 +190,12 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingActionButtonTiming.saveCrossfadeDuration,
             OnboardingActionButtonTiming.blackoutWaveDuration,
             "The final crossfade is deliberately simpler and quicker than the waves")
+        XCTAssertEqual(
+            OnboardingActionButtonTiming.firstWaveDelay, 0.2, accuracy: 0.001,
+            "The screen holds still for a beat of the press bump before the first wave")
+        XCTAssertEqual(
+            OnboardingActionButtonTiming.saveCrossfadeDelay, 0.5, accuracy: 0.001,
+            "The isolated link rests on black before the crossfade begins")
         XCTAssertGreaterThan(OnboardingDemoLoopTiming.geometryDuration, 0.45)
         XCTAssertLessThan(OnboardingDemoLoopTiming.geometryDuration, 0.70)
         XCTAssertGreaterThan(
@@ -479,6 +485,55 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(
             onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
             "Pressing Show me how must remove the retained corona before expansion")
+    }
+
+    @MainActor
+    func testLaunchTransitionFinishPreloadsTheDemonstrationBehindTheIntro() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let productionRoot = UINavigationController(
+            rootViewController: UIViewController())
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: AppOnboardingStore(
+                app: .reader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                temporarySave: OnboardingTemporarySave(
+                    install: { true },
+                    cleanup: {}),
+                makeCompletedRootViewController: { productionRoot }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        onboarding.appLaunchTransitionDidFinish()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        let safari = try XCTUnwrap(
+            onboarding.children.compactMap {
+                $0 as? SafariReplicaViewController
+            }.first,
+            "Show me how must not pay for replica creation; it is preloaded behind the intro")
+        XCTAssertTrue(
+            safari.view.isHidden,
+            "The preloaded Safari replica must stay invisible behind the intro card")
+        XCTAssertNotNil(
+            onboarding.children.compactMap {
+                $0 as? MessagesReplicaViewController
+            }.first)
+        XCTAssertTrue(
+            onboarding.savedRootViewControllerForTesting === productionRoot,
+            "The production root is prepared before Show me how is pressed")
+        XCTAssertFalse(
+            onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
+            "Preloading must not retire the intro corona early")
     }
 
     func testLaunchArtworkUsesTheReferenceRootCardsExactSize() {

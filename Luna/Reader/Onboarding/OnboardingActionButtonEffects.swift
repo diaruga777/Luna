@@ -8,8 +8,13 @@ import UIKit
 
 enum OnboardingActionButtonTiming {
     static let pressDuration: TimeInterval = 0.68
+    /// The screen holds still for a beat while the press bump forms; the first
+    /// wave sets out only once the bulge is fully grown.
+    static let firstWaveDelay: CFTimeInterval = 0.2
     static let firstWaveDuration: CFTimeInterval = 0.82
     static let blackoutWaveDuration: CFTimeInterval = 0.72
+    /// The isolated link rests on black before the crossfade begins.
+    static let saveCrossfadeDelay: CFTimeInterval = 0.5
     static let saveCrossfadeDuration: CFTimeInterval = 0.52
     /// Matches the small bezel intrusion of the system button-press response.
     static let pressCueSize = CGSize(width: 7, height: 120)
@@ -332,10 +337,14 @@ final class LiquidScreenWaveAnimator {
     private var highlightedLinkRegion = OnboardingHighlightedLinkRegion(
         frame: .zero,
         cornerRadius: 0)
+    private let firstWaveDelay = OnboardingAnimationClock.displayLinkDuration(
+        OnboardingActionButtonTiming.firstWaveDelay)
     private let firstWaveDuration = OnboardingAnimationClock.displayLinkDuration(
         OnboardingActionButtonTiming.firstWaveDuration)
     private let blackoutWaveDuration = OnboardingAnimationClock.displayLinkDuration(
         OnboardingActionButtonTiming.blackoutWaveDuration)
+    private let saveCrossfadeDelay = OnboardingAnimationClock.displayLinkDuration(
+        OnboardingActionButtonTiming.saveCrossfadeDelay)
     private let saveCrossfadeDuration = OnboardingAnimationClock.displayLinkDuration(
         OnboardingActionButtonTiming.saveCrossfadeDuration)
 
@@ -412,6 +421,9 @@ final class LiquidScreenWaveAnimator {
             return
         }
         let elapsed = max(link.timestamp - startedAt, 0)
+        // The overlay is already showing the untouched source snapshot, so the
+        // press-bump beat before the first wave needs no rendering at all.
+        if elapsed < firstWaveDelay { return }
         let extent = source.extent
         let pixelScale = extent.width
             / max(hostView?.bounds.width ?? window.bounds.width, 1)
@@ -449,13 +461,18 @@ final class LiquidScreenWaveAnimator {
             through: extent,
             padding: max(blackoutHalfWidth, blackoutRevealHalfWidth))
 
-        let blackoutStartedAt = firstWaveDuration
-        let crossfadeStartedAt = blackoutStartedAt + blackoutWaveDuration
+        let blackoutStartedAt = firstWaveDelay + firstWaveDuration
+        // The blackout phase window extends through the on-black hold: its
+        // clamped progress parks the front at the link boundary until the
+        // crossfade takes over.
+        let crossfadeStartedAt =
+            blackoutStartedAt + blackoutWaveDuration + saveCrossfadeDelay
         let output: CIImage?
         let isComplete: Bool
 
         if elapsed < blackoutStartedAt {
-            let progress = clampedProgress(elapsed / firstWaveDuration)
+            let progress = clampedProgress(
+                (elapsed - firstWaveDelay) / firstWaveDuration)
             let envelope = temporalEnvelope(for: progress)
             output = renderFirstWave(
                 source: source,

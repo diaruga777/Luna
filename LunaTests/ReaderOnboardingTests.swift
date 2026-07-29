@@ -5,6 +5,7 @@
 
 import LunaModels
 import LunaDesignSystem
+import LunaReaderUI
 import LunaStorage
 import XCTest
 @testable import Luna
@@ -142,8 +143,14 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThan(OnboardingSafariCardTiming.geometryDuration, 0.45)
         XCTAssertLessThan(OnboardingSafariCardTiming.geometryDuration, 0.70)
         XCTAssertGreaterThan(
-            OnboardingSafariCardTiming.browserHoldDuration,
-            OnboardingSafariCardTiming.cardHoldDuration)
+            OnboardingSafariCardTiming.cardHoldDuration,
+            OnboardingSafariCardTiming.browserHoldDuration)
+        XCTAssertLessThan(
+            OnboardingActionButtonTiming.wavefrontHalfWidth,
+            18)
+        XCTAssertGreaterThan(
+            OnboardingActionButtonTiming.maximumDisplacement,
+            8)
         XCTAssertLessThanOrEqual(
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
@@ -156,6 +163,18 @@ final class ReaderOnboardingTests: XCTestCase {
 
         XCTAssertEqual(cue.waveOrigin.x, 0, accuracy: 0.001)
         XCTAssertEqual(cue.waveOrigin.y, cue.frame.midY, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testActionButtonCueMatchesTheCompactPhysicalBezelFootprint() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let cue = ActionButtonPressCue()
+        cue.layout(in: window)
+
+        XCTAssertEqual(cue.bounds.width, 24, accuracy: 0.001)
+        XCTAssertEqual(cue.bounds.height, 60, accuracy: 0.001)
+        XCTAssertEqual(cue.frame.minX, 0, accuracy: 0.001)
+        XCTAssertTrue(cue.subviews.isEmpty, "The bezel cue must not contain glass or glow views")
     }
 
     @MainActor
@@ -173,6 +192,19 @@ final class ReaderOnboardingTests: XCTestCase {
                 temporarySave: OnboardingTemporarySave(
                     install: { true },
                     cleanup: {}),
+                makeSavedCardContent: {
+                    var item = ReadingListItem(
+                        urlString: BundledLunaArticle.urlString)
+                    item.title = BundledLunaArticle.content.title
+                    item.state = .ready
+                    item.lastReaderMode = .scroll
+                    let reader = ReaderHostFactory.make(
+                        item: item,
+                        content: BundledLunaArticle.content,
+                        fullContentUpFront: true)
+                    return OnboardingEmbeddedCardContentViewController(
+                        embedded: reader)
+                },
                 makeCompletedRootViewController: { UIViewController() }))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
@@ -198,6 +230,15 @@ final class ReaderOnboardingTests: XCTestCase {
                 $0 as? SafariReplicaViewController
             }.first)
         XCTAssertEqual(safari.view.frame, onboarding.view.bounds)
+        onboarding.savedCardContentForTesting.loadViewIfNeeded()
+        let reader = try XCTUnwrap(
+            onboarding.savedCardContentForTesting.descendantControllers(
+                of: RabbitHoleReaderViewController.self).first,
+            "The save destination must be a live Reader card, not the Safari replica")
+        XCTAssertEqual(
+            reader.chromeState?.selectedMode,
+            .scroll,
+            "The onboarding article must open in the Scroll reader mode")
         XCTAssertTrue(
             onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
             "The intro must grow directly into Safari without an eclipse dressing")
@@ -328,6 +369,17 @@ private extension UIView {
         subviews.flatMap { view -> [View] in
             let matching = (view as? View).map { [$0] } ?? []
             return matching + view.descendants(of: type)
+        }
+    }
+}
+
+private extension UIViewController {
+    func descendantControllers<Controller: UIViewController>(
+        of type: Controller.Type
+    ) -> [Controller] {
+        children.flatMap { child -> [Controller] in
+            let matching = (child as? Controller).map { [$0] } ?? []
+            return matching + child.descendantControllers(of: type)
         }
     }
 }

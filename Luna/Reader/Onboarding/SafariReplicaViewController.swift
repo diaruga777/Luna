@@ -43,6 +43,8 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
     private var pageIndex = 0
     private var pageTimer: Timer?
 
+    var hasInstructions: Bool { instructionOverlay != nil }
+
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
 
     init(configuration: OnboardingSurfaceConfiguration = .current) {
@@ -144,38 +146,43 @@ final class SafariReplicaViewController: UIViewController, WKNavigationDelegate 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(0.75)
         ) { [weak self] in
-            self?.playActionButtonCue()
+            self?.playActionButtonSaveEffect()
         }
     }
 
-    private func playActionButtonCue() {
-        guard let window = view.window else { return }
+    /// Replays the complete save gesture. The wave animator is installed first
+    /// so its snapshot contains the untouched page, then the solid bezel cue is
+    /// added above that snapshot. Both animations begin in the same run-loop
+    /// turn instead of making the wave wait for the press to finish.
+    func replayActionButtonSaveEffect() {
+        playActionButtonSaveEffect()
+    }
+
+    private func playActionButtonSaveEffect() {
+        guard actionCue == nil, waveAnimator == nil,
+              let window = view.window
+        else { return }
         let cue = ActionButtonPressCue()
         actionCue = cue
-        window.addSubview(cue)
         cue.layout(in: window)
-        cue.play { [weak self, weak cue] in
-            let origin = cue?.waveOrigin
-                ?? CGPoint(x: 0, y: window.safeAreaInsets.top + 107)
-            cue?.removeFromSuperview()
-            self?.actionCue = nil
-            self?.playLiquidWave(origin: origin)
-        }
-    }
+        let origin = cue.waveOrigin
 
-    private func playLiquidWave(origin: CGPoint) {
-        guard let window = view.window else {
-            onActionButtonWaveFinished?()
-            return
-        }
         let animator = LiquidScreenWaveAnimator(window: window)
         waveAnimator = animator
         animator.play(
             origin: origin,
-            completion: { [weak self] in
+            completion: { [weak self, weak cue] in
+                cue?.removeFromSuperview()
+                self?.actionCue = nil
                 self?.waveAnimator = nil
                 self?.onActionButtonWaveFinished?()
             })
+
+        window.addSubview(cue)
+        cue.play { [weak self, weak cue] in
+            cue?.removeFromSuperview()
+            self?.actionCue = nil
+        }
     }
 
     func showSafariPrompt() {

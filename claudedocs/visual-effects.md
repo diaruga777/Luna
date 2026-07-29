@@ -102,11 +102,13 @@ regeneration command, first-run sequence, and visual validation flags.
 
 The onboarding card-to-browser demonstration deliberately does not use an
 eclipse. “Show me how” grows the intro card to the screen edges and crossfades
-its content into the local Safari facsimile. After the circular Action Button
-wave finishes, the facsimile shrinks into the exact centered card frame before
-the instruction overlay appears. It then grows and shrinks on a loop behind the
-overlay, with no repeated wave. Completion settles on the card and performs a
-short stationary crossfade into the completed root card.
+its content into the local Safari facsimile. A small solid-black bezel press and
+a slim annular Action Button wave begin together. When the wave finishes,
+Safari shrinks toward the exact centered card frame while Reader crossfades it
+into the production Scroll reader card. The instruction overlay appears over
+that saved state. Each loop then resets to full-screen Safari and replays the
+press, wave, and save transformation—not geometry alone. Completion settles on
+the card and performs a short stationary crossfade into the completed root card.
 
 ## Loading spinner (`DotMatrixSpinnerView`)
 

@@ -12,6 +12,7 @@
 import LunaArchiveReader
 import LunaArticleIngest
 import LunaAudioPlayback
+import LunaDesignSystem
 import LunaIngest
 import LunaMailAccount
 import LunaMailTransport
@@ -99,6 +100,7 @@ enum KindWiring {
             : AppOnboardingViewController(
                 completion: AppOnboardingCompletion(
                     temporarySave: onboardingDemoSave,
+                    makeSavedCardContent: makeOnboardingSavedCardContent,
                     makeCompletedRootViewController: makeCompletedRootViewController))
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
@@ -107,6 +109,29 @@ enum KindWiring {
     private static func makeCompletedRootViewController() -> UIViewController {
         let nav = UINavigationController(rootViewController: ArticleCardsViewController())
         return MiniPlayerHostViewController(content: nav)
+    }
+
+    private static func makeOnboardingSavedCardContent()
+        -> CardContentViewController
+    {
+        var item = ReadingListItem(urlString: BundledLunaArticle.urlString)
+        item.title = BundledLunaArticle.content.title
+        item.state = .ready
+        item.lastReaderMode = .scroll
+        item.wordCount = BundledLunaArticle.content.wholeText
+            .split(whereSeparator: \.isWhitespace)
+            .count
+        let reader = ReaderHostFactory.make(
+            item: item,
+            content: BundledLunaArticle.content,
+            fullContentUpFront: true,
+            includesArticleTitle: true)
+        return OnboardingEmbeddedCardContentViewController(
+            embedded: reader,
+            onCentered: {
+                (reader as? RabbitHoleReaderViewController)?
+                    .activatePrimaryContent()
+            })
     }
 
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {

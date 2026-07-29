@@ -79,22 +79,31 @@ The root uses the production `CardCarouselViewController`:
 3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
    bundled files with a nonpersistent data store and JavaScript disabled.
    Central Luna changes the local page and displayed host every 3.4 seconds.
-4. An Action Button cue plays beside the physical button. A
-   `CIBumpDistortion` wave expands circularly from that cue across a whole-window
-   snapshot and settles in 0.78 seconds. Only after the last distorted pixels
-   settle does the Safari replica shrink into the exact centered card frame.
-5. The window-filling near-black setup overlay appears after that first shrink
+4. A compact solid-black bezel deformation plays beside the physical Action
+   Button. In the same run-loop turn, a custom Core Image warp sends a narrow,
+   two-lobed annular wavefront from that point across a whole-window snapshot;
+   it settles in 0.74 seconds. This keeps the wavefront slim and pronounced
+   instead of bending every pixel inside one growing `CIBumpDistortion` radius.
+5. Only after the last distorted pixels settle does Safari shrink into the
+   exact centered card frame. On Reader, Safari simultaneously dissolves away
+   to reveal a real `ReaderHostFactory`/`RabbitHoleReaderViewController`, backed
+   by the bundled article and explicitly opened in Scroll mode. The
+   target-specific reader is injected through `AppOnboardingCompletion`, so the
+   shared onboarding controller does not force Reader dependencies into the
+   Downloader or Price Tracker targets. The saved state is therefore real
+   Reader content, not the Safari facsimile clipped smaller.
+6. The window-filling near-black setup overlay appears after that first shrink
    and aligns its content to the same one-third vertical anchor. Behind it, the
-   saved card expands back into the Safari mock without another wave, then
-   alternates between full-screen Safari and the centered card on a loop. The
-   loop pauses during external hops and resumes behind each updated instruction
+   saved card resets to full-screen Safari, pauses briefly, and replays the
+   complete Action Button press + wave + saved-card transformation. The loop
+   pauses during external hops and resumes behind each updated instruction
    stage. The overlay offers Safari setup, then the same `BundledShortcut`
    installer and `SystemSettingsLink.openActionButton()` paths used elsewhere;
    existing Safari and Action Button PiP guides play during those hops.
-6. After Settings return, a real App Intent invocation completes the flow
+7. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
-7. Completion stops the loop and, unless it is already there, shrinks to the
+8. Completion stops the loop and, unless it is already there, shrinks to the
    card once more. It installs the surface's real save, then crossfades the
    stationary onboarding card directly into the completed root controller's
    centered card—no eclipse or second geometry change. The payload is a

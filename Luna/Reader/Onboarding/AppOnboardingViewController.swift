@@ -9,14 +9,15 @@ import UIKit
 
 enum OnboardingSafariCardTiming {
     static let geometryDuration: TimeInterval = 0.58
-    static let cardHoldDuration: TimeInterval = 0.72
-    static let browserHoldDuration: TimeInterval = 1.10
+    static let cardHoldDuration: TimeInterval = 0.95
+    /// A brief clean Safari beat before the next save gesture begins.
+    static let browserHoldDuration: TimeInterval = 0.38
 }
 
 /// The shared guided first-run deck. It intentionally uses the production
 /// CardCarousel rather than a look-alike. The intro card expands directly into
-/// the Safari facsimile; after the save wave, that same view alternates between
-/// the full browser and the centered saved-card frame behind the setup overlay.
+/// the Safari facsimile; after each save wave, Reader Safari dissolves into the
+/// production scroll-reader card before the whole gesture replays.
 final class AppOnboardingViewController: UIViewController {
     private enum ExternalReturn {
         case none
@@ -35,7 +36,8 @@ final class AppOnboardingViewController: UIViewController {
     private let completion: AppOnboardingCompletion
     private let carousel = CardCarouselViewController()
     private let intro: OnboardingIntroCardContentViewController
-    private let safariSeed = OnboardingBrowserSeedCardContentViewController()
+    private let savedCardContent: CardContentViewController
+    private let usesLiveSavedCard: Bool
     private let safariGuide = SetupGuideVideo(guide: .safariExtension)
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
     private var safariReplica: SafariReplicaViewController?
@@ -50,6 +52,9 @@ final class AppOnboardingViewController: UIViewController {
     private var setupObserver: NSObjectProtocol?
     #if DEBUG
     private var debugSafariStage: String?
+    var savedCardContentForTesting: CardContentViewController {
+        savedCardContent
+    }
     #endif
 
     init(
@@ -63,6 +68,10 @@ final class AppOnboardingViewController: UIViewController {
         self.intro = OnboardingIntroCardContentViewController(
             firstLine: configuration.firstLine,
             secondLine: configuration.secondLine)
+        let savedCardContent = completion.makeSavedCardContent()
+        self.savedCardContent = savedCardContent
+            ?? OnboardingBrowserSeedCardContentViewController()
+        self.usesLiveSavedCard = savedCardContent != nil
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -254,7 +263,10 @@ final class AppOnboardingViewController: UIViewController {
 
     private func actionButtonWaveDidFinish() {
         presentInstructionsAfterShrinking { [weak self] in
-            self?.safariReplica?.showSafariPrompt()
+            guard let self else { return }
+            if self.safariReplica?.hasInstructions != true {
+                self.safariReplica?.showSafariPrompt()
+            }
         }
     }
 
@@ -290,6 +302,8 @@ final class AppOnboardingViewController: UIViewController {
 
         if target == .card {
             carousel.view.isHidden = false
+        } else {
+            safari.view.isHidden = false
         }
         view.bringSubviewToFront(safari.view)
         setNeedsStatusBarAppearanceUpdate()
@@ -312,6 +326,8 @@ final class AppOnboardingViewController: UIViewController {
             self.isSafariGeometryTransitioning = false
             self.applySafariPresentation(target, safari: safari)
             self.carousel.view.isHidden = target == .fullScreen
+            safari.view.isHidden =
+                target == .card && self.usesLiveSavedCard
             self.setNeedsStatusBarAppearanceUpdate()
             completion()
         }
@@ -325,6 +341,7 @@ final class AppOnboardingViewController: UIViewController {
         case .fullScreen:
             safari.view.frame = view.bounds
             safari.view.layer.cornerRadius = 0
+            safari.view.alpha = 1
             carousel.view.alpha = 0
         case .card:
             view.layoutIfNeeded()
@@ -334,9 +351,9 @@ final class AppOnboardingViewController: UIViewController {
                     in: view.bounds,
                     safeAreaInsets: view.safeAreaInsets)
             safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
+            safari.view.alpha = usesLiveSavedCard ? 0 : 1
             carousel.view.alpha = 1
         }
-        safari.view.alpha = 1
         safari.view.layer.cornerCurve = .continuous
         safari.view.clipsToBounds = true
     }
@@ -355,24 +372,42 @@ final class AppOnboardingViewController: UIViewController {
               loopGeneration == safariLoopGeneration,
               externalReturn == .none
         else { return }
-        let delay = safariPresentation == .card
-            ? OnboardingSafariCardTiming.cardHoldDuration
-            : OnboardingSafariCardTiming.browserHoldDuration
+
+        if safariPresentation == .fullScreen {
+            scheduleActionButtonReplay(loopGeneration: loopGeneration)
+            return
+        }
+
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(delay)
+            deadline: .now() + OnboardingAnimationClock.delay(
+                OnboardingSafariCardTiming.cardHoldDuration)
         ) { [weak self] in
             guard let self,
                   !self.isFinishing,
                   loopGeneration == self.safariLoopGeneration,
                   self.externalReturn == .none
             else { return }
-            let next: SafariPresentation = self.safariPresentation == .card
-                ? .fullScreen
-                : .card
-            self.transitionSafari(to: next) { [weak self] in
-                self?.scheduleNextSafariPresentation(
+            self.transitionSafari(to: .fullScreen) { [weak self] in
+                self?.scheduleActionButtonReplay(
                     loopGeneration: loopGeneration)
             }
+        }
+    }
+
+    private func scheduleActionButtonReplay(loopGeneration: Int) {
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(
+                OnboardingSafariCardTiming.browserHoldDuration)
+        ) { [weak self] in
+            guard let self,
+                  !self.isFinishing,
+                  loopGeneration == self.safariLoopGeneration,
+                  self.externalReturn == .none,
+                  self.safariPresentation == .fullScreen
+            else { return }
+            // The wave completion drives the saved-card transition and schedules
+            // the next cycle. Nothing alternates geometry on its own anymore.
+            self.safariReplica?.replayActionButtonSaveEffect()
         }
     }
 
@@ -490,6 +525,7 @@ final class AppOnboardingViewController: UIViewController {
         return arguments[flag + 1]
     }
     #endif
+
 }
 
 // MARK: - Card carousel
@@ -503,7 +539,7 @@ extension AppOnboardingViewController: CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
-        index == 0 ? intro : safariSeed
+        index == 0 ? intro : savedCardContent
     }
 
     func carousel(

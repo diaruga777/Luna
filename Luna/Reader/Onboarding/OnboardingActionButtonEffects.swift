@@ -4,58 +4,74 @@
 //
 
 import CoreImage
-import LunaDesignSystem
 import UIKit
 
 enum OnboardingActionButtonTiming {
-    static let waveDuration: CFTimeInterval = 0.78
+    static let pressDuration: TimeInterval = 0.56
+    static let waveDuration: CFTimeInterval = 0.74
+    /// Half-width of the annular displacement band. The old bump filter bent
+    /// everything inside the growing radius, which read as one very long wave.
+    static let wavefrontHalfWidth: CGFloat = 14
+    static let maximumDisplacement: CGFloat = 11
 }
 
-final class ActionButtonPressCue: UIVisualEffectView {
-    private let rim = CAShapeLayer()
-    private let glow = UIView()
+/// A small piece of the black device bezel that pushes smoothly into the
+/// leading screen edge. It deliberately has no glass, highlight, or rim: the
+/// system Action Button response reads as the physical bezel deforming, not as
+/// a control floating over the page.
+final class ActionButtonPressCue: UIView {
+    private let bezel = CAShapeLayer()
 
     init() {
-        super.init(effect: GlassStyle.barEffect())
+        super.init(frame: .zero)
         isUserInteractionEnabled = false
-        if #available(iOS 26.0, *) {
-            cornerConfiguration = .capsule()
-        } else {
-            layer.cornerRadius = 19
-            layer.cornerCurve = .continuous
-            clipsToBounds = true
-        }
+        backgroundColor = .clear
+        layer.anchorPoint = CGPoint(x: 0, y: 0.5)
         alpha = 0
-        transform = CGAffineTransform(scaleX: 0.62, y: 0.62)
-
-        glow.backgroundColor = LunaSurfacePalette.baseColor.withAlphaComponent(0.88)
-        glow.layer.cornerRadius = 3
-        contentView.addSubview(glow)
-
-        rim.fillColor = UIColor.clear.cgColor
-        rim.strokeColor = UIColor.white.withAlphaComponent(0.72).cgColor
-        rim.lineWidth = 1
-        layer.addSublayer(rim)
-        layer.shadowColor = LunaSurfacePalette.baseColor.cgColor
-        layer.shadowOpacity = 0
-        layer.shadowRadius = 14
-        layer.shadowOffset = .zero
+        transform = CGAffineTransform(scaleX: 0.04, y: 0.82)
+        bezel.fillColor = UIColor.black.cgColor
+        layer.addSublayer(bezel)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        bezel.frame = bounds
+        let width = bounds.width
+        let height = bounds.height
+        let middle = height / 2
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addCurve(
+            to: CGPoint(x: width * 0.86, y: height * 0.30),
+            controlPoint1: CGPoint(x: width * 0.63, y: 0),
+            controlPoint2: CGPoint(x: width * 0.86, y: height * 0.13))
+        path.addCurve(
+            to: CGPoint(x: width, y: middle),
+            controlPoint1: CGPoint(x: width * 0.86, y: height * 0.40),
+            controlPoint2: CGPoint(x: width, y: height * 0.43))
+        path.addCurve(
+            to: CGPoint(x: width * 0.86, y: height * 0.70),
+            controlPoint1: CGPoint(x: width, y: height * 0.57),
+            controlPoint2: CGPoint(x: width * 0.86, y: height * 0.60))
+        path.addCurve(
+            to: CGPoint(x: 0, y: height),
+            controlPoint1: CGPoint(x: width * 0.86, y: height * 0.87),
+            controlPoint2: CGPoint(x: width * 0.63, y: height))
+        path.close()
+        bezel.path = path.cgPath
+    }
+
     func layout(in window: UIWindow) {
-        frame = CGRect(
-            x: -8,
-            y: window.safeAreaInsets.top + 68,
-            width: 38,
-            height: 78)
-        glow.frame = CGRect(x: 23, y: 26, width: 6, height: 26)
-        rim.frame = bounds
-        rim.path = UIBezierPath(
-            roundedRect: bounds.insetBy(dx: 1, dy: 1),
-            cornerRadius: bounds.width / 2).cgPath
+        let size = CGSize(width: 24, height: 60)
+        bounds = CGRect(origin: .zero, size: size)
+        layer.position = CGPoint(
+            x: 0,
+            y: window.safeAreaInsets.top + 74 + size.height / 2)
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     var waveOrigin: CGPoint {
@@ -63,34 +79,52 @@ final class ActionButtonPressCue: UIVisualEffectView {
     }
 
     func play(completion: @escaping () -> Void) {
+        alpha = 0
+        transform = CGAffineTransform(scaleX: 0.04, y: 0.82)
         UIView.animateKeyframes(
-            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.25 : 0.82,
+            withDuration: UIAccessibility.isReduceMotionEnabled
+                ? 0.20
+                : OnboardingActionButtonTiming.pressDuration,
             delay: 0,
             options: [.calculationModeCubic, .beginFromCurrentState]
         ) {
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.26) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.30) {
                 self.alpha = 1
                 self.transform = .identity
-                self.layer.shadowOpacity = 0.85
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.26, relativeDuration: 0.24) {
-                self.transform = CGAffineTransform(scaleX: 0.88, y: 0.92)
-                self.glow.transform = CGAffineTransform(scaleX: 1.2, y: 0.72)
+            UIView.addKeyframe(withRelativeStartTime: 0.30, relativeDuration: 0.22) {
+                self.transform = CGAffineTransform(scaleX: 0.78, y: 0.91)
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.50, relativeDuration: 0.50) {
+            UIView.addKeyframe(withRelativeStartTime: 0.52, relativeDuration: 0.48) {
                 self.alpha = 0
-                self.transform = CGAffineTransform(scaleX: 1.18, y: 1.08)
-                self.glow.transform = .identity
-                self.layer.shadowOpacity = 0
+                self.transform = CGAffineTransform(scaleX: 0.04, y: 0.78)
             }
-        } completion: { _ in completion() }
+        } completion: { _ in
+            self.alpha = 0
+            completion()
+        }
     }
 }
 
-/// A circular Core Image displacement wave over a whole-window snapshot,
+/// A narrow annular Core Image displacement wave over a whole-window snapshot,
 /// expanding from the physical Action Button cue at the screen's leading edge.
 @MainActor
 final class LiquidScreenWaveAnimator {
+    private static let waveKernel = CIWarpKernel(source: """
+        kernel vec2 lunaAnnularWave(
+            vec2 center, float radius, float halfWidth, float amplitude
+        ) {
+            vec2 destination = destCoord();
+            vec2 delta = destination - center;
+            float distanceFromCenter = length(delta);
+            float normalized = (distanceFromCenter - radius) / halfWidth;
+            float band = 1.0 - smoothstep(0.0, 1.0, abs(normalized));
+            float compression = sin(normalized * 3.14159265359);
+            vec2 direction = delta / max(distanceFromCenter, 1.0);
+            return destination - direction * (band * compression * amplitude);
+        }
+        """)
+
     private weak var window: UIWindow?
     private let context = CIContext(options: [.cacheIntermediates: false])
     private var overlay: UIImageView?
@@ -159,22 +193,34 @@ final class LiquidScreenWaveAnimator {
             hypot(center.x - extent.minX, center.y - extent.maxY),
             hypot(center.x - extent.maxX, center.y - extent.maxY),
         ].max() ?? extent.width
-        let radius = max(1, CGFloat(progress) * (farthestCornerDistance + 24 * pixelScale))
-        let envelope = sin(CGFloat(progress) * .pi)
-        // Core Image's scale is a unit scalar (-1...1), not a pixel distance.
-        // Radius owns the expanding circular front; scale owns its bend and
-        // falls back to zero as the last pixels settle.
-        let distortionScale = envelope * 0.62
+        let radius = max(
+            1,
+            CGFloat(progress)
+                * (farthestCornerDistance
+                    + OnboardingActionButtonTiming.wavefrontHalfWidth * pixelScale))
+        let attack = min(CGFloat(progress) / 0.12, 1)
+        let release = 1 - min(max((CGFloat(progress) - 0.82) / 0.18, 0), 1)
+        let temporalEnvelope = sin(attack * .pi / 2) * release
+        let halfWidth = OnboardingActionButtonTiming.wavefrontHalfWidth * pixelScale
+        let displacement =
+            OnboardingActionButtonTiming.maximumDisplacement
+            * pixelScale
+            * temporalEnvelope
+        let roiPadding = displacement + 2
 
-        guard let filter = CIFilter(
-            name: "CIBumpDistortion",
-            parameters: [
-                kCIInputImageKey: source.clampedToExtent(),
-                kCIInputCenterKey: CIVector(x: center.x, y: center.y),
-                kCIInputRadiusKey: radius,
-                kCIInputScaleKey: distortionScale,
-            ]),
-            let output = filter.outputImage?.cropped(to: extent),
+        guard let kernel = Self.waveKernel,
+            let output = kernel.apply(
+                extent: extent,
+                roiCallback: { _, rect in
+                    rect.insetBy(dx: -roiPadding, dy: -roiPadding)
+                },
+                image: source.clampedToExtent(),
+                arguments: [
+                    CIVector(x: center.x, y: center.y),
+                    NSNumber(value: Double(radius)),
+                    NSNumber(value: Double(halfWidth)),
+                    NSNumber(value: Double(displacement)),
+                ])?.cropped(to: extent),
             let rendered = context.createCGImage(output, from: extent)
         else {
             finish()

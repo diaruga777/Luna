@@ -316,6 +316,74 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
+    func testCancellingAnActiveSaveReplayClearsItsTransientState() throws {
+        let frame = CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize)
+        let messages = MessagesReplicaViewController(
+            urlString: OnboardingDemoPage.wikipedia.sharedURLString)
+        let window = UIWindow(frame: frame)
+        window.rootViewController = messages
+        window.makeKeyAndVisible()
+        messages.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = OnboardingActionButtonTiming.waveRasterScale
+        format.opaque = true
+        let destination = UIGraphicsImageRenderer(
+            bounds: frame,
+            format: format
+        ).image { context in
+            UIColor.black.setFill()
+            context.fill(frame)
+        }
+        messages.makeActionButtonDestinationSnapshot = { destination }
+
+        messages.replayActionButtonSaveEffect()
+        XCTAssertTrue(messages.isURLHighlighted)
+        XCTAssertTrue(messages.hasActiveActionButtonSaveEffectForTesting)
+
+        messages.cancelActionButtonSaveEffect()
+        XCTAssertFalse(messages.isURLHighlighted)
+        XCTAssertFalse(messages.hasActiveActionButtonSaveEffectForTesting)
+    }
+
+    @MainActor
+    func testExternalOpenFailureKeepsEverySetupRecoveryAvailable() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .reader))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = safari
+        window.makeKeyAndVisible()
+        safari.view.layoutIfNeeded()
+        safari.showExternalOpenFailure(destination: .shortcuts)
+        defer { window.isHidden = true }
+
+        let mountedLabels = window.descendants(of: UIButton.self)
+            .compactMap(\.accessibilityLabel)
+        let overlay = window.descendants(of: DemoInstructionOverlay.self).first
+        let mountedOverlay = try XCTUnwrap(overlay)
+        let obscuredSiblings = window.subviews.filter { $0 !== mountedOverlay }
+        XCTAssertEqual(
+            Set(mountedLabels),
+            Set(["Set up Safari", "Install Shortcut", "Set action button"]))
+        XCTAssertTrue(mountedOverlay.accessibilityViewIsModal)
+        XCTAssertTrue(obscuredSiblings.allSatisfy(\.accessibilityElementsHidden))
+
+        mountedOverlay.removeFromSuperview()
+        XCTAssertTrue(obscuredSiblings.allSatisfy {
+            !$0.accessibilityElementsHidden
+        })
+    }
+
+    func testSettingsOpenerReportsExhaustedFallbacks() {
+        var opened: Bool?
+        SystemSettingsLink.openFirstAvailable([]) { opened = $0 }
+        XCTAssertEqual(opened, false)
+    }
+
+    @MainActor
     func testActionButtonWaveStartsAtThePhysicalScreenEdgeCue() {
         let cue = ActionButtonPressCue()
         cue.frame = CGRect(x: 0, y: 92, width: 44, height: 56)

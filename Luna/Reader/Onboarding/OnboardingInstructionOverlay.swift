@@ -21,10 +21,17 @@ final class DemoInstructionOverlay: UIView {
     private var buttons: [UIButton] = []
     private var handlers: [() -> Void] = []
     private var hasAnimatedIn = false
+    private var obscuredAccessibilitySiblings: [
+        (view: UIView, wasHidden: Bool)
+    ] = []
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
+        // The looping production UI stays mounted behind this setup sheet.
+        // Keep VoiceOver and Switch Control inside the sheet so hidden card
+        // buttons cannot be activated while onboarding owns the interaction.
+        accessibilityViewIsModal = true
         scrim.backgroundColor = UIColor.black.withAlphaComponent(0.76)
         scrim.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scrim)
@@ -68,6 +75,25 @@ final class DemoInstructionOverlay: UIView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    override func willMove(toSuperview newSuperview: UIView?) {
+        if newSuperview !== superview {
+            restoreObscuredAccessibilitySiblings()
+        }
+        super.willMove(toSuperview: newSuperview)
+    }
+
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        guard let superview else { return }
+        obscuredAccessibilitySiblings = superview.subviews
+            .filter { $0 !== self }
+            .map { sibling in
+                let state = (view: sibling, wasHidden: sibling.accessibilityElementsHidden)
+                sibling.accessibilityElementsHidden = true
+                return state
+            }
+    }
 
     func configure(title: String?, actions: [Action]) {
         UIView.transition(
@@ -137,6 +163,13 @@ final class DemoInstructionOverlay: UIView {
     @objc private func actionTapped(_ sender: UIButton) {
         guard handlers.indices.contains(sender.tag) else { return }
         handlers[sender.tag]()
+    }
+
+    private func restoreObscuredAccessibilitySiblings() {
+        for state in obscuredAccessibilitySiblings {
+            state.view.accessibilityElementsHidden = state.wasHidden
+        }
+        obscuredAccessibilitySiblings.removeAll()
     }
 }
 

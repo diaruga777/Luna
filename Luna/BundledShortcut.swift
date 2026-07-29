@@ -20,18 +20,29 @@ enum BundledShortcut {
     /// Presents the system share sheet to import the bundled shortcut into the
     /// Shortcuts app. (`shortcuts://import-workflow?url=` rejects local file URLs,
     /// so import stays share-sheet based.) No-op if the resource is missing.
-    static func presentInstaller(from presenter: UIViewController, sourceView: UIView? = nil) {
+    static func presentInstaller(
+        from presenter: UIViewController,
+        sourceView: UIView? = nil,
+        completion: ((Bool) -> Void)? = nil
+    ) {
         guard let bundled = Bundle.main.url(
             forResource: resourceName, withExtension: "shortcut")
-        else { return }
+        else {
+            completion?(false)
+            return
+        }
         let temporaryCopy = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(resourceName).shortcut")
         try? FileManager.default.removeItem(at: temporaryCopy)
         do {
             try FileManager.default.copyItem(at: bundled, to: temporaryCopy)
         } catch {
+            completion?(false)
             return
         }
-        UIApplication.shared.open(temporaryCopy)
+        UIApplication.shared.open(
+            temporaryCopy,
+            options: [:],
+            completionHandler: completion)
     }
 }

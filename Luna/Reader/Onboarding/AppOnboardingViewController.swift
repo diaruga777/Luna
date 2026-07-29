@@ -35,7 +35,7 @@ enum OnboardingDemoSource: CaseIterable, Equatable {
 /// after each save wave, the active source dissolves into the app's complete
 /// production root, including its ordinary card chrome and carousel.
 final class AppOnboardingViewController: UIViewController {
-    private enum ExternalReturn {
+    private enum ExternalReturn: Equatable {
         case none
         case safari
         case shortcut
@@ -523,6 +523,29 @@ final class AppOnboardingViewController: UIViewController {
         demoLoopGeneration += 1
     }
 
+    /// Freezes the looping demonstration at its current model-layer state.
+    ///
+    /// The setup overlay deliberately leaves the demo running behind it, so a
+    /// button can be tapped while either a geometry animation or a save wave is
+    /// active. External apps pause those animations. Cancelling both kinds of
+    /// work before the hop prevents a foreground return from resuming stale
+    /// callbacks on top of the newly restarted loop.
+    private func pauseDemoPresentationPlayback() {
+        stopDemoPresentationLoop()
+        for source in OnboardingDemoSource.allCases {
+            sourceController(for: source)?.cancelActionButtonSaveEffect()
+        }
+
+        guard let source = sourceController(for: activeDemoSource) else { return }
+        demoTransitionGeneration += 1
+        isDemoGeometryTransitioning = false
+        source.view.layer.removeAllAnimations()
+        carousel.view.layer.removeAllAnimations()
+        savedRootViewController?.view.layer.removeAllAnimations()
+        applyDemoPresentation(demoPresentation, source: source)
+        source.view.isHidden = demoPresentation == .card
+    }
+
     private func scheduleNextDemoPresentation(loopGeneration: Int) {
         guard !isFinishing,
               loopGeneration == demoLoopGeneration,
@@ -569,27 +592,60 @@ final class AppOnboardingViewController: UIViewController {
 
     private func openSafariSetup() {
         guard externalReturn == .none else { return }
-        stopDemoPresentationLoop()
+        pauseDemoPresentationPlayback()
         externalReturn = .safari
         safariGuide.startPictureInPicture()
-        if let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia") {
-            UIApplication.shared.open(url)
+        guard let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia")
+        else {
+            externalOpenFailed(.safari)
+            return
+        }
+        UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+            guard !opened else { return }
+            Task { @MainActor in self?.externalOpenFailed(.safari) }
         }
     }
 
     private func installShortcut() {
         guard externalReturn == .none else { return }
-        stopDemoPresentationLoop()
+        pauseDemoPresentationPlayback()
         externalReturn = .shortcut
-        BundledShortcut.presentInstaller(from: self, sourceView: safariReplica?.view)
+        BundledShortcut.presentInstaller(
+            from: self,
+            sourceView: safariReplica?.view
+        ) { [weak self] opened in
+            guard !opened else { return }
+            Task { @MainActor in self?.externalOpenFailed(.shortcut) }
+        }
     }
 
     private func openActionButtonSettings() {
         guard externalReturn == .none else { return }
-        stopDemoPresentationLoop()
+        pauseDemoPresentationPlayback()
         externalReturn = .actionButton
         actionGuide.startPictureInPicture()
-        SystemSettingsLink.openActionButton()
+        SystemSettingsLink.openActionButton { [weak self] opened in
+            guard !opened else { return }
+            Task { @MainActor in self?.externalOpenFailed(.actionButton) }
+        }
+    }
+
+    private func externalOpenFailed(_ expectedReturn: ExternalReturn) {
+        guard externalReturn == expectedReturn else { return }
+        externalReturn = .none
+        safariGuide.stopPictureInPicture()
+        actionGuide.stopPictureInPicture()
+        switch expectedReturn {
+        case .none:
+            break
+        case .safari:
+            safariReplica?.showExternalOpenFailure(destination: .safari)
+        case .shortcut:
+            safariReplica?.showExternalOpenFailure(destination: .shortcuts)
+        case .actionButton:
+            safariReplica?.showExternalOpenFailure(destination: .settings)
+        }
+        startDemoPresentationLoop()
     }
 
     private func returnedFromExternalApp() {
@@ -629,7 +685,7 @@ final class AppOnboardingViewController: UIViewController {
     private func finishOnboarding() {
         guard !isFinishing else { return }
         isFinishing = true
-        stopDemoPresentationLoop()
+        pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
         safariReplica?.dismissInstructions(animated: true) { [weak self] in

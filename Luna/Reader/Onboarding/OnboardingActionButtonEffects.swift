@@ -116,6 +116,27 @@ class OnboardingSaveSourceViewController: UIViewController {
             self?.actionCue = nil
         }
     }
+
+    /// Stops an in-flight replay without reporting a completed save.
+    ///
+    /// Instruction buttons remain interactive while the demonstration loops
+    /// behind them. An external hop or "Set up later" can therefore arrive in
+    /// any of the three wave phases; cancelling here prevents that stale wave
+    /// from committing a card transition after the flow has already moved on.
+    final func cancelActionButtonSaveEffect() {
+        actionCue?.layer.removeAllAnimations()
+        actionCue?.removeFromSuperview()
+        actionCue = nil
+        waveAnimator?.cancel()
+        waveAnimator = nil
+        setURLHighlighted(false)
+    }
+
+    #if DEBUG
+    var hasActiveActionButtonSaveEffectForTesting: Bool {
+        actionCue != nil || waveAnimator != nil
+    }
+    #endif
 }
 
 /// The solid-black edge deformation iOS shows when the physical Action Button
@@ -300,9 +321,14 @@ final class LiquidScreenWaveAnimator {
         }
         """)
 
+    /// CIContext creation is intentionally expensive because it owns device
+    /// rendering resources and shader caches. The onboarding loop replays this
+    /// effect many times, so one process-wide context avoids a setup hitch and
+    /// cache churn at the start of every save wave.
+    private static let context = CIContext(options: [.cacheIntermediates: false])
+
     private weak var window: UIWindow?
     private weak var hostView: UIView?
-    private let context = CIContext(options: [.cacheIntermediates: false])
     private var overlay: UIImageView?
     private var source: CIImage?
     private var destination: CIImage?
@@ -354,6 +380,19 @@ final class LiquidScreenWaveAnimator {
         imageView.isUserInteractionEnabled = false
         hostView.addSubview(imageView)
         overlay = imageView
+
+        if UIAccessibility.isReduceMotionEnabled {
+            UIView.transition(
+                with: imageView,
+                duration: 0.20,
+                options: [.transitionCrossDissolve, .beginFromCurrentState]
+            ) {
+                imageView.image = capturedDestination
+            } completion: { [weak self] _ in
+                self?.finish()
+            }
+            return
+        }
 
         startedAt = CACurrentMediaTime()
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
@@ -490,7 +529,7 @@ final class LiquidScreenWaveAnimator {
         }
 
         guard let output,
-              let rendered = context.createCGImage(output, from: extent)
+              let rendered = Self.context.createCGImage(output, from: extent)
         else {
             finish()
             return
@@ -704,5 +743,16 @@ final class LiquidScreenWaveAnimator {
         self.completion = nil
         completion?()
         overlayToRemove?.removeFromSuperview()
+    }
+
+    func cancel() {
+        displayLink?.invalidate()
+        displayLink = nil
+        overlay?.layer.removeAllAnimations()
+        overlay?.removeFromSuperview()
+        overlay = nil
+        source = nil
+        destination = nil
+        completion = nil
     }
 }

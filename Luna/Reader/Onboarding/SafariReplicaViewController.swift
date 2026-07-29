@@ -7,6 +7,12 @@ import LunaDesignSystem
 import UIKit
 import WebKit
 
+enum OnboardingExternalDestination: String {
+    case safari = "Safari"
+    case shortcuts = "Shortcuts"
+    case settings = "Settings"
+}
+
 /// A deliberately noninteractive Safari facsimile used by each app's
 /// onboarding. The page bytes are local; the browser chrome remains native
 /// UIKit so it has the current OS's typography, glass, safe-area and status-bar
@@ -59,6 +65,10 @@ final class SafariReplicaViewController:
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    deinit {
+        pageTimer?.invalidate()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -209,6 +219,28 @@ final class SafariReplicaViewController:
                     image: UIImage(systemName: "clock"),
                     prominent: false,
                     action: { [weak self] in self?.onSetUpLater?() }),
+            ])
+    }
+
+    func showExternalOpenFailure(destination: OnboardingExternalDestination) {
+        setInstruction(
+            title: "Couldn’t open \(destination.rawValue). Try again.",
+            actions: [
+                .init(
+                    title: "Set up Safari",
+                    image: UIImage(systemName: "safari.fill"),
+                    prominent: destination == .safari,
+                    action: { [weak self] in self?.onSetUpSafari?() }),
+                .init(
+                    title: "Install Shortcut",
+                    image: OnboardingSystemIcons.shortcuts,
+                    prominent: destination == .shortcuts,
+                    action: { [weak self] in self?.onInstallShortcut?() }),
+                .init(
+                    title: "Set action button",
+                    image: OnboardingSystemIcons.actionButton,
+                    prominent: destination == .settings,
+                    action: { [weak self] in self?.onSetActionButton?() }),
             ])
     }
 

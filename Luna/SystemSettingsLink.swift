@@ -24,19 +24,40 @@ enum SystemSettingsLink {
 
     /// Best-effort deep link into Settings → Action Button (no public API for this
     /// either), falling back through the same root-Settings cascade as `open()`.
-    static func openActionButton() {
+    static func openActionButton(completion: ((Bool) -> Void)? = nil) {
         openFirstAvailable([
             "App-Prefs:",                   // root Settings
             UIApplication.openSettingsURLString, // app's own page (always works)
-        ])
+        ], completion: completion)
     }
 
     /// Opens the first candidate Settings URL the system accepts, in order.
     /// Shared with `VoiceInstallLink`.
-    static func openFirstAvailable(_ candidates: [String], at index: Int = 0) {
-        guard index < candidates.count, let url = URL(string: candidates[index]) else { return }
+    static func openFirstAvailable(
+        _ candidates: [String],
+        at index: Int = 0,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        guard index < candidates.count else {
+            completion?(false)
+            return
+        }
+        guard let url = URL(string: candidates[index]) else {
+            openFirstAvailable(
+                candidates,
+                at: index + 1,
+                completion: completion)
+            return
+        }
         UIApplication.shared.open(url, options: [:]) { success in
-            if !success { openFirstAvailable(candidates, at: index + 1) }
+            if success {
+                completion?(true)
+            } else {
+                openFirstAvailable(
+                    candidates,
+                    at: index + 1,
+                    completion: completion)
+            }
         }
     }
 }

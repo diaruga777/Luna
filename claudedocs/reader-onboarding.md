@@ -124,7 +124,15 @@ The root uses the production `CardCarouselViewController`:
    Safari setup, then the
    same `BundledShortcut` installer and
    `SystemSettingsLink.openActionButton()` paths used elsewhere; existing Safari
-   and Action Button PiP guides play during those hops.
+   and Action Button PiP guides play during those hops. Tapping a setup action
+   first cancels any in-flight save wave or card/source geometry transition and
+   settles the current presentation, so returning from an external app cannot
+   resume a stale callback over the restarted loop. If Safari, Shortcuts, or
+   Settings rejects the open request, the overlay stays in place, names the
+   failed destination, and keeps all three setup actions available for retry.
+   While the overlay is present it is an accessibility modal and explicitly
+   hides the looping production hierarchy from assistive technologies; removing
+   it restores each obscured view's prior accessibility state.
 8. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
@@ -134,6 +142,11 @@ The root uses the production `CardCarouselViewController`:
    the fresh completed root—no eclipse or second geometry change. The payload
    is a Wikipedia article for Reader and central Luna, local video for
    Downloader, and a real price tracker for Price Tracker.
+
+With Reduce Motion enabled, the full-screen Core Image wave is replaced by a
+short source-to-saved-card crossfade. Normal playback reuses one Core Image
+context across every Safari/Messages replay, avoiding device-context and shader
+cache setup on each loop.
 
 The demonstration save is temporary. Its exact UUID is recorded only when
 onboarding created a new item. The owning app deletes that exact save and its
@@ -161,5 +174,6 @@ liquid wave together.
 
 `ReaderOnboardingTests` covers independent per-app completion, exact surface
 copy/page mapping, temporary-save ownership, idempotent offline article
-installation, launch geometry, local-only HTML, bundled MP4 size, and
-attribution. The launch-art recorder remains skipped in ordinary test runs.
+installation, launch geometry, active-wave cancellation, external-open fallback
+actions, local-only HTML, bundled MP4 size, and attribution. The launch-art
+recorder remains skipped in ordinary test runs.

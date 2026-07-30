@@ -36,9 +36,11 @@ enum OnboardingAppIcon {
 }
 
 enum OnboardingIntroTiming {
-    /// Both sentences use the same deliberate top-down lunar sweep. The first
-    /// begins the instant `start()` is called — at the launch splash's fade
-    /// start — with no settling delay.
+    /// A brief settling beat after the splash starts its (near-instant) fade —
+    /// enough to separate the reveal from the launch itself while still
+    /// reading as immediate.
+    static let firstLineDelay: TimeInterval = 0.15
+    /// Both sentences use the same deliberate top-down lunar sweep.
     static let lineRevealDuration: TimeInterval = 1.55
     /// A short reading beat keeps the two sentences distinct without making the
     /// second feel like a separate stage.
@@ -47,6 +49,9 @@ enum OnboardingIntroTiming {
 
 final class OnboardingIntroCardContentViewController: CardContentViewController {
     var onContinue: (() -> Void)?
+    /// Fired when the first line's reveal completes — the host preloads the
+    /// demonstration in the reading pause, never inside a reveal's own turn.
+    var onFirstLineRevealed: (() -> Void)?
 
     private let firstLine: MoonRevealLineView
     private let secondLine: MoonRevealLineView
@@ -114,10 +119,21 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         guard !didStart else { return }
         didStart = true
         view.layoutIfNeeded()
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(
+                OnboardingIntroTiming.firstLineDelay)
+        ) { [weak self] in
+            guard let self else { return }
+            self.revealFirstLine()
+        }
+    }
+
+    private func revealFirstLine() {
         firstLine.reveal(
             duration: OnboardingIntroTiming.lineRevealDuration
         ) { [weak self] in
             guard let self else { return }
+            self.onFirstLineRevealed?()
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + OnboardingAnimationClock.delay(
                     OnboardingIntroTiming.interLineDelay)

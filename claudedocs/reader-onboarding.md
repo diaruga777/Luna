@@ -20,11 +20,13 @@ destination carousel for its real resting frame through
 keeps it visible for 0.10 seconds before crossfading the single splash layer
 into the fully laid-out root over 0.20 seconds. The first live frame cannot skip
 the eclipse even on a warm launch. There is no card resize or staged eclipse
-egress. The target is told the moment the fade BEGINS
-(`appLaunchTransitionWillReveal`) — the splash and the content beneath are
-pixel-identical, so onboarding starts its first lunar reveal right then
-instead of waiting out the crossfade; `appLaunchTransitionDidFinish` still
-fires at completion. On an incomplete first run only, a separate `EclipseCoronaView`
+egress. A target whose live hierarchy is pixel-identical to the splash
+(incomplete onboarding, via `prefersInstantLaunchReveal`) collapses that to
+one visible splash frame (0.02s) and a 0.05s fade — the crossfade reveals
+nothing there and only masks sub-pixel differences. The target is told the
+moment the fade BEGINS (`appLaunchTransitionWillReveal`) — onboarding starts
+its first lunar reveal from that instant (after a brief 0.15s settling beat);
+`appLaunchTransitionDidFinish` still fires at completion. On an incomplete first run only, a separate `EclipseCoronaView`
 reconstructs the identical static peak behind the intro card, so the corona
 remains stationary and fully visible after the launch layer is discarded.
 Completed roots do not retain it.
@@ -66,7 +68,8 @@ owns its onboarding completion independently.
 
 The root uses the production `CardCarouselViewController`:
 
-1. The instant the launch splash begins its fade, with no settling delay, a
+1. A brief 0.15-second settling beat after the launch splash begins its
+   near-instant fade, a
    completely borderless black circle
    moves slowly down across the surface-specific first line. After a brief
    0.32-second reading beat, the same reveal plays across the second line. The
@@ -94,11 +97,14 @@ The root uses the production `CardCarouselViewController`:
    the demonstration needs — the setup guide players (AVFoundation, kept off
    the launch frame), the temporary save, the mounted production root, the
    saved-card wave raster, and both source replicas (hidden, so Safari's
-   WKWebView loads its bundled page early) — is preloaded one run-loop turn
-   after the first appearance commits, while the static launch splash still
-   covers the screen, so the stall is invisible and the button press pays only
-   for the expansion animation itself. A failed temporary-save install stays
-   silent at preload; the press retries it and surfaces the failure alert.
+   WKWebView loads its bundled page early) — is preloaded in STAGES, one per
+   run-loop turn, starting when the first line's reveal completes
+   (`onFirstLineRevealed`). Staging is load-bearing: heavy work sharing a
+   run-loop turn with a just-added CAAnimation delays that animation's first
+   commit, and the render server then starts it visibly partway through its
+   duration. The button press pays only for the expansion animation itself. A
+   failed temporary-save install stops the chain silently; the press retries
+   it and surfaces the failure alert.
 3. The Reader's Safari content is a native, fictional `luna.app` article so its
    sequence begins after the card finishes expanding rather than during hidden
    preload. Its real app icon sits beside “A better way to read on the web”;

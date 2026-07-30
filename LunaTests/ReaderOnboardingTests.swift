@@ -178,6 +178,10 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     func testIntroWaveAndDemoLoopTimingsStayDeliberateButBrisk() {
+        XCTAssertGreaterThan(OnboardingIntroTiming.firstLineDelay, 0.05)
+        XCTAssertLessThan(
+            OnboardingIntroTiming.firstLineDelay, 0.2,
+            "The settling beat before the first reveal must stay brief")
         XCTAssertLessThan(OnboardingIntroTiming.interLineDelay, 0.5)
         XCTAssertGreaterThan(OnboardingIntroTiming.lineRevealDuration, 0.82)
         XCTAssertLessThan(
@@ -500,7 +504,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchRevealPreloadsTheDemonstrationBehindTheIntro() throws {
+    func testFirstLineRevealRunsTheStagedDemonstrationPreload() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -525,8 +529,16 @@ final class ReaderOnboardingTests: XCTestCase {
         onboarding.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        onboarding.appLaunchTransitionWillReveal()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        onboarding.firstIntroLineDidReveal()
+        // The preload runs one stage per run-loop turn; keep spinning until
+        // the final stage mounts the replicas (or the deadline trips).
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while Date() < deadline,
+              onboarding.children.compactMap({
+                  $0 as? SafariReplicaViewController
+              }).isEmpty {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
 
         let safari = try XCTUnwrap(
             onboarding.children.compactMap {
@@ -585,6 +597,11 @@ final class ReaderOnboardingTests: XCTestCase {
             AppLaunchTransition.minimumVisibleDuration
                 + AppLaunchTransition.fadeDuration,
             0.35)
+        XCTAssertLessThanOrEqual(
+            AppLaunchTransition.instantMinimumVisibleDuration
+                + AppLaunchTransition.instantFadeDuration,
+            0.10,
+            "The pixel-identical onboarding splash must reveal near-instantly")
     }
 
     func testStaticLaunchBundlesTheCompositeUnderTheCurrentStoryboardIdentity() {

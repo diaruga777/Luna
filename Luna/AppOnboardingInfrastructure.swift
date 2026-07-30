@@ -51,12 +51,17 @@ protocol AppLaunchTransitionTarget: AnyObject {
     func appLaunchTransitionWillReveal()
     func appLaunchTransitionDidFinish()
     var keepsOnboardingSlowMotionAfterLaunch: Bool { get }
+    /// True when the live hierarchy under the splash is pixel-identical to it
+    /// (incomplete onboarding), letting the launch crossfade collapse to the
+    /// quickest possible reveal instead of the content-masking 0.20s fade.
+    var prefersInstantLaunchReveal: Bool { get }
 }
 
 extension AppLaunchTransitionTarget {
     func appLaunchTransitionWillReveal() {}
     func appLaunchTransitionDidFinish() {}
     var keepsOnboardingSlowMotionAfterLaunch: Bool { false }
+    var prefersInstantLaunchReveal: Bool { false }
 }
 
 extension UIViewController {

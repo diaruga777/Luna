@@ -90,7 +90,10 @@ app has started. The card is already the destination root card's full resting
 size; the corona crops beyond the display instead of making the card smaller.
 No content or app chrome is present. `AppLaunchTransition` asks the destination
 carousel for its exact frame, guarantees the eclipse one 0.10-second visible
-beat, and fades the splash away as one layer over 0.20 seconds. This avoids a
+beat, and fades the splash away as one layer over 0.20 seconds. On an
+incomplete first run the live hierarchy beneath is pixel-identical to the
+splash, so the fade collapses to one visible frame plus a 0.05-second fade
+(`prefersInstantLaunchReveal`). This avoids a
 warm launch committing only the final transparent frame while remaining far
 shorter than the former staged egress. There is no resize or multi-stage
 egress. This happens on every launch, not only onboarding, and each

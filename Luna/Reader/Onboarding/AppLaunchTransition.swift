@@ -63,6 +63,12 @@ enum AppLaunchTransition {
     static let didFinish = Notification.Name("AppLaunchTransition.didFinish")
     static let minimumVisibleDuration: TimeInterval = 0.10
     static let fadeDuration: TimeInterval = 0.20
+    /// For a target whose live hierarchy is pixel-identical to the splash
+    /// (incomplete onboarding: same starfield, corona, and blank black card),
+    /// the crossfade reveals nothing and only needs to mask sub-pixel
+    /// differences — one visible splash frame, then the quickest possible fade.
+    static let instantMinimumVisibleDuration: TimeInterval = 0.02
+    static let instantFadeDuration: TimeInterval = 0.05
 
     static func install(in window: UIWindow) {
         window.layoutIfNeeded()
@@ -86,14 +92,20 @@ enum AppLaunchTransition {
         // Do not begin the fade in the same run-loop turn that installs the
         // splash. On a warm/fast launch Core Animation can otherwise commit
         // only the final alpha, producing a plain black frame with no eclipse.
+        // (An instant-reveal target keeps its own live corona, so it only
+        // needs the next turn, not a guaranteed eclipse beat.)
+        let instant = target?.prefersInstantLaunchReveal == true
+        let hold = instant ? instantMinimumVisibleDuration : minimumVisibleDuration
+        let fade: TimeInterval = instant
+            ? instantFadeDuration
+            : (UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration)
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(
-                minimumVisibleDuration)
+            deadline: .now() + OnboardingAnimationClock.delay(hold)
         ) {
             guard overlay.window != nil else { return }
             target?.appLaunchTransitionWillReveal()
             UIView.animate(
-                withDuration: UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration,
+                withDuration: fade,
                 delay: 0,
                 options: [.curveEaseOut, .beginFromCurrentState]
             ) {

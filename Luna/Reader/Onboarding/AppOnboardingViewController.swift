@@ -108,6 +108,7 @@ final class AppOnboardingViewController: UIViewController {
     private var demoTransitionGeneration = 0
     private var demoLoopGeneration = 0
     private var isDemoGeometryTransitioning = false
+    private var continuesToMessagesAfterSafariSave = false
     private var isFinishing = false
     private var foregroundObserver: NSObjectProtocol?
     private var setupObserver: NSObjectProtocol?
@@ -129,7 +130,8 @@ final class AppOnboardingViewController: UIViewController {
         self.intro = OnboardingIntroCardContentViewController(
             firstLine: configuration.firstLine,
             secondLine: configuration.secondLine,
-            supportingText: configuration.supportingText)
+            supportingText: configuration.supportingText,
+            app: configuration.app)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -442,6 +444,20 @@ final class AppOnboardingViewController: UIViewController {
         commitWaveDrivenCardPresentation()
         nextDemoSource = source.next
 
+        if source == .safari, continuesToMessagesAfterSafariSave {
+            continuesToMessagesAfterSafariSave = false
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + OnboardingAnimationClock.delay(
+                    OnboardingDemoLoopTiming.savedCardHoldDuration)
+            ) { [weak self] in
+                guard let self, !self.isFinishing else { return }
+                self.transitionDemo(to: .fullScreen, source: .messages) { [weak self] in
+                    self?.startDemoPresentationLoop()
+                }
+            }
+            return
+        }
+
         guard let prompt = journeyStage.completedSave(from: source) else {
             return
         }
@@ -727,6 +743,7 @@ final class AppOnboardingViewController: UIViewController {
     private func openSafariSetup() {
         guard externalReturn == .none else { return }
         pauseDemoPresentationPlayback()
+        journeyStage = .safariSetup
         externalReturn = .safari
         safariGuide.startPictureInPicture()
         guard let url = URL(string: "https://luna.app")
@@ -789,16 +806,17 @@ final class AppOnboardingViewController: UIViewController {
             break
         case .safari:
             safariGuide.stopPictureInPicture()
-            guard journeyStage.completedSafariSetup() else {
-                safariReplica?.showShortcutAndActionSetup()
+            guard LunaSetupStatusStore.shared.safariHasRun(
+                isCentral: configuration.isCentralApp)
+            else {
+                safariReplica?.restoreInPageSafariSetup()
                 return
             }
-            safariReplica?.dismissInstructions(animated: true) { [weak self] in
-                guard let self else { return }
-                self.transitionDemo(to: .fullScreen, source: .messages) { [weak self] in
-                    self?.startDemoPresentationLoop()
-                }
+            guard journeyStage.completedSafariSetup() else {
+                return
             }
+            continuesToMessagesAfterSafariSave = true
+            safariReplica?.playURLBarZoomAndSave()
         case .shortcut:
             // Importing the signed file is an external Shortcuts hop, but the
             // setup isn't complete until the hardware Action Button is assigned.

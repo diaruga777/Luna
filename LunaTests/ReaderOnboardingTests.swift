@@ -158,17 +158,20 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(lines[1].occluderIsFullyOpaque)
         XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
 
-        let supportingLabel = try XCTUnwrap(
-            intro.view.subviews.compactMap { $0 as? UILabel }.first {
-                $0.accessibilityIdentifier == "onboarding.intro.supportingText"
+        let iconCluster = try XCTUnwrap(
+            intro.view.subviews.first {
+                $0.accessibilityIdentifier == "onboarding.intro.iconCluster"
             })
         let button = try XCTUnwrap(
             intro.view.subviews.compactMap { $0 as? UIButton }.first)
-        XCTAssertEqual(supportingLabel.numberOfLines, 2)
-        XCTAssertEqual(supportingLabel.alpha, 0)
+        XCTAssertEqual(iconCluster.alpha, 0)
+        XCTAssertTrue(
+            intro.view.subviews.compactMap { $0 as? UILabel }.allSatisfy {
+                $0.accessibilityIdentifier != "onboarding.intro.supportingText"
+            })
         XCTAssertEqual(
-            supportingLabel.frame.minY - lines[1].frame.maxY,
-            button.frame.minY - supportingLabel.frame.maxY,
+            iconCluster.frame.midY,
+            (lines[1].frame.maxY + button.frame.minY) / 2,
             accuracy: 0.001)
         XCTAssertEqual(
             button.configuration?.title,
@@ -632,7 +635,9 @@ final class ReaderOnboardingTests: XCTestCase {
         let article = OnboardingArticleReplicaView()
         article.frame = CGRect(
             origin: .zero,
-            size: AppLaunchGeometry.referenceSize)
+            size: CGSize(
+                width: AppLaunchGeometry.referenceSize.width,
+                height: AppLaunchGeometry.referenceSize.height - 59))
         article.layoutIfNeeded()
 
         let identifiers = article.descendants(of: UIView.self).compactMap(
@@ -645,24 +650,82 @@ final class ReaderOnboardingTests: XCTestCase {
         let popover = article.descendants(of: UIView.self).first {
             $0.accessibilityIdentifier == "onboarding.safari.article.popover"
         }
+        let setupButton = article.descendants(of: UIButton.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.setupButton"
+        }
 
         XCTAssertTrue(labels.contains("Get rid of annoying ads!"))
-        XCTAssertTrue(labels.contains("Subscribe!"))
+        XCTAssertTrue(labels.contains("Subscribe to keep reading"))
+        XCTAssertTrue(labels.contains("…or not"))
         XCTAssertTrue(banner?.isHidden == true)
         XCTAssertTrue(identifiers.contains("onboarding.safari.article.popover"))
+        XCTAssertTrue(identifiers.contains("onboarding.safari.article.appIcon"))
+        XCTAssertTrue(identifiers.contains("onboarding.safari.article.setupButton"))
+        XCTAssertFalse(
+            popover?.descendants(of: UILabel.self).compactMap(\.text).contains("×")
+                ?? true)
         XCTAssertGreaterThan(
             popover?.bounds.height ?? 0,
             article.bounds.height * 0.45)
-        XCTAssertEqual(
-            Set(revealLines.compactMap(\.accessibilityLabel)),
-            Set([
-                "Save anything in Safari",
-                "Your article, and your browsing history, all stay offline.",
-                "…or not\n\nSay good bye to popups and just read",
-                "In just one click.",
-            ]))
+        XCTAssertLessThan(
+            setupButton?.bounds.width ?? .greatestFiniteMagnitude,
+            (popover?.bounds.width ?? 0) - 48)
+        let bannerBottom = banner?.frame.maxY ?? 0
+        let mockURLBarTop = article.bounds.height
+            - SafariBottomBar.chromeHeight
+            - 34
+            + 7
+        XCTAssertEqual(mockURLBarTop - bannerBottom, 8, accuracy: 0.001)
+        let revealCopy = revealLines.compactMap(\.accessibilityLabel)
+        XCTAssertTrue(revealCopy.contains("A quieter way to read the web"))
+        XCTAssertTrue(revealCopy.contains(
+            "Luna eliminates annoyances so you can read the things you want. Offline, private, one click away."))
+        let fittedBody = revealCopy.first {
+            $0.hasPrefix("Your article, your browsing history")
+        }
+        XCTAssertNotNil(fittedBody)
+        XCTAssertLessThan(
+            fittedBody?.count ?? .max,
+            OnboardingArticleReplicaView.fullArticleText.count)
+        XCTAssertFalse(revealCopy.contains("In just one click."))
         XCTAssertTrue(revealLines.allSatisfy(\.usesGlyphEdgeIllumination))
         XCTAssertGreaterThan(OnboardingArticleReplicaTiming.componentDelay, 0.1)
+    }
+
+    @MainActor
+    func testCleanupShatterPromotesTheRuntimePrefixToTheFullArticle() {
+        let article = OnboardingArticleReplicaView()
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: CGSize(
+                width: AppLaunchGeometry.referenceSize.width,
+                height: AppLaunchGeometry.referenceSize.height - 59)))
+        let host = UIViewController()
+        host.view = article
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        article.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let body = article.descendants(of: MoonRevealLineView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.body"
+        }
+        XCTAssertNotEqual(
+            body?.accessibilityLabel,
+            OnboardingArticleReplicaView.fullArticleText)
+
+        let finished = expectation(description: "cleanup shatter")
+        article.shatterClutter(
+            waveOriginInWindow: CGPoint(x: 0, y: 170),
+            window: window
+        ) {
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        XCTAssertEqual(
+            body?.accessibilityLabel,
+            OnboardingArticleReplicaView.fullArticleText)
     }
 
     func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {

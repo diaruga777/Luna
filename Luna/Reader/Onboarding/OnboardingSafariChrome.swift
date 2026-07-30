@@ -129,6 +129,37 @@ final class SafariBottomBar: UIView {
         urlHighlight.setHighlighted(highlighted)
     }
 
+    func animateURLBarZoom(completion: @escaping () -> Void) {
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            completion()
+            return
+        }
+        address.layer.removeAllAnimations()
+        UIView.animate(
+            withDuration: 0.28,
+            delay: 0,
+            usingSpringWithDamping: 0.72,
+            initialSpringVelocity: 0.3,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.address.transform = CGAffineTransform(scaleX: 1.12, y: 1.12)
+            self.backForward.alpha = 0.48
+            self.more.alpha = 0.48
+        } completion: { _ in
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0.06,
+                options: [.curveEaseInOut, .beginFromCurrentState]
+            ) {
+                self.address.transform = .identity
+                self.backForward.alpha = 1
+                self.more.alpha = 1
+            } completion: { _ in
+                completion()
+            }
+        }
+    }
+
     var isURLHighlighted: Bool { urlHighlight.isHighlighted }
 
     var highlightedURLRegion: OnboardingHighlightedLinkRegion {

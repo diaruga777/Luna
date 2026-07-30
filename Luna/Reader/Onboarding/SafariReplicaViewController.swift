@@ -47,6 +47,7 @@ final class SafariReplicaViewController:
     private let articleView = OnboardingArticleReplicaView()
     private var instructionOverlay: DemoInstructionOverlay?
     private var didBeginDemonstration = false
+    private var isPlayingSetupCleanup = false
     private var pageIndex = 0
     private var pageTimer: Timer?
 
@@ -73,8 +74,11 @@ final class SafariReplicaViewController:
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .white
+        view.backgroundColor = OnboardingPalette.background
         configureBrowser()
+        articleView.onSetUpSafari = { [weak self] in
+            self?.playSetupCleanupAndContinue()
+        }
         webView.navigationDelegate = self
         loadOfflinePage(at: 0)
     }
@@ -192,9 +196,7 @@ final class SafariReplicaViewController:
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
         if onboardingConfiguration.demoPages[pageIndex] == .lunaArticle {
-            articleView.start { [weak self] in
-                self?.replayActionButtonSaveEffect()
-            }
+            articleView.start {}
             return
         }
         DispatchQueue.main.asyncAfter(
@@ -238,6 +240,39 @@ final class SafariReplicaViewController:
                     prominent: true,
                     action: { [weak self] in self?.onSetUpSafari?() }),
             ])
+    }
+
+    /// The in-page button owns this setup handoff. It first plays the same
+    /// physical Action Button cue, then lets the radial front break apart the
+    /// two obstructions before Safari and its PiP guide are opened.
+    private func playSetupCleanupAndContinue() {
+        guard !isPlayingSetupCleanup, let window = view.window else { return }
+        isPlayingSetupCleanup = true
+        let cue = ActionButtonPressCue()
+        cue.layout(in: window)
+        let origin = cue.waveOrigin
+        window.addSubview(cue)
+        cue.play { [weak cue] in cue?.removeFromSuperview() }
+        articleView.shatterClutter(
+            waveOriginInWindow: origin,
+            window: window
+        ) { [weak self] in
+            guard let self else { return }
+            self.isPlayingSetupCleanup = false
+            self.onSetUpSafari?()
+        }
+    }
+
+    /// Returning from a successfully running extension focuses the real item
+    /// being saved before handing off to the shared URL-isolation transition.
+    func playURLBarZoomAndSave() {
+        browserBar.animateURLBarZoom { [weak self] in
+            self?.replayActionButtonSaveEffect()
+        }
+    }
+
+    func restoreInPageSafariSetup() {
+        articleView.restoreSetupPrompt()
     }
 
     func showShortcutAndActionSetup() {

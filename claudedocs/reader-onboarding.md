@@ -44,12 +44,12 @@ rim, tint, or star table, run
 
 ## Per-app configuration
 
-| App | Intro lines | Supporting lines | Demonstration | Save benefit |
+| App | Intro lines | Intro mark | Demonstration | Save benefit |
 |---|---|---|---|---|
-| Reader | “You want to read more.” / “Let’s make that happen.” | “Save onscreen links with one click.” / “Unlock or read offline later.” | native `luna.app` article sequence | “Read offline later” |
-| Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | “Download any video link in one click,” / “no signup required.” | bundled InstaTok page and eclipse video | “Watch or share” |
-| Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | “Track sales for any link” / “in one click.” | bundled amayzon eyePhone page | “Never miss a sale” |
-| Luna | “All your Luna saves.” / “In a single app.” | “Save any link on your screen” / “with one click.” | continually rotates through all three pages | “Read, watch, track, anything” |
+| Reader | “You want to read more.” / “Let’s make that happen.” | Reader icon with Shortcuts and Action Button badges | native `luna.app` article sequence | “Read offline later” |
+| Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | Downloader icon with Shortcuts and Action Button badges | bundled InstaTok page and eclipse video | “Watch or share” |
+| Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | Price Tracker icon with Shortcuts and Action Button badges | bundled amayzon eyePhone page | “Never miss a sale” |
+| Luna | “All your Luna saves.” / “In a single app.” | Luna icon with Shortcuts and Action Button badges | continually rotates through all three pages | “Read, watch, track, anything” |
 
 The InstaTok page is a deliberately fictional full-bleed video site whose
 signup modal blocks a bundled NASA SVS lunar-eclipse clip. The source, SHA-256,
@@ -80,10 +80,13 @@ The root uses the production `CardCarouselViewController`:
    white core briefly overwhelms legibility, and each pixel's bloom illuminates
    its neighbors before resolving to ordinary text. The copy
    starts one third of the way down the card. After the second line finishes,
-   the surface-specific two-line supporting copy fades in halfway between the
-   headline and the “Show me how” button, which gives it equal breathing room
-   above and below. The button appears with it, using a restrained 24% wash of
-   the current app surface tint in its glass background. A new UIKit corona
+   a compact icon cluster fades in halfway between the headline and the
+   “Show me how” button: the running app's real primary icon is centered, with
+   the Shortcuts icon and system Action Button symbol hugging its lower
+   corners. The button appears with it, using a restrained 24% wash of the
+   current app surface tint in its glass background. The card and mock article
+   use a dark neutral grey that keeps white copy and the black Action Button
+   deformation legible. A new UIKit corona
    independently reconstructs the splash's static peak behind this initial card
    for the entire intro; neither the launch raster nor its overlay hierarchy is
    retained.
@@ -102,13 +105,19 @@ The root uses the production `CardCarouselViewController`:
    silent at preload; the press retries it and surfaces the failure alert.
 3. The Reader's Safari content is a native, fictional `luna.app` article so its
    sequence begins after the card finishes expanding rather than during hidden
-   preload. “Save anything in Safari” and its offline body copy use the same
-   glyph-pixel eclipse reveal as the intro. An obnoxious radial-striped banner
-   is completely absent until it slides in from the right, then its rays rotate
-   continuously. A huge dark “Subscribe!” popup springs over most of the page
-   before revealing “...or not / Say good bye to popups and just read”, and
-   “In just one click.” receives the final eclipse reveal.
-   Only then does the existing Action Button save effect begin. Other demo
+   preload. Its real app icon sits beside a two-line editorial headline, with a
+   byline and more natural article typography below. The long feature copy
+   describes private history, popup/ad removal, offline reading, RSVP, search,
+   Safari/Messages/Share Sheet/Shortcuts/Action Button capture, Kindle, and
+   documents. At layout time the visible body takes the longest whole-word
+   prefix that fits above the obstruction; after cleanup the model switches to
+   the complete article text. An obnoxious radial-striped banner is completely
+   absent until it slides in from the right. Its bottom edge is fixed eight
+   points above the mock URL bar. A large dark popup springs over the page with
+   centered “Subscribe to keep reading”, a left-aligned “…or not”, centered
+   Luna benefit copy, and a content-hugging “Set up Safari” button. It has no
+   close control. Once this popup finishes, all automatic animation stops.
+   Other demo
    surfaces remain bundled, noninteractive `WKWebView` pages with a
    nonpersistent data store and JavaScript disabled; central Luna rotates its
    local pages every 3.4 seconds.
@@ -143,11 +152,18 @@ The root uses the production `CardCarouselViewController`:
    Reader, Downloader, Price Tracker, and central Luna therefore show their
    ordinary saved-card UI, chrome, scrubber, controls, and placement—not an
    onboarding remake or a Safari view clipped smaller.
-7. Setup deliberately splits the demonstrations. Safari saves first, its card
-   remains unobscured for 1.35 seconds, and only the Safari-setup overlay
-   appears. Returning from Safari dismisses that overlay, grows the Messages
-   replica from the saved card, plays its three-bubble sequence, and runs the
-   second Action Button save. After another 1.35-second card hold, the shortcut
+7. Setup deliberately splits the demonstrations. The first Safari stage has no
+   separate setup overlay. Pressing the popup's “Set up Safari” button plays the
+   physical Action Button deformation and a radial cleanup wave. As its front
+   reaches the popup and banner, snapshots of those views break into tiles;
+   the pieces blast away from the front, rotate, and fade to expose the full
+   article beneath. Only after the cleanup finishes does onboarding start the
+   Safari PiP guide and open real Safari. If the extension has not run, return
+   restores the in-page prompt for another attempt. A verified extension return
+   zooms the mock URL bar and runs the existing URL-isolation/save wave. Its
+   saved card then grows into the Messages replica, which plays its three-bubble
+   sequence and runs the second Action Button save. After another 1.35-second
+   card hold, the shortcut
    and Action Button setup overlay appears. Setup overlays do not run a second
    source behind themselves. At the start of each press, the source URL gains a
    bright app-tint highlight; it survives the blackout wave until the saved

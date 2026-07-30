@@ -4,7 +4,42 @@
 //
 
 import LunaDesignSystem
+import LunaModels
 import UIKit
+
+enum OnboardingPalette {
+    static let background = UIColor(
+        red: 0.31, green: 0.32, blue: 0.34, alpha: 1)
+}
+
+enum OnboardingAppIcon {
+    static func image(bundle: Bundle = .main) -> UIImage? {
+        let icons = bundle.object(forInfoDictionaryKey: "CFBundleIcons")
+            as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        let iconFiles = primary?["CFBundleIconFiles"] as? [String] ?? []
+        for name in iconFiles.reversed() {
+            if let image = UIImage(named: name, in: bundle, compatibleWith: nil) {
+                return image
+            }
+            guard let resources = bundle.resourceURL,
+                  let entries = try? FileManager.default.contentsOfDirectory(
+                    at: resources,
+                    includingPropertiesForKeys: nil)
+            else { continue }
+            let candidates = entries.filter {
+                $0.pathExtension == "png"
+                    && $0.deletingPathExtension().lastPathComponent.hasPrefix(name)
+            }
+            if let path = candidates.first?.path,
+               let image = UIImage(contentsOfFile: path)
+            {
+                return image
+            }
+        }
+        return nil
+    }
+}
 
 enum OnboardingIntroTiming {
     /// Both sentences use the same deliberate top-down lunar sweep. The first
@@ -21,14 +56,23 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     private let firstLine: MoonRevealLineView
     private let secondLine: MoonRevealLineView
-    private let supportingLabel = UILabel()
+    private let iconCluster: OnboardingIconClusterView
     private let button = UIButton(type: .system)
     private var didStart = false
 
-    init(firstLine: String, secondLine: String, supportingText: String) {
-        self.firstLine = MoonRevealLineView(text: firstLine)
-        self.secondLine = MoonRevealLineView(text: secondLine)
-        self.supportingLabel.text = supportingText
+    init(
+        firstLine: String,
+        secondLine: String,
+        supportingText _: String,
+        app: LunaApp = .current
+    ) {
+        self.firstLine = MoonRevealLineView(
+            text: firstLine,
+            occluderColor: OnboardingPalette.background)
+        self.secondLine = MoonRevealLineView(
+            text: secondLine,
+            occluderColor: OnboardingPalette.background)
+        self.iconCluster = OnboardingIconClusterView(app: app)
         super.init()
     }
 
@@ -37,19 +81,13 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        view.backgroundColor = OnboardingPalette.background
         view.addSubview(firstLine)
         view.addSubview(secondLine)
 
-        supportingLabel.font = .systemFont(ofSize: 17, weight: .medium)
-        supportingLabel.textColor = UIColor.white.withAlphaComponent(0.78)
-        supportingLabel.textAlignment = .center
-        supportingLabel.numberOfLines = 2
-        supportingLabel.lineBreakMode = .byWordWrapping
-        supportingLabel.alpha = 0
-        supportingLabel.isAccessibilityElement = false
-        supportingLabel.accessibilityIdentifier = "onboarding.intro.supportingText"
-        view.addSubview(supportingLabel)
+        iconCluster.alpha = 0
+        iconCluster.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        view.addSubview(iconCluster)
 
         button.configuration = GlassStyle.actionButtonConfiguration(
             title: "Show me how",
@@ -87,13 +125,13 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             y: view.bounds.height - max(54, buttonSize.height) - 24,
             width: max(170, buttonSize.width),
             height: max(54, buttonSize.height))
-        let supportingHeight: CGFloat = 52
         let availableCenterY = (secondLine.frame.maxY + button.frame.minY) / 2
-        supportingLabel.frame = CGRect(
-            x: inset,
-            y: availableCenterY - supportingHeight / 2,
-            width: view.bounds.width - inset * 2,
-            height: supportingHeight)
+        let iconSide: CGFloat = 126
+        iconCluster.frame = CGRect(
+            x: (view.bounds.width - iconSide) / 2,
+            y: availableCenterY - iconSide / 2,
+            width: iconSide,
+            height: iconSide)
     }
 
     func start() {
@@ -118,15 +156,15 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                         delay: 0.16,
                         options: [.curveEaseOut, .beginFromCurrentState]
                     ) {
-                        self.supportingLabel.alpha = 1
+                        self.iconCluster.alpha = 1
+                        self.iconCluster.transform = .identity
                         self.button.alpha = 1
                         self.button.transform = .identity
                     } completion: { _ in
-                        self.supportingLabel.isAccessibilityElement = true
                         self.button.isUserInteractionEnabled = true
                         UIAccessibility.post(
                             notification: .layoutChanged,
-                            argument: self.supportingLabel)
+                            argument: self.iconCluster)
                     }
                 }
             }
@@ -145,6 +183,80 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     }
 }
 
+/// The three things onboarding is about are presented as one compact mark:
+/// Luna in the middle, with the two system entry points tucked into its lower
+/// corners.
+private final class OnboardingIconClusterView: UIView {
+    private let appIcon = UIImageView()
+    private let shortcutsIcon = UIImageView()
+    private let actionButtonIcon = UIImageView()
+
+    init(app: LunaApp) {
+        super.init(frame: .zero)
+        isAccessibilityElement = true
+        accessibilityIdentifier = "onboarding.intro.iconCluster"
+        accessibilityLabel = "\(app.displayName), Shortcuts, and Action Button"
+
+        appIcon.image = OnboardingAppIcon.image()
+            ?? UIImage(systemName: "moon.stars.fill")
+        appIcon.contentMode = .scaleAspectFill
+        appIcon.layer.cornerRadius = 24
+        appIcon.layer.cornerCurve = .continuous
+        appIcon.clipsToBounds = true
+        appIcon.layer.shadowColor = UIColor.black.cgColor
+        appIcon.layer.shadowOpacity = 0.28
+        appIcon.layer.shadowRadius = 14
+        appIcon.layer.shadowOffset = CGSize(width: 0, height: 8)
+        addSubview(appIcon)
+
+        configureBadge(shortcutsIcon, image: OnboardingSystemIcons.shortcuts)
+        configureBadge(actionButtonIcon, image: OnboardingSystemIcons.actionButton)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let mainSide = min(bounds.width, bounds.height) * 0.76
+        appIcon.frame = CGRect(
+            x: (bounds.width - mainSide) / 2,
+            y: 4,
+            width: mainSide,
+            height: mainSide)
+        let badgeSide = mainSide * 0.39
+        let badgeY = appIcon.frame.maxY - badgeSide * 0.58
+        shortcutsIcon.frame = CGRect(
+            x: appIcon.frame.minX - badgeSide * 0.18,
+            y: badgeY,
+            width: badgeSide,
+            height: badgeSide)
+        actionButtonIcon.frame = CGRect(
+            x: appIcon.frame.maxX - badgeSide * 0.82,
+            y: badgeY,
+            width: badgeSide,
+            height: badgeSide)
+        for badge in [shortcutsIcon, actionButtonIcon] {
+            badge.layer.cornerRadius = badgeSide * 0.28
+        }
+    }
+
+    private func configureBadge(_ view: UIImageView, image: UIImage?) {
+        view.image = image
+        view.contentMode = .center
+        view.tintColor = .white
+        view.backgroundColor = UIColor(white: 0.12, alpha: 0.94)
+        view.layer.cornerCurve = .continuous
+        view.layer.borderWidth = 1.5
+        view.layer.borderColor = UIColor.white.withAlphaComponent(0.62).cgColor
+        view.layer.shadowColor = UIColor.black.cgColor
+        view.layer.shadowOpacity = 0.3
+        view.layer.shadowRadius = 8
+        view.layer.shadowOffset = CGSize(width: 0, height: 5)
+        addSubview(view)
+    }
+}
+
 /// A borderless black circle hides the unrevealed text against the black card.
 /// Its exact outer edge also drives a raster light pass clipped to the glyph
 /// alpha. Every newly exposed antialiased glyph pixel becomes an additive white
@@ -157,6 +269,7 @@ final class MoonRevealLineView: UIView {
     private let moonLayer = CAShapeLayer()
     private let revealMaskLayer = CAShapeLayer()
     private let pixelBloomView = GlyphPixelBloomView()
+    private let lineSpacing: CGFloat
     private var didStartReveal = false
     private var initialCircleFrame = CGRect.zero
     private(set) var isFullyRevealed: Bool
@@ -186,8 +299,10 @@ final class MoonRevealLineView: UIView {
         textAlignment: NSTextAlignment = .center,
         numberOfLines: Int = 1,
         minimumScaleFactor: CGFloat = 0.72,
+        lineSpacing: CGFloat = 0,
         occluderColor: UIColor = .black
     ) {
+        self.lineSpacing = lineSpacing
         self.isFullyRevealed = initiallyRevealed
         super.init(frame: .zero)
         isUserInteractionEnabled = false
@@ -200,7 +315,6 @@ final class MoonRevealLineView: UIView {
         addSubview(clippedContent)
 
         for label in [finalLabel, illuminationMaskLabel] {
-            label.text = text
             label.font = font
             label.textColor = .white
             label.textAlignment = textAlignment
@@ -209,6 +323,7 @@ final class MoonRevealLineView: UIView {
             label.adjustsFontSizeToFitWidth = true
             label.minimumScaleFactor = minimumScaleFactor
             label.isAccessibilityElement = false
+            apply(text: text, to: label)
         }
         clippedContent.addSubview(finalLabel)
 
@@ -307,6 +422,34 @@ final class MoonRevealLineView: UIView {
             self.pixelBloomView.removeFromSuperview()
             completion()
         }
+    }
+
+    func setText(_ text: String) {
+        apply(text: text, to: finalLabel)
+        apply(text: text, to: illuminationMaskLabel)
+        accessibilityLabel = text
+        if !didStartReveal {
+            setNeedsLayout()
+        }
+    }
+
+    private func apply(text: String, to label: UILabel) {
+        guard lineSpacing > 0 else {
+            label.attributedText = nil
+            label.text = text
+            return
+        }
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = lineSpacing
+        style.alignment = label.textAlignment
+        style.lineBreakMode = label.lineBreakMode
+        label.attributedText = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: label.font as Any,
+                .foregroundColor: label.textColor as Any,
+                .paragraphStyle: style,
+            ])
     }
 
     private func prepareRevealLayers() {

@@ -25,9 +25,12 @@ enum OnboardingArticleReplicaTiming {
     /// (a tap anywhere runs it early).
     static let blockedHoldDuration: TimeInterval = 1.0
     static let shatterDuration: TimeInterval = 0.86
-    /// The eclipse re-reveal sweeps the full page top to bottom alongside the
-    /// shatter front.
-    static let revealSweepDuration: TimeInterval = 1.15
+    /// One continuous lunar edge crosses the whole page in this time; every
+    /// element's reveal is cut from the same constant-speed front.
+    static let revealSweepDuration: TimeInterval = 2.2
+    /// Tiles detach this far ahead of the arriving light so the glyph bloom
+    /// is never hidden under still-flying pieces.
+    static let shatterLeadDuration: TimeInterval = 0.35
 }
 
 /// Luna's fictional Safari article. The page loads clean and fully readable,
@@ -366,8 +369,11 @@ final class OnboardingArticleReplicaView: UIView {
         }
     }
 
-    /// Re-arms each content element and staggers its reveal by vertical
-    /// position, so one coherent bright edge appears to travel down the page.
+    /// Re-arms each content element and cuts its reveal from one shared
+    /// constant-speed front: each view's edge begins exactly when the front
+    /// reaches its top and exits exactly when the front passes its bottom, so
+    /// the body's light visibly continues from the title's instead of every
+    /// element replaying its own sweep.
     private func revealContentTopToBottom() -> TimeInterval {
         let height = max(bounds.height, 1)
         var finish: TimeInterval = 0
@@ -389,9 +395,11 @@ final class OnboardingArticleReplicaView: UIView {
         ]
         for plan in plans {
             let frame = plan.view.frame
-            let delay = TimeInterval(frame.minY / height) * 0.5
-            let duration = max(
-                0.42, TimeInterval(frame.height / height) * sweep)
+            // Each occluding circle starts ~22pt above its view's top (the
+            // wide circle's sagitta) and travels to ~6pt past its bottom, so
+            // the front's constant speed maps to these paddings.
+            let delay = max(0, TimeInterval((frame.minY - 22) / height)) * sweep
+            let duration = TimeInterval((frame.height + 28) / height) * sweep
             finish = max(finish, delay + duration)
             afterDelay(delay) { _ in plan.reveal(duration) }
         }
@@ -414,7 +422,8 @@ final class OnboardingArticleReplicaView: UIView {
         let columns = min(max(Int(target.bounds.width / 56), 3), 8)
         let rows = min(max(Int(target.bounds.height / 56), 2), 8)
         let targetFrame = clutterContainer.convert(target.frame, to: self)
-        let sweep = OnboardingArticleReplicaTiming.shatterDuration * 0.68
+        let sweep = OnboardingArticleReplicaTiming.revealSweepDuration
+        let lead = OnboardingArticleReplicaTiming.shatterLeadDuration
         let height = max(bounds.height, 1)
         var pieces: [(UIView, TimeInterval, CGAffineTransform)] = []
 
@@ -439,13 +448,16 @@ final class OnboardingArticleReplicaView: UIView {
                 piece.layer.cornerRadius = 1.5
                 addSubview(piece)
 
-                // The front is a horizontal line travelling downward: delay is
-                // dominated by the tile's vertical position, with a small
-                // horizontal jitter so rows don't detach in lockstep.
+                // The front is a horizontal line travelling downward at the
+                // reveal sweep's speed, detaching tiles a beat ahead of the
+                // arriving light, with a small horizontal jitter so rows
+                // don't detach in lockstep.
                 let parity: CGFloat = (row + column).isMultiple(of: 2) ? 1 : -1
                 let jitter = abs(frame.midX - bounds.midX) / max(bounds.width, 1)
-                let delay = TimeInterval(frame.midY / height) * sweep
-                    + TimeInterval(jitter) * 0.06
+                let delay = max(
+                    0,
+                    TimeInterval(frame.midY / height) * sweep - lead)
+                    + TimeInterval(jitter) * 0.05
                 let delta = CGPoint(
                     x: frame.midX - bounds.midX,
                     y: frame.midY + height)
@@ -462,12 +474,9 @@ final class OnboardingArticleReplicaView: UIView {
             }
         }
 
-        let firstDelay = pieces.map(\.1).min() ?? 0
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(firstDelay)
-        ) {
-            target.isHidden = true
-        }
+        // The static tiles exactly cover the original, so it can vanish now —
+        // hiding it later leaves a "copy" behind the already-flying tiles.
+        target.isHidden = true
         let pieceDuration = OnboardingArticleReplicaTiming.shatterDuration * 0.54
         for (piece, delay, transform) in pieces {
             UIView.animate(

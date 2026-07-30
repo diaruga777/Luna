@@ -7,7 +7,8 @@ import LunaDesignSystem
 import UIKit
 
 private enum OnboardingArticleReplicaPalette {
-    static let background = OnboardingPalette.background
+    static let background = UIColor(
+        red: 0.31, green: 0.32, blue: 0.34, alpha: 1)
     static let popover = UIColor(white: 0.12, alpha: 0.985)
 }
 
@@ -15,9 +16,7 @@ enum OnboardingArticleReplicaTiming {
     static let headlineRevealDuration: TimeInterval = 1.05
     static let bodyRevealDuration: TimeInterval = 0.92
     static let componentDelay: TimeInterval = 0.22
-    static let bannerDuration: TimeInterval = 0.52
     static let popoverDuration: TimeInterval = 0.48
-    static let popoverTextRevealDuration: TimeInterval = 0.82
     static let shatterDuration: TimeInterval = 0.86
 }
 
@@ -26,19 +25,29 @@ enum OnboardingArticleReplicaTiming {
 /// completed; preloading the Safari replica cannot consume the sequence.
 final class OnboardingArticleReplicaView: UIView {
     static let fullArticleText = """
-    Your article, your browsing history, and every page you save stay private. Luna strips away subscription popups, sticky ads, autoplay distractions, and the clutter that gets between you and the story. Unlock supported articles, keep clean copies for flights and dead zones, search everything you have saved, and return to the exact piece you wanted without retracing your browsing history. Read in a calm scrolling view or switch to the RSVP speed reader when you want to move quickly. Save links from Safari, Messages, the Share Sheet, Shortcuts, or the Action Button; organise them once and find them on every return. Send finished articles to Kindle, preserve useful documents, and keep the original link close whenever you need it. Nothing needs an account just to build your own reading list, and the pages you keep remain yours to revisit offline.
+    Your article, your browsing history, and every page you save stay private. Luna strips away subscription popups, sticky ads, autoplay distractions, and the clutter that gets between you and the story. Unlock supported articles, keep clean copies for flights and dead zones, search everything you have saved, and return to the exact piece you wanted without retracing your browsing history. Read in a calm scrolling view or switch to the RSVP speed reader when you want to move quickly. Inline web sections preserve the useful context of the original page while the focused reader keeps the surrounding noise out of your way. Save links from Safari, Messages, the Share Sheet, Shortcuts, or the Action Button; organise them once and find them on every return. Send finished articles to Kindle, preserve useful documents, and keep the original link close whenever you need it. Luna handles ordinary stories, paywalled articles, PDFs, and other documents in the same reading list, so research does not disappear across a pile of open tabs. Search your collection instead of your browser history, revisit a clean offline copy on the train or in the air, and choose the reading pace that suits the moment. The extension works where you already browse, and one press is enough to move something worth keeping into a quieter place. Nothing needs an account just to build your own reading list, and the pages you keep remain yours to revisit offline.
     """
 
     var onSetUpSafari: (() -> Void)?
+    var onSkipForNow: (() -> Void)?
 
-    private let appIcon = UIImageView()
-    private let byline = UILabel()
+    private let appIcon = MoonRevealImageView(
+        image: OnboardingAppIcon.image()
+            ?? UIImage(systemName: "moon.stars.fill"),
+        occluderColor: OnboardingArticleReplicaPalette.background)
     private let headline = MoonRevealLineView(
-        text: "A quieter way to read the web",
+        text: "A better way to read on the web",
         font: UIFont.systemFont(ofSize: 29, weight: .bold),
         textAlignment: .left,
         numberOfLines: 2,
         minimumScaleFactor: 0.82,
+        occluderColor: OnboardingArticleReplicaPalette.background)
+    private let byline = MoonRevealLineView(
+        text: "A safari extension • by Luna",
+        font: .systemFont(ofSize: 13, weight: .semibold),
+        textAlignment: .left,
+        numberOfLines: 1,
+        minimumScaleFactor: 0.9,
         occluderColor: OnboardingArticleReplicaPalette.background)
     private let body = MoonRevealLineView(
         text: "",
@@ -51,15 +60,9 @@ final class OnboardingArticleReplicaView: UIView {
     private let banner = OnboardingAnnoyingBannerView()
     private let popover = UIView()
     private let popoverTitle = UILabel()
-    private let popoverAside = UILabel()
-    private let popoverText = MoonRevealLineView(
-        text: "Luna eliminates annoyances so you can read the things you want. Offline, private, one click away.",
-        font: .systemFont(ofSize: 21, weight: .medium),
-        textAlignment: .center,
-        numberOfLines: 5,
-        minimumScaleFactor: 0.86,
-        occluderColor: OnboardingArticleReplicaPalette.popover)
+    private let popoverText = UILabel()
     private let setupButton = UIButton(type: .system)
+    private let skipButton = UIButton(type: .system)
     private var didStart = false
     private var hasShatteredClutter = false
     private var fittedArticlePrefix = ""
@@ -77,22 +80,12 @@ final class OnboardingArticleReplicaView: UIView {
         popoverTitle.accessibilityIdentifier = "onboarding.safari.article.popoverTitle"
         popoverText.accessibilityIdentifier = "onboarding.safari.article.popoverText"
 
-        appIcon.image = OnboardingAppIcon.image()
-            ?? UIImage(systemName: "moon.stars.fill")
-        appIcon.contentMode = .scaleAspectFill
-        appIcon.layer.cornerRadius = 17
-        appIcon.layer.cornerCurve = .continuous
-        appIcon.clipsToBounds = true
         addSubview(appIcon)
         addSubview(headline)
 
-        byline.text = "LUNA READER  ·  6 MIN READ"
-        byline.font = .systemFont(ofSize: 11, weight: .bold)
-        byline.textColor = UIColor.white.withAlphaComponent(0.58)
-        byline.adjustsFontForContentSizeCategory = true
+        byline.accessibilityIdentifier = "onboarding.safari.article.byline"
         addSubview(byline)
         addSubview(body)
-        addSubview(banner)
 
         popover.backgroundColor = OnboardingArticleReplicaPalette.popover
         popover.layer.cornerRadius = 30
@@ -104,37 +97,56 @@ final class OnboardingArticleReplicaView: UIView {
         popover.layer.shadowRadius = 30
         popover.layer.shadowOffset = CGSize(width: 0, height: 18)
 
-        popoverTitle.text = "Subscribe to keep reading"
-        popoverTitle.font = .systemFont(ofSize: 29, weight: .bold)
+        popoverTitle.text = "Automatically remove subscription popups"
+        popoverTitle.font = .systemFont(ofSize: 27, weight: .bold)
         popoverTitle.textColor = .white
         popoverTitle.textAlignment = .center
+        popoverTitle.numberOfLines = 2
         popoverTitle.adjustsFontSizeToFitWidth = true
         popoverTitle.minimumScaleFactor = 0.82
         popover.addSubview(popoverTitle)
 
-        popoverAside.text = "…or not"
-        popoverAside.font = .systemFont(ofSize: 19, weight: .semibold)
-        popoverAside.textColor = UIColor.white.withAlphaComponent(0.74)
-        popoverAside.textAlignment = .left
-        popover.addSubview(popoverAside)
+        popover.addSubview(banner)
 
+        popoverText.text =
+            "Offline and private, Luna’s extension makes a better internet"
+        popoverText.font = .systemFont(ofSize: 20, weight: .medium)
+        popoverText.textColor = .white
+        popoverText.textAlignment = .center
+        popoverText.numberOfLines = 3
+        popoverText.adjustsFontSizeToFitWidth = true
+        popoverText.minimumScaleFactor = 0.88
         popover.addSubview(popoverText)
 
         setupButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: "Set up Safari",
+            title: "Activate now",
             symbol: "safari.fill",
             prominent: true)
-        setupButton.accessibilityLabel = "Set up Safari"
+        setupButton.accessibilityLabel = "Activate now"
         setupButton.accessibilityIdentifier = "onboarding.safari.article.setupButton"
         setupButton.addTarget(
             self, action: #selector(setUpSafariTapped), for: .touchUpInside)
         popover.addSubview(setupButton)
+
+        var skipConfiguration = UIButton.Configuration.plain()
+        skipConfiguration.title = "Skip for now"
+        skipConfiguration.baseForegroundColor = UIColor.white.withAlphaComponent(0.62)
+        skipConfiguration.contentInsets = NSDirectionalEdgeInsets(
+            top: 8, leading: 14, bottom: 8, trailing: 14)
+        skipConfiguration.titleTextAttributesTransformer =
+            UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .systemFont(ofSize: 16, weight: .medium)
+                return outgoing
+            }
+        skipButton.configuration = skipConfiguration
+        skipButton.accessibilityLabel = "Skip for now"
+        skipButton.accessibilityIdentifier = "onboarding.safari.article.skipButton"
+        skipButton.addTarget(
+            self, action: #selector(skipForNowTapped), for: .touchUpInside)
+        popover.addSubview(skipButton)
         addSubview(popover)
 
-        // `isHidden` is deliberate: a transform alone can briefly expose the
-        // banner while the preloaded view receives its first layout pass.
-        banner.isHidden = true
-        banner.alpha = 0
         popover.alpha = 0
         popover.transform = CGAffineTransform(
             translationX: 0, y: 26).scaledBy(x: 0.72, y: 0.72)
@@ -151,8 +163,6 @@ final class OnboardingArticleReplicaView: UIView {
             - SafariBottomBar.chromeHeight
             - 34
         let urlBarTop = browserChromeTop + 7
-        let bannerHeight: CGFloat = 76
-        let bannerY = urlBarTop - 8 - bannerHeight
 
         appIcon.frame = CGRect(x: horizontalInset, y: 31, width: 68, height: 68)
         headline.frame = CGRect(
@@ -164,34 +174,38 @@ final class OnboardingArticleReplicaView: UIView {
             x: horizontalInset,
             y: max(appIcon.frame.maxY, headline.frame.maxY) + 12,
             width: contentWidth,
-            height: 18)
+            height: 22)
         let bodyY = byline.frame.maxY + 14
-        let bodyBottom = hasShatteredClutter ? urlBarTop - 8 : bannerY - 16
+        let bodyBottom = urlBarTop - 8
         body.frame = CGRect(
             x: horizontalInset,
             y: bodyY,
             width: contentWidth,
             height: max(bodyBottom - bodyY, 44))
-        banner.frame = CGRect(
-            x: 15,
-            y: bannerY,
-            width: bounds.width - 30,
-            height: bannerHeight)
         popover.frame = CGRect(
             x: 16,
-            y: 151,
+            y: 140,
             width: bounds.width - 32,
-            height: min(474, max(390, banner.frame.minY - 175)))
+            height: min(510, max(440, urlBarTop - 170)))
         popoverTitle.frame = CGRect(
-            x: 24, y: 27, width: popover.bounds.width - 48, height: 44)
-        popoverAside.frame = CGRect(
-            x: 28, y: popoverTitle.frame.maxY + 18,
-            width: popover.bounds.width - 56, height: 28)
+            x: 24, y: 25, width: popover.bounds.width - 48, height: 76)
+        banner.frame = CGRect(
+            x: 24,
+            y: popoverTitle.frame.maxY + 14,
+            width: popover.bounds.width - 48,
+            height: 68)
         popoverText.frame = CGRect(
             x: 28,
-            y: popoverAside.frame.maxY + 25,
+            y: banner.frame.maxY + 22,
             width: popover.bounds.width - 56,
-            height: 150)
+            height: 92)
+        let skipSize = skipButton.sizeThatFits(CGSize(
+            width: popover.bounds.width - 48, height: 48))
+        skipButton.frame = CGRect(
+            x: 24,
+            y: popover.bounds.height - max(40, skipSize.height) - 18,
+            width: popover.bounds.width - 48,
+            height: max(40, skipSize.height))
         let buttonSize = setupButton.sizeThatFits(CGSize(
             width: popover.bounds.width - 48, height: 64))
         let buttonWidth = min(
@@ -199,7 +213,7 @@ final class OnboardingArticleReplicaView: UIView {
             max(154, buttonSize.width))
         setupButton.frame = CGRect(
             x: (popover.bounds.width - buttonWidth) / 2,
-            y: popover.bounds.height - max(54, buttonSize.height) - 28,
+            y: skipButton.frame.minY - max(54, buttonSize.height) - 8,
             width: buttonWidth,
             height: max(54, buttonSize.height))
 
@@ -223,36 +237,23 @@ final class OnboardingArticleReplicaView: UIView {
         didStart = true
         layoutIfNeeded()
 
+        appIcon.reveal(
+            duration: OnboardingArticleReplicaTiming.headlineRevealDuration)
         headline.reveal(
             duration: OnboardingArticleReplicaTiming.headlineRevealDuration
         ) { [weak self] in
             self?.afterComponentDelay {
                 guard let self else { return }
+                self.byline.reveal(
+                    duration: OnboardingArticleReplicaTiming.bodyRevealDuration,
+                    completion: {})
                 self.body.reveal(
                     duration: OnboardingArticleReplicaTiming.bodyRevealDuration
                 ) { [weak self] in
                     self?.afterComponentDelay {
-                        self?.slideBannerIn(completion: completion)
+                        self?.showPopover(completion: completion)
                     }
                 }
-            }
-        }
-    }
-
-    private func slideBannerIn(completion: @escaping () -> Void) {
-        banner.prepareForReveal()
-        UIView.animate(
-            withDuration: UIAccessibility.isReduceMotionEnabled
-                ? 0.2 : OnboardingArticleReplicaTiming.bannerDuration,
-            delay: 0,
-            usingSpringWithDamping: 0.72,
-            initialSpringVelocity: 0.55,
-            options: [.curveEaseOut, .beginFromCurrentState]
-        ) {
-            self.banner.transform = .identity
-        } completion: { [weak self] _ in
-            self?.afterComponentDelay {
-                self?.showPopover(completion: completion)
             }
         }
     }
@@ -268,24 +269,13 @@ final class OnboardingArticleReplicaView: UIView {
         ) {
             self.popover.alpha = 1
             self.popover.transform = .identity
-        } completion: { [weak self] _ in
-            self?.afterComponentDelay {
-                guard let self else { return }
-                self.popoverText.reveal(
-                    duration: OnboardingArticleReplicaTiming.popoverTextRevealDuration
-                ) { [weak self] in
-                    self?.afterComponentDelay {
-                        self?.banner.stopAnimating()
-                        completion()
-                    }
-                }
-            }
+        } completion: { _ in
+            completion()
         }
     }
 
-    /// A left-edge wave reaches each obstruction at a different instant. The
-    /// original views turn into image tiles at that front, then the tiles keep
-    /// the wave's momentum as they scatter and dissolve.
+    /// A radial wave reaches the composite obstruction, turning it into image
+    /// tiles that keep the front's momentum as they scatter and dissolve.
     func shatterClutter(
         waveOriginInWindow: CGPoint,
         window: UIWindow,
@@ -297,17 +287,14 @@ final class OnboardingArticleReplicaView: UIView {
         }
         hasShatteredClutter = true
         setupButton.isUserInteractionEnabled = false
-        banner.stopAnimating()
+        skipButton.isUserInteractionEnabled = false
         let origin = convert(waveOriginInWindow, from: window)
         let ring = makeCleanupWave(origin: origin)
         layer.addSublayer(ring)
 
         let popupFinish = shatter(
             popover, columns: 6, rows: 8, waveOrigin: origin)
-        let bannerFinish = shatter(
-            banner, columns: 8, rows: 2, waveOrigin: origin)
-        let finishDelay = max(popupFinish, bannerFinish)
-        DispatchQueue.main.asyncAfter(deadline: .now() + finishDelay) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + popupFinish) {
             ring.removeFromSuperlayer()
             self.body.setText(Self.fullArticleText)
             self.setNeedsLayout()
@@ -319,13 +306,11 @@ final class OnboardingArticleReplicaView: UIView {
     func restoreSetupPrompt() {
         hasShatteredClutter = false
         body.setText(fittedArticlePrefix)
-        banner.isHidden = false
-        banner.alpha = 1
-        banner.transform = .identity
         popover.isHidden = false
         popover.alpha = 1
         popover.transform = .identity
         setupButton.isUserInteractionEnabled = true
+        skipButton.isUserInteractionEnabled = true
         setNeedsLayout()
     }
 
@@ -490,7 +475,14 @@ final class OnboardingArticleReplicaView: UIView {
 
     @objc private func setUpSafariTapped() {
         setupButton.isUserInteractionEnabled = false
+        skipButton.isUserInteractionEnabled = false
         onSetUpSafari?()
+    }
+
+    @objc private func skipForNowTapped() {
+        setupButton.isUserInteractionEnabled = false
+        skipButton.isUserInteractionEnabled = false
+        onSkipForNow?()
     }
 
     private func afterComponentDelay(_ action: @escaping () -> Void) {
@@ -501,11 +493,138 @@ final class OnboardingArticleReplicaView: UIView {
     }
 }
 
+/// The article icon uses the same descending lunar edge as the nearby title.
+/// Its image alpha is geometrically excluded inside the moon, while a narrow
+/// luminous rim echoes the title's glyph-edge bloom.
+private final class MoonRevealImageView: UIView {
+    private let imageView = UIImageView()
+    private let moonLayer = CAShapeLayer()
+    private let revealMaskLayer = CAShapeLayer()
+    private let rimLayer = CAShapeLayer()
+    private let occluderColor: UIColor
+    private var initialCircleFrame = CGRect.zero
+    private var didReveal = false
+
+    init(image: UIImage?, occluderColor: UIColor) {
+        self.occluderColor = occluderColor
+        super.init(frame: .zero)
+        clipsToBounds = true
+        isAccessibilityElement = false
+        accessibilityLabel = "Luna"
+
+        imageView.image = image
+        imageView.contentMode = .scaleAspectFill
+        imageView.layer.cornerRadius = 17
+        imageView.layer.cornerCurve = .continuous
+        imageView.clipsToBounds = true
+        addSubview(imageView)
+
+        revealMaskLayer.fillColor = UIColor.white.cgColor
+        revealMaskLayer.fillRule = .evenOdd
+        imageView.layer.mask = revealMaskLayer
+
+        moonLayer.fillColor = occluderColor.cgColor
+        layer.addSublayer(moonLayer)
+
+        rimLayer.fillColor = UIColor.clear.cgColor
+        rimLayer.strokeColor = UIColor.white.withAlphaComponent(0.88).cgColor
+        rimLayer.lineWidth = 2.5
+        rimLayer.shadowColor = UIColor.white.cgColor
+        rimLayer.shadowOpacity = 0.9
+        rimLayer.shadowRadius = 7
+        rimLayer.shadowOffset = .zero
+        layer.addSublayer(rimLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        imageView.frame = bounds
+        guard !didReveal, bounds.width > 0, bounds.height > 0 else { return }
+        prepareLayers()
+    }
+
+    func reveal(duration: TimeInterval, completion: @escaping () -> Void = {}) {
+        guard !didReveal else {
+            completion()
+            return
+        }
+        layoutIfNeeded()
+        didReveal = true
+        let travel = bounds.maxY + 6 - initialCircleFrame.minY
+        let finalCircle = initialCircleFrame.offsetBy(dx: 0, dy: travel)
+        let transform = CATransform3DMakeTranslation(0, travel, 0)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        moonLayer.transform = transform
+        rimLayer.transform = transform
+        revealMaskLayer.path = revealPath(excluding: finalCircle)
+        CATransaction.commit()
+
+        let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
+        for layer in [moonLayer, rimLayer] {
+            let animation = CABasicAnimation(keyPath: "transform")
+            animation.fromValue = CATransform3DIdentity
+            animation.toValue = transform
+            animation.duration = resolvedDuration
+            animation.timingFunction = CAMediaTimingFunction(name: .linear)
+            layer.add(animation, forKey: "moonReveal")
+        }
+
+        let maskAnimation = CABasicAnimation(keyPath: "path")
+        maskAnimation.fromValue = revealPath(excluding: initialCircleFrame)
+        maskAnimation.toValue = revealPath(excluding: finalCircle)
+        maskAnimation.duration = resolvedDuration
+        maskAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
+        revealMaskLayer.add(maskAnimation, forKey: "moonReveal")
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
+        ) {
+            self.imageView.layer.mask = nil
+            self.moonLayer.removeFromSuperlayer()
+            self.rimLayer.removeFromSuperlayer()
+            self.isAccessibilityElement = true
+            completion()
+        }
+    }
+
+    private func prepareLayers() {
+        let diameter = max(bounds.width * 8, 1_200)
+        let radius = diameter / 2
+        let halfWidth = bounds.width / 2
+        let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
+        initialCircleFrame = CGRect(
+            x: bounds.midX - radius,
+            y: 4 - sagitta,
+            width: diameter,
+            height: diameter)
+        let circle = UIBezierPath(ovalIn: initialCircleFrame).cgPath
+        moonLayer.frame = bounds
+        moonLayer.path = circle
+        moonLayer.transform = CATransform3DIdentity
+        rimLayer.frame = bounds
+        rimLayer.path = circle
+        rimLayer.transform = CATransform3DIdentity
+        revealMaskLayer.frame = bounds
+        revealMaskLayer.path = revealPath(excluding: initialCircleFrame)
+    }
+
+    private func revealPath(excluding circleFrame: CGRect) -> CGPath {
+        let path = UIBezierPath(rect: bounds)
+        path.append(UIBezierPath(ovalIn: circleFrame))
+        path.usesEvenOddFillRule = true
+        return path.cgPath
+    }
+}
+
 private final class OnboardingAnnoyingBannerView: UIView {
     private let gradient = CAGradientLayer()
     private let radialStripes = CAShapeLayer()
     private let label = UILabel()
-    private let close = UILabel()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -527,19 +646,13 @@ private final class OnboardingAnnoyingBannerView: UIView {
         radialStripes.fillColor = UIColor.white.withAlphaComponent(0.22).cgColor
         layer.insertSublayer(radialStripes, above: gradient)
 
-        label.text = "Get rid of annoying ads!"
-        label.font = .systemFont(ofSize: 21, weight: .heavy)
+        label.text = "And annoying ads"
+        label.font = .systemFont(ofSize: 20, weight: .heavy)
         label.textColor = .white
         label.textAlignment = .center
         label.numberOfLines = 2
         label.accessibilityIdentifier = "onboarding.safari.article.bannerText"
         addSubview(label)
-
-        close.text = "×"
-        close.font = .systemFont(ofSize: 19, weight: .bold)
-        close.textColor = UIColor.white.withAlphaComponent(0.9)
-        close.textAlignment = .center
-        addSubview(close)
     }
 
     @available(*, unavailable)
@@ -549,16 +662,7 @@ private final class OnboardingAnnoyingBannerView: UIView {
         super.layoutSubviews()
         gradient.frame = bounds
         layoutRadialStripes()
-        label.frame = bounds.insetBy(dx: 34, dy: 8)
-        close.frame = CGRect(x: bounds.width - 31, y: 5, width: 24, height: 24)
-    }
-
-    func prepareForReveal() {
-        isHidden = false
-        alpha = 1
-        transform = CGAffineTransform(
-            translationX: max(bounds.width + 40, 460), y: 0)
-        startStripeRotationIfNeeded()
+        label.frame = bounds.insetBy(dx: 20, dy: 8)
     }
 
     private func layoutRadialStripes() {
@@ -585,20 +689,4 @@ private final class OnboardingAnnoyingBannerView: UIView {
         radialStripes.path = path.cgPath
     }
 
-    private func startStripeRotationIfNeeded() {
-        guard !UIAccessibility.isReduceMotionEnabled,
-              radialStripes.animation(forKey: "radialStripeRotation") == nil
-        else { return }
-        let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
-        rotation.fromValue = 0
-        rotation.toValue = CGFloat.pi * 2
-        rotation.duration = 7
-        rotation.repeatCount = .infinity
-        rotation.timingFunction = CAMediaTimingFunction(name: .linear)
-        radialStripes.add(rotation, forKey: "radialStripeRotation")
-    }
-
-    func stopAnimating() {
-        radialStripes.removeAnimation(forKey: "radialStripeRotation")
-    }
 }

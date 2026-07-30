@@ -74,10 +74,13 @@ final class SafariReplicaViewController:
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = OnboardingPalette.background
+        view.backgroundColor = articleView.backgroundColor
         configureBrowser()
         articleView.onSetUpSafari = { [weak self] in
             self?.playSetupCleanupAndContinue()
+        }
+        articleView.onSkipForNow = { [weak self] in
+            self?.onSetUpLater?()
         }
         webView.navigationDelegate = self
         loadOfflinePage(at: 0)
@@ -244,7 +247,7 @@ final class SafariReplicaViewController:
 
     /// The in-page button owns this setup handoff. It first plays the same
     /// physical Action Button cue, then lets the radial front break apart the
-    /// two obstructions before Safari and its PiP guide are opened.
+    /// composite popup before Safari and its PiP guide are opened.
     private func playSetupCleanupAndContinue() {
         guard !isPlayingSetupCleanup, let window = view.window else { return }
         isPlayingSetupCleanup = true

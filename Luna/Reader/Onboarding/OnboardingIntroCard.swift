@@ -4,13 +4,7 @@
 //
 
 import LunaDesignSystem
-import LunaModels
 import UIKit
-
-enum OnboardingPalette {
-    static let background = UIColor(
-        red: 0.31, green: 0.32, blue: 0.34, alpha: 1)
-}
 
 enum OnboardingAppIcon {
     static func image(bundle: Bundle = .main) -> UIImage? {
@@ -56,23 +50,16 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     private let firstLine: MoonRevealLineView
     private let secondLine: MoonRevealLineView
-    private let iconCluster: OnboardingIconClusterView
     private let button = UIButton(type: .system)
     private var didStart = false
 
     init(
         firstLine: String,
         secondLine: String,
-        supportingText _: String,
-        app: LunaApp = .current
+        supportingText _: String
     ) {
-        self.firstLine = MoonRevealLineView(
-            text: firstLine,
-            occluderColor: OnboardingPalette.background)
-        self.secondLine = MoonRevealLineView(
-            text: secondLine,
-            occluderColor: OnboardingPalette.background)
-        self.iconCluster = OnboardingIconClusterView(app: app)
+        self.firstLine = MoonRevealLineView(text: firstLine)
+        self.secondLine = MoonRevealLineView(text: secondLine)
         super.init()
     }
 
@@ -81,13 +68,9 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = OnboardingPalette.background
+        view.backgroundColor = .black
         view.addSubview(firstLine)
         view.addSubview(secondLine)
-
-        iconCluster.alpha = 0
-        iconCluster.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
-        view.addSubview(iconCluster)
 
         button.configuration = GlassStyle.actionButtonConfiguration(
             title: "Show me how",
@@ -125,13 +108,6 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             y: view.bounds.height - max(54, buttonSize.height) - 24,
             width: max(170, buttonSize.width),
             height: max(54, buttonSize.height))
-        let availableCenterY = (secondLine.frame.maxY + button.frame.minY) / 2
-        let iconSide: CGFloat = 126
-        iconCluster.frame = CGRect(
-            x: (view.bounds.width - iconSide) / 2,
-            y: availableCenterY - iconSide / 2,
-            width: iconSide,
-            height: iconSide)
     }
 
     func start() {
@@ -156,15 +132,13 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                         delay: 0.16,
                         options: [.curveEaseOut, .beginFromCurrentState]
                     ) {
-                        self.iconCluster.alpha = 1
-                        self.iconCluster.transform = .identity
                         self.button.alpha = 1
                         self.button.transform = .identity
                     } completion: { _ in
                         self.button.isUserInteractionEnabled = true
                         UIAccessibility.post(
                             notification: .layoutChanged,
-                            argument: self.iconCluster)
+                            argument: self.button)
                     }
                 }
             }
@@ -180,80 +154,6 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                 self.button.alpha = 0.72
             },
             completion: { [weak self] _ in self?.onContinue?() })
-    }
-}
-
-/// The three things onboarding is about are presented as one compact mark:
-/// Luna in the middle, with the two system entry points tucked into its lower
-/// corners.
-private final class OnboardingIconClusterView: UIView {
-    private let appIcon = UIImageView()
-    private let shortcutsIcon = UIImageView()
-    private let actionButtonIcon = UIImageView()
-
-    init(app: LunaApp) {
-        super.init(frame: .zero)
-        isAccessibilityElement = true
-        accessibilityIdentifier = "onboarding.intro.iconCluster"
-        accessibilityLabel = "\(app.displayName), Shortcuts, and Action Button"
-
-        appIcon.image = OnboardingAppIcon.image()
-            ?? UIImage(systemName: "moon.stars.fill")
-        appIcon.contentMode = .scaleAspectFill
-        appIcon.layer.cornerRadius = 24
-        appIcon.layer.cornerCurve = .continuous
-        appIcon.clipsToBounds = true
-        appIcon.layer.shadowColor = UIColor.black.cgColor
-        appIcon.layer.shadowOpacity = 0.28
-        appIcon.layer.shadowRadius = 14
-        appIcon.layer.shadowOffset = CGSize(width: 0, height: 8)
-        addSubview(appIcon)
-
-        configureBadge(shortcutsIcon, image: OnboardingSystemIcons.shortcuts)
-        configureBadge(actionButtonIcon, image: OnboardingSystemIcons.actionButton)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let mainSide = min(bounds.width, bounds.height) * 0.76
-        appIcon.frame = CGRect(
-            x: (bounds.width - mainSide) / 2,
-            y: 4,
-            width: mainSide,
-            height: mainSide)
-        let badgeSide = mainSide * 0.39
-        let badgeY = appIcon.frame.maxY - badgeSide * 0.58
-        shortcutsIcon.frame = CGRect(
-            x: appIcon.frame.minX - badgeSide * 0.18,
-            y: badgeY,
-            width: badgeSide,
-            height: badgeSide)
-        actionButtonIcon.frame = CGRect(
-            x: appIcon.frame.maxX - badgeSide * 0.82,
-            y: badgeY,
-            width: badgeSide,
-            height: badgeSide)
-        for badge in [shortcutsIcon, actionButtonIcon] {
-            badge.layer.cornerRadius = badgeSide * 0.28
-        }
-    }
-
-    private func configureBadge(_ view: UIImageView, image: UIImage?) {
-        view.image = image
-        view.contentMode = .center
-        view.tintColor = .white
-        view.backgroundColor = UIColor(white: 0.12, alpha: 0.94)
-        view.layer.cornerCurve = .continuous
-        view.layer.borderWidth = 1.5
-        view.layer.borderColor = UIColor.white.withAlphaComponent(0.62).cgColor
-        view.layer.shadowColor = UIColor.black.cgColor
-        view.layer.shadowOpacity = 0.3
-        view.layer.shadowRadius = 8
-        view.layer.shadowOffset = CGSize(width: 0, height: 5)
-        addSubview(view)
     }
 }
 

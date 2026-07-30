@@ -130,8 +130,7 @@ final class AppOnboardingViewController: UIViewController {
         self.intro = OnboardingIntroCardContentViewController(
             firstLine: configuration.firstLine,
             secondLine: configuration.secondLine,
-            supportingText: configuration.supportingText,
-            app: configuration.app)
+            supportingText: configuration.supportingText)
         super.init(nibName: nil, bundle: nil)
     }
 

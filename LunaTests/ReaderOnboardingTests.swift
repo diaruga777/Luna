@@ -158,21 +158,16 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(lines[1].occluderIsFullyOpaque)
         XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
 
-        let iconCluster = try XCTUnwrap(
-            intro.view.subviews.first {
-                $0.accessibilityIdentifier == "onboarding.intro.iconCluster"
-            })
         let button = try XCTUnwrap(
             intro.view.subviews.compactMap { $0 as? UIButton }.first)
-        XCTAssertEqual(iconCluster.alpha, 0)
+        XCTAssertEqual(intro.view.backgroundColor, .black)
+        XCTAssertFalse(intro.view.subviews.contains {
+            $0.accessibilityIdentifier == "onboarding.intro.iconCluster"
+        })
         XCTAssertTrue(
             intro.view.subviews.compactMap { $0 as? UILabel }.allSatisfy {
                 $0.accessibilityIdentifier != "onboarding.intro.supportingText"
             })
-        XCTAssertEqual(
-            iconCluster.frame.midY,
-            (lines[1].frame.maxY + button.frame.minY) / 2,
-            accuracy: 0.001)
         XCTAssertEqual(
             button.configuration?.title,
             "Show me how")
@@ -384,9 +379,8 @@ final class ReaderOnboardingTests: XCTestCase {
         let overlay = window.descendants(of: DemoInstructionOverlay.self).first
         let mountedOverlay = try XCTUnwrap(overlay)
         let obscuredSiblings = window.subviews.filter { $0 !== mountedOverlay }
-        XCTAssertEqual(
-            Set(mountedLabels),
-            Set(["Set up Safari", "Install Shortcut", "Set action button"]))
+        XCTAssertTrue(Set(mountedLabels).isSuperset(
+            of: Set(["Set up Safari", "Install Shortcut", "Set action button"])))
         XCTAssertTrue(mountedOverlay.accessibilityViewIsModal)
         XCTAssertTrue(obscuredSiblings.allSatisfy(\.accessibilityElementsHidden))
 
@@ -653,14 +647,21 @@ final class ReaderOnboardingTests: XCTestCase {
         let setupButton = article.descendants(of: UIButton.self).first {
             $0.accessibilityIdentifier == "onboarding.safari.article.setupButton"
         }
+        let skipButton = article.descendants(of: UIButton.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.skipButton"
+        }
 
-        XCTAssertTrue(labels.contains("Get rid of annoying ads!"))
-        XCTAssertTrue(labels.contains("Subscribe to keep reading"))
-        XCTAssertTrue(labels.contains("…or not"))
-        XCTAssertTrue(banner?.isHidden == true)
+        XCTAssertTrue(labels.contains("And annoying ads"))
+        XCTAssertTrue(labels.contains(
+            "Automatically remove subscription popups"))
+        XCTAssertTrue(labels.contains(
+            "Offline and private, Luna’s extension makes a better internet"))
+        XCTAssertFalse(banner?.isHidden ?? true)
         XCTAssertTrue(identifiers.contains("onboarding.safari.article.popover"))
         XCTAssertTrue(identifiers.contains("onboarding.safari.article.appIcon"))
         XCTAssertTrue(identifiers.contains("onboarding.safari.article.setupButton"))
+        XCTAssertTrue(identifiers.contains("onboarding.safari.article.skipButton"))
+        XCTAssertTrue(banner?.isDescendant(of: popover ?? UIView()) ?? false)
         XCTAssertFalse(
             popover?.descendants(of: UILabel.self).compactMap(\.text).contains("×")
                 ?? true)
@@ -670,16 +671,15 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertLessThan(
             setupButton?.bounds.width ?? .greatestFiniteMagnitude,
             (popover?.bounds.width ?? 0) - 48)
-        let bannerBottom = banner?.frame.maxY ?? 0
-        let mockURLBarTop = article.bounds.height
-            - SafariBottomBar.chromeHeight
-            - 34
-            + 7
-        XCTAssertEqual(mockURLBarTop - bannerBottom, 8, accuracy: 0.001)
+        XCTAssertEqual(setupButton?.accessibilityLabel, "Activate now")
+        XCTAssertEqual(skipButton?.accessibilityLabel, "Skip for now")
+        XCTAssertEqual(
+            skipButton?.configuration?.baseForegroundColor?.cgColor.alpha ?? -1,
+            0.62,
+            accuracy: 0.001)
         let revealCopy = revealLines.compactMap(\.accessibilityLabel)
-        XCTAssertTrue(revealCopy.contains("A quieter way to read the web"))
-        XCTAssertTrue(revealCopy.contains(
-            "Luna eliminates annoyances so you can read the things you want. Offline, private, one click away."))
+        XCTAssertTrue(revealCopy.contains("A better way to read on the web"))
+        XCTAssertTrue(revealCopy.contains("A safari extension • by Luna"))
         let fittedBody = revealCopy.first {
             $0.hasPrefix("Your article, your browsing history")
         }
@@ -690,6 +690,11 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertFalse(revealCopy.contains("In just one click."))
         XCTAssertTrue(revealLines.allSatisfy(\.usesGlyphEdgeIllumination))
         XCTAssertGreaterThan(OnboardingArticleReplicaTiming.componentDelay, 0.1)
+
+        var didSkip = false
+        article.onSkipForNow = { didSkip = true }
+        skipButton?.sendActions(for: .touchUpInside)
+        XCTAssertTrue(didSkip)
     }
 
     @MainActor

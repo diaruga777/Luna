@@ -78,7 +78,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         view.addSubview(secondLine)
 
         button.configuration = GlassStyle.actionButtonConfiguration(
-            title: "Show me how",
+            title: "Let's go",
             symbol: "arrow.right",
             prominent: true)
         // Carry this app's identity into the glass, but keep it a quiet wash
@@ -86,7 +86,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         button.configuration?.baseBackgroundColor =
             LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
         button.configuration?.imagePlacement = .trailing
-        button.accessibilityLabel = "Show me how"
+        button.accessibilityLabel = "Let's go"
         button.alpha = 0
         button.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
         button.isUserInteractionEnabled = false

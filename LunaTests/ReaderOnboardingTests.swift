@@ -170,8 +170,8 @@ final class ReaderOnboardingTests: XCTestCase {
             })
         XCTAssertEqual(
             button.configuration?.title,
-            "Show me how")
-        XCTAssertEqual(button.accessibilityLabel, "Show me how")
+            "Let's go")
+        XCTAssertEqual(button.accessibilityLabel, "Let's go")
         let tintAlpha = try XCTUnwrap(
             button.configuration?.baseBackgroundColor?.cgColor.alpha)
         XCTAssertEqual(tintAlpha, 0.24, accuracy: 0.001)
@@ -477,7 +477,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Show me how"
+                $0.accessibilityLabel == "Let's go"
             })
         UIView.setAnimationsEnabled(false)
         defer {

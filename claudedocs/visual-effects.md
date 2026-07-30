@@ -103,17 +103,18 @@ Completed roots preserve the ordinary fade-away behavior.
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.
 
-## Onboarding Safari/Messages/card loop
+## Onboarding Safari/Messages/card journey
 
 The initial onboarding card retains the launch corona until “Show me how” is
 pressed. The card-to-browser takeover itself does not use an eclipse: the
 button removes that corona and grows the intro card to the screen edges. The
 Reader's native `luna.app` article then stages four text components with the
-intro's glyph-level bright eclipse reveal; between them, an annoying banner
-slides in from the right and a popover springs into place. The second source is
-a mock iMessage thread with Johnny Appleseed: an outgoing explanation, an
-incoming reply, and Safari's current mock URL spring in one by one with readable
-text. A tall solid-black deformation first stretches from the screen edge
+intro's glyph-level bright eclipse reveal; between them, an initially absent
+radial-striped ad slides in and rotates, then an oversized “Subscribe!” popup
+obscures most of the article. The second source is a mock iMessage thread with
+Johnny Appleseed: an outgoing explanation, an incoming reply, and Safari's
+content-hugging mock URL bubble spring in one by one with 1.6-second reading
+beats. A tall solid-black deformation first stretches from the screen edge
 into the same narrow, flat-sided bulge as the system Action Button response,
 centered at the button's physical height. The screen holds still for a
 0.2-second beat while the bulge forms; the first, thick displacement-only wave
@@ -125,12 +126,12 @@ the isolated link rests on black for half a second, then the whole frame
 simply crossfades into the target app's complete production root at its exact
 centered card state, including its normal card chrome and carousel. The live
 hierarchy is committed beneath the final composited frame.
-The first Safari → save → iMessage → save loop completes before the final saved
-state remains clear for a reading beat and the instruction scrim/content fade
-appear separately. Later loops keep the same alternation behind the overlay and
-replay the press, highlight, wave, and save transformation—not geometry alone.
-Completion settles on the card and performs a short stationary crossfade into
-the completed root card.
+Safari saves before its dedicated Safari-setup overlay appears. Returning from
+Safari dismisses that overlay and begins the Messages animation; Messages then
+saves before the shortcut/Action Button overlay appears. Each saved state stays
+clear for a reading beat before its overlay, and no source animation loops
+behind setup. Completion settles on the card and performs a short stationary
+crossfade into the completed root card.
 
 ## Loading spinner (`DotMatrixSpinnerView`)
 

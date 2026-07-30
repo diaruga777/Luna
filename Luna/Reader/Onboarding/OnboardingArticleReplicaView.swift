@@ -41,19 +41,20 @@ final class OnboardingArticleReplicaView: UIView {
         occluderColor: OnboardingArticleReplicaPalette.background)
     private let banner = OnboardingAnnoyingBannerView()
     private let popover = UIView()
+    private let popoverTitle = UILabel()
+    private let popoverClose = UILabel()
     private let popoverText = MoonRevealLineView(
-        text: "Say goodbye to popups.",
-        font: .systemFont(ofSize: 21, weight: .semibold),
-        textAlignment: .center,
-        numberOfLines: 2,
-        minimumScaleFactor: 0.88,
+        text: "…or not\n\nSay good bye to popups and just read",
+        font: .systemFont(ofSize: 23, weight: .medium),
+        textAlignment: .left,
+        numberOfLines: 5,
+        minimumScaleFactor: 0.82,
         occluderColor: OnboardingArticleReplicaPalette.popover)
     private let finalLine = MoonRevealLineView(
         text: "In just one click.",
         font: .systemFont(ofSize: 22, weight: .semibold),
         textAlignment: .center,
         occluderColor: OnboardingArticleReplicaPalette.background)
-    private let popoverArrow = CAShapeLayer()
     private var didStart = false
 
     override init(frame: CGRect) {
@@ -66,6 +67,7 @@ final class OnboardingArticleReplicaView: UIView {
         body.accessibilityIdentifier = "onboarding.safari.article.body"
         banner.accessibilityIdentifier = "onboarding.safari.article.banner"
         popover.accessibilityIdentifier = "onboarding.safari.article.popover"
+        popoverTitle.accessibilityIdentifier = "onboarding.safari.article.popoverTitle"
         popoverText.accessibilityIdentifier = "onboarding.safari.article.popoverText"
         finalLine.accessibilityIdentifier = "onboarding.safari.article.finalLine"
 
@@ -74,24 +76,39 @@ final class OnboardingArticleReplicaView: UIView {
         addSubview(banner)
 
         popover.backgroundColor = OnboardingArticleReplicaPalette.popover
-        popover.layer.cornerRadius = 24
+        popover.layer.cornerRadius = 30
         popover.layer.cornerCurve = .continuous
-        popover.layer.borderWidth = 1
-        popover.layer.borderColor = UIColor.white.withAlphaComponent(0.2).cgColor
+        popover.layer.borderWidth = 2
+        popover.layer.borderColor = UIColor.white.withAlphaComponent(0.34).cgColor
         popover.layer.shadowColor = UIColor.black.cgColor
-        popover.layer.shadowOpacity = 0.42
-        popover.layer.shadowRadius = 22
-        popover.layer.shadowOffset = CGSize(width: 0, height: 12)
-        popover.layer.addSublayer(popoverArrow)
+        popover.layer.shadowOpacity = 0.72
+        popover.layer.shadowRadius = 30
+        popover.layer.shadowOffset = CGSize(width: 0, height: 18)
+
+        popoverTitle.text = "Subscribe!"
+        popoverTitle.font = .systemFont(ofSize: 34, weight: .heavy)
+        popoverTitle.textColor = .white
+        popoverTitle.textAlignment = .left
+        popover.addSubview(popoverTitle)
+
+        popoverClose.text = "×"
+        popoverClose.font = .systemFont(ofSize: 24, weight: .bold)
+        popoverClose.textColor = UIColor.white.withAlphaComponent(0.72)
+        popoverClose.textAlignment = .center
+        popover.addSubview(popoverClose)
+
         popover.addSubview(popoverText)
         addSubview(popover)
 
         addSubview(finalLine)
 
-        banner.transform = CGAffineTransform(translationX: 460, y: 0)
+        // `isHidden` is deliberate: a transform alone can briefly expose the
+        // banner while the preloaded view receives its first layout pass.
+        banner.isHidden = true
+        banner.alpha = 0
         popover.alpha = 0
         popover.transform = CGAffineTransform(
-            translationX: 0, y: 18).scaledBy(x: 0.82, y: 0.82)
+            translationX: 0, y: 26).scaledBy(x: 0.72, y: 0.72)
     }
 
     @available(*, unavailable)
@@ -111,27 +128,18 @@ final class OnboardingArticleReplicaView: UIView {
             x: 15, y: body.frame.maxY + 30,
             width: bounds.width - 30, height: 76)
         popover.frame = CGRect(
-            x: 28, y: banner.frame.maxY + 34,
-            width: bounds.width - 56, height: 104)
-        popoverText.frame = popover.bounds.insetBy(dx: 18, dy: 20)
+            x: 16, y: 146,
+            width: bounds.width - 32, height: 430)
+        popoverTitle.frame = CGRect(
+            x: 28, y: 30, width: popover.bounds.width - 92, height: 48)
+        popoverClose.frame = CGRect(
+            x: popover.bounds.width - 58, y: 25, width: 38, height: 38)
+        popoverText.frame = CGRect(
+            x: 28, y: 112,
+            width: popover.bounds.width - 56, height: 220)
         finalLine.frame = CGRect(
-            x: horizontalInset, y: popover.frame.maxY + 30,
+            x: horizontalInset, y: popover.frame.maxY + 24,
             width: contentWidth, height: 48)
-
-        let arrowWidth: CGFloat = 28
-        let arrowHeight: CGFloat = 14
-        let arrowPath = UIBezierPath()
-        arrowPath.move(to: CGPoint(x: 0, y: arrowHeight))
-        arrowPath.addLine(to: CGPoint(x: arrowWidth / 2, y: 0))
-        arrowPath.addLine(to: CGPoint(x: arrowWidth, y: arrowHeight))
-        arrowPath.close()
-        popoverArrow.path = arrowPath.cgPath
-        popoverArrow.fillColor = popover.backgroundColor?.cgColor
-        popoverArrow.frame = CGRect(
-            x: popover.bounds.midX - arrowWidth / 2,
-            y: -arrowHeight + 1,
-            width: arrowWidth,
-            height: arrowHeight)
     }
 
     func start(completion: @escaping () -> Void) {
@@ -159,6 +167,7 @@ final class OnboardingArticleReplicaView: UIView {
     }
 
     private func slideBannerIn(completion: @escaping () -> Void) {
+        banner.prepareForReveal()
         UIView.animate(
             withDuration: UIAccessibility.isReduceMotionEnabled
                 ? 0.2 : OnboardingArticleReplicaTiming.bannerDuration,
@@ -215,6 +224,7 @@ final class OnboardingArticleReplicaView: UIView {
 
 private final class OnboardingAnnoyingBannerView: UIView {
     private let gradient = CAGradientLayer()
+    private let radialStripes = CAShapeLayer()
     private let label = UILabel()
     private let close = UILabel()
 
@@ -234,6 +244,9 @@ private final class OnboardingAnnoyingBannerView: UIView {
         gradient.startPoint = CGPoint(x: 0, y: 0.25)
         gradient.endPoint = CGPoint(x: 1, y: 0.75)
         layer.insertSublayer(gradient, at: 0)
+
+        radialStripes.fillColor = UIColor.white.withAlphaComponent(0.22).cgColor
+        layer.insertSublayer(radialStripes, above: gradient)
 
         label.text = "Get rid of annoying ads!"
         label.font = .systemFont(ofSize: 21, weight: .heavy)
@@ -256,7 +269,53 @@ private final class OnboardingAnnoyingBannerView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         gradient.frame = bounds
+        layoutRadialStripes()
         label.frame = bounds.insetBy(dx: 34, dy: 8)
         close.frame = CGRect(x: bounds.width - 31, y: 5, width: 24, height: 24)
+    }
+
+    func prepareForReveal() {
+        isHidden = false
+        alpha = 1
+        transform = CGAffineTransform(
+            translationX: max(bounds.width + 40, 460), y: 0)
+        startStripeRotationIfNeeded()
+    }
+
+    private func layoutRadialStripes() {
+        let side = max(bounds.width, bounds.height) * 2.4
+        radialStripes.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        radialStripes.position = CGPoint(x: bounds.midX, y: bounds.midY)
+
+        let center = CGPoint(x: side / 2, y: side / 2)
+        let radius = side * 0.7
+        let stripeCount = 24
+        let angle = CGFloat.pi * 2 / CGFloat(stripeCount)
+        let path = UIBezierPath()
+        for index in stride(from: 0, to: stripeCount, by: 2) {
+            let start = -CGFloat.pi / 2 + CGFloat(index) * angle
+            path.move(to: center)
+            path.addArc(
+                withCenter: center,
+                radius: radius,
+                startAngle: start,
+                endAngle: start + angle,
+                clockwise: true)
+            path.close()
+        }
+        radialStripes.path = path.cgPath
+    }
+
+    private func startStripeRotationIfNeeded() {
+        guard !UIAccessibility.isReduceMotionEnabled,
+              radialStripes.animation(forKey: "radialStripeRotation") == nil
+        else { return }
+        let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
+        rotation.fromValue = 0
+        rotation.toValue = CGFloat.pi * 2
+        rotation.duration = 7
+        rotation.repeatCount = .infinity
+        rotation.timingFunction = CAMediaTimingFunction(name: .linear)
+        radialStripes.add(rotation, forKey: "radialStripeRotation")
     }
 }

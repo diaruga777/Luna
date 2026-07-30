@@ -7,9 +7,9 @@ import UIKit
 
 enum OnboardingMessagesReplicaTiming {
     static let firstMessageDelay: TimeInterval = 0.18
-    static let interMessageDelay: TimeInterval = 0.62
+    static let interMessageDelay: TimeInterval = 1.6
     static let messageDuration: TimeInterval = 0.42
-    static let saveDelayAfterLastMessage: TimeInterval = 0.42
+    static let saveDelayAfterLastMessage: TimeInterval = 0.75
 
     static var actionButtonReplayDelay: TimeInterval {
         firstMessageDelay
@@ -380,13 +380,14 @@ private final class OnboardingMessageURLBubble: UIView {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 16)
         label.textColor = .systemBlue
-        label.numberOfLines = 3
-        label.lineBreakMode = .byCharWrapping
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
         label.accessibilityIdentifier = "onboarding.messages.latestURL"
         addSubview(label)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 280),
+            widthAnchor.constraint(lessThanOrEqualToConstant: 280),
             highlight.topAnchor.constraint(equalTo: topAnchor),
             highlight.leadingAnchor.constraint(equalTo: leadingAnchor),
             highlight.trailingAnchor.constraint(equalTo: trailingAnchor),

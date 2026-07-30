@@ -10,9 +10,9 @@ import UIKit
 enum OnboardingDemoLoopTiming {
     static let geometryDuration: TimeInterval = 0.58
     static let savedCardHoldDuration: TimeInterval = 0.95
-    /// The first complete Safari → save → Messages → save loop remains
-    /// unobscured long enough to register before setup instructions fade in.
-    static let firstLoopSavedCardHoldDuration: TimeInterval = 1.35
+    /// Each completed source remains unobscured long enough to register before
+    /// its corresponding setup instructions fade in.
+    static let setupPromptSavedCardHoldDuration: TimeInterval = 1.35
     /// A brief clean source beat before the next save gesture begins.
     static let sourceHoldDuration: TimeInterval = 0.38
 }
@@ -29,11 +29,47 @@ enum OnboardingDemoSource: CaseIterable, Equatable {
     }
 }
 
+enum OnboardingSetupPrompt: Equatable {
+    case safari
+    case actionButton
+}
+
+/// The first-run teaching sequence deliberately separates the two mock
+/// sources with their corresponding setup work.
+enum OnboardingJourneyStage: Equatable {
+    case safariDemonstration
+    case safariSetup
+    case messagesDemonstration
+    case actionButtonSetup
+
+    mutating func completedSave(
+        from source: OnboardingDemoSource
+    ) -> OnboardingSetupPrompt? {
+        switch (self, source) {
+        case (.safariDemonstration, .safari):
+            self = .safariSetup
+            return .safari
+        case (.messagesDemonstration, .messages):
+            self = .actionButtonSetup
+            return .actionButton
+        default:
+            return nil
+        }
+    }
+
+    mutating func completedSafariSetup() -> Bool {
+        guard self == .safariSetup else { return false }
+        self = .messagesDemonstration
+        return true
+    }
+}
+
 /// The shared guided first-run deck. It intentionally uses the production
 /// CardCarousel rather than a look-alike. The intro card expands directly into
-/// the Safari facsimile. Safari and a mock Messages conversation then alternate;
-/// after each save wave, the active source dissolves into the app's complete
-/// production root, including its ordinary card chrome and carousel.
+/// the Safari facsimile. Its save leads to Safari setup; returning from that
+/// setup runs the Messages demonstration, whose save leads to shortcut and
+/// Action Button setup. Each wave dissolves into the app's complete production
+/// root, including its ordinary card chrome and carousel.
 final class AppOnboardingViewController: UIViewController {
     private enum ExternalReturn: Equatable {
         case none
@@ -68,7 +104,7 @@ final class AppOnboardingViewController: UIViewController {
     private var demoPresentation = DemoPresentation.fullScreen
     private var activeDemoSource = OnboardingDemoSource.safari
     private var nextDemoSource = OnboardingDemoSource.messages
-    private var completedDemonstrationSaves = 0
+    private var journeyStage = OnboardingJourneyStage.safariDemonstration
     private var demoTransitionGeneration = 0
     private var demoLoopGeneration = 0
     private var isDemoGeometryTransitioning = false
@@ -352,7 +388,7 @@ final class AppOnboardingViewController: UIViewController {
 
         activeDemoSource = .safari
         nextDemoSource = .messages
-        completedDemonstrationSaves = 0
+        journeyStage = .safariDemonstration
         demoPresentation = .fullScreen
         let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
             ? 0.20
@@ -375,18 +411,22 @@ final class AppOnboardingViewController: UIViewController {
             #if DEBUG
             switch self.debugSafariStage {
             case "prompt":
+                self.journeyStage = .safariSetup
                 self.presentInstructionsAfterShrinking {
                     safari.showSafariPrompt()
                 }
             case "setup":
+                self.journeyStage = .actionButtonSetup
                 self.presentInstructionsAfterShrinking {
                     safari.showShortcutAndActionSetup()
                 }
             case "waiting":
+                self.journeyStage = .actionButtonSetup
                 self.presentInstructionsAfterShrinking {
                     safari.showWaitingForActionButton()
                 }
             case "messages":
+                self.journeyStage = .messagesDemonstration
                 self.showDebugMessagesSource()
             default:
                 safari.beginDemonstration()
@@ -400,24 +440,25 @@ final class AppOnboardingViewController: UIViewController {
     private func actionButtonWaveDidFinish(from source: OnboardingDemoSource) {
         guard source == activeDemoSource else { return }
         commitWaveDrivenCardPresentation()
-        completedDemonstrationSaves += 1
         nextDemoSource = source.next
 
-        let completedFirstLoop =
-            completedDemonstrationSaves == OnboardingDemoSource.allCases.count
-        if completedFirstLoop, safariReplica?.hasInstructions != true {
-            stopDemoPresentationLoop()
-            presentInstructionsAfterShrinking(
-                instructionDelay:
-                    OnboardingDemoLoopTiming.firstLoopSavedCardHoldDuration
-            ) { [weak self] in
-                guard let self,
-                      self.safariReplica?.hasInstructions != true
-                else { return }
+        guard let prompt = journeyStage.completedSave(from: source) else {
+            return
+        }
+        stopDemoPresentationLoop()
+        presentInstructionsAfterShrinking(
+            instructionDelay:
+                OnboardingDemoLoopTiming.setupPromptSavedCardHoldDuration
+        ) { [weak self] in
+            guard let self,
+                  self.safariReplica?.hasInstructions != true
+            else { return }
+            switch prompt {
+            case .safari:
                 self.safariReplica?.showSafariPrompt()
+            case .actionButton:
+                self.safariReplica?.showShortcutAndActionSetup()
             }
-        } else {
-            startDemoPresentationLoop()
         }
     }
 
@@ -486,7 +527,6 @@ final class AppOnboardingViewController: UIViewController {
             ) { [weak self] in
                 guard let self, !self.isFinishing else { return }
                 presentInstructions()
-                self.startDemoPresentationLoop()
             }
         }
     }
@@ -619,13 +659,9 @@ final class AppOnboardingViewController: UIViewController {
         demoLoopGeneration += 1
     }
 
-    /// Freezes the looping demonstration at its current model-layer state.
-    ///
-    /// The setup overlay deliberately leaves the demo running behind it, so a
-    /// button can be tapped while either a geometry animation or a save wave is
-    /// active. External apps pause those animations. Cancelling both kinds of
-    /// work before the hop prevents a foreground return from resuming stale
-    /// callbacks on top of the newly restarted loop.
+    /// Freezes the current demonstration at its model-layer state. Cancelling
+    /// both geometry and save-wave work before an external hop prevents a
+    /// foreground return from resuming stale callbacks over the next stage.
     private func pauseDemoPresentationPlayback() {
         stopDemoPresentationLoop()
         for source in OnboardingDemoSource.allCases {
@@ -743,7 +779,6 @@ final class AppOnboardingViewController: UIViewController {
         case .actionButton:
             safariReplica?.showExternalOpenFailure(destination: .settings)
         }
-        startDemoPresentationLoop()
     }
 
     private func returnedFromExternalApp() {
@@ -754,20 +789,24 @@ final class AppOnboardingViewController: UIViewController {
             break
         case .safari:
             safariGuide.stopPictureInPicture()
-            safariReplica?.showShortcutAndActionSetup()
-            startDemoPresentationLoop()
+            guard journeyStage.completedSafariSetup() else {
+                safariReplica?.showShortcutAndActionSetup()
+                return
+            }
+            safariReplica?.dismissInstructions(animated: true) { [weak self] in
+                guard let self else { return }
+                self.transitionDemo(to: .fullScreen, source: .messages) { [weak self] in
+                    self?.startDemoPresentationLoop()
+                }
+            }
         case .shortcut:
             // Importing the signed file is an external Shortcuts hop, but the
             // setup isn't complete until the hardware Action Button is assigned.
             safariReplica?.showShortcutAndActionSetup()
-            startDemoPresentationLoop()
         case .actionButton:
             actionGuide.stopPictureInPicture()
             safariReplica?.showWaitingForActionButton()
             setupStatusChanged()
-            if !isFinishing {
-                startDemoPresentationLoop()
-            }
         }
     }
 

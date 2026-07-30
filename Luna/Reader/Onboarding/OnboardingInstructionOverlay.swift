@@ -28,9 +28,9 @@ final class DemoInstructionOverlay: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
-        // The looping production UI stays mounted behind this setup sheet.
-        // Keep VoiceOver and Switch Control inside the sheet so hidden card
-        // buttons cannot be activated while onboarding owns the interaction.
+        // The production card stays mounted behind this setup sheet. Keep
+        // VoiceOver and Switch Control inside the sheet so hidden card buttons
+        // cannot be activated while onboarding owns the interaction.
         accessibilityViewIsModal = true
         scrim.backgroundColor = UIColor.black.withAlphaComponent(0.76)
         scrim.translatesAutoresizingMaskIntoConstraints = false

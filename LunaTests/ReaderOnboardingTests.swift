@@ -204,7 +204,7 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingDemoLoopTiming.savedCardHoldDuration,
             OnboardingDemoLoopTiming.sourceHoldDuration)
         XCTAssertGreaterThan(
-            OnboardingDemoLoopTiming.firstLoopSavedCardHoldDuration,
+            OnboardingDemoLoopTiming.setupPromptSavedCardHoldDuration,
             OnboardingDemoLoopTiming.savedCardHoldDuration)
         XCTAssertGreaterThanOrEqual(
             OnboardingActionButtonTiming.blackoutWavefrontHalfWidth,
@@ -232,12 +232,21 @@ final class ReaderOnboardingTests: XCTestCase {
             0.25)
     }
 
-    func testDemoLoopAlternatesSafariSaveThenMessagesSave() {
+    func testJourneySeparatesSafariAndMessagesWithTheirSetupPrompts() {
         XCTAssertEqual(
             OnboardingDemoSource.allCases,
             [.safari, .messages])
         XCTAssertEqual(OnboardingDemoSource.safari.next, .messages)
         XCTAssertEqual(OnboardingDemoSource.messages.next, .safari)
+
+        var stage = OnboardingJourneyStage.safariDemonstration
+        XCTAssertEqual(stage.completedSave(from: .safari), .safari)
+        XCTAssertEqual(stage, .safariSetup)
+        XCTAssertNil(stage.completedSave(from: .messages))
+        XCTAssertTrue(stage.completedSafariSetup())
+        XCTAssertEqual(stage, .messagesDemonstration)
+        XCTAssertEqual(stage.completedSave(from: .messages), .actionButton)
+        XCTAssertEqual(stage, .actionButtonSetup)
     }
 
     @MainActor
@@ -274,6 +283,9 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThan(
             messages.actionButtonReplayDelay,
             OnboardingDemoLoopTiming.sourceHoldDuration)
+        XCTAssertGreaterThanOrEqual(
+            OnboardingMessagesReplicaTiming.interMessageDelay,
+            1.5)
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)
         XCTAssertTrue(messages.isURLHighlighted)
@@ -308,7 +320,8 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(frame.contains(safariRegion.frame))
 
         let messagesRegion = try XCTUnwrap(messages.highlightedLinkRegion)
-        XCTAssertEqual(messagesRegion.frame.width, 280, accuracy: 0.001)
+        XCTAssertLessThan(messagesRegion.frame.width, 200)
+        XCTAssertGreaterThan(messagesRegion.frame.width, 120)
         XCTAssertEqual(messagesRegion.cornerRadius, 18, accuracy: 0.001)
         XCTAssertTrue(frame.contains(messagesRegion.frame))
 
@@ -626,15 +639,26 @@ final class ReaderOnboardingTests: XCTestCase {
             \.accessibilityIdentifier)
         let labels = article.descendants(of: UILabel.self).compactMap(\.text)
         let revealLines = article.descendants(of: MoonRevealLineView.self)
+        let banner = article.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.banner"
+        }
+        let popover = article.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.popover"
+        }
 
         XCTAssertTrue(labels.contains("Get rid of annoying ads!"))
+        XCTAssertTrue(labels.contains("Subscribe!"))
+        XCTAssertTrue(banner?.isHidden == true)
         XCTAssertTrue(identifiers.contains("onboarding.safari.article.popover"))
+        XCTAssertGreaterThan(
+            popover?.bounds.height ?? 0,
+            article.bounds.height * 0.45)
         XCTAssertEqual(
             Set(revealLines.compactMap(\.accessibilityLabel)),
             Set([
                 "Save anything in Safari",
                 "Your article, and your browsing history, all stay offline.",
-                "Say goodbye to popups.",
+                "…or not\n\nSay good bye to popups and just read",
                 "In just one click.",
             ]))
         XCTAssertTrue(revealLines.allSatisfy(\.usesGlyphEdgeIllumination))

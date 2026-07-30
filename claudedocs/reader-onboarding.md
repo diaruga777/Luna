@@ -103,18 +103,20 @@ The root uses the production `CardCarouselViewController`:
 3. The Reader's Safari content is a native, fictional `luna.app` article so its
    sequence begins after the card finishes expanding rather than during hidden
    preload. “Save anything in Safari” and its offline body copy use the same
-   glyph-pixel eclipse reveal as the intro. An obnoxious gradient banner slides
-   in from the right, a dark popover springs in before revealing “Say goodbye
-   to popups.”, and “In just one click.” receives the final eclipse reveal.
+   glyph-pixel eclipse reveal as the intro. An obnoxious radial-striped banner
+   is completely absent until it slides in from the right, then its rays rotate
+   continuously. A huge dark “Subscribe!” popup springs over most of the page
+   before revealing “...or not / Say good bye to popups and just read”, and
+   “In just one click.” receives the final eclipse reveal.
    Only then does the existing Action Button save effect begin. Other demo
    surfaces remain bundled, noninteractive `WKWebView` pages with a
    nonpersistent data store and JavaScript disabled; central Luna rotates its
    local pages every 3.4 seconds.
    The second source is a native UIKit iMessage facsimile headed **Johnny
-   Appleseed**. Three readable bubbles spring in one at a time: “You can save
-   any link on your screen, too”, “Really? Like this?”, and the exact URL
-   currently shown by Safari. The existing Action Button save effect follows
-   the final bubble.
+   Appleseed**. Three readable, content-hugging bubbles spring in one at a time:
+   “You can save any link on your screen, too”, “Really? Like this?”, and the
+   exact URL currently shown by Safari. A 1.6-second reading beat separates
+   arrivals. The existing Action Button save effect follows the final bubble.
 4. A solid-black, tall rounded deformation stretches continuously out of the
    physical Action Button screen edge and smoothly retracts, matching the
    system's on-screen press silhouette. Its system-scale footprint is 7 points
@@ -141,34 +143,23 @@ The root uses the production `CardCarouselViewController`:
    Reader, Downloader, Price Tracker, and central Luna therefore show their
    ordinary saved-card UI, chrome, scrubber, controls, and placement—not an
    onboarding remake or a Safari view clipped smaller.
-7. The initial demonstration completes one whole **Safari → saved card →
-   iMessage → saved card** loop before showing setup. The final saved card then
-   remains completely unobscured for 1.35 seconds. The window-filling near-black
-   setup overlay eases its scrim in and follows with a subtly rising content
-   fade aligned to the same one-third vertical anchor. Behind it, the loop keeps
-   alternating Safari and iMessage, pausing briefly on each source and replaying
-   the complete Action Button press + wave + saved-card transformation. At the
-   start of each press, the source URL gains a bright app-tint highlight. That
-   highlighted element survives the blackout wave and remains visible until
-   the crossfade replaces it with the saved view; it is cleared only when the
-   source is prepared for its next appearance. The loop pauses during external
-   hops and resumes behind each updated instruction stage. The overlay offers
-   Safari setup, then the
-   same `BundledShortcut` installer and
-   `SystemSettingsLink.openActionButton()` paths used elsewhere; existing Safari
-   and Action Button PiP guides play during those hops. Tapping a setup action
-   first cancels any in-flight save wave or card/source geometry transition and
-   settles the current presentation, so returning from an external app cannot
-   resume a stale callback over the restarted loop. If Safari, Shortcuts, or
-   Settings rejects the open request, the overlay stays in place, names the
-   failed destination, and keeps all three setup actions available for retry.
-   While the overlay is present it is an accessibility modal and explicitly
-   hides the looping production hierarchy from assistive technologies; removing
-   it restores each obscured view's prior accessibility state.
+7. Setup deliberately splits the demonstrations. Safari saves first, its card
+   remains unobscured for 1.35 seconds, and only the Safari-setup overlay
+   appears. Returning from Safari dismisses that overlay, grows the Messages
+   replica from the saved card, plays its three-bubble sequence, and runs the
+   second Action Button save. After another 1.35-second card hold, the shortcut
+   and Action Button setup overlay appears. Setup overlays do not run a second
+   source behind themselves. At the start of each press, the source URL gains a
+   bright app-tint highlight; it survives the blackout wave until the saved
+   view replaces it. The setup actions retain the same `BundledShortcut`
+   installer and `SystemSettingsLink.openActionButton()` paths and PiP guides.
+   If Safari, Shortcuts, or Settings rejects the open request, the overlay stays
+   in place and offers recovery. While present it is an accessibility modal and
+   hides the mounted production hierarchy from assistive technologies.
 8. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
-9. Completion stops the loop and, unless it is already there, shrinks to the
+9. Completion stops any active presentation and, unless it is already there, shrinks to the
    card once more. The real save and production root are already present, so it
    marks onboarding complete and crossfades the stationary production card into
    the fresh completed root—no eclipse or second geometry change. The payload
@@ -176,9 +167,8 @@ The root uses the production `CardCarouselViewController`:
    Downloader, and a real price tracker for Price Tracker.
 
 With Reduce Motion enabled, the full-screen Core Image wave is replaced by a
-short source-to-saved-card crossfade. Normal playback reuses one Core Image
-context across every Safari/Messages replay, avoiding device-context and shader
-cache setup on each loop.
+short source-to-saved-card crossfade. The two saves reuse one Core Image context,
+avoiding device-context and shader-cache setup between Safari and Messages.
 
 The demonstration save is temporary. Its exact UUID is recorded only when
 onboarding created a new item. The owning app deletes that exact save and its

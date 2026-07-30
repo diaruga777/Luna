@@ -766,7 +766,9 @@ final class AppOnboardingViewController: UIViewController {
         journeyStage = .safariSetup
         externalReturn = .safari
         safariGuide.startPictureInPicture()
-        guard let url = URL(string: "https://luna.app")
+        // Any real page works for practicing the extension; Wikipedia loads
+        // reliably and looks nothing like an ad.
+        guard let url = URL(string: "https://en.wikipedia.org")
         else {
             externalOpenFailed(.safari)
             return

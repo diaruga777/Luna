@@ -485,7 +485,16 @@ final class ReaderOnboardingTests: XCTestCase {
             window.isHidden = true
         }
         button.sendActions(for: .touchUpInside)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        // The press finishes its (animations-disabled) button dip on a later
+        // run-loop turn; keep spinning until the expansion mounts the replica
+        // rather than betting on one fixed-length spin.
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while Date() < deadline,
+              onboarding.children.compactMap({
+                  $0 as? SafariReplicaViewController
+              }).isEmpty {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
 
         let safari = try XCTUnwrap(
             onboarding.children.compactMap {
@@ -642,7 +651,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testLunaArticleReplicaContainsEveryRequestedStagedComponent() {
+    func testLunaArticleReplicaLoadsCleanWithEveryObstructionStagedAbove() throws {
         let article = OnboardingArticleReplicaView()
         article.frame = CGRect(
             origin: .zero,
@@ -651,51 +660,13 @@ final class ReaderOnboardingTests: XCTestCase {
                 height: AppLaunchGeometry.referenceSize.height - 59))
         article.layoutIfNeeded()
 
-        let identifiers = article.descendants(of: UIView.self).compactMap(
-            \.accessibilityIdentifier)
         let labels = article.descendants(of: UILabel.self).compactMap(\.text)
         let revealLines = article.descendants(of: MoonRevealLineView.self)
-        let banner = article.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.banner"
-        }
-        let popover = article.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.popover"
-        }
-        let setupButton = article.descendants(of: UIButton.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.setupButton"
-        }
-        let skipButton = article.descendants(of: UIButton.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.skipButton"
-        }
 
-        XCTAssertTrue(labels.contains("And annoying ads"))
-        XCTAssertTrue(labels.contains(
-            "Automatically remove subscription popups"))
-        XCTAssertTrue(labels.contains(
-            "Offline and private, Luna’s extension makes a better internet"))
-        XCTAssertFalse(banner?.isHidden ?? true)
-        XCTAssertTrue(identifiers.contains("onboarding.safari.article.popover"))
-        XCTAssertTrue(identifiers.contains("onboarding.safari.article.appIcon"))
-        XCTAssertTrue(identifiers.contains("onboarding.safari.article.setupButton"))
-        XCTAssertTrue(identifiers.contains("onboarding.safari.article.skipButton"))
-        XCTAssertTrue(banner?.isDescendant(of: popover ?? UIView()) ?? false)
-        XCTAssertFalse(
-            popover?.descendants(of: UILabel.self).compactMap(\.text).contains("×")
-                ?? true)
-        XCTAssertGreaterThan(
-            popover?.bounds.height ?? 0,
-            article.bounds.height * 0.45)
-        XCTAssertLessThan(
-            setupButton?.bounds.width ?? .greatestFiniteMagnitude,
-            (popover?.bounds.width ?? 0) - 48)
-        XCTAssertEqual(setupButton?.accessibilityLabel, "Activate now")
-        XCTAssertEqual(skipButton?.accessibilityLabel, "Skip for now")
-        XCTAssertEqual(
-            skipButton?.configuration?.baseForegroundColor?.cgColor.alpha ?? -1,
-            0.62,
-            accuracy: 0.001)
+        // The page loads fully readable — nothing waits on a reveal.
+        XCTAssertTrue(revealLines.allSatisfy(\.isFullyRevealed))
         let revealCopy = revealLines.compactMap(\.accessibilityLabel)
-        XCTAssertTrue(revealCopy.contains("A better way to read on the web"))
+        XCTAssertTrue(revealCopy.contains("An article you want to read"))
         XCTAssertTrue(revealCopy.contains("A safari extension • by Luna"))
         let fittedBody = revealCopy.first {
             $0.hasPrefix("Your article, your browsing history")
@@ -704,18 +675,56 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertLessThan(
             fittedBody?.count ?? .max,
             OnboardingArticleReplicaView.fullArticleText.count)
-        XCTAssertFalse(revealCopy.contains("In just one click."))
-        XCTAssertTrue(revealLines.allSatisfy(\.usesGlyphEdgeIllumination))
-        XCTAssertGreaterThan(OnboardingArticleReplicaTiming.componentDelay, 0.1)
 
-        var didSkip = false
-        article.onSkipForNow = { didSkip = true }
-        skipButton?.sendActions(for: .touchUpInside)
-        XCTAssertTrue(didSkip)
+        // The NASA composite banner sits between the byline and the body at
+        // its native wide aspect, with real bundled pixels.
+        let eclipse = try XCTUnwrap(article.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.eclipseImage"
+        })
+        let byline = try XCTUnwrap(revealLines.first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.byline"
+        })
+        let body = try XCTUnwrap(revealLines.first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.body"
+        })
+        XCTAssertGreaterThan(eclipse.frame.minY, byline.frame.maxY)
+        XCTAssertLessThan(eclipse.frame.maxY, body.frame.minY)
+        XCTAssertEqual(
+            eclipse.frame.width / eclipse.frame.height,
+            1920 / 708,
+            accuracy: 0.05)
+        XCTAssertNotNil(
+            eclipse.descendants(of: UIImageView.self).first?.image)
+
+        // Every fake obstruction is mounted, staged invisible, and inert.
+        let clutter = try XCTUnwrap(article.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.clutter"
+        })
+        XCTAssertFalse(clutter.isUserInteractionEnabled)
+        XCTAssertTrue(clutter.subviews.allSatisfy { $0.alpha == 0 })
+        XCTAssertEqual(
+            clutter.subviews.filter { $0 is OnboardingAdBannerView }.count, 4)
+        XCTAssertTrue(labels.contains("Subscribe to our newsletter"))
+        XCTAssertTrue(labels.contains("We promise to spam you"))
+        XCTAssertTrue(labels.contains("you@example.com"))
+        XCTAssertTrue(labels.contains("Subscribe"))
+        XCTAssertTrue(labels.contains("Subscribe to keep reading"))
+        XCTAssertTrue(labels.contains("Already a subscriber? Sign in"))
+        XCTAssertTrue(labels.contains {
+            $0.contains("free article limit")
+        })
+
+        // The clean beat reads before the takeover; the wall holds a moment.
+        XCTAssertGreaterThanOrEqual(
+            OnboardingArticleReplicaTiming.contentHoldDuration, 0.5)
+        XCTAssertLessThanOrEqual(
+            OnboardingArticleReplicaTiming.contentHoldDuration, 0.75)
+        XCTAssertGreaterThanOrEqual(
+            OnboardingArticleReplicaTiming.blockedHoldDuration, 1.0)
     }
 
     @MainActor
-    func testCleanupShatterPromotesTheRuntimePrefixToTheFullArticle() {
+    func testCleanupShatterRevealsTheFullArticleUnderTheEclipseSweep() throws {
         let article = OnboardingArticleReplicaView()
         let window = UIWindow(frame: CGRect(
             origin: .zero,
@@ -737,17 +746,74 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingArticleReplicaView.fullArticleText)
 
         let finished = expectation(description: "cleanup shatter")
-        article.shatterClutter(
-            waveOriginInWindow: CGPoint(x: 0, y: 170),
-            window: window
-        ) {
+        article.cleanUpClutter {
             finished.fulfill()
         }
-        wait(for: [finished], timeout: 2)
+        wait(for: [finished], timeout: 4)
 
         XCTAssertEqual(
             body?.accessibilityLabel,
             OnboardingArticleReplicaView.fullArticleText)
+        let clutter = try XCTUnwrap(article.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.clutter"
+        })
+        XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
+    }
+
+    @MainActor
+    func testExtensionCalloutMocksTheSystemPopoverAboveTheURLBar() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .reader))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = safari
+        window.makeKeyAndVisible()
+        safari.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        safari.presentExtensionCallout()
+
+        let callout = try XCTUnwrap(
+            safari.view.descendants(of: OnboardingExtensionCalloutView.self).first)
+        XCTAssertFalse(callout.isHidden)
+        let calloutLabels = callout.descendants(of: UILabel.self)
+        XCTAssertTrue(calloutLabels.contains {
+            $0.accessibilityIdentifier == "onboarding.safari.callout.appName"
+                && $0.text == OnboardingExtensionCalloutView.appDisplayName
+        })
+        XCTAssertTrue(calloutLabels.contains {
+            $0.text == "Luna in Safari automatically gives you "
+                + "the web experience you want"
+        })
+        let activate = try XCTUnwrap(
+            callout.descendants(of: UIButton.self).first)
+        XCTAssertEqual(activate.accessibilityLabel, "Activate Safari")
+
+        let skipPill = try XCTUnwrap(
+            safari.view.descendants(of: UIButton.self).first {
+                $0.accessibilityIdentifier == "onboarding.safari.skipPill"
+            })
+        XCTAssertFalse(skipPill.isHidden)
+        XCTAssertEqual(skipPill.configuration?.title, "Skip")
+
+        // Both float above the browser chrome; the pill hugs the right edge
+        // and the callout's arrow grows from the bar's leading page item.
+        let barTop = safari.view.bounds.height - 58 - 34
+        XCTAssertLessThanOrEqual(
+            callout.frame.maxY,
+            barTop - OnboardingExtensionCalloutView.arrowHeight + 0.5)
+        XCTAssertLessThanOrEqual(skipPill.frame.maxY, barTop)
+        XCTAssertGreaterThan(skipPill.frame.minX, safari.view.bounds.midX)
+        XCTAssertGreaterThanOrEqual(
+            skipPill.frame.minX,
+            callout.frame.maxX,
+            "The Skip pill must not overlap the callout card")
+
+        var didActivate = false
+        safari.onSetUpSafari = { didActivate = true }
+        activate.sendActions(for: .touchUpInside)
+        XCTAssertTrue(didActivate)
     }
 
     func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {
@@ -779,6 +845,30 @@ final class ReaderOnboardingTests: XCTestCase {
         let attribution = try String(contentsOf: attributionURL, encoding: .utf8)
         XCTAssertTrue(attribution.contains("NASA Scientific Visualization Studio"))
         XCTAssertTrue(attribution.contains("https://svs.gsfc.nasa.gov/5604/"))
+
+        let compositeURL = try XCTUnwrap(
+            Bundle.main.url(
+                forResource: "LunaEclipseComposite", withExtension: "jpg"))
+        let compositeBytes = try XCTUnwrap(
+            try FileManager.default.attributesOfItem(
+                atPath: compositeURL.path)[.size] as? NSNumber).intValue
+        XCTAssertLessThan(
+            compositeBytes, 120_000,
+            "The banner image must stay too small to bloat the app")
+        let composite = try XCTUnwrap(UIImage(contentsOfFile: compositeURL.path))
+        XCTAssertGreaterThan(
+            composite.size.width / composite.size.height, 2.2,
+            "The article banner needs a wide aspect")
+
+        let compositeAttributionURL = try XCTUnwrap(
+            Bundle.main.url(
+                forResource: "LunaEclipseCompositeAttribution",
+                withExtension: "txt"))
+        let compositeAttribution = try String(
+            contentsOf: compositeAttributionURL, encoding: .utf8)
+        XCTAssertTrue(compositeAttribution.contains("NASA/Eric Bordelon"))
+        XCTAssertTrue(compositeAttribution.contains(
+            "https://images.nasa.gov/details/MAF_20250314_LunarEclipse_composite"))
     }
 }
 

@@ -45,9 +45,11 @@ final class SafariReplicaViewController:
 
     private let browserBar = SafariBottomBar()
     private let articleView = OnboardingArticleReplicaView()
+    private let extensionCallout = OnboardingExtensionCalloutView()
+    private let skipPill = UIButton(type: .system)
+    private var isCalloutVisible = false
     private var instructionOverlay: DemoInstructionOverlay?
     private var didBeginDemonstration = false
-    private var isPlayingSetupCleanup = false
     private var pageIndex = 0
     private var pageTimer: Timer?
 
@@ -76,14 +78,14 @@ final class SafariReplicaViewController:
         super.viewDidLoad()
         view.backgroundColor = articleView.backgroundColor
         configureBrowser()
-        articleView.onSetUpSafari = { [weak self] in
-            self?.playSetupCleanupAndContinue()
-        }
-        articleView.onSkipForNow = { [weak self] in
-            self?.onSetUpLater?()
-        }
+        configureExtensionCallout()
         webView.navigationDelegate = self
         loadOfflinePage(at: 0)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutExtensionCallout()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -143,6 +145,7 @@ final class SafariReplicaViewController:
 
         articleView.isHidden = true
         webView.isHidden = false
+        dismissExtensionCallout()
         guard let resourceName = page.resourceName,
               let url = Bundle.main.url(
                 forResource: resourceName, withExtension: "html")
@@ -199,7 +202,9 @@ final class SafariReplicaViewController:
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
         if onboardingConfiguration.demoPages[pageIndex] == .lunaArticle {
-            articleView.start {}
+            articleView.start { [weak self] in
+                self?.presentExtensionCallout()
+            }
             return
         }
         DispatchQueue.main.asyncAfter(
@@ -245,25 +250,146 @@ final class SafariReplicaViewController:
             ])
     }
 
-    /// The in-page button owns this setup handoff. It first plays the same
-    /// physical Action Button cue, then lets the radial front break apart the
-    /// composite popup before Safari and its PiP guide are opened.
-    private func playSetupCleanupAndContinue() {
-        guard !isPlayingSetupCleanup, let window = view.window else { return }
-        isPlayingSetupCleanup = true
-        let cue = ActionButtonPressCue()
-        cue.layout(in: window)
-        let origin = cue.waveOrigin
-        window.addSubview(cue)
-        cue.play { [weak cue] in cue?.removeFromSuperview() }
-        articleView.shatterClutter(
-            waveOriginInWindow: origin,
-            window: window
-        ) { [weak self] in
-            guard let self else { return }
-            self.isPlayingSetupCleanup = false
-            self.onSetUpSafari?()
+    // MARK: - Extension callout
+
+    private func configureExtensionCallout() {
+        extensionCallout.alpha = 0
+        extensionCallout.isHidden = true
+        extensionCallout.onActivate = { [weak self] in
+            self?.dismissExtensionCallout()
+            self?.onSetUpSafari?()
         }
+        view.addSubview(extensionCallout)
+
+        var pillConfiguration: UIButton.Configuration
+        if #available(iOS 26.0, *) {
+            pillConfiguration = .glass()
+        } else {
+            pillConfiguration = .filled()
+            pillConfiguration.baseBackgroundColor = UIColor(white: 0.22, alpha: 0.86)
+        }
+        pillConfiguration.title = "Skip"
+        pillConfiguration.cornerStyle = .capsule
+        pillConfiguration.baseForegroundColor = .white
+        pillConfiguration.contentInsets = NSDirectionalEdgeInsets(
+            top: 11, leading: 20, bottom: 11, trailing: 20)
+        pillConfiguration.titleTextAttributesTransformer =
+            UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .systemFont(ofSize: 15, weight: .semibold)
+                return outgoing
+            }
+        skipPill.configuration = pillConfiguration
+        skipPill.accessibilityLabel = "Skip"
+        skipPill.accessibilityIdentifier = "onboarding.safari.skipPill"
+        skipPill.alpha = 0
+        skipPill.isHidden = true
+        skipPill.addTarget(
+            self, action: #selector(skipPillTapped), for: .touchUpInside)
+        view.addSubview(skipPill)
+    }
+
+    private func layoutExtensionCallout() {
+        let barTop = view.bounds.height - SafariBottomBar.chromeHeight - 34
+        let width = min(310, view.bounds.width - 108)
+        let height = OnboardingExtensionCalloutView.preferredHeight
+        // The arrow tip rests just above the URL bar's leading page-menu item.
+        let frame = CGRect(
+            x: 16,
+            y: barTop - OnboardingExtensionCalloutView.arrowHeight - 2 - height,
+            width: width,
+            height: height)
+        let anchorX = view.convert(
+            browserBar.leadingAddressItemFrame, from: browserBar).midX
+        extensionCallout.arrowAnchorX = anchorX - frame.minX
+        // Growing out of the arrow tip needs the anchor there, so the frame is
+        // expressed as bounds + anchored position.
+        let anchor = CGPoint(
+            x: extensionCallout.arrowAnchorX / frame.width,
+            y: 1)
+        extensionCallout.layer.anchorPoint = anchor
+        extensionCallout.bounds = CGRect(origin: .zero, size: frame.size)
+        extensionCallout.layer.position = CGPoint(
+            x: frame.minX + anchor.x * frame.width,
+            y: frame.maxY)
+
+        let pillSize = skipPill.sizeThatFits(CGSize(width: 120, height: 44))
+        let pillHeight = max(40, pillSize.height)
+        skipPill.frame = CGRect(
+            x: view.bounds.width - 16 - max(72, pillSize.width),
+            y: barTop - 8 - pillHeight,
+            width: max(72, pillSize.width),
+            height: pillHeight)
+    }
+
+    /// The system-style popover grows out of the page-menu item once the
+    /// cleanup has re-revealed the article; the Skip pill follows it in.
+    func presentExtensionCallout() {
+        layoutExtensionCallout()
+        extensionCallout.setActionsEnabled(true)
+        guard !isCalloutVisible else { return }
+        isCalloutVisible = true
+        extensionCallout.isHidden = false
+        skipPill.isHidden = false
+        view.bringSubviewToFront(extensionCallout)
+        view.bringSubviewToFront(skipPill)
+
+        if UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(withDuration: 0.2) {
+                self.extensionCallout.alpha = 1
+                self.skipPill.alpha = 1
+            }
+            return
+        }
+        extensionCallout.transform = CGAffineTransform(scaleX: 0.05, y: 0.05)
+        skipPill.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+        UIView.animate(
+            withDuration: 0.52,
+            delay: 0,
+            usingSpringWithDamping: 0.78,
+            initialSpringVelocity: 0.3,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.extensionCallout.alpha = 1
+            self.extensionCallout.transform = .identity
+        }
+        UIView.animate(
+            withDuration: 0.34,
+            delay: 0.24,
+            usingSpringWithDamping: 0.8,
+            initialSpringVelocity: 0.2,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.skipPill.alpha = 1
+            self.skipPill.transform = .identity
+        }
+    }
+
+    private func dismissExtensionCallout() {
+        guard isCalloutVisible else { return }
+        isCalloutVisible = false
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.2 : 0.26,
+            delay: 0,
+            options: [.curveEaseIn, .beginFromCurrentState]
+        ) {
+            self.extensionCallout.alpha = 0
+            self.skipPill.alpha = 0
+            if !UIAccessibility.isReduceMotionEnabled {
+                self.extensionCallout.transform = CGAffineTransform(
+                    scaleX: 0.86, y: 0.86)
+            }
+        } completion: { _ in
+            self.extensionCallout.isHidden = true
+            self.extensionCallout.transform = .identity
+            self.skipPill.isHidden = true
+            self.skipPill.transform = .identity
+        }
+    }
+
+    @objc private func skipPillTapped() {
+        dismissExtensionCallout()
+        onSetUpLater?()
     }
 
     /// Returning from a successfully running extension focuses the real item
@@ -275,7 +401,7 @@ final class SafariReplicaViewController:
     }
 
     func restoreInPageSafariSetup() {
-        articleView.restoreSetupPrompt()
+        presentExtensionCallout()
     }
 
     func showShortcutAndActionSetup() {

@@ -186,6 +186,7 @@ final class MoonRevealLineView: UIView {
     private let revealMaskLayer = CAShapeLayer()
     private let pixelBloomView = GlyphPixelBloomView()
     private let lineSpacing: CGFloat
+    private let occluderColor: UIColor
     private var didStartReveal = false
     private var initialCircleFrame = CGRect.zero
     private(set) var isFullyRevealed: Bool
@@ -219,6 +220,7 @@ final class MoonRevealLineView: UIView {
         occluderColor: UIColor = .black
     ) {
         self.lineSpacing = lineSpacing
+        self.occluderColor = occluderColor
         self.isFullyRevealed = initiallyRevealed
         super.init(frame: .zero)
         isUserInteractionEnabled = false
@@ -244,7 +246,10 @@ final class MoonRevealLineView: UIView {
         clippedContent.addSubview(finalLabel)
 
         guard !initiallyRevealed else { return }
+        installOcclusion()
+    }
 
+    private func installOcclusion() {
         moonLayer.fillColor = occluderColor.cgColor
         moonLayer.opacity = 1
         moonLayer.strokeColor = nil
@@ -265,6 +270,18 @@ final class MoonRevealLineView: UIView {
         // alpha, not a whole-label or whole-word approximation.
         pixelBloomView.isUserInteractionEnabled = false
         addSubview(pixelBloomView)
+    }
+
+    /// Returns an already-visible line to its occluded state so `reveal` can
+    /// play again — the cleanup pass re-reveals content that loaded plainly.
+    func prepareToRevealAgain() {
+        guard isFullyRevealed || didStartReveal else { return }
+        isFullyRevealed = false
+        didStartReveal = false
+        isAccessibilityElement = false
+        installOcclusion()
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     @available(*, unavailable)

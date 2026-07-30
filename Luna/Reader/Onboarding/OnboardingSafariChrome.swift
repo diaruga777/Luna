@@ -48,7 +48,7 @@ final class SafariBottomBar: UIView {
         backForward.contentView.addSubview(nav)
 
         let page = icon("text.justify.leading", alpha: 0.86)
-        hostLabel.text = "en.wikipedia.org"
+        hostLabel.text = "luna.app"
         hostLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         hostLabel.textColor = UIColor(white: 0.10, alpha: 1)
         hostLabel.textAlignment = .center

@@ -5,17 +5,36 @@
 
 import UIKit
 
+enum OnboardingMessagesReplicaTiming {
+    static let firstMessageDelay: TimeInterval = 0.18
+    static let interMessageDelay: TimeInterval = 0.62
+    static let messageDuration: TimeInterval = 0.42
+    static let saveDelayAfterLastMessage: TimeInterval = 0.42
+
+    static var actionButtonReplayDelay: TimeInterval {
+        firstMessageDelay
+            + interMessageDelay * 2
+            + messageDuration
+            + saveDelayAfterLastMessage
+    }
+}
+
 /// A noninteractive iMessage conversation used as the second source in the
-/// onboarding save loop. Only the contact name and newest incoming URL are
-/// readable; every earlier message is represented by neutral gradient blocks.
+/// onboarding save loop. Its three readable messages arrive one by one before
+/// the shared Action Button save effect begins.
 @MainActor
 final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private let senderNameLabel = UILabel()
     private let urlBubble = OnboardingMessageURLBubble()
     private var currentURLString: String
+    private var messageRows: [UIView] = []
+    private var presentationGeneration = 0
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
     override var sharedURLString: String { currentURLString }
+    override var actionButtonReplayDelay: TimeInterval {
+        OnboardingMessagesReplicaTiming.actionButtonReplayDelay
+    }
 
     init(urlString: String) {
         currentURLString = urlString
@@ -54,6 +73,42 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         return OnboardingHighlightedLinkRegion(
             frame: view.convert(urlBubble.bounds, from: urlBubble),
             cornerRadius: urlBubble.layer.cornerRadius)
+    }
+
+    override func prepareForPresentation() {
+        super.prepareForPresentation()
+        presentationGeneration += 1
+        let generation = presentationGeneration
+
+        for row in messageRows {
+            row.layer.removeAllAnimations()
+            row.alpha = 0
+            row.transform = CGAffineTransform(
+                translationX: 0, y: 14).scaledBy(x: 0.94, y: 0.94)
+        }
+
+        for (index, row) in messageRows.enumerated() {
+            let delay = OnboardingMessagesReplicaTiming.firstMessageDelay
+                + Double(index) * OnboardingMessagesReplicaTiming.interMessageDelay
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + OnboardingAnimationClock.delay(delay)
+            ) { [weak self, weak row] in
+                guard let self, let row,
+                      generation == self.presentationGeneration
+                else { return }
+                UIView.animate(
+                    withDuration: UIAccessibility.isReduceMotionEnabled
+                        ? 0.18 : OnboardingMessagesReplicaTiming.messageDuration,
+                    delay: 0,
+                    usingSpringWithDamping: 0.7,
+                    initialSpringVelocity: 0.45,
+                    options: [.curveEaseOut, .beginFromCurrentState]
+                ) {
+                    row.alpha = 1
+                    row.transform = .identity
+                }
+            }
+        }
     }
 
     private func configureHeader() {
@@ -127,25 +182,22 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     }
 
     private func configureConversation() {
-        let stack = UIStackView(arrangedSubviews: [
-            OnboardingMessageRow(
-                direction: .incoming,
-                bubble: OnboardingMessagePlaceholderBubble(
-                    direction: .incoming, lineWidths: [136, 82])),
+        messageRows = [
             OnboardingMessageRow(
                 direction: .outgoing,
-                bubble: OnboardingMessagePlaceholderBubble(
-                    direction: .outgoing, lineWidths: [154, 104])),
+                bubble: OnboardingMessageTextBubble(
+                    direction: .outgoing,
+                    text: "You can save any link on your screen, too",
+                    accessibilityIdentifier: "onboarding.messages.firstOutgoing")),
             OnboardingMessageRow(
                 direction: .incoming,
-                bubble: OnboardingMessagePlaceholderBubble(
-                    direction: .incoming, lineWidths: [92])),
-            OnboardingMessageRow(
-                direction: .outgoing,
-                bubble: OnboardingMessagePlaceholderBubble(
-                    direction: .outgoing, lineWidths: [120, 68])),
+                bubble: OnboardingMessageTextBubble(
+                    direction: .incoming,
+                    text: "Really? Like this?",
+                    accessibilityIdentifier: "onboarding.messages.secondIncoming")),
             OnboardingMessageRow(direction: .incoming, bubble: urlBubble),
-        ])
+        ]
+        let stack = UIStackView(arrangedSubviews: messageRows)
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .vertical
         stack.spacing = 10
@@ -155,7 +207,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 24),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 34),
         ])
     }
 
@@ -245,36 +297,38 @@ private final class OnboardingMessageRow: UIView {
     required init?(coder: NSCoder) { nil }
 }
 
-private final class OnboardingMessagePlaceholderBubble: UIView {
-    init(direction: OnboardingMessageDirection, lineWidths: [CGFloat]) {
+private final class OnboardingMessageTextBubble: UIView {
+    init(
+        direction: OnboardingMessageDirection,
+        text: String,
+        accessibilityIdentifier: String
+    ) {
         super.init(frame: .zero)
-        accessibilityIdentifier = direction == .incoming
-            ? "onboarding.messages.placeholder.incoming"
-            : "onboarding.messages.placeholder.outgoing"
+        self.accessibilityIdentifier = accessibilityIdentifier
         backgroundColor = direction == .incoming
             ? UIColor(white: 0.91, alpha: 1)
-            : UIColor.systemBlue.withAlphaComponent(0.16)
+            : .systemBlue
         layer.cornerRadius = 18
         layer.cornerCurve = .continuous
 
-        let stack = UIStackView()
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.axis = .vertical
-        stack.alignment = .leading
-        stack.spacing = 7
-        addSubview(stack)
-
-        for width in lineWidths {
-            let block = OnboardingMessageGradientBlock(width: width)
-            stack.addArrangedSubview(block)
-            block.heightAnchor.constraint(equalToConstant: 11).isActive = true
-        }
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = text
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = direction == .incoming
+            ? UIColor(white: 0.08, alpha: 1)
+            : .white
+        label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        label.accessibilityLabel = text
+        addSubview(label)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -11),
+            widthAnchor.constraint(lessThanOrEqualToConstant: 292),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -13),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
         ])
     }
 

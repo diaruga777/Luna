@@ -673,7 +673,9 @@ final class AppOnboardingViewController: UIViewController {
     private func scheduleActionButtonReplay(loopGeneration: Int) {
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
-                OnboardingDemoLoopTiming.sourceHoldDuration)
+                self.sourceController(
+                    for: self.activeDemoSource)?.actionButtonReplayDelay
+                    ?? OnboardingDemoLoopTiming.sourceHoldDuration)
         ) { [weak self] in
             guard let self,
                   !self.isFinishing,
@@ -691,7 +693,7 @@ final class AppOnboardingViewController: UIViewController {
         pauseDemoPresentationPlayback()
         externalReturn = .safari
         safariGuide.startPictureInPicture()
-        guard let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia")
+        guard let url = URL(string: "https://luna.app")
         else {
             externalOpenFailed(.safari)
             return

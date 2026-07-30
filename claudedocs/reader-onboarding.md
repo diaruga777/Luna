@@ -46,7 +46,7 @@ rim, tint, or star table, run
 
 | App | Intro lines | Supporting lines | Demonstration | Save benefit |
 |---|---|---|---|---|
-| Reader | “You want to read more.” / “Let’s make that happen.” | “Save onscreen links with one click.” / “Unlock or read offline later.” | bundled Luna Wikipedia page | “Read offline later” |
+| Reader | “You want to read more.” / “Let’s make that happen.” | “Save onscreen links with one click.” / “Unlock or read offline later.” | native `luna.app` article sequence | “Read offline later” |
 | Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | “Download any video link in one click,” / “no signup required.” | bundled InstaTok page and eclipse video | “Watch or share” |
 | Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | “Track sales for any link” / “in one click.” | bundled amayzon eyePhone page | “Never miss a sale” |
 | Luna | “All your Luna saves.” / “In a single app.” | “Save any link on your screen” / “with one click.” | continually rotates through all three pages | “Read, watch, track, anything” |
@@ -100,13 +100,21 @@ The root uses the production `CardCarouselViewController`:
    covers the screen, so the stall is invisible and the button press pays only
    for the expansion animation itself. A failed temporary-save install stays
    silent at preload; the press retries it and surfaces the failure alert.
-3. The noninteractive `WKWebView` and native UIKit Safari facsimile load only
-   bundled files with a nonpersistent data store and JavaScript disabled.
-   Central Luna changes the local page and displayed host every 3.4 seconds.
+3. The Reader's Safari content is a native, fictional `luna.app` article so its
+   sequence begins after the card finishes expanding rather than during hidden
+   preload. “Save anything in Safari” and its offline body copy use the same
+   glyph-pixel eclipse reveal as the intro. An obnoxious gradient banner slides
+   in from the right, a dark popover springs in before revealing “Say goodbye
+   to popups.”, and “In just one click.” receives the final eclipse reveal.
+   Only then does the existing Action Button save effect begin. Other demo
+   surfaces remain bundled, noninteractive `WKWebView` pages with a
+   nonpersistent data store and JavaScript disabled; central Luna rotates its
+   local pages every 3.4 seconds.
    The second source is a native UIKit iMessage facsimile headed **Johnny
-   Appleseed**. It shows two earlier messages in each direction as neutral
-   gradient privacy blocks; the newest incoming bubble is the only readable
-   message and carries the exact URL currently shown by Safari.
+   Appleseed**. Three readable bubbles spring in one at a time: “You can save
+   any link on your screen, too”, “Really? Like this?”, and the exact URL
+   currently shown by Safari. The existing Action Button save effect follows
+   the final bubble.
 4. A solid-black, tall rounded deformation stretches continuously out of the
    physical Action Button screen edge and smoothly retracts, matching the
    system's on-screen press silhouette. Its system-scale footprint is 7 points
@@ -164,7 +172,7 @@ The root uses the production `CardCarouselViewController`:
    card once more. The real save and production root are already present, so it
    marks onboarding complete and crossfades the stationary production card into
    the fresh completed root—no eclipse or second geometry change. The payload
-   is a Wikipedia article for Reader and central Luna, local video for
+   is the fictional `luna.app` article for Reader and central Luna, local video for
    Downloader, and a real price tracker for Price Tracker.
 
 With Reduce Motion enabled, the full-screen Core Image wave is replaced by a

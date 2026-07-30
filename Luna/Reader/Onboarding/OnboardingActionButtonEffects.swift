@@ -57,6 +57,12 @@ class OnboardingSaveSourceViewController: UIViewController {
     /// content changes while the onboarding loop is running.
     var sharedURLString: String { "" }
 
+    /// How long this source needs to present its own staged content before the
+    /// shared Action Button gesture begins.
+    var actionButtonReplayDelay: TimeInterval {
+        OnboardingDemoLoopTiming.sourceHoldDuration
+    }
+
     /// Removes transient pressed-state decoration before this source grows back
     /// out of the saved card.
     func prepareForPresentation() {

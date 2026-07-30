@@ -43,12 +43,15 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(first.item.id, second.item.id)
         XCTAssertEqual(first.item.urlString, BundledLunaArticle.urlString)
         XCTAssertEqual(first.item.state, .ready)
-        XCTAssertEqual(content.title, "Luna")
-        XCTAssertEqual(content.author, "Wikipedia contributors")
-        XCTAssertGreaterThan(content.blocks.count, 10)
-        XCTAssertTrue(content.blocks.contains {
-            $0.text.contains("Creative Commons Attribution-ShareAlike 4.0")
-        })
+        XCTAssertEqual(content.title, "Save anything in Safari")
+        XCTAssertNil(content.author)
+        XCTAssertEqual(
+            content.blocks.map(\.text),
+            [
+                "Your article, and your browsing history, all stay offline.",
+                "Speed read, open links inline, and more! The best smartphone reading "
+                    + "experience you’ve ever had.",
+            ])
     }
 
     func testTemporaryArticleCleanupDeletesOnlyTheSaveOnboardingCreated() throws {
@@ -66,7 +69,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let contentStore = ReadingListStore(containerURL: directory)
         let registry = AppOnboardingStore(app: .luna, defaults: defaults)
-        let temporaryURL = "https://en.wikipedia.org/wiki/Luna?test=temporary"
+        let temporaryURL = "https://luna.app?test=temporary"
         XCTAssertTrue(BundledLunaArticle.installTemporary(
             urlString: temporaryURL, registry: registry, in: contentStore))
         let temporaryID = try XCTUnwrap(registry.temporarySaveIdentifier)
@@ -94,10 +97,10 @@ final class ReaderOnboardingTests: XCTestCase {
             reader.supportingText,
             "Save onscreen links with one click.\nUnlock or read offline later.")
         XCTAssertEqual(reader.saveBenefit, "Read offline later")
-        XCTAssertEqual(reader.demoPages, [.wikipedia])
+        XCTAssertEqual(reader.demoPages, [.lunaArticle])
         XCTAssertEqual(
             reader.demoPages.first?.sharedURLString,
-            "https://en.wikipedia.org/wiki/Luna")
+            "https://luna.app")
 
         let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
         XCTAssertEqual(downloader.firstLine, "App signup required? So annoying.")
@@ -130,7 +133,7 @@ final class ReaderOnboardingTests: XCTestCase {
             luna.supportingText,
             "Save any link on your screen\nwith one click.")
         XCTAssertEqual(luna.saveBenefit, "Read, watch, track, anything")
-        XCTAssertEqual(luna.demoPages, [.wikipedia, .instaTok, .amayzon])
+        XCTAssertEqual(luna.demoPages, [.lunaArticle, .instaTok, .amayzon])
     }
 
     @MainActor
@@ -238,8 +241,8 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testMessagesReplicaHasJohnnyPrivacyPlaceholdersAndSafariURL() throws {
-        let urlString = OnboardingDemoPage.wikipedia.sharedURLString
+    func testMessagesReplicaShowsTheStagedConversationAndSafariURL() throws {
+        let urlString = OnboardingDemoPage.lunaArticle.sharedURLString
         let messages = MessagesReplicaViewController(urlString: urlString)
         messages.loadViewIfNeeded()
         messages.view.frame = CGRect(
@@ -255,22 +258,22 @@ final class ReaderOnboardingTests: XCTestCase {
             messages.view.descendants(of: UILabel.self).first {
                 $0.accessibilityIdentifier == "onboarding.messages.latestURL"
             })
-        let placeholders = messages.view.descendants(of: UIView.self).compactMap {
+        let labels = messages.view.descendants(of: UILabel.self).compactMap {
+            $0.text
+        }
+        let bubbles = messages.view.descendants(of: UIView.self).compactMap {
             $0.accessibilityIdentifier
         }
 
         XCTAssertEqual(sender.text, "Johnny Appleseed")
         XCTAssertEqual(latestURL.text, urlString)
-        XCTAssertEqual(
-            placeholders.filter {
-                $0 == "onboarding.messages.placeholder.incoming"
-            }.count,
-            2)
-        XCTAssertEqual(
-            placeholders.filter {
-                $0 == "onboarding.messages.placeholder.outgoing"
-            }.count,
-            2)
+        XCTAssertTrue(labels.contains("You can save any link on your screen, too"))
+        XCTAssertTrue(labels.contains("Really? Like this?"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.firstOutgoing"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.secondIncoming"))
+        XCTAssertGreaterThan(
+            messages.actionButtonReplayDelay,
+            OnboardingDemoLoopTiming.sourceHoldDuration)
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)
         XCTAssertTrue(messages.isURLHighlighted)
@@ -319,7 +322,7 @@ final class ReaderOnboardingTests: XCTestCase {
     func testCancellingAnActiveSaveReplayClearsItsTransientState() throws {
         let frame = CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize)
         let messages = MessagesReplicaViewController(
-            urlString: OnboardingDemoPage.wikipedia.sharedURLString)
+            urlString: OnboardingDemoPage.lunaArticle.sharedURLString)
         let window = UIWindow(frame: frame)
         window.rootViewController = messages
         window.makeKeyAndVisible()
@@ -611,16 +614,31 @@ final class ReaderOnboardingTests: XCTestCase {
             1)
     }
 
-    func testOfflineWikipediaPageIsBundledWithoutRemoteSubresources() throws {
-        let url = try XCTUnwrap(
-            Bundle.main.url(forResource: "LunaWikipedia", withExtension: "html"))
-        let html = try String(contentsOf: url, encoding: .utf8)
+    @MainActor
+    func testLunaArticleReplicaContainsEveryRequestedStagedComponent() {
+        let article = OnboardingArticleReplicaView()
+        article.frame = CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize)
+        article.layoutIfNeeded()
 
-        XCTAssertTrue(html.contains("<h1>Luna</h1>"))
-        XCTAssertTrue(html.contains("Creative Commons"))
-        XCTAssertFalse(html.contains("<script"))
-        XCTAssertFalse(html.contains("src=\"http"))
-        XCTAssertFalse(html.contains("href=\"http"))
+        let identifiers = article.descendants(of: UIView.self).compactMap(
+            \.accessibilityIdentifier)
+        let labels = article.descendants(of: UILabel.self).compactMap(\.text)
+        let revealLines = article.descendants(of: MoonRevealLineView.self)
+
+        XCTAssertTrue(labels.contains("Get rid of annoying ads!"))
+        XCTAssertTrue(identifiers.contains("onboarding.safari.article.popover"))
+        XCTAssertEqual(
+            Set(revealLines.compactMap(\.accessibilityLabel)),
+            Set([
+                "Save anything in Safari",
+                "Your article, and your browsing history, all stay offline.",
+                "Say goodbye to popups.",
+                "In just one click.",
+            ]))
+        XCTAssertTrue(revealLines.allSatisfy(\.usesGlyphEdgeIllumination))
+        XCTAssertGreaterThan(OnboardingArticleReplicaTiming.componentDelay, 0.1)
     }
 
     func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {

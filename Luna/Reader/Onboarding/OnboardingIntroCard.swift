@@ -179,7 +179,15 @@ final class MoonRevealLineView: UIView {
             && pixelBloomView.usesStackedAdditiveHalos
     }
 
-    init(text: String, initiallyRevealed: Bool = false) {
+    init(
+        text: String,
+        initiallyRevealed: Bool = false,
+        font: UIFont = .systemFont(ofSize: 25, weight: .semibold),
+        textAlignment: NSTextAlignment = .center,
+        numberOfLines: Int = 1,
+        minimumScaleFactor: CGFloat = 0.72,
+        occluderColor: UIColor = .black
+    ) {
         self.isFullyRevealed = initiallyRevealed
         super.init(frame: .zero)
         isUserInteractionEnabled = false
@@ -193,18 +201,20 @@ final class MoonRevealLineView: UIView {
 
         for label in [finalLabel, illuminationMaskLabel] {
             label.text = text
-            label.font = .systemFont(ofSize: 25, weight: .semibold)
+            label.font = font
             label.textColor = .white
-            label.textAlignment = .center
+            label.textAlignment = textAlignment
+            label.numberOfLines = numberOfLines
+            label.lineBreakMode = .byWordWrapping
             label.adjustsFontSizeToFitWidth = true
-            label.minimumScaleFactor = 0.72
+            label.minimumScaleFactor = minimumScaleFactor
             label.isAccessibilityElement = false
         }
         clippedContent.addSubview(finalLabel)
 
         guard !initiallyRevealed else { return }
 
-        moonLayer.fillColor = UIColor.black.cgColor
+        moonLayer.fillColor = occluderColor.cgColor
         moonLayer.opacity = 1
         moonLayer.strokeColor = nil
         moonLayer.lineWidth = 0

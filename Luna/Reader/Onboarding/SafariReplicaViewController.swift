@@ -44,6 +44,7 @@ final class SafariReplicaViewController:
     }()
 
     private let browserBar = SafariBottomBar()
+    private let articleView = OnboardingArticleReplicaView()
     private var instructionOverlay: DemoInstructionOverlay?
     private var didBeginDemonstration = false
     private var pageIndex = 0
@@ -52,7 +53,7 @@ final class SafariReplicaViewController:
     var hasInstructions: Bool { instructionOverlay != nil }
     override var sharedURLString: String {
         let pages = onboardingConfiguration.demoPages
-        guard !pages.isEmpty else { return OnboardingDemoPage.wikipedia.sharedURLString }
+        guard !pages.isEmpty else { return OnboardingDemoPage.lunaArticle.sharedURLString }
         return pages[pageIndex % pages.count].sharedURLString
     }
 
@@ -92,6 +93,9 @@ final class SafariReplicaViewController:
     private func configureBrowser() {
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
+        articleView.translatesAutoresizingMaskIntoConstraints = false
+        articleView.isHidden = true
+        view.addSubview(articleView)
         browserBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(browserBar)
         NSLayoutConstraint.activate([
@@ -99,6 +103,10 @@ final class SafariReplicaViewController:
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            articleView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            articleView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            articleView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            articleView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             browserBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             browserBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -119,8 +127,18 @@ final class SafariReplicaViewController:
         browserBar.setURL(
             page.sharedURLString,
             displayedHost: page.displayedHost)
-        guard let url = Bundle.main.url(
-            forResource: page.resourceName, withExtension: "html")
+        if page == .lunaArticle {
+            webView.isHidden = true
+            articleView.isHidden = false
+            articleView.alpha = 1
+            return
+        }
+
+        articleView.isHidden = true
+        webView.isHidden = false
+        guard let resourceName = page.resourceName,
+              let url = Bundle.main.url(
+                forResource: resourceName, withExtension: "html")
         else {
             webView.loadHTMLString(Self.fallbackHTML, baseURL: nil)
             return
@@ -129,21 +147,34 @@ final class SafariReplicaViewController:
     }
 
     private func startPageRotationIfNeeded() {
-        guard onboardingConfiguration.demoPages.count > 1, pageTimer == nil else { return }
+        guard didBeginDemonstration,
+              onboardingConfiguration.demoPages.count > 1,
+              pageTimer == nil
+        else { return }
         pageTimer = Timer.scheduledTimer(
             withTimeInterval: OnboardingAnimationClock.delay(3.4),
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                let outgoing = self.visiblePageView
                 UIView.animate(
                     withDuration: 0.18,
-                    animations: { self.webView.alpha = 0.12 },
+                    animations: { outgoing.alpha = 0.12 },
                     completion: { _ in
                         self.loadOfflinePage(at: self.pageIndex + 1)
+                        let incoming = self.visiblePageView
+                        incoming.alpha = 0.12
+                        UIView.animate(
+                            withDuration: 0.18,
+                            animations: { incoming.alpha = 1 })
                     })
             }
         }
+    }
+
+    private var visiblePageView: UIView {
+        articleView.isHidden ? webView : articleView
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -160,6 +191,12 @@ final class SafariReplicaViewController:
     func beginDemonstration() {
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
+        if onboardingConfiguration.demoPages[pageIndex] == .lunaArticle {
+            articleView.start { [weak self] in
+                self?.replayActionButtonSaveEffect()
+            }
+            return
+        }
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(0.75)
         ) { [weak self] in
@@ -169,6 +206,16 @@ final class SafariReplicaViewController:
 
     override func setURLHighlighted(_ highlighted: Bool) {
         browserBar.setURLHighlighted(highlighted)
+    }
+
+    override func prepareForPresentation() {
+        super.prepareForPresentation()
+        // Keep the preloaded central-app source on luna.app through the initial
+        // staged article and save. Its normal multi-page rotation resumes when
+        // Safari returns later in the demonstration loop.
+        if didBeginDemonstration {
+            startPageRotationIfNeeded()
+        }
     }
 
     override var isURLHighlighted: Bool { browserBar.isURLHighlighted }
@@ -300,8 +347,7 @@ final class SafariReplicaViewController:
     private static let fallbackHTML = """
     <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
     <style>body{font:17px -apple-system;margin:24px;color:#202122}h1{font:36px Georgia}</style>
-    <h1>Luna</h1><p><b>Luna</b> commonly refers to Earth’s Moon and the ancient
-    Roman personification of the Moon.</p><h2>Offline</h2>
-    <p>This page is bundled with Luna for its onboarding demonstration.</p>
+    <h1>Save anything in Safari</h1>
+    <p>Your article, and your browsing history, all stay offline.</p>
     """
 }

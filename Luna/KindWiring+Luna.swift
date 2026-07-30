@@ -32,7 +32,7 @@ enum KindWiring {
     private static let onboardingDemoSave = OnboardingTemporarySave(
         install: {
             BundledLunaArticle.installTemporary(
-                urlString: "https://en.wikipedia.org/wiki/Luna?onboarding=luna")
+                urlString: "https://luna.app?onboarding=luna")
         },
         cleanup: { BundledLunaArticle.cleanupTemporary() })
 

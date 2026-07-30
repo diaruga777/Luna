@@ -106,13 +106,14 @@ regeneration command, first-run sequence, and visual validation flags.
 ## Onboarding Safari/Messages/card loop
 
 The initial onboarding card retains the launch corona until “Show me how” is
-pressed. The card-to-browser demonstration itself deliberately does not use an
-eclipse: the button removes that corona, grows the intro card to the screen
-edges, and crossfades its content into the local Safari facsimile. The second
-source is a mock
-iMessage thread with Johnny Appleseed: earlier messages in both directions are
-grey gradient blocks and the newest incoming bubble contains Safari's current
-mock URL. A tall solid-black deformation first stretches from the screen edge
+pressed. The card-to-browser takeover itself does not use an eclipse: the
+button removes that corona and grows the intro card to the screen edges. The
+Reader's native `luna.app` article then stages four text components with the
+intro's glyph-level bright eclipse reveal; between them, an annoying banner
+slides in from the right and a popover springs into place. The second source is
+a mock iMessage thread with Johnny Appleseed: an outgoing explanation, an
+incoming reply, and Safari's current mock URL spring in one by one with readable
+text. A tall solid-black deformation first stretches from the screen edge
 into the same narrow, flat-sided bulge as the system Action Button response,
 centered at the button's physical height. The screen holds still for a
 0.2-second beat while the bulge forms; the first, thick displacement-only wave

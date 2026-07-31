@@ -47,6 +47,9 @@ final class SafariReplicaViewController:
     private let browserBar = SafariBottomBar()
     private let articleView = OnboardingArticleReplicaView()
     private var instructionOverlay: DemoInstructionOverlay?
+    private var menuPopover: OnboardingSafariMenuPopoverView?
+    private var extensionsSheet: OnboardingManageExtensionsSheetView?
+    private var enableDemoGeneration = 0
     private var didBeginDemonstration = false
     private var pageIndex = 0
     private var pageTimer: Timer?
@@ -81,9 +84,6 @@ final class SafariReplicaViewController:
         }
         articleView.onSkipSafariSetup = { [weak self] in
             self?.onSkipSafariSetup?()
-        }
-        articleView.onSetupScrollBegan = { [weak self] duration in
-            self?.browserBar.minimizeThenHide(over: duration)
         }
         webView.navigationDelegate = self
         loadOfflinePage(at: 0)
@@ -202,7 +202,7 @@ final class SafariReplicaViewController:
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
         if onboardingConfiguration.demoPages[pageIndex] == .lunaArticle {
-            articleView.start {}
+            runExtensionEnableDemonstration()
             return
         }
         DispatchQueue.main.asyncAfter(
@@ -212,13 +212,107 @@ final class SafariReplicaViewController:
         }
     }
 
+    // MARK: - The mock extension-enable pass
+
+    /// The buried article's rescue, told through Safari's own UI: the page
+    /// menu opens from the address bar's page button, hunts down to Manage
+    /// Extensions, the Extensions sheet flips Luna's toggle on, and the wipe
+    /// begins the moment the sheet leaves.
+    private func runExtensionEnableDemonstration() {
+        enableDemoGeneration += 1
+        let generation = enableDemoGeneration
+        afterEnableDelay(
+            OnboardingExtensionEnableTiming.pageHoldDuration,
+            generation: generation
+        ) {
+            self.presentPageMenu(generation: generation)
+        }
+    }
+
+    private func presentPageMenu(generation: Int) {
+        let menu = OnboardingSafariMenuPopoverView()
+        menuPopover = menu
+        let anchor = view.convert(
+            browserBar.pageMenuAnchorPoint, from: browserBar)
+        menu.present(anchoredAbove: anchor, in: view) { [weak self] in
+            guard let self, generation == self.enableDemoGeneration else { return }
+            self.afterEnableDelay(
+                OnboardingExtensionEnableTiming.menuHoldBeforeScroll,
+                generation: generation
+            ) {
+                menu.scrollToManageExtensions { [weak self] in
+                    guard let self,
+                          generation == self.enableDemoGeneration
+                    else { return }
+                    self.afterEnableDelay(
+                        OnboardingExtensionEnableTiming.rowHighlightHold,
+                        generation: generation
+                    ) {
+                        self.presentExtensionsSheet(generation: generation)
+                    }
+                }
+            }
+        }
+    }
+
+    private func presentExtensionsSheet(generation: Int) {
+        menuPopover?.dismiss()
+        menuPopover = nil
+        let sheet = OnboardingManageExtensionsSheetView(frame: view.bounds)
+        extensionsSheet = sheet
+        view.addSubview(sheet)
+        sheet.present { [weak self] in
+            guard let self, generation == self.enableDemoGeneration else { return }
+            self.afterEnableDelay(
+                OnboardingExtensionEnableTiming.toggleDelay,
+                generation: generation
+            ) {
+                sheet.turnOnToggle { [weak self] in
+                    guard let self,
+                          generation == self.enableDemoGeneration
+                    else { return }
+                    self.afterEnableDelay(
+                        OnboardingExtensionEnableTiming.sheetDismissDelay,
+                        generation: generation
+                    ) {
+                        // The sheet leaves and the wipe sets out together.
+                        sheet.dismiss { [weak self] in
+                            self?.extensionsSheet = nil
+                        }
+                        self.articleView.cleanUpClutter()
+                    }
+                }
+            }
+        }
+    }
+
+    private func afterEnableDelay(
+        _ delay: TimeInterval,
+        generation: Int,
+        _ work: @escaping () -> Void
+    ) {
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(delay)
+        ) { [weak self] in
+            guard let self, generation == self.enableDemoGeneration else { return }
+            work()
+        }
+    }
+
+    override func saveEffectWasCancelled() {
+        enableDemoGeneration += 1
+        menuPopover?.removeFromSuperview()
+        menuPopover = nil
+        extensionsSheet?.removeFromSuperview()
+        extensionsSheet = nil
+    }
+
     override func setURLHighlighted(_ highlighted: Bool) {
         browserBar.setURLHighlighted(highlighted)
     }
 
     override func prepareForPresentation() {
         super.prepareForPresentation()
-        browserBar.resetChrome()
         // Keep the preloaded central-app source on luna.app through the initial
         // staged article and save. Its normal multi-page rotation resumes when
         // Safari returns later in the demonstration loop.

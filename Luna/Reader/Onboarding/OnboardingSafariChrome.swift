@@ -16,6 +16,7 @@ final class SafariBottomBar: UIView {
     private let more = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let hostLabel = UILabel()
     private let urlHighlight = OnboardingURLHighlightView()
+    private var pageMenuIcon: UIImageView?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -48,6 +49,7 @@ final class SafariBottomBar: UIView {
         backForward.contentView.addSubview(nav)
 
         let page = icon("text.justify.leading", alpha: 0.86)
+        pageMenuIcon = page
         hostLabel.text = "luna.app"
         hostLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         hostLabel.textColor = UIColor(white: 0.10, alpha: 1)
@@ -129,48 +131,15 @@ final class SafariBottomBar: UIView {
         urlHighlight.setHighlighted(highlighted)
     }
 
-    /// Real Safari's scroll response: the bar first compacts (the address
-    /// pill shrinks, the side controls fade), then slides off the bottom
-    /// edge entirely. Runs across the staged setup scroll's duration.
-    func minimizeThenHide(over duration: TimeInterval) {
-        if UIAccessibility.isReduceMotionEnabled {
-            UIView.animate(withDuration: 0.2) { self.alpha = 0 }
-            return
+    /// Where the address pill's page button sits, in the bar's coordinates —
+    /// the anchor the mock Safari page menu grows out of.
+    var pageMenuAnchorPoint: CGPoint {
+        guard let pageMenuIcon else {
+            return CGPoint(x: address.frame.minX + 24, y: address.frame.minY)
         }
-        UIView.animateKeyframes(
-            withDuration: duration,
-            delay: 0,
-            options: [.calculationModeCubic, .beginFromCurrentState]
-        ) {
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.42) {
-                self.address.transform = CGAffineTransform(
-                    translationX: 0, y: 7
-                ).scaledBy(x: 0.84, y: 0.72)
-                self.backForward.alpha = 0
-                self.more.alpha = 0
-                self.backdrop.alpha = 0.5
-            }
-            UIView.addKeyframe(
-                withRelativeStartTime: 0.4, relativeDuration: 0.6
-            ) {
-                self.transform = CGAffineTransform(
-                    translationX: 0,
-                    y: Self.chromeHeight + 46)
-                self.alpha = 0
-            }
-        }
-    }
-
-    /// Returns the chrome to its resting state for a fresh presentation.
-    func resetChrome() {
-        layer.removeAllAnimations()
-        address.layer.removeAllAnimations()
-        transform = .identity
-        alpha = 1
-        address.transform = .identity
-        backForward.alpha = 1
-        more.alpha = 1
-        backdrop.alpha = 0.78
+        return convert(
+            CGPoint(x: pageMenuIcon.bounds.midX, y: pageMenuIcon.bounds.minY),
+            from: pageMenuIcon)
     }
 
     var isURLHighlighted: Bool { urlHighlight.isHighlighted }

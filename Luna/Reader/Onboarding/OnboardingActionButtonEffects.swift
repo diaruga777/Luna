@@ -99,19 +99,23 @@ class OnboardingSaveSourceViewController: UIViewController {
     /// Sources with staged follow-up work cancel it here.
     func saveEffectWasCancelled() {}
 
-    /// Plays the same complete save gesture for every mock source. The URL is
-    /// highlighted before the source snapshot is captured, so it remains lit
-    /// until the advancing wave replaces it with the saved-card view.
+    /// Plays the same press gesture for every mock source. Isolating saves
+    /// highlight the URL before the source snapshot is captured, so it remains
+    /// lit until the advancing wave replaces it with the saved-card view;
+    /// ripple-only saves leave the screen untouched and stage their own
+    /// follow-up.
     final func replayActionButtonSaveEffect() {
         guard actionCue == nil, waveAnimator == nil,
               let window = view.window
         else { return }
 
-        setURLHighlighted(true)
-        view.layoutIfNeeded()
-        guard let sourceLinkRegion = highlightedLinkRegion else {
-            setURLHighlighted(false)
-            return
+        if saveEffectStyle == .isolateAndCrossfade {
+            setURLHighlighted(true)
+            view.layoutIfNeeded()
+            guard highlightedLinkRegion != nil else {
+                setURLHighlighted(false)
+                return
+            }
         }
 
         let cue = ActionButtonPressCue()
@@ -126,6 +130,7 @@ class OnboardingSaveSourceViewController: UIViewController {
         window.addSubview(cue)
         switch saveEffectStyle {
         case .isolateAndCrossfade:
+            guard let sourceLinkRegion = highlightedLinkRegion else { return }
             let linkRegion = OnboardingHighlightedLinkRegion(
                 frame: hostView.convert(sourceLinkRegion.frame, from: view),
                 cornerRadius: sourceLinkRegion.cornerRadius)

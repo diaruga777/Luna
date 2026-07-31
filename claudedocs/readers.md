@@ -46,6 +46,14 @@ with final geometry before it crosses onto the screen. The card's bounds are the
 authoritative width for both copies: the nested scroll view can retain a provisional
 screen-wide width for one parent layout pass, but that stale width must never reach
 the visible title or change its line breaks after first paint.
+**A title too long for the three-line cap is never truncated away.** The part past the
+cap is split off at its wrap point (`ReaderTitleOverflow.split`, LunaReaderUI — CoreText
+line ranges, so the break is never mid-word) and shown directly below the title in
+smaller 17pt type, led by an ellipsis, as the headline's continuation rather than a
+second one. Both copies split at the same card-derived width, so they stay
+pixel-identical and the handoff above still changes nothing onscreen; the header simply
+grows, and the reader's top content inset with it. VoiceOver still reads the whole
+headline as one label.
 RSVP has no scroll surface, so its pinned title stays visible through immersion and
 its layout never changes. `ReaderHostFactory(includesArticleTitle: false)` still
 suppresses the scroll reader's old attributed-string title to avoid a third copy.

@@ -2134,12 +2134,28 @@ private final class ReaderCardContentViewController: CardContentViewController,
 /// shown as a carousel card. It uses the same 30-point reader title typography,
 /// now paired with the page's favicon (a globe remains visible while it loads).
 private final class ReaderCardTitleHeaderView: UIView {
+    /// The title's line cap. Everything past it moves into `overflowLabel`
+    /// rather than dying in a truncating tail.
+    private static let titleLineLimit = 3
+    /// A tail long enough to need more than this is not a headline; the cap
+    /// keeps a junk extraction from swallowing the card.
+    private static let overflowLineLimit = 6
+    private static let overflowGap: CGFloat = 6
+
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
+    /// The rest of a title too long for the line cap, shown in smaller type
+    /// directly below it and led by an ellipsis. Hidden when the title fits.
+    private let overflowLabel = UILabel()
     private let subtitleLabel = UILabel()
     private var topInset: CGFloat = 0
+    private var fullTitle: String
+    /// The text width the current split was computed at — the split is CoreText
+    /// work, and layout runs far more often than the width changes.
+    private var splitWidth: CGFloat = 0
 
     init(title: String, subtitle: String?) {
+        fullTitle = title
         super.init(frame: .zero)
         backgroundColor = LunaColors.background
 
@@ -2152,8 +2168,16 @@ private final class ReaderCardTitleHeaderView: UIView {
         titleLabel.text = title
         titleLabel.font = Self.readerTitleFont
         titleLabel.textColor = LunaColors.primaryText
-        titleLabel.numberOfLines = 3
+        titleLabel.numberOfLines = Self.titleLineLimit
+        // The head ends on a wrap point, so it needs no tail of its own; this
+        // is a backstop for a head that still overflows by a hair.
         titleLabel.lineBreakMode = .byTruncatingTail
+
+        overflowLabel.font = Self.readerOverflowFont
+        overflowLabel.textColor = LunaColors.secondaryText
+        overflowLabel.numberOfLines = Self.overflowLineLimit
+        overflowLabel.lineBreakMode = .byTruncatingTail
+        overflowLabel.isHidden = true
 
         subtitleLabel.text = subtitle
         subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
@@ -2165,6 +2189,7 @@ private final class ReaderCardTitleHeaderView: UIView {
 
         addSubview(iconView)
         addSubview(titleLabel)
+        addSubview(overflowLabel)
         addSubview(subtitleLabel)
         isAccessibilityElement = true
         accessibilityLabel = title
@@ -2180,23 +2205,45 @@ private final class ReaderCardTitleHeaderView: UIView {
     }
 
     func setTitle(_ title: String) {
-        titleLabel.text = title
+        fullTitle = title
+        splitWidth = 0
+        // VoiceOver reads the headline whole, however it is split visually.
         accessibilityLabel = title
         setNeedsLayout()
         superview?.setNeedsLayout()
     }
 
+    /// Moves whatever does not fit the title's line cap into the overflow label.
+    /// Both copies of the header are sized from the same card width, so they
+    /// split identically and stay pixel-identical.
+    private func applyTitleSplit(textWidth: CGFloat) {
+        guard textWidth > 0, abs(textWidth - splitWidth) > 0.5 else { return }
+        splitWidth = textWidth
+        let split = ReaderTitleOverflow.split(
+            fullTitle, font: titleLabel.font, width: textWidth,
+            maxLines: Self.titleLineLimit)
+        titleLabel.text = split.head
+        overflowLabel.text = split.overflow.map(ReaderTitleOverflow.displayString(forOverflow:))
+        overflowLabel.isHidden = split.overflow == nil
+    }
+
+    /// The height of the title stack — title, the overflow tail, then the
+    /// sender line — each present only when it has something to say.
+    private func textHeight(width: CGFloat) -> CGFloat {
+        func height(_ label: UILabel) -> CGFloat {
+            label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        }
+        var total = height(titleLabel)
+        if !overflowLabel.isHidden { total += Self.overflowGap + height(overflowLabel) }
+        if !subtitleLabel.isHidden { total += 4 + height(subtitleLabel) }
+        return total
+    }
+
     func heightThatFits(width: CGFloat, topInset: CGFloat) -> CGFloat {
         self.topInset = topInset
         let titleWidth = max(width - 20 - 30 - 12 - 20, 0)
-        let titleHeight = titleLabel.sizeThatFits(
-            CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height
-        let subtitleHeight = subtitleLabel.isHidden
-            ? 0
-            : subtitleLabel.sizeThatFits(
-                CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height
-        let textHeight = titleHeight + (subtitleHeight > 0 ? 4 + subtitleHeight : 0)
-        return topInset + max(30, textHeight) + 20
+        applyTitleSplit(textWidth: titleWidth)
+        return topInset + max(30, textHeight(width: titleWidth)) + 20
     }
 
     override func layoutSubviews() {
@@ -2208,20 +2255,35 @@ private final class ReaderCardTitleHeaderView: UIView {
             width: iconSide, height: iconSide)
         let titleX = iconView.frame.maxX + 12
         let textWidth = max(bounds.width - titleX - 20, 0)
-        if subtitleLabel.isHidden {
+        applyTitleSplit(textWidth: textWidth)
+        if overflowLabel.isHidden, subtitleLabel.isHidden {
             titleLabel.frame = CGRect(
                 x: titleX, y: topInset + 10,
                 width: textWidth, height: max(contentHeight - 20, 0))
+            overflowLabel.frame = .zero
+            subtitleLabel.frame = .zero
+            return
+        }
+        func height(_ label: UILabel) -> CGFloat {
+            label.sizeThatFits(CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height
+        }
+        titleLabel.frame = CGRect(
+            x: titleX, y: topInset + 10, width: textWidth, height: height(titleLabel))
+        var bottom = titleLabel.frame.maxY
+        if overflowLabel.isHidden {
+            overflowLabel.frame = .zero
+        } else {
+            overflowLabel.frame = CGRect(
+                x: titleX, y: bottom + Self.overflowGap,
+                width: textWidth, height: height(overflowLabel))
+            bottom = overflowLabel.frame.maxY
+        }
+        if subtitleLabel.isHidden {
             subtitleLabel.frame = .zero
         } else {
-            let titleHeight = titleLabel.sizeThatFits(
-                CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height
-            titleLabel.frame = CGRect(
-                x: titleX, y: topInset + 10, width: textWidth, height: titleHeight)
             subtitleLabel.frame = CGRect(
-                x: titleX, y: titleLabel.frame.maxY + 4,
-                width: textWidth,
-                height: max(0, bounds.maxY - titleLabel.frame.maxY - 14))
+                x: titleX, y: bottom + 4, width: textWidth,
+                height: max(0, bounds.maxY - bottom - 14))
         }
     }
 
@@ -2229,6 +2291,14 @@ private final class ReaderCardTitleHeaderView: UIView {
         // Mirrors the article title in ArticleTextRenderer: same typeface,
         // size, and (clamped) accessibility scaling.
         ReaderSettings.font.font(size: 30 * ReaderSettings.effectiveFontScale, weight: .bold)
+    }
+
+    /// The tail's type: the title's typeface, small enough to read as its
+    /// continuation rather than a second headline.
+    private static var readerOverflowFont: UIFont {
+        // Deliberately below semibold: the named reader families map semibold
+        // and up onto their bold face, which would read as a second headline.
+        ReaderSettings.font.font(size: 17 * ReaderSettings.effectiveFontScale, weight: .medium)
     }
 }
 

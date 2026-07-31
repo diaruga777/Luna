@@ -343,6 +343,16 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// safeTop+48.
     private static let topChromeClearance: CGFloat = 44
 
+    /// Diameter of the row's circular chrome buttons. Pinned on BOTH axes: the
+    /// glass configuration is a capsule, so a width free to follow the glyph's
+    /// intrinsic size turns the circle into an oval the moment a wider symbol
+    /// is swapped in (`speaker.wave.2` is wider than `speaker.slash`).
+    private static let chromeButtonDiameter: CGFloat = 38
+
+    /// How far inside the centered card's top corners the row's circles sit —
+    /// the same corner inset the carousel's own card chrome uses.
+    private static let chromeCardCornerInset: CGFloat = 12
+
     /// The carousel's own top inset: the header row plus the 4pt gap above it.
     /// Doubles as the card's upward overflow allowance — growing by exactly this
     /// much puts the card's top edge at the safe-area top, never above it.
@@ -354,11 +364,16 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// page starts fully legible.
     private static let contentEdgeFade: CGFloat = 28
 
-    /// Floats the control row above the cards, over the bare screen background
-    /// — no bar, fill, or blur behind it.
+    /// Floats the control row inside the centered card's top corners — no bar,
+    /// fill, or blur behind it. Placement is driven by the live resting card
+    /// frame (see `layoutReaderChromeRow`), not the screen edges: the card sits
+    /// `peek + edgeGap` inside them, so screen-relative insets left the circles
+    /// straddling the card's rim.
     private func mountTopChrome() {
         readerChromeRow.backgroundColor = .clear
-        readerChromeRow.translatesAutoresizingMaskIntoConstraints = false
+        // The card's own reader carries buttons with these same labels (hidden
+        // while the deck's row drives them), so the row is addressable by name.
+        readerChromeRow.accessibilityIdentifier = "cards.readerChromeRow"
         view.addSubview(readerChromeRow)
 
         configureChromeButton(
@@ -372,18 +387,42 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
 
         NSLayoutConstraint.activate([
-            readerChromeRow.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
-            readerChromeRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            readerChromeRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            readerChromeRow.heightAnchor.constraint(equalToConstant: Self.topChromeClearance),
-
             readerBackButton.leadingAnchor.constraint(equalTo: readerChromeRow.leadingAnchor),
             readerBackButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
             readerAudioButton.trailingAnchor.constraint(equalTo: readerChromeRow.trailingAnchor),
             readerAudioButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
         ])
+        layoutReaderChromeRow()
         updateReaderChrome()
+    }
+
+    /// Sits the row's two circles `chromeCardCornerInset` inside the centered
+    /// card's top corners, never above the safe area (a card clamped short of
+    /// its aspect leaves its top edge below the row's minimum). The circles are
+    /// centred in the taller row, so the row itself starts half the slack above
+    /// where they should.
+    ///
+    /// Framed rather than constrained, deliberately: the card's own frame is not
+    /// Auto Layout driven, so constants read back from it would only take effect
+    /// on the NEXT layout pass — right on screen, wrong for anything (a test, a
+    /// snapshot) that lays out exactly once.
+    private func layoutReaderChromeRow() {
+        // The carousel resolves its metrics in its OWN layout pass, which runs
+        // after this one; without settling it first the very first pass has no
+        // card frame to place the row against.
+        carousel.view.layoutIfNeeded()
+        let card = carousel.restingCenteredCardFrame(in: view)
+        let inset = Self.chromeCardCornerInset
+        let slack = (Self.topChromeClearance - Self.chromeButtonDiameter) / 2
+        let minimumTop = view.safeAreaInsets.top + 4
+        let top = max(minimumTop, (card?.minY ?? minimumTop) + inset - slack)
+        let leading = (card?.minX ?? 12) + inset
+        let trailing = (card?.maxX ?? (view.bounds.width - 12)) - inset
+        readerChromeRow.frame = CGRect(
+            x: leading, y: top,
+            width: max(trailing - leading, Self.chromeButtonDiameter * 2),
+            height: Self.topChromeClearance)
+        readerChromeRow.layoutIfNeeded()
     }
 
     private func configureChromeButton(
@@ -395,8 +434,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         button.addTarget(self, action: action, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 38),
-            button.heightAnchor.constraint(equalToConstant: 38),
+            button.widthAnchor.constraint(equalToConstant: Self.chromeButtonDiameter),
+            button.heightAnchor.constraint(equalToConstant: Self.chromeButtonDiameter),
         ])
     }
 
@@ -463,6 +502,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        layoutReaderChromeRow()
         if !isIndicatorSliding { layoutCardScrollIndicator(animated: false) }
         let fadeStart = settingsButton.frame.minY - Self.contentEdgeFade
         footerContentFade.frame = CGRect(

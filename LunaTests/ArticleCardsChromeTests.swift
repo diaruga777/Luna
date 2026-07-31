@@ -83,6 +83,62 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(miniCarousel.transform, .identity)
     }
 
+    /// The read-aloud and back circles belong to the CARD's top corners, not the
+    /// screen's: the card sits `peek + edgeGap` inside the screen edges, so
+    /// screen-relative insets left them straddling its rim (half the circle
+    /// outside the card on both axes).
+    func testTopChromeCirclesSitInsideTheCenteredCardsTopCorners() throws {
+        let controller = makeArticleController(seed: "top-chrome", title: "Top Chrome")
+        let card = try XCTUnwrap(
+            controller.carousel.restingCenteredCardFrame(in: controller.view))
+        let audio = try chromeButton(labelled: "Read Aloud", in: controller)
+        let back = try chromeButton(labelled: "Back", in: controller)
+        let audioFrame = audio.convert(audio.bounds, to: controller.view)
+        let backFrame = back.convert(back.bounds, to: controller.view)
+
+        XCTAssertEqual(audioFrame.maxX, card.maxX - 12, accuracy: 0.5)
+        XCTAssertEqual(audioFrame.minY, card.minY + 12, accuracy: 0.5)
+        XCTAssertEqual(backFrame.minX, card.minX + 12, accuracy: 0.5)
+        XCTAssertEqual(backFrame.minY, card.minY + 12, accuracy: 0.5)
+        XCTAssertTrue(
+            card.insetBy(dx: -0.5, dy: -0.5).contains(audioFrame),
+            "the circle must be wholly inside the card, not over its edge")
+        XCTAssertTrue(card.insetBy(dx: -0.5, dy: -0.5).contains(backFrame))
+    }
+
+    /// The glass configuration is a capsule, so the circles are only round while
+    /// they stay square — a width free to follow the glyph turned read-aloud
+    /// into an oval the moment the wider `speaker.wave.2` was swapped in.
+    func testTopChromeCirclesStaySquareThroughTheWidestGlyph() throws {
+        let controller = makeArticleController(seed: "chrome-circle", title: "Chrome Circle")
+        let audio = try chromeButton(labelled: "Read Aloud", in: controller)
+
+        XCTAssertEqual(audio.frame.width, audio.frame.height, accuracy: 0.5)
+        XCTAssertEqual(audio.frame.width, 38, accuracy: 0.5)
+
+        audio.setImage(UIImage(systemName: "speaker.wave.2"), for: .normal)
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        XCTAssertEqual(audio.frame.width, audio.frame.height, accuracy: 0.5)
+        XCTAssertEqual(audio.frame.width, 38, accuracy: 0.5)
+    }
+
+    /// Scoped to the deck's own chrome row: the card's nested reader carries
+    /// buttons with the same labels (hidden while the row drives them).
+    private func chromeButton(
+        labelled label: String, in controller: ArticleCardsViewController
+    ) throws -> UIButton {
+        let row = try XCTUnwrap(
+            allSubviews(in: controller.view)
+                .first { $0.accessibilityIdentifier == "cards.readerChromeRow" },
+            "the deck's screen-level chrome row should be mounted")
+        return try XCTUnwrap(
+            row.subviews.compactMap { $0 as? UIButton }
+                .first { $0.accessibilityLabel == label },
+            "the \(label) chrome circle should be mounted")
+    }
+
     func testScrollableTitleCopyKeepsInsetStableAndCentersFaviconBesideMultilineTitle() throws {
         let title = "A deliberately long article title that wraps across multiple header lines"
         let controller = makeArticleController(seed: "stable-title", title: title)

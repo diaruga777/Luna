@@ -28,12 +28,9 @@ enum OnboardingArticleReplicaTiming {
     /// One continuous lunar edge crosses the whole page in this time; every
     /// element's reveal is cut from the same constant-speed front.
     static let revealSweepDuration: TimeInterval = 2.2
-    /// Tiles detach this far ahead of the arriving light so the glyph bloom
-    /// is never hidden under still-flying pieces.
-    static let shatterLeadDuration: TimeInterval = 0.35
-    /// Once the front has passed the bottom of the content, the page scrolls
-    /// this long to bring the below-the-fold setup card into view.
-    static let setupScrollDuration: TimeInterval = 0.7
+    /// Tiles detach just barely ahead of the arriving light — the same front
+    /// shatters the clutter and brightens the text in one pass.
+    static let shatterLeadDuration: TimeInterval = 0.08
 }
 
 /// Luna's fictional Safari article. The page loads clean and fully readable,
@@ -48,6 +45,9 @@ final class OnboardingArticleReplicaView: UIView {
 
     var onActivateSafari: (() -> Void)?
     var onSkipSafariSetup: (() -> Void)?
+    /// The staged post-reveal scroll is starting and will run this long — the
+    /// browser chrome minimizes and hides alongside it, like real Safari.
+    var onSetupScrollBegan: ((TimeInterval) -> Void)?
 
     private enum Stage {
         case pristine
@@ -63,6 +63,7 @@ final class OnboardingArticleReplicaView: UIView {
     private let scrollView = UIScrollView()
     private let setupCard = OnboardingSafariSetupCardView()
     private var setupCorona: EclipseCoronaView?
+    private var setupCurtain: MoonRevealCurtainView?
 
     private let appIcon = MoonRevealImageView(
         image: OnboardingAppIcon.image()
@@ -417,15 +418,14 @@ final class OnboardingArticleReplicaView: UIView {
 
         body.setText(Self.fullArticleText)
         setNeedsLayout()
-        let revealFinish = revealContentTopToBottom()
+        revealContentTopToBottom()
+        mountSetupCurtain()
 
-        // The page scrolls on to the setup card as soon as the front has
-        // passed the bottom of the SCREEN (and the last tiles have flown) —
-        // the article now extends below the fold, and that tail finishes its
-        // reveal while the scroll is already carrying it up.
-        let frontExitsScreen = min(
-            revealFinish, OnboardingArticleReplicaTiming.revealSweepDuration)
-        afterDelay(max(shatterFinish, frontExitsScreen) + 0.05) { view in
+        // The page scrolls on to the setup card the moment the front reaches
+        // the bottom of the SCREEN — the article now extends below the fold,
+        // and that tail finishes its reveal while the scroll is already
+        // carrying it up through the parked front.
+        afterDelay(OnboardingArticleReplicaTiming.revealSweepDuration) { view in
             view.scrollToSetupCard {
                 view.stage = .revealed
                 let startCompletion = view.cleanupCompletion
@@ -436,19 +436,64 @@ final class OnboardingArticleReplicaView: UIView {
         }
     }
 
+    /// Covers the below-the-fold setup card (and its corona) with the page
+    /// background so the continuing front can uncover it with the same bright
+    /// eclipse edge as the content above.
+    private func mountSetupCurtain() {
+        layoutIfNeeded()
+        let top = body.frame.maxY + 2
+        let curtain = MoonRevealCurtainView(
+            fillColor: OnboardingArticleReplicaPalette.background)
+        curtain.frame = CGRect(
+            x: 0,
+            y: top,
+            width: bounds.width,
+            height: max(scrollView.contentSize.height - top, 1))
+        scrollView.addSubview(curtain)
+        setupCurtain = curtain
+    }
+
+    /// The scroll continues the reveal at the front's exact speed: the edge
+    /// parks at the bottom of the screen and the page flows up through it,
+    /// the setup card brightening as it crosses.
     private func scrollToSetupCard(completion: @escaping () -> Void) {
         layoutIfNeeded()
         let chromeTop = bounds.height - SafariBottomBar.chromeHeight - 34
         let offset = CGPoint(
             x: 0,
             y: max(0, setupCard.frame.maxY + 20 - chromeTop))
+        let frontSpeed = bounds.height
+            / max(OnboardingArticleReplicaTiming.revealSweepDuration, 0.001)
+        let duration = UIAccessibility.isReduceMotionEnabled
+            ? 0.2
+            : TimeInterval(offset.y / frontSpeed)
+        onSetupScrollBegan?(duration)
+
+        if let curtain = setupCurtain {
+            if UIAccessibility.isReduceMotionEnabled {
+                curtain.removeFromSuperview()
+                setupCurtain = nil
+            } else {
+                // The front sits at the screen bottom (content y = height at
+                // scroll start) and the curtain rises through it.
+                let delay = max(
+                    0,
+                    TimeInterval((curtain.frame.minY - bounds.height) / frontSpeed))
+                let revealDuration = TimeInterval(
+                    (curtain.frame.height + 30) / frontSpeed)
+                afterDelay(delay) { view in
+                    view.setupCurtain?.reveal(duration: revealDuration) {
+                        view.setupCurtain?.removeFromSuperview()
+                        view.setupCurtain = nil
+                    }
+                }
+            }
+        }
+
         UIView.animate(
-            withDuration: UIAccessibility.isReduceMotionEnabled
-                ? 0.2 : OnboardingArticleReplicaTiming.setupScrollDuration,
+            withDuration: duration,
             delay: 0,
-            usingSpringWithDamping: 0.92,
-            initialSpringVelocity: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState]
+            options: [.curveLinear, .beginFromCurrentState]
         ) {
             self.scrollView.contentOffset = offset
         } completion: { _ in
@@ -467,6 +512,7 @@ final class OnboardingArticleReplicaView: UIView {
     /// reaches its top and exits exactly when the front passes its bottom, so
     /// the body's light visibly continues from the title's instead of every
     /// element replaying its own sweep.
+    @discardableResult
     private func revealContentTopToBottom() -> TimeInterval {
         let height = max(bounds.height, 1)
         var finish: TimeInterval = 0
@@ -814,6 +860,90 @@ private final class MoonRevealImageView: UIView {
         path.append(UIBezierPath(ovalIn: circleFrame))
         path.usesEvenOddFillRule = true
         return path.cgPath
+    }
+}
+
+/// An opaque page-coloured cover whose top edge is the same luminous lunar
+/// rim as the reveal above: as the huge circle translates down, whatever the
+/// curtain was hiding is uncovered behind the bright edge.
+private final class MoonRevealCurtainView: UIView {
+    private let occluder = CAShapeLayer()
+    private let rim = CAShapeLayer()
+    private var initialCircleFrame = CGRect.zero
+    private var didReveal = false
+
+    init(fillColor: UIColor) {
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        clipsToBounds = true
+
+        occluder.fillColor = fillColor.cgColor
+        layer.addSublayer(occluder)
+
+        rim.fillColor = UIColor.clear.cgColor
+        rim.strokeColor = UIColor.white.withAlphaComponent(0.88).cgColor
+        rim.lineWidth = 2.5
+        rim.shadowColor = UIColor.white.cgColor
+        rim.shadowOpacity = 0.9
+        rim.shadowRadius = 7
+        rim.shadowOffset = .zero
+        layer.addSublayer(rim)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard !didReveal, bounds.width > 0, bounds.height > 0 else { return }
+        let diameter = max(bounds.width * 8, 1_200)
+        let radius = diameter / 2
+        let halfWidth = bounds.width / 2
+        let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
+        initialCircleFrame = CGRect(
+            x: bounds.midX - radius,
+            y: -2 - sagitta,
+            width: diameter,
+            height: diameter)
+        let circle = UIBezierPath(ovalIn: initialCircleFrame).cgPath
+        occluder.frame = bounds
+        occluder.path = circle
+        rim.frame = bounds
+        rim.path = circle
+    }
+
+    func reveal(duration: TimeInterval, completion: @escaping () -> Void) {
+        guard !didReveal else {
+            completion()
+            return
+        }
+        layoutIfNeeded()
+        didReveal = true
+        let travel = bounds.maxY + 8 - initialCircleFrame.minY
+        let transform = CATransform3DMakeTranslation(0, travel, 0)
+        let resolvedDuration = UIAccessibility.isReduceMotionEnabled
+            ? 0.24 : duration
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        occluder.transform = transform
+        rim.transform = transform
+        CATransaction.commit()
+
+        for layer in [occluder, rim] {
+            let animation = CABasicAnimation(keyPath: "transform")
+            animation.fromValue = CATransform3DIdentity
+            animation.toValue = transform
+            animation.duration = resolvedDuration
+            animation.timingFunction = CAMediaTimingFunction(name: .linear)
+            layer.add(animation, forKey: "moonReveal")
+        }
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
+        ) {
+            completion()
+        }
     }
 }
 

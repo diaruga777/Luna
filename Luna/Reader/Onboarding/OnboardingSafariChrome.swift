@@ -129,35 +129,48 @@ final class SafariBottomBar: UIView {
         urlHighlight.setHighlighted(highlighted)
     }
 
-    func animateURLBarZoom(completion: @escaping () -> Void) {
-        guard !UIAccessibility.isReduceMotionEnabled else {
-            completion()
+    /// Real Safari's scroll response: the bar first compacts (the address
+    /// pill shrinks, the side controls fade), then slides off the bottom
+    /// edge entirely. Runs across the staged setup scroll's duration.
+    func minimizeThenHide(over duration: TimeInterval) {
+        if UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(withDuration: 0.2) { self.alpha = 0 }
             return
         }
-        address.layer.removeAllAnimations()
-        UIView.animate(
-            withDuration: 0.28,
+        UIView.animateKeyframes(
+            withDuration: duration,
             delay: 0,
-            usingSpringWithDamping: 0.72,
-            initialSpringVelocity: 0.3,
-            options: [.curveEaseOut, .beginFromCurrentState]
+            options: [.calculationModeCubic, .beginFromCurrentState]
         ) {
-            self.address.transform = CGAffineTransform(scaleX: 1.12, y: 1.12)
-            self.backForward.alpha = 0.48
-            self.more.alpha = 0.48
-        } completion: { _ in
-            UIView.animate(
-                withDuration: 0.24,
-                delay: 0.06,
-                options: [.curveEaseInOut, .beginFromCurrentState]
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.42) {
+                self.address.transform = CGAffineTransform(
+                    translationX: 0, y: 7
+                ).scaledBy(x: 0.84, y: 0.72)
+                self.backForward.alpha = 0
+                self.more.alpha = 0
+                self.backdrop.alpha = 0.5
+            }
+            UIView.addKeyframe(
+                withRelativeStartTime: 0.4, relativeDuration: 0.6
             ) {
-                self.address.transform = .identity
-                self.backForward.alpha = 1
-                self.more.alpha = 1
-            } completion: { _ in
-                completion()
+                self.transform = CGAffineTransform(
+                    translationX: 0,
+                    y: Self.chromeHeight + 46)
+                self.alpha = 0
             }
         }
+    }
+
+    /// Returns the chrome to its resting state for a fresh presentation.
+    func resetChrome() {
+        layer.removeAllAnimations()
+        address.layer.removeAllAnimations()
+        transform = .identity
+        alpha = 1
+        address.transform = .identity
+        backForward.alpha = 1
+        more.alpha = 1
+        backdrop.alpha = 0.78
     }
 
     var isURLHighlighted: Bool { urlHighlight.isHighlighted }

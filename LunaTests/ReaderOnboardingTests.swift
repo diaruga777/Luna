@@ -233,14 +233,15 @@ final class ReaderOnboardingTests: XCTestCase {
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
         XCTAssertGreaterThanOrEqual(
-            OnboardingShortcutRunTiming.savedAppHoldDuration, 1.0,
-            "The saved Luna screen holds a full beat before hopping back")
+            OnboardingShortcutRunTiming.extensionSheetHoldDuration, 1.0,
+            "The mock extension sheet holds a full beat before dismissing")
         XCTAssertLessThan(OnboardingShortcutRunTiming.appSwitchDuration, 1.0)
         XCTAssertGreaterThan(
             OnboardingShortcutRunTiming.islandProgressDuration, 1.0,
             "The shortcut-run progress ring must read as real work")
-        XCTAssertGreaterThan(
-            OnboardingShortcutRunTiming.followUpInterMessageDelay, 0.8)
+        XCTAssertEqual(
+            OnboardingShortcutRunTiming.skipButtonDelay, 0.5, accuracy: 0.001,
+            "The skip-out follows the shortcut-install message by half a second")
     }
 
     func testJourneySeparatesSafariAndMessagesWithTheirSetupPrompts() {
@@ -320,10 +321,22 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(bubbles.contains("onboarding.messages.settingsSetup"))
         let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
         XCTAssertTrue(labels.contains("Yeah just install this shortcut"))
-        XCTAssertTrue(labels.contains(
-            "And change your action button to that shortcut in"))
+        XCTAssertTrue(labels.contains("And change your action button to"))
+        XCTAssertTrue(
+            labels.contains("that shortcut in"),
+            "The Settings pill is inlined at the end of the sentence")
         XCTAssertTrue(labels.contains("Luna"))
         XCTAssertTrue(labels.contains("Settings"))
+
+        // The skip-out waits below the raised composer, invisible until the
+        // shortcut-install message has landed.
+        let skip = try XCTUnwrap(
+            messages.view.descendants(of: UIButton.self).first {
+                $0.accessibilityIdentifier == "onboarding.messages.skip"
+            })
+        XCTAssertEqual(skip.alpha, 0)
+        XCTAssertFalse(skip.isUserInteractionEnabled)
+        XCTAssertEqual(skip.configuration?.title, "or skip")
 
         let shortcutPill = try XCTUnwrap(
             messages.view.descendants(of: OnboardingMessagePillButton.self).first {

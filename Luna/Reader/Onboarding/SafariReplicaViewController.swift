@@ -82,6 +82,9 @@ final class SafariReplicaViewController:
         articleView.onSkipSafariSetup = { [weak self] in
             self?.onSkipSafariSetup?()
         }
+        articleView.onSetupScrollBegan = { [weak self] duration in
+            self?.browserBar.minimizeThenHide(over: duration)
+        }
         webView.navigationDelegate = self
         loadOfflinePage(at: 0)
     }
@@ -215,6 +218,7 @@ final class SafariReplicaViewController:
 
     override func prepareForPresentation() {
         super.prepareForPresentation()
+        browserBar.resetChrome()
         // Keep the preloaded central-app source on luna.app through the initial
         // staged article and save. Its normal multi-page rotation resumes when
         // Safari returns later in the demonstration loop.
@@ -246,14 +250,6 @@ final class SafariReplicaViewController:
     }
 
 
-    /// Returning from a successfully running extension focuses the real item
-    /// being saved before handing off to the shared URL-isolation transition.
-    func playURLBarZoomAndSave() {
-        browserBar.animateURLBarZoom { [weak self] in
-            self?.replayActionButtonSaveEffect()
-        }
-    }
-
     func restoreInPageSafariSetup() {
         articleView.reactivateSetupCard()
     }
@@ -264,7 +260,7 @@ final class SafariReplicaViewController:
             actions: [
                 .init(
                     title: "Install Shortcut",
-                    image: OnboardingSystemIcons.shortcuts,
+                    image: OnboardingSystemIcons.shortcutsAppIcon,
                     prominent: true,
                     action: { [weak self] in self?.onInstallShortcut?() }),
                 .init(
@@ -298,7 +294,7 @@ final class SafariReplicaViewController:
                     action: { [weak self] in self?.onSetUpSafari?() }),
                 .init(
                     title: "Install Shortcut",
-                    image: OnboardingSystemIcons.shortcuts,
+                    image: OnboardingSystemIcons.shortcutsAppIcon,
                     prominent: destination == .shortcuts,
                     action: { [weak self] in self?.onInstallShortcut?() }),
                 .init(

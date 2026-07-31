@@ -174,6 +174,29 @@ final class DemoInstructionOverlay: UIView {
 }
 
 enum OnboardingSystemIcons {
+    /// Apple's actual Shortcuts app icon (bundled PNG), rounded to the app-icon
+    /// squircle at UI size. Falls back to the drawn glyph if the resource is
+    /// ever missing.
+    static let shortcutsAppIcon: UIImage? = {
+        guard let path = Bundle.main.path(
+            forResource: "ShortcutsAppIcon", ofType: "png"),
+            let source = UIImage(contentsOfFile: path)
+        else { return shortcuts }
+        let side: CGFloat = 24
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        format.opaque = false
+        let rect = CGRect(x: 0, y: 0, width: side, height: side)
+        return UIGraphicsImageRenderer(
+            size: rect.size, format: format
+        ).image { _ in
+            UIBezierPath(
+                roundedRect: rect,
+                cornerRadius: side * 0.225).addClip()
+            source.draw(in: rect)
+        }.withRenderingMode(.alwaysOriginal)
+    }()
+
     static let shortcuts: UIImage? = {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 3

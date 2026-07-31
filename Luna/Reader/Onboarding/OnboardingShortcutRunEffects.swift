@@ -7,7 +7,7 @@ import UIKit
 
 /// Shared timing for the mock shortcut run the Messages demonstration plays
 /// after its ripple: Dynamic Island expansion, progress, the staged tap, and
-/// the app-switcher hop into the saved Luna screen and back.
+/// the mock action-extension sheet over the conversation.
 enum OnboardingShortcutRunTiming {
     /// The lit URL bubble grows for a beat before the island responds.
     static let bubbleEmphasisDuration: TimeInterval = 0.55
@@ -18,11 +18,15 @@ enum OnboardingShortcutRunTiming {
     static let islandTapDelay: TimeInterval = 0.45
     static let mockTapDuration: TimeInterval = 0.58
     static let islandCollapseDuration: TimeInterval = 0.30
+    /// The Safari-to-Messages hop after setup completes or is skipped.
     static let appSwitchDuration: TimeInterval = 0.85
-    /// The saved Luna screen holds long enough to register as "it's saved".
-    static let savedAppHoldDuration: TimeInterval = 1.0
+    static let sheetPresentDuration: TimeInterval = 0.55
+    static let sheetDismissDuration: TimeInterval = 0.38
+    /// The mock extension sheet rests long enough to register as "it's saved".
+    static let extensionSheetHoldDuration: TimeInterval = 1.0
     static let followUpMessageDelay: TimeInterval = 0.55
-    static let followUpInterMessageDelay: TimeInterval = 1.15
+    /// The skip-out appears shortly after the shortcut-install message.
+    static let skipButtonDelay: TimeInterval = 0.5
 }
 
 /// The compact-expanded Dynamic Island treatment iOS shows while an Action
@@ -54,7 +58,7 @@ final class OnboardingDynamicIslandRunView: UIView {
 
         iconView.image = appIcon
         iconView.contentMode = .scaleAspectFill
-        iconView.layer.cornerRadius = 6.5
+        iconView.layer.cornerRadius = 8
         iconView.layer.cornerCurve = .continuous
         iconView.clipsToBounds = true
         iconView.alpha = 0
@@ -70,25 +74,30 @@ final class OnboardingDynamicIslandRunView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         layer.cornerRadius = bounds.height / 2
-        let iconSide: CGFloat = 27
+        let iconSide: CGFloat = 34
         iconView.frame = CGRect(
-            x: 7,
+            x: 8,
             y: (bounds.height - iconSide) / 2,
             width: iconSide,
             height: iconSide)
-        let ringSide: CGFloat = 24
+        let ringSide: CGFloat = 28
         ring.frame = CGRect(
-            x: bounds.width - ringSide - 8,
+            x: bounds.width - ringSide - 10,
             y: (bounds.height - ringSide) / 2,
             width: ringSide,
             height: ringSide)
     }
 
     /// Mounts at the hardware island's capsule and springs out to the
-    /// shortcut-run width.
+    /// shortcut-run treatment — wider and taller, growing downward the way
+    /// the real expansion inflates below the hardware cutout.
     func expand(in host: UIView, completion: @escaping () -> Void) {
         restingFrame = Self.restingIslandFrame(in: host.bounds)
-        expandedFrame = restingFrame.insetBy(dx: -44, dy: 0)
+        expandedFrame = CGRect(
+            x: restingFrame.midX - 125,
+            y: restingFrame.minY,
+            width: 250,
+            height: 50)
         frame = restingFrame
         host.addSubview(self)
 
@@ -308,23 +317,196 @@ final class OnboardingMockTapIndicatorView: UIView {
     }
 }
 
+/// The mock "Read in Luna" action-extension presentation: the standard
+/// extension sheet slides up over the conversation with the scrolling reader
+/// inside, showing the same article the Safari mock just cleaned up.
+final class OnboardingActionExtensionSheetView: UIView {
+    private let scrim = UIView()
+    private let card = UIView()
+    private let grabber = UIView()
+    private let doneChip = UILabel()
+    private let titleLabel = UILabel()
+    private let bylineLabel = UILabel()
+    private let eclipseImage = UIImageView()
+    private let bodyLabel = UILabel()
+    private let bottomFade = CAGradientLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        accessibilityIdentifier = "onboarding.messages.extensionSheet"
+
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.42)
+        scrim.alpha = 0
+        addSubview(scrim)
+
+        card.backgroundColor = .black
+        card.layer.cornerRadius = 24
+        card.layer.cornerCurve = .continuous
+        card.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        card.clipsToBounds = true
+        addSubview(card)
+
+        grabber.backgroundColor = UIColor.white.withAlphaComponent(0.28)
+        grabber.layer.cornerRadius = 2.5
+        card.addSubview(grabber)
+
+        doneChip.text = "Done"
+        doneChip.font = .systemFont(ofSize: 15, weight: .semibold)
+        doneChip.textColor = .white
+        doneChip.textAlignment = .center
+        doneChip.backgroundColor = UIColor.white.withAlphaComponent(0.14)
+        doneChip.layer.cornerRadius = 16
+        doneChip.layer.cornerCurve = .continuous
+        doneChip.clipsToBounds = true
+        card.addSubview(doneChip)
+
+        titleLabel.text = "An article you want to read"
+        titleLabel.font = .systemFont(ofSize: 27, weight: .bold)
+        titleLabel.textColor = .white
+        titleLabel.numberOfLines = 2
+        card.addSubview(titleLabel)
+
+        bylineLabel.text = "A safari extension • by Luna"
+        bylineLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        bylineLabel.textColor = UIColor.white.withAlphaComponent(0.55)
+        card.addSubview(bylineLabel)
+
+        if let path = Bundle.main.path(
+            forResource: "LunaEclipseComposite", ofType: "jpg")
+        {
+            eclipseImage.image = UIImage(contentsOfFile: path)
+        }
+        eclipseImage.contentMode = .scaleAspectFill
+        eclipseImage.layer.cornerRadius = 12
+        eclipseImage.layer.cornerCurve = .continuous
+        eclipseImage.clipsToBounds = true
+        card.addSubview(eclipseImage)
+
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 5
+        bodyLabel.attributedText = NSAttributedString(
+            string: OnboardingArticleReplicaView.fullArticleText,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 17),
+                .foregroundColor: UIColor.white.withAlphaComponent(0.92),
+                .paragraphStyle: style,
+            ])
+        bodyLabel.numberOfLines = 0
+        card.addSubview(bodyLabel)
+
+        // The article continues past the sheet; a fade says "scrollable".
+        bottomFade.colors = [
+            UIColor.black.withAlphaComponent(0).cgColor,
+            UIColor.black.cgColor,
+        ]
+        bottomFade.locations = [0, 1]
+        card.layer.addSublayer(bottomFade)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        scrim.frame = bounds
+        card.frame = CGRect(
+            x: 0,
+            y: 66,
+            width: bounds.width,
+            height: bounds.height - 66)
+        grabber.frame = CGRect(
+            x: (card.bounds.width - 36) / 2, y: 6, width: 36, height: 5)
+        doneChip.frame = CGRect(
+            x: card.bounds.width - 66 - 16, y: 14, width: 66, height: 32)
+        let inset: CGFloat = 24
+        let width = card.bounds.width - inset * 2
+        titleLabel.frame = CGRect(
+            x: inset, y: doneChip.frame.maxY + 14, width: width, height: 66)
+        bylineLabel.frame = CGRect(
+            x: inset, y: titleLabel.frame.maxY + 6, width: width, height: 18)
+        eclipseImage.frame = CGRect(
+            x: inset,
+            y: bylineLabel.frame.maxY + 14,
+            width: width,
+            height: (width * 708 / 1920).rounded())
+        bodyLabel.frame = CGRect(
+            x: inset,
+            y: eclipseImage.frame.maxY + 14,
+            width: width,
+            height: card.bounds.height - eclipseImage.frame.maxY - 14)
+        bottomFade.frame = CGRect(
+            x: 0,
+            y: card.bounds.height - 96,
+            width: card.bounds.width,
+            height: 96)
+    }
+
+    func present(completion: @escaping () -> Void) {
+        layoutIfNeeded()
+        if UIAccessibility.isReduceMotionEnabled {
+            alpha = 0
+            UIView.animate(withDuration: 0.22, animations: {
+                self.alpha = 1
+                self.scrim.alpha = 1
+            }) { _ in completion() }
+            return
+        }
+        card.transform = CGAffineTransform(
+            translationX: 0, y: bounds.height - card.frame.minY)
+        UIView.animate(
+            withDuration: OnboardingShortcutRunTiming.sheetPresentDuration,
+            delay: 0,
+            usingSpringWithDamping: 0.88,
+            initialSpringVelocity: 0.3,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.card.transform = .identity
+        } completion: { _ in
+            completion()
+        }
+        UIView.animate(withDuration: 0.30) {
+            self.scrim.alpha = 1
+        }
+    }
+
+    func dismiss(completion: @escaping () -> Void) {
+        if UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(withDuration: 0.22, animations: {
+                self.alpha = 0
+            }) { _ in completion() }
+            return
+        }
+        UIView.animate(
+            withDuration: OnboardingShortcutRunTiming.sheetDismissDuration,
+            delay: 0,
+            options: [.curveEaseIn, .beginFromCurrentState]
+        ) {
+            self.card.transform = CGAffineTransform(
+                translationX: 0, y: self.bounds.height - self.card.frame.minY)
+            self.scrim.alpha = 0
+        } completion: { _ in
+            completion()
+        }
+    }
+}
+
 /// The mock app switcher: two full-screen snapshots become side-by-side cards,
-/// slide across, and the incoming one grows back to full screen — Messages to
-/// the saved Luna screen, and later the reverse.
+/// slide across, and the incoming one grows back to full screen.
 final class OnboardingAppSwitcherView: UIView {
-    private let messagesCard = UIImageView()
-    private let lunaCard = UIImageView()
+    private let fromCard = UIImageView()
+    private let toCard = UIImageView()
     private static let cardCornerRadius: CGFloat = 42
     private static let cardScale: CGFloat = 0.58
     private static let cardSlide: CGFloat = 0.85
 
-    init(frame: CGRect, messages: UIImage, luna: UIImage) {
+    init(frame: CGRect, from: UIImage, to: UIImage) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        accessibilityIdentifier = "onboarding.messages.appSwitcher"
+        accessibilityIdentifier = "onboarding.appSwitcher"
         backgroundColor = .black
 
-        for (card, image) in [(messagesCard, messages), (lunaCard, luna)] {
+        for (card, image) in [(fromCard, from), (toCard, to)] {
             card.image = image
             card.frame = bounds
             card.contentMode = .scaleToFill
@@ -337,15 +519,15 @@ final class OnboardingAppSwitcherView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// Messages shrinks and exits left; Luna slides in from the right and
-    /// fills the screen. Ends showing the Luna snapshot full screen.
-    func playToLuna(completion: @escaping () -> Void) {
-        play(from: messagesCard, to: lunaCard, direction: 1, completion: completion)
+    /// The outgoing screen shrinks and exits left; the incoming one slides in
+    /// from the right and fills the screen.
+    func playForward(completion: @escaping () -> Void) {
+        play(from: fromCard, to: toCard, direction: 1, completion: completion)
     }
 
-    /// The reverse hop back into the conversation.
-    func playToMessages(completion: @escaping () -> Void) {
-        play(from: lunaCard, to: messagesCard, direction: -1, completion: completion)
+    /// The reverse hop, back to the original screen.
+    func playBackward(completion: @escaping () -> Void) {
+        play(from: toCard, to: fromCard, direction: -1, completion: completion)
     }
 
     private func play(

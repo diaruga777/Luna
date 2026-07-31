@@ -29,30 +29,36 @@ enum OnboardingMessagesReplicaTiming {
 final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     var onInstallShortcut: (() -> Void)?
     var onSetActionButton: (() -> Void)?
-    /// Fired once the setup messages (4 and 5) are on screen: the
-    /// demonstration is over and the pills own the next step.
+    /// Fired once the shortcut-install message is on screen: the
+    /// demonstration is over and the pill (or the skip-out) owns what's next.
     var onShortcutSetupMessagesShown: (() -> Void)?
+    var onSkipSetup: (() -> Void)?
 
     private let senderNameLabel = UILabel()
     private let conversationStack = UIStackView()
     private let urlBubble = OnboardingMessageURLBubble(showsTail: true)
     private let shortcutPill = OnboardingMessagePillButton(style: .shortcuts)
     private let settingsPill = OnboardingMessagePillButton(style: .settings)
+    private let skipButton = UIButton(type: .system)
     private var shortcutBubble: OnboardingMessagePillBubble?
     private var currentURLString: String
     private var messageRows: [OnboardingMessageRow] = []
-    /// Rows that arrive on their own before the Action Button press; the rest
-    /// arrive after the mock shortcut run.
+    /// Rows that arrive on their own before the Action Button press; the
+    /// shortcut message follows the mock shortcut run, and the Settings
+    /// message waits for the return from the Shortcuts install.
     private let stagedRowCount = 3
     private var revealedRowCount = 0
     private var presentationGeneration = 0
     private var sequenceGeneration = 0
     private var islandView: OnboardingDynamicIslandRunView?
     private var mockTap: OnboardingMockTapIndicatorView?
-    private var appSwitcher: OnboardingAppSwitcherView?
+    private var extensionSheet: OnboardingActionExtensionSheetView?
+    private var hidesStatusBarForIsland = false
     private(set) var isShowingSetupMessages = false
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
+    override var prefersStatusBarHidden: Bool { hidesStatusBarForIsland }
+    override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
     override var sharedURLString: String { currentURLString }
     override var saveEffectStyle: OnboardingSaveEffectStyle { .rippleOnly }
     override var actionButtonReplayDelay: TimeInterval {
@@ -78,6 +84,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         urlBubble.setURL(currentURLString)
         shortcutPill.onActivate = { [weak self] in self?.onInstallShortcut?() }
         settingsPill.onActivate = { [weak self] in self?.onSetActionButton?() }
+    }
+
+    @objc private func skipTapped() {
+        skipButton.isUserInteractionEnabled = false
+        onSkipSetup?()
     }
 
     override func viewDidLayoutSubviews() {
@@ -113,6 +124,15 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
 
     override func prepareForPresentation() {
         super.prepareForPresentation()
+        resetConversation()
+        scheduleStagedConversation()
+    }
+
+    /// Returns the conversation to its untouched resting state — nothing
+    /// revealed, no in-flight shortcut run — without starting the staged
+    /// arrivals. The app-switcher hop snapshots this state as its incoming
+    /// card before the first bubble lands.
+    func resetConversation() {
         presentationGeneration += 1
         cancelShortcutRunSequence()
         isShowingSetupMessages = false
@@ -127,11 +147,16 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         shortcutBubble?.setShowsTail(true)
         shortcutPill.reset()
         settingsPill.reset()
+        skipButton.alpha = 0
+        skipButton.isUserInteractionEnabled = false
         view.layoutIfNeeded()
         conversationStack.transform = CGAffineTransform(
             translationX: 0,
             y: stackOffset(afterRevealing: 0))
+    }
 
+    /// Starts the timed arrival of the three staged messages.
+    func scheduleStagedConversation() {
         let generation = presentationGeneration
         for index in 0..<stagedRowCount {
             let delay = OnboardingMessagesReplicaTiming.firstMessageDelay
@@ -289,6 +314,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     }
 
     private func presentIsland(generation: Int) {
+        setStatusBarHiddenForIsland(true)
         let island = OnboardingDynamicIslandRunView(
             appIcon: OnboardingAppIcon.image())
         islandView = island
@@ -322,38 +348,31 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             island.collapse { [weak self] in
                 guard let self, generation == self.sequenceGeneration else { return }
                 self.islandView = nil
-                self.switchToSavedLunaScreen(generation: generation)
+                self.setStatusBarHiddenForIsland(false)
+                self.presentMockActionExtension(generation: generation)
             }
         }
     }
 
-    private func switchToSavedLunaScreen(generation: Int) {
-        guard let makeSnapshot = makeActionButtonDestinationSnapshot,
-              let lunaScreen = makeSnapshot()
-        else {
-            // No saved-screen raster to hop into — settle straight on the
-            // setup messages so the journey can still complete.
-            finishShortcutRunSequence(generation: generation)
-            return
-        }
-        let switcher = OnboardingAppSwitcherView(
-            frame: view.bounds,
-            messages: renderConversationSnapshot(),
-            luna: lunaScreen)
-        appSwitcher = switcher
-        view.addSubview(switcher)
-        switcher.playToLuna { [weak self] in
+    /// The tapped island "runs" the save: the app's ordinary action-extension
+    /// sheet slides up over the conversation with the reader inside, holds a
+    /// beat, and slides away.
+    private func presentMockActionExtension(generation: Int) {
+        let sheet = OnboardingActionExtensionSheetView(frame: view.bounds)
+        extensionSheet = sheet
+        view.addSubview(sheet)
+        sheet.present { [weak self] in
             guard let self, generation == self.sequenceGeneration else { return }
             self.afterDelay(
-                OnboardingShortcutRunTiming.savedAppHoldDuration,
+                OnboardingShortcutRunTiming.extensionSheetHoldDuration,
                 generation: generation
             ) {
-                self.appSwitcher?.playToMessages { [weak self] in
+                self.extensionSheet?.dismiss { [weak self] in
                     guard let self,
                           generation == self.sequenceGeneration
                     else { return }
-                    self.appSwitcher?.removeFromSuperview()
-                    self.appSwitcher = nil
+                    self.extensionSheet?.removeFromSuperview()
+                    self.extensionSheet = nil
                     self.finishShortcutRunSequence(generation: generation)
                 }
             }
@@ -369,16 +388,46 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         ) {
             self.revealNextRow()
             self.shortcutPill.beginGlowPulse()
+            self.isShowingSetupMessages = true
+            self.onShortcutSetupMessagesShown?()
             self.afterDelay(
-                OnboardingShortcutRunTiming.followUpInterMessageDelay,
+                OnboardingShortcutRunTiming.skipButtonDelay,
                 generation: generation
             ) {
-                self.shortcutBubble?.setShowsTail(false)
-                self.revealNextRow()
-                self.settingsPill.beginGlowPulse()
-                self.isShowingSetupMessages = true
-                self.onShortcutSetupMessagesShown?()
+                self.showSkipButton()
             }
+        }
+    }
+
+    /// The Settings walkthrough message arrives only once the user has been
+    /// to the Shortcuts install and re-foregrounded the app.
+    func revealSettingsSetupMessage() {
+        guard isShowingSetupMessages,
+              revealedRowCount == messageRows.count - 1
+        else { return }
+        shortcutBubble?.setShowsTail(false)
+        revealNextRow()
+        settingsPill.beginGlowPulse()
+    }
+
+    private func showSkipButton() {
+        guard skipButton.alpha == 0 else { return }
+        skipButton.isUserInteractionEnabled = true
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.18 : 0.32,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.skipButton.alpha = 1
+        }
+    }
+
+    private func setStatusBarHiddenForIsland(_ hidden: Bool) {
+        guard hidesStatusBarForIsland != hidden else { return }
+        hidesStatusBarForIsland = hidden
+        UIView.animate(withDuration: 0.25) {
+            self.setNeedsStatusBarAppearanceUpdate()
+            self.parent?.setNeedsStatusBarAppearanceUpdate()
         }
     }
 
@@ -390,16 +439,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         mockTap?.layer.removeAllAnimations()
         mockTap?.removeFromSuperview()
         mockTap = nil
-        appSwitcher?.removeFromSuperview()
-        appSwitcher = nil
+        extensionSheet?.removeFromSuperview()
+        extensionSheet = nil
+        setStatusBarHiddenForIsland(false)
         urlBubble.layer.removeAllAnimations()
         urlBubble.transform = .identity
-    }
-
-    private func renderConversationSnapshot() -> UIImage {
-        UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
-            view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
-        }
     }
 
     // MARK: - Static chrome
@@ -506,7 +550,8 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                 bubble: OnboardingMessagePillBubble(
                     direction: .outgoing,
                     showsTail: true,
-                    text: "And change your action button to that shortcut in",
+                    text: "And change your action button to",
+                    inlineLeadText: "that shortcut in",
                     pill: settingsPill,
                     accessibilityIdentifier: "onboarding.messages.settingsSetup")),
         ]
@@ -555,10 +600,6 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         field.layer.borderColor = UIColor(white: 0.82, alpha: 1).cgColor
         composer.addSubview(field)
 
-        let mutedText = OnboardingMessageGradientBlock(width: 76)
-        mutedText.translatesAutoresizingMaskIntoConstraints = false
-        field.addSubview(mutedText)
-
         let microphone = UIImageView(image: UIImage(
             systemName: "mic.fill",
             withConfiguration: UIImage.SymbolConfiguration(
@@ -567,10 +608,34 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         microphone.tintColor = UIColor(white: 0.48, alpha: 1)
         field.addSubview(microphone)
 
+        // The skip-out lives in the strip the raised composer leaves free; it
+        // stays invisible until the shortcut-install message has landed.
+        var skipConfiguration = UIButton.Configuration.plain()
+        skipConfiguration.title = "or skip"
+        skipConfiguration.baseForegroundColor = UIColor(white: 0.52, alpha: 1)
+        skipConfiguration.contentInsets = NSDirectionalEdgeInsets(
+            top: 4, leading: 10, bottom: 4, trailing: 10)
+        skipConfiguration.titleTextAttributesTransformer =
+            UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .systemFont(ofSize: 15, weight: .medium)
+                return outgoing
+            }
+        skipButton.configuration = skipConfiguration
+        skipButton.accessibilityLabel = "Skip setup"
+        skipButton.accessibilityIdentifier = "onboarding.messages.skip"
+        skipButton.alpha = 0
+        skipButton.isUserInteractionEnabled = false
+        skipButton.translatesAutoresizingMaskIntoConstraints = false
+        skipButton.addTarget(
+            self, action: #selector(skipTapped), for: .touchUpInside)
+        view.addSubview(skipButton)
+
         NSLayoutConstraint.activate([
             composer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            composer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            composer.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
             composer.heightAnchor.constraint(equalToConstant: 54),
             plus.leadingAnchor.constraint(equalTo: composer.leadingAnchor, constant: 12),
             plus.centerYAnchor.constraint(equalTo: composer.centerYAnchor),
@@ -580,11 +645,12 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             field.trailingAnchor.constraint(equalTo: composer.trailingAnchor, constant: -12),
             field.centerYAnchor.constraint(equalTo: composer.centerYAnchor),
             field.heightAnchor.constraint(equalToConstant: 38),
-            mutedText.leadingAnchor.constraint(equalTo: field.leadingAnchor, constant: 13),
-            mutedText.centerYAnchor.constraint(equalTo: field.centerYAnchor),
-            mutedText.heightAnchor.constraint(equalToConstant: 10),
             microphone.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -11),
             microphone.centerYAnchor.constraint(equalTo: field.centerYAnchor),
+            skipButton.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor, constant: -20),
+            skipButton.topAnchor.constraint(
+                equalTo: composer.bottomAnchor, constant: 2),
         ])
         return composer
     }
@@ -635,6 +701,9 @@ class OnboardingMessageBubble: UIView {
         red: 0 / 255, green: 122 / 255, blue: 255 / 255, alpha: 1)
     static let incomingGray = UIColor(
         red: 233 / 255, green: 233 / 255, blue: 235 / 255, alpha: 1)
+    /// Larger than the real app's 17pt — the conversation is a demonstration
+    /// watched from arm's length, not something being read up close.
+    static let textSize: CGFloat = 19
 
     let direction: OnboardingMessageDirection
     private let tail = CAShapeLayer()
@@ -704,7 +773,7 @@ private final class OnboardingMessageTextBubble: OnboardingMessageBubble {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = text
-        label.font = .systemFont(ofSize: 17)
+        label.font = .systemFont(ofSize: OnboardingMessageBubble.textSize)
         label.textColor = direction == .incoming
             ? UIColor(white: 0.08, alpha: 1)
             : .white
@@ -771,7 +840,8 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
         label.attributedText = NSAttributedString(
             string: urlString,
             attributes: [
-                .font: UIFont.systemFont(ofSize: 16),
+                .font: UIFont.systemFont(
+                    ofSize: OnboardingMessageBubble.textSize - 1),
                 .foregroundColor: highlighted
                     ? UIColor(white: 0.08, alpha: 1)
                     : UIColor.systemBlue,
@@ -780,36 +850,53 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
     }
 }
 
-/// An outgoing bubble whose sentence hands off to an interactive pill.
+/// An outgoing bubble whose sentence hands off to an interactive pill — on
+/// its own line under the text, or inlined at the end of the sentence when
+/// `inlineLeadText` carries the final words ("…that shortcut in [Settings]").
 private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
     init(
         direction: OnboardingMessageDirection,
         showsTail: Bool,
         text: String,
+        inlineLeadText: String? = nil,
         pill: OnboardingMessagePillButton,
         accessibilityIdentifier: String
     ) {
         super.init(direction: direction, showsTail: showsTail)
         self.accessibilityIdentifier = accessibilityIdentifier
-
-        let label = UILabel()
-        label.text = text
-        label.font = .systemFont(ofSize: 17)
-        label.textColor = direction == .incoming
+        let textColor: UIColor = direction == .incoming
             ? UIColor(white: 0.08, alpha: 1)
             : .white
-        label.numberOfLines = 0
-        label.lineBreakMode = .byWordWrapping
-        label.accessibilityLabel = text
 
-        let pillRow = UIStackView(arrangedSubviews: [pill, UIView()])
+        func makeLabel(_ string: String) -> UILabel {
+            let label = UILabel()
+            label.text = string
+            label.font = .systemFont(ofSize: OnboardingMessageBubble.textSize)
+            label.textColor = textColor
+            label.numberOfLines = 0
+            label.lineBreakMode = .byWordWrapping
+            label.accessibilityLabel = string
+            return label
+        }
+
+        var pillRowViews: [UIView] = []
+        if let inlineLeadText {
+            let lead = makeLabel(inlineLeadText)
+            lead.numberOfLines = 1
+            lead.setContentHuggingPriority(.required, for: .horizontal)
+            pillRowViews.append(lead)
+        }
+        pillRowViews.append(pill)
+        pillRowViews.append(UIView())
+        let pillRow = UIStackView(arrangedSubviews: pillRowViews)
         pillRow.axis = .horizontal
         pillRow.alignment = .center
+        pillRow.spacing = 7
 
-        let content = UIStackView(arrangedSubviews: [label, pillRow])
+        let content = UIStackView(arrangedSubviews: [makeLabel(text), pillRow])
         content.axis = .vertical
         content.alignment = .fill
-        content.spacing = 7
+        content.spacing = inlineLeadText == nil ? 7 : 3
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
 
@@ -845,7 +932,7 @@ final class OnboardingMessagePillButton: UIControl {
         let titleColor: UIColor
         switch style {
         case .shortcuts:
-            icon = OnboardingSystemIcons.shortcuts
+            icon = OnboardingSystemIcons.shortcutsAppIcon
             title = "Luna"
             // White lifted faintly toward the Shortcuts app's violet.
             fill = UIColor(red: 0.93, green: 0.91, blue: 1.0, alpha: 1)
@@ -977,29 +1064,3 @@ final class OnboardingMessagePillButton: UIControl {
     }
 }
 
-private final class OnboardingMessageGradientBlock: UIView {
-    private let gradient = CAGradientLayer()
-
-    init(width: CGFloat) {
-        super.init(frame: .zero)
-        widthAnchor.constraint(equalToConstant: width).isActive = true
-        gradient.colors = [
-            UIColor(white: 0.70, alpha: 0.78).cgColor,
-            UIColor(white: 0.88, alpha: 0.88).cgColor,
-            UIColor(white: 0.74, alpha: 0.82).cgColor,
-        ]
-        gradient.locations = [0, 0.5, 1]
-        gradient.startPoint = CGPoint(x: 0, y: 0.5)
-        gradient.endPoint = CGPoint(x: 1, y: 0.5)
-        layer.addSublayer(gradient)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        gradient.frame = bounds
-        gradient.cornerRadius = 4
-    }
-}

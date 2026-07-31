@@ -486,6 +486,7 @@ private final class GlyphPixelBloomView: UIView {
     private var revealDuration: CFTimeInterval = 0
     private var displayLink: CADisplayLink?
     private var emitterRenderer: UIGraphicsImageRenderer?
+    private var edgeSagitta: CGFloat = 0
 
     var usesRasterizedGlyphPixels: Bool {
         glyphImage != nil && !glyphFrame.isEmpty
@@ -531,13 +532,36 @@ private final class GlyphPixelBloomView: UIView {
         initialCircleFrame = circleFrame
         progress = 0
 
+        // Only a narrow strip around the circle's leading edge ever emits
+        // light (the bands hug the edge), so the per-frame render is a strip,
+        // not the whole view. A view-height emitter made the display link
+        // collapse on article-length text: whole lines never got their bright
+        // moment because the frame rate fell to a handful of samples.
+        let radius = circleFrame.width / 2
+        let halfWidth = bounds.width / 2
+        edgeSagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
         let emitterFormat = UIGraphicsImageRendererFormat()
         emitterFormat.scale = scale
         emitterFormat.opaque = false
         emitterRenderer = UIGraphicsImageRenderer(
-            size: bounds.size,
+            size: CGSize(width: bounds.width, height: stripHeight),
             format: emitterFormat)
         setNeedsDisplay()
+    }
+
+    /// The emitting band: everything within the falloff distance outside the
+    /// edge, plus the bow of the near-flat arc across the view's width.
+    private var stripHeight: CGFloat {
+        (Self.edgeFalloff.last?.outer ?? 12) + edgeSagitta + 12
+    }
+
+    private func currentStripRect() -> CGRect {
+        let edgeTop = initialCircleFrame.minY + circleTravel * progress
+        return CGRect(
+            x: 0,
+            y: edgeTop - (Self.edgeFalloff.last?.outer ?? 12) - 4,
+            width: bounds.width,
+            height: stripHeight)
     }
 
     func reveal(circleTravel: CGFloat, duration: CFTimeInterval) {
@@ -577,29 +601,38 @@ private final class GlyphPixelBloomView: UIView {
                 offset: .zero,
                 blur: halo.radius,
                 color: UIColor.white.withAlphaComponent(halo.alpha).cgColor)
-            emitter.draw(in: bounds, blendMode: .plusLighter, alpha: 1)
+            emitter.image.draw(in: emitter.rect, blendMode: .plusLighter, alpha: 1)
             context.restoreGState()
         }
         context.restoreGState()
     }
 
     @objc private func drawNextRevealFrame(_ link: CADisplayLink) {
+        let previousStrip = currentStripRect()
         let elapsed = link.timestamp - revealStartTime
         progress = min(max(CGFloat(elapsed / revealDuration), 0), 1)
-        setNeedsDisplay()
+        // Redraw covers where the glow was and where it is now — the widest
+        // halo included — so old light is cleared without repainting the view.
+        let glowReach = (Self.haloPasses.map(\.radius).max() ?? 30) + 4
+        setNeedsDisplay(
+            previousStrip
+                .union(currentStripRect())
+                .insetBy(dx: -glowReach, dy: -glowReach))
         if progress >= 1 {
             stop()
         }
     }
 
-    private func makeEmitterImage() -> UIImage? {
+    private func makeEmitterImage() -> (image: UIImage, rect: CGRect)? {
         guard let glyphImage, let emitterRenderer else { return nil }
         let circleFrame = initialCircleFrame.offsetBy(
             dx: 0,
             dy: circleTravel * progress)
+        let strip = currentStripRect()
 
-        return emitterRenderer.image { rendererContext in
+        let image = emitterRenderer.image { rendererContext in
             let context = rendererContext.cgContext
+            context.translateBy(x: -strip.minX, y: -strip.minY)
             for band in Self.edgeFalloff {
                 context.saveGState()
                 let ring = UIBezierPath(
@@ -620,5 +653,6 @@ private final class GlyphPixelBloomView: UIView {
                 context.restoreGState()
             }
         }
+        return (image, strip)
     }
 }

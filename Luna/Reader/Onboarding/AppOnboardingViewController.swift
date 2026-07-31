@@ -108,7 +108,7 @@ final class AppOnboardingViewController: UIViewController {
     private var demoTransitionGeneration = 0
     private var demoLoopGeneration = 0
     private var isDemoGeometryTransitioning = false
-    private var continuesToMessagesAfterSafariSave = false
+    private var appSwitcher: OnboardingAppSwitcherView?
     private var isFinishing = false
     private var foregroundObserver: NSObjectProtocol?
     private var setupObserver: NSObjectProtocol?
@@ -147,6 +147,12 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
+
+    /// The Messages replica hides the status bar around its mock Dynamic
+    /// Island treatment; forward the query the same way as the style.
+    override var childForStatusBarHidden: UIViewController? {
+        childForStatusBarStyle
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -358,11 +364,8 @@ final class AppOnboardingViewController: UIViewController {
 
         let messages = MessagesReplicaViewController(
             urlString: safari.sharedURLString)
-        messages.makeActionButtonDestinationSnapshot = { [weak self] in
-            self?.makeSavedCardSnapshot()
-        }
         // The Messages demonstration finishes in place: its mock shortcut run
-        // ends on the two setup messages whose pills carry the setup hops.
+        // ends on the setup messages whose pills carry the setup hops.
         messages.onInstallShortcut = { [weak self] in self?.installShortcut() }
         messages.onSetActionButton = { [weak self] in
             self?.openActionButtonSettings()
@@ -370,6 +373,7 @@ final class AppOnboardingViewController: UIViewController {
         messages.onShortcutSetupMessagesShown = { [weak self] in
             self?.messagesDemonstrationDidPresentSetup()
         }
+        messages.onSkipSetup = { [weak self] in self?.finishOnboarding() }
         messagesReplica = messages
         addChild(messages)
         messages.view.frame = view.bounds
@@ -473,20 +477,6 @@ final class AppOnboardingViewController: UIViewController {
         guard source == activeDemoSource else { return }
         commitWaveDrivenCardPresentation()
         nextDemoSource = source.next
-
-        if source == .safari, continuesToMessagesAfterSafariSave {
-            continuesToMessagesAfterSafariSave = false
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + OnboardingAnimationClock.delay(
-                    OnboardingDemoLoopTiming.savedCardHoldDuration)
-            ) { [weak self] in
-                guard let self, !self.isFinishing else { return }
-                self.transitionDemo(to: .fullScreen, source: .messages) { [weak self] in
-                    self?.startDemoPresentationLoop()
-                }
-            }
-            return
-        }
 
         guard let prompt = journeyStage.completedSave(from: source) else {
             return
@@ -721,6 +711,8 @@ final class AppOnboardingViewController: UIViewController {
     /// foreground return from resuming stale callbacks over the next stage.
     private func pauseDemoPresentationPlayback() {
         stopDemoPresentationLoop()
+        appSwitcher?.removeFromSuperview()
+        appSwitcher = nil
         for source in OnboardingDemoSource.allCases {
             sourceController(for: source)?.cancelActionButtonSaveEffect()
         }
@@ -801,8 +793,8 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     /// Skipping the Safari extension follows the exact route a completed
-    /// setup takes on return from Safari: the article's staged save plays,
-    /// then the Messages demonstration leads into Action Button setup.
+    /// setup takes on return from Safari: the app-switcher hop into the
+    /// Messages demonstration, which leads into Action Button setup.
     private func skipSafariSetupAndContinue() {
         guard externalReturn == .none,
               !isFinishing,
@@ -810,8 +802,68 @@ final class AppOnboardingViewController: UIViewController {
         else { return }
         journeyStage = .safariSetup
         guard journeyStage.completedSafariSetup() else { return }
-        continuesToMessagesAfterSafariSave = true
-        safariReplica?.playURLBarZoomAndSave()
+        transitionToMessagesViaAppSwitcher()
+    }
+
+    /// Safari setup completing (or being skipped) hands straight off to the
+    /// Messages demonstration with a mock app-switcher hop — the screen that
+    /// is up right now slides out as a card and the conversation slides in.
+    private func transitionToMessagesViaAppSwitcher() {
+        guard !isFinishing,
+              appSwitcher == nil,
+              let messages = messagesReplica
+        else { return }
+        stopDemoPresentationLoop()
+        demoTransitionGeneration += 1
+        isDemoGeometryTransitioning = false
+        safariReplica?.dismissInstructions(animated: false) {}
+
+        if let urlString = safariReplica?.sharedURLString {
+            messages.updateURL(urlString)
+        }
+        // Stage the conversation at rest, laid out full screen underneath
+        // everything, so it can be snapshotted as the incoming card.
+        messages.resetConversation()
+        let messagesView = messages.view!
+        messagesView.isHidden = false
+        messagesView.alpha = 1
+        messagesView.layer.cornerRadius = 0
+        messagesView.frame = view.bounds
+        view.insertSubview(messagesView, at: 0)
+        messagesView.layoutIfNeeded()
+
+        let outgoing = switcherSnapshot(of: view, afterScreenUpdates: false)
+        let incoming = switcherSnapshot(of: messagesView, afterScreenUpdates: true)
+        let switcher = OnboardingAppSwitcherView(
+            frame: view.bounds, from: outgoing, to: incoming)
+        appSwitcher = switcher
+        view.addSubview(switcher)
+
+        activeDemoSource = .messages
+        nextDemoSource = OnboardingDemoSource.messages.next
+        demoPresentation = .fullScreen
+        switcher.playForward { [weak self] in
+            guard let self else { return }
+            self.view.bringSubviewToFront(messagesView)
+            self.sourceController(for: .safari)?.view.isHidden = true
+            self.setNeedsStatusBarAppearanceUpdate()
+            switcher.removeFromSuperview()
+            self.appSwitcher = nil
+            guard !self.isFinishing else { return }
+            messages.scheduleStagedConversation()
+            self.startDemoPresentationLoop()
+        }
+    }
+
+    private func switcherSnapshot(
+        of target: UIView,
+        afterScreenUpdates: Bool
+    ) -> UIImage {
+        UIGraphicsImageRenderer(bounds: target.bounds).image { _ in
+            target.drawHierarchy(
+                in: target.bounds,
+                afterScreenUpdates: afterScreenUpdates)
+        }
     }
 
     private func installShortcut() {
@@ -873,17 +925,18 @@ final class AppOnboardingViewController: UIViewController {
             guard journeyStage.completedSafariSetup() else {
                 return
             }
-            continuesToMessagesAfterSafariSave = true
-            safariReplica?.playURLBarZoomAndSave()
+            transitionToMessagesViaAppSwitcher()
         case .shortcut:
             // Importing the signed file is an external Shortcuts hop, but the
             // setup isn't complete until the hardware Action Button is
-            // assigned. The Messages setup pills are already on screen and the
-            // Settings pill keeps pulsing; only a recovery overlay (an earlier
-            // open failure) needs replacing.
-            if messagesReplica?.isShowingSetupMessages != true
-                || safariReplica?.hasInstructions == true
+            // assigned: coming back from the install, the conversation now
+            // walks through that with its Settings message. Only a recovery
+            // overlay (an earlier open failure) still uses the overlay path.
+            if messagesReplica?.isShowingSetupMessages == true,
+               safariReplica?.hasInstructions != true
             {
+                messagesReplica?.revealSettingsSetupMessage()
+            } else {
                 safariReplica?.showShortcutAndActionSetup()
             }
         case .actionButton:

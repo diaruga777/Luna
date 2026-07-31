@@ -400,6 +400,30 @@ final class ArticleResolverTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.7, "0.4s + 0.4s of independent fetches must overlap, not add up")
     }
 
+    /// A winner must not be held hostage by the losers it made unnecessary. This is the
+    /// specific trap that bit the Wayback index race: `withTaskGroup` implicitly awaits
+    /// every child before returning, so a tier that "returns early" can still sit on a
+    /// slow sibling unless cancellation actually reaches its request. Here the
+    /// first-ranked capture is readable and instant while the second-ranked one takes
+    /// two seconds — the resolve must come back in well under that.
+    func testAWinnerDoesNotWaitForTheStrategiesItMadeUnnecessary() async {
+        let articleURL = URL(string: "https://www.theparisreview.org/interviews/3810/quick-win")!
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[articleURL.absoluteString] = truncatedPreviewHTML(paragraphs: 20)
+        fetcher.waybackHTMLByURL[articleURL.absoluteString] = proseHTML("newest", paragraphs: 40)
+        fetcher.delaysByKind = [.waybackPrePaywall: 2.0]
+
+        let start = Date()
+        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
+        let elapsed = Date().timeIntervalSince(start)
+
+        guard case let .readable(content, _) = result else {
+            return XCTFail("expected readable, got \(result)")
+        }
+        XCTAssertTrue(content.title.contains("newest"))
+        XCTAssertLessThan(elapsed, 1.0, "the cancelled loser must not hold the tier open")
+    }
+
     // MARK: - Subscribe-redirect hosts (News Corp Australia)
 
     private var newsCorpArticle: URL {

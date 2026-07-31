@@ -30,6 +30,7 @@ public enum ReaderSettings {
     private static let accentKey = "readerAccentColor"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
     private static let linkPreviewPositionsKey = "linkRSVPPreviewWordPositions"
+    private static let eyeTrackingKey = "rsvpEyeTrackingEnabled"
 
     /// One-time copy of settings previously kept in standard defaults into the
     /// App Group (so the extension sees them). Call once at app launch.
@@ -169,5 +170,16 @@ public enum ReaderSettings {
     public static var accent: ReaderAccent {
         get { ReaderAccent(rawValue: defaults.string(forKey: accentKey) ?? "") ?? .blue }
         set { defaults.set(newValue.rawValue, forKey: accentKey) }
+    }
+
+    /// Whether the RSVP reader's eye-tracking toggle is switched ON — the
+    /// USER's own preference, defaulting to off. The feature can be suppressed
+    /// at runtime (read-aloud is on, or the user pressed play while looking
+    /// away), but those are transient: they never touch this value, which is
+    /// exactly why quitting the app restores the preference the user last set.
+    /// See `claudedocs/eye-tracking.md`.
+    public static var eyeTrackingEnabled: Bool {
+        get { defaults.bool(forKey: eyeTrackingKey) }
+        set { defaults.set(newValue, forKey: eyeTrackingKey) }
     }
 }

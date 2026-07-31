@@ -25,6 +25,17 @@
         }
       }
     },
+    "NSCameraUsageDescription" : {
+      "comment" : "Explains why the RSVP reader's eye-tracking toggle needs the front camera.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luna tracks your eyes to pause playback automatically when you look away."
+          }
+        }
+      }
+    },
     "NSPhotoLibraryAddUsageDescription" : {
       "comment" : "Explains why Luna adds downloaded media to Photos.",
       "localizations" : {

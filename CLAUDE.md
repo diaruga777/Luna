@@ -10,7 +10,9 @@ that share one App Group, one on-disk store (`readingList.json`), and one codeba
   reader-style card deck showing all kinds. Placeholder crescent-moon icon.
 - **Luna Reader** (`com.hsanabria.luna.reader`, target `LunaReader`) — articles,
   paywalled articles, documents. Scrolling reader (inline split-web frames) + RSVP speed
-  reader; background-playback read-aloud with autoplay-next and on-device trimming (see
+  reader (whose opt-in eye-tracking toggle pauses the silent speed read when your gaze
+  leaves the focal word — ARKit face tracking, `claudedocs/eye-tracking.md`);
+  background-playback read-aloud with autoplay-next and on-device trimming (see
   `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account);
   share-sheet export of any unlocked article as EPUB / PDF / Markdown / plain text
   (`claudedocs/article-export.md`, shared with the central app); long-form X posts and

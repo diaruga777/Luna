@@ -57,6 +57,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     public private(set) var isPlaying = false {
         didSet {
             updatePlayPauseGlyph()
+            gazeCoordinator?.setPlaying(isPlaying)
             if isPlaying != oldValue { onPlaybackStateChanged?(isPlaying) }
         }
     }
@@ -119,12 +120,21 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// UTF-16 offset of each word within the current utterance string.
     private var speechWordOffsets: [Int] = []
 
-    /// Set by hosts whose chrome floats outside this reader. RSVP intentionally
-    /// IGNORES it for layout: unlike the scroll reader (which scrolls content
+    /// Set by hosts whose chrome floats outside this reader. The READING layout
+    /// intentionally IGNORES it: unlike the scroll reader (which scrolls content
     /// behind the floating header), the speed reader centers a single word and
-    /// makes no use of the extra top space, so its layout must be identical with
-    /// or without the card chrome. Kept only so the shared host wiring can set it.
-    public var topContentInset: CGFloat = 0
+    /// makes no use of the extra top space, so the word, context lanes and
+    /// controls must land identically with or without the card chrome. The one
+    /// thing that does honour it is the eye-tracking toggle, which lives in the
+    /// top-left corner and would otherwise sit under the floating chrome.
+    public var topContentInset: CGFloat = 0 {
+        didSet {
+            guard isViewLoaded,
+                  ChromeInsetDebounce.changed(from: oldValue, to: topContentInset)
+            else { return }
+            view.setNeedsLayout()
+        }
+    }
 
     private let wordLabel = UILabel()
     /// Multi-line phrase text shown in the focus panel in Phrases mode.
@@ -156,6 +166,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private let wpmUpButton = UIButton(type: .system)
     private let skipBackButton = UIButton(type: .system)
     private let skipForwardButton = UIButton(type: .system)
+
+    /// Top-left eye-tracking toggle, and the coordinator behind it. Both exist
+    /// only where face tracking could actually run (see
+    /// `GazeTrackingAvailability`) — on a device without a TrueDepth camera, or
+    /// inside a share/action extension, the corner stays empty.
+    private let eyeTrackingButton = EyeTrackingToggleButton()
+    private var gazeCoordinator: RSVPGazeCoordinator?
+    /// Test seam: substitutes the gaze source. Must be set before the view loads.
+    public var gazeTrackerOverride: GazeTracking?
 
     /// Words a skip button jumps from the current position.
     private static let skipWordCount = 25
@@ -304,6 +323,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
 
         guard isViewLoaded else { return }
+        gazeCoordinator?.setAudioPlaybackOn(isSpeechMode)
         updateMeldAnchor()
         scrubber.maximumValue = Float(max(engine.words.count - 1, 1))
         scrubber.value = Float(currentIndex)
@@ -350,6 +370,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Where the reader's eyes are expected to be: the ORP column in Words, the
+    /// centre of the phrase panel in Phrases. Published because eye tracking
+    /// measures every glance against it.
+    public var focalGazePoint: CGPoint {
+        let x = displayMode == .phrases
+            ? view.bounds.midX : view.bounds.width * Self.focalFraction
+        return CGPoint(x: x, y: focalCenterY)
+    }
+
     /// The focal word currently displayed — carried to other modes on a switch.
     public var currentReadingWordIndex: Int? {
         // Reported in the shared token space (see resolveResumeFrame).
@@ -395,6 +424,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         configureControls()
         configureGestures()
         configureFinishedBadge()
+        configureEyeTracking()
 
         // NB: the audio session is NOT touched here — only when read-aloud
         // actually starts playing (see `play()`), so opening the silent speed
@@ -416,10 +446,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         updateMeldAnchor()
+        gazeCoordinator?.setVisible(true)
     }
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        layoutEyeTrackingButton()
         layoutFocusReticule()
         layoutPhrasePanel()
         layoutContext()
@@ -430,6 +462,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        gazeCoordinator?.setVisible(false)
         // `pause()` already saves (a legitimate play→pause save point); only
         // call it — and skip the redundant extra save — when actually playing.
         // On the center path `pause()` never stops the audio itself: leaving
@@ -469,6 +502,60 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func configureReticule() {
         view.addSubview(focusReticule)
+    }
+
+    /// Installs the top-left eye-tracking toggle — or nothing at all, where the
+    /// feature could never run. The coordinator is still created so the reader
+    /// has one uniform place to report playback state to.
+    private func configureEyeTracking() {
+        let coordinator = RSVPGazeCoordinator(tracker: gazeTrackerOverride)
+        coordinator.delegate = self
+        coordinator.attach(to: view)
+        coordinator.setAudioPlaybackOn(isSpeechMode)
+        gazeCoordinator = coordinator
+
+        eyeTrackingButton.isHidden = !coordinator.isAvailable
+        guard coordinator.isAvailable else { return }
+        eyeTrackingButton.addTarget(self, action: #selector(eyeTrackingToggled), for: .touchUpInside)
+        view.addSubview(eyeTrackingButton)
+        refreshEyeTrackingButton()
+
+        // The camera must not keep running behind a backgrounded app, and a
+        // reader resumed from the background should start watching again
+        // without waiting for an appearance callback that will never come.
+        let center = NotificationCenter.default
+        center.addObserver(
+            self, selector: #selector(applicationDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
+        center.addObserver(
+            self, selector: #selector(applicationWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    private func layoutEyeTrackingButton() {
+        guard !eyeTrackingButton.isHidden else { return }
+        let size = EyeTrackingToggleButton.diameter
+        eyeTrackingButton.frame = CGRect(
+            x: 16, y: view.safeAreaInsets.top + topContentInset + 10, width: size, height: size)
+    }
+
+    private func refreshEyeTrackingButton() {
+        guard let gazeCoordinator else { return }
+        eyeTrackingButton.trackingState = gazeCoordinator.displayState
+        eyeTrackingButton.isEnabled = gazeCoordinator.isToggleInteractive
+    }
+
+    @objc private func eyeTrackingToggled() {
+        gazeCoordinator?.toggle(presenting: self)
+    }
+
+    @objc private func applicationDidEnterBackground() {
+        gazeCoordinator?.setVisible(false)
+    }
+
+    @objc private func applicationWillEnterForeground() {
+        guard view.window != nil else { return }
+        gazeCoordinator?.setVisible(true)
     }
 
     /// Spans approximately three monospaced characters around the ORP column.
@@ -554,7 +641,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let centerY = focalCenterY
         let horizontalMargin: CGFloat = 28
         let width = max(0, view.bounds.width - horizontalMargin * 2)
-        let topLimit = view.safeAreaInsets.top + 20
+        // The preceding-context lane grows upward into the freed top of the
+        // screen, so it must stop below the eye-tracking toggle when that
+        // corner is occupied.
+        let topLimit = eyeTrackingButton.isHidden
+            ? view.safeAreaInsets.top + 20
+            : max(view.safeAreaInsets.top + 20, eyeTrackingButton.frame.maxY + 12)
 
         let bandHalf: CGFloat = displayMode == .phrases
             ? phrasePanel.bounds.height / 2 + 14 : 84
@@ -1031,7 +1123,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         center.play(item: item, content: articleContent, fromWordIndex: token)
     }
 
-    private func pause() {
+    /// Stops playback. `deliberate` is true for every route EXCEPT a
+    /// gaze-triggered pause — the reader looking away is the one stop that must
+    /// not count as "the user settled the question", so it leaves a
+    /// play-override (if one were somehow live) alone.
+    private func pause(deliberate: Bool = true) {
+        if deliberate { gazeCoordinator?.notePlaybackStoppedDeliberately() }
         // Center-driven speech mode: lifecycle pauses (reuse, disappearing,
         // sub-mode switches) must NEVER stop the app-wide playback —
         // navigating away is exactly when background audio should keep going.
@@ -1105,7 +1202,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             }
             return
         }
-        isPlaying ? pause() : play()
+        if isPlaying {
+            pause()
+        } else {
+            // Pressing play while looking away is an explicit override: it
+            // wins over the setting AND stands eye tracking down, so the next
+            // glance elsewhere doesn't immediately stop the reader again.
+            if gazeCoordinator?.isLookingAway == true { gazeCoordinator?.notePlayOverride() }
+            play()
+        }
     }
 
     /// The full-screen tap: pause-only, never a toggle.
@@ -1345,6 +1450,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         scrubber.value = Float(currentIndex)
         updateStatus()
         updateFinishedReadingState()
+        // Reaching for the scrubber or a skip button means looking away from
+        // the word on purpose; don't spend the away allowance on it.
+        gazeCoordinator?.focalPositionDidJump()
     }
 
     @objc private func wpmDown() { adjustWPM(by: -25) }
@@ -1467,6 +1575,24 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 extension RSVPViewController: RSVPPlaybackClockDelegate {
     public func playbackClockDidFire(_ clock: RSVPPlaybackClock) {
         advance()
+    }
+}
+
+// MARK: - Eye tracking
+
+extension RSVPViewController: RSVPGazeCoordinatorDelegate {
+
+    func gazeCoordinatorRequestsPause(_ coordinator: RSVPGazeCoordinator) {
+        guard isPlaying else { return }
+        pause(deliberate: false)
+    }
+
+    func gazeCoordinatorDidChangeDisplayState(_ coordinator: RSVPGazeCoordinator) {
+        refreshEyeTrackingButton()
+    }
+
+    func gazeCoordinatorFocalPoint(_ coordinator: RSVPGazeCoordinator) -> CGPoint {
+        focalGazePoint
     }
 }
 

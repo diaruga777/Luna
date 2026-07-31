@@ -12,6 +12,8 @@
 	<string></string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Luna tracks your eyes to pause playback automatically when you look away.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Luna saves photos, GIFs, and videos you download from social posts to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

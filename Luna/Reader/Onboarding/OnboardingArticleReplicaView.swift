@@ -31,6 +31,9 @@ enum OnboardingArticleReplicaTiming {
     /// Tiles detach this far ahead of the arriving light so the glyph bloom
     /// is never hidden under still-flying pieces.
     static let shatterLeadDuration: TimeInterval = 0.35
+    /// Once the front has passed the bottom of the content, the page scrolls
+    /// this long to bring the below-the-fold setup card into view.
+    static let setupScrollDuration: TimeInterval = 0.7
 }
 
 /// Luna's fictional Safari article. The page loads clean and fully readable,
@@ -43,6 +46,9 @@ final class OnboardingArticleReplicaView: UIView {
     Your article, your browsing history, and every page you save stay private. Luna strips away subscription popups, sticky ads, autoplay distractions, and the clutter that gets between you and the story. Unlock supported articles, keep clean copies for flights and dead zones, search everything you have saved, and return to the exact piece you wanted without retracing your browsing history. Read in a calm scrolling view or switch to the RSVP speed reader when you want to move quickly. Inline web sections preserve the useful context of the original page while the focused reader keeps the surrounding noise out of your way. Save links from Safari, Messages, the Share Sheet, Shortcuts, or the Action Button; organise them once and find them on every return. Send finished articles to Kindle, preserve useful documents, and keep the original link close whenever you need it. Luna handles ordinary stories, paywalled articles, PDFs, and other documents in the same reading list, so research does not disappear across a pile of open tabs. Search your collection instead of your browser history, revisit a clean offline copy on the train or in the air, and choose the reading pace that suits the moment. The extension works where you already browse, and one press is enough to move something worth keeping into a quieter place. Nothing needs an account just to build your own reading list, and the pages you keep remain yours to revisit offline.
     """
 
+    var onActivateSafari: (() -> Void)?
+    var onSkipSafariSetup: (() -> Void)?
+
     private enum Stage {
         case pristine
         case cluttering
@@ -50,6 +56,13 @@ final class OnboardingArticleReplicaView: UIView {
         case cleaning
         case revealed
     }
+
+    /// Hosts the article content plus the below-the-fold setup card. It never
+    /// scrolls under the user's finger — only the staged post-reveal scroll —
+    /// so every coordinate the clutter and shatter use stays screen-fixed.
+    private let scrollView = UIScrollView()
+    private let setupCard = OnboardingSafariSetupCardView()
+    private var setupCorona: EclipseCoronaView?
 
     private let appIcon = MoonRevealImageView(
         image: OnboardingAppIcon.image()
@@ -143,11 +156,20 @@ final class OnboardingArticleReplicaView: UIView {
             "onboarding.safari.article.eclipseImage"
         body.accessibilityIdentifier = "onboarding.safari.article.body"
 
-        addSubview(appIcon)
-        addSubview(headline)
-        addSubview(byline)
-        addSubview(eclipseImage)
-        addSubview(body)
+        scrollView.isScrollEnabled = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.contentInsetAdjustmentBehavior = .never
+        addSubview(scrollView)
+
+        scrollView.addSubview(appIcon)
+        scrollView.addSubview(headline)
+        scrollView.addSubview(byline)
+        scrollView.addSubview(eclipseImage)
+        scrollView.addSubview(body)
+
+        setupCard.onActivate = { [weak self] in self?.onActivateSafari?() }
+        setupCard.onSkip = { [weak self] in self?.onSkipSafariSetup?() }
+        scrollView.addSubview(setupCard)
 
         // Every fake obstruction is a decoration: nothing inside is
         // interactive, so a tap lands on the page and runs the cleanup.
@@ -202,11 +224,47 @@ final class OnboardingArticleReplicaView: UIView {
             height: (contentWidth * 708 / 1920).rounded())
         let bodyY = eclipseImage.frame.maxY + 14
         let bodyBottom = urlBarTop - 8
+        let fittedBodyHeight = max(bodyBottom - bodyY, 44)
+        // The card's resting place is measured from the WHOLE article so it
+        // never moves: the body wears the viewport-fitted frame (and prefix)
+        // until the cleanup swaps in the full text and the taller frame.
+        let fullBodyHeight = max(
+            Self.height(
+                of: Self.fullArticleText,
+                width: contentWidth,
+                font: .systemFont(ofSize: 17, weight: .regular)),
+            fittedBodyHeight)
         body.frame = CGRect(
             x: horizontalInset,
             y: bodyY,
             width: contentWidth,
-            height: max(bodyBottom - bodyY, 44))
+            height: stage == .cleaning || stage == .revealed
+                ? fullBodyHeight
+                : fittedBodyHeight)
+
+        scrollView.frame = bounds
+        // A tight reading gap under the full text; the article copy is long
+        // enough that this always lands below the fold (the max() is a
+        // safety net for pathologically wide layouts, not the design).
+        let cardFrame = CGRect(
+            x: horizontalInset,
+            y: max(bodyY + fullBodyHeight + 20, bounds.height + 16),
+            width: contentWidth,
+            height: OnboardingSafariSetupCardView.preferredHeight)
+        setupCard.frame = cardFrame
+        if setupCorona?.bounds.size != cardFrame.size {
+            setupCorona?.removeFromSuperview()
+            let corona = EclipseCoronaView(
+                bodySize: cardFrame.size,
+                cornerRadius: OnboardingSafariSetupCardView.cornerRadius,
+                tint: LunaSurfacePalette.atmosphereTint)
+            scrollView.insertSubview(corona, belowSubview: setupCard)
+            setupCorona = corona
+        }
+        setupCorona?.frame = cardFrame
+        scrollView.contentSize = CGSize(
+            width: bounds.width,
+            height: cardFrame.maxY + 130)
 
         clutterContainer.frame = bounds
         adBanners[0].frame = CGRect(
@@ -358,15 +416,50 @@ final class OnboardingArticleReplicaView: UIView {
         }
 
         body.setText(Self.fullArticleText)
+        setNeedsLayout()
         let revealFinish = revealContentTopToBottom()
 
-        afterDelay(max(shatterFinish, revealFinish)) { view in
-            view.stage = .revealed
-            let startCompletion = view.cleanupCompletion
-            view.cleanupCompletion = nil
-            startCompletion?()
-            completion?()
+        // The page scrolls on to the setup card as soon as the front has
+        // passed the bottom of the SCREEN (and the last tiles have flown) —
+        // the article now extends below the fold, and that tail finishes its
+        // reveal while the scroll is already carrying it up.
+        let frontExitsScreen = min(
+            revealFinish, OnboardingArticleReplicaTiming.revealSweepDuration)
+        afterDelay(max(shatterFinish, frontExitsScreen) + 0.05) { view in
+            view.scrollToSetupCard {
+                view.stage = .revealed
+                let startCompletion = view.cleanupCompletion
+                view.cleanupCompletion = nil
+                startCompletion?()
+                completion?()
+            }
         }
+    }
+
+    private func scrollToSetupCard(completion: @escaping () -> Void) {
+        layoutIfNeeded()
+        let chromeTop = bounds.height - SafariBottomBar.chromeHeight - 34
+        let offset = CGPoint(
+            x: 0,
+            y: max(0, setupCard.frame.maxY + 20 - chromeTop))
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled
+                ? 0.2 : OnboardingArticleReplicaTiming.setupScrollDuration,
+            delay: 0,
+            usingSpringWithDamping: 0.92,
+            initialSpringVelocity: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState]
+        ) {
+            self.scrollView.contentOffset = offset
+        } completion: { _ in
+            completion()
+        }
+    }
+
+    /// Returning from Safari without the extension having run re-offers the
+    /// already-visible setup card.
+    func reactivateSetupCard() {
+        setupCard.setActionsEnabled(true)
     }
 
     /// Re-arms each content element and cuts its reveal from one shared
@@ -520,6 +613,21 @@ final class OnboardingArticleReplicaView: UIView {
             guard let self, self.sequenceGeneration == generation else { return }
             action(self)
         }
+    }
+
+    private static func height(
+        of text: String,
+        width: CGFloat,
+        font: UIFont
+    ) -> CGFloat {
+        guard width > 0 else { return 0 }
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 5
+        return ceil((text as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font, .paragraphStyle: style],
+            context: nil).height)
     }
 
     private static func prefix(
@@ -859,6 +967,120 @@ final class OnboardingNewsletterPopupView: UIView {
         emailPlaceholder.frame = emailField.bounds.insetBy(dx: 14, dy: 0)
         submitButton.frame = CGRect(
             x: inset, y: emailField.frame.maxY + 12, width: width, height: 48)
+    }
+}
+
+/// The one real thing on the fake page: a mini deck card — the usual black
+/// card surface riding the launch eclipse corona — sitting below the fold
+/// with the extension explainer, the Activate Safari action, and the
+/// skip-out.
+final class OnboardingSafariSetupCardView: UIView {
+    static let cornerRadius = CardSurfaceView.cornerRadius
+    static let preferredHeight: CGFloat = 214
+
+    var onActivate: (() -> Void)?
+    var onSkip: (() -> Void)?
+
+    private let surface = CardSurfaceView()
+    private let content = UIView()
+    private let explainer = UILabel()
+    private let activateButton = UIButton(type: .system)
+    private let skipButton = UIButton(type: .system)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        accessibilityIdentifier = "onboarding.safari.article.setupCard"
+
+        surface.backgroundColor = .black
+        surface.setBorderEnabled(true)
+        addSubview(surface)
+        content.backgroundColor = .black
+        surface.installContentView(content)
+
+        explainer.text = "Luna in Safari automatically gives you "
+            + "the web experience you want"
+        explainer.font = .systemFont(ofSize: 17, weight: .medium)
+        explainer.textColor = .white
+        explainer.textAlignment = .center
+        explainer.numberOfLines = 3
+        explainer.adjustsFontSizeToFitWidth = true
+        explainer.minimumScaleFactor = 0.85
+        explainer.accessibilityIdentifier =
+            "onboarding.safari.article.setupExplainer"
+        content.addSubview(explainer)
+
+        activateButton.configuration = GlassStyle.actionButtonConfiguration(
+            title: "Activate Safari",
+            symbol: "safari.fill",
+            prominent: true)
+        activateButton.accessibilityLabel = "Activate Safari"
+        activateButton.accessibilityIdentifier =
+            "onboarding.safari.article.setupActivate"
+        activateButton.addTarget(
+            self, action: #selector(activateTapped), for: .touchUpInside)
+        content.addSubview(activateButton)
+
+        var skipConfiguration = UIButton.Configuration.plain()
+        skipConfiguration.title = "Skip"
+        skipConfiguration.baseForegroundColor =
+            UIColor.white.withAlphaComponent(0.62)
+        skipConfiguration.contentInsets = NSDirectionalEdgeInsets(
+            top: 8, leading: 14, bottom: 8, trailing: 14)
+        skipConfiguration.titleTextAttributesTransformer =
+            UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .systemFont(ofSize: 16, weight: .medium)
+                return outgoing
+            }
+        skipButton.configuration = skipConfiguration
+        skipButton.accessibilityLabel = "Skip"
+        skipButton.accessibilityIdentifier =
+            "onboarding.safari.article.setupSkip"
+        skipButton.addTarget(
+            self, action: #selector(skipTapped), for: .touchUpInside)
+        content.addSubview(skipButton)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        surface.frame = bounds
+        surface.layoutIfNeeded()
+        let inset: CGFloat = 22
+        let width = bounds.width - inset * 2
+        explainer.frame = CGRect(x: inset, y: 20, width: width, height: 66)
+        let skipSize = skipButton.sizeThatFits(
+            CGSize(width: width, height: 44))
+        skipButton.frame = CGRect(
+            x: (bounds.width - max(80, skipSize.width)) / 2,
+            y: bounds.height - max(38, skipSize.height) - 12,
+            width: max(80, skipSize.width),
+            height: max(38, skipSize.height))
+        let buttonSize = activateButton.sizeThatFits(
+            CGSize(width: width, height: 56))
+        let buttonWidth = min(width, max(186, buttonSize.width))
+        activateButton.frame = CGRect(
+            x: (bounds.width - buttonWidth) / 2,
+            y: skipButton.frame.minY - max(52, buttonSize.height) - 8,
+            width: buttonWidth,
+            height: max(52, buttonSize.height))
+    }
+
+    func setActionsEnabled(_ enabled: Bool) {
+        activateButton.isUserInteractionEnabled = enabled
+        skipButton.isUserInteractionEnabled = enabled
+    }
+
+    @objc private func activateTapped() {
+        setActionsEnabled(false)
+        onActivate?()
+    }
+
+    @objc private func skipTapped() {
+        setActionsEnabled(false)
+        onSkip?()
     }
 }
 

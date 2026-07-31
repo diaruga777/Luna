@@ -16,7 +16,6 @@ final class SafariBottomBar: UIView {
     private let more = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let hostLabel = UILabel()
     private let urlHighlight = OnboardingURLHighlightView()
-    private var pageMenuIcon: UIImageView?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -49,7 +48,6 @@ final class SafariBottomBar: UIView {
         backForward.contentView.addSubview(nav)
 
         let page = icon("text.justify.leading", alpha: 0.86)
-        pageMenuIcon = page
         hostLabel.text = "luna.app"
         hostLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         hostLabel.textColor = UIColor(white: 0.10, alpha: 1)
@@ -163,20 +161,6 @@ final class SafariBottomBar: UIView {
     }
 
     var isURLHighlighted: Bool { urlHighlight.isHighlighted }
-
-    /// The URL bar's leading page-menu item — where Safari anchors its
-    /// extension popover — in this bar's coordinate space.
-    var leadingAddressItemFrame: CGRect {
-        guard let pageMenuIcon, pageMenuIcon.superview != nil else {
-            return CGRect(
-                x: address.frame.minX + 13,
-                y: address.frame.midY - 10,
-                width: 21,
-                height: 21)
-        }
-        layoutIfNeeded()
-        return convert(pageMenuIcon.bounds, from: pageMenuIcon)
-    }
 
     var highlightedURLRegion: OnboardingHighlightedLinkRegion {
         OnboardingHighlightedLinkRegion(

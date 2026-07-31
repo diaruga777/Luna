@@ -507,8 +507,10 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(
             productionRoot.parent === onboarding,
             "The production root must be mounted behind Safari during the save")
+        // The Safari replica's setup card carries its own corona, so only the
+        // intro's direct-subview corona must be gone.
         XCTAssertTrue(
-            onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
+            onboarding.view.subviews.compactMap { $0 as? EclipseCoronaView }.isEmpty,
             "Pressing Show me how must remove the retained corona before expansion")
     }
 
@@ -758,10 +760,93 @@ final class ReaderOnboardingTests: XCTestCase {
             $0.accessibilityIdentifier == "onboarding.safari.article.clutter"
         })
         XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
+
+        // Once the front reaches the bottom, the page scrolls the setup card
+        // fully into view above the browser chrome.
+        let card = try XCTUnwrap(
+            article.descendants(of: OnboardingSafariSetupCardView.self).first)
+        let scroll = try XCTUnwrap(
+            article.descendants(of: UIScrollView.self).first {
+                card.isDescendant(of: $0)
+            })
+        XCTAssertGreaterThan(scroll.contentOffset.y, 0)
+        XCTAssertLessThanOrEqual(
+            card.frame.maxY - scroll.contentOffset.y,
+            article.bounds.height - 58 - 34)
+
+        // The full article is long enough that the card rests a tight reading
+        // gap below it — never the offscreen-safety fallback position.
+        let bodyView = try XCTUnwrap(body)
+        XCTAssertEqual(
+            card.frame.minY, bodyView.frame.maxY + 20, accuracy: 0.5,
+            "The card must sit right under the full text — extend the article copy if this fails")
+        XCTAssertGreaterThanOrEqual(card.frame.minY, article.bounds.height)
     }
 
     @MainActor
-    func testExtensionCalloutMocksTheSystemPopoverAboveTheURLBar() throws {
+    func testSetupCardLivesBelowTheFoldWithGlassCoronaAndBothActions() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .reader))
+        safari.loadViewIfNeeded()
+        safari.view.frame = CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize)
+        safari.view.layoutIfNeeded()
+
+        let article = try XCTUnwrap(
+            safari.view.descendants(of: OnboardingArticleReplicaView.self).first)
+        let card = try XCTUnwrap(
+            article.descendants(of: OnboardingSafariSetupCardView.self).first)
+        let scroll = try XCTUnwrap(
+            article.descendants(of: UIScrollView.self).first {
+                card.isDescendant(of: $0)
+            })
+
+        // Below the fold until the staged post-reveal scroll: unscrolled, the
+        // card sits entirely outside the visible page.
+        XCTAssertEqual(scroll.contentOffset, .zero)
+        XCTAssertGreaterThanOrEqual(card.frame.minY, article.bounds.height)
+        XCTAssertGreaterThan(
+            scroll.contentSize.height,
+            card.frame.maxY,
+            "The content must extend past the card so it can scroll clear of the chrome")
+        XCTAssertFalse(scroll.isScrollEnabled, "Only the staged scroll moves the page")
+
+        // The mini-card wears the usual black deck-card surface and rides the
+        // launch corona.
+        let cardSurface = try XCTUnwrap(
+            card.descendants(of: CardSurfaceView.self).first)
+        XCTAssertEqual(cardSurface.backgroundColor, .black)
+        let corona = try XCTUnwrap(
+            article.descendants(of: EclipseCoronaView.self).first)
+        XCTAssertEqual(corona.frame, card.frame)
+
+        let labels = card.descendants(of: UILabel.self).compactMap(\.text)
+        XCTAssertTrue(labels.contains(
+            "Luna in Safari automatically gives you the web experience you want"))
+        let activate = try XCTUnwrap(
+            card.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == "Activate Safari"
+            })
+        let skip = try XCTUnwrap(
+            card.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == "Skip"
+            })
+
+        var didActivate = false
+        var didSkip = false
+        safari.onSetUpSafari = { didActivate = true }
+        safari.onSkipSafariSetup = { didSkip = true }
+        activate.sendActions(for: .touchUpInside)
+        XCTAssertTrue(didActivate)
+        XCTAssertFalse(didSkip)
+        safari.restoreInPageSafariSetup()
+        skip.sendActions(for: .touchUpInside)
+        XCTAssertTrue(didSkip)
+    }
+
+    @MainActor
+    func testSetupCardButtonsAreHittableAfterTheCleanupScroll() throws {
         let safari = SafariReplicaViewController(
             configuration: .configuration(for: .reader))
         let window = UIWindow(frame: CGRect(
@@ -772,48 +857,109 @@ final class ReaderOnboardingTests: XCTestCase {
         safari.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        safari.presentExtensionCallout()
+        let article = try XCTUnwrap(
+            safari.view.descendants(of: OnboardingArticleReplicaView.self).first)
+        let cleaned = expectation(description: "cleanup")
+        article.cleanUpClutter { cleaned.fulfill() }
+        wait(for: [cleaned], timeout: 6)
 
-        let callout = try XCTUnwrap(
-            safari.view.descendants(of: OnboardingExtensionCalloutView.self).first)
-        XCTAssertFalse(callout.isHidden)
-        let calloutLabels = callout.descendants(of: UILabel.self)
-        XCTAssertTrue(calloutLabels.contains {
-            $0.accessibilityIdentifier == "onboarding.safari.callout.appName"
-                && $0.text == OnboardingExtensionCalloutView.appDisplayName
-        })
-        XCTAssertTrue(calloutLabels.contains {
-            $0.text == "Luna in Safari automatically gives you "
-                + "the web experience you want"
-        })
-        let activate = try XCTUnwrap(
-            callout.descendants(of: UIButton.self).first)
-        XCTAssertEqual(activate.accessibilityLabel, "Activate Safari")
+        for label in ["Activate Safari", "Skip"] {
+            let button = try XCTUnwrap(
+                article.descendants(of: UIButton.self).first {
+                    $0.accessibilityLabel == label
+                })
+            let point = window.convert(
+                CGPoint(x: button.bounds.midX, y: button.bounds.midY),
+                from: button)
+            let hit = window.hitTest(point, with: nil)
+            XCTAssertNotNil(hit)
+            XCTAssertTrue(
+                hit === button || hit?.isDescendant(of: button) == true,
+                "\(label) at \(point) is shadowed by \(String(describing: hit))")
+        }
+    }
 
-        let skipPill = try XCTUnwrap(
-            safari.view.descendants(of: UIButton.self).first {
-                $0.accessibilityIdentifier == "onboarding.safari.skipPill"
+    @MainActor
+    func testSetupCardButtonsAreHittableInsideTheFullOnboardingHierarchy() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: AppOnboardingStore(app: .reader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                temporarySave: OnboardingTemporarySave(
+                    install: { true },
+                    cleanup: {}),
+                makeCompletedRootViewController: {
+                    UINavigationController(rootViewController: UIViewController())
+                }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let button = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == "Let's go"
             })
-        XCTAssertFalse(skipPill.isHidden)
-        XCTAssertEqual(skipPill.configuration?.title, "Skip")
+        button.sendActions(for: .touchUpInside)
 
-        // Both float above the browser chrome; the pill hugs the right edge
-        // and the callout's arrow grows from the bar's leading page item.
-        let barTop = safari.view.bounds.height - 58 - 34
-        XCTAssertLessThanOrEqual(
-            callout.frame.maxY,
-            barTop - OnboardingExtensionCalloutView.arrowHeight + 0.5)
-        XCTAssertLessThanOrEqual(skipPill.frame.maxY, barTop)
-        XCTAssertGreaterThan(skipPill.frame.minX, safari.view.bounds.midX)
-        XCTAssertGreaterThanOrEqual(
-            skipPill.frame.minX,
-            callout.frame.maxX,
-            "The Skip pill must not overlap the callout card")
+        // Ride the real staged sequence until the cleanup scroll has brought
+        // the setup card up (the scroll is the last step before the buttons
+        // matter).
+        let deadline = Date(timeIntervalSinceNow: 15)
+        var scroll: UIScrollView?
+        while Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            let article = onboarding.view
+                .descendants(of: OnboardingArticleReplicaView.self).first
+            scroll = article?.descendants(of: UIScrollView.self).first
+            if let scroll, scroll.contentOffset.y > 0 { break }
+        }
+        XCTAssertGreaterThan(
+            try XCTUnwrap(scroll).contentOffset.y, 0,
+            "The staged demo must reach the setup-card scroll")
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0))
 
-        var didActivate = false
-        safari.onSetUpSafari = { didActivate = true }
-        activate.sendActions(for: .touchUpInside)
-        XCTAssertTrue(didActivate)
+        for label in ["Activate Safari", "Skip"] {
+            let cardButton = try XCTUnwrap(
+                onboarding.view.descendants(of: UIButton.self).first {
+                    $0.accessibilityLabel == label
+                })
+            let point = window.convert(
+                CGPoint(x: cardButton.bounds.midX, y: cardButton.bounds.midY),
+                from: cardButton)
+            let hit = window.hitTest(point, with: nil)
+            XCTAssertTrue(
+                hit === cardButton || hit?.isDescendant(of: cardButton) == true,
+                "\(label) at \(point) is shadowed by \(String(describing: hit))")
+        }
+
+        // Skipping must ride the same rails as a completed Safari setup: the
+        // staged save plays and hands off to the Messages demonstration.
+        let skip = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == "Skip"
+            })
+        skip.sendActions(for: .touchUpInside)
+        let messagesDeadline = Date(timeIntervalSinceNow: 15)
+        var messages: MessagesReplicaViewController?
+        while Date() < messagesDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            messages = onboarding.children.compactMap {
+                $0 as? MessagesReplicaViewController
+            }.first
+            if let messages, !messages.view.isHidden { break }
+        }
+        XCTAssertEqual(
+            try XCTUnwrap(messages).view.isHidden, false,
+            "Skip must continue into the Messages demonstration")
     }
 
     func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {

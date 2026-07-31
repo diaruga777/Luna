@@ -31,6 +31,12 @@ final class AppOnboardingStore {
         defaults.set(true, forKey: completionKey)
     }
 
+    /// The diagnostics onboarding reset: the full first-run journey plays
+    /// again on this app's next launch.
+    func resetCompletion() {
+        defaults.removeObject(forKey: completionKey)
+    }
+
     var temporarySaveIdentifier: UUID? {
         defaults.string(forKey: temporarySaveKey).flatMap(UUID.init(uuidString:))
     }

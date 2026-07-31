@@ -342,6 +342,9 @@ final class AppOnboardingViewController: UIViewController {
         guard safariReplica == nil else { return }
         let safari = SafariReplicaViewController(configuration: configuration)
         safari.onSetUpSafari = { [weak self] in self?.openSafariSetup() }
+        safari.onSkipSafariSetup = { [weak self] in
+            self?.skipSafariSetupAndContinue()
+        }
         safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
         safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
         safari.onSetUpLater = { [weak self] in self?.finishOnboarding() }
@@ -777,6 +780,20 @@ final class AppOnboardingViewController: UIViewController {
             guard !opened else { return }
             Task { @MainActor in self?.externalOpenFailed(.safari) }
         }
+    }
+
+    /// Skipping the Safari extension follows the exact route a completed
+    /// setup takes on return from Safari: the article's staged save plays,
+    /// then the Messages demonstration leads into Action Button setup.
+    private func skipSafariSetupAndContinue() {
+        guard externalReturn == .none,
+              !isFinishing,
+              journeyStage == .safariDemonstration
+        else { return }
+        journeyStage = .safariSetup
+        guard journeyStage.completedSafariSetup() else { return }
+        continuesToMessagesAfterSafariSave = true
+        safariReplica?.playURLBarZoomAndSave()
     }
 
     private func installShortcut() {

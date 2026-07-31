@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-manifest="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/manifest.json"
+resources="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+manifest="${resources}/manifest.json"
 [ -f "$manifest" ] || exit 0
 
 case "${PRODUCT_BUNDLE_IDENTIFIER}" in
@@ -23,25 +24,29 @@ case "${PRODUCT_BUNDLE_IDENTIFIER}" in
     ;;
 esac
 
-# Xcode's synchronized-group resource copy FLATTENS nested resource folders, so
-# the source `_locales/en/messages.json` lands at the bundle root. Rewrite it
-# wherever it ended up.
-for messages in \
-  "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/_locales/en/messages.json" \
-  "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/messages.json"
-do
-  if [ -f "$messages" ]; then
-    /usr/bin/plutil -replace extensionName.message -string "$app_name" "$messages"
-  fi
-done
+# `browser.i18n` reads ONLY `_locales/<locale>/messages.json`, and Xcode's
+# synchronized-group resource copy FLATTENS nested resource folders — the source
+# file lands at the bundle root, where the extension cannot see it, so every
+# getMessage() returned "" and the in-page pill rendered as a text-less stub.
+# Rebuild the directory from the source tree (authoritative, and independent of
+# whether this build's copy phase re-ran), drop the flattened stray, THEN rewrite
+# the per-app name in place.
+/bin/rm -rf "${resources}/_locales"
+/bin/cp -R "${SRCROOT}/LunaSafari/Resources/_locales" "${resources}/_locales"
+/bin/rm -f "${resources}/messages.json"
+
+messages="${resources}/_locales/en/messages.json"
+if [ ! -f "$messages" ]; then
+  echo "error: no _locales/en/messages.json under ${SRCROOT}/LunaSafari/Resources" >&2
+  exit 1
+fi
+/usr/bin/plutil -replace extensionName.message -string "$app_name" "$messages"
 
 info_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
 if [ -f "$info_plist" ]; then
   /usr/bin/plutil -replace CFBundleDisplayName -string "$app_name" "$info_plist"
   /usr/bin/plutil -replace CFBundleName -string "$app_name" "$info_plist"
 fi
-
-resources="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
 
 # The 1024px masters are not consistently named: most appiconsets use
 # "<Name>-1024.png", AppIconLuna uses "<Name>1024.png". Accept either, and FAIL

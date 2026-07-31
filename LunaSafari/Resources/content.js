@@ -18,10 +18,32 @@
     // resurrect an independently-maintained Safari rule set.
     var PRODUCT_RULES = self.__LUNA_PRODUCT_RULES || {};
 
+    // Every string this script renders, with its English default inline.
+    // `browser.i18n.getMessage` returns "" for EVERY key unless the bundle keeps
+    // `_locales/<locale>/messages.json` intact, and Xcode's synchronized-group
+    // resource copy flattens that folder to the bundle root — which is what
+    // turned the in-page pill into a bare padding-sized stub with no text. The
+    // build phase (`scripts/update_safari_extension_branding.sh`) restores the
+    // directory; these defaults make an empty lookup non-fatal regardless, and
+    // are also what the standalone WKWebView test harnesses see (no `browser`).
+    // Keep in sync with `_locales/en/messages.json` — SafariPillLabelTests.
+    var MESSAGE_DEFAULTS = {
+        unlockedWithLuna: "Unlocked with Luna",
+        openingLuna: "Opening Luna…",
+        readInLuna: "📖  Read in Luna",
+        downloadInLuna: "Download in Luna",
+        trackInLuna: "Track in Luna"
+    };
+
     function localizedMessage(key) {
-        if (typeof browser === "undefined" || !browser.i18n) { return ""; }
-        return browser.i18n.getMessage(key);
+        var localized = "";
+        if (typeof browser !== "undefined" && browser.i18n) {
+            localized = browser.i18n.getMessage(key) || "";
+        }
+        return localized || MESSAGE_DEFAULTS[key] || "";
     }
+    window.__lunaLocalizedMessage = localizedMessage;
+    window.__lunaMessageDefaults = MESSAGE_DEFAULTS;
 
     function productRuleArray(name) {
         return Array.isArray(PRODUCT_RULES[name]) ? PRODUCT_RULES[name] : [];

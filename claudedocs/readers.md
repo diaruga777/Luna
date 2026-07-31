@@ -31,8 +31,16 @@ The Reader carousel gives every card a stable title region using the normal 30pt
 reader-title font and the saved page's asynchronously cached favicon (a globe while
 loading). Scroll and Original/web-archive modes own two pixel-identical copies: a
 permanent copy in the scroll view's top content-inset region and a pinned card copy.
-While any of the in-content title remains onscreen, the pinned copy is hidden; only
-after the title has fully scrolled away can it appear with surfaced card chrome. An
+Ownership of the title passes between them on a LATCH with a threshold at each end of
+its travel, never one shared edge (`ReaderScrollPosition.pinnedTitleOwnsTitle`, in
+LunaModels): the pinned copy takes over only once the scrolling copy has left the card
+entirely — nothing is onscreen there, so its fade with surfaced card chrome is clean —
+and hands back exactly where the scrolling copy is home again, the one offset at which
+the two coincide, so the swap renders NO changed pixels and is applied unanimated. In
+between, the pinned copy stays parked over the scrolling copy's approach. Sharing one
+edge is what made scrolling back to the top look wrong: the pinned copy left while the
+scrolling copy was still fully above the card, so the title blinked out and then slid
+back in behind it. An
 offset within that title region is normalized to zero when Scroll or Original persists,
 so reopening shows the title in full instead of restoring a clipped fragment. That
 canonical zero is converted back to UIKit's inset-relative top offset on restore

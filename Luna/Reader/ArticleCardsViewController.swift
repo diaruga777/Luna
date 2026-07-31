@@ -1662,6 +1662,8 @@ private final class ReaderCardContentViewController: CardContentViewController,
     /// prefix-to-full article swap) so the pinned/scrolling title copies never
     /// trade visibility for a single frame after a card transition.
     private var pendingProgrammaticTitleUpdate: DispatchWorkItem?
+    /// Which copy currently owns the title — see `updateTitleHandoffLatch()`.
+    private var pinnedTitleHasTakenOver = false
     private(set) var isCentered = false
     var rabbitHoleReader: LunaReaderUI.RabbitHoleReaderViewController? {
         reader as? LunaReaderUI.RabbitHoleReaderViewController
@@ -2069,10 +2071,11 @@ private final class ReaderCardContentViewController: CardContentViewController,
     }
 
     private func updatePinnedTitleVisibility(animated: Bool) {
+        updateTitleHandoffLatch()
         // With no scroll surface the active reader is RSVP (or a non-ready
         // placeholder), whose title is fixed and never follows card chrome.
         let showsPinnedTitle = titleScrollView == nil
-            || (cardChromeVisible && focusedScrollIsPastTitle)
+            || (cardChromeVisible && pinnedTitleHasTakenOver)
         let changes = {
             self.titleHeader.alpha = showsPinnedTitle ? 1 : 0
         }
@@ -2087,10 +2090,20 @@ private final class ReaderCardContentViewController: CardContentViewController,
         }
     }
 
-    private var focusedScrollIsPastTitle: Bool {
-        guard let scroll = titleScrollView else { return false }
-        let distanceFromTop = scroll.contentOffset.y + scroll.adjustedContentInset.top
-        return distanceFromTop > titleHeaderHeight + 1
+    /// Advances the latched handoff between the two copies (the rule itself is
+    /// `ReaderScrollPosition.pinnedTitleOwnsTitle`). While the pinned copy owns
+    /// the title it stays parked over the scrolling copy's approach, and the
+    /// swap lands at the one offset where the two are pixel-identical — so a
+    /// scroll-driven change of owner is applied without animation.
+    private func updateTitleHandoffLatch() {
+        guard let scroll = titleScrollView else {
+            pinnedTitleHasTakenOver = false
+            return
+        }
+        pinnedTitleHasTakenOver = ReaderScrollPosition.pinnedTitleOwnsTitle(
+            wasPinned: pinnedTitleHasTakenOver,
+            distanceFromTop: Double(scroll.contentOffset.y + scroll.adjustedContentInset.top),
+            titleHeaderHeight: Double(titleHeaderHeight))
     }
 
     private func applyReaderTopInset() {

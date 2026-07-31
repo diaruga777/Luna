@@ -259,15 +259,14 @@ public struct ArticleFetcher: HTMLFetching {
     /// service takes", without giving up the better answer when it arrives in time.
     public func fetchWaybackRawHTML(for url: URL) async throws -> String {
         let canonical = Self.canonicalForArchiving(url).absoluteString
-        let indexed = Task { try? await waybackTimestamp(forCanonical: canonical, end: .newest) }
-        let available = Task { await availabilityReplayURL(forCanonical: canonical) }
-        defer { indexed.cancel(); available.cancel() }
-
-        if let timestamp = await preferredTimestamp(indexed, orFallbackFrom: available) {
+        switch await resolveNewestSnapshot(canonical: canonical) {
+        case let .indexed(timestamp):
             return try await fetchWaybackRaw(timestamp: timestamp, canonical: canonical)
+        case let .available(replayURL):
+            return try await fetch(url: replayURL, userAgent: Self.safariUserAgent, timeout: 30)
+        case nil:
+            throw FetchError.badResponse(status: nil)
         }
-        guard let replayURL = await available.value else { throw FetchError.badResponse(status: nil) }
-        return try await fetch(url: replayURL, userAgent: Self.safariUserAgent, timeout: 30)
     }
 
     /// Resolves the OLDEST Wayback 200 snapshot and fetches its raw `id_` replay — the
@@ -299,33 +298,66 @@ public struct ArticleFetcher: HTMLFetching {
         return try await fetchWaybackRaw(timestamp: timestamp, canonical: canonical)
     }
 
-    /// Awaits the CDX timestamp, but abandons it `waybackIndexGrace` after `available`
-    /// has produced a usable snapshot — so a stalled index costs a save a couple of
-    /// seconds rather than its whole timeout. When the Availability API has nothing to
-    /// offer there is no cheaper answer to fall back to, so CDX is waited out in full.
-    private func preferredTimestamp(
-        _ indexed: Task<String?, Never>, orFallbackFrom available: Task<URL?, Never>
-    ) async -> String? {
-        enum Leg: Sendable {
+    /// Which capture the newest-snapshot race settled on.
+    private enum NewestSnapshot {
+        /// A CDX timestamp — replayed raw (`…id_/…`), un-mangled source HTML.
+        case indexed(String)
+        /// The Availability API's own replay URL (IA's rewritten replay).
+        case available(URL)
+    }
+
+    /// Races the CDX index against the Availability API for the newest capture. CDX wins
+    /// whenever it answers; the moment a usable Availability snapshot exists, CDX gets
+    /// `waybackIndexGrace` more and then loses. With no Availability answer to fall back
+    /// on, the grace timer is never even started and CDX is waited out in full.
+    ///
+    /// Both lookups are STRUCTURED children doing their own I/O. That is load-bearing,
+    /// not stylistic: `withTaskGroup` implicitly awaits every child before returning, and
+    /// wrapping a leg in an unstructured `Task` to await its `.value` hides the request
+    /// from the group's cancellation entirely — the first cut of this did exactly that,
+    /// and the group went on blocking for the full 8s on the stalled CDX request it had
+    /// just decided to walk away from (measured: grace expired at 1.5s, returned at
+    /// 8.0s). As direct children, `cancelAll` — including the implicit one at scope exit
+    /// — reaches `URLSession`, and abandoning a leg is immediate.
+    private func resolveNewestSnapshot(canonical: String) async -> NewestSnapshot? {
+        enum Event: Sendable {
             case indexed(String?)
+            case available(URL?)
             case graceExpired
         }
-        return await withTaskGroup(of: Leg.self) { group in
-            group.addTask { .indexed(await indexed.value) }
+        return await withTaskGroup(of: Event.self) { group in
             group.addTask {
-                // No fallback → the index is the only hope; let its own timeout bound it.
-                let wait = await available.value == nil
-                    ? Self.waybackIndexTimeout
-                    : Self.waybackIndexGrace
-                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-                return .graceExpired
+                .indexed(try? await waybackTimestamp(forCanonical: canonical, end: .newest))
             }
-            var winner: String?
-            if case let .indexed(timestamp) = await group.next() ?? .graceExpired {
-                winner = timestamp
+            group.addTask {
+                .available(await availabilityReplayURL(forCanonical: canonical))
             }
-            group.cancelAll()
-            return winner
+
+            var fallback: URL?
+            var indexExhausted = false
+            for await event in group {
+                switch event {
+                case let .indexed(timestamp):
+                    if let timestamp { return .indexed(timestamp) }
+                    indexExhausted = true
+                    if let fallback { return .available(fallback) }
+                case let .available(url):
+                    fallback = url
+                    if indexExhausted { return url.map(NewestSnapshot.available) }
+                    // The index is still working, but there is now something to fall back
+                    // to — so start its clock.
+                    if url != nil {
+                        group.addTask {
+                            try? await Task.sleep(
+                                nanoseconds: UInt64(Self.waybackIndexGrace * 1_000_000_000))
+                            return .graceExpired
+                        }
+                    }
+                case .graceExpired:
+                    return fallback.map(NewestSnapshot.available)
+                }
+            }
+            return nil
         }
     }
 

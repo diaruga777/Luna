@@ -228,23 +228,37 @@ The root uses the production `CardCarouselViewController`:
    with no shine at all while the slower body bloomed correctly (the 6×
    `-slowOnboardingAnimations` run hid this entirely). For the same reason the
    `GlyphPixelBloomView` clock is anchored to its first display-link tick and
-   the moon-reveal `CABasicAnimation`s carry no explicit `beginTime`. Each
-   obstruction's tiles blast away from the front, rotate, and fade to expose
-   the article beneath, detaching only a fraction ahead of the arriving
-   light: one horizontal front shatters the clutter and brightens the content
-   in a single pass, and the reveal is EXACTLY the intro's — the same
-   glyph-pixel bloom, with `GlyphPixelBloomView`'s falloff distances scaled by
-   the front's speed relative to the intro line's (~46pt/s reference), so
+   the moon-reveal `CABasicAnimation`s carry no explicit `beginTime`.
+   **Everything is cut from ONE front with zero offset and the front itself
+   has no marker — no rim, no line, only its effect.** The front leaves the
+   screen top at sweep start and descends at `height / 2.2s`; each element's
+   occluder edge starts 1pt above its own top exactly as the front arrives
+   and travels at exactly the front's speed
+   (`revealFrontCrossingDistance / frontSpeed`), each obstruction tile
+   detaches at the instant the front line reaches its center (scheduled
+   through the same generation-guarded dispatch clock as the reveals — a
+   pre-scheduled `UIView.animate(delay:)` counts from its own commit and ran
+   a beat ahead), and the bloom's band position is slaved to the moon
+   layer's *presentation* translation each display-link tick, so the light
+   can never run ahead of or behind its own mask (a drifting clock is what
+   made the text "appear, then brighten in chunks"). The reveal is EXACTLY
+   the intro's — the same glyph-pixel bloom, with falloff distances scaled
+   by the front's speed relative to the intro line's (~46pt/s reference), so
    every glyph brightens and cools over the same TIME as “You want to read
-   more…” despite the ~9× faster sweep (the bloom renders just a strip around
-   the edge, so article-length text sweeps at full frame rate). The images
-   ride the same light pass: `MoonRevealImageView` feeds a raster of the image
-   (aspect fill and corner mask included) to its own `GlyphPixelBloomView`, so
-   the image's bright pixels — the NASA moons, the icon art — flare white-hot
-   at the edge and cool back to their normal colors exactly like glyphs. The
+   more…” despite the ~9× faster sweep (the bloom renders just a strip
+   around the edge, so article-length text sweeps at full frame rate). The
+   images ride the same light pass: `MoonRevealImageView` feeds its own
+   `GlyphPixelBloomView` a raster of the image as displayed whose alpha is
+   rebuilt from LUMINANCE — Quartz shadows key off alpha, and an opaque
+   photograph's black sky would otherwise glow like a full moon (note the
+   masking rule: a grayscale masking image KEEPS samples where it is white,
+   the opposite of true image masks) — at a lowered emitter gain (0.45) so
+   only genuinely bright pixels (the NASA moons, the icon's dome and book)
+   flare white-hot and cool back to their normal colors exactly like glyph
+   strokes, along the image's whole height as the front crosses it. The
    setup card, sharing the screen, comes out of the same sweep from behind a
-   page-coloured curtain (`MoonRevealCurtainView`, same luminous rim) — there
-   is no scroll and the browser bar never moves.
+   page-coloured curtain (`MoonRevealCurtainView`, occluder only, no rim) —
+   there is no scroll and the browser bar never moves.
    Only after the cleanup finishes does onboarding start the
    Safari PiP guide and open real Safari. If the extension has not run, return
    restores the in-page prompt for another attempt. Choosing “Skip for now”

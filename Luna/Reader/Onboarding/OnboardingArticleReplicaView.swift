@@ -17,11 +17,9 @@ private enum OnboardingArticleReplicaPalette {
 enum OnboardingArticleReplicaTiming {
     static let shatterDuration: TimeInterval = 0.86
     /// One continuous lunar edge crosses the whole page in this time; every
-    /// element's reveal is cut from the same constant-speed front.
+    /// element's reveal, every tile detachment and the setup-card curtain
+    /// are cut from the same constant-speed front, with zero offset.
     static let revealSweepDuration: TimeInterval = 2.2
-    /// Tiles detach just barely ahead of the arriving light — the same front
-    /// shatters the clutter and brightens the text in one pass.
-    static let shatterLeadDuration: TimeInterval = 0.08
 }
 
 /// Luna's fictional Safari article. The page loads already buried under ads,
@@ -321,7 +319,7 @@ final class OnboardingArticleReplicaView: UIView {
 
     /// Covers the setup card (and its corona) with the page background and
     /// sweeps the cover away as the shared front passes over it, so the card
-    /// brightens in with the same eclipse edge as the content above. Returns
+    /// comes out from the same invisible edge as the content above. Returns
     /// when the curtain has fully cleared.
     private func revealSetupCardBehindCurtain() -> TimeInterval {
         let top = body.frame.maxY + 2
@@ -341,10 +339,10 @@ final class OnboardingArticleReplicaView: UIView {
             return 0
         }
 
-        let sweep = OnboardingArticleReplicaTiming.revealSweepDuration
-        let height = max(bounds.height, 1)
-        let delay = max(0, TimeInterval((top - 22) / height)) * sweep
-        let duration = TimeInterval((curtain.frame.height + 28) / height) * sweep
+        curtain.layoutIfNeeded()
+        let delay = TimeInterval(max(0, top - 1) / frontSpeed)
+        let duration = TimeInterval(
+            curtain.revealFrontCrossingDistance / frontSpeed)
         afterDelay(delay) { view in
             view.setupCurtain?.reveal(duration: duration) {
                 view.setupCurtain?.removeFromSuperview()
@@ -360,31 +358,40 @@ final class OnboardingArticleReplicaView: UIView {
         setupCard.setActionsEnabled(true)
     }
 
-    /// Cuts each (already re-occluded) element's reveal from one shared
-    /// constant-speed front: each view's edge begins exactly when the front
-    /// reaches its top and exits exactly when the front passes its bottom, so
-    /// the body's light visibly continues from the title's instead of every
-    /// element replaying its own sweep.
+    /// One front for the whole page: it leaves the screen top at sweep start
+    /// and descends at constant speed, crossing the full height in the sweep
+    /// duration. Everything — tile detachments, each element's edge, the
+    /// setup-card curtain — is cut from this one line so nothing leads or
+    /// trails anything else.
+    private var frontSpeed: CGFloat {
+        max(bounds.height, 1)
+            / CGFloat(OnboardingArticleReplicaTiming.revealSweepDuration)
+    }
+
+    /// Cuts each (already re-occluded) element's reveal from the shared
+    /// front: each view's edge starts exactly when the front reaches its top
+    /// (its occluder's edge waits 1pt above it) and moves at exactly the
+    /// front's speed, so the body's light visibly continues from the title's
+    /// instead of every element replaying its own sweep.
     @discardableResult
     private func revealContentTopToBottom() -> TimeInterval {
-        let height = max(bounds.height, 1)
         var finish: TimeInterval = 0
-        let sweep = OnboardingArticleReplicaTiming.revealSweepDuration
-
-        let plans: [(view: UIView, reveal: (TimeInterval) -> Void)] = [
-            (appIcon, { [appIcon] in appIcon.reveal(duration: $0) }),
-            (headline, { [headline] in headline.reveal(duration: $0) { } }),
-            (byline, { [byline] in byline.reveal(duration: $0) { } }),
-            (eclipseImage, { [eclipseImage] in eclipseImage.reveal(duration: $0) }),
-            (body, { [body] in body.reveal(duration: $0) { } }),
+        let plans: [(view: UIView, crossing: CGFloat, reveal: (TimeInterval) -> Void)] = [
+            (appIcon, appIcon.revealFrontCrossingDistance,
+             { [appIcon] in appIcon.reveal(duration: $0) }),
+            (headline, headline.revealFrontCrossingDistance,
+             { [headline] in headline.reveal(duration: $0) { } }),
+            (byline, byline.revealFrontCrossingDistance,
+             { [byline] in byline.reveal(duration: $0) { } }),
+            (eclipseImage, eclipseImage.revealFrontCrossingDistance,
+             { [eclipseImage] in eclipseImage.reveal(duration: $0) }),
+            (body, body.revealFrontCrossingDistance,
+             { [body] in body.reveal(duration: $0) { } }),
         ]
         for plan in plans {
-            let frame = plan.view.frame
-            // Each occluding circle starts ~22pt above its view's top (the
-            // wide circle's sagitta) and travels to ~6pt past its bottom, so
-            // the front's constant speed maps to these paddings.
-            let delay = max(0, TimeInterval((frame.minY - 22) / height)) * sweep
-            let duration = TimeInterval((frame.height + 28) / height) * sweep
+            let delay = TimeInterval(
+                max(0, plan.view.frame.minY - 1) / frontSpeed)
+            let duration = TimeInterval(plan.crossing / frontSpeed)
             finish = max(finish, delay + duration)
             afterDelay(delay) { _ in plan.reveal(duration) }
         }
@@ -407,8 +414,6 @@ final class OnboardingArticleReplicaView: UIView {
         let columns = min(max(Int(target.bounds.width / 56), 3), 8)
         let rows = min(max(Int(target.bounds.height / 56), 2), 8)
         let targetFrame = clutterContainer.convert(target.frame, to: self)
-        let sweep = OnboardingArticleReplicaTiming.revealSweepDuration
-        let lead = OnboardingArticleReplicaTiming.shatterLeadDuration
         let height = max(bounds.height, 1)
         var pieces: [ShatterPiece] = []
 
@@ -433,16 +438,11 @@ final class OnboardingArticleReplicaView: UIView {
                 piece.layer.cornerRadius = 1.5
                 addSubview(piece)
 
-                // The front is a horizontal line travelling downward at the
-                // reveal sweep's speed, detaching tiles a beat ahead of the
-                // arriving light, with a small horizontal jitter so rows
-                // don't detach in lockstep.
+                // Each tile detaches at the exact moment the shared front
+                // line reaches its center — zero offset against the light
+                // arriving on the content beneath it.
                 let parity: CGFloat = (row + column).isMultiple(of: 2) ? 1 : -1
-                let jitter = abs(frame.midX - bounds.midX) / max(bounds.width, 1)
-                let delay = max(
-                    0,
-                    TimeInterval(frame.midY / height) * sweep - lead)
-                    + TimeInterval(jitter) * 0.05
+                let delay = TimeInterval(frame.midY / frontSpeed)
                 let delta = CGPoint(
                     x: frame.midX - bounds.midX,
                     y: frame.midY + height)
@@ -466,24 +466,39 @@ final class OnboardingArticleReplicaView: UIView {
         return pieces
     }
 
-    /// Sends every prepared tile on its staggered flight. Returns when the
-    /// last tile lands.
+    /// Sends every prepared tile on its staggered flight. Each flight starts
+    /// through the same generation-guarded dispatch clock the reveals use,
+    /// so tiles and light share one timeline to the frame — pre-scheduled
+    /// `UIView.animate(delay:)` counted from its own commit instead, which
+    /// put every tile a beat ahead of the front. Returns when the last tile
+    /// lands.
     private func animatePreparedShatterPieces() -> TimeInterval {
         let pieces = preparedShatterPieces
         preparedShatterPieces = []
+        if UIAccessibility.isReduceMotionEnabled {
+            for piece in pieces {
+                UIView.animate(withDuration: 0.18) {
+                    piece.view.transform = piece.flight
+                    piece.view.alpha = 0
+                } completion: { _ in
+                    piece.view.removeFromSuperview()
+                }
+            }
+            return 0.18
+        }
         let pieceDuration = OnboardingArticleReplicaTiming.shatterDuration * 0.54
         for piece in pieces {
-            UIView.animate(
-                withDuration: UIAccessibility.isReduceMotionEnabled
-                    ? 0.18 : pieceDuration,
-                delay: UIAccessibility.isReduceMotionEnabled
-                    ? 0 : OnboardingAnimationClock.delay(piece.delay),
-                options: [.curveEaseOut, .beginFromCurrentState]
-            ) {
-                piece.view.transform = piece.flight
-                piece.view.alpha = 0
-            } completion: { _ in
-                piece.view.removeFromSuperview()
+            afterDelay(piece.delay) { _ in
+                UIView.animate(
+                    withDuration: pieceDuration,
+                    delay: 0,
+                    options: [.curveEaseOut, .beginFromCurrentState]
+                ) {
+                    piece.view.transform = piece.flight
+                    piece.view.alpha = 0
+                } completion: { _ in
+                    piece.view.removeFromSuperview()
+                }
             }
         }
         return (pieces.map(\.delay).max() ?? 0) + pieceDuration
@@ -538,8 +553,8 @@ final class OnboardingArticleReplicaView: UIView {
 /// image feeds the same `GlyphPixelBloomView`, so the image's bright pixels
 /// flare white-hot as the edge exposes them and cool back to their normal
 /// colors, exactly like the intro lines' letters. The image alpha is
-/// geometrically excluded inside the moon, and a narrow luminous rim marks
-/// the edge itself.
+/// geometrically excluded inside the moon; the front itself has no marker —
+/// only its light.
 private final class MoonRevealImageView: UIView {
     /// Clips the occluder circle (which is page-sized) to the image's frame;
     /// the bloom lives outside it so the glow can spill past the edges.
@@ -547,11 +562,16 @@ private final class MoonRevealImageView: UIView {
     private let imageView = UIImageView()
     private let moonLayer = CAShapeLayer()
     private let revealMaskLayer = CAShapeLayer()
-    private let rimLayer = CAShapeLayer()
     private let pixelBloomView = GlyphPixelBloomView()
     private let occluderColor: UIColor
     private var initialCircleFrame = CGRect.zero
+    private var edgeSagitta: CGFloat = 0
     private var didReveal: Bool
+
+    /// See `MoonRevealLineView.revealFrontCrossingDistance`.
+    var revealFrontCrossingDistance: CGFloat {
+        bounds.height + 2 + edgeSagitta
+    }
 
     init(
         image: UIImage?,
@@ -582,14 +602,6 @@ private final class MoonRevealImageView: UIView {
 
         moonLayer.fillColor = occluderColor.cgColor
 
-        rimLayer.fillColor = UIColor.clear.cgColor
-        rimLayer.strokeColor = UIColor.white.withAlphaComponent(0.88).cgColor
-        rimLayer.lineWidth = 2.5
-        rimLayer.shadowColor = UIColor.white.cgColor
-        rimLayer.shadowOpacity = 0.9
-        rimLayer.shadowRadius = 7
-        rimLayer.shadowOffset = .zero
-
         guard !initiallyRevealed else { return }
         installOcclusion()
     }
@@ -600,7 +612,6 @@ private final class MoonRevealImageView: UIView {
     private func installOcclusion() {
         imageView.layer.mask = revealMaskLayer
         clippedContent.layer.addSublayer(moonLayer)
-        clippedContent.layer.addSublayer(rimLayer)
         pixelBloomView.isUserInteractionEnabled = false
         addSubview(pixelBloomView)
     }
@@ -631,26 +642,23 @@ private final class MoonRevealImageView: UIView {
         }
         layoutIfNeeded()
         didReveal = true
-        let travel = bounds.maxY + 6 - initialCircleFrame.minY
+        let travel = revealFrontCrossingDistance
         let finalCircle = initialCircleFrame.offsetBy(dx: 0, dy: travel)
         let transform = CATransform3DMakeTranslation(0, travel, 0)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         moonLayer.transform = transform
-        rimLayer.transform = transform
         revealMaskLayer.path = revealPath(excluding: finalCircle)
         CATransaction.commit()
 
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
-        for layer in [moonLayer, rimLayer] {
-            let animation = CABasicAnimation(keyPath: "transform")
-            animation.fromValue = CATransform3DIdentity
-            animation.toValue = transform
-            animation.duration = resolvedDuration
-            animation.timingFunction = CAMediaTimingFunction(name: .linear)
-            layer.add(animation, forKey: "moonReveal")
-        }
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = CATransform3DIdentity
+        animation.toValue = transform
+        animation.duration = resolvedDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        moonLayer.add(animation, forKey: "moonReveal")
 
         let maskAnimation = CABasicAnimation(keyPath: "path")
         maskAnimation.fromValue = revealPath(excluding: initialCircleFrame)
@@ -660,14 +668,21 @@ private final class MoonRevealImageView: UIView {
         revealMaskLayer.add(maskAnimation, forKey: "moonReveal")
 
         // The image's own light: same front, same time-constant cooling as
-        // the glyph bloom beside it.
+        // the glyph bloom beside it, slaved to the same rendered edge. The
+        // lowered gain keeps a photograph's mid-tones from saturating —
+        // only its genuinely bright pixels go white-hot, the way only
+        // glyph strokes do in text.
         let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
         pixelBloomView.reveal(
             circleTravel: travel,
             duration: OnboardingAnimationClock.displayLinkDuration(
                 resolvedDuration),
             edgeBandScale: max(
-                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed))
+                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
+            emitterGain: 0.45,
+            offsetProvider: { [weak moonLayer] in
+                moonLayer?.presentation().map { CGFloat($0.transform.m42) }
+            })
 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
@@ -675,7 +690,6 @@ private final class MoonRevealImageView: UIView {
             guard let self, self.didReveal else { return }
             self.imageView.layer.mask = nil
             self.moonLayer.removeFromSuperlayer()
-            self.rimLayer.removeFromSuperlayer()
             self.pixelBloomView.stop()
             self.pixelBloomView.removeFromSuperview()
             self.isAccessibilityElement = true
@@ -688,18 +702,16 @@ private final class MoonRevealImageView: UIView {
         let radius = diameter / 2
         let halfWidth = bounds.width / 2
         let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
+        edgeSagitta = sagitta
         initialCircleFrame = CGRect(
             x: bounds.midX - radius,
-            y: 4 - sagitta,
+            y: -1 - sagitta,
             width: diameter,
             height: diameter)
         let circle = UIBezierPath(ovalIn: initialCircleFrame).cgPath
         moonLayer.frame = bounds
         moonLayer.path = circle
         moonLayer.transform = CATransform3DIdentity
-        rimLayer.frame = bounds
-        rimLayer.path = circle
-        rimLayer.transform = CATransform3DIdentity
         revealMaskLayer.frame = bounds
         revealMaskLayer.path = revealPath(excluding: initialCircleFrame)
 
@@ -719,7 +731,15 @@ private final class MoonRevealImageView: UIView {
     }
 
     /// The bloom's emitter: the image exactly as displayed (aspect fill and
-    /// corner mask included), so the light lands on real image pixels.
+    /// corner mask included), with its alpha rebuilt from LUMINANCE. The
+    /// bloom's halos are Quartz shadows, and shadows key off alpha — a
+    /// photograph is opaque everywhere, so left as-is its black sky would
+    /// cast the same white glow as a full moon and the band read as a solid
+    /// white slab crossing the frame. With luminance as alpha the light
+    /// lands on the image's bright pixels exactly the way it lands on glyph
+    /// strokes. The occlusion mask is lifted for the render — rasterizing
+    /// through it left only the sliver above the initial edge, killing the
+    /// image's light a few points into the sweep.
     private func rasterizedContent() -> UIImage? {
         guard imageView.image != nil,
               imageView.bounds.width > 0, imageView.bounds.height > 0
@@ -727,11 +747,42 @@ private final class MoonRevealImageView: UIView {
         let format = UIGraphicsImageRendererFormat()
         format.scale = traitCollection.displayScale
         format.opaque = false
-        return UIGraphicsImageRenderer(
+        let occlusionMask = imageView.layer.mask
+        imageView.layer.mask = nil
+        defer { imageView.layer.mask = occlusionMask }
+        let photo = UIGraphicsImageRenderer(
             bounds: imageView.bounds, format: format
         ).image { context in
             imageView.layer.render(in: context.cgContext)
         }
+        guard let cgPhoto = photo.cgImage else { return nil }
+
+        // A GRAYSCALE masking image sets the result's alpha to its own
+        // sample value — white keeps, black removes (verified empirically;
+        // the black-shows rule belongs to true image masks). The photo's
+        // plain luminance therefore leaves alpha proportional to
+        // brightness. Transparent raster regions (the corner mask) land on
+        // the black prefill: masked out, as they should be.
+        let width = cgPhoto.width
+        let height = cgPhoto.height
+        guard let gray = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return photo }
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        gray.setFillColor(gray: 0, alpha: 1)
+        gray.fill(rect)
+        gray.draw(cgPhoto, in: rect)
+        guard let luminance = gray.makeImage(),
+              let emitter = cgPhoto.masking(luminance)
+        else { return photo }
+        return UIImage(
+            cgImage: emitter, scale: photo.scale, orientation: .up)
     }
 
     private func revealPath(excluding circleFrame: CGRect) -> CGPath {
@@ -742,14 +793,19 @@ private final class MoonRevealImageView: UIView {
     }
 }
 
-/// An opaque page-coloured cover whose top edge is the same luminous lunar
-/// rim as the reveal above: as the huge circle translates down, whatever the
-/// curtain was hiding is uncovered behind the bright edge.
+/// An opaque page-coloured cover: as the huge circle translates down,
+/// whatever the curtain was hiding is uncovered by the same descending edge
+/// as everything above it. The front itself is invisible — only its effect.
 private final class MoonRevealCurtainView: UIView {
     private let occluder = CAShapeLayer()
-    private let rim = CAShapeLayer()
     private var initialCircleFrame = CGRect.zero
+    private var edgeSagitta: CGFloat = 0
     private var didReveal = false
+
+    /// See `MoonRevealLineView.revealFrontCrossingDistance`.
+    var revealFrontCrossingDistance: CGFloat {
+        bounds.height + 2 + edgeSagitta
+    }
 
     init(fillColor: UIColor) {
         super.init(frame: .zero)
@@ -758,15 +814,6 @@ private final class MoonRevealCurtainView: UIView {
 
         occluder.fillColor = fillColor.cgColor
         layer.addSublayer(occluder)
-
-        rim.fillColor = UIColor.clear.cgColor
-        rim.strokeColor = UIColor.white.withAlphaComponent(0.88).cgColor
-        rim.lineWidth = 2.5
-        rim.shadowColor = UIColor.white.cgColor
-        rim.shadowOpacity = 0.9
-        rim.shadowRadius = 7
-        rim.shadowOffset = .zero
-        layer.addSublayer(rim)
     }
 
     @available(*, unavailable)
@@ -779,16 +826,14 @@ private final class MoonRevealCurtainView: UIView {
         let radius = diameter / 2
         let halfWidth = bounds.width / 2
         let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
+        edgeSagitta = sagitta
         initialCircleFrame = CGRect(
             x: bounds.midX - radius,
-            y: -2 - sagitta,
+            y: -1 - sagitta,
             width: diameter,
             height: diameter)
-        let circle = UIBezierPath(ovalIn: initialCircleFrame).cgPath
         occluder.frame = bounds
-        occluder.path = circle
-        rim.frame = bounds
-        rim.path = circle
+        occluder.path = UIBezierPath(ovalIn: initialCircleFrame).cgPath
     }
 
     func reveal(duration: TimeInterval, completion: @escaping () -> Void) {
@@ -798,7 +843,7 @@ private final class MoonRevealCurtainView: UIView {
         }
         layoutIfNeeded()
         didReveal = true
-        let travel = bounds.maxY + 8 - initialCircleFrame.minY
+        let travel = revealFrontCrossingDistance
         let transform = CATransform3DMakeTranslation(0, travel, 0)
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled
             ? 0.24 : duration
@@ -806,17 +851,14 @@ private final class MoonRevealCurtainView: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         occluder.transform = transform
-        rim.transform = transform
         CATransaction.commit()
 
-        for layer in [occluder, rim] {
-            let animation = CABasicAnimation(keyPath: "transform")
-            animation.fromValue = CATransform3DIdentity
-            animation.toValue = transform
-            animation.duration = resolvedDuration
-            animation.timingFunction = CAMediaTimingFunction(name: .linear)
-            layer.add(animation, forKey: "moonReveal")
-        }
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = CATransform3DIdentity
+        animation.toValue = transform
+        animation.duration = resolvedDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        occluder.add(animation, forKey: "moonReveal")
 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)

@@ -189,7 +189,16 @@ final class MoonRevealLineView: UIView {
     private let occluderColor: UIColor
     private var didStartReveal = false
     private var initialCircleFrame = CGRect.zero
+    private var edgeSagitta: CGFloat = 0
     private(set) var isFullyRevealed: Bool
+
+    /// The distance the front travels while crossing this view: from the
+    /// wide arc's edge first touching the top to its highest point clearing
+    /// the bottom. A shared sweep divides this by its front speed so every
+    /// element's edge moves at exactly the front's own pace.
+    var revealFrontCrossingDistance: CGFloat {
+        bounds.height + 2 + edgeSagitta
+    }
 
     var occluderHasVisibleChrome: Bool {
         moonLayer.borderWidth > 0
@@ -304,8 +313,7 @@ final class MoonRevealLineView: UIView {
         guard !didStartReveal else { return }
         didStartReveal = true
         layoutIfNeeded()
-        let initialTop = initialCircleFrame.minY
-        let travel = bounds.maxY + 6 - initialTop
+        let travel = revealFrontCrossingDistance
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
         let transform = CATransform3DMakeTranslation(0, travel, 0)
         let finalCircleFrame = initialCircleFrame.offsetBy(dx: 0, dy: travel)
@@ -333,13 +341,18 @@ final class MoonRevealLineView: UIView {
         // the edge travels, every glyph spends the same TIME brightened and
         // fading back as the intro line's glyphs do — the article-body sweep
         // is ~9× faster than the intro's, so its bands stretch ~9× further.
+        // The light's position is slaved to the moon layer's presentation
+        // translation, so it can never run ahead of or behind the mask edge.
         let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
         pixelBloomView.reveal(
             circleTravel: travel,
             duration: OnboardingAnimationClock.displayLinkDuration(
                 resolvedDuration),
             edgeBandScale: max(
-                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed))
+                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
+            offsetProvider: { [weak moonLayer] in
+                moonLayer?.presentation().map { CGFloat($0.transform.m42) }
+            })
 
         let revealAnimation = CABasicAnimation(keyPath: "path")
         revealAnimation.fromValue = initialRevealPath
@@ -398,9 +411,11 @@ final class MoonRevealLineView: UIView {
         let radius = diameter / 2
         let halfWidth = bounds.width / 2
         let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
-        // At the line's extreme left/right the edge begins four points above
-        // the glyph cap, ensuring no antialiased text pixel leaks out early.
-        let initialTop = 4 - sagitta
+        edgeSagitta = sagitta
+        // At the line's extreme left/right the edge begins one point above
+        // the view's top, so no antialiased pixel leaks out early and the
+        // reveal starts exactly as a shared front reaches the view.
+        let initialTop = -1 - sagitta
         let circleFrame = CGRect(
             x: bounds.midX - radius,
             y: initialTop,
@@ -503,6 +518,14 @@ final class GlyphPixelBloomView: UIView {
     private var edgeSagitta: CGFloat = 0
     private var edgeBandScale: CGFloat = 1
     private var rasterScale: CGFloat = 1
+    private var offsetProvider: (() -> CGFloat?)?
+    private var didSampleOffset = false
+    /// Per-pass alpha for the additive passes. Thin glyph strokes want the
+    /// full 1 — their saturation to a white core is the intro's look. A
+    /// dense raster (a photograph) saturates even its mid-tones under eight
+    /// additive passes and reads as a white slab; its owner lowers the gain
+    /// so only genuinely bright pixels reach white heat.
+    private var emitterGain: CGFloat = 1
 
     var usesRasterizedGlyphPixels: Bool {
         glyphImage != nil && !glyphFrame.isEmpty
@@ -590,14 +613,25 @@ final class GlyphPixelBloomView: UIView {
             height: stripHeight)
     }
 
+    /// `offsetProvider` slaves the light to the occluder itself: it returns
+    /// the moon layer's current *presentation* translation, so the emitting
+    /// band sits exactly on the rendered edge no matter how the clocks
+    /// drift — light lagging its own mask is what read as "the text appears,
+    /// then brightens in chunks". Without a provider the band falls back to
+    /// wall-clock progress anchored at the first display-link tick.
     func reveal(
         circleTravel: CGFloat,
         duration: CFTimeInterval,
-        edgeBandScale: CGFloat = 1
+        edgeBandScale: CGFloat = 1,
+        emitterGain: CGFloat = 1,
+        offsetProvider: (() -> CGFloat?)? = nil
     ) {
         stop()
         self.circleTravel = circleTravel
         self.edgeBandScale = max(edgeBandScale, 1)
+        self.emitterGain = min(max(emitterGain, 0.05), 1)
+        self.offsetProvider = offsetProvider
+        didSampleOffset = false
         revealDuration = max(duration, 0.001)
         // Anchored by the first display-link tick, not by this call: when a
         // heavy transaction separates the call from the first rendered frame,
@@ -633,6 +667,7 @@ final class GlyphPixelBloomView: UIView {
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
+        offsetProvider = nil
     }
 
     override func draw(_ rect: CGRect) {
@@ -647,8 +682,12 @@ final class GlyphPixelBloomView: UIView {
             context.setShadow(
                 offset: .zero,
                 blur: halo.radius,
-                color: UIColor.white.withAlphaComponent(halo.alpha).cgColor)
-            emitter.image.draw(in: emitter.rect, blendMode: .plusLighter, alpha: 1)
+                color: UIColor.white
+                    .withAlphaComponent(halo.alpha * emitterGain).cgColor)
+            emitter.image.draw(
+                in: emitter.rect,
+                blendMode: .plusLighter,
+                alpha: emitterGain)
             context.restoreGState()
         }
         context.restoreGState()
@@ -657,8 +696,19 @@ final class GlyphPixelBloomView: UIView {
     @objc private func drawNextRevealFrame(_ link: CADisplayLink) {
         if revealStartTime == 0 { revealStartTime = link.timestamp }
         let previousStrip = currentStripRect()
-        let elapsed = link.timestamp - revealStartTime
-        progress = min(max(CGFloat(elapsed / revealDuration), 0), 1)
+        if let offsetProvider {
+            if let offset = offsetProvider() {
+                didSampleOffset = true
+                progress = min(max(offset / max(circleTravel, 1), 0), 1)
+            } else {
+                // nil before the occluder's animation is committed, and again
+                // after it is removed: not-yet-started vs finished.
+                progress = didSampleOffset ? 1 : 0
+            }
+        } else {
+            let elapsed = link.timestamp - revealStartTime
+            progress = min(max(CGFloat(elapsed / revealDuration), 0), 1)
+        }
         // Redraw covers where the glow was and where it is now — the widest
         // halo included — so old light is cleared without repainting the view.
         let glowReach = (Self.haloPasses.map(\.radius).max() ?? 30) + 4

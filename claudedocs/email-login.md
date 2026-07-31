@@ -36,7 +36,7 @@ issue.
    field carrying the AutoFill invariants below and a provider chip that fades in
    once the domain is recognized; beneath it a
    **Connect** row, tinted and selectable only while the typed address could
-   plausibly be one, and showing a small dot-matrix spinner during autodiscovery.
+   plausibly be one, and showing a small eclipse-horizon spinner during autodiscovery.
    The field and chip are long-lived views re-hosted into each freshly built cell:
    the screen reloads its table on `viewWillAppear`, and rebuilding the field
    would drop both the half-typed address and the keyboard session.
@@ -77,7 +77,7 @@ reading accent, so the screen reads as "Luna" whatever the reading accent is.
 - **`EmailLoginActionButton`** — the filled 52pt/cornerRadius-14 Sign In button.
   `isEnabled` dims to 50% alpha (a stock disabled state barely dims
   a solid fill). `setLoading(true)` swaps the title for a small embedded white
-  `DotMatrixSpinnerView` and blocks taps. Restoring the
+  `EclipseHorizonSpinnerView` and blocks taps. Restoring the
   correct `isEnabled` afterward is the caller's job — `setLoading` only undoes
   the title swap.
 - **`ProviderBadgeView`** / **`ProviderBadgeText`** — the small capsule chip
@@ -144,11 +144,8 @@ Both verification paths — `CredentialViewController.signIn`'s IMAP/SMTP
 `verifyCredentials()`, and the OAuth token exchange — install one
 `EmailLoginLoadingCover` over `navigationController?.view` (not just the
 screen's own view, so the Cancel/back bar buttons are covered too): an opaque
-`.systemBackground` view with a centered `DotMatrixSpinnerView(dimension: 7,
-side: 40)`. Nothing under it is tappable. `dimension: 7` (vs. the default 4)
-is specifically so the checkmark shape in `resolveToCheckmark` (below) reads
-as a recognizable "✓" rather than a handful of scattered dots. On failure the
-cover is torn down (`hide()`) and the screen's own UI (button, field
+.systemBackground` view with a centered `EclipseHorizonSpinnerView(side: 40)`.
+Nothing under it is tappable. On failure the cover is torn down (`hide()`) and the screen's own UI (button, field
 interaction) is explicitly re-enabled before the error alert is shown — never
 left disabled with no cover and no way to retry.
 
@@ -164,22 +161,13 @@ way — no success or failure handling is gated on its outcome.
 
 ### Success beat: checkmark resolve
 
-`DotMatrixSpinnerView.resolveToCheckmark(holdDuration:completion:)`
-(`LunaLibraries/Sources/LunaDesignSystem/DotMatrixSpinnerView.swift`) stops the
-ripple and animates the matrix into a "✓": dots whose cell-center lies within
-half a cell of a fixed 3-point checkmark polyline (unit-square coordinates
-`(0.18,0.55) → (0.42,0.78) → (0.82,0.28)`, top-down to match `layoutDots`'
-row-major y-axis) animate to full opacity/1.05x scale with a small stagger
-ordered by position along the stroke (`checkmarkStrokePosition`); every other
-dot fades to ~0.08 opacity/0.6x scale. After the last dot settles, it holds for
-`holdDuration` (default 0.35s; total beat ≈0.5s) and calls `completion`. Both
-verification paths call this on success and hand back from the completion — so the
-user sees the spinner resolve into a checkmark before the screen changes. The classification
-(`isCheckmarkDot(dimension:index:)`) and stroke-position
-(`checkmarkStrokePosition(dimension:index:)`) functions are pure/static/public
-so the shape can be sanity-checked without a live view (`LunaTests/
-DotMatrixSpinnerViewTests.swift`); `isCheckmarkDot` degrades gracefully (returns
-`false`, never crashes) for coarse or degenerate dimensions.
+`EclipseHorizonSpinnerView.resolveToCheckmark(completion:)`
+(`LunaLibraries/Sources/LunaDesignSystem/EclipseHorizonSpinnerView.swift`) stops
+the orbit, fades the moon and horizon, and draws a centered white-hot "✓" before
+calling `completion`. Both verification paths call this on success and hand back
+from the completion, so the user sees a compact success beat before the screen
+changes. Its basic activity-view contract is covered by
+`LunaTests/DotMatrixSpinnerViewTests.swift`.
 
 ## Error copy
 

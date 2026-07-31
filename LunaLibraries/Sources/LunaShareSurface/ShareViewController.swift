@@ -30,8 +30,9 @@ open class ShareViewController: UIViewController {
         return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
     }
 
-    private let spinner = DotMatrixSpinnerView(side: 36)
-    private let statusLabel = UILabel()
+    private let spinner = EclipseHorizonSpinnerView(side: 36)
+    private let statusLabel = EclipseBloomStatusLabel()
+    private var articleLoadingStatus: ArticleLoadingStatusCycler?
     private let closeButton = UIButton(type: .system)
     /// The action extension owns one navigation context for its entire lifetime.
     /// Replacing its root avoids stacking a second modal over the extension sheet.
@@ -122,7 +123,6 @@ open class ShareViewController: UIViewController {
         spinner.translatesAutoresizingMaskIntoConstraints = false
         spinner.startAnimating()
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.text = L10n.string("Opening in Luna…")
         statusLabel.textColor = LunaColors.secondaryText
         statusLabel.font = .preferredFont(forTextStyle: .body)
         statusLabel.textAlignment = .center
@@ -143,6 +143,9 @@ open class ShareViewController: UIViewController {
             closeButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 20),
             closeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
         ])
+        articleLoadingStatus = ArticleLoadingStatusCycler(
+            label: statusLabel, initialText: L10n.string("Opening in Luna…"))
+        articleLoadingStatus?.start()
     }
 
     /// Action extension: surface a failure as visible error text (never a silent
@@ -153,9 +156,10 @@ open class ShareViewController: UIViewController {
         guard isActionExtension else { complete(); return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            self.articleLoadingStatus?.stop()
             self.spinner.stopAnimating()
             self.statusLabel.textColor = LunaColors.primaryText
-            self.statusLabel.text = message
+            self.statusLabel.setTextImmediately(message)
             self.closeButton.isHidden = false
         }
     }
@@ -557,7 +561,7 @@ open class ShareViewController: UIViewController {
         badge.layer.cornerCurve = .continuous
         badge.clipsToBounds = true
 
-        let spinner = DotMatrixSpinnerView(side: 36)
+        let spinner = EclipseHorizonSpinnerView(side: 36)
         spinner.color = GlassStyle.readingAccent
         spinner.startAnimating()
         let label = UILabel()
@@ -661,6 +665,7 @@ extension ShareViewController: ExtensionHost {
     /// not create a second presentation that can dismiss the extension host.
     public func presentModally(_ viewController: UIViewController) {
         if isActionExtension {
+            articleLoadingStatus?.stop()
             spinner.stopAnimating()
             statusLabel.isHidden = true
             closeButton.isHidden = true

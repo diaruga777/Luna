@@ -52,7 +52,9 @@ public final class ShareReaderViewController: UIViewController {
     /// A pre-computed `Outcome` to present (the action extension already ran the
     /// shared `IngestPipeline`), or nil to run the pipeline itself on `viewDidLoad`.
     private let precomputedOutcome: Outcome?
-    private let spinner = DotMatrixSpinnerView(side: 36)
+    private let spinner = EclipseHorizonSpinnerView(side: 36)
+    private let loadingStatus = EclipseBloomStatusLabel()
+    private var articleLoadingStatus: ArticleLoadingStatusCycler?
 
     public init(
         url: URL, mode: Mode, outcome: Outcome? = nil,
@@ -73,12 +75,24 @@ public final class ShareReaderViewController: UIViewController {
         view.backgroundColor = LunaColors.background
 
         spinner.translatesAutoresizingMaskIntoConstraints = false
+        loadingStatus.translatesAutoresizingMaskIntoConstraints = false
+        loadingStatus.textColor = LunaColors.secondaryText
+        loadingStatus.font = .preferredFont(forTextStyle: .body)
+        loadingStatus.textAlignment = .center
+        loadingStatus.numberOfLines = 0
         view.addSubview(spinner)
+        view.addSubview(loadingStatus)
         NSLayoutConstraint.activate([
             spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -16),
+            loadingStatus.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
+            loadingStatus.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            loadingStatus.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
         ])
         spinner.startAnimating()
+        articleLoadingStatus = ArticleLoadingStatusCycler(
+            label: loadingStatus, initialText: L10n.string("Opening in Luna…"))
+        articleLoadingStatus?.start()
         navigationItem.leftBarButtonItem = doneButton()
 
         Task { await ingestAndPresent() }
@@ -141,6 +155,7 @@ public final class ShareReaderViewController: UIViewController {
     /// the snapshot loads, the web reader extracts the article and flips it to
     /// `.ready`.
     private func presentArchiveReader(for item: ReadingListItem, fallbackTitle: String) {
+        articleLoadingStatus?.stop()
         spinner.stopAnimating()
         ReadingListStore.shared.markNeedsCaptcha(item.id, title: fallbackTitle)
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
@@ -159,6 +174,7 @@ public final class ShareReaderViewController: UIViewController {
     }
 
     private func presentReader(item: ReadingListItem, content: ArticleContent) {
+        articleLoadingStatus?.stop()
         spinner.stopAnimating()
         // A lightweight share provider (friend-share via the App Group queue +
         // link share — no CloudKit in the extension) so the end-of-article share
@@ -181,6 +197,7 @@ public final class ShareReaderViewController: UIViewController {
     /// A saved-confirmation state for a product page captured as a price tracker:
     /// a checkmark + the product name. The user edits the tracker in the main app.
     private func presentSavedConfirmation(productName: String) {
+        articleLoadingStatus?.stop()
         spinner.stopAnimating()
 
         let icon = UIImageView(image: UIImage(
@@ -211,6 +228,7 @@ public final class ShareReaderViewController: UIViewController {
     }
 
     private func presentFailure() {
+        articleLoadingStatus?.stop()
         spinner.stopAnimating()
 
         let icon = UIImageView(image: UIImage(

@@ -34,7 +34,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private let itemID: UUID?
     private let store: ReadingListStore
     private let webView: WKWebView
-    private let progress = DotMatrixSpinnerView()
+    private let progress = EclipseHorizonSpinnerView()
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
     /// archive.today navigation (home page, form fill/submit, snapshot load). It's
     /// removed only while a CAPTCHA is up — the one moment the user must see and
@@ -48,8 +48,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// exposing a user-facing experimental setting. Once revealed, disabling the
     /// overlay's interaction lets scroll gestures reach the web view below.
     private var archiveCoverTapCount = 0
-    private let overlaySpinner = DotMatrixSpinnerView(side: 36)
-    private let overlayLabel = UILabel()
+    private let overlaySpinner = EclipseHorizonSpinnerView(side: 36)
+    private let overlayLabel = EclipseBloomStatusLabel()
+    private var articleLoadingStatus: ArticleLoadingStatusCycler?
     /// An "Open in Safari" escape shown INSIDE the overlay alongside an error /
     /// guidance message. Hidden in extensions (no `UIApplication`).
     private let overlaySafariButton = UIButton(type: .system)
@@ -384,7 +385,6 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         overlaySpinner.color = GlassStyle.readingAccent
         overlaySpinner.startAnimating()
 
-        overlayLabel.text = L10n.string("Unlocking article…")
         overlayLabel.textColor = LunaColors.secondaryText
         overlayLabel.font = .preferredFont(forTextStyle: .callout)
         overlayLabel.textAlignment = .center
@@ -420,6 +420,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
             overlayLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
         ])
+        articleLoadingStatus = ArticleLoadingStatusCycler(
+            label: overlayLabel, initialText: L10n.string("Unlocking article…"))
+        articleLoadingStatus?.start()
     }
 
     @objc private func archiveCoverTapped(_ gesture: UITapGestureRecognizer) {
@@ -985,7 +988,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         didShowStuckNotice = true
         view.bringSubviewToFront(loadingOverlay)
         loadingOverlay.isHidden = false
-        overlayLabel.text = Self.mayBeStuckMessage
+        articleLoadingStatus?.stop()
+        overlayLabel.setTextImmediately(Self.mayBeStuckMessage)
         overlayLabel.textColor = LunaColors.secondaryText
         overlaySafariButton.isHidden = (onOpenInBrowser == nil)
         overlaySpinner.startAnimating()
@@ -1008,7 +1012,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         view.bringSubviewToFront(loadingOverlay)
         loadingOverlay.isHidden = false
         overlaySpinner.stopAnimating()
-        overlayLabel.text = message
+        articleLoadingStatus?.stop()
+        overlayLabel.setTextImmediately(message)
         overlayLabel.textColor = LunaColors.primaryText
         overlaySafariButton.isHidden = (onOpenInBrowser == nil)
         loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)

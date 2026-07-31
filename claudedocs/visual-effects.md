@@ -136,13 +136,22 @@ clear for a reading beat before its overlay, and no source animation loops
 behind setup. Completion settles on the card and performs a short stationary
 crossfade into the completed root card.
 
-## Loading spinner (`DotMatrixSpinnerView`)
+## Loading spinner (`EclipseHorizonSpinnerView`)
 
-`LunaLibraries/Sources/LunaDesignSystem/DotMatrixSpinnerView.swift` is the shared loading
-indicator: a configurable grid of rounded dots whose opacity and scale ripple diagonally.
-It is a plain UIKit/Core Animation view with the familiar `startAnimating()`,
-`stopAnimating()`, and `hidesWhenStopped` API. The email login cover can resolve its grid
-into a checkmark after successful verification.
+`LunaLibraries/Sources/LunaDesignSystem/EclipseHorizonSpinnerView.swift` is the shared
+loading indicator. It is a solid black moon, encircled by the same dim horizon, dawn glow,
+and white-hot point used by the moon-horizon progress bar. Its head makes a continuous
+orbit; on every other orbit a dimmer point separates, travels one counter-clockwise lap at
+an uneven speed, and merges back in a brief flare. It retains the familiar
+`startAnimating()`, `stopAnimating()`, and `hidesWhenStopped` API and honors Reduce Motion.
+The email login cover resolves the eclipse into a drawn checkmark after successful
+verification.
+
+Article-loading labels use `EclipseBloomStatusLabel` with
+`ArticleLoadingStatusCycler`: the current initial message enters through the onboarding's
+top-down eclipse-bloom reveal, then—only after three seconds—cycles at random through
+reassuring alternatives such as “Still going…” and “Just a bit longer…”. Terminal errors
+replace the label plainly and stop the cycle.
 
 ## Moon-horizon progress (`MoonHorizonProgressBar` / `MoonHorizonProgressView`)
 

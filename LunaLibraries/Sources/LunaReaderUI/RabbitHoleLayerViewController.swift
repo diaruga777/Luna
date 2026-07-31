@@ -59,7 +59,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// inset that keeps text clear of the free-floating header pills.
     public static let headerHeight: CGFloat = 52
 
-    private let spinner = DotMatrixSpinnerView()
+    private let spinner = EclipseHorizonSpinnerView()
     /// Backstop so a page that never resolves (slow/hung fetch, web view that never
     /// fires didFinish) can't spin forever — see `armLoadWatchdog`.
     private var loadWatchdog: DispatchWorkItem?

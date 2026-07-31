@@ -2,7 +2,7 @@
 //  EmailLoginLoadingCover.swift
 //  Luna
 //
-//  A button-free, full-screen cover with a centered dot-matrix spinner, installed
+//  A button-free, full-screen cover with a centered eclipse-horizon spinner, installed
 //  over the navigation controller's view so it also hides the Cancel/back bar
 //  buttons — while a network verification round trip runs, nothing on screen can
 //  be tapped. Shared by both the app-password `signIn` path and the Outlook OAuth
@@ -14,15 +14,13 @@ import UIKit
 
 final class EmailLoginLoadingCover {
     private let coverView = UIView()
-    private let spinner: DotMatrixSpinnerView
+    private let spinner: EclipseHorizonSpinnerView
 
     /// Installs the cover over `host` (pass `navigationController?.view` so the
     /// bar buttons are covered too, falling back to the view controller's own
     /// view if it isn't in a navigation controller).
     init(host: UIView) {
-        // dimension: 7 so the checkmark shape in `resolveToCheckmark` reads clearly —
-        // the default 4×4 grid is too coarse for a recognizable check.
-        spinner = DotMatrixSpinnerView(dimension: 7, side: 40)
+        spinner = EclipseHorizonSpinnerView(side: 40)
         coverView.backgroundColor = LunaColors.background
         coverView.isUserInteractionEnabled = true
         coverView.translatesAutoresizingMaskIntoConstraints = false

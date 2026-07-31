@@ -130,6 +130,8 @@ public struct ArticlePDFBuilder {
             case .tableOfContents:
                 result.append(NSAttributedString(
                     string: block.text + "\n", attributes: Self.listItem))
+            case .caption:
+                result.append(Self.body(block, attributes: Self.caption))
             case .image:
                 guard let attachment = Self.attachment(
                     for: block, imagesDirectory: imagesDirectory) else { break }
@@ -248,6 +250,14 @@ public struct ArticlePDFBuilder {
         .font: UIFont.systemFont(ofSize: 12),
         .foregroundColor: ink,
         .paragraphStyle: paragraphStyle(spacingAfter: 4, indent: 16),
+    ]
+
+    /// A figure's caption: small, muted, and tucked under the picture — hence no
+    /// leading space, since `figure` already left room after the image.
+    private static let caption: [NSAttributedString.Key: Any] = [
+        .font: UIFont.systemFont(ofSize: 10),
+        .foregroundColor: mutedInk,
+        .paragraphStyle: paragraphStyle(spacingAfter: 12),
     ]
 
     private static let figure: [NSAttributedString.Key: Any] = [

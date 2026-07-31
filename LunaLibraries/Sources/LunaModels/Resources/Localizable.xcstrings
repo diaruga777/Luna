@@ -1734,6 +1734,9 @@
     "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n•  Wait ~30 minutes\n•  Switch networks or turn on a VPN\n•  Tap Open in Safari below and view there" : {
 
     },
+    "[Caption: %@]" : {
+
+    },
     "[Image: %@]" : {
 
     },

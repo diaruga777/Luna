@@ -50,6 +50,10 @@ public struct ArticleMarkdownBuilder {
                 // The page's own chapter list: a flat bullet. In-page `#anchor`
                 // jumps don't survive into a standalone file, so it's plain text.
                 lines.append("- \(Self.escape(block.text))")
+            case .caption:
+                // Italic: the closest CommonMark has to a caption, and how the
+                // preceding image's credit line conventionally reads.
+                lines.append("*\(Self.inline(block))*")
             case .image:
                 guard let urlString = block.imageURLString, !urlString.isEmpty else { break }
                 lines.append("![\(Self.escape(block.text))](\(Self.escapeURL(urlString)))")

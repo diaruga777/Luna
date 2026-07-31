@@ -302,6 +302,15 @@ public enum ArticleTextRenderer {
             attributes[.font] = bodyFont(size: 19, weight: .regular)
             paragraph.headIndent = 18
             prefix = "•  "
+        case .caption:
+            // A picture's caption/credit: smaller and dimmer than the body, and
+            // pulled up tight against the image directly above it so the two read
+            // as one figure. Rendered here but never spoken or flashed — see
+            // `ArticleContent.Block.isReadableProse`.
+            attributes[.font] = bodyFont(size: 15, weight: .regular)
+            attributes[.foregroundColor] = LunaColors.secondaryText
+            paragraph.lineSpacing = 3
+            paragraph.paragraphSpacingBefore = 0
         case .tableOfContents:
             // The page's own chapter marks read as navigation, not prose: a
             // compact indented list, smaller than the body it introduces. Its

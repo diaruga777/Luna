@@ -174,6 +174,10 @@ public struct EpubBuilder {
                 } else {
                     bodyParts.append("<p>\(text)</p>")
                 }
+            case .caption:
+                // Italic, because the book's stylesheet is the reading system's and
+                // a class name it doesn't know would render as ordinary body text.
+                bodyParts.append("<p\(id)><em>\(Self.escapeXML(block.text))</em></p>")
             case .image:
                 guard let fileName = block.imageFileName,
                       embeddedImageFileNames.contains(fileName) else { break }

@@ -56,6 +56,10 @@ enum SavedArticleSnapshotRenderer {
                 body.append("<li\(id)>\(linkedText)</li>")
             case .tableOfContents:
                 body.append("<p class=\"toc-row\">\(linkedText)</p>")
+            case .caption:
+                // Styled as this document's own figure captions are: the caption
+                // arrives as its own block, next to (not inside) its <figure>.
+                body.append("<p class=\"caption\">\(linkedText)</p>")
             case .image:
                 body.append(imageHTML(for: block, imagesDirectory: imagesDirectory))
             }
@@ -139,7 +143,10 @@ enum SavedArticleSnapshotRenderer {
             li { margin: 0.55em 0; padding-left: 0.25em; }
             figure { margin: 1.7em 0; }
             img { display: block; width: 100%; height: auto; border-radius: 8px; }
-            figcaption { margin-top: 0.55em; color: var(--secondary); font-size: 0.78em; }
+            figcaption, .caption {
+              margin-top: 0.55em; color: var(--secondary); font-size: 0.78em;
+            }
+            .caption { margin-bottom: 1.7em; }
             .toc-row { margin: 0.28em 0 0.28em 1.1em; font-size: 0.88em; }
           </style>
         </head>

@@ -366,8 +366,9 @@ public struct ArticleExtractor {
 
     private func isMidArticleRecircLine(_ block: ArticleContent.Block) -> Bool {
         // A ToC row is short and 100% link by construction; it has already been
-        // positively identified, so none of the junk heuristics apply to it.
-        guard block.kind != .image, block.kind != .tableOfContents,
+        // positively identified, so none of the junk heuristics apply to it. Nor to
+        // a caption, which is already excluded from the word stream.
+        guard block.kind != .image, block.kind != .tableOfContents, block.kind != .caption,
               block.text.count < 200, linkDensity(of: block) > 0.6
         else {
             return false
@@ -442,12 +443,12 @@ public struct ArticleExtractor {
 
     /// A recirc card title: a short block that is (essentially) nothing but one
     /// outbound hyperlink. In-page jumps are excluded — a blog that links its own
-    /// section headings to their permalink anchor is not a rail — as are rows of an
-    /// already-identified table of contents.
+    /// section headings to their permalink anchor is not a rail — as are captions
+    /// and rows of an already-identified table of contents.
     private func isFullyLinkedCard(_ block: ArticleContent.Block) -> Bool {
         switch block.kind {
         case .heading, .listItem, .paragraph: break
-        case .image, .quote, .tableOfContents: return false
+        case .image, .caption, .quote, .tableOfContents: return false
         }
         guard !block.links.isEmpty, block.text.count < 200,
               linkDensity(of: block) > 0.9,
@@ -517,8 +518,10 @@ public struct ArticleExtractor {
         for index in blocks.indices {
             let block = blocks[index]
             // A ToC row naming a section ("More on this") must never truncate the
-            // article, and its words aren't body text that arms the terminator.
-            if block.kind == .tableOfContents { continue }
+            // article, and its words aren't body text that arms the terminator. A
+            // caption is skipped for the same two reasons: a photo credit reading
+            // "Related Press" is not a rail, and caption words aren't body prose.
+            if block.kind == .tableOfContents || block.kind == .caption { continue }
             let words = wordCount(block.text)
             if cumulativeWords >= 60, words < 15 {
                 if matchesCommentTerminator(block.text) {
@@ -583,8 +586,11 @@ public struct ArticleExtractor {
     /// or a trailing image run may truncate/trim; 80 chars is the (shorter) bar the
     /// reverse trim stops at, matching Readability's sibling-paragraph rule.
     private func isStrongParagraph(_ block: ArticleContent.Block, minLength: Int) -> Bool {
-        guard block.kind != .image, block.text.count >= minLength,
-              linkDensity(of: block) < 0.25
+        // A long caption often reads exactly like prose (it ends in a full stop and
+        // links nothing), but it belongs to a picture — so it must not be what stops
+        // a trailing image dump from being swept, or the dump survives behind it.
+        guard block.kind != .image, block.kind != .caption,
+              block.text.count >= minLength, linkDensity(of: block) < 0.25
         else { return false }
         return hasSentenceEndingPunctuation(block.text)
     }
@@ -617,6 +623,10 @@ public struct ArticleExtractor {
         // Some blogs close with their chapter marks; the link-density rules below
         // would pop an identified ToC off row by row.
         if block.kind == .tableOfContents { return false }
+        // A caption is bound to the image above it, which by this point has already
+        // been kept — popping the caption alone would leave that picture unexplained.
+        // (Photo credits routinely carry a "©", which the phrase list below matches.)
+        if block.kind == .caption { return false }
         let trimmedText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedText.isEmpty { return true }
         if block.kind == .heading { return true } // trailing headings are junk (trafilatura)
@@ -828,7 +838,15 @@ public struct ArticleExtractor {
 
     // MARK: - Block extraction
 
-    private let blockTags: Set<String> = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "li", "pre"]
+    /// `figcaption` is a block like any other so that a picture's caption becomes a
+    /// block of its own (emitted right after its image, since `select` walks the
+    /// document in order) instead of being dropped on the floor — it is in no other
+    /// selector, so before this the reader silently lost every caption on the page.
+    /// Listing it here also means a `<p>` or `<img>` nested inside a caption is
+    /// skipped by `hasBlockAncestor` rather than emitted a second time.
+    private let blockTags: Set<String> = [
+        "p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "li", "pre", "figcaption",
+    ]
 
     /// Child tags that disqualify a `<div>`/`<section>` from being a single
     /// paragraph (their presence means the element is a structural container).
@@ -1259,10 +1277,14 @@ public struct ArticleExtractor {
 
         let kind: ArticleContent.Block.Kind
         switch element.tagName() {
+        case "figcaption": kind = .caption
         case "h1", "h2", "h3", "h4", "h5", "h6": kind = .heading
         case "blockquote": kind = .quote
         case "li": kind = .listItem
-        default: kind = .paragraph
+        // Text sitting inside a `<figure>` IS that figure's caption, whatever tag
+        // carries it — WordPress and several CMSs emit `<figure><p class=…-caption>`
+        // rather than a `<figcaption>`. Structural, so there is no wording to guess.
+        default: kind = isInsideFigure(element) ? .caption : .paragraph
         }
         return (ArticleContent.Block(kind: kind, text: text, links: links), nestedImages)
     }

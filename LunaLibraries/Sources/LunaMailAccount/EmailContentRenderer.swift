@@ -70,6 +70,11 @@ public enum EmailContentRenderer {
                     bodyHTML += "<p style=\"margin:16px 0\"><img src=\"cid:\(cid)\" "
                         + "style=\"max-width:100%;height:auto;border-radius:6px\" alt=\"\"></p>"
                 }
+            case .caption:
+                // Directly under its picture (mail clients honour no class names, so
+                // the styling is inline like every other block here).
+                bodyHTML += "<p style=\"margin:-8px 0 16px;font-size:13px;"
+                    + "line-height:1.4;color:#666\">\(inlineHTML(block))</p>"
             case .paragraph:
                 bodyHTML += "<p style=\"margin:12px 0;line-height:1.5\">\(inlineHTML(block))</p>"
             }

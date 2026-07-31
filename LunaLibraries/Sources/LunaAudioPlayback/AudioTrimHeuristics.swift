@@ -190,10 +190,13 @@ public enum AudioTrimHeuristics {
 
     private static func signal(for block: ArticleContent.Block) -> Signal? {
         if block.kind == .image { return Signal(precision: .high, edge: .anywhere, reason: "image block") }
-        // The page's own chapter marks: identified at extraction, so this needs no
-        // heuristic — it is furniture wherever in the article it sits.
+        // The page's own chapter marks and its picture captions: both identified at
+        // extraction, so this needs no heuristic — either is furniture wherever in
+        // the article it sits.
         if !block.isReadableProse {
-            return Signal(precision: .high, edge: .anywhere, reason: "table of contents")
+            return Signal(
+                precision: .high, edge: .anywhere,
+                reason: block.kind == .caption ? "caption block" : "table of contents")
         }
         let text = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }

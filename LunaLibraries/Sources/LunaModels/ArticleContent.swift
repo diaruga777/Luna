@@ -31,6 +31,13 @@ public struct ArticleContent: Codable, Equatable {
             /// jump, and is skipped by every word-stream consumer — see
             /// `isReadableProse`.
             case tableOfContents
+            /// A figure's caption/credit line — the text the page prints under
+            /// (or over) a picture. It belongs to the picture, not to the prose:
+            /// the scroll reader shows it tucked under its image, and every
+            /// word-stream consumer skips it, so RSVP never flashes a photo
+            /// credit mid-sentence and read-aloud never speaks one. See
+            /// `isReadableProse`.
+            case caption
         }
 
         public var kind: Kind
@@ -67,10 +74,11 @@ public struct ArticleContent: Codable, Equatable {
 
         /// Whether this block belongs to the article's word stream — the ONE
         /// index space `RSVPEngine`, `WordMap`, `SpeechController` and the audio
-        /// script all share. A table of contents is navigation furniture: it is
-        /// rendered but never read, and every one of those consumers must agree
-        /// to skip it or their word indices drift apart.
-        public var isReadableProse: Bool { kind != .tableOfContents }
+        /// script all share. A table of contents is navigation furniture and a
+        /// caption belongs to its picture: both are rendered but never read, and
+        /// every one of those consumers must agree to skip them or their word
+        /// indices drift apart.
+        public var isReadableProse: Bool { kind != .tableOfContents && kind != .caption }
     }
 
     /// An inline link inside a block. `start`/`length` are UTF-16 offsets into `text`.

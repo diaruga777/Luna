@@ -47,6 +47,10 @@ public struct ArticlePlainTextBuilder {
                 lines.append("  • \(block.text)")
             case .tableOfContents:
                 lines.append("  \(block.text)")
+            case .caption:
+                // Labelled, because with no typography a caption would otherwise be
+                // indistinguishable from the paragraph it interrupts.
+                lines.append(L10n.string("[Caption: \(block.text)]"))
             case .image:
                 let alt = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 lines.append(alt.isEmpty

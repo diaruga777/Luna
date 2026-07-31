@@ -76,6 +76,8 @@ enum XPostHTMLRenderer {
             return "<blockquote><p>\(linked(block))</p></blockquote>"
         case .listItem:
             return "<ul><li>\(linked(block))</li></ul>"
+        case .caption:
+            return "<figcaption>\(linked(block))</figcaption>"
         case .paragraph, .tableOfContents:
             return "<p>\(linked(block))</p>"
         }

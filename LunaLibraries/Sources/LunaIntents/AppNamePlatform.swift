@@ -19,6 +19,38 @@ public enum AppNamePlatform {
         platform(forAppName: app) != nil || isSafari(forAppName: app) || isShortcuts(forAppName: app)
     }
 
+    /// Whether the frontmost app is a DIFFERENT app in the Luna family.
+    ///
+    /// All four apps register the same two Action Button intents, so a press
+    /// made while a sibling owns the screen can reach any of them. Nothing good
+    /// comes of acting on it: the sibling's own UI is not a page to save, and a
+    /// link visible inside it is already in the shared store, filed under the
+    /// app that owns its kind. Both intents therefore treat this as unhandled
+    /// and stop — see `ProvideContextIntent` / `SaveIntent`.
+    ///
+    /// The running app itself is deliberately NOT a match: a press inside the
+    /// app you're holding keeps whatever behavior its screen affords.
+    /// Compared as a whole normalized name because "Luna" is a prefix of the
+    /// other three, so substring matching would fold them together.
+    public static func isSiblingLunaApp(
+        _ app: String?, running: LunaApp = .current
+    ) -> Bool {
+        guard let name = normalizedName(app) else { return false }
+        return LunaApp.allCases.contains {
+            $0 != running && normalizedName($0.displayName) == name
+        }
+    }
+
+    private static func normalizedName(_ app: String?) -> String? {
+        guard let app else { return nil }
+        let collapsed = app
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .lowercased()
+        return collapsed.isEmpty ? nil : collapsed
+    }
+
     /// Whether the app is Safari (supported, but needs no model prompt — the tracked
     /// page URL is saved instead).
     public static func isSafari(forAppName app: String) -> Bool {

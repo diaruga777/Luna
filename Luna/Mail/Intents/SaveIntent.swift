@@ -147,6 +147,16 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     private func save(
         reporter: IntentProgressReporter
     ) async throws -> (value: SaveResultEntity, dialog: IntentDialog) {
+        // A sibling Luna app owns the screen. This has to come before the
+        // double-press path below, which would otherwise re-run the previous
+        // save without ever consulting the current app.
+        if AppNamePlatform.isSiblingLunaApp(app) {
+            SharedDiagnosticLog.record(
+                "save: ignored — sibling Luna app frontmost (app=\(app))",
+                category: "intents")
+            return (SaveResultEntity(), "Nothing to save from another Luna app.")
+        }
+
         reporter.enter(.saving)
         let imageData = screenshot.data
         guard let digest = ScreenshotDigest.digest(forImageData: imageData) else {

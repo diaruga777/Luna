@@ -31,7 +31,20 @@ ProvideContextOutcome` (`AppEnum`) and optional `media: IntentFile`. The outcome
 is `.done`, `.unhandled`, or `.requiresScreenshot`; transient entities are result
 values only and are not queryable.
 
-The optional **OnScreenURLs** input is checked first, before the normal decision
+**A sibling Luna app in the foreground outranks everything below.** All four apps
+register both intents, so a press made while another app in the family owns the
+screen can reach any of them; there is nothing there to save (the sibling's own
+UI is not a page, and a link visible inside it is already in the shared store,
+filed under the app that owns its kind). `AppNamePlatform.isSiblingLunaApp` is
+checked before the OnScreenURLs input and before the decision table:
+`ProvideContextIntent` returns `.unhandled` and `SaveIntent` returns an empty
+`SaveResultEntity` — no save, no error dialog, no screenshot. The frontmost name
+is compared against every `LunaApp.displayName` as a WHOLE normalized name,
+because "Luna" is a prefix of the other three; the running app itself is
+deliberately not a match, so a press inside the app you're holding keeps whatever
+its own screen affords. `SiblingLunaAppIntentGateTests` pins the matrix.
+
+The optional **OnScreenURLs** input is checked next, before the normal decision
 table (including in Safari), so a supplied
 URL this app can handle is saved even when the current app would otherwise be
 unsupported. It is
@@ -82,6 +95,7 @@ evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 
 | `app` | conditions | result |
 |---|---|---|
+| another Luna app | — (gated in the intent, above the table) | **unhandled** |
 | nil / empty (lock screen) | — | **unhandled** |
 | Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **done** — saves `lastURL` NOW via the action-button path |
 | Safari | URL stale/absent, vision model available | **requiresScreenshot** |
@@ -112,6 +126,9 @@ There is no user setting for this threshold.
 The return value is a `TransientAppEntity` with optional `media: IntentFile`.
 Non-media saves and large/unknown media downloads return `media = nil`.
 
+0. **Sibling Luna app gate** — first, and specifically ahead of the double-press
+   skip below, which would otherwise re-run the previous save without ever
+   consulting the current app. Returns an empty `SaveResultEntity`.
 1. **Digest double-press skip** — `ScreenshotDigest.digest(forImageData:)`
    (32×32 grayscale, CoreGraphics-only) vs `ScreenshotDoublePressStore.last()`
    (App-Group single-slot: digest + date + saved URL).

@@ -96,6 +96,18 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     private func provideContext(
         reporter: IntentProgressReporter
     ) async throws -> ProvideContextResultEntity {
+        // A sibling Luna app owns the screen: nothing here is ours to save, and
+        // that verdict outranks even a supplied on-screen URL (a link showing
+        // inside another Luna app is already saved, in the app that owns its
+        // kind). Reported as plainly unhandled so the Shortcut just stops.
+        if AppNamePlatform.isSiblingLunaApp(app) {
+            SharedDiagnosticLog.record(
+                "provide context: ignored — sibling Luna app frontmost "
+                    + "(app=\(app ?? "nil"))",
+                category: "intents")
+            return ProvideContextResultEntity(outcome: .unhandled)
+        }
+
         let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
 
         // A supplied URL this app can handle takes precedence over every

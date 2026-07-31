@@ -20,6 +20,7 @@ final class DiagnosticsViewController: UIViewController {
     let textView = UITextView()
     /// In-content header in place of the nav bar.
     private let header = NavHeaderBar()
+    private let resetOnboardingButton = UIButton(type: .system)
     /// Keeps left-edge swipe-back alive while the real nav bar is hidden.
     private let popGestureClaim = InteractivePopGestureClaim()
 
@@ -59,11 +60,26 @@ final class DiagnosticsViewController: UIViewController {
         ])
         let headerBottom = header.mount(in: self)
 
+        var resetConfiguration = UIButton.Configuration.plain()
+        resetConfiguration.title = L10n.string("Reset Onboarding")
+        resetConfiguration.baseForegroundColor = .systemRed
+        resetOnboardingButton.configuration = resetConfiguration
+        resetOnboardingButton.accessibilityIdentifier = "diagnostics.resetOnboarding"
+        resetOnboardingButton.addTarget(
+            self, action: #selector(confirmResetOnboarding), for: .touchUpInside)
+        resetOnboardingButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(resetOnboardingButton)
+
         NSLayoutConstraint.activate([
             textView.topAnchor.constraint(equalTo: headerBottom),
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            textView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            textView.bottomAnchor.constraint(
+                equalTo: resetOnboardingButton.topAnchor, constant: -4),
+            resetOnboardingButton.centerXAnchor.constraint(
+                equalTo: view.centerXAnchor),
+            resetOnboardingButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -6),
         ])
     }
 
@@ -118,6 +134,29 @@ final class DiagnosticsViewController: UIViewController {
         confirm.addAction(UIAlertAction(title: L10n.string("Clear"), style: .destructive) { [weak self] _ in
             self?.log.clear()
             self?.reload()
+        })
+        present(confirm, animated: true)
+    }
+
+    /// Clears this app's onboarding completion plus every shared "has run"
+    /// marker (Safari extension, App Intents shortcut), so the full first-run
+    /// journey — including its setup steps — plays again on next launch.
+    @objc private func confirmResetOnboarding() {
+        let confirm = UIAlertController(
+            title: L10n.string("Reset Onboarding?"),
+            message: L10n.string(
+                "Clears onboarding completion and the Safari extension and Shortcut run evidence. Full onboarding will show again on the next launch."),
+            preferredStyle: .alert)
+        confirm.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        confirm.addAction(UIAlertAction(
+            title: L10n.string("Reset"), style: .destructive
+        ) { [weak self] _ in
+            AppOnboardingStore.shared.resetCompletion()
+            LunaSetupStatusStore.shared.resetAllRunEvidence()
+            self?.presentAlert(
+                title: L10n.string("Onboarding Reset"),
+                message: L10n.string(
+                    "Quit and relaunch the app to see the full onboarding."))
         })
         present(confirm, animated: true)
     }

@@ -45,6 +45,21 @@ public final class LunaSetupStatusStore {
         Self.postChange()
     }
 
+    /// Erases every "has ever worked" marker — the Safari extension's and the
+    /// App Intents' — across the shared and central facets. The diagnostics
+    /// onboarding reset uses this so a re-run must gather fresh evidence.
+    public func resetAllRunEvidence() {
+        for key in [
+            Self.sharedSafariKey,
+            Self.centralSafariKey,
+            Self.sharedShortcutKey,
+            Self.centralShortcutKey,
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+        Self.postChange()
+    }
+
     /// Bridges extension/App Intent completion back into a running app process.
     /// Foreground refresh remains the fallback when iOS suspended the process.
     public static func startObservingCrossProcessChanges() {

@@ -845,6 +845,35 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(didSkip)
     }
 
+    func testOnboardingResetClearsCompletionAndEveryRunEvidence() {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingStore(app: .reader, defaults: defaults)
+        onboarding.markCompleted()
+        XCTAssertTrue(onboarding.isCompleted)
+        onboarding.resetCompletion()
+        XCTAssertFalse(onboarding.isCompleted)
+
+        let status = LunaSetupStatusStore(defaults: defaults)
+        defaults.set(true, forKey: LunaSetupStatusStore.sharedSafariKey)
+        defaults.set(true, forKey: LunaSetupStatusStore.centralSafariKey)
+        status.recordShortcutRun(isCentral: false)
+        status.recordShortcutRun(isCentral: true)
+        XCTAssertTrue(status.safariHasRun(isCentral: false))
+        XCTAssertTrue(status.safariHasRun(isCentral: true))
+        XCTAssertTrue(status.shortcutHasRun(isCentral: false))
+        XCTAssertTrue(status.shortcutHasRun(isCentral: true))
+
+        status.resetAllRunEvidence()
+        XCTAssertFalse(status.safariHasRun(isCentral: false))
+        XCTAssertFalse(status.safariHasRun(isCentral: true))
+        XCTAssertFalse(status.shortcutHasRun(isCentral: false))
+        XCTAssertFalse(status.shortcutHasRun(isCentral: true))
+    }
+
     @MainActor
     func testSetupCardButtonsAreHittableAfterTheCleanupScroll() throws {
         let safari = SafariReplicaViewController(

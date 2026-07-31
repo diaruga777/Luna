@@ -41,6 +41,17 @@ struct OnboardingHighlightedLinkRegion: Equatable {
     var cornerRadius: CGFloat
 }
 
+/// How a source's Action Button press resolves on screen.
+enum OnboardingSaveEffectStyle {
+    /// The full three-beat wave: ripple, blackout isolation of the link, then
+    /// a crossfade into the saved-card screen (Safari's demonstration).
+    case isolateAndCrossfade
+    /// Just the press cue and the in-place ripple with the highlight lit. The
+    /// source then continues with its own staged follow-up (Messages hands off
+    /// to the Dynamic Island shortcut-run sequence).
+    case rippleOnly
+}
+
 /// A full-screen mock source that can demonstrate saving its visible URL with
 /// the physical Action Button. Safari and Messages both inherit this player so
 /// their press cue, URL highlight, wave timing, and destination transition can
@@ -78,6 +89,16 @@ class OnboardingSaveSourceViewController: UIViewController {
     /// every pixel beyond its rounded boundary black.
     var highlightedLinkRegion: OnboardingHighlightedLinkRegion? { nil }
 
+    /// Which resolution this source's press plays.
+    var saveEffectStyle: OnboardingSaveEffectStyle { .isolateAndCrossfade }
+
+    /// Ripple-only sources continue their own staged follow-up here; the URL
+    /// is still highlighted when this fires.
+    func rippleSaveEffectDidFinish() {}
+
+    /// Sources with staged follow-up work cancel it here.
+    func saveEffectWasCancelled() {}
+
     /// Plays the same complete save gesture for every mock source. The URL is
     /// highlighted before the source snapshot is captured, so it remains lit
     /// until the advancing wave replaces it with the saved-card view.
@@ -99,25 +120,37 @@ class OnboardingSaveSourceViewController: UIViewController {
         let origin = cue.waveOrigin
 
         let hostView = view.superview ?? window
-        let linkRegion = OnboardingHighlightedLinkRegion(
-            frame: hostView.convert(sourceLinkRegion.frame, from: view),
-            cornerRadius: sourceLinkRegion.cornerRadius)
         let animator = LiquidScreenWaveAnimator(window: window, hostView: hostView)
         waveAnimator = animator
 
         window.addSubview(cue)
-        animator.play(
-            origin: origin,
-            highlightedLinkRegion: linkRegion,
-            destinationSnapshot: { [weak self] in
-                self?.makeActionButtonDestinationSnapshot?()
-            },
-            completion: { [weak self, weak cue] in
-                cue?.removeFromSuperview()
-                self?.actionCue = nil
-                self?.waveAnimator = nil
-                self?.onActionButtonWaveFinished?()
-            })
+        switch saveEffectStyle {
+        case .isolateAndCrossfade:
+            let linkRegion = OnboardingHighlightedLinkRegion(
+                frame: hostView.convert(sourceLinkRegion.frame, from: view),
+                cornerRadius: sourceLinkRegion.cornerRadius)
+            animator.play(
+                origin: origin,
+                highlightedLinkRegion: linkRegion,
+                destinationSnapshot: { [weak self] in
+                    self?.makeActionButtonDestinationSnapshot?()
+                },
+                completion: { [weak self, weak cue] in
+                    cue?.removeFromSuperview()
+                    self?.actionCue = nil
+                    self?.waveAnimator = nil
+                    self?.onActionButtonWaveFinished?()
+                })
+        case .rippleOnly:
+            animator.playRipple(
+                origin: origin,
+                completion: { [weak self, weak cue] in
+                    cue?.removeFromSuperview()
+                    self?.actionCue = nil
+                    self?.waveAnimator = nil
+                    self?.rippleSaveEffectDidFinish()
+                })
+        }
         cue.play { [weak self, weak cue] in
             cue?.removeFromSuperview()
             self?.actionCue = nil
@@ -137,6 +170,7 @@ class OnboardingSaveSourceViewController: UIViewController {
         waveAnimator?.cancel()
         waveAnimator = nil
         setURLHighlighted(false)
+        saveEffectWasCancelled()
     }
 
     #if DEBUG
@@ -331,6 +365,11 @@ final class LiquidScreenWaveAnimator {
     /// cache churn at the start of every save wave.
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
+    private enum Mode {
+        case fullSave
+        case rippleOnly
+    }
+
     private weak var window: UIWindow?
     private weak var hostView: UIView?
     private var overlay: UIImageView?
@@ -340,6 +379,7 @@ final class LiquidScreenWaveAnimator {
     private var startedAt: CFTimeInterval = 0
     private var completion: (() -> Void)?
     private var origin: CGPoint = .zero
+    private var mode = Mode.fullSave
     private var highlightedLinkRegion = OnboardingHighlightedLinkRegion(
         frame: .zero,
         cornerRadius: 0)
@@ -376,18 +416,14 @@ final class LiquidScreenWaveAnimator {
             completion()
             return
         }
+        mode = .fullSave
         self.origin = hostView.convert(origin, from: window)
         self.highlightedLinkRegion = highlightedLinkRegion
         self.completion = completion
         source = CIImage(cgImage: sourceImage)
         destination = CIImage(cgImage: destinationImage)
 
-        let imageView = UIImageView(frame: hostView.bounds)
-        imageView.image = sourceSnapshot
-        imageView.contentMode = .scaleToFill
-        imageView.isUserInteractionEnabled = false
-        hostView.addSubview(imageView)
-        overlay = imageView
+        let imageView = mountOverlay(showing: sourceSnapshot, in: hostView)
 
         if UIAccessibility.isReduceMotionEnabled {
             UIView.transition(
@@ -402,6 +438,50 @@ final class LiquidScreenWaveAnimator {
             return
         }
 
+        startDisplayLink()
+    }
+
+    /// The press cue and in-place ripple only — the screen returns to exactly
+    /// its pre-press appearance (highlight included) and the caller stages
+    /// whatever follows.
+    func playRipple(origin: CGPoint, completion: @escaping () -> Void) {
+        guard let window,
+              let hostView,
+              let sourceSnapshot = snapshot(view: hostView),
+              let sourceImage = sourceSnapshot.cgImage,
+              !UIAccessibility.isReduceMotionEnabled
+        else {
+            // Without motion there is nothing to draw over the live view; the
+            // press cue alone carries the beat.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) { [weak self] in
+                self?.finish()
+            }
+            self.completion = completion
+            return
+        }
+        mode = .rippleOnly
+        self.origin = hostView.convert(origin, from: window)
+        self.completion = completion
+        source = CIImage(cgImage: sourceImage)
+
+        _ = mountOverlay(showing: sourceSnapshot, in: hostView)
+        startDisplayLink()
+    }
+
+    private func mountOverlay(
+        showing sourceSnapshot: UIImage,
+        in hostView: UIView
+    ) -> UIImageView {
+        let imageView = UIImageView(frame: hostView.bounds)
+        imageView.image = sourceSnapshot
+        imageView.contentMode = .scaleToFill
+        imageView.isUserInteractionEnabled = false
+        hostView.addSubview(imageView)
+        overlay = imageView
+        return imageView
+    }
+
+    private func startDisplayLink() {
         startedAt = CACurrentMediaTime()
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         if #available(iOS 15.0, *) {
@@ -422,7 +502,7 @@ final class LiquidScreenWaveAnimator {
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        guard let source, let destination, let overlay, let window else {
+        guard let source, let overlay, let window else {
             finish()
             return
         }
@@ -436,6 +516,47 @@ final class LiquidScreenWaveAnimator {
         let actionButtonCenter = CGPoint(
             x: origin.x * pixelScale,
             y: extent.height - origin.y * pixelScale)
+
+        if mode == .rippleOnly {
+            let firstHalfWidth =
+                OnboardingActionButtonTiming.firstWavefrontHalfWidth * pixelScale
+            let progress = clampedProgress(
+                (elapsed - firstWaveDelay) / firstWaveDuration)
+            let envelope = temporalEnvelope(for: progress)
+            let output = renderFirstWave(
+                source: source,
+                extent: extent,
+                center: actionButtonCenter,
+                radius: max(
+                    1,
+                    CGFloat(progress) * radialTravelDistance(
+                        from: actionButtonCenter,
+                        through: extent,
+                        padding: firstHalfWidth)),
+                halfWidth: firstHalfWidth,
+                displacement:
+                    OnboardingActionButtonTiming.firstMaximumDisplacement
+                        * pixelScale
+                        * envelope,
+                lightingStrength:
+                    OnboardingActionButtonTiming.firstWaveLightingStrength
+                        * envelope)
+            guard let output,
+                  let rendered = Self.context.createCGImage(output, from: extent)
+            else {
+                finish()
+                return
+            }
+            overlay.image = UIImage(
+                cgImage: rendered, scale: pixelScale, orientation: .up)
+            if progress >= 1 { finish() }
+            return
+        }
+
+        guard let destination else {
+            finish()
+            return
+        }
         let linkFrame = CGRect(
             x: highlightedLinkRegion.frame.minX * pixelScale,
             y: extent.height - highlightedLinkRegion.frame.maxY * pixelScale,

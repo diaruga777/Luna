@@ -159,16 +159,36 @@ final class SavedMediaStoreTests: XCTestCase {
     /// nothing, so the URL is no longer "already downloaded" — every save
     /// surface asking this question (App Intent handoff, extension preview, the
     /// awaited-transfer poll) must be told to download again, in whichever
-    /// process it runs.
-    func testExistingDownloadedItemClearsPhotosRowWhoseAssetWasDeleted() throws {
+    /// process it runs. The stale save is DISCARDED, exactly as the card deck's
+    /// foreground reconcile discards it, and the incoming save makes a new one.
+    func testExistingDownloadedItemDiscardsPhotosSaveWhoseAssetWasDeleted() throws {
         let urlString = "https://x.com/example/status/500"
         let item = try makePhotosBackedItem(urlString: urlString, localIdentifier: "gone-id")
+        let thumbnail = try XCTUnwrap(item.thumbnailFileName)
         store.photosBackingProbe = StubBackingProbe(.deleted)
 
         XCTAssertNil(store.existingDownloadedItem(forURLString: urlString))
-        let repaired = try XCTUnwrap(store.items().first(where: { $0.id == item.id }))
-        XCTAssertEqual(repaired.storageState, .undownloaded)
-        XCTAssertEqual(repaired.title, "Example", "the row keeps its identity and metadata")
+        XCTAssertTrue(store.items().isEmpty, "the stale save is gone, not repaired in place")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: store.thumbnailDirectory.appendingPathComponent(thumbnail).path))
+    }
+
+    /// The archive tray's rule is the deck's too: a missing asset leaves an
+    /// archived row in place, downloadable, with its poster intact.
+    func testArchivedPhotosSaveSurvivesAsUndownloadedWhenAssetWasDeleted() throws {
+        let urlString = "https://x.com/example/status/504"
+        let item = try makePhotosBackedItem(urlString: urlString, localIdentifier: "archived-id")
+        let thumbnail = try XCTUnwrap(item.thumbnailFileName)
+        store.setArchived(true, for: item.id, at: Date(timeIntervalSince1970: 789))
+        store.photosBackingProbe = StubBackingProbe(.deleted)
+
+        XCTAssertNil(store.existingDownloadedItem(forURLString: urlString))
+        let kept = try XCTUnwrap(store.items().first(where: { $0.id == item.id }))
+        XCTAssertEqual(kept.storageState, .undownloaded)
+        XCTAssertTrue(kept.isArchived)
+        XCTAssertEqual(kept.thumbnailFileName, thumbnail)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: store.thumbnailDirectory.appendingPathComponent(thumbnail).path))
     }
 
     /// Without FULL read authorization an empty fetch means "not in the selected
@@ -193,23 +213,27 @@ final class SavedMediaStoreTests: XCTestCase {
     }
 
     /// `ensureUndownloaded` is the call every download path makes before it
-    /// starts, so repairing there is what turns the start gate's
+    /// starts, so discarding there is what turns the start gate's
     /// `.alreadyDownloaded` rejection back into a real transfer — and the legacy
     /// URL marker, the other dedup gate, has to go with it.
-    func testEnsureUndownloadedRevertsDeletedPhotosBackingAndClearsDedupMarker() throws {
+    func testEnsureUndownloadedReplacesDeletedPhotosSaveAndClearsDedupMarker() throws {
         let urlString = "https://x.com/example/status/502"
-        let item = try makePhotosBackedItem(urlString: urlString, localIdentifier: "stale-id")
+        let stale = try makePhotosBackedItem(urlString: urlString, localIdentifier: "stale-id")
         let wasMarked = AutoDownloadSettings.wasDownloaded(urlString)
         AutoDownloadSettings.markDownloaded(urlString)
         defer { if !wasMarked { AutoDownloadSettings.unmarkDownloaded(urlString) } }
         store.photosBackingProbe = StubBackingProbe(.deleted)
 
+        let freshID = UUID()
         let ensured = try store.ensureUndownloaded(
-            id: item.id, sourceURLString: urlString, title: "Example")
-        XCTAssertEqual(ensured.id, item.id, "the download re-applies to the existing save")
+            id: freshID, sourceURLString: urlString, title: "Example")
+        XCTAssertEqual(ensured.id, freshID, "a new save, not the discarded one")
         XCTAssertEqual(ensured.storageState, .undownloaded)
+        XCTAssertNil(ensured.thumbnailFileName)
         XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(
             storageState: ensured.storageState))
+        XCTAssertEqual(store.items().count, 1, "the stale save didn't survive alongside it")
+        XCTAssertNil(store.items().first(where: { $0.id == stale.id }))
         XCTAssertFalse(AutoDownloadSettings.wasDownloaded(urlString))
     }
 

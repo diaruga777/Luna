@@ -330,17 +330,17 @@ public final class SavedMediaStore {
     ///
     /// A `.photosReference` whose asset the user deleted out of Photos is NOT a
     /// download: it is a dangling identifier that would hand the caller nothing.
-    /// Clearing it here — in the one place every surface asks this question — is
-    /// what lets a process with no card deck (an App Intent, a share/action
-    /// extension) re-download instead of reporting a duplicate, without waiting
-    /// for the main app to run its foreground reconcile sweep.
+    /// Discarding that save here — in the one place every surface asks this
+    /// question — is what lets a process with no card deck (an App Intent, a
+    /// share/action extension) download again instead of reporting a duplicate,
+    /// without waiting for the main app to run its foreground reconcile sweep.
     public func existingDownloadedItem(forURLString urlString: String) -> SavedMediaItem? {
         guard let item = matchingItem(forURLString: urlString) else { return nil }
         switch item.storageState {
         case .localFile:
             return item
         case .photosReference:
-            return clearDeletedPhotosBacking(item.id) ? nil : item
+            return discardSaveWithDeletedPhotosBacking(item.id) ? nil : item
         case .undownloaded:
             return nil
         }
@@ -367,11 +367,11 @@ public final class SavedMediaStore {
 
     /// Ensures every Downloader save has a durable manifest row before download
     /// begins. Existing local/Photos state wins — unless a Photos reference's
-    /// asset is gone, which reverts the row to `.undownloaded` so the caller's
-    /// start gate (`LiveMediaDownloadStartPolicy.downloaderShouldStart`) sees
-    /// work to do instead of rejecting the save as `.alreadyDownloaded`.
-    /// Metadata is filled in without replacing the stable identity supplied by
-    /// the reading-list item.
+    /// asset is gone, in which case that save is discarded and this call makes a
+    /// NEW one, so the caller's start gate
+    /// (`LiveMediaDownloadStartPolicy.downloaderShouldStart`) sees work to do
+    /// instead of rejecting the save as `.alreadyDownloaded`. Metadata is filled
+    /// in without replacing the stable identity supplied by the reading-list item.
     @discardableResult
     public func ensureUndownloaded(
         id: UUID,
@@ -383,7 +383,7 @@ public final class SavedMediaStore {
     ) throws -> SavedMediaItem {
         let recognized = PlatformRecognizer.recognize(sourceURLString)
         if let matched = matchedItem(id: id, sourceURLString: sourceURLString) {
-            clearDeletedPhotosBacking(matched.id)
+            discardSaveWithDeletedPhotosBacking(matched.id)
         }
         lock.lock()
         var items = loadUnlocked()
@@ -609,9 +609,14 @@ public final class SavedMediaStore {
         notifyChanged()
     }
 
-    /// Reverts a row whose Photos asset the user deleted to `.undownloaded`, so
-    /// the next save of the same URL downloads into this very row — keeping its
-    /// id, title, creator and archive state. Returns whether it cleared one.
+    /// Discards a save whose Photos asset the user deleted, so the save arriving
+    /// right now starts over: the row is REMOVED and the next
+    /// `ensureUndownloaded` creates a fresh one. An ARCHIVED row instead reverts
+    /// to `.undownloaded` and keeps its poster — the archive tray's own rule
+    /// (`markArchivedPhotosAssetMissing`). Both are exactly what the card deck's
+    /// foreground reconcile does, so the two paths can't drift; the deck's
+    /// reading-list deletion is deliberately NOT mirrored, because the save being
+    /// processed still owns that row. Returns whether a stale save was discarded.
     ///
     /// A no-op unless the probe CONFIRMS the asset is gone: without full read
     /// authorization an empty fetch proves nothing (see `PhotosBackingPresence`),
@@ -622,10 +627,10 @@ public final class SavedMediaStore {
     ///
     /// The legacy URL marker goes too: it is the other "already downloaded" gate
     /// (`AutoDownloadSettings.wasDownloaded`, read by the ingest fallback and the
-    /// non-Downloader start path), and a row with no backing must not keep
-    /// suppressing its own re-download.
+    /// non-Downloader start path), and a discarded save must not keep suppressing
+    /// its own replacement.
     @discardableResult
-    public func clearDeletedPhotosBacking(_ itemID: UUID) -> Bool {
+    public func discardSaveWithDeletedPhotosBacking(_ itemID: UUID) -> Bool {
         lock.lock()
         let items = loadUnlocked()
         guard let index = items.firstIndex(where: { $0.id == itemID }),
@@ -643,22 +648,34 @@ public final class SavedMediaStore {
         lock.lock()
         var updated = loadUnlocked()
         guard let index = updated.firstIndex(where: { $0.id == itemID }),
-              case .photosReference(let current, let pendingFile, let pendingThumbnail)
-                = updated[index].storageState,
+              case .photosReference(let current, _, _) = updated[index].storageState,
               current == identifier
         else {
             lock.unlock()
             return false
         }
-        updated[index].storageState = .undownloaded
+        let stale = updated[index]
+        if stale.isArchived {
+            updated[index].storageState = .undownloaded
+        } else {
+            updated.remove(at: index)
+        }
         guard (try? saveUnlocked(updated)) != nil else {
             lock.unlock()
             return false
         }
         lock.unlock()
-        // Leftovers from an interrupted local-to-Photos transition have nothing
-        // left to belong to once the reference is gone.
-        removePendingFiles(fileName: pendingFile, thumbnailFileName: pendingThumbnail)
+        // An archived row keeps its poster — that IS the archive's visual
+        // identity, and `items()`'s recovery pass already clears any leftover
+        // pending files.
+        if !stale.isArchived {
+            removeLocalFiles(for: stale)
+            // `delete` leaves a Photos-backed row's poster on disk (it clears
+            // only the transition's pending names). Nothing can reference it
+            // once the row is gone, and unlike a one-off delete this path runs
+            // again on every re-save.
+            removePendingFiles(fileName: nil, thumbnailFileName: stale.thumbnailFileName)
+        }
         AutoDownloadSettings.unmarkDownloaded(sourceURLString)
         notifyChanged()
         return true

@@ -118,12 +118,16 @@ two questions the save paths actually ask:
   `LiveMediaDownloadStartPolicy.downloaderShouldStart` sees work to do instead of
   rejecting the start as `.alreadyDownloaded`.
 
-Both route through `clearDeletedPhotosBacking(_:)`, which reverts the row to
-`.undownloaded` (keeping its id, title, creator and archive state, so the
-re-download lands in the same save) and clears the legacy
-`AutoDownloadSettings` dedup marker — the other "already downloaded" gate. The
-verdict comes from `PhotosBackingProbing`; the real `PhotoKitBackingProbe` NEVER
-prompts, and reports `.indeterminate` without full `.authorized` read/write
+Both route through `discardSaveWithDeletedPhotosBacking(_:)`, whose outcome is the
+same as the carousel's: an active row is **deleted** (the incoming save then makes
+a new one, via the very `ensureUndownloaded` above) and an archived row instead
+becomes `.undownloaded` with its poster retained. The legacy `AutoDownloadSettings`
+dedup marker — the other "already downloaded" gate — is cleared with it. The one
+thing the save path does NOT mirror is the carousel's reading-list deletion: the
+save being processed right now owns that row, so it stays.
+
+The verdict comes from `PhotosBackingProbing`; the real `PhotoKitBackingProbe`
+NEVER prompts, and reports `.indeterminate` without full `.authorized` read/write
 access, so an unauthorized extension leaves the row untouched rather than
 guessing. Local-file rows never consult PhotoKit at all.
 

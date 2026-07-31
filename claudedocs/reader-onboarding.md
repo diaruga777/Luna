@@ -129,10 +129,17 @@ The root uses the production `CardCarouselViewController`:
    nonpersistent data store and JavaScript disabled; central Luna rotates its
    local pages every 3.4 seconds.
    The second source is a native UIKit iMessage facsimile headed **Johnny
-   Appleseed**. Three readable, content-hugging bubbles spring in one at a time:
-   “You can save any link on your screen, too”, “Really? Like this?”, and the
-   exact URL currently shown by Safari. A 1.6-second reading beat separates
-   arrivals. The existing Action Button save effect follows the final bubble.
+   Appleseed**, styled like the real app: `#007AFF` outgoing / `#E9E9EB`
+   incoming bubbles with the classic outward tail curl on the last bubble of
+   each same-sender group (2-point grouped spacing, 8 between groups), and each
+   arrival pops out of its tail corner while the whole bottom-anchored thread
+   springs up, the way iMessage lands a new message. Three staged bubbles
+   arrive one at a time — “You can press the Action Button and Luna saves any
+   link on screen”, “Woah! Like this?”, and the exact URL currently shown by
+   Safari (underlined link-blue, `https://luna.app/about` for the article
+   page). A 1.6-second reading beat separates arrivals. The Action Button
+   press effect follows the final bubble — but see step 5a: in Messages the
+   save resolves as a mock shortcut run, not the blackout crossfade.
 4. A solid-black, tall rounded deformation stretches continuously out of the
    physical Action Button screen edge and smoothly retracts, matching the
    system's on-screen press silhouette. Its system-scale footprint is 7 points
@@ -142,8 +149,9 @@ The root uses the production `CardCarouselViewController`:
    starts to recede. This first, thick wave is displacement-only: it passes
    through the source pixels without replacing them, and finishes before the
    next phase starts.
-5. A second wave then creeps in from the display edges, closing in on the
-   rounded boundary of the highlighted Safari URL bar or iMessage link bubble.
+5. In Safari (`OnboardingSaveEffectStyle.isolateAndCrossfade`) a second wave
+   then creeps in from the display edges, closing in on the
+   rounded boundary of the highlighted Safari URL bar.
    Every pixel behind its inward-travelling front turns black while the
    highlighted link itself is preserved, until only that link is visible on
    black. Both waves stay concentrated at their moving wavefronts instead of
@@ -151,6 +159,25 @@ The root uses the production `CardCarouselViewController`:
    no third wave: the isolated link rests on black for half a second, then the
    whole frame simply crossfades, uniformly across the screen, into the
    saved-card snapshot.
+
+   5a. Messages instead uses `.rippleOnly` — the press cue and in-place ripple
+   play with the URL bubble lit, and the save then resolves as a mock shortcut
+   run (`OnboardingShortcutRunEffects.swift`): the highlighted link bubble
+   spring-scales up (1.12×); a black capsule expands around the real Dynamic
+   Island with the app icon on the left and a filling progress ring on the
+   right; a staged fingertip lands on the finished ring (the island squeezes
+   under it); the island collapses; a mock app switcher slides the
+   conversation out as a rounded card while the saved production screen (the
+   same raster the Safari crossfade lands on) slides in and fills the screen;
+   after a one-second hold the switcher hops back; the bubble highlight and
+   scale release; and two follow-up outgoing messages pop in: “Yeah just
+   install this shortcut” with a Shortcuts-purple **{Shortcuts glyph} Luna**
+   pill, then “And change your action button to that shortcut in” with a
+   grey **{gear} Settings** pill. Both pills glow and pulse until tapped —
+   the shortcut pill runs the `BundledShortcut` installer, the Settings pill
+   opens the Action Button settings — and the demonstration stops there
+   (`onShortcutSetupMessagesShown` advances the journey to
+   `actionButtonSetup` and stops the loop; no shrink to card, no overlay).
 6. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
    `AppOnboardingCompletion`. The final crossfade lands on that root
@@ -170,17 +197,22 @@ The root uses the production `CardCarouselViewController`:
    restores the in-page prompt for another attempt. Choosing “Skip for now”
    completes onboarding without opening Safari. A verified extension return
    zooms the mock URL bar and runs the existing URL-isolation/save wave. The
-   saved card then grows into the Messages replica, which plays its three-bubble
-   sequence and runs the second Action Button save. After another 1.35-second
-   card hold, the shortcut
-   and Action Button setup overlay appears. Setup overlays do not run a second
-   source behind themselves. At the start of each press, the source URL gains a
-   bright app-tint highlight; it survives the blackout wave until the saved
-   view replaces it. The setup actions retain the same `BundledShortcut`
+   saved card then grows into the Messages replica, which plays its
+   three-bubble sequence, the second Action Button press, and the full mock
+   shortcut run of step 5a, ending in place on the two pill messages — the
+   shortcut and Action Button setup now lives in the conversation instead of
+   an overlay. At the start of each press, the source URL gains a
+   bright app-tint highlight; in Safari it survives the blackout wave until
+   the saved view replaces it, in Messages it holds through the island and
+   app-switcher hop. The setup actions retain the same `BundledShortcut`
    installer and `SystemSettingsLink.openActionButton()` paths and PiP guides.
-   If Safari, Shortcuts, or Settings rejects the open request, the overlay stays
-   in place and offers recovery. While present it is an accessibility modal and
-   hides the mounted production hierarchy from assistive technologies.
+   If Safari, Shortcuts, or Settings rejects the open request, the recovery
+   instruction overlay appears (window-level, over whichever source is up) and
+   offers every setup action. While present it is an accessibility modal and
+   hides the mounted production hierarchy from assistive technologies. A
+   return from the Shortcuts install leaves the pills in place (the Settings
+   pill keeps pulsing); a return from Settings shows the “Press the action
+   button to finish” overlay with its “Set up later” escape.
 8. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
@@ -191,8 +223,10 @@ The root uses the production `CardCarouselViewController`:
    is the fictional `luna.app` article for Reader and central Luna, local video for
    Downloader, and a real price tracker for Price Tracker.
 
-With Reduce Motion enabled, the full-screen Core Image wave is replaced by a
-short source-to-saved-card crossfade. The two saves reuse one Core Image context,
+With Reduce Motion enabled, Safari's full-screen Core Image wave is replaced by
+a short source-to-saved-card crossfade; the Messages ripple is skipped (the
+press cue alone carries the beat) and the island, tap, and app-switcher steps
+become plain fades. The two saves reuse one Core Image context,
 avoiding device-context and shader-cache setup between Safari and Messages.
 
 The demonstration save is temporary. Its exact UUID is recorded only when
@@ -212,8 +246,9 @@ inferred from merely opening a destination.
 Debug launches accept `-resetOnboarding` (`-resetReaderOnboarding` remains a
 Reader alias). `-onboardingStage prompt|setup|waiting` moves through the real
 direct card expansion and first shrink but begins at a deterministic overlay stage;
-`-onboardingStage messages` holds on the unobscured Messages replica for visual
-inspection.
+`-onboardingStage messages` opens straight onto the Messages replica and runs
+its full demonstration (staged bubbles, ripple, Dynamic Island, app-switcher
+hop, pill messages) for visual inspection.
 `-readerOnboardingStage` remains an alias. Add `-slowOnboardingAnimations` for
 a 6× inspection timeline, or `-onboardingAnimationScale <1...12>` for an
 explicit factor. The clock slows Core Animation, timers, and the display-link
@@ -221,6 +256,8 @@ liquid wave together.
 
 `ReaderOnboardingTests` covers independent per-app completion, exact surface
 copy/page mapping, temporary-save ownership, idempotent offline article
-installation, launch geometry, active-wave cancellation, external-open fallback
+installation, launch geometry, active-wave cancellation, the setup pills
+(identifiers, glow-until-tapped, and their shortcut/Settings callbacks),
+external-open fallback
 actions, local-only HTML, bundled MP4 size, and attribution. The launch-art
 recorder remains skipped in ordinary test runs.

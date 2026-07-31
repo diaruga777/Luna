@@ -100,7 +100,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(reader.demoPages, [.lunaArticle])
         XCTAssertEqual(
             reader.demoPages.first?.sharedURLString,
-            "https://luna.app")
+            "https://luna.app/about")
 
         let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
         XCTAssertEqual(downloader.firstLine, "App signup required? So annoying.")
@@ -232,6 +232,15 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             AppOnboardingCompletionTransition.handoffDuration,
             0.25)
+        XCTAssertGreaterThanOrEqual(
+            OnboardingShortcutRunTiming.savedAppHoldDuration, 1.0,
+            "The saved Luna screen holds a full beat before hopping back")
+        XCTAssertLessThan(OnboardingShortcutRunTiming.appSwitchDuration, 1.0)
+        XCTAssertGreaterThan(
+            OnboardingShortcutRunTiming.islandProgressDuration, 1.0,
+            "The shortcut-run progress ring must read as real work")
+        XCTAssertGreaterThan(
+            OnboardingShortcutRunTiming.followUpInterMessageDelay, 0.8)
     }
 
     func testJourneySeparatesSafariAndMessagesWithTheirSetupPrompts() {
@@ -278,8 +287,9 @@ final class ReaderOnboardingTests: XCTestCase {
 
         XCTAssertEqual(sender.text, "Johnny Appleseed")
         XCTAssertEqual(latestURL.text, urlString)
-        XCTAssertTrue(labels.contains("You can save any link on your screen, too"))
-        XCTAssertTrue(labels.contains("Really? Like this?"))
+        XCTAssertTrue(labels.contains(
+            "You can press the Action Button and Luna saves any link on screen"))
+        XCTAssertTrue(labels.contains("Woah! Like this?"))
         XCTAssertTrue(bubbles.contains("onboarding.messages.firstOutgoing"))
         XCTAssertTrue(bubbles.contains("onboarding.messages.secondIncoming"))
         XCTAssertGreaterThan(
@@ -291,6 +301,64 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)
         XCTAssertTrue(messages.isURLHighlighted)
+    }
+
+    @MainActor
+    func testMessagesSetupPillsGlowUntilTheyDriveTheirSetupHops() throws {
+        let messages = MessagesReplicaViewController(
+            urlString: OnboardingDemoPage.lunaArticle.sharedURLString)
+        messages.loadViewIfNeeded()
+        messages.view.frame = CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize)
+        messages.view.layoutIfNeeded()
+
+        let bubbles = messages.view.descendants(of: UIView.self).compactMap {
+            $0.accessibilityIdentifier
+        }
+        XCTAssertTrue(bubbles.contains("onboarding.messages.shortcutSetup"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.settingsSetup"))
+        let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
+        XCTAssertTrue(labels.contains("Yeah just install this shortcut"))
+        XCTAssertTrue(labels.contains(
+            "And change your action button to that shortcut in"))
+        XCTAssertTrue(labels.contains("Luna"))
+        XCTAssertTrue(labels.contains("Settings"))
+
+        let shortcutPill = try XCTUnwrap(
+            messages.view.descendants(of: OnboardingMessagePillButton.self).first {
+                $0.accessibilityIdentifier == "onboarding.messages.shortcutPill"
+            })
+        let settingsPill = try XCTUnwrap(
+            messages.view.descendants(of: OnboardingMessagePillButton.self).first {
+                $0.accessibilityIdentifier == "onboarding.messages.settingsPill"
+            })
+
+        // The demonstration hasn't reached the setup messages yet.
+        XCTAssertFalse(messages.isShowingSetupMessages)
+
+        var installedShortcut = false
+        var openedSettings = false
+        messages.onInstallShortcut = { installedShortcut = true }
+        messages.onSetActionButton = { openedSettings = true }
+
+        shortcutPill.beginGlowPulse()
+        XCTAssertNotNil(
+            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            "The shortcut pill must pulse until tapped")
+        shortcutPill.sendActions(for: .touchUpInside)
+        XCTAssertTrue(installedShortcut)
+        XCTAssertTrue(shortcutPill.wasActivated)
+        XCTAssertNil(
+            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            "Tapping the pill must stop its glow pulse")
+        shortcutPill.beginGlowPulse()
+        XCTAssertNil(
+            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            "An activated pill never resumes pulsing")
+
+        settingsPill.sendActions(for: .touchUpInside)
+        XCTAssertTrue(openedSettings)
     }
 
     @MainActor
@@ -306,6 +374,9 @@ final class ReaderOnboardingTests: XCTestCase {
         messages.view.frame = frame
         safari.view.layoutIfNeeded()
         messages.view.layoutIfNeeded()
+        // The URL bubble only reaches its on-screen resting spot once the
+        // staged conversation has arrived.
+        messages.revealStagedConversationImmediately()
 
         XCTAssertEqual(messages.sharedURLString, safari.sharedURLString)
         XCTAssertFalse(safari.isURLHighlighted)
@@ -322,7 +393,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(frame.contains(safariRegion.frame))
 
         let messagesRegion = try XCTUnwrap(messages.highlightedLinkRegion)
-        XCTAssertLessThan(messagesRegion.frame.width, 200)
+        XCTAssertLessThan(messagesRegion.frame.width, 260)
         XCTAssertGreaterThan(messagesRegion.frame.width, 120)
         XCTAssertEqual(messagesRegion.cornerRadius, 18, accuracy: 0.001)
         XCTAssertTrue(frame.contains(messagesRegion.frame))

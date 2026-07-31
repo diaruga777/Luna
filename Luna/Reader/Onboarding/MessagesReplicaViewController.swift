@@ -20,18 +20,41 @@ enum OnboardingMessagesReplicaTiming {
 }
 
 /// A noninteractive iMessage conversation used as the second source in the
-/// onboarding save loop. Its three readable messages arrive one by one before
-/// the shared Action Button save effect begins.
+/// onboarding save loop. Its three staged messages arrive one by one, the
+/// Action Button ripple lights the shared URL, and the save then plays out as
+/// a mock shortcut run: Dynamic Island progress, a staged tap, an app-switcher
+/// hop into the saved Luna screen and back — ending on two follow-up messages
+/// whose glowing pills install the shortcut and open Settings.
 @MainActor
 final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
+    var onInstallShortcut: (() -> Void)?
+    var onSetActionButton: (() -> Void)?
+    /// Fired once the setup messages (4 and 5) are on screen: the
+    /// demonstration is over and the pills own the next step.
+    var onShortcutSetupMessagesShown: (() -> Void)?
+
     private let senderNameLabel = UILabel()
-    private let urlBubble = OnboardingMessageURLBubble()
+    private let conversationStack = UIStackView()
+    private let urlBubble = OnboardingMessageURLBubble(showsTail: true)
+    private let shortcutPill = OnboardingMessagePillButton(style: .shortcuts)
+    private let settingsPill = OnboardingMessagePillButton(style: .settings)
+    private var shortcutBubble: OnboardingMessagePillBubble?
     private var currentURLString: String
-    private var messageRows: [UIView] = []
+    private var messageRows: [OnboardingMessageRow] = []
+    /// Rows that arrive on their own before the Action Button press; the rest
+    /// arrive after the mock shortcut run.
+    private let stagedRowCount = 3
+    private var revealedRowCount = 0
     private var presentationGeneration = 0
+    private var sequenceGeneration = 0
+    private var islandView: OnboardingDynamicIslandRunView?
+    private var mockTap: OnboardingMockTapIndicatorView?
+    private var appSwitcher: OnboardingAppSwitcherView?
+    private(set) var isShowingSetupMessages = false
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
     override var sharedURLString: String { currentURLString }
+    override var saveEffectStyle: OnboardingSaveEffectStyle { .rippleOnly }
     override var actionButtonReplayDelay: TimeInterval {
         OnboardingMessagesReplicaTiming.actionButtonReplayDelay
     }
@@ -49,10 +72,23 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         overrideUserInterfaceStyle = .light
         view.backgroundColor = .white
         view.accessibilityIdentifier = "onboarding.messages.replica"
+        let composer = configureComposer()
+        configureConversation(above: composer)
         configureHeader()
-        configureConversation()
-        configureComposer()
         urlBubble.setURL(currentURLString)
+        shortcutPill.onActivate = { [weak self] in self?.onInstallShortcut?() }
+        settingsPill.onActivate = { [weak self] in self?.onSetActionButton?() }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Until the first message lands, the conversation waits just below its
+        // resting spot; each reveal then springs the thread up from there.
+        if revealedRowCount == 0 {
+            conversationStack.transform = CGAffineTransform(
+                translationX: 0,
+                y: stackOffset(afterRevealing: 0))
+        }
     }
 
     func updateURL(_ urlString: String) {
@@ -78,38 +114,295 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     override func prepareForPresentation() {
         super.prepareForPresentation()
         presentationGeneration += 1
-        let generation = presentationGeneration
+        cancelShortcutRunSequence()
+        isShowingSetupMessages = false
+        revealedRowCount = 0
 
         for row in messageRows {
             row.layer.removeAllAnimations()
+            row.bubbleView.layer.removeAllAnimations()
             row.alpha = 0
-            row.transform = CGAffineTransform(
-                translationX: 0, y: 14).scaledBy(x: 0.94, y: 0.94)
+            row.bubbleView.transform = .identity
         }
+        shortcutBubble?.setShowsTail(true)
+        shortcutPill.reset()
+        settingsPill.reset()
+        view.layoutIfNeeded()
+        conversationStack.transform = CGAffineTransform(
+            translationX: 0,
+            y: stackOffset(afterRevealing: 0))
 
-        for (index, row) in messageRows.enumerated() {
+        let generation = presentationGeneration
+        for index in 0..<stagedRowCount {
             let delay = OnboardingMessagesReplicaTiming.firstMessageDelay
                 + Double(index) * OnboardingMessagesReplicaTiming.interMessageDelay
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + OnboardingAnimationClock.delay(delay)
-            ) { [weak self, weak row] in
-                guard let self, let row,
+            ) { [weak self] in
+                guard let self,
                       generation == self.presentationGeneration
                 else { return }
-                UIView.animate(
-                    withDuration: UIAccessibility.isReduceMotionEnabled
-                        ? 0.18 : OnboardingMessagesReplicaTiming.messageDuration,
-                    delay: 0,
-                    usingSpringWithDamping: 0.7,
-                    initialSpringVelocity: 0.45,
-                    options: [.curveEaseOut, .beginFromCurrentState]
+                self.revealNextRow()
+            }
+        }
+    }
+
+    // MARK: - Message arrival
+
+    /// Lands the staged conversation instantly — the deterministic seam tests
+    /// (and debug holds) use instead of the timed arrival.
+    func revealStagedConversationImmediately() {
+        presentationGeneration += 1
+        view.layoutIfNeeded()
+        while revealedRowCount < stagedRowCount {
+            messageRows[revealedRowCount].alpha = 1
+            revealedRowCount += 1
+        }
+        conversationStack.transform = CGAffineTransform(
+            translationX: 0,
+            y: stackOffset(afterRevealing: revealedRowCount))
+    }
+
+    /// Pops the next bubble in the way iMessage does: the thread springs up
+    /// while the new bubble grows out of its tail corner.
+    private func revealNextRow(completion: (() -> Void)? = nil) {
+        guard revealedRowCount < messageRows.count else {
+            completion?()
+            return
+        }
+        let row = messageRows[revealedRowCount]
+        revealedRowCount += 1
+        view.layoutIfNeeded()
+        let offset = stackOffset(afterRevealing: revealedRowCount)
+
+        if UIAccessibility.isReduceMotionEnabled {
+            conversationStack.transform = CGAffineTransform(
+                translationX: 0, y: offset)
+            UIView.animate(withDuration: 0.18, animations: {
+                row.alpha = 1
+            }) { _ in completion?() }
+            return
+        }
+
+        let bubble = row.bubbleView
+        let scale: CGFloat = 0.55
+        let anchorShift = CGPoint(
+            x: bubble.bounds.width * (1 - scale) / 2
+                * (row.direction == .outgoing ? 1 : -1),
+            y: bubble.bounds.height * (1 - scale) / 2)
+        bubble.transform = CGAffineTransform(
+            translationX: anchorShift.x, y: anchorShift.y
+        ).scaledBy(x: scale, y: scale)
+
+        UIView.animate(
+            withDuration: 0.16,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            row.alpha = 1
+        }
+        UIView.animate(
+            withDuration: OnboardingMessagesReplicaTiming.messageDuration,
+            delay: 0,
+            usingSpringWithDamping: 0.78,
+            initialSpringVelocity: 0.4,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.conversationStack.transform = CGAffineTransform(
+                translationX: 0, y: offset)
+        }
+        UIView.animate(
+            withDuration: 0.52,
+            delay: 0,
+            usingSpringWithDamping: 0.66,
+            initialSpringVelocity: 0.5,
+            options: [.beginFromCurrentState]
+        ) {
+            bubble.transform = .identity
+        } completion: { _ in
+            completion?()
+        }
+    }
+
+    /// How far the whole thread sits below its resting spot so that the last
+    /// revealed bubble is the one hugging the composer. Before anything has
+    /// arrived, the thread waits one bubble-length lower so the first message
+    /// rises out of the composer, the way a freshly sent iMessage does.
+    private func stackOffset(afterRevealing count: Int) -> CGFloat {
+        guard count > 0, messageRows.indices.contains(count - 1) else {
+            guard !messageRows.isEmpty else { return 0 }
+            return stackOffset(afterRevealing: 1) + 34
+        }
+        return conversationStack.bounds.height
+            - messageRows[count - 1].frame.maxY
+    }
+
+    // MARK: - The mock shortcut run
+
+    override func rippleSaveEffectDidFinish() {
+        sequenceGeneration += 1
+        let generation = sequenceGeneration
+        setURLBubbleEmphasized(true)
+        afterDelay(
+            OnboardingShortcutRunTiming.islandExpandDelay
+                + OnboardingShortcutRunTiming.bubbleEmphasisDuration,
+            generation: generation
+        ) {
+            self.presentIsland(generation: generation)
+        }
+    }
+
+    override func saveEffectWasCancelled() {
+        cancelShortcutRunSequence()
+    }
+
+    private func afterDelay(
+        _ delay: TimeInterval,
+        generation: Int,
+        _ work: @escaping () -> Void
+    ) {
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(delay)
+        ) { [weak self] in
+            guard let self, generation == self.sequenceGeneration else { return }
+            work()
+        }
+    }
+
+    private func setURLBubbleEmphasized(_ emphasized: Bool) {
+        let transform = emphasized
+            ? CGAffineTransform(scaleX: 1.12, y: 1.12)
+            : .identity
+        if UIAccessibility.isReduceMotionEnabled {
+            urlBubble.transform = transform
+            return
+        }
+        UIView.animate(
+            withDuration: OnboardingShortcutRunTiming.bubbleEmphasisDuration,
+            delay: 0,
+            usingSpringWithDamping: 0.6,
+            initialSpringVelocity: 0.5,
+            options: [.beginFromCurrentState]
+        ) {
+            self.urlBubble.transform = transform
+        }
+    }
+
+    private func presentIsland(generation: Int) {
+        let island = OnboardingDynamicIslandRunView(
+            appIcon: OnboardingAppIcon.image())
+        islandView = island
+        island.expand(in: view) { [weak self] in
+            guard let self, generation == self.sequenceGeneration else { return }
+            island.runProgress { [weak self] in
+                guard let self, generation == self.sequenceGeneration else { return }
+                self.afterDelay(
+                    OnboardingShortcutRunTiming.islandTapDelay,
+                    generation: generation
                 ) {
-                    row.alpha = 1
-                    row.transform = .identity
+                    self.playMockTap(on: island, generation: generation)
                 }
             }
         }
     }
+
+    private func playMockTap(
+        on island: OnboardingDynamicIslandRunView,
+        generation: Int
+    ) {
+        let tap = OnboardingMockTapIndicatorView()
+        mockTap = tap
+        tap.play(
+            at: island.tapTarget(in: view),
+            in: view,
+            pressing: island
+        ) { [weak self] in
+            guard let self, generation == self.sequenceGeneration else { return }
+            self.mockTap = nil
+            island.collapse { [weak self] in
+                guard let self, generation == self.sequenceGeneration else { return }
+                self.islandView = nil
+                self.switchToSavedLunaScreen(generation: generation)
+            }
+        }
+    }
+
+    private func switchToSavedLunaScreen(generation: Int) {
+        guard let makeSnapshot = makeActionButtonDestinationSnapshot,
+              let lunaScreen = makeSnapshot()
+        else {
+            // No saved-screen raster to hop into — settle straight on the
+            // setup messages so the journey can still complete.
+            finishShortcutRunSequence(generation: generation)
+            return
+        }
+        let switcher = OnboardingAppSwitcherView(
+            frame: view.bounds,
+            messages: renderConversationSnapshot(),
+            luna: lunaScreen)
+        appSwitcher = switcher
+        view.addSubview(switcher)
+        switcher.playToLuna { [weak self] in
+            guard let self, generation == self.sequenceGeneration else { return }
+            self.afterDelay(
+                OnboardingShortcutRunTiming.savedAppHoldDuration,
+                generation: generation
+            ) {
+                self.appSwitcher?.playToMessages { [weak self] in
+                    guard let self,
+                          generation == self.sequenceGeneration
+                    else { return }
+                    self.appSwitcher?.removeFromSuperview()
+                    self.appSwitcher = nil
+                    self.finishShortcutRunSequence(generation: generation)
+                }
+            }
+        }
+    }
+
+    private func finishShortcutRunSequence(generation: Int) {
+        setURLHighlighted(false)
+        setURLBubbleEmphasized(false)
+        afterDelay(
+            OnboardingShortcutRunTiming.followUpMessageDelay,
+            generation: generation
+        ) {
+            self.revealNextRow()
+            self.shortcutPill.beginGlowPulse()
+            self.afterDelay(
+                OnboardingShortcutRunTiming.followUpInterMessageDelay,
+                generation: generation
+            ) {
+                self.shortcutBubble?.setShowsTail(false)
+                self.revealNextRow()
+                self.settingsPill.beginGlowPulse()
+                self.isShowingSetupMessages = true
+                self.onShortcutSetupMessagesShown?()
+            }
+        }
+    }
+
+    private func cancelShortcutRunSequence() {
+        sequenceGeneration += 1
+        islandView?.layer.removeAllAnimations()
+        islandView?.removeFromSuperview()
+        islandView = nil
+        mockTap?.layer.removeAllAnimations()
+        mockTap?.removeFromSuperview()
+        mockTap = nil
+        appSwitcher?.removeFromSuperview()
+        appSwitcher = nil
+        urlBubble.layer.removeAllAnimations()
+        urlBubble.transform = .identity
+    }
+
+    private func renderConversationSnapshot() -> UIImage {
+        UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+            view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
+        }
+    }
+
+    // MARK: - Static chrome
 
     private func configureHeader() {
         let header = UIView()
@@ -181,37 +474,67 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         ])
     }
 
-    private func configureConversation() {
+    private func configureConversation(above composer: UIView) {
+        let shortcutBubble = OnboardingMessagePillBubble(
+            direction: .outgoing,
+            showsTail: true,
+            text: "Yeah just install this shortcut",
+            pill: shortcutPill,
+            accessibilityIdentifier: "onboarding.messages.shortcutSetup")
+        self.shortcutBubble = shortcutBubble
+
         messageRows = [
             OnboardingMessageRow(
                 direction: .outgoing,
                 bubble: OnboardingMessageTextBubble(
                     direction: .outgoing,
-                    text: "You can save any link on your screen, too",
+                    showsTail: true,
+                    text: "You can press the Action Button and Luna saves "
+                        + "any link on screen",
                     accessibilityIdentifier: "onboarding.messages.firstOutgoing")),
             OnboardingMessageRow(
                 direction: .incoming,
                 bubble: OnboardingMessageTextBubble(
                     direction: .incoming,
-                    text: "Really? Like this?",
+                    showsTail: false,
+                    text: "Woah! Like this?",
                     accessibilityIdentifier: "onboarding.messages.secondIncoming")),
             OnboardingMessageRow(direction: .incoming, bubble: urlBubble),
+            OnboardingMessageRow(direction: .outgoing, bubble: shortcutBubble),
+            OnboardingMessageRow(
+                direction: .outgoing,
+                bubble: OnboardingMessagePillBubble(
+                    direction: .outgoing,
+                    showsTail: true,
+                    text: "And change your action button to that shortcut in",
+                    pill: settingsPill,
+                    accessibilityIdentifier: "onboarding.messages.settingsSetup")),
         ]
-        let stack = UIStackView(arrangedSubviews: messageRows)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.axis = .vertical
-        stack.spacing = 10
-        stack.accessibilityIdentifier = "onboarding.messages.conversation"
-        view.addSubview(stack)
+        for row in messageRows {
+            row.alpha = 0
+            conversationStack.addArrangedSubview(row)
+        }
+
+        conversationStack.translatesAutoresizingMaskIntoConstraints = false
+        conversationStack.axis = .vertical
+        conversationStack.spacing = 8
+        // Consecutive same-sender bubbles group tightly, like iMessage.
+        conversationStack.setCustomSpacing(2, after: messageRows[1])
+        conversationStack.setCustomSpacing(2, after: messageRows[3])
+        conversationStack.accessibilityIdentifier = "onboarding.messages.conversation"
+        // Unrevealed rows wait below the resting thread; keep them (and each
+        // arrival's rise) underneath the opaque composer.
+        view.insertSubview(conversationStack, belowSubview: composer)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 34),
+            conversationStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            conversationStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            conversationStack.bottomAnchor.constraint(
+                equalTo: composer.topAnchor, constant: -12),
         ])
     }
 
-    private func configureComposer() {
+    private func configureComposer() -> UIView {
         let composer = UIView()
         composer.translatesAutoresizingMaskIntoConstraints = false
         composer.backgroundColor = .white
@@ -263,16 +586,24 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             microphone.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -11),
             microphone.centerYAnchor.constraint(equalTo: field.centerYAnchor),
         ])
+        return composer
     }
 }
 
-private enum OnboardingMessageDirection {
+// MARK: - Bubbles
+
+enum OnboardingMessageDirection {
     case incoming
     case outgoing
 }
 
 private final class OnboardingMessageRow: UIView {
-    init(direction: OnboardingMessageDirection, bubble: UIView) {
+    let direction: OnboardingMessageDirection
+    let bubbleView: OnboardingMessageBubble
+
+    init(direction: OnboardingMessageDirection, bubble: OnboardingMessageBubble) {
+        self.direction = direction
+        self.bubbleView = bubble
         super.init(frame: .zero)
         bubble.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bubble)
@@ -281,10 +612,10 @@ private final class OnboardingMessageRow: UIView {
         switch direction {
         case .incoming:
             edgeConstraint = bubble.leadingAnchor.constraint(
-                equalTo: leadingAnchor, constant: 14)
+                equalTo: leadingAnchor, constant: 16)
         case .outgoing:
             edgeConstraint = bubble.trailingAnchor.constraint(
-                equalTo: trailingAnchor, constant: -14)
+                equalTo: trailingAnchor, constant: -16)
         }
         NSLayoutConstraint.activate([
             edgeConstraint,
@@ -297,19 +628,78 @@ private final class OnboardingMessageRow: UIView {
     required init?(coder: NSCoder) { nil }
 }
 
-private final class OnboardingMessageTextBubble: UIView {
+/// The rounded iMessage bubble surface, with the classic outward tail curl on
+/// the last bubble of a same-sender group.
+class OnboardingMessageBubble: UIView {
+    static let outgoingBlue = UIColor(
+        red: 0 / 255, green: 122 / 255, blue: 255 / 255, alpha: 1)
+    static let incomingGray = UIColor(
+        red: 233 / 255, green: 233 / 255, blue: 235 / 255, alpha: 1)
+
+    let direction: OnboardingMessageDirection
+    private let tail = CAShapeLayer()
+    private var showsTail: Bool
+
+    init(direction: OnboardingMessageDirection, showsTail: Bool) {
+        self.direction = direction
+        self.showsTail = showsTail
+        super.init(frame: .zero)
+        clipsToBounds = false
+        layer.cornerRadius = 18
+        layer.cornerCurve = .continuous
+        let fill = direction == .incoming ? Self.incomingGray : Self.outgoingBlue
+        backgroundColor = fill
+        tail.fillColor = fill.cgColor
+        layer.addSublayer(tail)
+        widthAnchor.constraint(lessThanOrEqualToConstant: 292).isActive = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    func setShowsTail(_ shows: Bool) {
+        guard shows != showsTail else { return }
+        showsTail = shows
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        tail.frame = bounds
+        tail.path = showsTail ? tailPath().cgPath : nil
+    }
+
+    /// A flat run along the baseline out to a point just beyond the bubble,
+    /// curling concavely back up into the bubble's side — mirrored for
+    /// incoming bubbles.
+    private func tailPath() -> UIBezierPath {
+        let width = bounds.width
+        let height = bounds.height
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: width - 18, y: height))
+        path.addLine(to: CGPoint(x: width + 6, y: height))
+        path.addQuadCurve(
+            to: CGPoint(x: width, y: height - 10),
+            controlPoint: CGPoint(x: width + 0.5, y: height - 3))
+        path.addLine(to: CGPoint(x: width, y: height - 18))
+        path.close()
+        if direction == .incoming {
+            path.apply(CGAffineTransform(scaleX: -1, y: 1)
+                .translatedBy(x: -width, y: 0))
+        }
+        return path
+    }
+}
+
+private final class OnboardingMessageTextBubble: OnboardingMessageBubble {
     init(
         direction: OnboardingMessageDirection,
+        showsTail: Bool,
         text: String,
         accessibilityIdentifier: String
     ) {
-        super.init(frame: .zero)
+        super.init(direction: direction, showsTail: showsTail)
         self.accessibilityIdentifier = accessibilityIdentifier
-        backgroundColor = direction == .incoming
-            ? UIColor(white: 0.91, alpha: 1)
-            : .systemBlue
-        layer.cornerRadius = 18
-        layer.cornerCurve = .continuous
 
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -324,16 +714,267 @@ private final class OnboardingMessageTextBubble: UIView {
         addSubview(label)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(lessThanOrEqualToConstant: 292),
-            label.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 8),
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -13),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
         ])
+    }
+}
+
+final class OnboardingMessageURLBubble: OnboardingMessageBubble {
+    private let highlight = OnboardingURLHighlightView()
+    private let label = UILabel()
+    private var urlString = ""
+
+    init(showsTail: Bool) {
+        super.init(direction: .incoming, showsTail: showsTail)
+        accessibilityIdentifier = "onboarding.messages.latestIncoming"
+
+        highlight.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(highlight)
+
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        label.accessibilityIdentifier = "onboarding.messages.latestURL"
+        addSubview(label)
+
+        NSLayoutConstraint.activate([
+            highlight.topAnchor.constraint(equalTo: topAnchor),
+            highlight.leadingAnchor.constraint(equalTo: leadingAnchor),
+            highlight.trailingAnchor.constraint(equalTo: trailingAnchor),
+            highlight.bottomAnchor.constraint(equalTo: bottomAnchor),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 11),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -11),
+        ])
+    }
+
+    func setURL(_ urlString: String) {
+        self.urlString = urlString
+        accessibilityValue = urlString
+        applyURLText(highlighted: isURLHighlighted)
+    }
+
+    func setURLHighlighted(_ highlighted: Bool) {
+        highlight.setHighlighted(highlighted)
+        applyURLText(highlighted: highlighted)
+    }
+
+    var isURLHighlighted: Bool { highlight.isHighlighted }
+
+    /// iMessage renders bare links as underlined blue text.
+    private func applyURLText(highlighted: Bool) {
+        label.attributedText = NSAttributedString(
+            string: urlString,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 16),
+                .foregroundColor: highlighted
+                    ? UIColor(white: 0.08, alpha: 1)
+                    : UIColor.systemBlue,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ])
+    }
+}
+
+/// An outgoing bubble whose sentence hands off to an interactive pill.
+private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
+    init(
+        direction: OnboardingMessageDirection,
+        showsTail: Bool,
+        text: String,
+        pill: OnboardingMessagePillButton,
+        accessibilityIdentifier: String
+    ) {
+        super.init(direction: direction, showsTail: showsTail)
+        self.accessibilityIdentifier = accessibilityIdentifier
+
+        let label = UILabel()
+        label.text = text
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = direction == .incoming
+            ? UIColor(white: 0.08, alpha: 1)
+            : .white
+        label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        label.accessibilityLabel = text
+
+        let pillRow = UIStackView(arrangedSubviews: [pill, UIView()])
+        pillRow.axis = .horizontal
+        pillRow.alignment = .center
+
+        let content = UIStackView(arrangedSubviews: [label, pillRow])
+        content.axis = .vertical
+        content.alignment = .fill
+        content.spacing = 7
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -13),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+        ])
+    }
+}
+
+/// The tappable in-bubble chip: the Shortcuts-purple "Luna" shortcut install
+/// and the grey system-Settings link. Glows and pulses until tapped.
+final class OnboardingMessagePillButton: UIControl {
+    enum Style {
+        case shortcuts
+        case settings
+    }
+
+    var onActivate: (() -> Void)?
+    private(set) var wasActivated = false
+    private let glowColor: UIColor
+    private var isPulsing = false
+
+    private static let shortcutsPurple = UIColor(
+        red: 0.46, green: 0.29, blue: 0.96, alpha: 1)
+
+    init(style: Style) {
+        let icon: UIImage?
+        let title: String
+        let fill: UIColor
+        let titleColor: UIColor
+        switch style {
+        case .shortcuts:
+            icon = OnboardingSystemIcons.shortcuts
+            title = "Luna"
+            // White lifted faintly toward the Shortcuts app's violet.
+            fill = UIColor(red: 0.93, green: 0.91, blue: 1.0, alpha: 1)
+            titleColor = UIColor(red: 0.32, green: 0.18, blue: 0.78, alpha: 1)
+            glowColor = Self.shortcutsPurple
+            super.init(frame: .zero)
+            accessibilityIdentifier = "onboarding.messages.shortcutPill"
+            accessibilityLabel = "Install the Luna shortcut"
+        case .settings:
+            icon = UIImage(
+                systemName: "gearshape.fill",
+                withConfiguration: UIImage.SymbolConfiguration(
+                    pointSize: 14, weight: .medium))
+            title = "Settings"
+            fill = UIColor(red: 0.93, green: 0.93, blue: 0.94, alpha: 1)
+            titleColor = UIColor(white: 0.15, alpha: 1)
+            glowColor = UIColor(white: 0.55, alpha: 1)
+            super.init(frame: .zero)
+            accessibilityIdentifier = "onboarding.messages.settingsPill"
+            accessibilityLabel = "Open Settings"
+        }
+        accessibilityTraits = .button
+        backgroundColor = fill
+        layer.cornerCurve = .continuous
+        layer.shadowColor = glowColor.cgColor
+        layer.shadowOffset = .zero
+        layer.shadowOpacity = 0
+        layer.shadowRadius = 6
+
+        let iconView = UIImageView(image: icon)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.contentMode = .scaleAspectFit
+        if style == .settings {
+            iconView.tintColor = UIColor(white: 0.42, alpha: 1)
+        }
+        addSubview(iconView)
+
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = title
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.textColor = titleColor
+        addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 34),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20),
+            titleLabel.leadingAnchor.constraint(
+                equalTo: iconView.trailingAnchor, constant: 6),
+            titleLabel.trailingAnchor.constraint(
+                equalTo: trailingAnchor, constant: -12),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+
+        addTarget(self, action: #selector(activated), for: .touchUpInside)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = bounds.height / 2
+    }
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(
+                withDuration: 0.12,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction]
+            ) {
+                self.transform = self.isHighlighted
+                    ? CGAffineTransform(scaleX: 0.93, y: 0.93)
+                    : .identity
+            }
+        }
+    }
+
+    /// The pill demands its tap: a slow shadow-and-scale breath that runs
+    /// until the user follows it.
+    func beginGlowPulse() {
+        guard !isPulsing, !wasActivated else { return }
+        isPulsing = true
+
+        if UIAccessibility.isReduceMotionEnabled {
+            layer.shadowOpacity = 0.6
+            layer.shadowRadius = 8
+            return
+        }
+
+        let opacity = CABasicAnimation(keyPath: "shadowOpacity")
+        opacity.fromValue = 0.25
+        opacity.toValue = 0.9
+        let radius = CABasicAnimation(keyPath: "shadowRadius")
+        radius.fromValue = 5
+        radius.toValue = 12
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 1.0
+        scale.toValue = 1.05
+        let pulse = CAAnimationGroup()
+        pulse.animations = [opacity, radius, scale]
+        pulse.duration = 0.85
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.shadowOpacity = 0.25
+        layer.add(pulse, forKey: "onboarding.pill.pulse")
+    }
+
+    private func stopGlowPulse() {
+        isPulsing = false
+        layer.removeAnimation(forKey: "onboarding.pill.pulse")
+        layer.shadowOpacity = 0
+    }
+
+    func reset() {
+        wasActivated = false
+        stopGlowPulse()
+    }
+
+    @objc private func activated() {
+        wasActivated = true
+        stopGlowPulse()
+        onActivate?()
+    }
 }
 
 private final class OnboardingMessageGradientBlock: UIView {
@@ -361,58 +1002,4 @@ private final class OnboardingMessageGradientBlock: UIView {
         gradient.frame = bounds
         gradient.cornerRadius = 4
     }
-}
-
-private final class OnboardingMessageURLBubble: UIView {
-    private let highlight = OnboardingURLHighlightView()
-    private let label = UILabel()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        accessibilityIdentifier = "onboarding.messages.latestIncoming"
-        backgroundColor = UIColor(white: 0.91, alpha: 1)
-        layer.cornerRadius = 18
-        layer.cornerCurve = .continuous
-
-        highlight.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(highlight)
-
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 16)
-        label.textColor = .systemBlue
-        label.numberOfLines = 1
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        label.accessibilityIdentifier = "onboarding.messages.latestURL"
-        addSubview(label)
-
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(lessThanOrEqualToConstant: 280),
-            highlight.topAnchor.constraint(equalTo: topAnchor),
-            highlight.leadingAnchor.constraint(equalTo: leadingAnchor),
-            highlight.trailingAnchor.constraint(equalTo: trailingAnchor),
-            highlight.bottomAnchor.constraint(equalTo: bottomAnchor),
-            label.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -11),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
-
-    func setURL(_ urlString: String) {
-        label.text = urlString
-        accessibilityValue = urlString
-    }
-
-    func setURLHighlighted(_ highlighted: Bool) {
-        highlight.setHighlighted(highlighted)
-        label.textColor = highlighted
-            ? UIColor(white: 0.08, alpha: 1)
-            : .systemBlue
-    }
-
-    var isURLHighlighted: Bool { highlight.isHighlighted }
 }

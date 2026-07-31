@@ -361,8 +361,14 @@ final class AppOnboardingViewController: UIViewController {
         messages.makeActionButtonDestinationSnapshot = { [weak self] in
             self?.makeSavedCardSnapshot()
         }
-        messages.onActionButtonWaveFinished = { [weak self] in
-            self?.actionButtonWaveDidFinish(from: .messages)
+        // The Messages demonstration finishes in place: its mock shortcut run
+        // ends on the two setup messages whose pills carry the setup hops.
+        messages.onInstallShortcut = { [weak self] in self?.installShortcut() }
+        messages.onSetActionButton = { [weak self] in
+            self?.openActionButtonSettings()
+        }
+        messages.onShortcutSetupMessagesShown = { [weak self] in
+            self?.messagesDemonstrationDidPresentSetup()
         }
         messagesReplica = messages
         addChild(messages)
@@ -453,6 +459,7 @@ final class AppOnboardingViewController: UIViewController {
             case "messages":
                 self.journeyStage = .messagesDemonstration
                 self.showDebugMessagesSource()
+                self.startDemoPresentationLoop()
             default:
                 safari.beginDemonstration()
             }
@@ -499,6 +506,17 @@ final class AppOnboardingViewController: UIViewController {
                 self.safariReplica?.showShortcutAndActionSetup()
             }
         }
+    }
+
+    /// The Messages demonstration ended on its in-conversation setup pills
+    /// (its save never crosses into the saved card, so there is no wave-driven
+    /// commit): the demonstration loop is over and the pills own what's next.
+    private func messagesDemonstrationDidPresentSetup() {
+        guard journeyStage.completedSave(from: .messages) == .actionButton else {
+            return
+        }
+        nextDemoSource = OnboardingDemoSource.messages.next
+        stopDemoPresentationLoop()
     }
 
     /// The wave's final rendered frame is already the saved-card screen. Commit
@@ -802,7 +820,8 @@ final class AppOnboardingViewController: UIViewController {
         externalReturn = .shortcut
         BundledShortcut.presentInstaller(
             from: self,
-            sourceView: safariReplica?.view
+            sourceView: sourceController(for: activeDemoSource)?.view
+                ?? safariReplica?.view
         ) { [weak self] opened in
             guard !opened else { return }
             Task { @MainActor in self?.externalOpenFailed(.shortcut) }
@@ -858,8 +877,15 @@ final class AppOnboardingViewController: UIViewController {
             safariReplica?.playURLBarZoomAndSave()
         case .shortcut:
             // Importing the signed file is an external Shortcuts hop, but the
-            // setup isn't complete until the hardware Action Button is assigned.
-            safariReplica?.showShortcutAndActionSetup()
+            // setup isn't complete until the hardware Action Button is
+            // assigned. The Messages setup pills are already on screen and the
+            // Settings pill keeps pulsing; only a recovery overlay (an earlier
+            // open failure) needs replacing.
+            if messagesReplica?.isShowingSetupMessages != true
+                || safariReplica?.hasInstructions == true
+            {
+                safariReplica?.showShortcutAndActionSetup()
+            }
         case .actionButton:
             actionGuide.stopPictureInPicture()
             safariReplica?.showWaitingForActionButton()

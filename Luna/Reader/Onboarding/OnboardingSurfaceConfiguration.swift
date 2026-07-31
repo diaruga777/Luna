@@ -30,7 +30,7 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
     /// latest incoming Messages bubble during the onboarding loop.
     var sharedURLString: String {
         switch self {
-        case .lunaArticle: return "https://luna.app"
+        case .lunaArticle: return "https://luna.app/about"
         case .instaTok: return "https://instatok.local/@moonwatch/lunar-eclipse"
         case .amayzon: return "https://amayzon.local/eyephone-air"
         }

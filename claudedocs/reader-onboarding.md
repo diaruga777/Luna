@@ -107,23 +107,19 @@ The root uses the production `CardCarouselViewController`:
    it and surfaces the failure alert.
 3. The Reader's Safari content is a native, fictional `luna.app` article so its
    sequence begins after the card finishes expanding rather than during hidden
-   preload. Its real app icon sits beside “A better way to read on the web”;
-   both use the same lunar reveal. The “A safari extension • by Luna” byline
-   then reveals with the body copy and more natural article typography below.
-   The mock page alone uses a dark neutral grey that keeps white copy and the
-   black Action Button deformation legible. The long feature copy
-   describes private history, popup/ad removal, offline reading, RSVP, search,
-   Safari/Messages/Share Sheet/Shortcuts/Action Button capture, Kindle, and
-   documents. At layout time the visible body takes the longest whole-word
-   prefix that fills the page to eight points above the mock URL bar, including
-   the portion behind the obstruction; after cleanup the model switches to the
-   complete article text. A large dark popup fades and springs over the
-   page with centered “Automatically remove subscription popups”, an internal
-   radial-striped “And annoying ads” banner, centered “Offline and private,
-   Luna’s extension makes a better internet”, a content-hugging “Activate now”
-   button, and a secondary “Skip for now” text button. The banner fades in as
-   part of the popup, and neither has a close control. Once the popup finishes,
-   all automatic animation stops.
+   preload. The page loads ALREADY BURIED: four garish ads, the newsletter
+   popup, and the subscription wall are all in place from the first frame (no
+   entrance animations), over a short article — headline, byline, NASA
+   eclipse banner, and a five-line body — sized so the setup card shares the
+   same screen and no scroll is ever needed. The mock page alone uses a dark
+   neutral grey that keeps white copy legible. The demonstration then plays a
+   mock extension-enable pass through Safari's own UI
+   (`OnboardingSafariSetupMocks.swift`): the page menu grows out of the
+   address bar's page button, its list scrolls quickly down to a highlighted
+   “Manage Extensions” row, the Manage Extensions bottom sheet slides up with
+   the app's real icon and name beside a mock switch, the switch flips on,
+   and the sheet's dismissal launches the cleanup wipe (step 7) at the same
+   moment.
    Other demo
    surfaces remain bundled, noninteractive `WKWebView` pages with a
    nonpersistent data store and JavaScript disabled; central Luna rotates its
@@ -163,32 +159,39 @@ The root uses the production `CardCarouselViewController`:
    whole frame simply crossfades, uniformly across the screen, into the
    saved-card snapshot.
 
-   5a. Messages instead uses `.rippleOnly` — the press cue and in-place ripple
-   play with the URL bubble lit, and the save then resolves as a mock shortcut
-   run (`OnboardingShortcutRunEffects.swift`): the highlighted link bubble
-   spring-scales up (1.12×); the status bar fades OUT and a black capsule
-   expands around the real Dynamic Island — wider and taller than the
-   hardware cutout, growing downward like the real expansion (250×50 from
-   126×37) — with the app icon on the left and a filling progress ring on
-   the right; a staged fingertip lands on the finished ring (the island
-   squeezes under it); the island collapses and the status bar fades back;
-   the app's action-extension presentation then plays as a mock sheet
+   5a. Messages instead uses `.rippleOnly` — the press cue and in-place
+   ripple play with the screen untouched (no URL highlight at all), and the
+   save then resolves as a mock shortcut run
+   (`OnboardingShortcutRunEffects.swift`): the status bar fades OUT and a
+   black capsule inflates around the real Dynamic Island the way the
+   system's expanded treatment does — growing downward, taller and wider
+   (340×76 from 126×37) — with the app icon on the left and a filling
+   progress ring on the right; AS the island expands, the URL bubble pops
+   out of its spot in the thread and flies a curved climb with a slight
+   tumble, shrinking until the island swallows it (a raster copy flies so
+   the tail comes along; the island puffs on absorption); a staged fingertip
+   lands on the finished ring (the island squeezes under it); the island
+   collapses and the status bar fades back; the app's action-extension
+   presentation then plays as a mock sheet
    (`OnboardingActionExtensionSheetView`) sliding up over the dimmed
    conversation — grabber, Done chip, and the scrolling reader showing the
-   same article the Safari mock cleaned up (title, byline, eclipse banner,
-   full body with a bottom fade); after a one-second hold the sheet slides
-   away; the bubble highlight and scale release; and the follow-up outgoing
-   message pops in: “Yeah just install this shortcut” with the real Apple
-   Shortcuts app icon (bundled `ShortcutsAppIcon.png`, rounded in code) on a
-   purple-tinted **Luna** pill. Half a second later a grey “or skip” button
-   fades in under the composer, bottom-right (`onSkipSetup` →
-   `finishOnboarding`). The demonstration stops there
-   (`onShortcutSetupMessagesShown` advances the journey to
-   `actionButtonSetup` and stops the loop; no shrink to card, no overlay).
-   The Settings walkthrough message — “And change your action button to /
-   that shortcut in **{gear} Settings**”, its pill inlined on the sentence's
-   final line — arrives only after the user has been to the Shortcuts
-   install and re-foregrounded the app
+   same article the Safari mock cleaned up. The sheet's card is laid out
+   with bounds+center, never `frame` — a layout pass mid-slide with a
+   transform applied corrupted the geometry and made the dismiss "pop" —
+   and it slides straight back down. While the sheet covers the screen, the
+   absorbed bubble quietly returns to the thread. Then the follow-up
+   outgoing message pops in: “Yeah just install this shortcut ⚡Luna” with
+   the real Apple Shortcuts app icon (bundled `ShortcutsAppIcon.png`) on a
+   purple-tinted pill that flows INLINE with the sentence — the pill is an
+   `NSTextAttachment` placeholder in a UITextView with the live control
+   seated over the attachment's laid-out rect, so line breaking stays
+   natural. Half a second later a grey “or skip” button fades in under the
+   composer, bottom-right (`onSkipSetup` → `finishOnboarding`). The
+   demonstration stops there (`onShortcutSetupMessagesShown` advances the
+   journey to `actionButtonSetup` and stops the loop). The Settings message
+   — “And change your action button to that shortcut in ⚙Settings”, pill
+   inlined the same way — arrives only after the user has been to the
+   Shortcuts install and re-foregrounded the app
    (`revealSettingsSetupMessage`). Both pills glow and pulse until tapped —
    the shortcut pill runs the `BundledShortcut` installer, the Settings pill
    opens the Action Button settings.
@@ -201,21 +204,21 @@ The root uses the production `CardCarouselViewController`:
    ordinary saved-card UI, chrome, scrubber, controls, and placement—not an
    onboarding remake or a Safari view clipped smaller.
 7. Setup deliberately splits the demonstrations. The first Safari stage has no
-   separate setup overlay. Pressing the popup's “Activate now” button plays the
-   physical Action Button deformation and a radial cleanup wave. As its front
-   reaches the composite popup, a snapshot including its banner breaks into
-   tiles;
-   the pieces blast away from the front, rotate, and fade to expose the full
-   article beneath. The tiles detach only a fraction ahead of the arriving
+   separate setup overlay: the mock extension-enable pass of step 3 ends with
+   the Manage Extensions sheet dismissing and the cleanup wipe starting in
+   the same beat. Each obstruction breaks into tiles that blast away from
+   the front, rotate, and fade to expose the article beneath. The tiles
+   detach only a fraction ahead of the arriving
    light: one horizontal front shatters the clutter and brightens the text in
-   a single pass (the glyph bloom renders just a strip around the edge —
-   `GlyphPixelBloomView` — so article-length text sweeps at full frame rate
-   instead of lighting scattered lines). The moment the front reaches the
-   bottom of the screen, the page scrolls on LINEARLY at the front's exact
-   speed: the bright edge parks at the screen bottom while the article tail,
-   then a page-coloured curtain (`MoonRevealCurtainView`, same luminous rim),
-   flows up through it to uncover the setup card. The Safari bottom bar
-   minimizes and then slides away during that scroll, like real Safari.
+   a single pass, and the reveal is EXACTLY the intro's — the same glyph-pixel
+   bloom, with `GlyphPixelBloomView`'s falloff distances scaled by the front's
+   speed relative to the intro line's (~46pt/s reference), so every glyph
+   brightens and cools over the same TIME as “You want to read more…” despite
+   the ~9× faster sweep (the bloom renders just a strip around the edge, so
+   article-length text sweeps at full frame rate). The setup card, sharing
+   the screen, comes out of the same sweep from behind a page-coloured
+   curtain (`MoonRevealCurtainView`, same luminous rim) — there is no scroll
+   and the browser bar never moves.
    Only after the cleanup finishes does onboarding start the
    Safari PiP guide and open real Safari. If the extension has not run, return
    restores the in-page prompt for another attempt. Choosing “Skip for now”

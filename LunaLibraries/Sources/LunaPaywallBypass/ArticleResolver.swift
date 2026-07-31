@@ -100,53 +100,50 @@ public enum ArticleResolver {
         }
 
         // Build the ONE typed bypass plan (per-host rule, else the generic
-        // signal-based fallback) and walk its silent leg. The first readable,
-        // non-locked extraction wins. The WKWebView strategies (third-party reader
-        // pages, archive.today) live in the plan's web leg and run later in the
-        // archive reader. A bounded aggregate deadline keeps the ingest path from
-        // serially burning a minute of silent fetches before parking.
-        // A site unlock rule → run the rule's silent request technique
-        // (crawler/custom UA or spoofed Referer) and a forced JSON-LD reconstruction
-        // before parking for the browser tier. Kept out of the strategy enum because
-        // the rule carries arbitrary UA/referer strings the enum can't express.
+        // signal-based fallback) and run its silent leg. The WKWebView strategies
+        // (third-party reader pages, archive.today) live in the plan's web leg and run
+        // later in the archive reader.
+        //
+        // A site unlock rule contributes two more silent attempts AHEAD of the plan's:
+        // the rule's own request technique (crawler/custom UA or spoofed Referer) and a
+        // forced JSON-LD reconstruction. They're kept out of the strategy enum because
+        // the rule carries arbitrary UA/referer strings the enum can't express — but
+        // they are the same TIER, so they belong in the same ordered list.
+        //
         // Never trade a trusted capture DOWN: a rule fetch or an archive snapshot can
         // come back readable (no lock declaration, over the threshold) and still be
         // shorter than what the user already had on screen.
         let floor = trustedCapture?.content.bodyTextLength ?? 0
+        let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
+        let directHTML = direct?.sourceHTML
+        let plan = BypassPlan.make(for: url, directHTML: directHTML)
+
+        var attempts: [@Sendable () async -> ExtractedArticle?] = []
         if let rule = siteRule {
-            if let html = try? await SiteUnlockSilent.fetch(url: url, rule: rule, fetcher: fetcher),
-               let candidate = await extraction.fetchAndExtract(baseURL: url, fetch: { html }),
-               ArticleExtraction.isReadableArticle(candidate),
-               candidate.content.bodyTextLength >= floor {
-                return .readable(candidate.content, html: candidate.sourceHTML)
+            attempts.append {
+                guard let html = try? await SiteUnlockSilent.fetch(
+                    url: url, rule: rule, fetcher: fetcher) else { return nil }
+                return await extraction.fetchAndExtract(baseURL: url, fetch: { html })
             }
-            if let directHTML = direct?.sourceHTML,
-               let content = extraction.extractFromJSONLD(html: directHTML, baseURL: url) {
-                let reconstructed = ExtractedArticle(content: content, sourceHTML: directHTML)
-                if ArticleExtraction.isReadableArticle(reconstructed),
-                   content.bodyTextLength >= floor {
-                    return .readable(content, html: directHTML)
-                }
+            attempts.append {
+                guard let directHTML,
+                      let content = extraction.extractFromJSONLD(html: directHTML, baseURL: url)
+                else { return nil }
+                return ExtractedArticle(content: content, sourceHTML: directHTML)
             }
         }
+        attempts += plan.silent.map { strategy in
+            { await bypassRunner.run(strategy.asBypassStrategy, url: url, directHTML: directHTML) }
+        }
 
-        let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
-        let plan = BypassPlan.make(for: url, directHTML: direct?.sourceHTML)
         // A trusted capture is already on screen, so the chain is a bounded attempt to
         // IMPROVE it, not the thing the user is waiting for — it gets the shorter budget.
         let silentDeadline = Date().addingTimeInterval(
             trustedCapture == nil
                 ? BypassPlan.silentChainDeadlineSeconds
                 : BypassPlan.trustedCaptureSilentDeadlineSeconds)
-        let directHTML = direct?.sourceHTML
-        for strategy in plan.silent {
-            let candidate = await withDeadline(silentDeadline) {
-                await bypassRunner.run(strategy.asBypassStrategy, url: url, directHTML: directHTML)
-            }
-            if let candidate, ArticleExtraction.isReadableArticle(candidate),
-               candidate.content.bodyTextLength >= floor {
-                return .readable(candidate.content, html: candidate.sourceHTML)
-            }
+        if let winner = await firstQualifying(attempts, deadline: silentDeadline, floor: floor) {
+            return .readable(winner.content, html: winner.sourceHTML)
         }
 
         // Nothing beat the capture. Hand back what the user is already looking at rather
@@ -172,27 +169,62 @@ public enum ArticleResolver {
             parksForArchive: plan.allowsArchiveToday)
     }
 
-    /// Runs `work`, abandoning it when `deadline` passes — so the silent chain can never
-    /// overrun its budget however slowly one fetch answers. The budget used to be
-    /// advisory (checked only BETWEEN strategies) while a single strategy can spend ~45s
-    /// of its own timeouts, and `IngestPipeline`'s overall 28s cap turns an overrun into a
-    /// FAILED save on an ordinary host, not the archive-reader park the page deserves.
-    /// Returns nil once the deadline has already passed, so a strategy never starts on a
-    /// spent budget.
-    private static func withDeadline<T: Sendable>(
-        _ deadline: Date, _ work: @escaping @Sendable () async -> T?
-    ) async -> T? {
+    /// Runs every silent attempt CONCURRENTLY and returns the first one — in LIST order,
+    /// not completion order — that clears the readability gate and the trusted-capture
+    /// `floor`. Nil when none does, or when `deadline` passes first.
+    ///
+    /// Concurrency here is the whole reason a hard-paywalled save is quick. The
+    /// strategies are independent GETs against DIFFERENT servers (the publisher, the
+    /// Wayback index, an archive replay), so running them one after another made the
+    /// wall clock their SUM: a WSJ article spent ~30s in the Wayback index alone, twice
+    /// blowing past `IngestPipeline`'s 28s ceiling, and the extension sat on a spinner
+    /// that looked hung. Fanning them out makes it the MAX instead.
+    ///
+    /// Resolving by list order rather than by whoever finishes first keeps the OUTCOME
+    /// identical to the old serial walk: a cheap-but-weaker strategy that happens to
+    /// answer first still can't beat a better one that was ranked above it. Once a
+    /// winner is settled the rest are cancelled, so a fast win doesn't pay for the
+    /// downloads it made unnecessary.
+    private static func firstQualifying(
+        _ attempts: [@Sendable () async -> ExtractedArticle?],
+        deadline: Date, floor: Int
+    ) async -> ExtractedArticle? {
+        guard !attempts.isEmpty else { return nil }
         let remaining = deadline.timeIntervalSinceNow
         guard remaining > 0 else { return nil }
-        return await withTaskGroup(of: T?.self) { group in
-            group.addTask { await work() }
+
+        /// The deadline leg reports under this index so it's distinguishable from a
+        /// real attempt without a second channel.
+        let deadlineIndex = -1
+        return await withTaskGroup(of: (Int, ExtractedArticle?).self) { group in
+            for (index, attempt) in attempts.enumerated() {
+                group.addTask { (index, await attempt()) }
+            }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
-                return nil
+                return (deadlineIndex, nil)
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+            defer { group.cancelAll() }
+
+            // `settled[i]` holds attempt i's result once it lands. `next` is the
+            // highest-ranked attempt still undecided: everything below it has already
+            // answered and lost, so the moment `next` answers with a qualifying article
+            // nothing left in flight could outrank it.
+            var settled: [Int: ExtractedArticle?] = [:]
+            var next = 0
+            while let (index, candidate) = await group.next() {
+                if index == deadlineIndex { return nil }
+                settled[index] = candidate
+                while next < attempts.count, let decided = settled[next] {
+                    if let decided, ArticleExtraction.isReadableArticle(decided),
+                       decided.content.bodyTextLength >= floor {
+                        return decided
+                    }
+                    next += 1
+                }
+                if next == attempts.count { return nil }
+            }
+            return nil
         }
     }
 

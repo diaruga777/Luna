@@ -3,6 +3,8 @@
 //  ReaderKit
 //
 
+import LunaFetch
+import LunaHTMLClassification
 import Foundation
 
 /// The pure (no-I/O) policy that turns (article URL + the already-fetched direct
@@ -17,7 +19,9 @@ public enum BypassStrategySelector {
     /// A supported site unlock rule always runs before archive.today. The silent
     /// request leg (crawler/custom UA or spoofed Referer, JSON-LD reconstruction)
     /// is run by the resolver, not emitted here.
-    public static func strategies(for url: URL, directHTML: String?) -> [BypassStrategy] {
+    public static func strategies(
+        for url: URL, directHTML: String?, now: Date = Date()
+    ) -> [BypassStrategy] {
         // The single gate decides whether ANY bypass may run. It blocks
         // product/platform pages and pages with no paywall evidence; `extracted` is
         // nil here because the resolver already returned early when the direct read
@@ -48,11 +52,23 @@ public enum BypassStrategySelector {
         // server-side truncation — the publisher never sent the rest of the body, so
         // nothing done to the live page can recover it. Newest capture first (right for an
         // article walled from publication), then the oldest, which predates a wall added
-        // later (`.waybackPrePaywall`). Both are cheap enough to precede a user-visible
-        // WKWebView flow, and the readability gate discards a capture that carries the
-        // same wall.
+        // later (`.waybackPrePaywall`). Both precede a user-visible WKWebView flow, and
+        // the readability gate discards a capture that carries the same wall.
         strategies.append(.waybackRaw)
-        strategies.append(.waybackPrePaywall)
+        // …except that the pre-paywall end is only meaningful for an article OLD enough
+        // to have been published before its publisher put a wall up. When the page's own
+        // markup dates it to the last few months, that era cannot exist and the strategy
+        // is not scheduled at all — saving a Wayback index lookup, which is the slowest
+        // and flakiest service in the pipeline (1.7s–16s on consecutive lookups of one
+        // URL) and the reason today's paywalled news used to sit on a spinner. An undated
+        // page keeps the strategy: absence of a date is not evidence of youth.
+        let provablyRecent = directHTML.map {
+            PublicationDate.provesYounger(
+                than: ArticleFetcher.prePaywallCaptureMinimumAge, html: $0, now: now)
+        } ?? false
+        if !provablyRecent {
+            strategies.append(.waybackPrePaywall)
+        }
 
         // A site rule → the browser-tier direct unlock before archive.today.
         if rule != nil {

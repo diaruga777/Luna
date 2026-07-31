@@ -186,27 +186,30 @@ public struct ArticleFetcher: HTMLFetching {
             .replacingOccurrences(of: "www.", with: "")
     }
 
-    /// The Wayback Machine's replay snapshot. (NOT the `id_` raw variant — for JS-heavy
-    /// sites like WSJ the raw capture is a contentless app shell, whereas the replay
-    /// preserves the server-rendered article body the extractor needs.)
-    private func fetchWaybackHTML(for url: URL) async throws -> String {
+    /// The replay URL of the capture CLOSEST to now, from the Availability API. (NOT
+    /// the `id_` raw variant — for JS-heavy sites like WSJ the raw capture is a
+    /// contentless app shell, whereas the replay preserves the server-rendered article
+    /// body the extractor needs.) Nil when nothing is archived / the API didn't answer.
+    ///
+    /// This asks the SAME question as the CDX `.newest` lookup, but of a different,
+    /// much faster service — which is why `fetchWaybackRawHTML` races the two rather
+    /// than reaching for this only after CDX has already spent its timeout.
+    private func availabilityReplayURL(forCanonical canonical: String) async -> URL? {
         var components = URLComponents(string: "https://archive.org/wayback/available")
-        components?.queryItems = [
-            URLQueryItem(name: "url", value: Self.canonicalForArchiving(url).absoluteString),
-        ]
-        guard let apiURL = components?.url else { throw FetchError.badResponse(status: nil) }
-        let (data, _) = try await URLSession.shared.data(for: URLRequest(url: apiURL, timeoutInterval: 15))
-        guard data.count <= Self.maxBytes,
+        components?.queryItems = [URLQueryItem(name: "url", value: canonical)]
+        guard let apiURL = components?.url,
+              let (data, _) = try? await URLSession.shared.data(
+                for: URLRequest(url: apiURL, timeoutInterval: Self.waybackIndexTimeout)),
+              data.count <= Self.maxBytes,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let snapshots = json["archived_snapshots"] as? [String: Any],
               let closest = snapshots["closest"] as? [String: Any],
               (closest["available"] as? Bool) == true,
-              let snapshotString = closest["url"] as? String,
-              // The API returns http://; https avoids an ATS upgrade round-trip.
-              let snapshotURL = URL(string: snapshotString.replacingOccurrences(
-                of: "http://web.archive.org", with: "https://web.archive.org"))
-        else { throw FetchError.badResponse(status: nil) }
-        return try await fetch(url: snapshotURL, userAgent: Self.safariUserAgent, timeout: 30)
+              let snapshotString = closest["url"] as? String
+        else { return nil }
+        // The API returns http://; https avoids an ATS upgrade round-trip.
+        return URL(string: snapshotString.replacingOccurrences(
+            of: "http://web.archive.org", with: "https://web.archive.org"))
     }
 
     // MARK: - Bypass-strategy fetches (HTMLFetching)
@@ -242,16 +245,29 @@ public struct ArticleFetcher: HTMLFetching {
         return try await fetch(url: jinaURL, userAgent: Self.safariUserAgent, timeout: 20)
     }
 
-    /// Resolves the newest Wayback 200 snapshot via the CDX API (newest rows, drop
-    /// tiny/non-200), then fetches the raw `…/web/<ts>id_/<url>` replay (the `id_`
-    /// suffix strips IA's banner/asset rewriting). Falls back to the rewritten
-    /// Availability-API replay when CDX returns nothing.
+    /// Resolves the newest Wayback 200 snapshot and fetches its replay.
+    ///
+    /// The CDX index is still the PREFERRED resolver — it filters to non-trivial 200
+    /// captures and addresses the raw `…/web/<ts>id_/<url>` replay (the `id_` suffix
+    /// strips IA's banner/asset rewriting) — but it is no longer the only one on the
+    /// clock. CDX either answers in about a second or effectively stops answering:
+    /// three consecutive lookups of ONE WSJ article measured 16s (timed out), 1.7s and
+    /// 14s, while every Availability call for the same URL answered in ≤0.6s. So both
+    /// lookups start TOGETHER and CDX gets only `waybackIndexGrace` more once a usable
+    /// Availability snapshot is in hand. That turns the slowest step in a paywalled
+    /// save from "up to the full index timeout" into "about as long as the fast
+    /// service takes", without giving up the better answer when it arrives in time.
     public func fetchWaybackRawHTML(for url: URL) async throws -> String {
         let canonical = Self.canonicalForArchiving(url).absoluteString
-        if let timestamp = try? await waybackTimestamp(forCanonical: canonical, end: .newest) {
+        let indexed = Task { try? await waybackTimestamp(forCanonical: canonical, end: .newest) }
+        let available = Task { await availabilityReplayURL(forCanonical: canonical) }
+        defer { indexed.cancel(); available.cancel() }
+
+        if let timestamp = await preferredTimestamp(indexed, orFallbackFrom: available) {
             return try await fetchWaybackRaw(timestamp: timestamp, canonical: canonical)
         }
-        return try await fetchWaybackHTML(for: url)
+        guard let replayURL = await available.value else { throw FetchError.badResponse(status: nil) }
+        return try await fetch(url: replayURL, userAgent: Self.safariUserAgent, timeout: 30)
     }
 
     /// Resolves the OLDEST Wayback 200 snapshot and fetches its raw `id_` replay — the
@@ -262,17 +278,55 @@ public struct ArticleFetcher: HTMLFetching {
     /// every recent capture of a 1969 interview carries the same truncated preview the
     /// live page serves while the 2010–2016 captures hold the whole 50 000-character
     /// piece. Newest-first (`fetchWaybackRawHTML`) is right for an article that was
-    /// walled from publication — where the oldest capture is just an older wall — so the
-    /// two run in that order and the readability gate picks the winner.
+    /// walled from publication — where the oldest capture is just an older wall — so
+    /// the readability gate picks the winner between the two.
+    ///
+    /// Skips the download when the first capture is too RECENT for that era to exist
+    /// (`captureCouldPredateAWall`) — a story archived for the first time last week was
+    /// walled the day it was published, so its oldest capture is byte-for-byte the same
+    /// wall as its newest.
     ///
     /// Throws rather than falling back to the Availability API: that API only answers
     /// "closest to now", which is exactly the capture the newest-first attempt already
     /// tried.
     public func fetchWaybackPrePaywallHTML(for url: URL) async throws -> String {
         let canonical = Self.canonicalForArchiving(url).absoluteString
-        guard let timestamp = try? await waybackTimestamp(forCanonical: canonical, end: .oldest)
+        guard let timestamp = try? await waybackTimestamp(
+                forCanonical: canonical, end: .oldest,
+                timeout: Self.waybackSpeculativeIndexTimeout),
+              Self.captureCouldPredateAWall(timestamp)
         else { throw FetchError.badResponse(status: nil) }
         return try await fetchWaybackRaw(timestamp: timestamp, canonical: canonical)
+    }
+
+    /// Awaits the CDX timestamp, but abandons it `waybackIndexGrace` after `available`
+    /// has produced a usable snapshot — so a stalled index costs a save a couple of
+    /// seconds rather than its whole timeout. When the Availability API has nothing to
+    /// offer there is no cheaper answer to fall back to, so CDX is waited out in full.
+    private func preferredTimestamp(
+        _ indexed: Task<String?, Never>, orFallbackFrom available: Task<URL?, Never>
+    ) async -> String? {
+        enum Leg: Sendable {
+            case indexed(String?)
+            case graceExpired
+        }
+        return await withTaskGroup(of: Leg.self) { group in
+            group.addTask { .indexed(await indexed.value) }
+            group.addTask {
+                // No fallback → the index is the only hope; let its own timeout bound it.
+                let wait = await available.value == nil
+                    ? Self.waybackIndexTimeout
+                    : Self.waybackIndexGrace
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                return .graceExpired
+            }
+            var winner: String?
+            if case let .indexed(timestamp) = await group.next() ?? .graceExpired {
+                winner = timestamp
+            }
+            group.cancelAll()
+            return winner
+        }
     }
 
     /// The raw `…/web/<ts>id_/<url>` replay for a resolved snapshot (the `id_` suffix
@@ -289,12 +343,70 @@ public struct ArticleFetcher: HTMLFetching {
         case oldest
     }
 
+    /// How long a Wayback INDEX lookup may take. Deliberately far shorter than a content
+    /// fetch (30s): an index lookup is one small JSON row set, and the CDX server either
+    /// serves it in about a second or not at all. The old 15s here was the single
+    /// slowest step in a hard-paywalled save.
+    static let waybackIndexTimeout: TimeInterval = 8
+
+    /// The budget for a SPECULATIVE index lookup — one whose strategy is a long shot
+    /// rather than the route the save depends on (`.waybackPrePaywall`). A long shot
+    /// earns a long-shot budget: CDX answers a healthy lookup in 1–2s, so this catches
+    /// the case where it can pay off and abandons the case where it would only make the
+    /// user wait. Without it a stalled index on the speculative leg sets the whole
+    /// fanned-out silent tier's wall clock, since failure can't be declared until every
+    /// attempt has answered.
+    static let waybackSpeculativeIndexTimeout: TimeInterval = 4
+
+    /// How much longer the CDX index gets once the Availability API has already produced
+    /// a usable snapshot. CDX stays preferred — it filters out tiny stub captures — but
+    /// never at the price of several more seconds of a share sheet's spinner when an
+    /// answer is already in hand. Sized off the measured split: a healthy CDX lookup
+    /// takes 1.1–1.7s and started ~0.6s before this timer did, so it clears comfortably,
+    /// while a sick one (8s+) is abandoned about two seconds in.
+    static let waybackIndexGrace: TimeInterval = 1.5
+
+    /// How old a page's FIRST capture must be for a pre-paywall snapshot to plausibly
+    /// exist. `.waybackPrePaywall` hunts for the era before a publisher metered
+    /// something it had published free — The Paris Review's 1969 interviews, walled
+    /// decades later. An article whose earliest capture is days old was walled the day
+    /// it was published, so its oldest capture carries the identical wall and replaying
+    /// it is a second archive download that provably cannot help. Six months is
+    /// deliberately generous: the cost of being wrong is one skipped long-shot, and the
+    /// cost of never skipping is that every save of a brand-new hard-paywalled story
+    /// pays for the leg.
+    public static let prePaywallCaptureMinimumAge: TimeInterval = 180 * 24 * 60 * 60
+
+    /// Whether a capture taken at `timestamp` is old enough to predate a wall the
+    /// publisher added after publication. Pure (takes `now`) so the policy is
+    /// unit-testable. An unparseable timestamp answers true — the skip is an
+    /// optimization and must never suppress a strategy on bad data.
+    public static func captureCouldPredateAWall(_ timestamp: String, now: Date = Date()) -> Bool {
+        guard let captured = waybackDate(fromTimestamp: timestamp) else { return true }
+        return now.timeIntervalSince(captured) >= prePaywallCaptureMinimumAge
+    }
+
+    /// Parses a Wayback 14-digit `yyyyMMddHHmmss` UTC timestamp.
+    public static func waybackDate(fromTimestamp timestamp: String) -> Date? {
+        guard timestamp.count == 14, timestamp.allSatisfy(\.isNumber) else { return nil }
+        return waybackTimestampFormatter.date(from: timestamp)
+    }
+
+    private static let waybackTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        return formatter
+    }()
+
     /// CDX 200-only lookup at one end of the capture history → the snapshot timestamp,
     /// or nil when none is available. A negative `limit` returns the LAST n rows (newest,
     /// with `fastLatest` letting IA answer from the tail of the index); a positive one
     /// returns the first n (oldest).
     private func waybackTimestamp(
-        forCanonical canonical: String, end: SnapshotEnd
+        forCanonical canonical: String, end: SnapshotEnd,
+        timeout: TimeInterval = ArticleFetcher.waybackIndexTimeout
     ) async throws -> String? {
         var components = URLComponents(string: "https://web.archive.org/cdx/search/cdx")
         var queryItems = [
@@ -309,7 +421,7 @@ public struct ArticleFetcher: HTMLFetching {
         }
         components?.queryItems = queryItems
         guard let cdxURL = components?.url else { return nil }
-        var request = URLRequest(url: cdxURL, timeoutInterval: 15)
+        var request = URLRequest(url: cdxURL, timeoutInterval: timeout)
         request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),

@@ -301,7 +301,10 @@ final class ArticleResolverTests: XCTestCase {
         } else {
             XCTFail("expected readable, got \(result)")
         }
-        XCTAssertEqual(fetcher.calls.map(\.kind), [.waybackRaw, .waybackPrePaywall])
+        // Exactly the two Wayback probes and nothing else — no re-fetch of the page.
+        // The tier runs them concurrently, so compare as a SET, not a sequence.
+        XCTAssertEqual(Set(fetcher.calls.map(\.kind)), [.waybackRaw, .waybackPrePaywall])
+        XCTAssertEqual(fetcher.calls.count, 2)
     }
 
     /// The Paris Review case end to end: the live page serves a long readable preview cut
@@ -320,7 +323,10 @@ final class ArticleResolverTests: XCTestCase {
             return XCTFail("expected readable, got \(result)")
         }
         XCTAssertTrue(content.title.contains("steinbeck"), "the pre-paywall capture must win")
-        XCTAssertEqual(fetcher.calls.map(\.kind), [.plain, .waybackRaw, .waybackPrePaywall])
+        // The direct read is still first; the silent tier behind it fans out, so its two
+        // Wayback probes are compared as a set.
+        XCTAssertEqual(fetcher.calls.first?.kind, .plain)
+        XCTAssertEqual(Set(fetcher.calls.dropFirst().map(\.kind)), [.waybackRaw, .waybackPrePaywall])
     }
 
     /// Same shape, but the archives only ever hold the walled version: the item parks for
@@ -347,6 +353,51 @@ final class ArticleResolverTests: XCTestCase {
         let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
         // WSJ's title survives; the body never became readable.
         XCTAssertEqual(result, .paywalled(title: "WSJ Story"))
+    }
+
+    // MARK: - The silent tier runs concurrently but resolves by plan order
+
+    /// The load-bearing invariant of the concurrent silent tier: a lower-ranked strategy
+    /// that answers FIRST must not beat a higher-ranked one that is still in flight.
+    /// Here the Paris Review shape is inverted — the pre-paywall capture (ranked last)
+    /// returns instantly while the newest capture (ranked ahead of it) takes a moment —
+    /// and the newest capture must still win, exactly as it did when the tier walked its
+    /// strategies one at a time.
+    func testSlowerHigherRankedStrategyStillWins() async {
+        let articleURL = URL(string: "https://www.theparisreview.org/interviews/3810/steinbeck")!
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[articleURL.absoluteString] = truncatedPreviewHTML(paragraphs: 20)
+        // Both archive captures are readable. The newest (ranked first) takes a beat;
+        // the oldest (ranked last) answers instantly.
+        fetcher.waybackHTMLByURL[articleURL.absoluteString] = proseHTML("newest", paragraphs: 40)
+        fetcher.prePaywallHTMLByURL[articleURL.absoluteString] = proseHTML("oldest", paragraphs: 40)
+        fetcher.delaysByKind = [.waybackRaw: 0.25]
+
+        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
+
+        guard case let .readable(content, _) = result else {
+            return XCTFail("expected readable, got \(result)")
+        }
+        XCTAssertTrue(content.title.contains("newest"),
+                      "the instant lower-ranked capture must not outrank the slower first choice")
+    }
+
+    /// And the tier really is concurrent: two strategies that each take a beat finish in
+    /// about ONE beat, not two. This is the whole reason a hard-paywalled save stopped
+    /// looking hung — serially the same page spent the sum of every strategy's latency.
+    func testSilentStrategiesRunConcurrently() async {
+        let articleURL = URL(string: "https://www.theparisreview.org/interviews/3810/nothing-works")!
+        let fetcher = MockArticleFetcher()
+        // Nothing is readable, so the tier must wait for BOTH probes before parking.
+        fetcher.htmlByURL[articleURL.absoluteString] = truncatedPreviewHTML(paragraphs: 20)
+        fetcher.delaysByKind = [.waybackRaw: 0.4, .waybackPrePaywall: 0.4]
+
+        let start = Date()
+        _ = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertEqual(Set(fetcher.calls.dropFirst().map(\.kind)), [.waybackRaw, .waybackPrePaywall])
+        XCTAssertLessThan(elapsed, 0.7, "0.4s + 0.4s of independent fetches must overlap, not add up")
     }
 
     // MARK: - Subscribe-redirect hosts (News Corp Australia)

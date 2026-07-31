@@ -96,4 +96,31 @@ final class WaybackCDXTests: XCTestCase {
         XCTAssertNil(ArticleFetcher.oldestSnapshotTimestamp(fromCDXJSON: json("[]")))
         XCTAssertNil(ArticleFetcher.oldestSnapshotTimestamp(fromCDXJSON: json("{not an array}")))
     }
+
+    // MARK: - Is a pre-paywall capture even possible?
+
+    private let now = ISO8601DateFormatter().date(from: "2026-08-01T12:00:00Z")!
+
+    func testTimestampParsing() {
+        XCTAssertEqual(ArticleFetcher.waybackDate(fromTimestamp: "20260731015035"),
+                       ISO8601DateFormatter().date(from: "2026-07-31T01:50:35Z"))
+        XCTAssertNil(ArticleFetcher.waybackDate(fromTimestamp: "2026073101"))     // too short
+        XCTAssertNil(ArticleFetcher.waybackDate(fromTimestamp: "2026073101503x")) // not numeric
+    }
+
+    func testFreshCaptureCannotPredateAWall() {
+        // Yesterday's first capture of a hard-paywalled story: the oldest snapshot IS the
+        // walled one, so replaying it is a download that provably cannot help.
+        XCTAssertFalse(ArticleFetcher.captureCouldPredateAWall("20260731015035", now: now))
+    }
+
+    func testDecadeOldCaptureCouldPredateAWall() {
+        // The Paris Review shape: captured in 2012, metered years later.
+        XCTAssertTrue(ArticleFetcher.captureCouldPredateAWall("20120405120000", now: now))
+    }
+
+    func testUnparseableTimestampKeepsTheAttempt() {
+        // The skip is an optimization; bad index data must never suppress a strategy.
+        XCTAssertTrue(ArticleFetcher.captureCouldPredateAWall("not-a-timestamp", now: now))
+    }
 }

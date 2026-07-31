@@ -328,10 +328,17 @@ final class MoonRevealLineView: UIView {
             CACurrentMediaTime(), from: nil)
         moonLayer.add(moonAnimation, forKey: "moonReveal")
 
+        // The bloom's cooling distance rides the front's speed: however fast
+        // the edge travels, every glyph spends the same TIME brightened and
+        // fading back as the intro line's glyphs do — the article-body sweep
+        // is ~9× faster than the intro's, so its bands stretch ~9× further.
+        let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
         pixelBloomView.reveal(
             circleTravel: travel,
             duration: OnboardingAnimationClock.displayLinkDuration(
-                resolvedDuration))
+                resolvedDuration),
+            edgeBandScale: max(
+                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed))
 
         let revealAnimation = CABasicAnimation(keyPath: "path")
         revealAnimation.fromValue = initialRevealPath
@@ -455,6 +462,11 @@ private final class GlyphPixelBloomView: UIView {
 
     static let renderPadding: CGFloat = 42
 
+    /// The intro line's edge speed (its travel over its reveal duration).
+    /// Faster sweeps scale the falloff distances up by speed/reference so a
+    /// glyph's brighten-and-cool takes the same TIME at any front speed.
+    static let referenceFrontSpeed: CGFloat = 46
+
     private static let edgeFalloff = [
         EdgeBand(inner: 0, outer: 1.75, alpha: 1.00),
         EdgeBand(inner: 1.75, outer: 4.00, alpha: 0.72),
@@ -487,6 +499,8 @@ private final class GlyphPixelBloomView: UIView {
     private var displayLink: CADisplayLink?
     private var emitterRenderer: UIGraphicsImageRenderer?
     private var edgeSagitta: CGFloat = 0
+    private var edgeBandScale: CGFloat = 1
+    private var rasterScale: CGFloat = 1
 
     var usesRasterizedGlyphPixels: Bool {
         glyphImage != nil && !glyphFrame.isEmpty
@@ -530,46 +544,59 @@ private final class GlyphPixelBloomView: UIView {
 
         self.glyphFrame = glyphFrame
         initialCircleFrame = circleFrame
+        rasterScale = scale
         progress = 0
 
-        // Only a narrow strip around the circle's leading edge ever emits
-        // light (the bands hug the edge), so the per-frame render is a strip,
-        // not the whole view. A view-height emitter made the display link
-        // collapse on article-length text: whole lines never got their bright
-        // moment because the frame rate fell to a handful of samples.
         let radius = circleFrame.width / 2
         let halfWidth = bounds.width / 2
         edgeSagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
-        let emitterFormat = UIGraphicsImageRendererFormat()
-        emitterFormat.scale = scale
-        emitterFormat.opaque = false
-        emitterRenderer = UIGraphicsImageRenderer(
-            size: CGSize(width: bounds.width, height: stripHeight),
-            format: emitterFormat)
         setNeedsDisplay()
+    }
+
+    /// The widest cooling distance for the current front speed.
+    private var scaledFalloffReach: CGFloat {
+        (Self.edgeFalloff.last?.outer ?? 12) * edgeBandScale
     }
 
     /// The emitting band: everything within the falloff distance outside the
     /// edge, plus the bow of the near-flat arc across the view's width.
     private var stripHeight: CGFloat {
-        (Self.edgeFalloff.last?.outer ?? 12) + edgeSagitta + 12
+        scaledFalloffReach + edgeSagitta + 12
     }
 
     private func currentStripRect() -> CGRect {
         let edgeTop = initialCircleFrame.minY + circleTravel * progress
         return CGRect(
             x: 0,
-            y: edgeTop - (Self.edgeFalloff.last?.outer ?? 12) - 4,
+            y: edgeTop - scaledFalloffReach - 4,
             width: bounds.width,
             height: stripHeight)
     }
 
-    func reveal(circleTravel: CGFloat, duration: CFTimeInterval) {
+    func reveal(
+        circleTravel: CGFloat,
+        duration: CFTimeInterval,
+        edgeBandScale: CGFloat = 1
+    ) {
         stop()
         self.circleTravel = circleTravel
+        self.edgeBandScale = max(edgeBandScale, 1)
         revealDuration = max(duration, 0.001)
         revealStartTime = CACurrentMediaTime()
         progress = 0
+
+        // Only a strip around the circle's leading edge ever emits light (the
+        // bands hug the edge), so the per-frame render is a strip, not the
+        // whole view. A view-height emitter made the display link collapse on
+        // article-length text: whole lines never got their bright moment
+        // because the frame rate fell to a handful of samples. The strip is
+        // sized here because the falloff reach depends on the front's speed.
+        let emitterFormat = UIGraphicsImageRendererFormat()
+        emitterFormat.scale = rasterScale
+        emitterFormat.opaque = false
+        emitterRenderer = UIGraphicsImageRenderer(
+            size: CGSize(width: bounds.width, height: stripHeight),
+            format: emitterFormat)
         setNeedsDisplay()
 
         let displayLink = CADisplayLink(
@@ -637,12 +664,12 @@ private final class GlyphPixelBloomView: UIView {
                 context.saveGState()
                 let ring = UIBezierPath(
                     ovalIn: circleFrame.insetBy(
-                        dx: -band.outer,
-                        dy: -band.outer))
+                        dx: -band.outer * edgeBandScale,
+                        dy: -band.outer * edgeBandScale))
                 ring.append(UIBezierPath(
                     ovalIn: circleFrame.insetBy(
-                        dx: -band.inner,
-                        dy: -band.inner)))
+                        dx: -band.inner * edgeBandScale,
+                        dy: -band.inner * edgeBandScale)))
                 ring.usesEvenOddFillRule = true
                 context.addPath(ring.cgPath)
                 context.clip(using: .evenOdd)

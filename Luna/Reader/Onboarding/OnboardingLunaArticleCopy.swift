@@ -20,38 +20,26 @@ enum OnboardingLunaArticleCopy {
     static let title = "An article you want to read"
     static let byline = "A safari extension • by Luna"
 
-    static let intro =
-        "Here’s what you get the moment a link lands in Luna, minus the sales pitch:"
+    static let intro = "What you get, minus the pitch:"
 
+    /// Deliberately one short line each. The Safari mock lays the article and
+    /// the setup card out on ONE screen with no scroll (see
+    /// `OnboardingArticleReplicaView.layoutSubviews`), which leaves the body
+    /// about seven lines; a bullet long enough to wrap costs two of them and
+    /// pushes the card under the browser chrome.
+    /// `testLunaArticleLoadsBuriedWithTheCardSharingTheScreen` is the guard.
     static let features = [
-        "A clean read. Ads, newsletter popups and the “subscribe to keep "
-            + "reading” wall don’t come along for the ride — you get the story "
-            + "and nothing else.",
-        "It’s already offline. Every save sits on your phone, so a tunnel, a "
-            + "flight or a dead hotspot doesn’t end your reading.",
-        "Locked articles open where they can. Luna gets past the wall when "
-            + "it’s able to, and says so plainly when it isn’t.",
-        "A speed reader that flashes one word at a time, at whatever pace you "
-            + "set. Turn on eye tracking and it pauses the instant you look "
-            + "away, then carries on when you’re back.",
-        "Read aloud that keeps going with the screen off and rolls into the "
-            + "next article on its own, like a podcast you assembled by "
-            + "accident.",
-        "Links you can follow without leaving. Tap one inside an article, read "
-            + "it in place, back out, and you’re exactly where you were.",
-        "Send it onward: straight to your Kindle, or out of Luna as EPUB, PDF, "
-            + "Markdown or plain text.",
-        "Save from wherever you found it — Safari, Messages, the share sheet, a "
-            + "Shortcut, or one press of the Action Button.",
-        "PDFs, documents and those endless X threads land in the same list as "
-            + "the articles, instead of scattered across four other apps.",
+        "Ads, popups and paywalls: gone.",
+        "Saved offline, ready on any flight.",
+        "Speed-read a word at a time.",
+        "Read aloud with the screen off.",
+        "Open links without losing your place.",
+        "Send to Kindle, or export anywhere.",
     ]
 
     /// The list as one rendered string, for the two mock surfaces that draw the
     /// article as a single label. Bullets are baked in here because neither of
-    /// them runs the real article renderer. Single-spaced after the bullet on
-    /// purpose: the Safari mock's viewport-fitted prefix re-joins the text on
-    /// spaces, and a run of two would collapse to one there and nowhere else.
+    /// them runs the real article renderer.
     static let plainText: String = ([intro] + features.map { "• " + $0 })
         .joined(separator: "\n")
 

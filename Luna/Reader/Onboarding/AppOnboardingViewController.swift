@@ -436,6 +436,7 @@ final class AppOnboardingViewController: UIViewController {
             options: [.curveEaseInOut, .beginFromCurrentState]
         ) {
             safari.view.frame = self.view.bounds
+            safari.view.layoutIfNeeded()
             safari.view.layer.cornerRadius = 0
             safari.view.alpha = 1
             self.carousel.view.alpha = 0
@@ -639,6 +640,10 @@ final class AppOnboardingViewController: UIViewController {
         switch presentation {
         case .fullScreen:
             source.view.frame = view.bounds
+            // The card branch below forces layout; the full-screen branch must
+            // too, or a source shown straight after mounting keeps its
+            // preload-size internal layout until the next display pass.
+            source.view.layoutIfNeeded()
             source.view.layer.cornerRadius = 0
             source.view.alpha = 1
             carousel.view.alpha = 0

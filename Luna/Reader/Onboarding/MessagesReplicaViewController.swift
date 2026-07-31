@@ -52,6 +52,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private var sequenceGeneration = 0
     private var islandView: OnboardingDynamicIslandRunView?
     private var mockTap: OnboardingMockTapIndicatorView?
+    private var flyingBubble: UIView?
     private var extensionSheet: OnboardingActionExtensionSheetView?
     private var hidesStatusBarForIsland = false
     private(set) var isShowingSetupMessages = false
@@ -143,6 +144,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             row.bubbleView.layer.removeAllAnimations()
             row.alpha = 0
             row.bubbleView.transform = .identity
+            row.bubbleView.alpha = 1
         }
         shortcutBubble?.setShowsTail(true)
         shortcutPill.reset()
@@ -267,10 +269,8 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     override func rippleSaveEffectDidFinish() {
         sequenceGeneration += 1
         let generation = sequenceGeneration
-        setURLBubbleEmphasized(true)
         afterDelay(
-            OnboardingShortcutRunTiming.islandExpandDelay
-                + OnboardingShortcutRunTiming.bubbleEmphasisDuration,
+            OnboardingShortcutRunTiming.islandExpandDelay,
             generation: generation
         ) {
             self.presentIsland(generation: generation)
@@ -294,25 +294,6 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         }
     }
 
-    private func setURLBubbleEmphasized(_ emphasized: Bool) {
-        let transform = emphasized
-            ? CGAffineTransform(scaleX: 1.12, y: 1.12)
-            : .identity
-        if UIAccessibility.isReduceMotionEnabled {
-            urlBubble.transform = transform
-            return
-        }
-        UIView.animate(
-            withDuration: OnboardingShortcutRunTiming.bubbleEmphasisDuration,
-            delay: 0,
-            usingSpringWithDamping: 0.6,
-            initialSpringVelocity: 0.5,
-            options: [.beginFromCurrentState]
-        ) {
-            self.urlBubble.transform = transform
-        }
-    }
-
     private func presentIsland(generation: Int) {
         setStatusBarHiddenForIsland(true)
         let island = OnboardingDynamicIslandRunView(
@@ -329,6 +310,85 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                     self.playMockTap(on: island, generation: generation)
                 }
             }
+        }
+        // The saved link rides along: the bubble pops out of the thread and
+        // arcs up into the inflating island.
+        flyURLBubble(into: island, generation: generation)
+    }
+
+    /// Pops the URL bubble out of its spot and flies it — a curved climb with
+    /// a slight tumble, shrinking — up under the island, which swallows it.
+    private func flyURLBubble(
+        into island: OnboardingDynamicIslandRunView,
+        generation: Int
+    ) {
+        if UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(withDuration: 0.25) { self.urlBubble.alpha = 0 }
+            return
+        }
+        guard urlBubble.alpha > 0, let row = urlBubble.superview else { return }
+
+        // Fly a raster copy (the tail curls outside the bubble's bounds, so a
+        // plain snapshotView would crop it) and pop the real bubble out.
+        let padded = urlBubble.bounds.insetBy(dx: -8, dy: -2)
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(
+            bounds: padded, format: format
+        ).image { context in
+            urlBubble.layer.render(in: context.cgContext)
+        }
+        let flying = UIImageView(image: image)
+        flying.bounds = CGRect(origin: .zero, size: padded.size)
+        flying.center = view.convert(
+            CGPoint(x: urlBubble.center.x, y: urlBubble.center.y),
+            from: row)
+        view.insertSubview(flying, belowSubview: island)
+        flyingBubble = flying
+        urlBubble.alpha = 0
+
+        let start = flying.center
+        let target = CGPoint(
+            x: island.frame.midX,
+            y: island.frame.maxY - 6)
+        let path = UIBezierPath()
+        path.move(to: start)
+        path.addCurve(
+            to: target,
+            controlPoint1: CGPoint(
+                x: start.x + view.bounds.width * 0.42,
+                y: start.y - (start.y - target.y) * 0.38),
+            controlPoint2: CGPoint(
+                x: target.x + view.bounds.width * 0.24,
+                y: target.y + (start.y - target.y) * 0.20))
+
+        let duration = OnboardingShortcutRunTiming.bubbleFlightDuration
+        let position = CAKeyframeAnimation(keyPath: "position")
+        position.path = path.cgPath
+        position.calculationMode = .paced
+        let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
+        rotation.fromValue = 0
+        rotation.toValue = -0.22
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 1
+        scale.toValue = 0.16
+        scale.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [1, 1, 0.9, 0]
+        fade.keyTimes = [0, 0.72, 0.9, 1]
+        let flight = CAAnimationGroup()
+        flight.animations = [position, rotation, scale, fade]
+        flight.duration = duration
+        flight.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        flight.fillMode = .forwards
+        flight.isRemovedOnCompletion = false
+        flying.layer.add(flight, forKey: "onboarding.bubble.flight")
+        flying.layer.opacity = 0
+
+        afterDelay(duration, generation: generation) {
+            self.flyingBubble?.removeFromSuperview()
+            self.flyingBubble = nil
+            island.absorb()
         }
     }
 
@@ -363,6 +423,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         view.addSubview(sheet)
         sheet.present { [weak self] in
             guard let self, generation == self.sequenceGeneration else { return }
+            // The absorbed bubble quietly returns to the thread while the
+            // sheet covers it, so the conversation is whole again afterwards.
+            self.urlBubble.alpha = 1
             self.afterDelay(
                 OnboardingShortcutRunTiming.extensionSheetHoldDuration,
                 generation: generation
@@ -381,7 +444,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
 
     private func finishShortcutRunSequence(generation: Int) {
         setURLHighlighted(false)
-        setURLBubbleEmphasized(false)
+        urlBubble.alpha = 1
         afterDelay(
             OnboardingShortcutRunTiming.followUpMessageDelay,
             generation: generation
@@ -439,11 +502,17 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         mockTap?.layer.removeAllAnimations()
         mockTap?.removeFromSuperview()
         mockTap = nil
+        flyingBubble?.layer.removeAllAnimations()
+        flyingBubble?.removeFromSuperview()
+        flyingBubble = nil
         extensionSheet?.removeFromSuperview()
         extensionSheet = nil
         setStatusBarHiddenForIsland(false)
         urlBubble.layer.removeAllAnimations()
         urlBubble.transform = .identity
+        if revealedRowCount >= stagedRowCount {
+            urlBubble.alpha = 1
+        }
     }
 
     // MARK: - Static chrome
@@ -550,8 +619,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                 bubble: OnboardingMessagePillBubble(
                     direction: .outgoing,
                     showsTail: true,
-                    text: "And change your action button to",
-                    inlineLeadText: "that shortcut in",
+                    text: "And change your action button to that shortcut in",
                     pill: settingsPill,
                     accessibilityIdentifier: "onboarding.messages.settingsSetup")),
         ]
@@ -850,62 +918,90 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
     }
 }
 
-/// An outgoing bubble whose sentence hands off to an interactive pill — on
-/// its own line under the text, or inlined at the end of the sentence when
-/// `inlineLeadText` carries the final words ("…that shortcut in [Settings]").
+/// An outgoing bubble whose sentence carries an interactive pill INLINE: the
+/// pill flows with the words (an attachment reserves its spot, so the line
+/// breaking stays natural) and the live control sits exactly over that spot.
 private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
+    private let textView = UITextView()
+    private let pill: OnboardingMessagePillButton
+    private let attachmentIndex: Int
+    private let pillSize: CGSize
+
     init(
         direction: OnboardingMessageDirection,
         showsTail: Bool,
         text: String,
-        inlineLeadText: String? = nil,
         pill: OnboardingMessagePillButton,
         accessibilityIdentifier: String
     ) {
+        self.pill = pill
+        self.pillSize = pill.systemLayoutSizeFitting(
+            UIView.layoutFittingCompressedSize)
+        self.attachmentIndex = (text + " ").utf16.count
         super.init(direction: direction, showsTail: showsTail)
         self.accessibilityIdentifier = accessibilityIdentifier
-        let textColor: UIColor = direction == .incoming
-            ? UIColor(white: 0.08, alpha: 1)
-            : .white
 
-        func makeLabel(_ string: String) -> UILabel {
-            let label = UILabel()
-            label.text = string
-            label.font = .systemFont(ofSize: OnboardingMessageBubble.textSize)
-            label.textColor = textColor
-            label.numberOfLines = 0
-            label.lineBreakMode = .byWordWrapping
-            label.accessibilityLabel = string
-            return label
-        }
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.isScrollEnabled = false
+        textView.isUserInteractionEnabled = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.isAccessibilityElement = false
+        textView.translatesAutoresizingMaskIntoConstraints = false
 
-        var pillRowViews: [UIView] = []
-        if let inlineLeadText {
-            let lead = makeLabel(inlineLeadText)
-            lead.numberOfLines = 1
-            lead.setContentHuggingPriority(.required, for: .horizontal)
-            pillRowViews.append(lead)
-        }
-        pillRowViews.append(pill)
-        pillRowViews.append(UIView())
-        let pillRow = UIStackView(arrangedSubviews: pillRowViews)
-        pillRow.axis = .horizontal
-        pillRow.alignment = .center
-        pillRow.spacing = 7
+        let font = UIFont.systemFont(ofSize: OnboardingMessageBubble.textSize)
+        let content = NSMutableAttributedString(
+            string: text + " ",
+            attributes: [
+                .font: font,
+                .foregroundColor: direction == .incoming
+                    ? UIColor(white: 0.08, alpha: 1)
+                    : UIColor.white,
+            ])
+        let placeholder = NSTextAttachment()
+        placeholder.bounds = CGRect(
+            x: 0,
+            y: (font.capHeight - pillSize.height) / 2,
+            width: pillSize.width,
+            height: pillSize.height)
+        content.append(NSAttributedString(attachment: placeholder))
+        textView.attributedText = content
+        addSubview(textView)
 
-        let content = UIStackView(arrangedSubviews: [makeLabel(text), pillRow])
-        content.axis = .vertical
-        content.alignment = .fill
-        content.spacing = inlineLeadText == nil ? 7 : 3
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
+        addSubview(pill)
+        accessibilityLabel = text
 
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -13),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            textView.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            textView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
+            textView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -13),
+            textView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
         ])
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        positionPill()
+    }
+
+    /// Seats the live pill exactly over its attachment's laid-out spot.
+    private func positionPill() {
+        let layoutManager = textView.layoutManager
+        layoutManager.ensureLayout(for: textView.textContainer)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: attachmentIndex, length: 1),
+            actualCharacterRange: nil)
+        guard glyphRange.length > 0 else { return }
+        let rect = layoutManager.boundingRect(
+            forGlyphRange: glyphRange,
+            in: textView.textContainer)
+        pill.frame = CGRect(
+            x: (textView.frame.minX + rect.minX).rounded(),
+            y: (textView.frame.minY + rect.midY - pillSize.height / 2).rounded(),
+            width: pillSize.width,
+            height: pillSize.height)
     }
 }
 

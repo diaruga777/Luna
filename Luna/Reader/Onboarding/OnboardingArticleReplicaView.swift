@@ -15,15 +15,6 @@ private enum OnboardingArticleReplicaPalette {
 }
 
 enum OnboardingArticleReplicaTiming {
-    /// The clean article registers before the takeover begins.
-    static let contentHoldDuration: TimeInterval = 0.6
-    /// Each piece of clutter arrives on its own beat.
-    static let clutterStagger: TimeInterval = 0.14
-    static let clutterEntranceDuration: TimeInterval = 0.52
-    static let sheetEntranceDuration: TimeInterval = 0.56
-    /// The fully blocked page holds before the cleanup runs on its own
-    /// (a tap anywhere runs it early).
-    static let blockedHoldDuration: TimeInterval = 1.0
     static let shatterDuration: TimeInterval = 0.86
     /// One continuous lunar edge crosses the whole page in this time; every
     /// element's reveal is cut from the same constant-speed front.
@@ -33,23 +24,19 @@ enum OnboardingArticleReplicaTiming {
     static let shatterLeadDuration: TimeInterval = 0.08
 }
 
-/// Luna's fictional Safari article. The page loads clean and fully readable,
-/// is then buried under an animated pile of ads, popups and a subscription
-/// wall, and finally has the clutter shattered top-to-bottom while the same
-/// lunar eclipse reveal that opened the app re-exposes the content beneath.
+/// Luna's fictional Safari article. The page loads already buried under ads,
+/// popups and a subscription wall; once the mock extension-enable sequence
+/// completes, the clutter is shattered top-to-bottom while the same lunar
+/// eclipse reveal that opened the app exposes the content beneath — short
+/// enough that the setup card is on screen the moment the wipe passes.
 /// It is native instead of HTML so those glyph-level effects are possible.
 final class OnboardingArticleReplicaView: UIView {
     static let fullArticleText = OnboardingLunaArticleCopy.plainText
 
     var onActivateSafari: (() -> Void)?
     var onSkipSafariSetup: (() -> Void)?
-    /// The staged post-reveal scroll is starting and will run this long — the
-    /// browser chrome minimizes and hides alongside it, like real Safari.
-    var onSetupScrollBegan: ((TimeInterval) -> Void)?
 
     private enum Stage {
-        case pristine
-        case cluttering
         case blocked
         case cleaning
         case revealed
@@ -135,13 +122,9 @@ final class OnboardingArticleReplicaView: UIView {
     ]
     private let newsletterPopup = OnboardingNewsletterPopupView()
     private let subscriptionSheet = OnboardingSubscriptionSheetView()
-    private let tapToClean = UITapGestureRecognizer()
 
-    private var didStart = false
-    private var stage = Stage.pristine
+    private var stage = Stage.blocked
     private var sequenceGeneration = 0
-    private var cleanupCompletion: (() -> Void)?
-    private var fittedArticlePrefix = ""
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -170,25 +153,19 @@ final class OnboardingArticleReplicaView: UIView {
         setupCard.onSkip = { [weak self] in self?.onSkipSafariSetup?() }
         scrollView.addSubview(setupCard)
 
-        // Every fake obstruction is a decoration: nothing inside is
-        // interactive, so a tap lands on the page and runs the cleanup.
+        // Every fake obstruction is a decoration, buried over the page from
+        // the very first frame; the mock extension-enable pass clears them.
         clutterContainer.isUserInteractionEnabled = false
         clutterContainer.accessibilityIdentifier =
             "onboarding.safari.article.clutter"
         addSubview(clutterContainer)
         for (index, ad) in adBanners.enumerated() {
             ad.accessibilityIdentifier = "onboarding.safari.article.ad.\(index)"
-            ad.alpha = 0
             clutterContainer.addSubview(ad)
         }
-        newsletterPopup.alpha = 0
         clutterContainer.addSubview(newsletterPopup)
-        subscriptionSheet.alpha = 0
         clutterContainer.addSubview(subscriptionSheet)
-
-        tapToClean.addTarget(self, action: #selector(pageTapped))
-        tapToClean.isEnabled = false
-        addGestureRecognizer(tapToClean)
+        body.setText(Self.fullArticleText)
     }
 
     @available(*, unavailable)
@@ -198,10 +175,6 @@ final class OnboardingArticleReplicaView: UIView {
         super.layoutSubviews()
         let horizontalInset: CGFloat = 24
         let contentWidth = bounds.width - horizontalInset * 2
-        let browserChromeTop = bounds.height
-            - SafariBottomBar.chromeHeight
-            - 34
-        let urlBarTop = browserChromeTop + 7
 
         appIcon.frame = CGRect(x: horizontalInset, y: 31, width: 68, height: 68)
         headline.frame = CGRect(
@@ -221,33 +194,21 @@ final class OnboardingArticleReplicaView: UIView {
             y: byline.frame.maxY + 14,
             width: contentWidth,
             height: (contentWidth * 708 / 1920).rounded())
-        let bodyY = eclipseImage.frame.maxY + 14
-        let bodyBottom = urlBarTop - 8
-        let fittedBodyHeight = max(bodyBottom - bodyY, 44)
-        // The card's resting place is measured from the WHOLE article so it
-        // never moves: the body wears the viewport-fitted frame (and prefix)
-        // until the cleanup swaps in the full text and the taller frame.
-        let fullBodyHeight = max(
-            Self.height(
-                of: Self.fullArticleText,
-                width: contentWidth,
-                font: .systemFont(ofSize: 17, weight: .regular)),
-            fittedBodyHeight)
+        // The copy is deliberately short: article and setup card share one
+        // screen, so the wipe alone brings the card into view — no scroll.
         body.frame = CGRect(
             x: horizontalInset,
-            y: bodyY,
+            y: eclipseImage.frame.maxY + 14,
             width: contentWidth,
-            height: stage == .cleaning || stage == .revealed
-                ? fullBodyHeight
-                : fittedBodyHeight)
+            height: Self.height(
+                of: Self.fullArticleText,
+                width: contentWidth,
+                font: .systemFont(ofSize: 17, weight: .regular)))
 
         scrollView.frame = bounds
-        // A tight reading gap under the full text; the article copy is long
-        // enough that this always lands below the fold (the max() is a
-        // safety net for pathologically wide layouts, not the design).
         let cardFrame = CGRect(
             x: horizontalInset,
-            y: max(bodyY + fullBodyHeight + 20, bounds.height + 16),
+            y: body.frame.maxY + 20,
             width: contentWidth,
             height: OnboardingSafariSetupCardView.preferredHeight)
         setupCard.frame = cardFrame
@@ -263,7 +224,7 @@ final class OnboardingArticleReplicaView: UIView {
         setupCorona?.frame = cardFrame
         scrollView.contentSize = CGSize(
             width: bounds.width,
-            height: cardFrame.maxY + 130)
+            height: max(bounds.height, cardFrame.maxY + 16))
 
         clutterContainer.frame = bounds
         adBanners[0].frame = CGRect(
@@ -289,156 +250,41 @@ final class OnboardingArticleReplicaView: UIView {
             y: bounds.height - sheetHeight,
             width: bounds.width,
             height: sheetHeight)
-
-        if stage == .pristine || stage == .cluttering || stage == .blocked {
-            let prefix = Self.prefix(
-                of: Self.fullArticleText,
-                fitting: body.bounds.size,
-                font: .systemFont(ofSize: 17, weight: .regular))
-            if prefix != fittedArticlePrefix {
-                fittedArticlePrefix = prefix
-                body.setText(prefix)
-            }
-        }
-    }
-
-    /// Plays the whole staged takeover: a clean readable beat, the clutter
-    /// pile-on, the subscription wall, then the tap-or-timeout cleanup. The
-    /// completion fires once the content has finished its re-reveal.
-    func start(completion: @escaping () -> Void) {
-        guard !didStart else {
-            completion()
-            return
-        }
-        didStart = true
-        cleanupCompletion = completion
-        layoutIfNeeded()
-        afterDelay(OnboardingArticleReplicaTiming.contentHoldDuration) {
-            $0.beginClutterInvasion()
-        }
-    }
-
-    // MARK: - Clutter invasion
-
-    private func beginClutterInvasion() {
-        guard stage == .pristine else { return }
-        stage = .cluttering
-        let stagger = OnboardingArticleReplicaTiming.clutterStagger
-
-        animateEntrance(adBanners[0], .slideFromLeft, delay: 0)
-        animateEntrance(adBanners[1], .slideFromRight, delay: stagger)
-        animateEntrance(adBanners[2], .slideFromLeft, delay: stagger * 2)
-        animateEntrance(adBanners[3], .slideFromRight, delay: stagger * 3)
-        animateEntrance(newsletterPopup, .pop, delay: stagger * 3 + 0.2)
-
-        let sheetDelay = stagger * 3 + 0.5
-        afterDelay(sheetDelay) { view in
-            view.tapToClean.isEnabled = true
-            view.animateEntrance(view.subscriptionSheet, .slideFromBottom, delay: 0)
-            let settled = OnboardingArticleReplicaTiming.sheetEntranceDuration
-                + OnboardingArticleReplicaTiming.blockedHoldDuration
-            view.stage = .blocked
-            view.afterDelay(settled) { $0.cleanUpClutter() }
-        }
-    }
-
-    private enum Entrance {
-        case slideFromLeft
-        case slideFromRight
-        case pop
-        case slideFromBottom
-    }
-
-    private func animateEntrance(
-        _ view: UIView, _ entrance: Entrance, delay: TimeInterval
-    ) {
-        if UIAccessibility.isReduceMotionEnabled {
-            UIView.animate(
-                withDuration: 0.2,
-                delay: OnboardingAnimationClock.delay(delay),
-                options: [.beginFromCurrentState]
-            ) {
-                view.alpha = 1
-            }
-            return
-        }
-        switch entrance {
-        case .slideFromLeft:
-            view.transform = CGAffineTransform(
-                translationX: -(view.frame.maxX + 40), y: 0)
-        case .slideFromRight:
-            view.transform = CGAffineTransform(
-                translationX: bounds.width - view.frame.minX + 40, y: 0)
-        case .pop:
-            view.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
-        case .slideFromBottom:
-            view.transform = CGAffineTransform(
-                translationX: 0, y: view.frame.height + 40)
-        }
-        view.alpha = entrance == .pop ? 0 : 1
-        let duration = entrance == .slideFromBottom
-            ? OnboardingArticleReplicaTiming.sheetEntranceDuration
-            : OnboardingArticleReplicaTiming.clutterEntranceDuration
-        UIView.animate(
-            withDuration: duration,
-            delay: OnboardingAnimationClock.delay(delay),
-            usingSpringWithDamping: entrance == .slideFromBottom ? 0.86 : 0.74,
-            initialSpringVelocity: 0.2,
-            options: [.curveEaseOut, .beginFromCurrentState]
-        ) {
-            view.alpha = 1
-            view.transform = .identity
-        }
-    }
-
-    @objc private func pageTapped() {
-        cleanUpClutter()
     }
 
     // MARK: - Cleanup
 
     /// Shatters every obstruction in a single top-to-bottom sweep while the
-    /// same descending lunar edge that opened the app re-reveals the content
-    /// underneath.
+    /// same descending lunar edge that opened the app reveals the content
+    /// underneath — the setup card included, since everything shares one
+    /// screen.
     func cleanUpClutter(completion: (() -> Void)? = nil) {
-        guard stage != .cleaning, stage != .revealed else {
+        guard stage == .blocked else {
             completion?()
             return
         }
         stage = .cleaning
         sequenceGeneration += 1
-        tapToClean.isEnabled = false
+        layoutIfNeeded()
 
         var shatterFinish: TimeInterval = 0
         for view in clutterContainer.subviews {
             shatterFinish = max(shatterFinish, shatter(view))
         }
+        let revealFinish = revealContentTopToBottom()
+        let curtainFinish = revealSetupCardBehindCurtain()
 
-        body.setText(Self.fullArticleText)
-        setNeedsLayout()
-        revealContentTopToBottom()
-        mountSetupCurtain()
-
-        // The page scrolls on to the setup card the moment the front reaches
-        // the bottom of the SCREEN — the article now extends below the fold,
-        // and that tail finishes its reveal while the scroll is already
-        // carrying it up through the parked front.
-        afterDelay(OnboardingArticleReplicaTiming.revealSweepDuration) { view in
-            view.scrollToSetupCard {
-                view.stage = .revealed
-                let startCompletion = view.cleanupCompletion
-                view.cleanupCompletion = nil
-                startCompletion?()
-                completion?()
-            }
+        afterDelay(max(revealFinish, max(curtainFinish, shatterFinish)) + 0.05) { view in
+            view.stage = .revealed
+            completion?()
         }
     }
 
-    /// Covers the below-the-fold setup card (and its corona) with the page
-    /// background so the continuing front can uncover it with the same bright
-    /// eclipse edge as the content above.
-    private func mountSetupCurtain() {
-        layoutIfNeeded()
+    /// Covers the setup card (and its corona) with the page background and
+    /// sweeps the cover away as the shared front passes over it, so the card
+    /// brightens in with the same eclipse edge as the content above. Returns
+    /// when the curtain has fully cleared.
+    private func revealSetupCardBehindCurtain() -> TimeInterval {
         let top = body.frame.maxY + 2
         let curtain = MoonRevealCurtainView(
             fillColor: OnboardingArticleReplicaPalette.background)
@@ -449,54 +295,24 @@ final class OnboardingArticleReplicaView: UIView {
             height: max(scrollView.contentSize.height - top, 1))
         scrollView.addSubview(curtain)
         setupCurtain = curtain
-    }
 
-    /// The scroll continues the reveal at the front's exact speed: the edge
-    /// parks at the bottom of the screen and the page flows up through it,
-    /// the setup card brightening as it crosses.
-    private func scrollToSetupCard(completion: @escaping () -> Void) {
-        layoutIfNeeded()
-        let chromeTop = bounds.height - SafariBottomBar.chromeHeight - 34
-        let offset = CGPoint(
-            x: 0,
-            y: max(0, setupCard.frame.maxY + 20 - chromeTop))
-        let frontSpeed = bounds.height
-            / max(OnboardingArticleReplicaTiming.revealSweepDuration, 0.001)
-        let duration = UIAccessibility.isReduceMotionEnabled
-            ? 0.2
-            : TimeInterval(offset.y / frontSpeed)
-        onSetupScrollBegan?(duration)
+        if UIAccessibility.isReduceMotionEnabled {
+            curtain.removeFromSuperview()
+            setupCurtain = nil
+            return 0
+        }
 
-        if let curtain = setupCurtain {
-            if UIAccessibility.isReduceMotionEnabled {
-                curtain.removeFromSuperview()
-                setupCurtain = nil
-            } else {
-                // The front sits at the screen bottom (content y = height at
-                // scroll start) and the curtain rises through it.
-                let delay = max(
-                    0,
-                    TimeInterval((curtain.frame.minY - bounds.height) / frontSpeed))
-                let revealDuration = TimeInterval(
-                    (curtain.frame.height + 30) / frontSpeed)
-                afterDelay(delay) { view in
-                    view.setupCurtain?.reveal(duration: revealDuration) {
-                        view.setupCurtain?.removeFromSuperview()
-                        view.setupCurtain = nil
-                    }
-                }
+        let sweep = OnboardingArticleReplicaTiming.revealSweepDuration
+        let height = max(bounds.height, 1)
+        let delay = max(0, TimeInterval((top - 22) / height)) * sweep
+        let duration = TimeInterval((curtain.frame.height + 28) / height) * sweep
+        afterDelay(delay) { view in
+            view.setupCurtain?.reveal(duration: duration) {
+                view.setupCurtain?.removeFromSuperview()
+                view.setupCurtain = nil
             }
         }
-
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            options: [.curveLinear, .beginFromCurrentState]
-        ) {
-            self.scrollView.contentOffset = offset
-        } completion: { _ in
-            completion()
-        }
+        return delay + duration
     }
 
     /// Returning from Safari without the extension having run re-offers the
@@ -674,39 +490,6 @@ final class OnboardingArticleReplicaView: UIView {
             context: nil).height)
     }
 
-    private static func prefix(
-        of text: String,
-        fitting size: CGSize,
-        font: UIFont
-    ) -> String {
-        let words = text.split(separator: " ")
-        guard !words.isEmpty, size.width > 0, size.height > 0 else { return "" }
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .paragraphStyle: {
-                let style = NSMutableParagraphStyle()
-                style.lineSpacing = 5
-                return style
-            }(),
-        ]
-        var lower = 0
-        var upper = words.count
-        while lower < upper {
-            let candidateCount = (lower + upper + 1) / 2
-            let candidate = words.prefix(candidateCount).joined(separator: " ")
-            let measured = (candidate as NSString).boundingRect(
-                with: CGSize(width: size.width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: attributes,
-                context: nil)
-            if measured.height <= size.height {
-                lower = candidateCount
-            } else {
-                upper = candidateCount - 1
-            }
-        }
-        return words.prefix(lower).joined(separator: " ")
-    }
 }
 
 /// The article icon and banner image share the same descending lunar edge as

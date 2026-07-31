@@ -9,10 +9,10 @@ import UIKit
 /// after its ripple: Dynamic Island expansion, progress, the staged tap, and
 /// the mock action-extension sheet over the conversation.
 enum OnboardingShortcutRunTiming {
-    /// The lit URL bubble grows for a beat before the island responds.
-    static let bubbleEmphasisDuration: TimeInterval = 0.55
     static let islandExpandDelay: TimeInterval = 0.30
     static let islandExpandDuration: TimeInterval = 0.52
+    /// The link bubble's arc up into the expanding island.
+    static let bubbleFlightDuration: TimeInterval = 0.68
     static let islandProgressDuration: TimeInterval = 1.35
     /// The finished ring rests a moment before the staged finger arrives.
     static let islandTapDelay: TimeInterval = 0.45
@@ -73,31 +73,33 @@ final class OnboardingDynamicIslandRunView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        layer.cornerRadius = bounds.height / 2
-        let iconSide: CGFloat = 34
+        layer.cornerRadius = min(bounds.height / 2, 38)
+        let iconSide: CGFloat = min(bounds.height - 24, 44)
         iconView.frame = CGRect(
-            x: 8,
+            x: 16,
             y: (bounds.height - iconSide) / 2,
             width: iconSide,
             height: iconSide)
-        let ringSide: CGFloat = 28
+        iconView.layer.cornerRadius = iconSide * 0.24
+        let ringSide: CGFloat = min(bounds.height - 30, 36)
         ring.frame = CGRect(
-            x: bounds.width - ringSide - 10,
+            x: bounds.width - ringSide - 18,
             y: (bounds.height - ringSide) / 2,
             width: ringSide,
             height: ringSide)
     }
 
-    /// Mounts at the hardware island's capsule and springs out to the
-    /// shortcut-run treatment — wider and taller, growing downward the way
-    /// the real expansion inflates below the hardware cutout.
+    /// Mounts at the hardware island's capsule and inflates the way the
+    /// system's expanded treatment does — growing downward, getting taller
+    /// and wider around the fixed cutout.
     func expand(in host: UIView, completion: @escaping () -> Void) {
         restingFrame = Self.restingIslandFrame(in: host.bounds)
+        let expandedWidth = min(host.bounds.width - 44, 340)
         expandedFrame = CGRect(
-            x: restingFrame.midX - 125,
+            x: restingFrame.midX - expandedWidth / 2,
             y: restingFrame.minY,
-            width: 250,
-            height: 50)
+            width: expandedWidth,
+            height: 76)
         frame = restingFrame
         host.addSubview(self)
 
@@ -152,6 +154,29 @@ final class OnboardingDynamicIslandRunView: UIView {
     /// the staged finger lands.
     func tapTarget(in host: UIView) -> CGPoint {
         host.convert(CGPoint(x: ring.frame.midX, y: ring.frame.midY), from: self)
+    }
+
+    /// A quick swallow: the capsule puffs as the flying bubble disappears
+    /// behind it.
+    func absorb() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        UIView.animate(
+            withDuration: 0.14,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
+        } completion: { _ in
+            UIView.animate(
+                withDuration: 0.34,
+                delay: 0,
+                usingSpringWithDamping: 0.55,
+                initialSpringVelocity: 0.4,
+                options: [.beginFromCurrentState]
+            ) {
+                self.transform = .identity
+            }
+        }
     }
 
     func pressDown() {
@@ -210,7 +235,7 @@ final class OnboardingIslandProgressRingView: UIView {
         isUserInteractionEnabled = false
         for shape in [track, progress] {
             shape.fillColor = UIColor.clear.cgColor
-            shape.lineWidth = 3.5
+            shape.lineWidth = 4.5
             shape.lineCap = .round
             layer.addSublayer(shape)
         }
@@ -226,7 +251,7 @@ final class OnboardingIslandProgressRingView: UIView {
         super.layoutSubviews()
         let path = UIBezierPath(
             arcCenter: CGPoint(x: bounds.midX, y: bounds.midY),
-            radius: (min(bounds.width, bounds.height) - 3.5) / 2,
+            radius: (min(bounds.width, bounds.height) - 4.5) / 2,
             startAngle: -.pi / 2,
             endAngle: .pi * 1.5,
             clockwise: true).cgPath
@@ -407,14 +432,24 @@ final class OnboardingActionExtensionSheetView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
+    /// The top edge of the presented card.
+    private static let cardTop: CGFloat = 66
+
     override func layoutSubviews() {
         super.layoutSubviews()
         scrim.frame = bounds
-        card.frame = CGRect(
+        // The card animates via its transform (present/dismiss slides), and a
+        // layout pass can land mid-animation — setting `frame` on a
+        // transformed view corrupts its geometry (that read as the sheet
+        // "popping" to the top mid-dismiss). bounds+center are transform-safe.
+        card.bounds = CGRect(
             x: 0,
-            y: 66,
+            y: 0,
             width: bounds.width,
-            height: bounds.height - 66)
+            height: bounds.height - Self.cardTop)
+        card.center = CGPoint(
+            x: bounds.midX,
+            y: Self.cardTop + card.bounds.height / 2)
         grabber.frame = CGRect(
             x: (card.bounds.width - 36) / 2, y: 6, width: 36, height: 5)
         doneChip.frame = CGRect(
@@ -453,7 +488,7 @@ final class OnboardingActionExtensionSheetView: UIView {
             return
         }
         card.transform = CGAffineTransform(
-            translationX: 0, y: bounds.height - card.frame.minY)
+            translationX: 0, y: bounds.height - Self.cardTop)
         UIView.animate(
             withDuration: OnboardingShortcutRunTiming.sheetPresentDuration,
             delay: 0,
@@ -483,7 +518,7 @@ final class OnboardingActionExtensionSheetView: UIView {
             options: [.curveEaseIn, .beginFromCurrentState]
         ) {
             self.card.transform = CGAffineTransform(
-                translationX: 0, y: self.bounds.height - self.card.frame.minY)
+                translationX: 0, y: self.bounds.height - Self.cardTop)
             self.scrim.alpha = 0
         } completion: { _ in
             completion()

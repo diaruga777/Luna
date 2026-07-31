@@ -120,7 +120,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // notifications Luna posts, so asking at launch is the earliest honest
         // moment — there is no setup flow left to defer it to.
         UNUserNotificationCenter.current().delegate = self
+        #if DEBUG
+        // Demo/recording seam: `-onboardingStage` jumps straight into the
+        // Safari demonstration, which puts the system permission alert over
+        // the animation being inspected instead of over the intro where a
+        // person would have answered it.
+        if !ProcessInfo.processInfo.arguments
+            .contains("-skipNotificationAuthPrompt")
+        {
+            NotificationManager.requestAuthorization()
+        }
+        #else
         NotificationManager.requestAuthorization()
+        #endif
 
         // Mail fetch only where there's a mailbox to read: Downloader and Price
         // Tracker share by plain URL and connect no account (see `sharesByEmail`).

@@ -231,35 +231,56 @@ The root uses the production `CardCarouselViewController`:
    turn let the commit outlive the short reveals at the top of the page, which
    then started already finished: at production speed the headline snapped in
    with no shine at all while the slower body bloomed correctly (the 6×
-   `-slowOnboardingAnimations` run hid this entirely). For the same reason the
-   `GlyphPixelBloomView` clock is anchored to its first display-link tick and
-   the moon-reveal `CABasicAnimation`s carry no explicit `beginTime`.
+   `-slowOnboardingAnimations` run hid this entirely — verify wipe timing at
+   1×, e.g. `simctl io recordVideo` + frame analysis, and remember the
+   `-skipNotificationAuthPrompt` DEBUG arg so the permission alert doesn't
+   sit over the recording).
    **Everything is cut from ONE front with zero offset and the front itself
    has no marker — no rim, no line, only its effect.** The front leaves the
    screen top at sweep start and descends at `height / 2.2s`; each element's
    occluder edge starts 1pt above its own top exactly as the front arrives
    and travels at exactly the front's speed
-   (`revealFrontCrossingDistance / frontSpeed`), each obstruction tile
-   detaches at the instant the front line reaches its center (scheduled
-   through the same generation-guarded dispatch clock as the reveals — a
-   pre-scheduled `UIView.animate(delay:)` counts from its own commit and ran
-   a beat ahead), and the bloom's band position is slaved to the moon
-   layer's *presentation* translation each display-link tick, so the light
-   can never run ahead of or behind its own mask (a drifting clock is what
-   made the text "appear, then brighten in chunks"). The reveal is EXACTLY
-   the intro's — the same glyph-pixel bloom, with falloff distances scaled
-   by the front's speed relative to the intro line's (~46pt/s reference), so
-   every glyph brightens and cools over the same TIME as “You want to read
-   more…” despite the ~9× faster sweep (the bloom renders just a strip
-   around the edge, so article-length text sweeps at full frame rate). The
-   images ride the same light pass: `MoonRevealImageView` feeds its own
-   `GlyphPixelBloomView` a raster of the image as displayed whose alpha is
-   rebuilt from LUMINANCE — Quartz shadows key off alpha, and an opaque
-   photograph's black sky would otherwise glow like a full moon (note the
-   masking rule: a grayscale masking image KEEPS samples where it is white,
-   the opposite of true image masks) — at a lowered emitter gain (0.45) so
-   only genuinely bright pixels (the NASA moons, the icon's dome and book)
-   flare white-hot and cool back to their normal colors exactly like glyph
+   (`revealFrontCrossingDistance / frontSpeed`), and each obstruction tile
+   (~32pt — small enough that a fresh row detaches every ~80ms and reads as
+   one continuous crumble, plus a 0–33ms trailing-only scatter so rows don't
+   pop off in lockstep) detaches at the instant the front line reaches its
+   center, scheduled through the same generation-guarded dispatch clock as
+   the reveals in one bucket per frame-width of delay. **Each element's
+   reveal has NO CAAnimations at all**: `GlyphPixelBloomView`'s display link
+   is the wipe's one clock — per tick it advances progress (clamped to two
+   frames' worth, so a stall dilates the sweep instead of skipping glyphs
+   past their bright moment), moves the light, and hands the same progress
+   to the owner via `onProgress`, which places the moon occluder and reveal
+   mask directly (`setDisableActions`). CAAnimation begin times are stamped
+   when the transaction is encoded, so under a backed-up render server they
+   started already partway through — the mask snapped open in one frame with
+   no sweep; and a wall-clock teardown ripped the occlusion off while a slow
+   render was still mid-animation. Teardown now rides `onCompletion`.
+   The light itself is prerendered: `configure` builds the FULLY LIT image
+   (glyph raster + all eight stacked additive halo passes) once, in the
+   primed phase — `format.preferredRange = .standard` is LOAD-BEARING there,
+   because `UIGraphicsImageRenderer`'s default extended-range context
+   silently drops the CGContext shadows that ARE the halos (verified
+   empirically on the iOS 27 sim) — and the sweep just slides a
+   `CAGradientLayer` mask over it whose stops encode the (1-t)^1.3 cooling
+   curve over the speed-scaled reach plus a 12pt spill past the edge. The
+   old per-frame CPU pipeline (band-clipped raster draws + eight shadow
+   blurs per element per tick) starved the display link to a handful of
+   ticks per sweep and the light advanced in visible plateaus; and its four
+   coarse alpha bands, scaled ~8× by the article front speed, became
+   line-height slabs that blinked instead of cooling. The reveal is EXACTLY
+   the intro's — falloff distances scaled by the front's speed relative to
+   the intro line's (~46pt/s reference), so every glyph brightens and cools
+   over the same TIME as “You want to read more…” despite the ~9× faster
+   sweep. The images ride the same light pass: `MoonRevealImageView` feeds
+   its own `GlyphPixelBloomView` a raster of the image as displayed whose
+   alpha is rebuilt from LUMINANCE — Quartz shadows key off alpha, and an
+   opaque photograph's black sky would otherwise glow like a full moon (note
+   the masking rule: a grayscale masking image KEEPS samples where it is
+   white, the opposite of true image masks) — at a lowered emitter gain
+   (0.45, applied in `configure` where the lit image is built) so only
+   genuinely bright pixels (the NASA moons, the icon's dome and book) flare
+   white-hot and cool back to their normal colors exactly like glyph
    strokes, along the image's whole height as the front crosses it. The
    setup card, sharing the screen, comes out of the same sweep from behind a
    page-coloured curtain (`MoonRevealCurtainView`, occluder only, no rim) —

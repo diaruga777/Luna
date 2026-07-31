@@ -315,34 +315,17 @@ final class MoonRevealLineView: UIView {
         layoutIfNeeded()
         let travel = revealFrontCrossingDistance
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
-        let transform = CATransform3DMakeTranslation(0, travel, 0)
-        let finalCircleFrame = initialCircleFrame.offsetBy(dx: 0, dy: travel)
-        let initialRevealPath = revealPath(excluding: initialCircleFrame)
-        let finalRevealPath = revealPath(excluding: finalCircleFrame)
 
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        moonLayer.transform = transform
-        revealMaskLayer.path = finalRevealPath
-        CATransaction.commit()
-
-        // No explicit beginTime: a zero beginTime is stamped when the
-        // animation reaches the render tree, so a rendering backlog can never
-        // start the sweep already partway through its duration.
-        let moonAnimation = CABasicAnimation(keyPath: "transform")
-        moonAnimation.fromValue = CATransform3DIdentity
-        moonAnimation.toValue = transform
-        moonAnimation.duration = resolvedDuration
-        moonAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
-        moonAnimation.isRemovedOnCompletion = true
-        moonLayer.add(moonAnimation, forKey: "moonReveal")
-
-        // The bloom's cooling distance rides the front's speed: however fast
-        // the edge travels, every glyph spends the same TIME brightened and
-        // fading back as the intro line's glyphs do — the article-body sweep
-        // is ~9× faster than the intro's, so its bands stretch ~9× further.
-        // The light's position is slaved to the moon layer's presentation
-        // translation, so it can never run ahead of or behind the mask edge.
+        // The bloom's display link is the reveal's only clock: occluder,
+        // mask and light are all placed from the same per-tick progress, so
+        // they cannot drift apart. CAAnimations are deliberately absent —
+        // their begin time is stamped when the transaction is encoded, and
+        // a backed-up render server starts them already partway through, so
+        // the mask snapped fully open in one frame under load. The bloom's
+        // cooling distance rides the front's speed: however fast the edge
+        // travels, every glyph spends the same TIME brightened and fading
+        // back as the intro line's glyphs do — the article-body sweep is
+        // ~9× faster than the intro's, so its bands stretch ~9× further.
         let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
         pixelBloomView.reveal(
             circleTravel: travel,
@@ -350,30 +333,27 @@ final class MoonRevealLineView: UIView {
                 resolvedDuration),
             edgeBandScale: max(
                 1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
-            offsetProvider: { [weak moonLayer] in
-                moonLayer?.presentation().map { CGFloat($0.transform.m42) }
+            onProgress: { [weak self] progress in
+                guard let self else { return }
+                let offset = travel * progress
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.moonLayer.transform = CATransform3DMakeTranslation(
+                    0, offset, 0)
+                self.revealMaskLayer.path = self.revealPath(
+                    excluding: self.initialCircleFrame.offsetBy(
+                        dx: 0, dy: offset))
+                CATransaction.commit()
+            },
+            onCompletion: { [weak self] in
+                guard let self, self.didStartReveal else { return }
+                self.isFullyRevealed = true
+                self.isAccessibilityElement = true
+                self.finalLabel.layer.mask = nil
+                self.moonLayer.removeFromSuperlayer()
+                self.pixelBloomView.removeFromSuperview()
+                completion()
             })
-
-        let revealAnimation = CABasicAnimation(keyPath: "path")
-        revealAnimation.fromValue = initialRevealPath
-        revealAnimation.toValue = finalRevealPath
-        revealAnimation.duration = resolvedDuration
-        revealAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
-        revealAnimation.isRemovedOnCompletion = true
-        revealMaskLayer.add(revealAnimation, forKey: "opaqueGlyphReveal")
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
-        ) { [weak self] in
-            guard let self else { return }
-            self.isFullyRevealed = true
-            self.isAccessibilityElement = true
-            self.finalLabel.layer.mask = nil
-            self.moonLayer.removeFromSuperlayer()
-            self.pixelBloomView.stop()
-            self.pixelBloomView.removeFromSuperview()
-            completion()
-        }
     }
 
     func setText(_ text: String) {
@@ -457,21 +437,29 @@ final class MoonRevealLineView: UIView {
 
 /// Draws the transient light separately from the ordinary text.
 ///
-/// The emitter is rebuilt at display cadence by intersecting the descending
-/// circle's narrow trailing bands with a native-scale raster of the glyphs.
-/// Quartz shadows are then applied to that exact alpha image in additive passes.
-/// Keeping the padded result in its own view lets the glow illuminate pixels
-/// around the letters instead of being clipped back to the text mask.
+/// The FULLY LIT image — the glyph raster with every stacked additive halo
+/// pass applied — is rendered ONCE, when the view is configured (for the
+/// article that is the primed phase, under the Manage Extensions sheet).
+/// During the sweep, a translating gradient mask carves the moving cooling
+/// band out of that image: full heat at the descending edge, falling off
+/// behind it on the same curve the coarse bands used to approximate, plus a
+/// short spill past the edge so glyph halos still lick the unrevealed side.
+/// Per display-link tick the only work is moving that mask — the earlier
+/// per-frame CPU pipeline (band-clipped raster draws plus eight Quartz
+/// shadow blurs, per element) starved the display link to a handful of
+/// ticks per sweep and the light advanced in visible plateaus.
+///
+/// This display link is also the wipe's ONE clock: `onProgress` fires every
+/// tick so the owner can place its occluder and reveal mask at exactly the
+/// band's own position — light and edge cannot drift apart because they are
+/// the same number. CAAnimations are unusable here: their begin time is
+/// stamped when the transaction is encoded, so a backed-up render server
+/// starts them already partway through (the mask then snaps open with no
+/// sweep at all).
 ///
 /// Internal (not private): the mock Safari article's images ride the same
 /// light pass, fed a raster of the image instead of glyph alpha.
 final class GlyphPixelBloomView: UIView {
-    struct EdgeBand {
-        let inner: CGFloat
-        let outer: CGFloat
-        let alpha: CGFloat
-    }
-
     struct HaloPass {
         let radius: CGFloat
         let alpha: CGFloat
@@ -484,12 +472,17 @@ final class GlyphPixelBloomView: UIView {
     /// glyph's brighten-and-cool takes the same TIME at any front speed.
     static let referenceFrontSpeed: CGFloat = 46
 
-    private static let edgeFalloff = [
-        EdgeBand(inner: 0, outer: 1.75, alpha: 1.00),
-        EdgeBand(inner: 1.75, outer: 4.00, alpha: 0.72),
-        EdgeBand(inner: 4.00, outer: 7.25, alpha: 0.32),
-        EdgeBand(inner: 7.25, outer: 10.50, alpha: 0.09),
-    ]
+    /// The cooling reach behind the edge at the reference speed, and the
+    /// falloff exponent — alpha ≈ (1-t)^1.3 matches the midpoints of the
+    /// original four coarse bands. The curve is baked into the gradient
+    /// mask's stops, so the staircase the coarse bands produced at high
+    /// front speeds (line-height slabs of distinct brightness, blinking on
+    /// and off) cannot come back: the GPU interpolates the stops smoothly.
+    private static let falloffReach: CGFloat = 10.5
+    private static let falloffExponent: CGFloat = 1.3
+    /// How far the light spills PAST the edge onto not-yet-revealed pixels,
+    /// echoing how halos always bled a little beyond the mask.
+    private static let edgeSpill: CGFloat = 12
 
     // Several optically additive passes are intentional. A single CALayer
     // shadow reads as soft text; stacked scales produce a clipped white core,
@@ -506,26 +499,22 @@ final class GlyphPixelBloomView: UIView {
         HaloPass(radius: 2, alpha: 1.00),
     ]
 
+    private let litLayer = CALayer()
+    private let gradientMask = CAGradientLayer()
     private var glyphImage: UIImage?
     private var glyphFrame = CGRect.zero
     private var initialCircleFrame = CGRect.zero
     private var circleTravel: CGFloat = 0
     private var progress: CGFloat = 0
-    private var revealStartTime: CFTimeInterval = 0
+    private var lastTickTime: CFTimeInterval = 0
     private var revealDuration: CFTimeInterval = 0
     private var displayLink: CADisplayLink?
-    private var emitterRenderer: UIGraphicsImageRenderer?
     private var edgeSagitta: CGFloat = 0
     private var edgeBandScale: CGFloat = 1
     private var rasterScale: CGFloat = 1
-    private var offsetProvider: (() -> CGFloat?)?
-    private var didSampleOffset = false
-    /// Per-pass alpha for the additive passes. Thin glyph strokes want the
-    /// full 1 — their saturation to a white core is the intro's look. A
-    /// dense raster (a photograph) saturates even its mid-tones under eight
-    /// additive passes and reads as a white slab; its owner lowers the gain
-    /// so only genuinely bright pixels reach white heat.
     private var emitterGain: CGFloat = 1
+    private var onProgress: ((CGFloat) -> Void)?
+    private var onCompletion: (() -> Void)?
 
     var usesRasterizedGlyphPixels: Bool {
         glyphImage != nil && !glyphFrame.isEmpty
@@ -541,7 +530,12 @@ final class GlyphPixelBloomView: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
-        contentMode = .redraw
+        litLayer.contentsGravity = .resize
+        litLayer.isHidden = true
+        layer.addSublayer(litLayer)
+        gradientMask.startPoint = CGPoint(x: 0.5, y: 0)
+        gradientMask.endPoint = CGPoint(x: 0.5, y: 1)
+        litLayer.mask = gradientMask
     }
 
     @available(*, unavailable)
@@ -573,89 +567,98 @@ final class GlyphPixelBloomView: UIView {
     }
 
     /// The general emitter form: any raster works as the light source — the
-    /// additive passes brighten wherever it has luminance, so an image's
-    /// bright pixels flare exactly the way glyph alpha does.
+    /// halo passes brighten wherever it has alpha, so an image raster whose
+    /// alpha was rebuilt from luminance flares exactly the way glyph alpha
+    /// does. `emitterGain` scales every pass: thin glyph strokes want the
+    /// full 1 (their saturation to a white core is the intro's look), while
+    /// a dense photograph saturates even its mid-tones under eight additive
+    /// passes and would read as a white slab — its owner lowers the gain so
+    /// only genuinely bright pixels reach white heat. Rendering the lit
+    /// image happens HERE, once — never during the sweep.
     func configure(
         raster: UIImage,
         rasterFrame: CGRect,
         circleFrame: CGRect,
-        scale: CGFloat
+        scale: CGFloat,
+        emitterGain: CGFloat = 1
     ) {
         glyphImage = raster
         glyphFrame = rasterFrame
         initialCircleFrame = circleFrame
         rasterScale = scale
+        self.emitterGain = min(max(emitterGain, 0.05), 1)
         progress = 0
 
         let radius = circleFrame.width / 2
         let halfWidth = bounds.width / 2
         edgeSagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
-        setNeedsDisplay()
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = false
+        // Standard range is LOAD-BEARING: UIGraphicsImageRenderer's default
+        // (automatic/extended range) context silently drops CGContext
+        // shadows — verified empirically on the iOS 27 simulator with a
+        // variant matrix — and the shadows ARE the halos. The old per-frame
+        // pipeline never hit this because its shadow passes ran in the
+        // view's own draw(_:) backing context.
+        format.preferredRange = .standard
+        let lit = UIGraphicsImageRenderer(
+            bounds: bounds, format: format
+        ).image { rendererContext in
+            let context = rendererContext.cgContext
+            context.setBlendMode(.plusLighter)
+            for halo in Self.haloPasses {
+                context.saveGState()
+                context.setShadow(
+                    offset: .zero,
+                    blur: halo.radius,
+                    color: UIColor.white
+                        .withAlphaComponent(halo.alpha * self.emitterGain)
+                        .cgColor)
+                raster.draw(
+                    in: rasterFrame,
+                    blendMode: .plusLighter,
+                    alpha: self.emitterGain)
+                context.restoreGState()
+            }
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        litLayer.frame = bounds
+        litLayer.contents = lit.cgImage
+        litLayer.isHidden = true
+        CATransaction.commit()
     }
 
     /// The widest cooling distance for the current front speed.
     private var scaledFalloffReach: CGFloat {
-        (Self.edgeFalloff.last?.outer ?? 12) * edgeBandScale
+        Self.falloffReach * edgeBandScale
     }
 
-    /// The emitting band: everything within the falloff distance outside the
-    /// edge, plus the bow of the near-flat arc across the view's width.
-    private var stripHeight: CGFloat {
-        scaledFalloffReach + edgeSagitta + 12
-    }
-
-    private func currentStripRect() -> CGRect {
-        let edgeTop = initialCircleFrame.minY + circleTravel * progress
-        return CGRect(
-            x: 0,
-            y: edgeTop - scaledFalloffReach - 4,
-            width: bounds.width,
-            height: stripHeight)
-    }
-
-    /// `offsetProvider` slaves the light to the occluder itself: it returns
-    /// the moon layer's current *presentation* translation, so the emitting
-    /// band sits exactly on the rendered edge no matter how the clocks
-    /// drift — light lagging its own mask is what read as "the text appears,
-    /// then brightens in chunks". Without a provider the band falls back to
-    /// wall-clock progress anchored at the first display-link tick.
     func reveal(
         circleTravel: CGFloat,
         duration: CFTimeInterval,
         edgeBandScale: CGFloat = 1,
-        emitterGain: CGFloat = 1,
-        offsetProvider: (() -> CGFloat?)? = nil
+        onProgress: ((CGFloat) -> Void)? = nil,
+        onCompletion: (() -> Void)? = nil
     ) {
         stop()
         self.circleTravel = circleTravel
         self.edgeBandScale = max(edgeBandScale, 1)
-        self.emitterGain = min(max(emitterGain, 0.05), 1)
-        self.offsetProvider = offsetProvider
-        didSampleOffset = false
+        self.onProgress = onProgress
+        self.onCompletion = onCompletion
         revealDuration = max(duration, 0.001)
-        // Anchored by the first display-link tick, not by this call: when a
-        // heavy transaction separates the call from the first rendered frame,
-        // a wall-clock anchor would start the light already cooled.
-        revealStartTime = 0
+        lastTickTime = 0
         progress = 0
 
-        // Only a strip around the circle's leading edge ever emits light (the
-        // bands hug the edge), so the per-frame render is a strip, not the
-        // whole view. A view-height emitter made the display link collapse on
-        // article-length text: whole lines never got their bright moment
-        // because the frame rate fell to a handful of samples. The strip is
-        // sized here because the falloff reach depends on the front's speed.
-        let emitterFormat = UIGraphicsImageRendererFormat()
-        emitterFormat.scale = rasterScale
-        emitterFormat.opaque = false
-        emitterRenderer = UIGraphicsImageRenderer(
-            size: CGSize(width: bounds.width, height: stripHeight),
-            format: emitterFormat)
-        setNeedsDisplay()
+        installGradientMask()
+        placeGradientMask()
+        litLayer.isHidden = false
 
         let displayLink = CADisplayLink(
             target: self,
-            selector: #selector(drawNextRevealFrame(_:)))
+            selector: #selector(advanceRevealFrame(_:)))
         displayLink.preferredFrameRateRange = CAFrameRateRange(
             minimum: 30,
             maximum: 120,
@@ -667,90 +670,63 @@ final class GlyphPixelBloomView: UIView {
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
-        offsetProvider = nil
+        onProgress = nil
+        onCompletion = nil
     }
 
-    override func draw(_ rect: CGRect) {
-        guard let emitter = makeEmitterImage(),
-              let context = UIGraphicsGetCurrentContext()
-        else { return }
-
-        context.saveGState()
-        context.setBlendMode(.plusLighter)
-        for halo in Self.haloPasses {
-            context.saveGState()
-            context.setShadow(
-                offset: .zero,
-                blur: halo.radius,
-                color: UIColor.white
-                    .withAlphaComponent(halo.alpha * emitterGain).cgColor)
-            emitter.image.draw(
-                in: emitter.rect,
-                blendMode: .plusLighter,
-                alpha: emitterGain)
-            context.restoreGState()
+    /// Stops encode the (1-t)^exponent cooling curve from cold (top, oldest)
+    /// to full heat at the edge, then the short spill past it.
+    private func installGradientMask() {
+        let reach = scaledFalloffReach
+        let height = reach + Self.edgeSpill
+        var colors: [CGColor] = []
+        var locations: [NSNumber] = []
+        let samples = 12
+        for sample in 0...samples {
+            let fraction = CGFloat(sample) / CGFloat(samples)
+            colors.append(
+                UIColor.white.withAlphaComponent(
+                    pow(fraction, Self.falloffExponent)).cgColor)
+            locations.append(NSNumber(value: fraction * reach / height))
         }
-        context.restoreGState()
+        colors.append(UIColor.white.withAlphaComponent(0).cgColor)
+        locations.append(NSNumber(value: 1))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientMask.colors = colors
+        gradientMask.locations = locations
+        gradientMask.bounds = CGRect(
+            x: 0, y: 0, width: bounds.width, height: height)
+        gradientMask.anchorPoint = .zero
+        CATransaction.commit()
     }
 
-    @objc private func drawNextRevealFrame(_ link: CADisplayLink) {
-        if revealStartTime == 0 { revealStartTime = link.timestamp }
-        let previousStrip = currentStripRect()
-        if let offsetProvider {
-            if let offset = offsetProvider() {
-                didSampleOffset = true
-                progress = min(max(offset / max(circleTravel, 1), 0), 1)
-            } else {
-                // nil before the occluder's animation is committed, and again
-                // after it is removed: not-yet-started vs finished.
-                progress = didSampleOffset ? 1 : 0
-            }
-        } else {
-            let elapsed = link.timestamp - revealStartTime
-            progress = min(max(CGFloat(elapsed / revealDuration), 0), 1)
-        }
-        // Redraw covers where the glow was and where it is now — the widest
-        // halo included — so old light is cleared without repainting the view.
-        let glowReach = (Self.haloPasses.map(\.radius).max() ?? 30) + 4
-        setNeedsDisplay(
-            previousStrip
-                .union(currentStripRect())
-                .insetBy(dx: -glowReach, dy: -glowReach))
+    /// The full-heat line rides the arc's mid-height; the flat gradient is
+    /// within half a sagitta of the true curved edge everywhere.
+    private func placeGradientMask() {
+        let edgeY = initialCircleFrame.minY + edgeSagitta / 2
+            + circleTravel * progress
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientMask.position = CGPoint(x: 0, y: edgeY - scaledFalloffReach)
+        CATransaction.commit()
+    }
+
+    @objc private func advanceRevealFrame(_ link: CADisplayLink) {
+        // Incremental, clamped time: the front advances by real frame time
+        // but never more than two frames' worth per tick, so a rendering
+        // stall dilates the sweep instead of teleporting the light.
+        let dt = lastTickTime == 0
+            ? link.targetTimestamp - link.timestamp
+            : min(link.timestamp - lastTickTime, 2.0 / 60.0)
+        progress = min(progress + CGFloat(dt / revealDuration), 1)
+        placeGradientMask()
+        onProgress?(progress)
         if progress >= 1 {
+            let completion = onCompletion
             stop()
+            litLayer.isHidden = true
+            completion?()
         }
-    }
-
-    private func makeEmitterImage() -> (image: UIImage, rect: CGRect)? {
-        guard let glyphImage, let emitterRenderer else { return nil }
-        let circleFrame = initialCircleFrame.offsetBy(
-            dx: 0,
-            dy: circleTravel * progress)
-        let strip = currentStripRect()
-
-        let image = emitterRenderer.image { rendererContext in
-            let context = rendererContext.cgContext
-            context.translateBy(x: -strip.minX, y: -strip.minY)
-            for band in Self.edgeFalloff {
-                context.saveGState()
-                let ring = UIBezierPath(
-                    ovalIn: circleFrame.insetBy(
-                        dx: -band.outer * edgeBandScale,
-                        dy: -band.outer * edgeBandScale))
-                ring.append(UIBezierPath(
-                    ovalIn: circleFrame.insetBy(
-                        dx: -band.inner * edgeBandScale,
-                        dy: -band.inner * edgeBandScale)))
-                ring.usesEvenOddFillRule = true
-                context.addPath(ring.cgPath)
-                context.clip(using: .evenOdd)
-                glyphImage.draw(
-                    in: glyphFrame,
-                    blendMode: .normal,
-                    alpha: band.alpha)
-                context.restoreGState()
-            }
-        }
-        return (image, strip)
     }
 }

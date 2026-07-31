@@ -16,12 +16,17 @@ private enum OnboardingArticleReplicaPalette {
 
 enum OnboardingArticleReplicaTiming {
     static let shatterDuration: TimeInterval = 0.86
+    /// The cascade edge's speed down each element. Brisker than the intro
+    /// line's own ~46pt/s — the page is tall — while the bloom's falloff
+    /// bands stretch with the ratio, so every glyph's brighten-and-cool
+    /// still takes exactly the intro's TIME; only the edge travels faster.
+    static let cascadeFrontSpeed: CGFloat = 70
     /// The next element's reveal sets out when the one above it is this far
     /// through — the cascade equivalent of the intro's reading beat between
     /// its two lines.
-    static let cascadeOverlap: Double = 0.5
+    static let cascadeOverlap: Double = 0.35
     /// The setup-card curtain has no light of its own, so it need not crawl
-    /// at the intro's pace; it just slides off within this long.
+    /// at the cascade's pace; it just slides off within this long.
     static let curtainMaxDuration: TimeInterval = 1.6
 }
 
@@ -49,8 +54,12 @@ final class OnboardingArticleReplicaView: UIView {
 
     private struct ShatterPiece {
         let view: UIView
-        let delay: TimeInterval
+        let midY: CGFloat
+        var arrival: TimeInterval
+        let scatter: TimeInterval
         let flight: CGAffineTransform
+
+        var delay: TimeInterval { arrival + scatter }
     }
 
     /// One stretch of the cascading front: within [top, bottom] the light
@@ -311,20 +320,34 @@ final class OnboardingArticleReplicaView: UIView {
         preparedShatterPieces = clutterContainer.subviews.flatMap {
             buildShatterPieces(for: $0)
         }
+        // Strictly top-to-bottom, across every view at once: the cascade's
+        // overlapping legs make raw arrival dip at element boundaries (a
+        // lower element's light sets out while the one above is still
+        // mid-crossing), and those dips read as a chunk mid-popup flying
+        // before the rows above it. A running maximum down the page keeps
+        // each tile at or after every tile above it; the dipped stretches
+        // just detach together, textured by their scatter.
+        preparedShatterPieces.sort { $0.midY < $1.midY }
+        var runningArrival: TimeInterval = 0
+        for index in preparedShatterPieces.indices {
+            runningArrival = max(
+                runningArrival, preparedShatterPieces[index].arrival)
+            preparedShatterPieces[index].arrival = runningArrival
+        }
     }
 
     /// THE ARTICLE IS THE INTRO'S ANIMATION, ELEMENT BY ELEMENT. Every
-    /// element's edge crosses it at exactly the intro line's own speed
-    /// (`GlyphPixelBloomView.referenceFrontSpeed`), which keeps the bloom's
-    /// band scale at 1 — the identical deliberate light of “You want to
-    /// read more.”, not a sped-up derivative of it. The reveals cascade:
-    /// the icon and headline set out together (they share the first row),
-    /// and each following element sets out when the one above it is halfway
-    /// through, echoing the intro's line-after-line rhythm. The tiles and
-    /// the setup-card curtain are cut from the same schedule so nothing
-    /// leads or trails the light.
+    /// element's edge crosses it at `cascadeFrontSpeed`, a brisk multiple
+    /// of the intro line's pace whose band stretch keeps each glyph's
+    /// brighten-and-cool at the intro's exact TIME — the same deliberate
+    /// light of “You want to read more.”, just a faster-travelling edge.
+    /// The reveals cascade: the icon and headline set out together (they
+    /// share the first row), and each following element sets out when the
+    /// one above it is `cascadeOverlap` through, echoing the intro's
+    /// line-after-line rhythm. The tiles and the setup-card curtain are cut
+    /// from the same schedule so nothing leads or trails the light.
     private func computeCascade() {
-        let speed = GlyphPixelBloomView.referenceFrontSpeed
+        let speed = OnboardingArticleReplicaTiming.cascadeFrontSpeed
         let rows: [[(view: UIView, crossing: CGFloat, reveal: (TimeInterval) -> Void)]] = [
             [
                 (appIcon, appIcon.revealFrontCrossingDistance,
@@ -500,11 +523,10 @@ final class OnboardingArticleReplicaView: UIView {
             target.isHidden = true
             return []
         }
-        // ~32pt tiles: at the front's speed a fresh row detaches every
-        // ~80ms, fast enough to read as one continuous crumble — the old
-        // ~56pt tiles came off as thick slabs, one every ~135ms.
-        let columns = min(max(Int(target.bounds.width / 32), 4), 14)
-        let rows = min(max(Int(target.bounds.height / 32), 3), 14)
+        // ~22pt tiles: small enough that the crumble reads as a continuous
+        // granular flow — larger tiles came off as discernible slabs.
+        let columns = min(max(Int(target.bounds.width / 22), 4), 20)
+        let rows = min(max(Int(target.bounds.height / 22), 3), 20)
         let targetFrame = clutterContainer.convert(target.frame, to: self)
         let height = max(bounds.height, 1)
         var pieces: [ShatterPiece] = []
@@ -537,7 +559,7 @@ final class OnboardingArticleReplicaView: UIView {
                 // trails, no tile flies before the light has arrived.
                 let parity: CGFloat = (row + column).isMultiple(of: 2) ? 1 : -1
                 let scatter = TimeInterval((row * 3 + column * 7) % 4) * 0.011
-                let delay = frontArrival(atPageY: frame.midY) + scatter
+                let arrival = frontArrival(atPageY: frame.midY)
                 let delta = CGPoint(
                     x: frame.midX - bounds.midX,
                     y: frame.midY + height)
@@ -551,7 +573,11 @@ final class OnboardingArticleReplicaView: UIView {
                     .rotated(by: parity * (0.28 + CGFloat(column % 3) * 0.11))
                     .scaledBy(x: 0.72, y: 0.72)
                 pieces.append(ShatterPiece(
-                    view: piece, delay: delay, flight: flight))
+                    view: piece,
+                    midY: frame.midY,
+                    arrival: arrival,
+                    scatter: scatter,
+                    flight: flight))
             }
         }
 

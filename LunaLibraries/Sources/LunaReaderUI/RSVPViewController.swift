@@ -532,12 +532,21 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             name: UIApplication.willEnterForegroundNotification, object: nil)
     }
 
+    /// Mirrors the host's read-aloud circle across the reader: the same corner
+    /// inset from the top-LEADING corner that the deck's chrome row takes from
+    /// the card's top-trailing one, so the two toggles read as a pair.
+    /// `safeAreaInsets.top` is 0 while the reader is inside a card and non-zero
+    /// when it owns the whole screen, so one expression serves both hosts.
     private func layoutEyeTrackingButton() {
         guard !eyeTrackingButton.isHidden else { return }
         let size = EyeTrackingToggleButton.diameter
+        let inset = Self.eyeTrackingCornerInset
         eyeTrackingButton.frame = CGRect(
-            x: 16, y: view.safeAreaInsets.top + topContentInset + 10, width: size, height: size)
+            x: inset, y: view.safeAreaInsets.top + inset, width: size, height: size)
     }
+
+    /// Matches `ArticleCardsViewController.chromeCardCornerInset`.
+    private static let eyeTrackingCornerInset: CGFloat = 12
 
     private func refreshEyeTrackingButton() {
         guard let gazeCoordinator else { return }

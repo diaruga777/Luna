@@ -108,12 +108,20 @@ final class RSVPEyeTrackingTests: XCTestCase {
             "no TrueDepth camera (or an app extension) means no toggle at all")
     }
 
-    func testToggleSitsInTheTopLeftClearOfTheReadingLayout() throws {
+    /// The toggle mirrors the deck's read-aloud circle: same diameter, same
+    /// 12pt corner inset, opposite corner — so the pair reads as one row across
+    /// the card's top edge.
+    func testToggleSitsInTheTopLeadingCornerOppositeTheReadAloudCircle() throws {
         let reader = makeReader()
         let button = try toggle(in: reader)
         LayoutAssertions.assertVisibleAndInBounds(button, in: reader.view)
-        XCTAssertLessThan(button.frame.midX, reader.view.bounds.width / 3)
-        XCTAssertLessThan(button.frame.midY, reader.view.bounds.height / 4)
+        XCTAssertEqual(button.frame.minX, 12, accuracy: 0.5)
+        XCTAssertEqual(
+            button.frame.minY, reader.view.safeAreaInsets.top + 12, accuracy: 0.5)
+        XCTAssertEqual(
+            button.frame.width, button.frame.height, accuracy: 0.5,
+            "a capsule-cornered toggle is only a circle while it stays square")
+        XCTAssertEqual(button.frame.width, EyeTrackingToggleButton.diameter, accuracy: 0.5)
     }
 
     // MARK: - The three states

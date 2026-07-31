@@ -30,6 +30,10 @@ final class RSVPGazeCoordinator {
 
     private(set) var state: EyeTrackingState
     private var monitor = GazeAttentionMonitor()
+    /// Set only for the pause request emitted by this coordinator. It is
+    /// consumed by the next *manual* play press, so ordinary play never
+    /// accidentally stands eye tracking down.
+    private var awaitingManualResumeAfterGazePause = false
     private let tracker: GazeTracking
     /// The view the focal point is expressed in, used to convert gaze samples
     /// out of screen space.
@@ -58,9 +62,12 @@ final class RSVPGazeCoordinator {
     var displayState: EyeTrackingDisplayState { state.displayState }
     var isToggleInteractive: Bool { state.isToggleInteractive }
 
-    /// True while the most recent gaze estimate was off the focal word — the
-    /// test a play press makes to decide whether it is an override.
-    var isLookingAway: Bool { state.isWatching && monitor.isAway }
+    /// The legacy controller seam asks whether a play press is an override.
+    /// The latch is authoritative: a stale away sample alone must not make a
+    /// normal play press disable tracking.
+    var isLookingAway: Bool {
+        state.isWatching && (awaitingManualResumeAfterGazePause || monitor.isAway)
+    }
 
     func attach(to view: UIView) { referenceView = view }
 
@@ -69,6 +76,7 @@ final class RSVPGazeCoordinator {
     func setPlaying(_ playing: Bool) {
         guard state.isPlaying != playing else { return }
         state.isPlaying = playing
+        if playing { awaitingManualResumeAfterGazePause = false }
         // Every excursion is judged against the playback it might interrupt;
         // starting fresh means a glance taken while paused never counts.
         monitor.resetAllowance()
@@ -87,9 +95,11 @@ final class RSVPGazeCoordinator {
     /// were legitimately elsewhere while they aimed at the control.
     func focalPositionDidJump() { monitor.resetAllowance() }
 
-    /// The user pressed play while looking away — an explicit override that
-    /// keeps playback running and stands the feature down.
+    /// The controller invokes this from a user play press. It has an effect
+    /// only if this coordinator actually caused the preceding pause.
     func notePlayOverride() {
+        guard awaitingManualResumeAfterGazePause else { return }
+        awaitingManualResumeAfterGazePause = false
         guard state.isWatching else { return }
         state.overrideWithPlay()
         publish()
@@ -98,6 +108,7 @@ final class RSVPGazeCoordinator {
     /// Playback stopped by any route other than gaze. Reverts a play-override
     /// to whatever the user's own setting was.
     func notePlaybackStoppedDeliberately() {
+        awaitingManualResumeAfterGazePause = false
         guard state.playOverridden else { return }
         state.playbackStoppedDeliberately()
         publish()
@@ -148,6 +159,21 @@ final class RSVPGazeCoordinator {
 
     private func handle(_ sample: GazeSample) {
         guard state.isWatching, let view = referenceView, let delegate else { return }
+        // A missing face is an explicit lack of signal, not evidence that the
+        // reader looked away. In dim light and during ARKit relocalisation we
+        // choose the harmless failure mode: do not interrupt reading.
+        if case .faceLost = sample {
+            if !state.gazeUnavailable {
+                state.gazeUnavailable = true
+                publish()
+            }
+            monitor.clear()
+            return
+        }
+        if state.gazeUnavailable {
+            state.gazeUnavailable = false
+            publish()
+        }
         let focus = delegate.gazeCoordinatorFocalPoint(self)
         let converted = converted(sample, in: view)
         let trippedThreshold = monitor.update(
@@ -156,6 +182,7 @@ final class RSVPGazeCoordinator {
         // press taken mid-glance be recognised as an override — but only a
         // running playback is ever interrupted.
         guard trippedThreshold, state.isPlaying else { return }
+        awaitingManualResumeAfterGazePause = true
         delegate.gazeCoordinatorRequestsPause(self)
     }
 

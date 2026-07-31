@@ -8,12 +8,14 @@ import LunaModels
 import UIKit
 
 /// The RSVP reader's eye-tracking toggle: the same Liquid Glass circle as the
-/// reader chrome's read-aloud button, showing one of three states.
+/// reader chrome's read-aloud button, showing one of four states.
 ///
 /// - `.disabled` — a closed eyelid, grey.
 /// - `.enabled` — an open eye, grey.
 /// - `.active` — the same open eye in the reading accent, while it is actually
 ///   watching a running playback.
+/// - `.unavailable` — a red slashed eye while the enabled tracker has lost the
+///   reader's eyes; it deliberately has no effect until a signal returns.
 public final class EyeTrackingToggleButton: UIButton {
 
     public static let diameter: CGFloat = 38
@@ -49,10 +51,22 @@ public final class EyeTrackingToggleButton: UIButton {
     }
 
     private func applyState() {
-        configuration?.image = Self.glyph(for: trackingState)
-        let tint: UIColor = trackingState == .active
-            ? GlassStyle.readingAccent : LunaColors.secondaryText
-        configuration?.baseForegroundColor = tint
+        var updated = configuration ?? GlassStyle.circularButtonConfiguration(symbol: "eye.fill", padding: 8)
+        updated.image = Self.glyph(for: trackingState)
+        let tint: UIColor
+        switch trackingState {
+        case .active:
+            // Assign the configuration back as a value. Mutating through an
+            // optional configuration leaves a glass button's foreground at
+            // UIKit's default white on some OS releases.
+            tint = GlassStyle.readingAccent
+        case .unavailable:
+            tint = LunaColors.errorAccent
+        case .disabled, .enabled:
+            tint = LunaColors.secondaryText
+        }
+        updated.baseForegroundColor = tint
+        configuration = updated
         tintColor = tint
         accessibilityLabel = Self.accessibilityLabel(for: trackingState)
         accessibilityValue = Self.accessibilityValue(for: trackingState)
@@ -65,6 +79,10 @@ public final class EyeTrackingToggleButton: UIButton {
         case .enabled, .active:
             return UIImage(
                 systemName: "eye.fill",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: glyphPointSize))
+        case .unavailable:
+            return UIImage(
+                systemName: "eye.slash.fill",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: glyphPointSize))
         }
     }
@@ -79,6 +97,7 @@ public final class EyeTrackingToggleButton: UIButton {
         case .disabled: return L10n.string("Off")
         case .enabled: return L10n.string("Watching")
         case .active: return L10n.string("Pausing when you look away")
+        case .unavailable: return L10n.string("Gaze unavailable")
         }
     }
 }

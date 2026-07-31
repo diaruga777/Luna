@@ -30,6 +30,14 @@ final class EyeTrackingStateTests: XCTestCase {
         XCTAssertEqual(state.displayState, .disabled)
     }
 
+    func testUnavailableSignalOverridesActiveWithoutTurningTheSettingOff() {
+        let state = EyeTrackingState(userEnabled: true, isPlaying: true, gazeUnavailable: true)
+        XCTAssertEqual(state.displayState, .unavailable)
+        XCTAssertTrue(state.userEnabled)
+        XCTAssertTrue(state.isWatching,
+                      "the camera should keep trying so the state can recover when eyes return")
+    }
+
     // MARK: - Tapping
 
     func testTapEnablesFromDisabledAndDisablesFromEitherOtherState() {

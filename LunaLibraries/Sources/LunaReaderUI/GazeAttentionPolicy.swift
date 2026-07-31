@@ -14,7 +14,8 @@ public enum GazeSample: Equatable {
     /// The gaze ray missed the display — the reader is looking past the device.
     case offScreen
     /// No usable face: the reader turned away, covered the camera, or the
-    /// session dropped tracking. Treated exactly like `offScreen`.
+    /// session dropped tracking. This is an unavailable signal, never a
+    /// reason to pause playback.
     case faceLost
 }
 
@@ -30,9 +31,10 @@ public enum GazeSample: Equatable {
 public struct GazeAttentionPolicy: Equatable {
 
     /// Gaze inside this radius of the focal word counts as reading. Generous on
-    /// purpose: gaze estimates from a front-facing camera are good to a few
+    /// purpose: gaze estimates from a front-facing camera are good to several
     /// centimetres at arm's length, not to the letter, and RSVP's surrounding
-    /// context lanes are legitimately part of the reading surface.
+    /// context lanes are legitimately part of the reading surface. A false
+    /// pause is much more disruptive than a delayed pause.
     public var focusRadius: CGFloat
     /// The extra distance beyond `focusRadius` over which tolerance falls from
     /// `nearTolerance` to `farTolerance`. Roughly the height of a phone, so
@@ -41,14 +43,14 @@ public struct GazeAttentionPolicy: Equatable {
     /// Dwell allowed just outside `focusRadius`.
     public var nearTolerance: TimeInterval
     /// Dwell allowed at `focusRadius + falloffDistance` and beyond — including
-    /// off-screen and face-lost.
+    /// a confidently off-screen gaze.
     public var farTolerance: TimeInterval
 
     public init(
-        focusRadius: CGFloat = 170,
+        focusRadius: CGFloat = 240,
         falloffDistance: CGFloat = 420,
-        nearTolerance: TimeInterval = 1.5,
-        farTolerance: TimeInterval = 0.4
+        nearTolerance: TimeInterval = 1.8,
+        farTolerance: TimeInterval = 0.7
     ) {
         self.focusRadius = focusRadius
         self.falloffDistance = falloffDistance
@@ -65,14 +67,17 @@ public struct GazeAttentionPolicy: Equatable {
         return nearTolerance + (farTolerance - nearTolerance) * travelled
     }
 
-    /// The tolerance for a whole sample. Off-screen and face-lost skip the
-    /// distance curve entirely and take the shortest fuse.
+    /// The tolerance for a whole sample. Off-screen skips the distance curve
+    /// entirely and takes the shortest fuse. A lost face is not a gaze sample;
+    /// the coordinator marks tracking unavailable and never passes it here.
     public func tolerance(for sample: GazeSample, focus: CGPoint) -> TimeInterval {
         switch sample {
         case .point(let point):
             return tolerance(forDistance: hypot(point.x - focus.x, point.y - focus.y))
-        case .offScreen, .faceLost:
+        case .offScreen:
             return farTolerance
+        case .faceLost:
+            return .infinity
         }
     }
 }

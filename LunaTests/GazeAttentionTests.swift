@@ -38,10 +38,10 @@ final class GazeAttentionTests: XCTestCase {
         XCTAssertEqual(policy.tolerance(forDistance: 10_000), policy.farTolerance, accuracy: 0.001)
     }
 
-    func testLookingPastTheScreenGetsTheShortestFuse() {
+    func testLookingPastTheScreenGetsTheShortestFuseButALostFaceDoesNotPause() {
         XCTAssertEqual(policy.tolerance(for: .offScreen, focus: focus), policy.farTolerance)
-        XCTAssertEqual(policy.tolerance(for: .faceLost, focus: focus), policy.farTolerance,
-                       "a lost face means the reader turned away — same as off-screen")
+        XCTAssertEqual(policy.tolerance(for: .faceLost, focus: focus), .infinity,
+                       "a lost face is uncertainty, so it must never pause reading")
     }
 
     // MARK: - Monitor

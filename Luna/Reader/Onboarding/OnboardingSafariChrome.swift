@@ -16,7 +16,6 @@ final class SafariBottomBar: UIView {
     private let more = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let hostLabel = UILabel()
     private let urlHighlight = OnboardingURLHighlightView()
-    private var pageMenuIcon: UIImageView?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -49,7 +48,6 @@ final class SafariBottomBar: UIView {
         backForward.contentView.addSubview(nav)
 
         let page = icon("text.justify.leading", alpha: 0.86)
-        pageMenuIcon = page
         hostLabel.text = "luna.app"
         hostLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         hostLabel.textColor = UIColor(white: 0.10, alpha: 1)
@@ -129,17 +127,6 @@ final class SafariBottomBar: UIView {
 
     func setURLHighlighted(_ highlighted: Bool) {
         urlHighlight.setHighlighted(highlighted)
-    }
-
-    /// Where the address pill's page button sits, in the bar's coordinates —
-    /// the anchor the mock Safari page menu grows out of.
-    var pageMenuAnchorPoint: CGPoint {
-        guard let pageMenuIcon else {
-            return CGPoint(x: address.frame.minX + 24, y: address.frame.minY)
-        }
-        return convert(
-            CGPoint(x: pageMenuIcon.bounds.midX, y: pageMenuIcon.bounds.minY),
-            from: pageMenuIcon)
     }
 
     var isURLHighlighted: Bool { urlHighlight.isHighlighted }

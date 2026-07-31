@@ -126,12 +126,12 @@ The root uses the production `CardCarouselViewController`:
    The mock page alone uses a dark
    neutral grey that keeps white copy legible. The demonstration then plays a
    mock extension-enable pass through Safari's own UI
-   (`OnboardingSafariSetupMocks.swift`): the page menu grows out of the
-   address bar's page button, its list scrolls quickly down to a highlighted
-   “Manage Extensions” row, the Manage Extensions bottom sheet slides up with
-   the app's real icon and name beside a mock switch, the switch flips on,
-   the cleanup wipe (step 7) is primed under the departing sheet, and it sets
-   out the moment the sheet has left.
+   (`OnboardingSafariSetupMocks.swift`), deliberately reduced to its ONE
+   load-bearing beat: no page menu, no scroll down its list, no tap — the
+   Manage Extensions bottom sheet slides straight up over the buried page with
+   the app's real icon and name beside a mock switch, and the switch flips on.
+   That flip IS the cleanup wipe's cue (step 7): the wipe sets out with it and
+   plays while the sheet slides back down, rather than waiting the sheet out.
    Other demo
    surfaces remain bundled, noninteractive `WKWebView` pages with a
    nonpersistent data store and JavaScript disabled; central Luna rotates its
@@ -216,12 +216,13 @@ The root uses the production `CardCarouselViewController`:
    ordinary saved-card UI, chrome, scrubber, controls, and placement—not an
    onboarding remake or a Safari view clipped smaller.
 7. Setup deliberately splits the demonstrations. The first Safari stage has no
-   separate setup overlay: the mock extension-enable pass of step 3 ends with
-   the wipe primed under the Manage Extensions sheet (`prepareCleanUp` swaps
-   each obstruction for still tiles, re-occludes the content and draws every
-   light raster while the sheet's scrim still dims the page) and set out the
-   moment the sheet has left, so the first shine at the top of the page plays
-   in the clear. The sweep itself always starts a run-loop turn after that
+   separate setup overlay: the mock extension-enable pass of step 3 ends on the
+   switch flipping on, and THAT is the wipe's cue. `prepareCleanUp` (swapping
+   each obstruction for still tiles, re-occluding the content, drawing every
+   light raster) commits on the flip, the sheet then starts sliding away, and
+   the sweep sets out with it — the top of the page is only dimmed by the
+   sheet's fading scrim, never covered by its card, so the first shine still
+   reads. The sweep itself always starts a run-loop turn after that
    heavy preparation commits — anchoring animations in the preparation's own
    turn let the commit outlive the short reveals at the top of the page, which
    then started already finished: at production speed the headline snapped in

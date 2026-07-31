@@ -836,13 +836,71 @@ final class ReaderOnboardingTests: XCTestCase {
             $0.contains("free article limit")
         })
 
-        // The buried page registers before the mock enable pass starts.
+        // The buried page registers before the Manage Extensions sheet — the
+        // pass's first and only step — slides up, and the sheet is readable
+        // before its switch moves.
         XCTAssertGreaterThanOrEqual(
             OnboardingExtensionEnableTiming.pageHoldDuration, 0.5)
         XCTAssertGreaterThan(
-            OnboardingExtensionEnableTiming.menuHoldBeforeScroll, 0.3)
-        XCTAssertGreaterThan(
-            OnboardingExtensionEnableTiming.rowHighlightHold, 0.3)
+            OnboardingExtensionEnableTiming.toggleDelay, 0.3)
+    }
+
+    /// The enable pass skips Safari's page menu entirely: the sheet is up, and
+    /// the wipe starts on the flip rather than waiting out its dismissal.
+    @MainActor
+    func testExtensionEnablePassGoesStraightToTheSheetAndWipesOnTheFlip() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .reader))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = safari
+        window.makeKeyAndVisible()
+        safari.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        safari.beginDemonstration()
+        let deadline = Date(timeIntervalSinceNow: 4)
+        var sheet: OnboardingManageExtensionsSheetView?
+        while Date() < deadline, sheet == nil {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            sheet = safari.view.descendants(
+                of: OnboardingManageExtensionsSheetView.self).first
+        }
+        XCTAssertNotNil(
+            sheet,
+            "The pass must reach the Manage Extensions sheet with no page-menu step")
+
+        // The wipe's cue is the switch, not the sheet leaving: the article's
+        // obstructions give way to their shatter tiles while the sheet is
+        // still on screen sliding back down.
+        let article = try XCTUnwrap(safari.view.descendants(
+            of: OnboardingArticleReplicaView.self).first)
+        let clutter = try XCTUnwrap(article.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.article.clutter"
+        })
+        let wipeDeadline = Date(timeIntervalSinceNow: 8)
+        while Date() < wipeDeadline,
+              !clutter.subviews.allSatisfy(\.isHidden) {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
+        XCTAssertNotNil(
+            safari.view.descendants(
+                of: OnboardingManageExtensionsSheetView.self).first,
+            "The wipe must start with the flip, not wait out the sheet's exit")
+
+        // And the sweep still finishes on the revealed, live setup card.
+        let cardDeadline = Date(timeIntervalSinceNow: 8)
+        let card = try XCTUnwrap(article.descendants(
+            of: UIButton.self).first { $0.accessibilityLabel == "Skip" })
+        while Date() < cardDeadline, !card.isUserInteractionEnabled {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+        XCTAssertTrue(card.isUserInteractionEnabled)
+        XCTAssertNil(
+            safari.view.descendants(
+                of: OnboardingManageExtensionsSheetView.self).first)
     }
 
     @MainActor

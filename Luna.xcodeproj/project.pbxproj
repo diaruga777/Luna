@@ -1346,6 +1346,7 @@
 				8EB0831099D5B0A268C3D01C /* Sources */,
 				B03ABDEE93DCD539AA44AB3F /* Frameworks */,
 				048291C3B03514BE45628006 /* Resources */,
+				F20000000000000000000004 /* Update Safari extension branding */,
 			);
 			buildRules = (
 			);
@@ -2384,6 +2385,26 @@
 			shellScript = "/bin/sh \"${SRCROOT}/scripts/update_safari_extension_branding.sh\"\n";
 		};
 		F20000000000000000000003 /* Update Safari extension branding */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/update_safari_extension_branding.sh",
+			);
+			name = "Update Safari extension branding";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/update_safari_extension_branding.sh\"\n";
+		};
+		F20000000000000000000004 /* Update Safari extension branding */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;

@@ -5,12 +5,12 @@
     "default_locale": "en",
     "version": "1.0",
     "icons": {
-        "48": "icon-48.png",
-        "64": "icon-64.png",
-        "96": "icon-96.png",
-        "128": "icon-128.png",
-        "256": "icon-256.png",
-        "512": "icon-512.png"
+        "48": "extension-icon-48.png",
+        "64": "extension-icon-64.png",
+        "96": "extension-icon-96.png",
+        "128": "extension-icon-128.png",
+        "256": "extension-icon-256.png",
+        "512": "extension-icon-512.png"
     },
     "background": {
         "page": "background.html",

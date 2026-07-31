@@ -16,18 +16,19 @@ private enum OnboardingArticleReplicaPalette {
 
 enum OnboardingArticleReplicaTiming {
     static let shatterDuration: TimeInterval = 0.86
-    /// The cascade edge's speed down each element. Brisker than the intro
-    /// line's own ~46pt/s — the page is tall — while the bloom's falloff
-    /// bands stretch with the ratio, so every glyph's brighten-and-cool
-    /// still takes exactly the intro's TIME; only the edge travels faster.
-    static let cascadeFrontSpeed: CGFloat = 70
+    /// The cascade edge's speed down each element. Much brisker than the
+    /// intro line's own ~46pt/s — the page is tall — while the bloom's
+    /// falloff bands stretch with the ratio, so every glyph's
+    /// brighten-and-cool still takes exactly the intro's TIME; only the
+    /// edge travels faster.
+    static let cascadeFrontSpeed: CGFloat = 140
     /// The next element's reveal sets out when the one above it is this far
     /// through — the cascade equivalent of the intro's reading beat between
     /// its two lines.
     static let cascadeOverlap: Double = 0.35
     /// The setup-card curtain has no light of its own, so it need not crawl
     /// at the cascade's pace; it just slides off within this long.
-    static let curtainMaxDuration: TimeInterval = 1.6
+    static let curtainMaxDuration: TimeInterval = 0.8
 }
 
 /// Luna's fictional Safari article. The page loads already buried under ads,
@@ -523,10 +524,10 @@ final class OnboardingArticleReplicaView: UIView {
             target.isHidden = true
             return []
         }
-        // ~22pt tiles: small enough that the crumble reads as a continuous
-        // granular flow — larger tiles came off as discernible slabs.
-        let columns = min(max(Int(target.bounds.width / 22), 4), 20)
-        let rows = min(max(Int(target.bounds.height / 22), 3), 20)
+        // ~11pt tiles: fine enough that the crumble reads as grains, not
+        // pieces — larger tiles came off as discernible slabs.
+        let columns = min(max(Int(target.bounds.width / 11), 4), 36)
+        let rows = min(max(Int(target.bounds.height / 11), 3), 36)
         let targetFrame = clutterContainer.convert(target.frame, to: self)
         let height = max(bounds.height, 1)
         var pieces: [ShatterPiece] = []

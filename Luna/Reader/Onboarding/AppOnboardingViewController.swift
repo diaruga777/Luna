@@ -986,6 +986,10 @@ final class AppOnboardingViewController: UIViewController {
             return
         }
         onboardingStore.markCompleted()
+        // The demonstration item is scaffolding for the empty deck, not content:
+        // from here on, the user's first real save removes it again.
+        OnboardingDemoSaveEvictor.shared.arm(
+            completion.temporarySave, registry: onboardingStore)
         AppOnboardingCompletionTransition.run(
             in: window,
             to: completion.makeCompletedRootViewController())

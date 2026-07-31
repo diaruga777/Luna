@@ -39,9 +39,7 @@ enum OnboardingArticleReplicaTiming {
 /// lunar eclipse reveal that opened the app re-exposes the content beneath.
 /// It is native instead of HTML so those glyph-level effects are possible.
 final class OnboardingArticleReplicaView: UIView {
-    static let fullArticleText = """
-    Your article, your browsing history, and every page you save stay private. Luna strips away subscription popups, sticky ads, autoplay distractions, and the clutter that gets between you and the story. Unlock supported articles, keep clean copies for flights and dead zones, search everything you have saved, and return to the exact piece you wanted without retracing your browsing history. Read in a calm scrolling view or switch to the RSVP speed reader when you want to move quickly. Inline web sections preserve the useful context of the original page while the focused reader keeps the surrounding noise out of your way. Save links from Safari, Messages, the Share Sheet, Shortcuts, or the Action Button; organise them once and find them on every return. Send finished articles to Kindle, preserve useful documents, and keep the original link close whenever you need it. Luna handles ordinary stories, paywalled articles, PDFs, and other documents in the same reading list, so research does not disappear across a pile of open tabs. Search your collection instead of your browser history, revisit a clean offline copy on the train or in the air, and choose the reading pace that suits the moment. The extension works where you already browse, and one press is enough to move something worth keeping into a quieter place. Nothing needs an account just to build your own reading list, and the pages you keep remain yours to revisit offline.
-    """
+    static let fullArticleText = OnboardingLunaArticleCopy.plainText
 
     var onActivateSafari: (() -> Void)?
     var onSkipSafariSetup: (() -> Void)?
@@ -72,7 +70,7 @@ final class OnboardingArticleReplicaView: UIView {
         cornerRadius: 17,
         initiallyRevealed: true)
     private let headline = MoonRevealLineView(
-        text: "An article you want to read",
+        text: OnboardingLunaArticleCopy.title,
         initiallyRevealed: true,
         font: UIFont.systemFont(ofSize: 29, weight: .bold),
         textAlignment: .left,
@@ -80,7 +78,7 @@ final class OnboardingArticleReplicaView: UIView {
         minimumScaleFactor: 0.82,
         occluderColor: OnboardingArticleReplicaPalette.background)
     private let byline = MoonRevealLineView(
-        text: "A safari extension • by Luna",
+        text: OnboardingLunaArticleCopy.byline,
         initiallyRevealed: true,
         font: .systemFont(ofSize: 13, weight: .semibold),
         textAlignment: .left,

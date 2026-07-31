@@ -361,13 +361,13 @@ final class OnboardingActionExtensionSheetView: UIView {
         doneChip.clipsToBounds = true
         card.addSubview(doneChip)
 
-        titleLabel.text = "An article you want to read"
+        titleLabel.text = OnboardingLunaArticleCopy.title
         titleLabel.font = .systemFont(ofSize: 27, weight: .bold)
         titleLabel.textColor = .white
         titleLabel.numberOfLines = 2
         card.addSubview(titleLabel)
 
-        bylineLabel.text = "A safari extension • by Luna"
+        bylineLabel.text = OnboardingLunaArticleCopy.byline
         bylineLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         bylineLabel.textColor = UIColor.white.withAlphaComponent(0.55)
         card.addSubview(bylineLabel)

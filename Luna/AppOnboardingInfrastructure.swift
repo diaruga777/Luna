@@ -5,6 +5,7 @@
 
 import QuartzCore
 import LunaDesignSystem
+import LunaStorage
 import UIKit
 
 /// Target-specific persistence behind the shared visual journey.
@@ -12,9 +13,35 @@ import UIKit
 /// `install` returns false when the real save could not be created. The
 /// onboarding marker is never written in that case, so a transient disk or
 /// bundle failure cannot strand the user in an empty completed state.
+///
+/// The demonstration item exists ONLY so the deck isn't empty the moment
+/// onboarding ends. `changeNotifications` and `storedIdentifiers` are what let
+/// `OnboardingDemoSaveEvictor` notice the user's first real save and take the
+/// mock content straight back out — see `claudedocs/reader-onboarding.md`.
 struct OnboardingTemporarySave {
     let install: () -> Bool
     let cleanup: () -> Void
+    /// Every notification this app's content stores post when their contents
+    /// change. Each app names its own: a foreign kind's notification lives in a
+    /// module that app doesn't link.
+    let changeNotifications: [Notification.Name]
+    /// The ids currently stored across every store this app saves into,
+    /// including the demonstration item itself.
+    let storedIdentifiers: () -> Set<UUID>
+
+    init(
+        install: @escaping () -> Bool,
+        cleanup: @escaping () -> Void,
+        changeNotifications: [Notification.Name] = [.readingListChanged],
+        storedIdentifiers: @escaping () -> Set<UUID> = {
+            Set(ReadingListStore.shared.items().map(\.id))
+        }
+    ) {
+        self.install = install
+        self.cleanup = cleanup
+        self.changeNotifications = changeNotifications
+        self.storedIdentifiers = storedIdentifiers
+    }
 }
 
 /// Everything the shared controller needs to cross into a target-specific root.

@@ -29,12 +29,19 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    private static let onboardingDemoSave = OnboardingTemporarySave(
+    /// The central app's deck draws every kind, so ANY new save — article,
+    /// media, tracker — is the real content that retires the demonstration item.
+    static let onboardingDemoSave = OnboardingTemporarySave(
         install: {
             BundledLunaArticle.installTemporary(
                 urlString: "https://luna.app?onboarding=luna")
         },
-        cleanup: { BundledLunaArticle.cleanupTemporary() })
+        cleanup: { BundledLunaArticle.cleanupTemporary() },
+        changeNotifications: [.readingListChanged, .savedMediaChanged],
+        storedIdentifiers: {
+            Set(ReadingListStore.shared.items().map(\.id))
+                .union(SavedMediaStore.shared.items().map(\.id))
+        })
 
     @MainActor
     static func install() {

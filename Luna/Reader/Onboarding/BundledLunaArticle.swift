@@ -60,17 +60,8 @@ enum BundledLunaArticle {
         store.delete(item)
     }
 
-    static let content = ArticleContent(
-        title: "Save anything in Safari",
-        blocks: [
-            paragraph(
-                "Your article, and your browsing history, all stay offline."),
-            paragraph(
-                "Speed read, open links inline, and more! The best smartphone reading "
-                    + "experience you’ve ever had."),
-        ])
-
-    private static func paragraph(_ text: String) -> ArticleContent.Block {
-        .init(kind: .paragraph, text: text, links: [])
-    }
+    /// The same article the onboarding mocks just showed being cleaned up and
+    /// saved — see `OnboardingLunaArticleCopy`. A card whose contents don't
+    /// match the page the demonstration opened reads as a different save.
+    static let content = OnboardingLunaArticleCopy.articleContent
 }

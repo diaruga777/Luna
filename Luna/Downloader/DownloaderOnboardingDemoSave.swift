@@ -5,12 +5,20 @@
 
 import LunaMediaDownload
 import LunaModels
+import LunaStorage
 import Foundation
 
 enum DownloaderOnboardingDemoSave {
+    /// A media save lands in both stores (the reading-list item at ingest, the
+    /// file in `SavedMediaStore`), so the eviction watch covers both.
     static let service = OnboardingTemporarySave(
         install: install,
-        cleanup: cleanup)
+        cleanup: cleanup,
+        changeNotifications: [.readingListChanged, .savedMediaChanged],
+        storedIdentifiers: {
+            Set(ReadingListStore.shared.items().map(\.id))
+                .union(SavedMediaStore.shared.items().map(\.id))
+        })
 
     private static let sourceURL = "https://instatok.local/@moonwatch/eclipse"
 

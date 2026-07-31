@@ -360,8 +360,8 @@ final class SafariReplicaViewController:
 
     private static let fallbackHTML = """
     <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
-    <style>body{font:17px -apple-system;margin:24px;color:#202122}h1{font:36px Georgia}</style>
-    <h1>Save anything in Safari</h1>
-    <p>Your article, and your browsing history, all stay offline.</p>
+    <style>body{font:17px -apple-system;margin:24px;color:#202122}h1{font:36px Georgia}\
+    li{margin:0 0 10px}</style>
+    \(OnboardingLunaArticleCopy.fallbackHTMLBody)
     """
 }

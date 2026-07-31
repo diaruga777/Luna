@@ -111,10 +111,18 @@ The root uses the production `CardCarouselViewController`:
    both use the same lunar reveal. The “A safari extension • by Luna” byline
    then reveals with the body copy and more natural article typography below.
    The mock page alone uses a dark neutral grey that keeps white copy and the
-   black Action Button deformation legible. The long feature copy
-   describes private history, popup/ad removal, offline reading, RSVP, search,
-   Safari/Messages/Share Sheet/Shortcuts/Action Button capture, Kindle, and
-   documents. At layout time the visible body takes the longest whole-word
+   black Action Button deformation legible. The body is a **bulleted list of what
+   the reader actually does** — clutter/paywall removal, offline copies, the RSVP
+   speed reader with gaze pausing, background read-aloud with autoplay-next,
+   inline link following, Kindle and EPUB/PDF/Markdown/text export, capture from
+   Safari/Messages/Share Sheet/Shortcuts/Action Button, and documents + long X
+   threads — written plainly rather than as marketing prose. It lives once in
+   `OnboardingLunaArticleCopy` and all three surfaces that show it read from
+   there: this page, the mock action-extension sheet the Messages shortcut run
+   slides up, and the temporary save the deck shows afterwards. The rendered
+   `plainText` puts one space after each bullet on purpose — the fitted prefix
+   below re-joins on spaces, so a run of two would collapse there and nowhere
+   else. At layout time the visible body takes the longest whole-word
    prefix that fills the page to eight points above the mock URL bar, including
    the portion behind the obstruction; after cleanup the model switches to the
    complete article text. A large dark popup fades and springs over the
@@ -259,13 +267,30 @@ app-switcher steps become plain fades. The two saves reuse one Core Image
 context,
 avoiding device-context and shader-cache setup between Safari and Messages.
 
-The demonstration save is temporary. Its exact UUID is recorded only when
-onboarding created a new item. The owning app deletes that exact save and its
-local media/image on the first background callback after onboarding completes,
-then clears the UUID. It deliberately survives the incomplete onboarding
-background hops to Safari, Shortcuts, and Settings because the production root
-needs it for each replay. A pre-existing matching user save is never claimed or
-removed. Launch also sweeps a marker left by an abandoned or terminated run.
+The demonstration save is temporary — the mock content is never permanently
+stored. Its exact UUID is recorded only when onboarding created a new item. It
+exists for one reason: so the deck that replaces the journey isn't an empty
+screen. Three things retire it, and its contents match the mock views exactly
+(same title, same feature list, as real `.listItem` article structure) so the
+card reads as the article the demonstration just saved:
+
+- **The user's first real save**, immediately. `OnboardingDemoSaveEvictor` is
+  armed the moment onboarding marks itself complete and watches every store this
+  app saves into — `changeNotifications` + `storedIdentifiers` on
+  `OnboardingTemporarySave`, which is why the central app and the Downloader
+  name both `.readingListChanged` and `.savedMediaChanged` while Reader and Price
+  Tracker name only the reading list. The watch is **id-based, not count-based**:
+  it snapshots the stored ids when it arms, so content the user already had (a
+  diagnostics onboarding reset leaves real saves in place) is not mistaken for a
+  new one. The demonstration item disappearing on its own — a swipe-delete, the
+  background cleanup — just ends the watch.
+- **The first background callback** after onboarding completes, which deletes
+  that exact save and its local media/image, then clears the UUID.
+- **Launch**, which also sweeps a marker left by an abandoned or terminated run.
+
+The save deliberately survives the incomplete onboarding background hops to
+Safari, Shortcuts, and Settings because the production root needs it for each
+replay. A pre-existing matching user save is never claimed or removed.
 
 If iOS terminates an app while Safari or Settings is foreground, the next
 launch starts incomplete onboarding from its first card; completion is not
@@ -285,7 +310,9 @@ explicit factor. The clock slows Core Animation, timers, and the display-link
 liquid wave together.
 
 `ReaderOnboardingTests` covers independent per-app completion, exact surface
-copy/page mapping, temporary-save ownership, idempotent offline article
+copy/page mapping, one feature list shared by every article surface,
+temporary-save ownership, eviction on the first real save (and only on a real
+one), idempotent offline article
 installation, launch geometry, active-wave cancellation, the setup pills
 (identifiers, glow-until-tapped, and their shortcut/Settings callbacks),
 external-open fallback

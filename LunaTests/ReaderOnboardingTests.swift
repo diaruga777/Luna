@@ -43,15 +43,37 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(first.item.id, second.item.id)
         XCTAssertEqual(first.item.urlString, BundledLunaArticle.urlString)
         XCTAssertEqual(first.item.state, .ready)
-        XCTAssertEqual(content.title, "Save anything in Safari")
         XCTAssertNil(content.author)
+
+        // The card the deck shows is the very article the mocks just cleaned
+        // up and saved: same title, same feature list, as real `.listItem`
+        // structure rather than a wall of prose.
+        XCTAssertEqual(content.title, OnboardingLunaArticleCopy.title)
+        XCTAssertEqual(content.blocks.first?.kind, .paragraph)
+        XCTAssertEqual(content.blocks.first?.text, OnboardingLunaArticleCopy.intro)
         XCTAssertEqual(
-            content.blocks.map(\.text),
-            [
-                "Your article, and your browsing history, all stay offline.",
-                "Speed read, open links inline, and more! The best smartphone reading "
-                    + "experience you’ve ever had.",
-            ])
+            content.blocks.dropFirst().map(\.text),
+            OnboardingLunaArticleCopy.features)
+        XCTAssertTrue(content.blocks.dropFirst().allSatisfy { $0.kind == .listItem })
+        // The renderer draws the bullet and the hanging indent; a block that
+        // carried its own would show two.
+        XCTAssertFalse(content.blocks.contains { $0.text.hasPrefix("•") })
+    }
+
+    func testEveryOnboardingArticleSurfaceShowsTheSameFeatureList() {
+        let plain = OnboardingLunaArticleCopy.plainText
+        XCTAssertEqual(OnboardingArticleReplicaView.fullArticleText, plain)
+        XCTAssertTrue(plain.hasPrefix(OnboardingLunaArticleCopy.intro))
+        for feature in OnboardingLunaArticleCopy.features {
+            XCTAssertTrue(
+                plain.contains("• " + feature),
+                "The rendered list must carry every feature line verbatim")
+        }
+        // One line per feature, so the mock surfaces read as a list and not a
+        // paragraph that happens to contain bullets.
+        XCTAssertEqual(
+            plain.components(separatedBy: "\n").count,
+            OnboardingLunaArticleCopy.features.count + 1)
     }
 
     func testTemporaryArticleCleanupDeletesOnlyTheSaveOnboardingCreated() throws {
@@ -752,10 +774,10 @@ final class ReaderOnboardingTests: XCTestCase {
         // The page loads fully readable — nothing waits on a reveal.
         XCTAssertTrue(revealLines.allSatisfy(\.isFullyRevealed))
         let revealCopy = revealLines.compactMap(\.accessibilityLabel)
-        XCTAssertTrue(revealCopy.contains("An article you want to read"))
-        XCTAssertTrue(revealCopy.contains("A safari extension • by Luna"))
+        XCTAssertTrue(revealCopy.contains(OnboardingLunaArticleCopy.title))
+        XCTAssertTrue(revealCopy.contains(OnboardingLunaArticleCopy.byline))
         let fittedBody = revealCopy.first {
-            $0.hasPrefix("Your article, your browsing history")
+            $0.hasPrefix(OnboardingLunaArticleCopy.intro)
         }
         XCTAssertNotNil(fittedBody)
         XCTAssertLessThan(

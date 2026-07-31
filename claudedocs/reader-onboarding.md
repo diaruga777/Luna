@@ -264,6 +264,11 @@ The root uses the production `CardCarouselViewController`:
    empirically on the iOS 27 sim) — and the sweep just slides a
    `CAGradientLayer` mask over it whose stops encode the (1-t)^1.3 cooling
    curve over the speed-scaled reach plus a 12pt spill past the edge. The
+   lit layer composites ADDITIVELY (`compositingFilter = "plusL"`, also
+   load-bearing): light lands on the dark gaps and saturates over the white
+   glyphs, keeping the text crisp under the glow — composed normally, the
+   baked halo cloud reads as translucent white fog smeared over the glyph
+   edges while it cools, and the whole reveal looks blurred. The
    old per-frame CPU pipeline (band-clipped raster draws + eight shadow
    blurs per element per tick) starved the display link to a handful of
    ticks per sweep and the light advanced in visible plateaus; and its four

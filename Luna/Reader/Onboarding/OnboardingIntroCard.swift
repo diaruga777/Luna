@@ -532,6 +532,12 @@ final class GlyphPixelBloomView: UIView {
         isOpaque = false
         litLayer.contentsGravity = .resize
         litLayer.isHidden = true
+        // ADDITIVE compositing, exactly like the original pipeline's
+        // plusLighter draws: light lands on the dark gaps and saturates over
+        // the white glyphs, so the text stays crisp under the glow. Composed
+        // normally, the baked halo cloud reads as semi-transparent white fog
+        // smeared over the glyph edges while it cools — a blurry mess.
+        litLayer.compositingFilter = "plusL"
         layer.addSublayer(litLayer)
         gradientMask.startPoint = CGPoint(x: 0.5, y: 0)
         gradientMask.endPoint = CGPoint(x: 0.5, y: 1)

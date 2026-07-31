@@ -428,7 +428,66 @@ they name. Tests: `ArticleExtractorTests.testBRBetweenSentencesBecomesASpace`,
 
 **Player + hidden chrome**: refined also strips `[class*=video|player]`, `[id*=video|player]`, `[aria-live]`, `[role=slider|menu|menubar]`, and **visually-hidden / sr-only** elements (`removeVisuallyHiddenElements` — `clip:rect(1px…)`, `clip-path:inset(50%)`, 1px boxes) so an embedded video player's chrome and screen-reader labels don't leak once div-text is captured.
 
-Regression tests: `ArticleExtractorTests.testArchivedArticleBeatsSubscriptionGateAndComments`, `…testDivBasedArticleBodyExtractedWithoutPlayerChrome`.
+**A wrapper that HOLDS the article is layout, not the rail its class names.** Junk
+classes are matched by SUBSTRING, which also hits the layout wrapper that merely makes
+room for the thing it names — and removing that removes the story, zeroing the refined
+layer so the *untrimmed* `basic` layer wins arbitration and every ad label and recirc
+rail it keeps reaches the reader. Two shapes of this: a class on the page root
+(WordPress emits `sidebar-right has-sidebar` on `<body>`; New Statesman), handled by
+`isPageRoot`; and a grid wrapper naming its own columns (NY Post lays an article out in
+`<div class="layout layout--sidebar">`, whose two columns are the story and the sidebar
+— refined returned **13 characters**), handled by `articleWrapperChain`: score the prose
+container BEFORE stripping and spare its **strict** ancestors. Strictness is the safety
+property — on a comment-heavy page where the thread outscores the story, the thread's own
+container still matches `[class*=comment]` and is still removed; only the shared layout
+wrappers above it survive, and each of THEIR junk children is still matched individually.
+So the rule never keeps junk that used to go; it replaces "delete the wrapper" with
+"delete the wrapper's junk". Tests:
+`ArticleBodyFurnitureTests.testLayoutWrapperNamingASidebarDoesNotDeleteTheArticle`,
+`ArticleExtractorTests.testLayoutClassOnBodyDoesNotDeleteTheDocument`.
+
+**Ad labels and in-body recirc rails are shape rules, applied to WHICHEVER layer wins.**
+`basic` runs no trailing-junk trimming at all, so the position-independent rules were
+hoisted out of refined's `trimTrailingJunk` and now also run once on the chosen layer
+(alongside the comment-tier terminator). Left in refined only: the recirc terminator tier
+and the reverse trim, both of which lean on refined's class stripping to stay free of
+false positives. The two rules:
+
+- **Ad label** (`adLabelPhrases`, Readability's `adWords`): a block whose WHOLE text is a
+  slot's own caption — "Advertisement", "Sponsored content", "Story continues below…".
+  NY Post ships nine `<p class="ad__label">Advertisement</p>` inside `<div class="ad">`,
+  which no `advert`/`sponsor` substring matches. Whole-text matching is what leaves prose
+  that merely discusses advertising alone.
+- **In-body recirc module** (`removeInlineRecircModules`): a publisher's ad for its own
+  content — NY Post's "Explore More" card rail dropped between two body paragraphs —
+  recognised by SHAPE rather than by the wrapper's class, and removed IN PLACE because the
+  article continues underneath it. A run of adjacent blocks that are essentially nothing
+  but hyperlink (`isFullyLinkedCard`: >0.9 link density, <200 chars, no in-page anchors),
+  optionally under a short label. The false positive to avoid is a genuine link roundup
+  ("five posts to read this week"), so two gates: a run of **≥2** all-link blocks is a
+  rail on its own evidence, while a **lone** one goes only under a recirc label
+  (`recircLabelPhrases`, matched exactly). In a roundup the linked headings are separated
+  by the author's prose, so every run is length 1 and unlabelled. A dropped multi-block
+  run also takes a preceding short bare heading with it, whatever the section is called
+  ("More from Business") — that's what stops an orphan label being left behind.
+
+**Captions: `.caption` blocks — rendered, never read.** `figcaption` was in no selector,
+so the reader silently lost every caption on every page (twelve on the NY Post article).
+Detection is structural: a `<figcaption>`, plus any text inside a `<figure>` (WordPress
+emits `<figure><p class="wp-caption-text">`). `figcaption` joining `blockTags` also stops
+a `<p>`/`<img>` nested in a caption being emitted twice, and `select`'s document order
+puts the caption directly after its image. A caption is NOT prose: `isReadableProse`
+excludes it, so RSVP, `WordMap`, `SpeechController` and the audio script all skip it and
+stay in one word-index space — a photo credit is never flashed mid-sentence or spoken
+aloud. Three trimming rules learned the kind or would misfire: a caption is not the strong
+paragraph that shields a trailing image dump, it can neither arm nor trip the recirc
+terminator (a credit reading "Trending Now / Reuters" is an agency, not a rail), and the
+reverse trim must not pop a closing caption off the end and orphan its picture (photo
+credits carry "©", one of that pass's junk phrases). Every renderer has a case: scroll
+reader (smaller, dimmer, tucked under the image), saved snapshot, X-post HTML, EPUB, PDF,
+Markdown, plain text, mail. Tests: `ArticleCaptionTests`.
+
+Regression tests: `ArticleExtractorTests.testArchivedArticleBeatsSubscriptionGateAndComments`, `…testDivBasedArticleBodyExtractedWithoutPlayerChrome`, `ArticleBodyFurnitureTests`, `ArticleCaptionTests`.
 
 ## Hard-paywall resolution & archive reader
 

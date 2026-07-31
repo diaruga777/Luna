@@ -401,49 +401,54 @@ final class AppOnboardingViewController: UIViewController {
         expandSafariCard()
     }
 
+    /// "Show me how" hands off to Safari with the same mock app-switcher hop
+    /// the Safari-setup return uses: the intro deck slides out as a rounded
+    /// card while the browser, snapshotted at rest, slides in and fills the
+    /// screen. (It used to grow the intro card itself to the display edges.)
     private func expandSafariCard() {
-        guard !didExpandSafari,
-              let card = carousel.cardView(at: 0)
-        else { return }
+        guard !didExpandSafari, appSwitcher == nil else { return }
         preloadDemonstrationIfNeeded()
         guard isDemonstrationPreloaded, let safari = safariReplica else {
             presentSavePreparationFailure()
             return
         }
-        dismissIntroCorona()
         didExpandSafari = true
-
-        let startFrame = card.convert(card.bounds, to: view)
-        safari.view.frame = startFrame
-        safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
-        safari.view.alpha = 0
-        safari.view.isHidden = false
-        safari.view.layoutIfNeeded()
-        view.bringSubviewToFront(safari.view)
 
         activeDemoSource = .safari
         nextDemoSource = .messages
         journeyStage = .safariDemonstration
         demoPresentation = .fullScreen
-        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
-            ? 0.20
-            : OnboardingDemoLoopTiming.geometryDuration
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            usingSpringWithDamping: 0.94,
-            initialSpringVelocity: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState]
-        ) {
-            safari.view.frame = self.view.bounds
-            safari.view.layoutIfNeeded()
-            safari.view.layer.cornerRadius = 0
-            safari.view.alpha = 1
-            self.carousel.view.alpha = 0
-            self.savedRootViewController?.view.alpha = 0
-        } completion: { _ in
+
+        // Stage the browser at rest, laid out full screen underneath
+        // everything, so it can be snapshotted as the incoming card.
+        let safariView = safari.view!
+        safariView.isHidden = false
+        safariView.alpha = 1
+        safariView.layer.cornerRadius = 0
+        safariView.frame = view.bounds
+        view.insertSubview(safariView, at: 0)
+        safariView.layoutIfNeeded()
+
+        let outgoing = switcherSnapshot(of: view, afterScreenUpdates: false)
+        let incoming = switcherSnapshot(of: safariView, afterScreenUpdates: true)
+        let switcher = OnboardingAppSwitcherView(
+            frame: view.bounds, from: outgoing, to: incoming)
+        appSwitcher = switcher
+        view.addSubview(switcher)
+
+        // The hop's own black backdrop covers the deck from its first frame.
+        dismissIntroCorona()
+        carousel.view.alpha = 0
+        savedRootViewController?.view.alpha = 0
+
+        switcher.playForward { [weak self] in
+            guard let self else { return }
+            self.view.bringSubviewToFront(safariView)
             self.carousel.view.isHidden = true
+            switcher.removeFromSuperview()
+            self.appSwitcher = nil
             self.setNeedsStatusBarAppearanceUpdate()
+            guard !self.isFinishing else { return }
             #if DEBUG
             switch self.debugSafariStage {
             case "prompt":

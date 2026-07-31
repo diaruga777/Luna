@@ -312,6 +312,7 @@ final class OnboardingArticleReplicaView: UIView {
                 max(revealFinish, max(curtainFinish, shatterFinish)) + 0.05
             ) { view in
                 view.stage = .revealed
+                view.setupCard.setActionsEnabled(true)
                 completion?()
             }
         }
@@ -1090,6 +1091,11 @@ final class OnboardingSafariSetupCardView: UIView {
         skipButton.addTarget(
             self, action: #selector(skipTapped), for: .touchUpInside)
         content.addSubview(skipButton)
+
+        // Buried under the clutter, the card is invisible — but the clutter is
+        // NON-interactive, so a tap at its position would still reach these
+        // buttons. They stay inert until the wipe actually reveals the card.
+        setActionsEnabled(false)
     }
 
     @available(*, unavailable)

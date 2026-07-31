@@ -89,10 +89,14 @@ The root uses the production `CardCarouselViewController`:
    independently reconstructs the splash's static peak behind this initial card
    for the entire intro; neither the launch raster nor its overlay hierarchy is
    retained.
-2. “Show me how” does not page or invoke `CardEclipseTransition`. The centered
-   intro corona is removed when the button advances successfully, then the card
-   grows directly to the display edges while its contents crossfade into
-   `SafariReplicaViewController`. Once it is full-screen, the hidden carousel
+2. “Show me how” does not page or invoke `CardEclipseTransition`, and it does
+   not grow the card to the display edges either. It hands off with the SAME
+   mock app-switcher hop the Safari-setup return uses
+   (`OnboardingAppSwitcherView`): the intro deck slides out as a rounded card
+   while `SafariReplicaViewController`, staged full screen and snapshotted at
+   rest, slides in and fills the screen. The centered intro corona is removed
+   as the hop starts (its own black backdrop covers the deck from the first
+   frame). Once Safari is full-screen, the hidden carousel
    prepares the saved-content slot without animating between cards. Everything
    the demonstration needs — the setup guide players (AVFoundation, kept off
    the launch frame), the temporary save, the mounted production root, the
@@ -259,7 +263,12 @@ The root uses the production `CardCarouselViewController`:
    strokes, along the image's whole height as the front crosses it. The
    setup card, sharing the screen, comes out of the same sweep from behind a
    page-coloured curtain (`MoonRevealCurtainView`, occluder only, no rim) —
-   there is no scroll and the browser bar never moves.
+   there is no scroll and the browser bar never moves. Its two buttons are
+   INERT until that sweep finishes: the clutter burying the card is
+   non-interactive, so a tap at the card's position would otherwise reach a
+   button nobody can see — and during the opening app-switcher hop it would
+   drop the setup leg (`skipSafariSetupAndContinue` bails while a hop is in
+   flight).
    Only after the cleanup finishes does onboarding start the
    Safari PiP guide and open real Safari. If the extension has not run, return
    restores the in-page prompt for another attempt. Choosing “Skip for now”

@@ -55,14 +55,6 @@ public struct ArticleExtractor {
             chosen = refined
         }
 
-        // A basic-layer win hasn't been through any trailing-junk trimming (it only
-        // strips structural chrome tags), so a comment thread on a page whose refined
-        // pass wasn't substantial enough to win arbitration can still leak through.
-        // Applying just the (safest, unconditional) comment-tier terminator here — not
-        // the recirc tier or reverse trim, which lean on refined's junk-class stripping
-        // to avoid false positives — catches that case for every chosen layer.
-        chosen = applyTerminatorHardStop(chosen, commentTierOnly: true)
-
         // Some sites ship the article body as JSON-LD metadata while the DOM
         // is JS-rendered scaffolding — if that text dwarfs what the DOM gave
         // us, it IS the article (loses inline links/images, gains the text).
@@ -73,6 +65,19 @@ public struct ArticleExtractor {
         if chosen.isEmpty {
             chosen = rawBlocks(from: document)
         }
+        guard !chosen.isEmpty else { throw ExtractError.noContent }
+
+        // A basic-layer win hasn't been through any trailing-junk trimming (it only
+        // strips structural chrome tags), so a comment thread — or an ad label, or an
+        // in-body recirc rail — on a page whose refined pass wasn't substantial enough
+        // to win arbitration leaks straight through. So the position-independent,
+        // shape-only rules run here, on WHICHEVER layer won: inline junk lines (ad
+        // labels, "Related:" teasers, own-content card rails) and the safest
+        // (comment) tier of the terminator. Left out is everything that leans on
+        // refined's junk-class stripping to stay free of false positives — the recirc
+        // terminator tier and the reverse trim.
+        chosen = removeInlineJunkLines(chosen)
+        chosen = applyTerminatorHardStop(chosen, commentTierOnly: true)
         guard !chosen.isEmpty else { throw ExtractError.noContent }
         // Publisher hero art is commonly declared only in Open Graph metadata,
         // outside the scored article container. Treat it as the lead block so it
@@ -183,13 +188,19 @@ public struct ArticleExtractor {
         [class*=endslate], [class*=livefyre], [class*=coral-], [class*=spot-im], \
         [class*=syndication], [id*=disqus_thread], #respond
         """
-        // Skip the page root itself: CMSs routinely put layout-state classes on
-        // <body>/<html> (WordPress emits e.g. `sidebar-right has-sidebar` on <body>),
-        // and a substring match there would `remove()` the ENTIRE document — zeroing
-        // this refined layer and forcing the untrimmed `basic` layer (which keeps the
-        // page's related/tag/footer rails) to win. New Statesman hit exactly this.
+        // Class matching is by SUBSTRING, so a junk name also hits the layout
+        // wrapper that merely makes room for the rail it names. Two shapes of that:
+        // CMSs put layout-state classes on <body>/<html> (WordPress emits e.g.
+        // `sidebar-right has-sidebar`), and grid wrappers name their columns (NY
+        // Post lays an article out in `<div class="layout layout--sidebar">`, whose
+        // two columns are the story and the sidebar). Removing either takes the
+        // ENTIRE article with it — zeroing this refined layer and forcing the
+        // untrimmed `basic` layer (which keeps every ad label and recirc rail) to
+        // win. New Statesman hit the first; NY Post the second (13 chars survived).
+        let wrappers = articleWrapperChain(in: document)
         for element in try document.select(strippedSelectors)
-        where !isPageRoot(element) && !InPageAnchors.isProtected(element) {
+        where !isPageRoot(element) && !isArticleWrapper(element, chain: wrappers)
+            && !InPageAnchors.isProtected(element) {
             try element.remove()
         }
         try removePaywallJunk(in: document)
@@ -209,6 +220,31 @@ public struct ArticleExtractor {
     private func isPageRoot(_ element: Element) -> Bool {
         let tag = element.tagName().lowercased()
         return tag == "body" || tag == "html"
+    }
+
+    /// The STRICT ancestors of the document's densest prose container, identified
+    /// BEFORE any stripping: the chain of layout wrappers that a junk-class match
+    /// must not delete wholesale, because deleting one deletes the article.
+    ///
+    /// Strictness is what keeps this safe on a page whose junk outweighs its story.
+    /// When a comment thread is what scores highest pre-strip, its own container
+    /// still matches `[class*=comment]` and is still removed — only the shared
+    /// layout wrappers ABOVE it are spared, and every junk child of those is still
+    /// matched and removed individually. So the rule never keeps junk that used to
+    /// go; it only replaces "delete the wrapper" with "delete the wrapper's junk".
+    private func articleWrapperChain(in document: Document) -> Set<ObjectIdentifier> {
+        guard let container = try? bestContainer(in: document) else { return [] }
+        var chain: Set<ObjectIdentifier> = []
+        var parent = container.parent()
+        while let current = parent {
+            chain.insert(ObjectIdentifier(current))
+            parent = current.parent()
+        }
+        return chain
+    }
+
+    private func isArticleWrapper(_ element: Element, chain: Set<ObjectIdentifier>) -> Bool {
+        chain.contains(ObjectIdentifier(element))
     }
 
     /// Removes actual subscription walls while preserving unlocked article bodies
@@ -306,13 +342,26 @@ public struct ArticleExtractor {
         "related:", "read more:", "read also:", "see also:", "more:", "watch:", "also read",
     ]
 
-    /// Readability's `adWords` rule: a block whose ENTIRE text is a bare ad label.
-    private let bareAdWords: Set<String> = [
-        "advertisement", "advert", "sponsored", "sponsored content", "ad",
+    /// Readability's `adWords` rule: a block whose ENTIRE text is an ad label — the
+    /// caption an ad slot prints above itself, left behind whenever the slot's own
+    /// markup names itself something the junk-class strip doesn't recognise (NY Post
+    /// ships nine `<p class="ad__label">Advertisement</p>` inside `<div class="ad">`,
+    /// which no `advert`/`sponsor` substring matches). Matching is on the block's
+    /// WHOLE text, so a paragraph that merely mentions advertising is untouched.
+    private let adLabelPhrases: Set<String> = [
+        "ad", "ads", "advert", "adverts", "advertisement", "advertisements",
+        "sponsored", "sponsored content", "sponsored links", "sponsored story",
+        "paid content", "paid post", "promoted content", "promoted stories",
+        "story continues below", "story continues below advertisement",
+        "article continues below", "article continues below advertisement",
+        "advertisement story continues below", "continue reading below",
+        "advertisement continue reading below", "continues below advertisement",
+        "scroll to continue", "scroll to continue with content",
     ]
 
     private func removeInlineJunkLines(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
-        blocks.filter { !isMidArticleRecircLine($0) && !isBareAdWordBlock($0) }
+        let filtered = blocks.filter { !isMidArticleRecircLine($0) && !isAdLabelBlock($0) }
+        return removeInlineRecircModules(filtered)
     }
 
     private func isMidArticleRecircLine(_ block: ArticleContent.Block) -> Bool {
@@ -327,11 +376,110 @@ public struct ArticleExtractor {
         return recircLeadIns.contains { normalized.hasPrefix($0) }
     }
 
-    private func isBareAdWordBlock(_ block: ArticleContent.Block) -> Bool {
+    private func isAdLabelBlock(_ block: ArticleContent.Block) -> Bool {
         guard block.kind != .image else { return false }
         var normalized = block.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        while let last = normalized.last, ".!".contains(last) { normalized.removeLast() }
-        return bareAdWords.contains(normalized)
+        while let last = normalized.last, ".!:".contains(last) { normalized.removeLast() }
+        return adLabelPhrases.contains(normalized.trimmingCharacters(in: .whitespaces))
+    }
+
+    // MARK: - Phase 1b: in-body recirc modules
+
+    /// A publisher's in-body ad for its OWN content — NY Post drops an "Explore More"
+    /// card rail between two body paragraphs — is recognised by SHAPE, not by the
+    /// wrapper's class (which is what the strip above already tries, and misses as
+    /// soon as a site names the module something new): a run of adjacent blocks whose
+    /// text is essentially nothing but hyperlink (card titles are never prose),
+    /// optionally introduced by a short label naming the rail.
+    ///
+    /// Unlike the terminator below it removes the module IN PLACE, because the
+    /// article continues underneath it.
+    ///
+    /// Two independent gates keep a genuine link roundup — "the five posts to read
+    /// this week", where each item legitimately IS a linked heading — intact: a run
+    /// of TWO OR MORE adjacent fully-linked blocks is a rail on its own evidence,
+    /// while a LONE fully-linked block goes only when a recirc label introduces it.
+    /// In a roundup the linked headings are separated by the author's prose, so every
+    /// run is length 1 and unlabelled, and nothing is touched.
+    ///
+    /// A dropped run takes its heading with it. For a multi-block run the heading
+    /// needs no recognised wording — a short heading whose entire body WAS a card
+    /// rail is that rail's heading, whatever the section is called ("More from
+    /// Business") — which is what stops an orphan label being left behind.
+    private func removeInlineRecircModules(
+        _ blocks: [ArticleContent.Block]
+    ) -> [ArticleContent.Block] {
+        var doomed = Set<Int>()
+        var index = 0
+        while index < blocks.count {
+            guard isFullyLinkedCard(blocks[index]) else {
+                index += 1
+                continue
+            }
+            var end = index
+            while end + 1 < blocks.count, isFullyLinkedCard(blocks[end + 1]) { end += 1 }
+            let previous = index > 0 ? blocks[index - 1] : nil
+            let isRun = end > index
+            let heading = previous.flatMap { block -> Int? in
+                if isRun, isShortBareHeading(block) { return index - 1 }
+                return isRecircLabel(block) ? index - 1 : nil
+            }
+            if isRun || heading != nil {
+                if let heading { doomed.insert(heading) }
+                for card in index...end { doomed.insert(card) }
+            }
+            index = end + 1
+        }
+        guard !doomed.isEmpty else { return blocks }
+        return blocks.enumerated().filter { !doomed.contains($0.offset) }.map(\.element)
+    }
+
+    /// A heading short enough to be a rail's title rather than a section of prose.
+    /// Restricted to headings: a `<p>` this short could be a real one-line sentence.
+    private func isShortBareHeading(_ block: ArticleContent.Block) -> Bool {
+        block.kind == .heading && block.links.isEmpty && wordCount(block.text) <= 6
+    }
+
+    /// A recirc card title: a short block that is (essentially) nothing but one
+    /// outbound hyperlink. In-page jumps are excluded — a blog that links its own
+    /// section headings to their permalink anchor is not a rail — as are rows of an
+    /// already-identified table of contents.
+    private func isFullyLinkedCard(_ block: ArticleContent.Block) -> Bool {
+        switch block.kind {
+        case .heading, .listItem, .paragraph: break
+        case .image, .quote, .tableOfContents: return false
+        }
+        guard !block.links.isEmpty, block.text.count < 200,
+              linkDensity(of: block) > 0.9,
+              block.links.allSatisfy({ !$0.isInPageAnchor })
+        else { return false }
+        return true
+    }
+
+    /// Short labels a site prints above a rail of its own stories. Deliberately a
+    /// superset of `recircTerminatorPhrases`: a match here only ever removes the
+    /// label itself plus an adjacent all-link run, so it can afford to be broader
+    /// than the list that truncates the whole remainder of the article. Matched
+    /// EXACTLY (bar a trailing colon), never as a substring.
+    private let recircLabelPhrases: Set<String> = [
+        "explore more", "more from", "more on", "more in", "more stories",
+        "related", "related articles", "related stories", "related coverage",
+        "read more", "read next", "up next", "what to read next",
+        "recommended", "recommended for you", "you may also like",
+        "you might also like", "don't miss", "in case you missed it",
+        "most popular", "most read", "trending", "trending now",
+        "editor's picks", "editors' picks", "popular stories",
+        "around the web", "further reading", "see also",
+        "sponsored content", "from our partners", "paid content",
+    ]
+
+    private func isRecircLabel(_ block: ArticleContent.Block) -> Bool {
+        guard block.kind == .heading || block.kind == .paragraph,
+              block.links.isEmpty, wordCount(block.text) <= 6
+        else { return false }
+        var normalized = block.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while let last = normalized.last, ":.…".contains(last) { normalized.removeLast() }
+        return recircLabelPhrases.contains(normalized.trimmingCharacters(in: .whitespaces))
     }
 
     // MARK: - Phase 2, step 1: terminator hard stop

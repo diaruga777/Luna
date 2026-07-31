@@ -133,7 +133,10 @@ The root uses the production `CardCarouselViewController`:
    incoming bubbles with the classic outward tail curl on the last bubble of
    each same-sender group (2-point grouped spacing, 8 between groups), and each
    arrival pops out of its tail corner while the whole bottom-anchored thread
-   springs up, the way iMessage lands a new message. Three staged bubbles
+   springs up, the way iMessage lands a new message. Message text is 19pt
+   (demonstration-size, not the real app's 17), the composer sits 30 points
+   above the home area to leave a strip for the later "or skip" button, and
+   the compose field is empty. Three staged bubbles
    arrive one at a time — “You can press the Action Button and Luna saves any
    link on screen”, “Woah! Like this?”, and the exact URL currently shown by
    Safari (underlined link-blue, `https://luna.app/about` for the article
@@ -163,21 +166,32 @@ The root uses the production `CardCarouselViewController`:
    5a. Messages instead uses `.rippleOnly` — the press cue and in-place ripple
    play with the URL bubble lit, and the save then resolves as a mock shortcut
    run (`OnboardingShortcutRunEffects.swift`): the highlighted link bubble
-   spring-scales up (1.12×); a black capsule expands around the real Dynamic
-   Island with the app icon on the left and a filling progress ring on the
-   right; a staged fingertip lands on the finished ring (the island squeezes
-   under it); the island collapses; a mock app switcher slides the
-   conversation out as a rounded card while the saved production screen (the
-   same raster the Safari crossfade lands on) slides in and fills the screen;
-   after a one-second hold the switcher hops back; the bubble highlight and
-   scale release; and two follow-up outgoing messages pop in: “Yeah just
-   install this shortcut” with a Shortcuts-purple **{Shortcuts glyph} Luna**
-   pill, then “And change your action button to that shortcut in” with a
-   grey **{gear} Settings** pill. Both pills glow and pulse until tapped —
-   the shortcut pill runs the `BundledShortcut` installer, the Settings pill
-   opens the Action Button settings — and the demonstration stops there
+   spring-scales up (1.12×); the status bar fades OUT and a black capsule
+   expands around the real Dynamic Island — wider and taller than the
+   hardware cutout, growing downward like the real expansion (250×50 from
+   126×37) — with the app icon on the left and a filling progress ring on
+   the right; a staged fingertip lands on the finished ring (the island
+   squeezes under it); the island collapses and the status bar fades back;
+   the app's action-extension presentation then plays as a mock sheet
+   (`OnboardingActionExtensionSheetView`) sliding up over the dimmed
+   conversation — grabber, Done chip, and the scrolling reader showing the
+   same article the Safari mock cleaned up (title, byline, eclipse banner,
+   full body with a bottom fade); after a one-second hold the sheet slides
+   away; the bubble highlight and scale release; and the follow-up outgoing
+   message pops in: “Yeah just install this shortcut” with the real Apple
+   Shortcuts app icon (bundled `ShortcutsAppIcon.png`, rounded in code) on a
+   purple-tinted **Luna** pill. Half a second later a grey “or skip” button
+   fades in under the composer, bottom-right (`onSkipSetup` →
+   `finishOnboarding`). The demonstration stops there
    (`onShortcutSetupMessagesShown` advances the journey to
    `actionButtonSetup` and stops the loop; no shrink to card, no overlay).
+   The Settings walkthrough message — “And change your action button to /
+   that shortcut in **{gear} Settings**”, its pill inlined on the sentence's
+   final line — arrives only after the user has been to the Shortcuts
+   install and re-foregrounded the app
+   (`revealSettingsSetupMessage`). Both pills glow and pulse until tapped —
+   the shortcut pill runs the `BundledShortcut` installer, the Settings pill
+   opens the Action Button settings.
 6. Before Safari opens, onboarding installs the target's temporary save and
    lazily mounts the complete production root returned by that app's
    `AppOnboardingCompletion`. The final crossfade lands on that root
@@ -192,27 +206,42 @@ The root uses the production `CardCarouselViewController`:
    reaches the composite popup, a snapshot including its banner breaks into
    tiles;
    the pieces blast away from the front, rotate, and fade to expose the full
-   article beneath. Only after the cleanup finishes does onboarding start the
+   article beneath. The tiles detach only a fraction ahead of the arriving
+   light: one horizontal front shatters the clutter and brightens the text in
+   a single pass (the glyph bloom renders just a strip around the edge —
+   `GlyphPixelBloomView` — so article-length text sweeps at full frame rate
+   instead of lighting scattered lines). The moment the front reaches the
+   bottom of the screen, the page scrolls on LINEARLY at the front's exact
+   speed: the bright edge parks at the screen bottom while the article tail,
+   then a page-coloured curtain (`MoonRevealCurtainView`, same luminous rim),
+   flows up through it to uncover the setup card. The Safari bottom bar
+   minimizes and then slides away during that scroll, like real Safari.
+   Only after the cleanup finishes does onboarding start the
    Safari PiP guide and open real Safari. If the extension has not run, return
    restores the in-page prompt for another attempt. Choosing “Skip for now”
-   completes onboarding without opening Safari. A verified extension return
-   zooms the mock URL bar and runs the existing URL-isolation/save wave. The
-   saved card then grows into the Messages replica, which plays its
-   three-bubble sequence, the second Action Button press, and the full mock
-   shortcut run of step 5a, ending in place on the two pill messages — the
+   completes onboarding without opening Safari. A verified extension return —
+   or the skip — hands off with the mock app-switcher hop
+   (`transitionToMessagesViaAppSwitcher`): whatever is on screen slides out
+   as a rounded card while the conversation, snapshotted at rest, slides in
+   and fills the screen; there is no more URL-bar zoom or second save wave in
+   Safari. The Messages replica then plays its
+   three-bubble sequence, the Action Button press, and the full mock
+   shortcut run of step 5a, ending in place on the pill message(s) — the
    shortcut and Action Button setup now lives in the conversation instead of
-   an overlay. At the start of each press, the source URL gains a
-   bright app-tint highlight; in Safari it survives the blackout wave until
-   the saved view replaces it, in Messages it holds through the island and
-   app-switcher hop. The setup actions retain the same `BundledShortcut`
+   an overlay. At the start of a press, the source URL gains a
+   bright app-tint highlight; in Safari (Downloader/Price Tracker pages) it
+   survives the blackout wave until the saved view replaces it, in Messages
+   it holds through the island and extension-sheet mock. The setup actions
+   retain the same `BundledShortcut`
    installer and `SystemSettingsLink.openActionButton()` paths and PiP guides.
    If Safari, Shortcuts, or Settings rejects the open request, the recovery
    instruction overlay appears (window-level, over whichever source is up) and
    offers every setup action. While present it is an accessibility modal and
    hides the mounted production hierarchy from assistive technologies. A
-   return from the Shortcuts install leaves the pills in place (the Settings
-   pill keeps pulsing); a return from Settings shows the “Press the action
-   button to finish” overlay with its “Set up later” escape.
+   return from the Shortcuts install reveals the Settings message (the
+   shortcut pill's tail hands off to it); a return from Settings shows the
+   “Press the action button to finish” overlay with its “Set up later”
+   escape.
 8. After Settings return, a real App Intent invocation completes the flow
    through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
    completion path.
@@ -225,8 +254,9 @@ The root uses the production `CardCarouselViewController`:
 
 With Reduce Motion enabled, Safari's full-screen Core Image wave is replaced by
 a short source-to-saved-card crossfade; the Messages ripple is skipped (the
-press cue alone carries the beat) and the island, tap, and app-switcher steps
-become plain fades. The two saves reuse one Core Image context,
+press cue alone carries the beat) and the island, tap, extension-sheet, and
+app-switcher steps become plain fades. The two saves reuse one Core Image
+context,
 avoiding device-context and shader-cache setup between Safari and Messages.
 
 The demonstration save is temporary. Its exact UUID is recorded only when

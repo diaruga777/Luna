@@ -155,6 +155,92 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(existing.platformItemID, "dup1")
     }
 
+    /// The user deleting the asset out of Photos leaves the row pointing at
+    /// nothing, so the URL is no longer "already downloaded" — every save
+    /// surface asking this question (App Intent handoff, extension preview, the
+    /// awaited-transfer poll) must be told to download again, in whichever
+    /// process it runs.
+    func testExistingDownloadedItemClearsPhotosRowWhoseAssetWasDeleted() throws {
+        let urlString = "https://x.com/example/status/500"
+        let item = try makePhotosBackedItem(urlString: urlString, localIdentifier: "gone-id")
+        store.photosBackingProbe = StubBackingProbe(.deleted)
+
+        XCTAssertNil(store.existingDownloadedItem(forURLString: urlString))
+        let repaired = try XCTUnwrap(store.items().first(where: { $0.id == item.id }))
+        XCTAssertEqual(repaired.storageState, .undownloaded)
+        XCTAssertEqual(repaired.title, "Example", "the row keeps its identity and metadata")
+    }
+
+    /// Without FULL read authorization an empty fetch means "not in the selected
+    /// set", not "deleted" — a Photos row must survive that verdict untouched.
+    func testExistingDownloadedItemKeepsPhotosRowUnlessDeletionIsConfirmed() throws {
+        let urlString = "https://x.com/example/status/501"
+        let item = try makePhotosBackedItem(urlString: urlString, localIdentifier: "kept-id")
+
+        for presence in [PhotosBackingPresence.present, .indeterminate] {
+            store.photosBackingProbe = StubBackingProbe(presence)
+            let existing = try XCTUnwrap(
+                store.existingDownloadedItem(forURLString: urlString),
+                "\(presence) must not be read as a deletion")
+            XCTAssertEqual(existing.photosLocalIdentifier, "kept-id")
+            XCTAssertEqual(
+                try XCTUnwrap(store.items().first(where: { $0.id == item.id })).storageState,
+                .photosReference(
+                    localIdentifier: "kept-id",
+                    pendingLocalFileName: nil,
+                    pendingThumbnailFileName: nil))
+        }
+    }
+
+    /// `ensureUndownloaded` is the call every download path makes before it
+    /// starts, so repairing there is what turns the start gate's
+    /// `.alreadyDownloaded` rejection back into a real transfer — and the legacy
+    /// URL marker, the other dedup gate, has to go with it.
+    func testEnsureUndownloadedRevertsDeletedPhotosBackingAndClearsDedupMarker() throws {
+        let urlString = "https://x.com/example/status/502"
+        let item = try makePhotosBackedItem(urlString: urlString, localIdentifier: "stale-id")
+        let wasMarked = AutoDownloadSettings.wasDownloaded(urlString)
+        AutoDownloadSettings.markDownloaded(urlString)
+        defer { if !wasMarked { AutoDownloadSettings.unmarkDownloaded(urlString) } }
+        store.photosBackingProbe = StubBackingProbe(.deleted)
+
+        let ensured = try store.ensureUndownloaded(
+            id: item.id, sourceURLString: urlString, title: "Example")
+        XCTAssertEqual(ensured.id, item.id, "the download re-applies to the existing save")
+        XCTAssertEqual(ensured.storageState, .undownloaded)
+        XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(
+            storageState: ensured.storageState))
+        XCTAssertFalse(AutoDownloadSettings.wasDownloaded(urlString))
+    }
+
+    /// A local-file row never touches PhotoKit — the probe is only for rows that
+    /// gave their bytes away to Photos.
+    func testExistingDownloadedItemDoesNotProbePhotosForLocalRows() throws {
+        let urlString = "https://x.com/example/status/503"
+        let source = root.appendingPathComponent("local.jpg")
+        try makeJPEG().write(to: source)
+        _ = try store.addDownloadedFile(
+            source, kind: .image, sourceURLString: urlString, title: "Local")
+        let probe = StubBackingProbe(.deleted)
+        store.photosBackingProbe = probe
+
+        XCTAssertNotNil(store.existingDownloadedItem(forURLString: urlString))
+        XCTAssertEqual(probe.queryCount, 0)
+    }
+
+    /// A row whose bytes moved into Photos, with the transition's file cleanup
+    /// already settled.
+    private func makePhotosBackedItem(
+        urlString: String, localIdentifier: String
+    ) throws -> SavedMediaItem {
+        let source = root.appendingPathComponent("\(UUID().uuidString).jpg")
+        try makeJPEG().write(to: source)
+        let local = try store.addDownloadedFile(
+            source, kind: .image, sourceURLString: urlString, title: "Example")
+        return try XCTUnwrap(try store.transitionToPhotosReference(
+            local.id, localIdentifier: localIdentifier, kind: .image))
+    }
+
     func testDisplayTitleFallsBackTitleThenCreatorThenURL() throws {
         let urlString = "https://x.com/example/status/99"
         let titled = try store.ensureUndownloaded(
@@ -322,5 +408,21 @@ final class SavedMediaStoreTests: XCTestCase {
             UIColor.systemPurple.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
         }
+    }
+}
+
+/// States one verdict for every identifier, and counts the questions asked — the
+/// simulator's photo library can't be made to hold (or lose) a specific asset.
+private final class StubBackingProbe: PhotosBackingProbing {
+    private let verdict: PhotosBackingPresence
+    private(set) var queryCount = 0
+
+    init(_ verdict: PhotosBackingPresence) {
+        self.verdict = verdict
+    }
+
+    func presence(ofAssetWithLocalIdentifier _: String) -> PhotosBackingPresence {
+        queryCount += 1
+        return verdict
     }
 }

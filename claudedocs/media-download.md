@@ -105,6 +105,28 @@ access, where a nil fetch can mean "not selected" rather than deleted. Limited a
 still display selected assets, but Luna only interprets absence as deletion with full
 `.authorized` read/write access.
 
+The carousel is not the only place that has to notice. **Every save path re-checks
+the backing before it treats a duplicate URL as already downloaded**, so a process
+with no deck — an App Intent, a share/action extension, a Shortcut run — behaves
+like the app that reconciles on foreground. `SavedMediaStore` owns the check at the
+two questions the save paths actually ask:
+
+- `existingDownloadedItem(forURLString:)` — the "don't re-fetch, hand back what we
+  have" query (the intent media handoff, the awaited-transfer poll, the extension's
+  saved-media screen). A Photos row whose asset is gone answers nil.
+- `ensureUndownloaded(…)` — the row-ensure every download makes before starting, so
+  `LiveMediaDownloadStartPolicy.downloaderShouldStart` sees work to do instead of
+  rejecting the start as `.alreadyDownloaded`.
+
+Both route through `clearDeletedPhotosBacking(_:)`, which reverts the row to
+`.undownloaded` (keeping its id, title, creator and archive state, so the
+re-download lands in the same save) and clears the legacy
+`AutoDownloadSettings` dedup marker — the other "already downloaded" gate. The
+verdict comes from `PhotosBackingProbing`; the real `PhotoKitBackingProbe` NEVER
+prompts, and reports `.indeterminate` without full `.authorized` read/write
+access, so an unauthorized extension leaves the row untouched rather than
+guessing. Local-file rows never consult PhotoKit at all.
+
 Deleting a Photos-backed item from the card's long-press menu first
 deletes the referenced `PHAsset` through `PHPhotoLibrary`, then removes the Downloader and
 reading-list records. If Photos access is denied, or limited access cannot resolve the

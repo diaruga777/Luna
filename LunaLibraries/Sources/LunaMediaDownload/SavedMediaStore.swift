@@ -231,6 +231,11 @@ public final class SavedMediaStore {
     private let fm = FileManager.default
     private let overrideContainerURL: URL?
 
+    /// Consulted before a `.photosReference` row is allowed to answer "already
+    /// downloaded" (`existingDownloadedItem`, `ensureUndownloaded`). The real
+    /// PhotoKit probe in every process; tests substitute a verdict.
+    public var photosBackingProbe: PhotosBackingProbing = PhotoKitBackingProbe()
+
     /// In-memory cache of the decoded manifest, valid only while `cacheToken` matches the
     /// file's current (modification date, size). Filled by `loadUnlocked()` on a cache miss
     /// and refreshed by `saveUnlocked()` from the array it just wrote — guarded entirely by
@@ -322,11 +327,22 @@ public final class SavedMediaStore {
     /// The existing item for `urlString` if it's ALREADY downloaded (`.localFile`
     /// or `.photosReference`). Used by callers that must not re-fetch from the
     /// network when a duplicate link comes in.
+    ///
+    /// A `.photosReference` whose asset the user deleted out of Photos is NOT a
+    /// download: it is a dangling identifier that would hand the caller nothing.
+    /// Clearing it here — in the one place every surface asks this question — is
+    /// what lets a process with no card deck (an App Intent, a share/action
+    /// extension) re-download instead of reporting a duplicate, without waiting
+    /// for the main app to run its foreground reconcile sweep.
     public func existingDownloadedItem(forURLString urlString: String) -> SavedMediaItem? {
         guard let item = matchingItem(forURLString: urlString) else { return nil }
         switch item.storageState {
-        case .localFile, .photosReference: return item
-        case .undownloaded: return nil
+        case .localFile:
+            return item
+        case .photosReference:
+            return clearDeletedPhotosBacking(item.id) ? nil : item
+        case .undownloaded:
+            return nil
         }
     }
 
@@ -350,8 +366,12 @@ public final class SavedMediaStore {
     }
 
     /// Ensures every Downloader save has a durable manifest row before download
-    /// begins. Existing local/Photos state wins; metadata is filled in without
-    /// replacing the stable identity supplied by the reading-list item.
+    /// begins. Existing local/Photos state wins — unless a Photos reference's
+    /// asset is gone, which reverts the row to `.undownloaded` so the caller's
+    /// start gate (`LiveMediaDownloadStartPolicy.downloaderShouldStart`) sees
+    /// work to do instead of rejecting the save as `.alreadyDownloaded`.
+    /// Metadata is filled in without replacing the stable identity supplied by
+    /// the reading-list item.
     @discardableResult
     public func ensureUndownloaded(
         id: UUID,
@@ -362,6 +382,9 @@ public final class SavedMediaStore {
         dateSaved: Date = Date()
     ) throws -> SavedMediaItem {
         let recognized = PlatformRecognizer.recognize(sourceURLString)
+        if let matched = matchedItem(id: id, sourceURLString: sourceURLString) {
+            clearDeletedPhotosBacking(matched.id)
+        }
         lock.lock()
         var items = loadUnlocked()
         if let index = Self.matchIndex(in: items, id: id, sourceURLString: sourceURLString) {
@@ -584,6 +607,72 @@ public final class SavedMediaStore {
             removePendingFiles(fileName: old.fileName, thumbnailFileName: nil)
         }
         notifyChanged()
+    }
+
+    /// Reverts a row whose Photos asset the user deleted to `.undownloaded`, so
+    /// the next save of the same URL downloads into this very row — keeping its
+    /// id, title, creator and archive state. Returns whether it cleared one.
+    ///
+    /// A no-op unless the probe CONFIRMS the asset is gone: without full read
+    /// authorization an empty fetch proves nothing (see `PhotosBackingPresence`),
+    /// and a row still backed by Photos must stay a Photos row. The probe runs
+    /// outside the lock and the state is re-verified after it, so a concurrent
+    /// transition (a download completing into a fresh Photos identifier) can't be
+    /// clobbered by a verdict about the previous one.
+    ///
+    /// The legacy URL marker goes too: it is the other "already downloaded" gate
+    /// (`AutoDownloadSettings.wasDownloaded`, read by the ingest fallback and the
+    /// non-Downloader start path), and a row with no backing must not keep
+    /// suppressing its own re-download.
+    @discardableResult
+    public func clearDeletedPhotosBacking(_ itemID: UUID) -> Bool {
+        lock.lock()
+        let items = loadUnlocked()
+        guard let index = items.firstIndex(where: { $0.id == itemID }),
+              case .photosReference(let identifier, _, _) = items[index].storageState
+        else {
+            lock.unlock()
+            return false
+        }
+        let sourceURLString = items[index].sourceURLString
+        lock.unlock()
+
+        guard photosBackingProbe.presence(ofAssetWithLocalIdentifier: identifier) == .deleted
+        else { return false }
+
+        lock.lock()
+        var updated = loadUnlocked()
+        guard let index = updated.firstIndex(where: { $0.id == itemID }),
+              case .photosReference(let current, let pendingFile, let pendingThumbnail)
+                = updated[index].storageState,
+              current == identifier
+        else {
+            lock.unlock()
+            return false
+        }
+        updated[index].storageState = .undownloaded
+        guard (try? saveUnlocked(updated)) != nil else {
+            lock.unlock()
+            return false
+        }
+        lock.unlock()
+        // Leftovers from an interrupted local-to-Photos transition have nothing
+        // left to belong to once the reference is gone.
+        removePendingFiles(fileName: pendingFile, thumbnailFileName: pendingThumbnail)
+        AutoDownloadSettings.unmarkDownloaded(sourceURLString)
+        notifyChanged()
+        return true
+    }
+
+    /// The row `ensureUndownloaded`/`addDownloadedFile` would act on, under the
+    /// same id-or-URL-or-platform-item matching, without the `items()` recovery
+    /// pass. Read-only, so callers can consult a row before mutating it.
+    private func matchedItem(id: UUID?, sourceURLString: String) -> SavedMediaItem? {
+        lock.lock()
+        defer { lock.unlock() }
+        let items = loadUnlocked()
+        return Self.matchIndex(in: items, id: id, sourceURLString: sourceURLString)
+            .map { items[$0] }
     }
 
     /// A deleted/unavailable Photos asset leaves an archived row downloadable;

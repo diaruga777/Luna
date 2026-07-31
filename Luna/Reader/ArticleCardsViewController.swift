@@ -331,6 +331,21 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // rather than over the screen background.
         applyCarouselTopInset(Self.carouselTopInset)
         updateExternalReaderInsets()
+        reconcileFooterContentFade()
+    }
+
+    /// The footer veil belongs to an immersed, bottom-extended reader and to
+    /// nothing else. It is raised and lowered from the immersion callbacks, so a
+    /// card torn down — or a deck reloaded, or a fresh root swapped in, which is
+    /// exactly what completing onboarding does — while it is up leaves it
+    /// stranded OPAQUE. The one thing it sits above is the scrub strip, so that
+    /// reads as a black shroud over the mini carousel with the flanking Settings
+    /// and Share circles still drawn on top of it. Reconciled at the points
+    /// where no immersion animation can be in flight, so a stranded veil cannot
+    /// outlive the state that raised it.
+    private func reconcileFooterContentFade() {
+        guard !carousel.isImmersed, footerContentFade.alpha != 0 else { return }
+        footerContentFade.alpha = 0
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -779,6 +794,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     @objc private func reload() {
+        reconcileFooterContentFade()
         let allReaderItems = store.items().filter {
             includesAllKinds || ReadingListSectioning.rendersAsReader($0)
         }

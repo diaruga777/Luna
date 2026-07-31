@@ -124,6 +124,41 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(audio.frame.width, 38, accuracy: 0.5)
     }
 
+    /// The footer veil is the one screen-level view that covers the scrub strip
+    /// and nothing above it, and it is raised only from the immersion callbacks
+    /// — so a card torn down while immersed strands it opaque and the strip
+    /// reads as blacked out. An un-immersed deck must never carry it.
+    func testFooterVeilCannotOutliveImmersionOverTheScrubStrip() throws {
+        let controller = makeArticleController(seed: "footer-veil", title: "Footer Veil")
+        let strip = try XCTUnwrap(
+            firstSubview(of: CarouselScrubberView.self, in: controller.carousel.view))
+        let veil = try XCTUnwrap(
+            controller.view.subviews.first {
+                type(of: $0).description().contains("ReaderFooterContentFade")
+            },
+            "the footer veil should be mounted above the carousel")
+        let stripFrame = strip.convert(strip.bounds, to: controller.view)
+        let veilFrame = veil.convert(veil.bounds, to: controller.view)
+
+        XCTAssertTrue(
+            veilFrame.intersects(stripFrame),
+            "this test is only meaningful while the veil spans the strip's band")
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
+
+        // Strand it the way a teardown mid-immersion does, then hand the deck
+        // either of the two beats that cannot coincide with an immersion
+        // animation.
+        veil.alpha = 1
+        controller.beginAppearanceTransition(true, animated: false)
+        controller.endAppearanceTransition()
+        XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
+
+        veil.alpha = 1
+        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
+    }
+
     /// Scoped to the deck's own chrome row: the card's nested reader carries
     /// buttons with the same labels (hidden while the row drives them).
     private func chromeButton(

@@ -318,14 +318,15 @@ final class MoonRevealLineView: UIView {
         revealMaskLayer.path = finalRevealPath
         CATransaction.commit()
 
+        // No explicit beginTime: a zero beginTime is stamped when the
+        // animation reaches the render tree, so a rendering backlog can never
+        // start the sweep already partway through its duration.
         let moonAnimation = CABasicAnimation(keyPath: "transform")
         moonAnimation.fromValue = CATransform3DIdentity
         moonAnimation.toValue = transform
         moonAnimation.duration = resolvedDuration
         moonAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         moonAnimation.isRemovedOnCompletion = true
-        moonAnimation.beginTime = moonLayer.convertTime(
-            CACurrentMediaTime(), from: nil)
         moonLayer.add(moonAnimation, forKey: "moonReveal")
 
         // The bloom's cooling distance rides the front's speed: however fast
@@ -346,8 +347,6 @@ final class MoonRevealLineView: UIView {
         revealAnimation.duration = resolvedDuration
         revealAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         revealAnimation.isRemovedOnCompletion = true
-        revealAnimation.beginTime = revealMaskLayer.convertTime(
-            CACurrentMediaTime(), from: nil)
         revealMaskLayer.add(revealAnimation, forKey: "opaqueGlyphReveal")
 
         DispatchQueue.main.asyncAfter(
@@ -448,7 +447,10 @@ final class MoonRevealLineView: UIView {
 /// Quartz shadows are then applied to that exact alpha image in additive passes.
 /// Keeping the padded result in its own view lets the glow illuminate pixels
 /// around the letters instead of being clipped back to the text mask.
-private final class GlyphPixelBloomView: UIView {
+///
+/// Internal (not private): the mock Safari article's images ride the same
+/// light pass, fed a raster of the image instead of glyph alpha.
+final class GlyphPixelBloomView: UIView {
     struct EdgeBand {
         let inner: CGFloat
         let outer: CGFloat
@@ -538,11 +540,26 @@ private final class GlyphPixelBloomView: UIView {
         let glyphRenderer = UIGraphicsImageRenderer(
             size: glyphLabel.bounds.size,
             format: glyphFormat)
-        glyphImage = glyphRenderer.image { _ in
-            glyphLabel.drawText(in: glyphLabel.bounds)
-        }
+        configure(
+            raster: glyphRenderer.image { _ in
+                glyphLabel.drawText(in: glyphLabel.bounds)
+            },
+            rasterFrame: glyphFrame,
+            circleFrame: circleFrame,
+            scale: scale)
+    }
 
-        self.glyphFrame = glyphFrame
+    /// The general emitter form: any raster works as the light source — the
+    /// additive passes brighten wherever it has luminance, so an image's
+    /// bright pixels flare exactly the way glyph alpha does.
+    func configure(
+        raster: UIImage,
+        rasterFrame: CGRect,
+        circleFrame: CGRect,
+        scale: CGFloat
+    ) {
+        glyphImage = raster
+        glyphFrame = rasterFrame
         initialCircleFrame = circleFrame
         rasterScale = scale
         progress = 0
@@ -582,7 +599,10 @@ private final class GlyphPixelBloomView: UIView {
         self.circleTravel = circleTravel
         self.edgeBandScale = max(edgeBandScale, 1)
         revealDuration = max(duration, 0.001)
-        revealStartTime = CACurrentMediaTime()
+        // Anchored by the first display-link tick, not by this call: when a
+        // heavy transaction separates the call from the first rendered frame,
+        // a wall-clock anchor would start the light already cooled.
+        revealStartTime = 0
         progress = 0
 
         // Only a strip around the circle's leading edge ever emits light (the
@@ -635,6 +655,7 @@ private final class GlyphPixelBloomView: UIView {
     }
 
     @objc private func drawNextRevealFrame(_ link: CADisplayLink) {
+        if revealStartTime == 0 { revealStartTime = link.timestamp }
         let previousStrip = currentStripRect()
         let elapsed = link.timestamp - revealStartTime
         progress = min(max(CGFloat(elapsed / revealDuration), 0), 1)

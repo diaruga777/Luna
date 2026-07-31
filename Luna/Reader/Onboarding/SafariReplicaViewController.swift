@@ -217,7 +217,7 @@ final class SafariReplicaViewController:
     /// The buried article's rescue, told through Safari's own UI: the page
     /// menu opens from the address bar's page button, hunts down to Manage
     /// Extensions, the Extensions sheet flips Luna's toggle on, and the wipe
-    /// begins the moment the sheet leaves.
+    /// — primed under the departing sheet — begins the moment it has left.
     private func runExtensionEnableDemonstration() {
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
@@ -275,11 +275,19 @@ final class SafariReplicaViewController:
                         OnboardingExtensionEnableTiming.sheetDismissDelay,
                         generation: generation
                     ) {
-                        // The sheet leaves and the wipe sets out together.
+                        // The wipe is primed under the sheet's scrim — the
+                        // tile swap and re-occlusion land while the page is
+                        // still dimmed — and sets out the moment the sheet
+                        // has left, so its first shine at the top of the
+                        // page plays in the clear.
+                        self.articleView.prepareCleanUp()
                         sheet.dismiss { [weak self] in
-                            self?.extensionsSheet = nil
+                            guard let self else { return }
+                            self.extensionsSheet = nil
+                            guard generation == self.enableDemoGeneration
+                            else { return }
+                            self.articleView.cleanUpClutter()
                         }
-                        self.articleView.cleanUpClutter()
                     }
                 }
             }

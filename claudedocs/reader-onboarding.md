@@ -130,8 +130,8 @@ The root uses the production `CardCarouselViewController`:
    address bar's page button, its list scrolls quickly down to a highlighted
    “Manage Extensions” row, the Manage Extensions bottom sheet slides up with
    the app's real icon and name beside a mock switch, the switch flips on,
-   and the sheet's dismissal launches the cleanup wipe (step 7) at the same
-   moment.
+   the cleanup wipe (step 7) is primed under the departing sheet, and it sets
+   out the moment the sheet has left.
    Other demo
    surfaces remain bundled, noninteractive `WKWebView` pages with a
    nonpersistent data store and JavaScript disabled; central Luna rotates its
@@ -217,20 +217,34 @@ The root uses the production `CardCarouselViewController`:
    onboarding remake or a Safari view clipped smaller.
 7. Setup deliberately splits the demonstrations. The first Safari stage has no
    separate setup overlay: the mock extension-enable pass of step 3 ends with
-   the Manage Extensions sheet dismissing and the cleanup wipe starting in
-   the same beat. Each obstruction breaks into tiles that blast away from
-   the front, rotate, and fade to expose the article beneath. The tiles
-   detach only a fraction ahead of the arriving
-   light: one horizontal front shatters the clutter and brightens the text in
-   a single pass, and the reveal is EXACTLY the intro's — the same glyph-pixel
-   bloom, with `GlyphPixelBloomView`'s falloff distances scaled by the front's
-   speed relative to the intro line's (~46pt/s reference), so every glyph
-   brightens and cools over the same TIME as “You want to read more…” despite
-   the ~9× faster sweep (the bloom renders just a strip around the edge, so
-   article-length text sweeps at full frame rate). The setup card, sharing
-   the screen, comes out of the same sweep from behind a page-coloured
-   curtain (`MoonRevealCurtainView`, same luminous rim) — there is no scroll
-   and the browser bar never moves.
+   the wipe primed under the Manage Extensions sheet (`prepareCleanUp` swaps
+   each obstruction for still tiles, re-occludes the content and draws every
+   light raster while the sheet's scrim still dims the page) and set out the
+   moment the sheet has left, so the first shine at the top of the page plays
+   in the clear. The sweep itself always starts a run-loop turn after that
+   heavy preparation commits — anchoring animations in the preparation's own
+   turn let the commit outlive the short reveals at the top of the page, which
+   then started already finished: at production speed the headline snapped in
+   with no shine at all while the slower body bloomed correctly (the 6×
+   `-slowOnboardingAnimations` run hid this entirely). For the same reason the
+   `GlyphPixelBloomView` clock is anchored to its first display-link tick and
+   the moon-reveal `CABasicAnimation`s carry no explicit `beginTime`. Each
+   obstruction's tiles blast away from the front, rotate, and fade to expose
+   the article beneath, detaching only a fraction ahead of the arriving
+   light: one horizontal front shatters the clutter and brightens the content
+   in a single pass, and the reveal is EXACTLY the intro's — the same
+   glyph-pixel bloom, with `GlyphPixelBloomView`'s falloff distances scaled by
+   the front's speed relative to the intro line's (~46pt/s reference), so
+   every glyph brightens and cools over the same TIME as “You want to read
+   more…” despite the ~9× faster sweep (the bloom renders just a strip around
+   the edge, so article-length text sweeps at full frame rate). The images
+   ride the same light pass: `MoonRevealImageView` feeds a raster of the image
+   (aspect fill and corner mask included) to its own `GlyphPixelBloomView`, so
+   the image's bright pixels — the NASA moons, the icon art — flare white-hot
+   at the edge and cool back to their normal colors exactly like glyphs. The
+   setup card, sharing the screen, comes out of the same sweep from behind a
+   page-coloured curtain (`MoonRevealCurtainView`, same luminous rim) — there
+   is no scroll and the browser bar never moves.
    Only after the cleanup finishes does onboarding start the
    Safari PiP guide and open real Safari. If the extension has not run, return
    restores the in-page prompt for another attempt. Choosing “Skip for now”

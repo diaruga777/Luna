@@ -922,7 +922,7 @@ final class ReaderOnboardingTests: XCTestCase {
         article.cleanUpClutter {
             finished.fulfill()
         }
-        wait(for: [finished], timeout: 6)
+        wait(for: [finished], timeout: 15)
 
         let body = try XCTUnwrap(
             article.descendants(of: MoonRevealLineView.self).first {
@@ -1054,7 +1054,7 @@ final class ReaderOnboardingTests: XCTestCase {
             safari.view.descendants(of: OnboardingArticleReplicaView.self).first)
         let cleaned = expectation(description: "cleanup")
         article.cleanUpClutter { cleaned.fulfill() }
-        wait(for: [cleaned], timeout: 6)
+        wait(for: [cleaned], timeout: 15)
 
         for label in ["Activate Safari", "Skip"] {
             let button = try XCTUnwrap(

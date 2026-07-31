@@ -16,17 +16,20 @@ private enum OnboardingArticleReplicaPalette {
 
 enum OnboardingArticleReplicaTiming {
     static let shatterDuration: TimeInterval = 0.86
-    /// One continuous lunar edge crosses the whole page in this time; every
-    /// element's reveal, every tile detachment and the setup-card curtain
-    /// are cut from the same constant-speed front, with zero offset.
-    static let revealSweepDuration: TimeInterval = 2.2
+    /// The next element's reveal sets out when the one above it is this far
+    /// through — the cascade equivalent of the intro's reading beat between
+    /// its two lines.
+    static let cascadeOverlap: Double = 0.5
+    /// The setup-card curtain has no light of its own, so it need not crawl
+    /// at the intro's pace; it just slides off within this long.
+    static let curtainMaxDuration: TimeInterval = 1.6
 }
 
 /// Luna's fictional Safari article. The page loads already buried under ads,
 /// popups and a subscription wall; once the mock extension-enable sequence
-/// completes, the clutter is shattered top-to-bottom while the same lunar
-/// eclipse reveal that opened the app exposes the content beneath — short
-/// enough that the setup card is on screen the moment the wipe passes.
+/// completes, the clutter is shattered top-to-bottom while the content
+/// beneath reveals as a cascade of the SAME lunar reveals that opened the
+/// app — element by element at the intro's own pace, the setup card last.
 /// It is native instead of HTML so those glyph-level effects are possible.
 final class OnboardingArticleReplicaView: UIView {
     static let fullArticleText = OnboardingLunaArticleCopy.plainText
@@ -48,6 +51,27 @@ final class OnboardingArticleReplicaView: UIView {
         let view: UIView
         let delay: TimeInterval
         let flight: CGAffineTransform
+    }
+
+    /// One stretch of the cascading front: within [top, bottom] the light
+    /// arrives at `start + (y - top) / speed`. Tiles look their own page-y
+    /// up in these legs so every tile detaches exactly when the light below
+    /// it arrives, even though each element runs its own intro-paced reveal.
+    private struct FrontLeg {
+        let top: CGFloat
+        let bottom: CGFloat
+        let start: TimeInterval
+        let speed: CGFloat
+
+        func arrival(at y: CGFloat) -> TimeInterval {
+            start + TimeInterval(max(0, min(y, bottom) - top) / speed)
+        }
+    }
+
+    private struct CascadeEntry {
+        let start: TimeInterval
+        let duration: TimeInterval
+        let reveal: (TimeInterval) -> Void
     }
 
     /// Hosts the article content plus the below-the-fold setup card. It never
@@ -134,6 +158,9 @@ final class OnboardingArticleReplicaView: UIView {
     private var stage = Stage.blocked
     private var sequenceGeneration = 0
     private var preparedShatterPieces: [ShatterPiece] = []
+    private var revealSchedule: [CascadeEntry] = []
+    private var frontLegs: [FrontLeg] = []
+    private var curtainSchedule: (start: TimeInterval, duration: TimeInterval) = (0, 0)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -274,27 +301,118 @@ final class OnboardingArticleReplicaView: UIView {
         sequenceGeneration += 1
         layoutIfNeeded()
 
-        preparedShatterPieces = clutterContainer.subviews.flatMap {
-            buildShatterPieces(for: $0)
-        }
         appIcon.prepareToRevealAgain()
         headline.prepareToRevealAgain()
         byline.prepareToRevealAgain()
         eclipseImage.prepareToRevealAgain()
         body.prepareToRevealAgain()
         layoutIfNeeded()
+        computeCascade()
+        preparedShatterPieces = clutterContainer.subviews.flatMap {
+            buildShatterPieces(for: $0)
+        }
     }
 
-    /// Shatters every obstruction in a single top-to-bottom sweep while the
-    /// same descending lunar edge that opened the app reveals the content
-    /// underneath — the setup card included, since everything shares one
-    /// screen.
+    /// THE ARTICLE IS THE INTRO'S ANIMATION, ELEMENT BY ELEMENT. Every
+    /// element's edge crosses it at exactly the intro line's own speed
+    /// (`GlyphPixelBloomView.referenceFrontSpeed`), which keeps the bloom's
+    /// band scale at 1 — the identical deliberate light of “You want to
+    /// read more.”, not a sped-up derivative of it. The reveals cascade:
+    /// the icon and headline set out together (they share the first row),
+    /// and each following element sets out when the one above it is halfway
+    /// through, echoing the intro's line-after-line rhythm. The tiles and
+    /// the setup-card curtain are cut from the same schedule so nothing
+    /// leads or trails the light.
+    private func computeCascade() {
+        let speed = GlyphPixelBloomView.referenceFrontSpeed
+        let rows: [[(view: UIView, crossing: CGFloat, reveal: (TimeInterval) -> Void)]] = [
+            [
+                (appIcon, appIcon.revealFrontCrossingDistance,
+                 { [appIcon] in appIcon.reveal(duration: $0) }),
+                (headline, headline.revealFrontCrossingDistance,
+                 { [headline] in headline.reveal(duration: $0) { } }),
+            ],
+            [
+                (byline, byline.revealFrontCrossingDistance,
+                 { [byline] in byline.reveal(duration: $0) { } }),
+            ],
+            [
+                (eclipseImage, eclipseImage.revealFrontCrossingDistance,
+                 { [eclipseImage] in eclipseImage.reveal(duration: $0) }),
+            ],
+            [
+                (body, body.revealFrontCrossingDistance,
+                 { [body] in body.reveal(duration: $0) { } }),
+            ],
+        ]
+
+        revealSchedule = []
+        frontLegs = []
+        var rowStart: TimeInterval = 0
+        var previousRowDuration: TimeInterval = 0
+        for (index, row) in rows.enumerated() {
+            if index > 0 {
+                rowStart += previousRowDuration
+                    * OnboardingArticleReplicaTiming.cascadeOverlap
+            }
+            var rowDuration: TimeInterval = 0
+            for element in row {
+                let duration = TimeInterval(element.crossing / speed)
+                rowDuration = max(rowDuration, duration)
+                revealSchedule.append(CascadeEntry(
+                    start: rowStart, duration: duration, reveal: element.reveal))
+                // The icon shares its row with the wider headline; the
+                // headline's leg covers that band of the page for tiles.
+                if element.view !== appIcon {
+                    frontLegs.append(FrontLeg(
+                        top: element.view.frame.minY,
+                        bottom: element.view.frame.maxY,
+                        start: rowStart,
+                        speed: element.crossing
+                            / CGFloat(max(duration, 0.001))))
+                }
+            }
+            previousRowDuration = rowDuration
+        }
+
+        let curtainTop = body.frame.maxY + 2
+        let curtainBottom = max(scrollView.contentSize.height, curtainTop + 1)
+        let curtainCrossing = curtainBottom - curtainTop + 2
+        let curtainDuration = min(
+            TimeInterval(curtainCrossing / speed),
+            OnboardingArticleReplicaTiming.curtainMaxDuration)
+        curtainSchedule = (
+            start: rowStart + previousRowDuration
+                * OnboardingArticleReplicaTiming.cascadeOverlap,
+            duration: curtainDuration)
+        frontLegs.append(FrontLeg(
+            top: curtainTop,
+            bottom: curtainBottom,
+            start: curtainSchedule.start,
+            speed: curtainCrossing / CGFloat(max(curtainDuration, 0.001))))
+    }
+
+    /// When the cascading light reaches a page-level y: inside an element,
+    /// its own leg answers; in the dead space between elements, the next
+    /// leg's start does (its `arrival` clamps y above its top).
+    private func frontArrival(atPageY y: CGFloat) -> TimeInterval {
+        for leg in frontLegs where y <= leg.bottom {
+            return leg.arrival(at: y)
+        }
+        return frontLegs.last.map { $0.arrival(at: $0.bottom) } ?? 0
+    }
+
+    /// Shatters every obstruction top-to-bottom while the content underneath
+    /// reveals as a cascade of INTRO reveals — each element crossed by the
+    /// same descending lunar edge, at the same speed, with the same light as
+    /// “You want to read more.” — the setup card included, since everything
+    /// shares one screen.
     ///
-    /// The sweep itself starts one run-loop turn after `prepareCleanUp`'s
-    /// work, never in the same turn: the preparation's heavy commit (tiles,
+    /// The cascade starts one run-loop turn after `prepareCleanUp`'s work,
+    /// never in the same turn: the preparation's heavy commit (tiles,
     /// occluders, rasters) otherwise lands between an animation's added
-    /// wall-clock anchor and its first rendered frame, and the short reveals
-    /// at the top of the page — shine and all — start already finished.
+    /// wall-clock anchor and its first rendered frame, and the reveals at
+    /// the top of the page — shine and all — start already finished.
     func cleanUpClutter(completion: (() -> Void)? = nil) {
         guard stage == .blocked || stage == .primed else {
             completion?()
@@ -341,16 +459,14 @@ final class OnboardingArticleReplicaView: UIView {
         }
 
         curtain.layoutIfNeeded()
-        let delay = TimeInterval(max(0, top - 1) / frontSpeed)
-        let duration = TimeInterval(
-            curtain.revealFrontCrossingDistance / frontSpeed)
-        afterDelay(delay) { view in
-            view.setupCurtain?.reveal(duration: duration) {
+        let schedule = curtainSchedule
+        afterDelay(schedule.start) { view in
+            view.setupCurtain?.reveal(duration: schedule.duration) {
                 view.setupCurtain?.removeFromSuperview()
                 view.setupCurtain = nil
             }
         }
-        return delay + duration
+        return schedule.start + schedule.duration
     }
 
     /// Returning from Safari without the extension having run re-offers the
@@ -359,42 +475,14 @@ final class OnboardingArticleReplicaView: UIView {
         setupCard.setActionsEnabled(true)
     }
 
-    /// One front for the whole page: it leaves the screen top at sweep start
-    /// and descends at constant speed, crossing the full height in the sweep
-    /// duration. Everything — tile detachments, each element's edge, the
-    /// setup-card curtain — is cut from this one line so nothing leads or
-    /// trails anything else.
-    private var frontSpeed: CGFloat {
-        max(bounds.height, 1)
-            / CGFloat(OnboardingArticleReplicaTiming.revealSweepDuration)
-    }
-
-    /// Cuts each (already re-occluded) element's reveal from the shared
-    /// front: each view's edge starts exactly when the front reaches its top
-    /// (its occluder's edge waits 1pt above it) and moves at exactly the
-    /// front's speed, so the body's light visibly continues from the title's
-    /// instead of every element replaying its own sweep.
+    /// Plays the cascade computed in `prepareCleanUp`: each element's reveal
+    /// is the intro's own animation, staggered down the page.
     @discardableResult
     private func revealContentTopToBottom() -> TimeInterval {
         var finish: TimeInterval = 0
-        let plans: [(view: UIView, crossing: CGFloat, reveal: (TimeInterval) -> Void)] = [
-            (appIcon, appIcon.revealFrontCrossingDistance,
-             { [appIcon] in appIcon.reveal(duration: $0) }),
-            (headline, headline.revealFrontCrossingDistance,
-             { [headline] in headline.reveal(duration: $0) { } }),
-            (byline, byline.revealFrontCrossingDistance,
-             { [byline] in byline.reveal(duration: $0) { } }),
-            (eclipseImage, eclipseImage.revealFrontCrossingDistance,
-             { [eclipseImage] in eclipseImage.reveal(duration: $0) }),
-            (body, body.revealFrontCrossingDistance,
-             { [body] in body.reveal(duration: $0) { } }),
-        ]
-        for plan in plans {
-            let delay = TimeInterval(
-                max(0, plan.view.frame.minY - 1) / frontSpeed)
-            let duration = TimeInterval(plan.crossing / frontSpeed)
-            finish = max(finish, delay + duration)
-            afterDelay(delay) { _ in plan.reveal(duration) }
+        for entry in revealSchedule {
+            finish = max(finish, entry.start + entry.duration)
+            afterDelay(entry.start) { _ in entry.reveal(entry.duration) }
         }
         return finish
     }
@@ -412,8 +500,11 @@ final class OnboardingArticleReplicaView: UIView {
             target.isHidden = true
             return []
         }
-        let columns = min(max(Int(target.bounds.width / 56), 3), 8)
-        let rows = min(max(Int(target.bounds.height / 56), 2), 8)
+        // ~32pt tiles: at the front's speed a fresh row detaches every
+        // ~80ms, fast enough to read as one continuous crumble — the old
+        // ~56pt tiles came off as thick slabs, one every ~135ms.
+        let columns = min(max(Int(target.bounds.width / 32), 4), 14)
+        let rows = min(max(Int(target.bounds.height / 32), 3), 14)
         let targetFrame = clutterContainer.convert(target.frame, to: self)
         let height = max(bounds.height, 1)
         var pieces: [ShatterPiece] = []
@@ -439,11 +530,14 @@ final class OnboardingArticleReplicaView: UIView {
                 piece.layer.cornerRadius = 1.5
                 addSubview(piece)
 
-                // Each tile detaches at the exact moment the shared front
-                // line reaches its center — zero offset against the light
-                // arriving on the content beneath it.
+                // Each tile detaches the moment the cascading light beneath
+                // its center arrives, plus a deterministic 0–33ms TRAILING
+                // scatter: it breaks the row-at-a-time lockstep so the
+                // crumble reads as continuous, and because it only ever
+                // trails, no tile flies before the light has arrived.
                 let parity: CGFloat = (row + column).isMultiple(of: 2) ? 1 : -1
-                let delay = TimeInterval(frame.midY / frontSpeed)
+                let scatter = TimeInterval((row * 3 + column * 7) % 4) * 0.011
+                let delay = frontArrival(atPageY: frame.midY) + scatter
                 let delta = CGPoint(
                     x: frame.midX - bounds.midX,
                     y: frame.midY + height)
@@ -488,17 +582,27 @@ final class OnboardingArticleReplicaView: UIView {
             return 0.18
         }
         let pieceDuration = OnboardingArticleReplicaTiming.shatterDuration * 0.54
-        for piece in pieces {
-            afterDelay(piece.delay) { _ in
-                UIView.animate(
-                    withDuration: pieceDuration,
-                    delay: 0,
-                    options: [.curveEaseOut, .beginFromCurrentState]
-                ) {
-                    piece.view.transform = piece.flight
-                    piece.view.alpha = 0
-                } completion: { _ in
-                    piece.view.removeFromSuperview()
+        // One dispatch turn (one transaction) per frame-width bucket instead
+        // of one per tile — the finer tiles roughly double the count, and a
+        // few hundred separate commits queue the render server up enough to
+        // delay the reveals' first frames.
+        let buckets = Dictionary(grouping: pieces) {
+            Int(($0.delay * 60).rounded())
+        }
+        for (_, group) in buckets {
+            guard let earliest = group.map(\.delay).min() else { continue }
+            afterDelay(earliest) { _ in
+                for piece in group {
+                    UIView.animate(
+                        withDuration: pieceDuration,
+                        delay: 0,
+                        options: [.curveEaseOut, .beginFromCurrentState]
+                    ) {
+                        piece.view.transform = piece.flight
+                        piece.view.alpha = 0
+                    } completion: { _ in
+                        piece.view.removeFromSuperview()
+                    }
                 }
             }
         }

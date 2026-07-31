@@ -274,6 +274,9 @@
     "By default you're notified only the first time this contact shares with you." : {
 
     },
+    "Camera Access Needed" : {
+
+    },
     "Cancel" : {
 
     },
@@ -785,6 +788,9 @@
     "Luna sets this up automatically for Outlook." : {
 
     },
+    "Luna tracks your eyes to pause playback automatically when you look away. Turn on camera access in Settings to use it." : {
+
+    },
     "Lunar Eclipse Transition" : {
 
     },
@@ -1012,6 +1018,9 @@
 
     },
     "Outlook sign-in failed. Please try again." : {
+
+    },
+    "Pausing when you look away" : {
 
     },
     "PDF" : {
@@ -1614,10 +1623,16 @@
     "Trying harder with Apple Intelligence…" : {
 
     },
+    "Turn off eye tracking" : {
+
+    },
     "Turn off read aloud" : {
 
     },
     "Turn on 2-Step Verification, then create an app password for \"Mail\" and paste the 16-character code here." : {
+
+    },
+    "Turn on eye tracking" : {
 
     },
     "Unable to save this link in %@" : {
@@ -1660,6 +1675,9 @@
 
     },
     "Waiting to resume" : {
+
+    },
+    "Watching" : {
 
     },
     "We couldn't find a price on this page, so it wasn't added. Try a product page that shows a price." : {

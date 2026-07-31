@@ -66,6 +66,35 @@ public enum GazeScreenProjection {
             y: (-CGFloat(hit.y) - cameraHeightAboveScreen) * pointsPerMetre)
     }
 
+    /// Rotates a portrait-fixed screen point into the screen coordinates the
+    /// interface is currently presented in.
+    ///
+    /// This is done by hand rather than through
+    /// `UIScreen.fixedCoordinateSpace.convert(_:to:)` because that conversion
+    /// needs a window attached to a scene, which is precisely what a unit test
+    /// (and any headless layout pass) does not have — it silently collapses to
+    /// the origin instead of failing.
+    ///
+    /// - Parameter portraitSize: the display's size held upright.
+    public static func orientedScreenPoint(
+        fromPortraitPoint point: CGPoint,
+        portraitSize: CGSize,
+        orientation: UIInterfaceOrientation
+    ) -> CGPoint {
+        switch orientation {
+        case .portraitUpsideDown:
+            return CGPoint(x: portraitSize.width - point.x, y: portraitSize.height - point.y)
+        case .landscapeLeft:
+            // Home-button edge to the right: the device's top edge runs down
+            // the screen's left, so portrait-y becomes screen-x.
+            return CGPoint(x: point.y, y: portraitSize.width - point.x)
+        case .landscapeRight:
+            return CGPoint(x: portraitSize.height - point.y, y: point.x)
+        default:
+            return point
+        }
+    }
+
     /// Whether a projected point counts as "on the display". The margin absorbs
     /// the estimator's error at the edges: a reader looking at the very bottom
     /// of the screen should not be classified as looking past the phone.

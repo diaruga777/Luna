@@ -97,9 +97,11 @@ public struct GazeAttentionMonitor {
 
     private var lastTimestamp: TimeInterval?
 
-    /// Longest gap between samples that still counts as elapsed time. A stalled
-    /// session (app suspended, camera pre-empted) must not hand back a
-    /// multi-second jump that trips the threshold the instant it resumes.
+    /// Longest gap between samples that still reads as one continuous
+    /// excursion. Anything longer is a discontinuity — a suspended app, a
+    /// pre-empted camera — and starts the excursion over rather than being
+    /// counted or clamped: clamping to any value at or above `farTolerance`
+    /// would trip the threshold the instant the session resumed.
     private static let maximumSampleGap: TimeInterval = 0.5
 
     public init(policy: GazeAttentionPolicy = GazeAttentionPolicy()) {
@@ -130,8 +132,16 @@ public struct GazeAttentionMonitor {
     public mutating func update(
         sample: GazeSample, focus: CGPoint, at timestamp: TimeInterval
     ) -> Bool {
-        let elapsed = lastTimestamp.map { min(Self.maximumSampleGap, max(0, timestamp - $0)) } ?? 0
+        let gap = lastTimestamp.map { timestamp - $0 }
         lastTimestamp = timestamp
+        var elapsed: TimeInterval = 0
+        if let gap, gap > 0 {
+            if gap > Self.maximumSampleGap {
+                awayProgress = 0
+            } else {
+                elapsed = gap
+            }
+        }
 
         let tolerance = policy.tolerance(for: sample, focus: focus)
         guard tolerance.isFinite else {

@@ -370,6 +370,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Where the reader's eyes are expected to be: the ORP column in Words, the
+    /// centre of the phrase panel in Phrases. Published because eye tracking
+    /// measures every glance against it.
+    public var focalGazePoint: CGPoint {
+        let x = displayMode == .phrases
+            ? view.bounds.midX : view.bounds.width * Self.focalFraction
+        return CGPoint(x: x, y: focalCenterY)
+    }
+
     /// The focal word currently displayed — carried to other modes on a switch.
     public var currentReadingWordIndex: Int? {
         // Reported in the shared token space (see resolveResumeFrame).
@@ -1582,12 +1591,8 @@ extension RSVPViewController: RSVPGazeCoordinatorDelegate {
         refreshEyeTrackingButton()
     }
 
-    /// The point the reader is expected to be looking at: the ORP column in
-    /// Words, the centre of the phrase panel in Phrases.
     func gazeCoordinatorFocalPoint(_ coordinator: RSVPGazeCoordinator) -> CGPoint {
-        let x = displayMode == .phrases
-            ? view.bounds.midX : view.bounds.width * Self.focalFraction
-        return CGPoint(x: x, y: focalCenterY)
+        focalGazePoint
     }
 }
 

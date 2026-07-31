@@ -159,13 +159,19 @@ final class RSVPGazeCoordinator {
         delegate.gazeCoordinatorRequestsPause(self)
     }
 
-    /// Moves a screen-space gaze point into the reader view's coordinates. The
-    /// tracker reports in `UIScreen.fixedCoordinateSpace`, which stays
-    /// portrait-origin, so UIKit absorbs any interface rotation here.
+    /// Moves a gaze point out of the tracker's portrait-fixed screen space and
+    /// into the reader view's coordinates, in three steps: rotate for the
+    /// interface orientation, subtract the window's own screen position (an
+    /// iPad in Split View), then let UIKit walk the view hierarchy.
     private func converted(_ sample: GazeSample, in view: UIView) -> GazeSample {
-        guard case .point(let point) = sample else { return sample }
-        guard let screen = view.window?.screen else { return sample }
-        return .point(view.convert(point, from: screen.fixedCoordinateSpace))
+        guard case .point(let point) = sample, let window = view.window else { return sample }
+        let onScreen = GazeScreenProjection.orientedScreenPoint(
+            fromPortraitPoint: point,
+            portraitSize: window.screen.fixedCoordinateSpace.bounds.size,
+            orientation: window.windowScene?.interfaceOrientation ?? .portrait)
+        let inWindow = CGPoint(
+            x: onScreen.x - window.frame.origin.x, y: onScreen.y - window.frame.origin.y)
+        return .point(view.convert(inWindow, from: window))
     }
 
     // MARK: - Plumbing

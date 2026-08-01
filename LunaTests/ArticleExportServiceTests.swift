@@ -7,6 +7,7 @@ import LunaReadingList
 import LunaSend
 import LunaStorage
 import LunaModels
+import UIKit
 import XCTest
 import UniformTypeIdentifiers
 @testable import Luna
@@ -35,6 +36,90 @@ final class ArticleExportServiceTests: XCTestCase {
             title: title,
             blocks: [ArticleContent.Block(kind: .paragraph, text: "Body text.", links: [])])
         return store.saveContent(content, for: item)
+    }
+
+    /// An article saved with image blocks whose pictures haven't downloaded yet
+    /// — the state EVERY save is in for a while, and permanently for a save
+    /// that came through the share extension.
+    private func itemWithUnfetchedImage(url: String) -> ReadingListItem {
+        let item = store.add(urlString: url)
+        let content = ArticleContent(
+            title: "Illustrated",
+            blocks: [
+                ArticleContent.Block(kind: .paragraph, text: "Body text.", links: []),
+                ArticleContent.Block(
+                    kind: .image, text: "A photo", links: [],
+                    imageURLString: "https://example.com/photo.png", imageFileName: nil),
+            ])
+        return store.saveContent(content, for: item)
+    }
+
+    /// Writes a PNG where the downloader would put it, and returns the content
+    /// with the name recorded — a stand-in for a real fetch.
+    private func fakeDownload(_ content: ArticleContent) -> ArticleContent {
+        var updated = content
+        updated.blocks = content.blocks.map { block in
+            guard block.kind == .image, let raw = block.imageURLString else { return block }
+            var block = block
+            let name = "\(ArticleImageFiles.stableBase(forImageURL: raw)).png"
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 10)).image {
+                UIColor.red.setFill()
+                $0.fill(CGRect(x: 0, y: 0, width: 20, height: 10))
+            }
+            try? image.pngData()?.write(to: store.articlesDirectory.appendingPathComponent(name))
+            block.imageFileName = name
+            return block
+        }
+        return updated
+    }
+
+    /// The export FETCHES the images the article hasn't downloaded yet, instead
+    /// of quietly shipping a file with none — and persists the result, so the
+    /// work is done once.
+    func testWritePreparingImagesFetchesMissingImagesAndPersistsThem() async throws {
+        let item = itemWithUnfetchedImage(url: "https://example.com/illustrated")
+        var preparerRan = false
+        ArticleExportImages.preparer = { content, _ in
+            preparerRan = true
+            return self.fakeDownload(content)
+        }
+        defer { ArticleExportImages.preparer = nil }
+
+        let url = try await ArticleExportService(store: store)
+            .writePreparingImages(.epub, for: item)
+
+        XCTAssertTrue(preparerRan)
+        let stored = try XCTUnwrap(store.content(for: item))
+        XCTAssertNotNil(
+            stored.blocks.first(where: { $0.kind == .image })?.imageFileName,
+            "the fetched file name must be persisted, not thrown away")
+        // The picture really reached the book.
+        let archive = try Data(contentsOf: url)
+        XCTAssertTrue(
+            String(decoding: archive, as: UTF8.self).contains("<img src=\"images/img-"))
+    }
+
+    /// Nothing to fetch ⇒ no seam call and no pointless re-persist.
+    func testWritePreparingImagesSkipsWhenEveryImageIsAlreadyLocal() async throws {
+        let item = readyItem(title: "Plain", url: "https://example.com/plain")
+        var preparerRan = false
+        ArticleExportImages.preparer = { content, _ in
+            preparerRan = true
+            return content
+        }
+        defer { ArticleExportImages.preparer = nil }
+
+        _ = try await ArticleExportService(store: store).writePreparingImages(.pdf, for: item)
+        XCTAssertFalse(preparerRan, "an article with no image blocks has nothing to prepare")
+    }
+
+    /// Extensions install no preparer; the export still works from local files.
+    func testWritePreparingImagesWorksWithNoPreparerInstalled() async throws {
+        ArticleExportImages.preparer = nil
+        let item = itemWithUnfetchedImage(url: "https://example.com/no-seam")
+        let url = try await ArticleExportService(store: store)
+            .writePreparingImages(.markdown, for: item)
+        XCTAssertEqual(url.pathExtension, "md")
     }
 
     func testWriteEPUBProducesValidZipFileWithSanitizedName() throws {

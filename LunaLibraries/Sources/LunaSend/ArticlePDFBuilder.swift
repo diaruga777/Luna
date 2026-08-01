@@ -167,12 +167,17 @@ public struct ArticlePDFBuilder {
     /// The downloaded image, scaled to fit the text column and at most 60% of a
     /// page's height. Oversized attachments are what would otherwise produce a
     /// container that lays out nothing — see `paginate`.
+    ///
+    /// The file is resolved through `ArticleImageFiles`, NOT from
+    /// `block.imageFileName` alone: content is persisted before its images
+    /// finish downloading, so a nil name routinely means "on disk, just not
+    /// recorded yet". An animated GIF contributes its first frame — PDF has no
+    /// animation to give it.
     private static func attachment(
         for block: ArticleContent.Block, imagesDirectory: URL
     ) -> NSTextAttachment? {
-        guard let fileName = block.imageFileName,
-              let data = try? Data(
-                contentsOf: imagesDirectory.appendingPathComponent(fileName)),
+        guard let fileURL = ArticleImageFiles.localFile(for: block, in: imagesDirectory),
+              let data = try? Data(contentsOf: fileURL),
               let image = UIImage(data: data), image.size.width > 0, image.size.height > 0
         else { return nil }
 

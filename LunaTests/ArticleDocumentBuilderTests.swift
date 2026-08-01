@@ -3,9 +3,11 @@
 //  LunaTests
 //
 
+import ImageIO
 import LunaModels
 import LunaSend
 import UIKit
+import UniformTypeIdentifiers
 import XCTest
 
 /// The Markdown / plain-text / PDF / RTF serializers behind the "Export as…"
@@ -36,18 +38,64 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         ArticleContent.Block(kind: kind, text: text, links: links)
     }
 
-    /// Writes a real 2x2 PNG into the scratch images directory and returns an
-    /// image block pointing at it.
+    /// Writes a real image into the scratch images directory and returns an
+    /// image block pointing at it. Defaults to a 2x2 PNG.
     private func imageBlock(alt: String, fileName: String = "pic.png",
-                            remote: String? = "https://example.com/pic.png") -> ArticleContent.Block {
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { context in
+                            remote: String? = "https://example.com/pic.png",
+                            data: Data? = nil) -> ArticleContent.Block {
+        let bytes = data ?? UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { context in
             UIColor.red.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
-        }
-        try? image.pngData()?.write(to: scratch.appendingPathComponent(fileName))
+        }.pngData()!
+        try? bytes.write(to: scratch.appendingPathComponent(fileName))
         return ArticleContent.Block(
             kind: .image, text: alt, links: [],
             imageURLString: remote, imageFileName: fileName)
+    }
+
+    /// An image block with NO recorded `imageFileName`, whose file sits on disk
+    /// under the URL-hash name the downloader uses — the state content is in
+    /// between "saved" and "images finished downloading".
+    private func hashNamedImageBlock(remote: String) -> ArticleContent.Block {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+        }
+        let name = "\(ArticleImageFiles.stableBase(forImageURL: remote)).png"
+        try? image.pngData()?.write(to: scratch.appendingPathComponent(name))
+        return ArticleContent.Block(
+            kind: .image, text: "Unrecorded", links: [],
+            imageURLString: remote, imageFileName: nil)
+    }
+
+    private func animatedGIFData(frames: Int) -> Data {
+        let output = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(
+            output, UTType.gif.identifier as CFString, frames, nil)!
+        for index in 0..<frames {
+            let frame = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 20)).image { context in
+                (index % 2 == 0 ? UIColor.green : UIColor.blue).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 30, height: 20))
+            }
+            CGImageDestinationAddImage(destination, frame.cgImage!, [
+                kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.1]
+            ] as CFDictionary)
+        }
+        CGImageDestinationFinalize(destination)
+        return output as Data
+    }
+
+    private func encodedImage(as type: UTType) -> Data? {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 40)).image { context in
+            UIColor.orange.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 60, height: 40))
+        }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output, type.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image.cgImage!, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
     }
 
     // MARK: - Markdown
@@ -204,8 +252,36 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         XCTAssertGreaterThan(document.numberOfPages, 1)
     }
 
-    /// Images are embedded from the downloaded file; a block whose file is missing
-    /// must be skipped rather than fail the export.
+    /// Counts real `/Subtype /Image` XObjects across every page. Comparing byte
+    /// counts (what this used to do) cannot tell an embedded picture from an
+    /// empty line where one should have been.
+    private func pdfImageCount(_ data: Data) throws -> Int {
+        let document = try XCTUnwrap(CGPDFDocument(CGDataProvider(data: data as CFData)!))
+        var total = 0
+        for number in 1...max(1, document.numberOfPages) {
+            guard let page = document.page(at: number), let dict = page.dictionary
+            else { continue }
+            var resources: CGPDFDictionaryRef?
+            guard CGPDFDictionaryGetDictionary(dict, "Resources", &resources),
+                  let resources else { continue }
+            var xobjects: CGPDFDictionaryRef?
+            guard CGPDFDictionaryGetDictionary(resources, "XObject", &xobjects),
+                  let xobjects else { continue }
+            CGPDFDictionaryApplyBlock(xobjects, { _, value, _ in
+                var stream: CGPDFStreamRef?
+                guard CGPDFObjectGetValue(value, .stream, &stream), let stream,
+                      let streamDict = CGPDFStreamGetDictionary(stream) else { return true }
+                var subtype: UnsafePointer<Int8>?
+                if CGPDFDictionaryGetName(streamDict, "Subtype", &subtype), let subtype,
+                   String(cString: subtype) == "Image" { total += 1 }
+                return true
+            }, nil)
+        }
+        return total
+    }
+
+    /// The downloaded image really lands in the PDF as an image XObject; a block
+    /// whose file is missing is skipped rather than failing the export.
     func testPDFEmbedsDownloadedImageAndSkipsMissingOne() throws {
         let present = ArticlePDFBuilder().build(
             content: content([imageBlock(alt: "A photo")]),
@@ -215,8 +291,47 @@ final class ArticleDocumentBuilderTests: XCTestCase {
                 kind: .image, text: "A photo", links: [], imageFileName: "gone.png")]),
             sourceURLString: "", imagesDirectory: scratch)
 
+        XCTAssertEqual(try pdfImageCount(present), 1)
         XCTAssertEqual(String(decoding: missing.prefix(4), as: UTF8.self), "%PDF")
-        XCTAssertGreaterThan(present.count, missing.count)
+        XCTAssertEqual(try pdfImageCount(missing), 0)
+    }
+
+    /// The regression this whole path exists for: content is persisted BEFORE
+    /// its images finish downloading, so an image block routinely has no
+    /// `imageFileName` while the file is already on disk under its URL hash.
+    /// Trusting the recorded name alone is what shipped picture-less exports.
+    func testPDFEmbedsImageResolvedByURLHashWhenFileNameIsUnrecorded() throws {
+        let block = hashNamedImageBlock(remote: "https://example.com/unrecorded.png")
+        XCTAssertNil(block.imageFileName, "precondition: content recorded no file name")
+        let data = ArticlePDFBuilder().build(
+            content: content([block]), sourceURLString: "", imagesDirectory: scratch)
+        XCTAssertEqual(try pdfImageCount(data), 1)
+    }
+
+    /// PDF has no animation, so a GIF contributes its first frame rather than
+    /// being dropped.
+    func testPDFEmbedsAnimatedGIFAsAStill() throws {
+        let block = imageBlock(
+            alt: "Loop", fileName: "loop.gif", data: animatedGIFData(frames: 4))
+        let data = ArticlePDFBuilder().build(
+            content: content([block]), sourceURLString: "", imagesDirectory: scratch)
+        XCTAssertEqual(try pdfImageCount(data), 1)
+    }
+
+    /// Every format the downloader can leave on disk has to survive into the
+    /// PDF — a stored HEIC/AVIF/WebP that silently vanishes is the same bug in
+    /// a different coat.
+    func testPDFEmbedsEveryStoredImageFormat() throws {
+        for (ext, type) in [("jpg", UTType.jpeg), ("png", .png), ("heic", .heic),
+                            ("img", UTType.jpeg)] {
+            guard let bytes = encodedImage(as: type) else {
+                XCTFail("could not encode \(ext)"); continue
+            }
+            let block = imageBlock(alt: ext, fileName: "photo.\(ext)", data: bytes)
+            let data = ArticlePDFBuilder().build(
+                content: content([block]), sourceURLString: "", imagesDirectory: scratch)
+            XCTAssertEqual(try pdfImageCount(data), 1, "\(ext) was dropped")
+        }
     }
 
     /// The share sheet builds off the main thread, so layout must not require it.
@@ -287,6 +402,29 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         // U+201C “ and U+2014 —
         XCTAssertTrue(text.contains("\\u8220?"), text)
         XCTAssertTrue(text.contains("\\u8212?"), text)
+    }
+
+    /// Same regression as the PDF: the file is on disk under its URL hash while
+    /// the content recorded no name.
+    func testRTFEmbedsImageResolvedByURLHashWhenFileNameIsUnrecorded() {
+        let text = rtf([hashNamedImageBlock(remote: "https://example.com/rtf-unrecorded.png")])
+        XCTAssertTrue(text.contains("{\\pict\\pngblip"), String(text.prefix(500)))
+    }
+
+    /// RTF has no GIF blip type, so an animated GIF is re-encoded to a PNG
+    /// still rather than dropped.
+    func testRTFEmbedsAnimatedGIFAsAPNGStill() {
+        let text = rtf([imageBlock(
+            alt: "Loop", fileName: "loop.gif", data: animatedGIFData(frames: 4))])
+        XCTAssertTrue(text.contains("{\\pict\\pngblip"), String(text.prefix(500)))
+        XCTAssertFalse(text.contains("[Loop]"), "fell back to the text placeholder")
+    }
+
+    /// A stored HEIC has no blip type either; it must transcode, not vanish.
+    func testRTFEmbedsHEICAsAPNGStill() throws {
+        let bytes = try XCTUnwrap(encodedImage(as: .heic))
+        let text = rtf([imageBlock(alt: "Shot", fileName: "shot.heic", data: bytes)])
+        XCTAssertTrue(text.contains("{\\pict\\pngblip"), String(text.prefix(500)))
     }
 
     func testRTFEmbedsDownloadedImageAndPlaceholdersAMissingOne() {

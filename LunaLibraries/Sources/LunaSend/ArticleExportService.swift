@@ -83,6 +83,34 @@ public struct ArticleExportService {
         }
     }
 
+    /// `write`, but first downloading any of the article's images that aren't
+    /// on disk yet (`ArticleExportImages`, bounded by its own timeout).
+    ///
+    /// **This is the form every user-facing export should call.** Content is
+    /// persisted before its pictures are, so `write` alone exports whatever a
+    /// reader happened to have fetched — which, for a save that was never
+    /// opened or an export taken seconds after the save, is nothing.
+    @discardableResult
+    public func writePreparingImages(
+        _ format: ArticleExportFormat, for item: ReadingListItem
+    ) async throws -> URL {
+        await prepareImages(for: item)
+        return try write(format, for: item)
+    }
+
+    /// Fetches the article's missing images and persists the enriched content,
+    /// so the work is done once: the next export, reader open, or Kindle send
+    /// finds the files already recorded. Also registers the new files with
+    /// `ImageReferenceStore` (that's `saveContent`'s job), which is what keeps
+    /// them from being collected as orphans.
+    public func prepareImages(for item: ReadingListItem) async {
+        guard let content = store.content(for: item),
+              let prepared = await ArticleExportImages.prepared(
+                content, for: item, imagesDirectory: store.articlesDirectory)
+        else { return }
+        _ = store.saveContent(prepared, for: item)
+    }
+
     /// Builds the EPUB and writes it to a temp file, returning its URL — the
     /// pre-multi-format spelling of `write(.epub, for:)`.
     public func writeEPUB(for item: ReadingListItem) throws -> URL {
@@ -102,11 +130,26 @@ public struct ArticleExportService {
         return provider
     }
 
-    /// Builds the file off the main thread and presents the system share sheet
-    /// anchored to `sourceView`, or an alert if the article has no content.
-    /// Call on the main thread; it hops to a background queue to build, then back.
+    /// Fetches any missing images, builds the file off the main thread, and
+    /// presents the system share sheet anchored to `sourceView` — or an alert if
+    /// the article has no content. Call on the main thread.
+    ///
+    /// The sheet waits on the image preparation. That's deliberate: an export
+    /// with the pictures missing is the wrong file, and the wait is nil whenever
+    /// they're already local (the common case).
     public func presentShareSheet(
         _ format: ArticleExportFormat = .epub, for item: ReadingListItem,
+        from presenter: UIViewController, sourceView: UIView
+    ) {
+        Task { @MainActor in
+            await self.prepareImages(for: item)
+            self.buildAndPresent(
+                format, for: item, from: presenter, sourceView: sourceView)
+        }
+    }
+
+    private func buildAndPresent(
+        _ format: ArticleExportFormat, for item: ReadingListItem,
         from presenter: UIViewController, sourceView: UIView
     ) {
         DispatchQueue.global(qos: .userInitiated).async {

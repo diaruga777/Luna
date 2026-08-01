@@ -6,7 +6,6 @@
 import LunaStorage
 import LunaFetch
 import LunaModels
-import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -192,26 +191,20 @@ public enum ArticleImageDownloader {
 
     /// Stable, filesystem-safe filename stem for an image URL (so the same image maps
     /// to one local file regardless of which item/open requested it).
+    ///
+    /// The naming lives in `LunaStorage.ArticleImageFiles` because the exporters
+    /// resolve files by it too and can't see this module — the two ends MUST
+    /// agree, so there is one definition.
     private static func stableBase(for rawURL: String) -> String {
-        let digest = SHA256.hash(data: Data(rawURL.utf8))
-        return "img-" + digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+        ArticleImageFiles.stableBase(forImageURL: rawURL)
     }
 
     /// An already-downloaded file for `base` (any image extension), or nil.
     private static func existingFileName(
         base: String, in directory: URL, animatedGIFOnly: Bool = false
     ) -> String? {
-        // Prefer GIF before legacy JPEG when both exist after an automatic repair.
-        let candidates = animatedGIFOnly
-            ? ["gif"]
-            : ["gif", "jpg", "png", "jpeg", "webp", "heic", "heif", "avif", "img"]
-        for ext in candidates {
-            let name = "\(base).\(ext)"
-            if FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
-                return name
-            }
-        }
-        return nil
+        ArticleImageFiles.existingFileName(
+            base: base, in: directory, animatedGIFOnly: animatedGIFOnly)
     }
 
     private static func fetch(_ url: URL, refererURL: URL) async -> (data: Data, fileExtension: String)? {

@@ -222,7 +222,13 @@ public final class ArticleSendCoordinator {
             store.setSendState(.queued, for: fresh.id, destination: destination.id)
             return
         }
-        guard let built = buildEPUB(for: fresh) else {
+        // Fetch any images the article hasn't downloaded yet before building the
+        // book — an auto-send fires the moment an article becomes ready, which
+        // is BEFORE its pictures have finished arriving, and a Kindle EPUB with
+        // no illustrations is the wrong book.
+        await ArticleExportService(store: store).prepareImages(for: fresh)
+        guard let refreshed = store.item(withID: fresh.id),
+              let built = buildEPUB(for: refreshed) else {
             store.markSendTerminalFailure(
                 for: fresh.id, destination: destination.id,
                 errorMessage: "Couldn't build the EPUB attachment.")

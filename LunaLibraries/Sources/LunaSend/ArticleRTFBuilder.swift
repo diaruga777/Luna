@@ -122,13 +122,19 @@ public struct ArticleRTFBuilder {
 
     /// Hex-encoded `{\pict}` group for the block's downloaded image. PNG and
     /// JPEG bytes are embedded as-is (`\pngblip` / `\jpegblip`); anything else
-    /// is re-encoded as PNG, which is the only other thing RTF readers agree on.
+    /// — WebP, HEIC, AVIF, and **animated GIF**, which RTF has no blip type for
+    /// — is re-encoded as a PNG still, the only other thing RTF readers agree
+    /// on. A GIF therefore embeds as its first frame rather than being dropped.
+    ///
+    /// The file is resolved through `ArticleImageFiles`, NOT from
+    /// `block.imageFileName` alone: content is persisted before its images
+    /// finish downloading, so a nil name routinely means "on disk, just not
+    /// recorded yet".
     private static func picture(
         for block: ArticleContent.Block, imagesDirectory: URL
     ) -> String? {
-        guard let fileName = block.imageFileName,
-              let data = try? Data(
-                contentsOf: imagesDirectory.appendingPathComponent(fileName)),
+        guard let fileURL = ArticleImageFiles.localFile(for: block, in: imagesDirectory),
+              let data = try? Data(contentsOf: fileURL),
               !data.isEmpty
         else { return nil }
 

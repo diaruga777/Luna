@@ -490,10 +490,13 @@ public final class CardCarouselViewController: UIViewController {
     private func alignScrubberToCardColumn() {
         let inset: CGFloat
         if LunaLayout.isWide(containerWidth: view.bounds.width), let metrics {
-            let cardFrame = cardArea.convert(metrics.centeredCardFrame(), to: view)
+            // The card area spans the view's full width, so the metrics' own x is
+            // already this view's x — and deliberately WITHOUT the column-aside
+            // shift, which the strip carries as its own transform instead. Going
+            // through `restingCenteredCardFrame` here would apply it twice.
             let clearanceInsideCard =
                 style.scrubberHorizontalInset - (style.peek + style.edgeGap)
-            inset = max(0, cardFrame.minX + clearanceInsideCard)
+            inset = max(0, metrics.centeredCardFrame().minX + clearanceInsideCard)
         } else {
             inset = style.scrubberHorizontalInset
         }
@@ -587,7 +590,7 @@ public final class CardCarouselViewController: UIViewController {
         }
         isImmersed = immersed
         immersionExtendsCard = extendsCard
-        scrubber.isUserInteractionEnabled = !immersed
+        scrubber.isUserInteractionEnabled = !immersed && !isColumnAside
         if animated {
             UIView.animate(
                 withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
@@ -595,6 +598,57 @@ public final class CardCarouselViewController: UIViewController {
         } else {
             applyImmersionLayout()
         }
+    }
+
+    // MARK: - Column aside (making room for a second card)
+
+    /// How far the whole deck has stepped sideways to make room for a second
+    /// card beside it — the side-by-side inline reader's left column. Zero at
+    /// rest.
+    ///
+    /// Deliberately NOT immersion: the card keeps its chrome, its rim, its
+    /// resting geometry, and every touch. Only its neighbours leave, because
+    /// they would otherwise sit underneath the new column. Because
+    /// `restingCenteredCardFrame` reports the shifted frame, host chrome
+    /// anchored to the card travels with it for free.
+    public private(set) var columnAsideShift: CGFloat = 0
+
+    private var isColumnAside: Bool { abs(columnAsideShift) > 0.5 }
+
+    /// Steps the deck aside by `shift` (negative moves it left). The animation
+    /// is the same spring the archive tray uses, so a host animating its own
+    /// chrome alongside can simply lay out inside this call's animation block.
+    public func setColumnAside(shift: CGFloat, animated: Bool = false) {
+        loadViewIfNeeded()
+        guard abs(shift - columnAsideShift) > 0.5 else { return }
+        columnAsideShift = shift
+        scrubber.isUserInteractionEnabled = !isImmersed && !isColumnAside
+        let changes = { self.applyColumnAsideLayout() }
+        guard animated, !UIAccessibility.isReduceMotionEnabled else {
+            changes()
+            return
+        }
+        UIView.animate(
+            withDuration: 0.36, delay: 0,
+            usingSpringWithDamping: 0.88, initialSpringVelocity: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState],
+            animations: changes)
+    }
+
+    private func applyColumnAsideLayout() {
+        cardArea.transform = CGAffineTransform(translationX: columnAsideShift, y: 0)
+        applyScrubberTransform()
+        for other in slots.values where other.index != currentIndex {
+            other.card.alpha = isImmersed || isColumnAside ? 0 : 1
+        }
+    }
+
+    /// The strip's two independent offsets composed in one place: the column
+    /// shift that carries it sideways with the card, and immersion's short
+    /// downward drift as it hands the bottom lane to the reader's mode switcher.
+    private func applyScrubberTransform() {
+        let drift: CGFloat = isImmersed && !UIAccessibility.isReduceMotionEnabled ? 8 : 0
+        scrubber.transform = CGAffineTransform(translationX: columnAsideShift, y: drift)
     }
 
     private func applyImmersionLayout() {
@@ -605,11 +659,9 @@ public final class CardCarouselViewController: UIViewController {
         // The Reader replaces this bottom-center strip with its mode switcher
         // during immersion. A short downward drift makes that handoff read as
         // one control yielding the lane to the other instead of a hard swap.
-        scrubber.transform = isImmersed && !UIAccessibility.isReduceMotionEnabled
-            ? CGAffineTransform(translationX: 0, y: 8)
-            : .identity
+        applyScrubberTransform()
         for other in slots.values where other.index != currentIndex {
-            other.card.alpha = isImmersed ? 0 : 1
+            other.card.alpha = isImmersed || isColumnAside ? 0 : 1
         }
         // The centered card's content stays fully visible while immersed — its
         // glass rim fades in step with the strip and side cards, and its
@@ -637,7 +689,8 @@ public final class CardCarouselViewController: UIViewController {
     /// Reduce Motion or off-window); anything else is a crossfade jump.
     public func page(by step: Int, completion: (() -> Void)? = nil) {
         let target = min(max(currentIndex + step, 0), max(0, count - 1))
-        guard count > 0, target != currentIndex, !isTransitioning, !isImmersed
+        guard count > 0, target != currentIndex, !isTransitioning, !isImmersed,
+              !isColumnAside
         else {
             completion?()
             return
@@ -736,7 +789,10 @@ public final class CardCarouselViewController: UIViewController {
         applyRestingLayout(to: slot.card, atSlotOffset: offset)
         // A live scrub preview draws the whole deck itself; the real cards
         // stand aside for it rather than showing the committed card's window.
-        slot.card.alpha = isImmersed || isShowingScrubPreview ? 0 : 1
+        // A deck stepped aside for a second column keeps only its centered card:
+        // the peeks would land underneath that column.
+        slot.card.alpha = isImmersed || isShowingScrubPreview
+            || (isColumnAside && offset != 0) ? 0 : 1
         updateMuteUI()
     }
 

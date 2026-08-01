@@ -766,17 +766,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             onLinkActivatedAtPoint(url, linkPill.center)
             return
         }
-        let sourceInWindow = view.convert(linkPill.center, to: nil)
-        let coordinator = inlineReaderPresentationCoordinator
-        let inline = SplitWebOverlayViewController(
-            url: url, shareProvider: shareProvider,
-            sourcePoint: sourceInWindow, outerURL: item.url ?? url,
-            outerTitle: articleContent.title,
-            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
-            cardFrame: coordinator?.inlineReaderCardFrameInWindow,
-            showsOuterContentBelow: coordinator?.inlineReaderShowsOuterContentBelow ?? false)
-        inline.presentationCoordinator = coordinator
-        present(inline, animated: true)
+        InlineReaderOpener.open(
+            url: url,
+            from: self,
+            coordinator: inlineReaderPresentationCoordinator,
+            shareProvider: shareProvider,
+            sourcePointInWindow: view.convert(linkPill.center, to: nil),
+            outerURL: item.url ?? url,
+            outerTitle: articleContent.title)
     }
 
     private func configureLinkPreview() {

@@ -160,6 +160,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// An unarchive reload must not let normal pull-availability reconciliation
     /// snap the still-open tray shut before its coordinated dismissal begins.
     private var isAnimatingFromArchiveTray = false
+    /// The nested reader currently living in the column beside the centered card
+    /// (wide screens only). Strongly held through containment; this reference is
+    /// the flag "the deck is paired" that immersion, paging, and the trays check.
+    private weak var inlineColumn: SplitWebOverlayViewController?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -229,7 +233,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 return [self.carousel.view, self.emptyView]
             },
             canPull: { [weak self] in
-                guard let self else { return false }
+                guard let self, self.inlineColumn == nil else { return false }
                 let count = self.items.count + self.cardOffset
                 return count == 0 || self.carousel.currentIndex == count - 1
             },
@@ -243,7 +247,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 return [self.carousel.view, self.emptyView]
             },
             canPull: { [weak self] in
-                guard let self else { return false }
+                guard let self, self.inlineColumn == nil else { return false }
                 return self.items.isEmpty || self.carousel.currentIndex == 0
             },
             savedURL: { [weak self] url, captureSource, sourceView in
@@ -521,6 +525,16 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutReaderChromeRow()
+        // Rotation (or a Split View resize) moves the column with the card it
+        // sits beside; a container that has stopped being wide enough for two
+        // columns closes it rather than leaving it half off screen.
+        if let inlineColumn {
+            if let frame = inlineColumnFrame {
+                inlineColumn.view.frame = frame
+            } else {
+                closeInlineColumn(inlineColumn)
+            }
+        }
         if !isIndicatorSliding { layoutCardScrollIndicator(animated: false) }
         let fadeStart = settingsButton.frame.minY - Self.contentEdgeFade
         footerContentFade.frame = CGRect(
@@ -1544,6 +1558,11 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     fileprivate func readerCard(
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool
     ) {
+        // A paired layout IS the surfaced state: the left card keeps its chrome
+        // and its resting footprint for as long as the column beside it is open,
+        // so reading it must not fade the deck away or grow the card downward
+        // over the column's own controls.
+        guard inlineColumn == nil else { return }
         if immersed, renderedPasteboardState != nil,
            carousel.currentIndex == 0,
            carousel.contentController(at: 0) === card {
@@ -1575,7 +1594,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     fileprivate func readerCard(
         _ card: ReaderCardContentViewController, didChangeCardExtension extendsCard: Bool
     ) {
-        guard card.isCentered, carousel.isImmersed else { return }
+        guard card.isCentered, carousel.isImmersed, inlineColumn == nil else { return }
         carousel.setImmersed(true, extendsCard: extendsCard, animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,
@@ -1607,19 +1626,177 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         layoutCardScrollIndicator(animated: false)
     }
 
-    fileprivate func readerCardInlineFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect? {
+    fileprivate func readerCardRestingFrameInWindow(
+        _ card: ReaderCardContentViewController
+    ) -> CGRect? {
         guard let restingFrame = carousel.restingCenteredCardFrame(in: view) else { return nil }
         return view.convert(restingFrame, to: nil)
+    }
+
+    // MARK: - The second column (wide screens)
+
+    /// How far left the deck steps to make room for a second column. Negative;
+    /// zero when the screen has no room for one.
+    private var columnAsideShift: CGFloat {
+        guard LunaLayout.isWide(containerWidth: view.bounds.width) else { return 0 }
+        return -LunaLayout.columnCenterOffset(forContainerWidth: view.bounds.width)
+    }
+
+    /// Whether this screen can hold a second reader column beside the card.
+    /// Internal rather than private: it is the one bit of state that decides
+    /// between the two nested-reader behaviours, and the tests assert on it.
+    var hasRoomForColumn: Bool { columnAsideShift < 0 }
+
+    /// The right column's frame in this view's space — the card's own footprint,
+    /// one full column over.
+    ///
+    /// Derived from the LEFT card rather than measured on its own, so the two
+    /// cards are the same size by construction. That is the whole reason
+    /// `LunaLayout` caps a card at half the width minus padding.
+    ///
+    /// `restingCenteredCardFrame` already includes whatever shift the deck has
+    /// taken, so the offset backs that out and then steps one column right —
+    /// giving the same answer before the deck moves and after.
+    private var inlineColumnFrame: CGRect? {
+        guard hasRoomForColumn,
+              let resting = carousel.restingCenteredCardFrame(in: view)
+        else { return nil }
+        return resting.offsetBy(dx: -columnAsideShift - carousel.columnAsideShift, dy: 0)
+    }
+
+    fileprivate func readerCardInlineReaderPlacement(
+        _ card: ReaderCardContentViewController
+    ) -> InlineReaderPlacement {
+        hasRoomForColumn ? .column : .overlay
+    }
+
+    fileprivate func readerCardInlineReaderFrameInWindow(
+        _ card: ReaderCardContentViewController
+    ) -> CGRect? {
+        guard hasRoomForColumn else { return readerCardRestingFrameInWindow(card) }
+        guard let frame = inlineColumnFrame else { return nil }
+        return view.convert(frame, to: nil)
+    }
+
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController,
+        presentInlineColumn column: SplitWebOverlayViewController,
+        fromSourcePointInWindow point: CGPoint
+    ) {
+        guard card.isCentered, inlineColumn == nil, hasRoomForColumn else { return }
+        inlineColumn = column
+
+        // Reading dismissed the deck's chrome; a paired layout brings it back.
+        // The card becomes a card again BEFORE it travels, so what slides left is
+        // the resting footprint the right column is sized against.
+        carousel.setImmersed(false, extendsCard: true, animated: true)
+        UIView.animate(
+            withDuration: 0.32, delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction]
+        ) {
+            self.footerContentFade.alpha = 0
+        }
+        updateReaderChrome()
+
+        addChild(column)
+        view.insertSubview(column.view, belowSubview: readerChromeRow)
+        column.didMove(toParent: self)
+        column.view.frame = inlineColumnFrame ?? .zero
+        column.view.layoutIfNeeded()
+
+        // The deck's chrome is anchored to the card's frame, so laying the screen
+        // out INSIDE the carousel's own shift animation carries the chrome row,
+        // the flanking circles, and the scroll indicator along with the card.
+        carousel.setColumnAside(shift: columnAsideShift, animated: true)
+        UIView.animate(
+            withDuration: 0.36, delay: 0,
+            usingSpringWithDamping: 0.88, initialSpringVelocity: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState]
+        ) {
+            self.view.setNeedsLayout()
+            self.view.layoutIfNeeded()
+        }
+        refreshArchivePullAvailability(animated: true)
+        refreshLeftPullAvailability(animated: true)
+        column.animateColumnAppearance()
+    }
+
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController,
+        closeInlineColumn column: SplitWebOverlayViewController
+    ) {
+        closeInlineColumn(column)
+    }
+
+    /// Sends the column away and returns the left card to center. Internal so
+    /// the tests can close one without synthesising a tab tap.
+    func closeInlineColumn(_ column: SplitWebOverlayViewController) {
+        guard inlineColumn === column else { return }
+        inlineColumn = nil
+        carousel.setColumnAside(shift: 0, animated: true)
+        UIView.animate(
+            withDuration: 0.36, delay: 0,
+            usingSpringWithDamping: 0.88, initialSpringVelocity: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState]
+        ) {
+            self.view.setNeedsLayout()
+            self.view.layoutIfNeeded()
+        }
+        column.animateColumnDismissal { [weak self, weak column] in
+            guard let column else { return }
+            column.willMove(toParent: nil)
+            column.view.removeFromSuperview()
+            column.removeFromParent()
+            guard let self else { return }
+            self.refreshArchivePullAvailability(animated: true)
+            self.refreshLeftPullAvailability(animated: true)
+            self.updateReaderChrome()
+            self.layoutCardScrollIndicator(animated: false)
+        }
+    }
+
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController,
+        pushIntoOpenColumn url: URL,
+        sourcePointInWindow point: CGPoint
+    ) -> Bool {
+        guard let column = inlineColumn, column.acceptsPushedLink else { return false }
+        column.pushLink(url: url, sourcePointInWindow: point)
+        return true
+    }
+
+    /// The column currently open beside the centered card, if any.
+    var openInlineColumn: SplitWebOverlayViewController? { inlineColumn }
+
+    /// Test seam: opens a nested reader from the centered card down the SAME path
+    /// a link tap takes, so the paired-column layout can be asserted without
+    /// landing a real hit on a link inside TextKit or WebKit.
+    @discardableResult
+    func openNestedReaderForTesting(
+        url: URL, sourcePointInWindow point: CGPoint
+    ) -> SplitWebOverlayViewController? {
+        guard let card = carousel.contentController(at: carousel.currentIndex)
+            as? ReaderCardContentViewController,
+            let reader = card.rabbitHoleReader
+        else { return nil }
+        return InlineReaderOpener.open(
+            url: url,
+            from: reader,
+            coordinator: card,
+            shareProvider: nil,
+            sourcePointInWindow: point,
+            outerURL: url,
+            outerTitle: nil)
     }
 }
 
 // MARK: - Card content
 
 /// The push/pull contract between a `ReaderCardContentViewController` and its
-/// host: three pushes (immersion changed, the reader became ready, an inline
-/// reader presented/dismissed) and one pull (the card's resting frame in the
-/// window, for an inline reader's presentation math). Sole conformer:
-/// `ArticleCardsViewController`.
+/// host: pushes for immersion changes, the reader becoming ready, and an inline
+/// reader presenting/dismissing; pulls for the card's resting frame, where a
+/// nested reader belongs, and whether there is room to put it beside this card
+/// instead of over it. Sole conformer: `ArticleCardsViewController`.
 private protocol ReaderCardContentDelegate: AnyObject {
     /// The reader wants the carousel chrome faded away (true — reading is
     /// under way) or back in (false — the user is surfacing). `extendsCard`
@@ -1639,7 +1816,27 @@ private protocol ReaderCardContentDelegate: AnyObject {
         _ card: ReaderCardContentViewController, didBecomeReady reader: RabbitHoleReaderViewController)
     func readerCard(
         _ card: ReaderCardContentViewController, inlineReaderDidChange reader: ReaderChromeControlling?)
-    func readerCardInlineFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect?
+    /// This card's own resting footprint in window coordinates — what the live
+    /// card measures its immersion bottom-extension against.
+    func readerCardRestingFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect?
+    /// Where a nested reader opened from this card belongs: this card's footprint
+    /// on a phone, the column beside it on a wide screen.
+    func readerCardInlineReaderFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect?
+    func readerCardInlineReaderPlacement(
+        _ card: ReaderCardContentViewController) -> InlineReaderPlacement
+    /// Install `column` beside this card and step this card aside for it.
+    func readerCard(
+        _ card: ReaderCardContentViewController,
+        presentInlineColumn column: SplitWebOverlayViewController,
+        fromSourcePointInWindow point: CGPoint)
+    func readerCard(
+        _ card: ReaderCardContentViewController,
+        closeInlineColumn column: SplitWebOverlayViewController)
+    /// True when an open column took the link instead of a second one opening.
+    func readerCard(
+        _ card: ReaderCardContentViewController,
+        pushIntoOpenColumn url: URL,
+        sourcePointInWindow point: CGPoint) -> Bool
 }
 
 /// One article card: the FULL live reader, always embedded (side cards too, so
@@ -1720,7 +1917,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     /// distance the card's bottom edge travels back UP when the chrome returns.
     /// Zero whenever the card is already resting.
     private var immersionBottomExtension: CGFloat {
-        guard isViewLoaded, let resting = delegate?.readerCardInlineFrameInWindow(self)
+        guard isViewLoaded, let resting = delegate?.readerCardRestingFrameInWindow(self)
         else { return 0 }
         return max(0, view.bounds.height - resting.height)
     }
@@ -1991,15 +2188,34 @@ private final class ReaderCardContentViewController: CardContentViewController,
         guard isViewLoaded else { return .zero }
         // Immersion extends this content view to the bottom of the screen. The
         // nested reader must instead occupy the carousel card's stable resting
-        // footprint; its own metrics reserve the tab strip within that height.
-        if let restingFrame = delegate?.readerCardInlineFrameInWindow(self) {
-            return restingFrame
+        // footprint — or, on a wide screen, the column beside it; either way the
+        // host owns that rect. Its own metrics reserve the tab strip within it.
+        if let frame = delegate?.readerCardInlineReaderFrameInWindow(self) {
+            return frame
         }
         return view.convert(view.bounds, to: nil)
     }
 
     var inlineReaderShowsOuterContentBelow: Bool {
         rabbitHoleReader?.focusedContentScrollView != nil
+    }
+
+    var inlineReaderPlacement: InlineReaderPlacement {
+        delegate?.readerCardInlineReaderPlacement(self) ?? .overlay
+    }
+
+    func inlineReaderPresentAsColumn(
+        _ reader: SplitWebOverlayViewController, fromSourcePointInWindow point: CGPoint
+    ) {
+        delegate?.readerCard(self, presentInlineColumn: reader, fromSourcePointInWindow: point)
+    }
+
+    func inlineReaderColumnRequestedClose(_ reader: SplitWebOverlayViewController) {
+        delegate?.readerCard(self, closeInlineColumn: reader)
+    }
+
+    func inlineReaderPushIntoOpenColumn(url: URL, sourcePointInWindow point: CGPoint) -> Bool {
+        delegate?.readerCard(self, pushIntoOpenColumn: url, sourcePointInWindow: point) ?? false
     }
 
     /// The resting clearance below the card's top edge — enough that an

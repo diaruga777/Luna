@@ -1632,18 +1632,16 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// resolved glyph center, so the black-circle phase begins at the link itself.
     private func openSplit(for url: URL, tappedRange: NSRange) {
         let sourcePoint = linkActivationPoint(forCharacterRange: tappedRange)
-        let sourceInWindow = view.convert(sourcePoint, to: nil)
         let readerOffset = textView.contentOffset.y
-        let coordinator = inlineReaderPresentationCoordinator
-
-        let overlay = SplitWebOverlayViewController(
-            url: url, shareProvider: shareProvider,
-            sourcePoint: sourceInWindow, outerURL: item.url ?? url,
+        InlineReaderOpener.open(
+            url: url,
+            from: self,
+            coordinator: inlineReaderPresentationCoordinator,
+            shareProvider: shareProvider,
+            sourcePointInWindow: view.convert(sourcePoint, to: nil),
+            outerURL: item.url ?? url,
             outerTitle: content.title,
-            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)
-        overlay.presentationCoordinator = coordinator
-        overlay.onDismiss = { [weak self] in self?.restoreScroll(to: readerOffset) }
-        present(overlay, animated: true)
+            onDismiss: { [weak self] in self?.restoreScroll(to: readerOffset) })
     }
 
     // MARK: - Simulator-only split hooks

@@ -329,22 +329,16 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         sourcePoint: CGPoint,
         from focused: RabbitHoleLayerViewController
     ) {
-        guard presentedViewController == nil else { return }
         focused.setBottomLipText(lineText)
         let pointInReader = focused.view.convert(sourcePoint, to: view)
-        let pointInWindow = view.convert(pointInReader, to: nil)
-        let coordinator = inlineReaderPresentationCoordinator
-        let overlay = SplitWebOverlayViewController(
+        InlineReaderOpener.open(
             url: url,
+            from: self,
+            coordinator: inlineReaderPresentationCoordinator,
             shareProvider: shareProvider,
-            sourcePoint: pointInWindow,
+            sourcePointInWindow: view.convert(pointInReader, to: nil),
             outerURL: focused.descriptor.url ?? url,
-            outerTitle: focused.descriptor.title,
-            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
-            cardFrame: coordinator?.inlineReaderCardFrameInWindow,
-            showsOuterContentBelow: coordinator?.inlineReaderShowsOuterContentBelow ?? false)
-        overlay.presentationCoordinator = coordinator
-        present(overlay, animated: true)
+            outerTitle: focused.descriptor.title)
     }
 
     /// When set, the reader is embedded outside a push (the Reader card

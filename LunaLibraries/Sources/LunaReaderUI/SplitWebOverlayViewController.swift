@@ -9,6 +9,23 @@ import LunaModels
 import LunaStorage
 import UIKit
 
+/// Where a nested reader appears — the one decision that separates the phone's
+/// inline reader from the iPad's.
+public enum InlineReaderPlacement: Equatable, Sendable {
+    /// Over the reader it came from, its ancestors reduced to a tab strip. The
+    /// only thing that fits on a phone: one column of readable width.
+    case overlay
+    /// Its own card, beside the reader it came from, on a container with room
+    /// for two columns. The outer card steps left and keeps every touch; this
+    /// one takes the right column and stacks its own nested layers there.
+    ///
+    /// A column is a CHILD of its host, not a modal presentation: a
+    /// presentation container is a full-screen view that swallows every touch
+    /// outside the presented frame, which is exactly the touches the card next
+    /// door needs.
+    case column
+}
+
 /// Optional bridge implemented by containers such as the root card carousel.
 /// It lets an embedded reader dismiss its surrounding card chrome in lockstep
 /// with the eclipse without coupling LunaReaderUI to the app target.
@@ -28,11 +45,98 @@ public protocol InlineReaderPresentationCoordinating: AnyObject {
     var inlineReaderCardFrameInWindow: CGRect { get }
     /// Whether the outer reader is scrollable content that remains visible below.
     var inlineReaderShowsOuterContentBelow: Bool { get }
+
+    /// Whether this host has room to open the nested reader beside the outer one
+    /// rather than over it. Hosts that don't implement it stay on `.overlay`.
+    var inlineReaderPlacement: InlineReaderPlacement { get }
+
+    /// Take ownership of `reader` as the column beside the outer one: install it
+    /// as a child at the right column's frame, step the outer card aside, and
+    /// run its opening eclipse. Only ever called on a host that answered
+    /// `.column`.
+    func inlineReaderPresentAsColumn(
+        _ reader: SplitWebOverlayViewController, fromSourcePointInWindow point: CGPoint)
+
+    /// The open column asked to go away (its innermost layer was the last one).
+    /// The host runs the closing eclipse, removes the child, and brings the
+    /// outer card back to center.
+    func inlineReaderColumnRequestedClose(_ reader: SplitWebOverlayViewController)
+
+    /// A link activated in the OUTER reader while a column is already open
+    /// belongs on that column's stack — nested layers stack on the second card,
+    /// they never open a third. False when no column is open, leaving the caller
+    /// to open one.
+    func inlineReaderPushIntoOpenColumn(url: URL, sourcePointInWindow point: CGPoint) -> Bool
 }
 
 public extension InlineReaderPresentationCoordinating {
     func inlineReaderWillDismiss(_ reader: ReaderChromeControlling) {}
     func inlineReaderDismissalDidCancel(_ reader: ReaderChromeControlling) {}
+    var inlineReaderPlacement: InlineReaderPlacement { .overlay }
+    func inlineReaderPresentAsColumn(
+        _ reader: SplitWebOverlayViewController, fromSourcePointInWindow point: CGPoint) {}
+    func inlineReaderColumnRequestedClose(_ reader: SplitWebOverlayViewController) {}
+    func inlineReaderPushIntoOpenColumn(url: URL, sourcePointInWindow point: CGPoint) -> Bool {
+        false
+    }
+}
+
+/// The single door a nested reader is opened through.
+///
+/// Three readers can activate a link (the rabbit-hole layers in a card, a
+/// standalone scroll reader, RSVP's link pill), and the choice between an
+/// overlay and a second column belongs to the HOST's width, not to any of them.
+/// Routing it here keeps that decision in one place — three copies of it is
+/// exactly how a phone-only behaviour survives on the iPad.
+@MainActor
+public enum InlineReaderOpener {
+    /// Opens `url` as a nested reader. Returns the overlay when one was created,
+    /// so a caller with cleanup of its own (the scroll reader's saved offset) can
+    /// still attach it. Nil when the link went onto an already-open column.
+    @discardableResult
+    public static func open(
+        url: URL,
+        from host: UIViewController,
+        coordinator: InlineReaderPresentationCoordinating?,
+        shareProvider: ReaderShareProviding?,
+        sourcePointInWindow: CGPoint,
+        outerURL: URL,
+        outerTitle: String?,
+        onDismiss: (() -> Void)? = nil
+    ) -> SplitWebOverlayViewController? {
+        // A column already open beside the outer reader takes the link: nested
+        // layers stack on the second card, they never open a third.
+        if coordinator?.inlineReaderPushIntoOpenColumn(
+            url: url, sourcePointInWindow: sourcePointInWindow) == true {
+            return nil
+        }
+        let placement = coordinator?.inlineReaderPlacement ?? .overlay
+        guard placement == .column || host.presentedViewController == nil else { return nil }
+        let overlay = SplitWebOverlayViewController(
+            url: url,
+            shareProvider: shareProvider,
+            sourcePoint: sourcePointInWindow,
+            outerURL: outerURL,
+            outerTitle: outerTitle,
+            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
+            cardFrame: coordinator?.inlineReaderCardFrameInWindow,
+            // A column has nothing below it — the room under the card belongs to
+            // the deck's own chrome, not to the reader it opened from.
+            showsOuterContentBelow: placement == .column
+                ? false
+                : (coordinator?.inlineReaderShowsOuterContentBelow ?? false),
+            placement: placement)
+        overlay.presentationCoordinator = coordinator
+        overlay.onDismiss = onDismiss
+        switch placement {
+        case .overlay:
+            host.present(overlay, animated: true)
+        case .column:
+            coordinator?.inlineReaderPresentAsColumn(
+                overlay, fromSourcePointInWindow: sourcePointInWindow)
+        }
+        return overlay
+    }
 }
 
 extension UIViewController {
@@ -79,12 +183,20 @@ public final class SplitWebOverlayViewController: UIViewController,
     private let shareProvider: ReaderShareProviding?
     private let showsOuterContentBelow: Bool
 
+    /// Over the outer reader, or beside it. Fixed at construction: the host
+    /// decides from its own width before the reader exists.
+    public let placement: InlineReaderPlacement
+    private var isColumn: Bool { placement == .column }
+
     private let innerNav = UINavigationController()
     private let cardView = CardSurfaceView()
     private let tabBar = UIView()
     private let tabScrollView = UIScrollView()
     private let tabContainer = UIView()
     private let scrollIndicator = HorizonScrollIndicator.makeHosted()
+    /// A column carries its OWN controls: the shared screen-level chrome stays
+    /// with the card next door, which is still being read. Nil in `.overlay`.
+    private var columnChrome: InlineReaderColumnChromeBar?
 
     private static let tabBarHeight: CGFloat = 42
     private static let tabBottomOverlap: CGFloat = 4
@@ -110,7 +222,8 @@ public final class SplitWebOverlayViewController: UIViewController,
         outerTitle: String? = nil,
         contentTop: CGFloat = 0,
         cardFrame: CGRect? = nil,
-        showsOuterContentBelow: Bool = false
+        showsOuterContentBelow: Bool = false,
+        placement: InlineReaderPlacement = .overlay
     ) {
         self.url = url
         self.initialSourcePoint = sourcePoint
@@ -118,10 +231,12 @@ public final class SplitWebOverlayViewController: UIViewController,
         self.outerTitle = Self.titleFallback(outerTitle, url: outerURL ?? url)
         self.shareProvider = shareProvider
         self.showsOuterContentBelow = showsOuterContentBelow
+        self.placement = placement
         self.cardFrameInWindow = cardFrame ?? CGRect(
             x: 0, y: max(contentTop, 0), width: UIScreen.main.bounds.width,
             height: max(UIScreen.main.bounds.height - max(contentTop, 0), 0))
         super.init(nibName: nil, bundle: nil)
+        guard placement == .overlay else { return }
         modalPresentationStyle = .custom
         transitioningDelegate = self
     }
@@ -138,6 +253,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         scrollIndicator.isHidden = true
         view.addSubview(scrollIndicator)
         setUpInnerNav()
+        if isColumn { installColumnChrome() }
         // `setUpInnerNav` may synchronously load a cached page and publish its
         // scroll view. Install the hosted indicator first, then make one final
         // idempotent sweep so that target cannot be hidden after publication.
@@ -150,12 +266,16 @@ public final class SplitWebOverlayViewController: UIViewController,
         innerNav.view.frame = cardView.contentContainer.bounds
         layoutTabBar()
         layoutScrollIndicator()
+        layoutColumnChrome()
     }
 
     private func transitionWillOpen() {
         SharedDiagnosticLog.record(
             "opening inline reader: \(url.absoluteString)", category: "preload-tap")
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        // A column never takes the host's chrome: the card it opened beside is
+        // still being read and keeps every control it had. This one drew its own.
+        guard !isColumn else { return }
         presentationCoordinator?.inlineReaderWillPresent(self)
     }
 
@@ -163,7 +283,56 @@ public final class SplitWebOverlayViewController: UIViewController,
         guard !didDismiss else { return }
         didDismiss = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        guard !isColumn else {
+            // A column is a child, not a presentation: its host owns the closing
+            // eclipse, the child removal, and returning the outer card to center.
+            presentationCoordinator?.inlineReaderColumnRequestedClose(self)
+            return
+        }
         dismiss(animated: true)
+    }
+
+    // MARK: - Column lifecycle (a child, not a presentation)
+
+    /// Runs the opening eclipse over this column's own card. Called by the host
+    /// once the overlay is installed as a child and has its frame.
+    public func animateColumnAppearance(completion: (() -> Void)? = nil) {
+        view.layoutIfNeeded()
+        transitionWillOpen()
+        let scene = InlineReaderEclipseScene(
+            container: view,
+            sourcePoint: view.convert(initialSourcePoint, from: nil),
+            frame: localCardFrame)
+        cardView.alpha = 0
+        tabBar.alpha = 0
+        scene.animate(atZenith: { [weak self] in
+            guard let self else { return }
+            self.pendingTabInsertion = true
+            self.tabBar.alpha = 1
+            self.syncHeaderToTopPage(animateNewTab: true)
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.curveEaseOut]) {
+                self.cardView.alpha = 1
+            }
+        }, completion: { completion?() })
+    }
+
+    /// Runs the closing eclipse in reverse and calls back once the column can be
+    /// removed from its host.
+    public func animateColumnDismissal(completion: @escaping () -> Void) {
+        let scene = InlineReaderEclipseScene(
+            container: view,
+            sourcePoint: view.convert(initialSourcePoint, from: nil),
+            frame: localCardFrame)
+        scene.animateReverse(
+            hiding: cardView,
+            atZenith: { [weak self] in
+                self?.tabBar.alpha = 0
+                self?.animateNewestTabBehindReader()
+            },
+            completion: { [weak self] in
+                self?.onDismiss?()
+                completion()
+            })
     }
 
     fileprivate func presentationDidDismiss() {
@@ -542,8 +711,62 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 
     private var presentationMetrics: InlineReaderPresentationMetrics {
-        InlineReaderPresentationMetrics(
-            cardFrameInWindow: cardFrameInWindow, tabHeight: Self.tabBarHeight)
+        // A column is a child view: its host owns its frame and may resize it
+        // (rotation, a Split View resize), so the geometry comes from the live
+        // bounds rather than the window rect captured when the link was tapped.
+        // An overlay's presentation frame must stay the captured one — it is what
+        // the presentation controller was built with.
+        guard isColumn, isViewLoaded, view.bounds.width > 0 else {
+            return InlineReaderPresentationMetrics(
+                cardFrameInWindow: cardFrameInWindow, tabHeight: Self.tabBarHeight)
+        }
+        return InlineReaderPresentationMetrics(
+            cardFrameInWindow: view.convert(view.bounds, to: nil),
+            tabHeight: Self.tabBarHeight)
+    }
+
+    // MARK: - Column chrome
+
+    /// Every control the column needs, in one floating glass bar inside its
+    /// card's bottom edge: close, the Scroll/RSVP/Original switcher, read-aloud,
+    /// share. It goes at the BOTTOM deliberately — the top of a reader is where
+    /// the first line is, and the deck already puts its own switcher in the
+    /// bottom lane while reading.
+    private func installColumnChrome() {
+        let bar = InlineReaderColumnChromeBar()
+        bar.onClose = { [weak self] in self?.chromeBack() }
+        bar.onToggleAudio = { [weak self] in self?.chromeToggleAudio() }
+        bar.onSelectMode = { [weak self] mode in self?.chromeSetMode(mode) }
+        bar.shareMenu = { [weak self] source in self?.chromeShareMenu(from: source) }
+        bar.onShare = { [weak self] source in self?.chromeShare(from: source) }
+        view.addSubview(bar)
+        columnChrome = bar
+        bar.apply(chromeState, providesShareMenu: providesShareMenu)
+    }
+
+    private func layoutColumnChrome() {
+        guard let columnChrome else { return }
+        let card = localCardFrame
+        let size = columnChrome.sizeThatFits(CGSize(width: card.width - 24, height: 0))
+        columnChrome.frame = CGRect(
+            x: card.midX - size.width / 2,
+            y: card.maxY - size.height - 14,
+            width: size.width,
+            height: size.height)
+    }
+
+    /// Pushes a link the OUTER reader activated onto this column's stack. The
+    /// point is in window coordinates — the eclipse grows from the link the user
+    /// actually touched, one card over.
+    public func pushLink(url: URL, sourcePointInWindow point: CGPoint) {
+        guard isColumn, !didDismiss else { return }
+        pushPage(url: url, sourcePoint: view.convert(point, from: nil))
+    }
+
+    /// Whether this column can take another link right now — false while it is
+    /// already animating one in or out.
+    public var acceptsPushedLink: Bool {
+        isColumn && !didDismiss && pendingSourcePoint == nil && !isNavigatingInlineStack
     }
 
     // MARK: - Stable outer chrome target
@@ -592,6 +815,10 @@ public final class SplitWebOverlayViewController: UIViewController,
 
     private func notifyChromeStateChanged() {
         guard !didDismiss else { return }
+        guard !isColumn else {
+            columnChrome?.apply(chromeState, providesShareMenu: providesShareMenu)
+            return
+        }
         presentationCoordinator?.inlineReaderWillPresent(self)
     }
 
@@ -765,6 +992,149 @@ private final class InlineReaderPresentationController: UIPresentationController
         else { return }
         overlay.forwardPersistentChromeTap(
             at: containerView.convert(recognizer.location(in: containerView), to: nil))
+    }
+}
+
+/// The column's own controls, in one floating glass bar: close, mode switcher,
+/// read-aloud, share.
+///
+/// The deck's screen-level pill row can't be borrowed here — it belongs to the
+/// card next door, which is still being read, and read-aloud in particular has
+/// to be reachable on BOTH cards for the "playing one pauses the other" rule to
+/// mean anything.
+private final class InlineReaderColumnChromeBar: UIView {
+    var onClose: (() -> Void)?
+    var onToggleAudio: (() -> Void)?
+    var onSelectMode: ((ReadingListItem.ReaderMode) -> Void)?
+    var shareMenu: ((UIView) -> UIMenu?)?
+    var onShare: ((UIView) -> Void)?
+
+    private let background = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private let closeButton = UIButton(type: .system)
+    private let audioButton = UIButton(type: .system)
+    private let shareButton = UIButton(type: .system)
+    private let modeControl = LunaSegmentedControl()
+    private var modes: [ReadingListItem.ReaderMode] = []
+    private var didInstallShare = false
+
+    private static let controlSide: CGFloat = 34
+    private static let height: CGFloat = 46
+    private static let spacing: CGFloat = 6
+    private static let inset: CGFloat = 6
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        background.isUserInteractionEnabled = false
+        background.layer.cornerCurve = .continuous
+        background.clipsToBounds = true
+        addSubview(background)
+
+        configure(closeButton, symbol: "xmark", label: L10n.string("Close"))
+        closeButton.addAction(UIAction { [weak self] _ in self?.onClose?() }, for: .touchUpInside)
+        configure(audioButton, symbol: "speaker.slash", label: L10n.string("Read Aloud"))
+        audioButton.addAction(
+            UIAction { [weak self] _ in self?.onToggleAudio?() }, for: .touchUpInside)
+        configure(shareButton, symbol: "square.and.arrow.up", label: L10n.string("Share"))
+
+        modeControl.addAction(
+            UIAction { [weak self] _ in
+                guard let self,
+                      self.modes.indices.contains(self.modeControl.selectedSegmentIndex)
+                else { return }
+                self.onSelectMode?(self.modes[self.modeControl.selectedSegmentIndex])
+            },
+            for: .valueChanged)
+        addSubview(modeControl)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    private func configure(_ button: UIButton, symbol: String, label: String) {
+        button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 7)
+        button.tintColor = GlassStyle.readingAccent
+        button.accessibilityLabel = label
+        addSubview(button)
+    }
+
+    func apply(_ state: ReaderChromeState?, providesShareMenu: Bool) {
+        // Installed once and only once: `ReaderShareMenu.install` fixes the
+        // menu-vs-tap behaviour at install time, and stacking a second install
+        // would leave two handlers on one press.
+        if !didInstallShare {
+            didInstallShare = true
+            ReaderShareMenu.install(
+                on: shareButton,
+                providesMenu: providesShareMenu,
+                build: { [weak self] in
+                    guard let self else { return nil }
+                    return self.shareMenu?(self.shareButton)
+                },
+                fallback: { [weak self] in
+                    guard let self else { return }
+                    self.onShare?(self.shareButton)
+                })
+        }
+        guard let state else {
+            audioButton.isHidden = true
+            shareButton.isHidden = true
+            modeControl.isHidden = true
+            setNeedsLayout()
+            return
+        }
+        audioButton.isHidden = !state.isArticle
+        audioButton.setImage(
+            UIImage(systemName: state.isAudioOn ? "speaker.wave.2" : "speaker.slash"),
+            for: .normal)
+        audioButton.accessibilityValue =
+            state.isAudioOn ? L10n.string("On") : L10n.string("Off")
+        shareButton.isHidden = !state.offersSaveShare
+        modeControl.isHidden = !state.isArticle
+        if modes != state.modes {
+            modes = state.modes
+            modeControl.removeAllSegments()
+            for (index, mode) in state.modes.enumerated() {
+                modeControl.insertSegment(
+                    with: ReaderModeIcons.image(for: mode), at: index, animated: false)
+            }
+        }
+        modeControl.selectedSegmentIndex = state.modes.firstIndex(of: state.selectedMode) ?? 0
+        setNeedsLayout()
+    }
+
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        let side = Self.controlSide
+        var width = Self.inset * 2 + side   // close is always there
+        if !modeControl.isHidden {
+            width += Self.spacing + max(CGFloat(modes.count) * 40, 40)
+        }
+        for button in [audioButton, shareButton] where !button.isHidden {
+            width += Self.spacing + side
+        }
+        return CGSize(width: min(width, max(size.width, side)), height: Self.height)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        background.frame = bounds
+        background.layer.cornerRadius = bounds.height / 2
+        let side = Self.controlSide
+        let y = (bounds.height - side) / 2
+        var x = Self.inset
+        closeButton.frame = CGRect(x: x, y: y, width: side, height: side)
+        x = closeButton.frame.maxX
+
+        // Trailing controls are placed from the right edge inward, so the mode
+        // switcher takes whatever is left in the middle and the bar never has to
+        // guess at the switcher's width.
+        var trailing = bounds.width - Self.inset
+        for button in [shareButton, audioButton] where !button.isHidden {
+            button.frame = CGRect(x: trailing - side, y: y, width: side, height: side)
+            trailing = button.frame.minX - Self.spacing
+        }
+        modeControl.frame = CGRect(
+            x: x + Self.spacing, y: (bounds.height - 30) / 2,
+            width: max(trailing - x - Self.spacing * 2, 0), height: 30)
     }
 }
 

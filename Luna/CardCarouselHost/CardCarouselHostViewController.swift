@@ -181,23 +181,30 @@ class CardCarouselHostViewController: UIViewController {
         ])
     }
 
-    /// Keeps the flanking circles just outside the centered card's edges on a
-    /// wide container — the same 12pt they keep from the screen edges on a phone,
+    /// Keeps the flanking circles just inside the centered card's edges on a wide
+    /// container — the same 12pt they keep from the screen edges on a phone,
     /// where the card very nearly IS the screen.
+    ///
+    /// Each edge is resolved independently rather than as one symmetric inset:
+    /// a deck stepped aside for a second column is no longer centered, and a
+    /// mirrored inset would leave the trailing circle floating in the gap
+    /// between the two cards.
     private func alignBottomControlsToCardColumn() {
         guard let leadingConstraint = bottomControlLeadingConstraint,
               let trailingConstraint = bottomControlTrailingConstraint
         else { return }
-        let inset: CGFloat
+        var leading: CGFloat = 12
+        var trailing: CGFloat = -12
         if LunaLayout.isWide(containerWidth: view.bounds.width) {
             let column = carousel.restingCardColumn(in: view)
-            inset = max(12, column.lowerBound + 12)
-        } else {
-            inset = 12
+            leading = max(12, column.lowerBound + 12)
+            trailing = min(-12, column.upperBound - view.bounds.width - 12)
         }
-        guard abs(leadingConstraint.constant - inset) > 0.5 else { return }
-        leadingConstraint.constant = inset
-        trailingConstraint.constant = -inset
+        guard abs(leadingConstraint.constant - leading) > 0.5
+            || abs(trailingConstraint.constant - trailing) > 0.5
+        else { return }
+        leadingConstraint.constant = leading
+        trailingConstraint.constant = trailing
     }
 
     // MARK: - Pasteboard-offset index math

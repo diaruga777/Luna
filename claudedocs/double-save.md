@@ -8,7 +8,7 @@ Safari → Double Save Articles**. Three choices, in picker order:
 | --- | --- |
 | **Nothing** (default) | No-op. |
 | Send to Kindle | Emails the article's EPUB to the configured Kindle address. |
-| View immediately | Returns a self-contained `.rtfd` Rich Text document package from the App Intent, ready for Quick Look. |
+| View immediately | Returns a self-contained `.docx` Word document from the App Intent, ready for Quick Look or Save to Files. |
 
 Nothing is the default because a double save is easy to trigger by accident.
 This behavior is strictly article-only: videos, social posts, audio, products,
@@ -30,11 +30,19 @@ another model call, so it reaches the same decision.
 Intent timing is captured at the very start of `perform()`, before setup,
 Foundation Models, search, or ingest work. Once the URL resolves,
 `ReadingListStore.reserveSaveAttempt` atomically performs URL lookup + initial
-insert/press-timestamp update in one cross-process coordinated mutation. Two
-overlapping intent runs therefore cannot both observe an absent URL and behave
-as first saves. The policy compares the absolute distance between the two start
-times and has **no minimum gap**: zero-gap starts and starts whose store-arrival
-order is reversed both count, provided they are less than seven seconds apart.
+insert/explicit `lastSaveAttemptDate` update in one cross-process coordinated
+disk mutation. Save also records the screenshot digest, resolved URL, and start
+timestamp as one flushed App-Group value before ingest begins. Two overlapping
+runs therefore cannot both observe an absent URL or wait for the first run to
+tear down before reusing its result.
+
+Both state stores are recommitted with `Date()` at intent completion. The ingest
+task also finalizes its reading-list marker when it completes, covering the case
+where the App Intent's timeout returned first. This makes the seven-second window
+temporarily run from invocation start, then run from the later completion time.
+Completion writes are monotonic and screenshot-identity checked, so an older run
+cannot shorten the window or overwrite a newer page. The policy still has **no
+minimum gap** and compares absolute distance for reverse-arrival overlaps.
 
 ## Flow
 
@@ -49,8 +57,8 @@ always stays in the 7 s intent regime rather than falling through to the legacy
 A repeat inside `intentDoublePressWindow` (7 s) then becomes:
 
 - `.sendToEreaders([kindle])`, retaining the 24-hour resend cooldown; or
-- `.exportArticle(format: .richText)` →
-  `SavePressResult.exportRequested(item, .richText)`.
+- `.exportArticle(format: .document)` →
+  `SavePressResult.exportRequested(item, .document)`.
 
 **The file is not built in the ingestor.** Serialization lives in `LunaSend`, an
 article-kind module that the universal `LunaReadingList` / `LunaIntents` can't
@@ -83,24 +91,24 @@ immediately). The retired `sendToFriend` action no longer decodes and reads back
 as `.nothing`; the friend-prompt hand-off and preset-email storage survive
 unused, and pending contact prompts are not consumed on foreground.
 
-## Why RTFD for "View immediately"
+## Why DOCX for "View immediately"
 
-The previous flat `.rtf` did contain standard hex-encoded `{\pict}` JPEG/PNG
-payloads, but Apple's RTF importer/Quick Look ignores those groups. That made the
-document appear picture-less even though Word and LibreOffice could read the
-same bytes. Apple's own flat-RTF writer likewise documents that it omits
-attachment attributes.
+Flat `.rtf` could hold standard `{\pict}` bytes, but Apple's importer/Quick Look
+ignored them. RTFD made those images visible by moving them into sibling files,
+but an RTFD document is a directory package. App Intents' `IntentFile` and the
+Files share extension could preview that live URL yet could not reliably copy it
+as a saved file.
 
-RTFD is Apple's native Rich Text with Attachments document package and Quick
-Look renders it. `ArticleRTFBuilder` now returns a `FileWrapper` containing:
+`ArticleDOCXBuilder` now returns one regular ZIP-backed `.docx` file. It contains
+the actual JPEG/PNG bytes under `word/media` (unsupported formats and GIFs become
+PNG stills), DrawingML relationships, explicit EMU geometry, live hyperlink
+relationships, and no Luna-container paths. DOCX previews in Quick Look and is a
+normal file for Save to Files.
 
-- `TXT.rtf`, with live `HYPERLINK` fields and relative `\NeXTGraphic` entries;
-- one `LunaImage-NNN.jpg|png` sibling per resolved picture, containing a COPY of
-  the actual bytes (unsupported formats/GIF animations become PNG stills); and
-- explicit `\widthN \heightN` display geometry in twips on every attachment.
-
-No attachment path points at Luna's App Group/Documents directory. Moving the
-`.rtfd` package away from Luna therefore keeps every picture readable.
+Image geometry prefers the HTML-declared width/height instead of treating the
+full-resolution download as its intended display size. Missing dimensions fall
+back to decoded pixels, and every image is capped at 3.5 × 4 inches while keeping
+its aspect ratio.
 
 ## Settings UI
 
@@ -122,9 +130,9 @@ until then.
   `.doNothing` never falls back to the legacy ereader send.
 - `DoubleSaveActionStoreTests` — the `.nothing` default, per-surface
   independence, retired-value migration, and the single document action →
-  `ArticleExportFormat.richText` mapping.
+  `ArticleExportFormat.document` mapping.
 - `ReadingListStoreCacheTests` — atomic first-invocation reservation across
   concurrent store instances and monotonic timing state.
 - `SavePressPolicyTests` — the older in-app ereader regime.
-- `ArticleDocumentBuilderTests` — RTFD package structure, copied/decodable image
-  bytes, explicit dimensions, no Luna paths, and a system-reader round trip.
+- `ArticleDocumentBuilderTests` — DOCX package structure, copied/decodable image
+  bytes, HTML-derived/capped dimensions, live links, and no Luna paths.

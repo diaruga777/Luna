@@ -261,7 +261,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         case .onScreenURLs:
             return L10n.string("When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling.")
         case .doubleSave:
-            return L10n.string("For saved articles only: press the Action Button twice on the same article within 7 seconds. Send to Kindle emails the article; View immediately returns a self-contained Rich Text document to the shortcut. Videos, posts, products, and imported documents ignore the second press.")
+            return L10n.string("For saved articles only: press the Action Button twice on the same article within 7 seconds. Send to Kindle emails the article; View immediately returns a self-contained Word document to the shortcut. Videos, posts, products, and imported documents ignore the second press.")
         case .shortcut:
             let base = L10n.string("Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)")
             return base

@@ -22,7 +22,7 @@ public enum DoubleSaveAction: String, CaseIterable {
     /// Email the article's EPUB to the configured Kindle address (the existing
     /// send-to-Kindle pipeline).
     case sendToKindle
-    /// Return the article as a self-contained Rich Text document for the
+    /// Return the article as a self-contained Word document for the
     /// Shortcut to display immediately or pass onward.
     case openDocument
 
@@ -39,7 +39,7 @@ public enum DoubleSaveAction: String, CaseIterable {
     public var exportFormat: ArticleExportFormat? {
         switch self {
         case .nothing, .sendToKindle: return nil
-        case .openDocument: return .richText
+        case .openDocument: return .document
         }
     }
 }

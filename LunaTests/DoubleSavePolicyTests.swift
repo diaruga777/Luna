@@ -58,15 +58,15 @@ final class DoubleSavePolicyTests: XCTestCase {
         XCTAssertEqual(
             decideIntent(
                 existingItem: item(), previousPressDate: now.addingTimeInterval(0.25),
-                action: .exportArticle(format: .richText)),
-            .exportArticle(format: .richText))
+                action: .exportArticle(format: .document)),
+            .exportArticle(format: .document))
     }
 
     func testReverseOrderedIntentStartsStillRespectTheSevenSecondWindow() {
         XCTAssertEqual(
             decideIntent(
                 existingItem: item(), previousPressDate: now.addingTimeInterval(7.1),
-                action: .exportArticle(format: .richText)),
+                action: .exportArticle(format: .document)),
             .ignore)
     }
 
@@ -176,7 +176,7 @@ final class DoubleSavePolicyTests: XCTestCase {
     // MARK: - Article file exports
 
     func testIntentExportReturnsTheRequestedFormat() {
-        for format in [ArticleExportFormat.pdf, .markdown, .richText] {
+        for format in [ArticleExportFormat.pdf, .markdown, .document] {
             XCTAssertEqual(
                 decideIntent(
                     existingItem: item(),

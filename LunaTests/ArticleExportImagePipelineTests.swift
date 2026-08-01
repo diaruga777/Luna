@@ -167,6 +167,8 @@ final class ArticleExportImagePipelineTests: XCTestCase {
     /// The same article through every format that carries pictures.
     func testEveryImageCarryingFormatKeepsTheImage() throws {
         let fileName = writeDownloadedImage()
+        let sourceImage = try Data(contentsOf:
+            ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName))
         let item = saveArticle(recordingFileName: fileName)
         let service = ArticleExportService()
 
@@ -175,14 +177,12 @@ final class ArticleExportImagePipelineTests: XCTestCase {
             String(decoding: epub, as: UTF8.self).contains("<img src=\"images/\(fileName)\""),
             "EPUB lost the image")
 
-        let rtfd = try service.write(.richText, for: item)
-        let rtf = try Data(contentsOf: rtfd.appendingPathComponent("TXT.rtf"))
+        let docx = try Data(contentsOf: service.write(.document, for: item))
         XCTAssertTrue(
-            String(decoding: rtf, as: UTF8.self)
-                .contains("\\NeXTGraphic LunaImage-001.jpg"),
-            "RTFD lost the image reference")
-        let image = try Data(contentsOf: rtfd.appendingPathComponent("LunaImage-001.jpg"))
-        XCTAssertNotNil(UIImage(data: image), "RTFD lost the readable image bytes")
+            String(decoding: docx, as: UTF8.self).contains("word/media/image001.jpg"),
+            "DOCX lost the image relationship")
+        XCTAssertNotNil(docx.firstRange(of: sourceImage),
+                        "DOCX lost the actual image bytes")
 
         // Plain text drops images by design; Markdown references the remote URL.
         let markdown = String(decoding: try Data(contentsOf: service.write(.markdown, for: item)),

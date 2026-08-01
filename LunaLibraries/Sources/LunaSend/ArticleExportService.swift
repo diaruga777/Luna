@@ -44,17 +44,9 @@ public struct ArticleExportService {
             forTitle: item.title ?? item.urlString, extension: format.fileExtension)
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: fileURL)
-        if format == .richText {
-            let wrapper = ArticleRTFBuilder().build(
-                content: content,
-                sourceURLString: item.urlString,
-                imagesDirectory: store.articlesDirectory)
-            try wrapper.write(to: fileURL, options: .atomic, originalContentsURL: nil)
-        } else {
-            let data = try self.data(
-                format, content: content, sourceURLString: item.urlString)
-            try data.write(to: fileURL, options: .atomic)
-        }
+        let data = try self.data(
+            format, content: content, sourceURLString: item.urlString)
+        try data.write(to: fileURL, options: .atomic)
         return fileURL
     }
 
@@ -97,8 +89,11 @@ public struct ArticleExportService {
                 content: content,
                 sourceURLString: sourceURLString,
                 imagesDirectory: store.articlesDirectory)
-        case .richText:
-            preconditionFailure("RTFD is a package and is written directly by write(_:for:)")
+        case .document:
+            return ArticleDOCXBuilder().build(
+                content: content,
+                sourceURLString: sourceURLString,
+                imagesDirectory: store.articlesDirectory)
         case .markdown:
             let text = ArticleMarkdownBuilder().build(
                 content: content, sourceURLString: sourceURLString)
@@ -125,6 +120,28 @@ public struct ArticleExportService {
     ) async throws -> URL {
         await prepareImages(for: item)
         return try write(format, for: item)
+    }
+
+    /// The second intent can arrive after the first has committed its placeholder
+    /// but before extraction has committed article content. Keep the double-save
+    /// action alive for that in-flight save instead of silently returning no
+    /// document. Ordinary exports use `writePreparingImages` and fail promptly.
+    public func writePreparingImagesWhenAvailable(
+        _ format: ArticleExportFormat, for item: ReadingListItem,
+        timeout: TimeInterval = 12
+    ) async throws -> URL {
+        let deadline = Date().addingTimeInterval(max(0, timeout))
+        while true {
+            guard let current = store.item(withID: item.id) else {
+                throw ExportError.noContent
+            }
+            if store.content(for: current) != nil {
+                return try await writePreparingImages(format, for: current)
+            }
+            guard Date() < deadline else { throw ExportError.noContent }
+            try Task.checkCancellation()
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
     }
 
     /// Fetches the article's missing images and persists the enriched content,

@@ -61,12 +61,12 @@ final class DoubleSaveActionStoreTests: XCTestCase {
         }
     }
 
-    /// The single View immediately action returns the self-contained Rich Text
+    /// The single View immediately action returns the self-contained Word
     /// document; the inert/Kindle actions return no file.
     func testExportFormats() {
         XCTAssertNil(DoubleSaveAction.nothing.exportFormat)
         XCTAssertNil(DoubleSaveAction.sendToKindle.exportFormat)
-        XCTAssertEqual(DoubleSaveAction.openDocument.exportFormat, .richText)
+        XCTAssertEqual(DoubleSaveAction.openDocument.exportFormat, .document)
         XCTAssertEqual(DoubleSaveAction.openDocument.displayName, "View immediately")
     }
 

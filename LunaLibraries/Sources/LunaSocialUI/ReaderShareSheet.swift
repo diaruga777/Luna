@@ -51,7 +51,7 @@ public final class ReaderShareSheet: UIViewController {
     public static var exportTitle: String { L10n.string("Export as…") }
 
     /// The export-format options, in `ArticleExportFormat.shareMenuFormats`
-    /// order (which is NOT `allCases` — `.richText` is double-save only).
+    /// order (which is NOT `allCases` — `.document` is double-save only).
     public static func exportRows(
         onExport: @escaping (ArticleExportFormat) -> Void
     ) -> [Row] {

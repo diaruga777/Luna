@@ -121,7 +121,8 @@ enum KindWiring {
         // installed here — matching `ActionButtonIntentSupport.doubleSaveSurface`,
         // which arms double save in exactly the apps that link LunaSend.
         ActionButtonIntentSupport.articleExporter = { item, format in
-            try? await ArticleExportService().writePreparingImages(format, for: item)
+            try? await ArticleExportService().writePreparingImagesWhenAvailable(
+                format, for: item)
         }
         // Exports fetch the article images that haven't landed yet rather than
         // shipping a file with none. The downloader is LunaReaderUI's and the

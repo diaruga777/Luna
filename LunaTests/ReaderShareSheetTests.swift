@@ -32,7 +32,7 @@ final class ReaderShareSheetTests: XCTestCase {
 
     /// The export row is a submenu of every SHARE-MENU format, in
     /// `ArticleExportFormat.shareMenuFormats` order, and each child reports its
-    /// own format. `.richText` is deliberately not among them — it exists only
+    /// own format. `.document` is deliberately not among them — it exists only
     /// as a double-save return format (claudedocs/double-save.md).
     func testExportRowOffersEveryFormatInOrder() {
         var picked: [ArticleExportFormat] = []

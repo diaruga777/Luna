@@ -10,7 +10,7 @@ import UIKit
 import UniformTypeIdentifiers
 import XCTest
 
-/// The Markdown / plain-text / PDF / RTFD serializers behind the "Export as…"
+/// The Markdown / plain-text / PDF / DOCX serializers behind the "Export as…"
 /// formats and the double-save "View immediately" action.
 final class ArticleDocumentBuilderTests: XCTestCase {
 
@@ -348,206 +348,134 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         wait(for: [expectation], timeout: 10)
     }
 
-    // MARK: - Rich Text with Attachments (RTFD)
+    // MARK: - Word document (DOCX)
 
-    private func rtfd(_ blocks: [ArticleContent.Block],
-                      sourceURLString: String = "https://example.com/a") -> FileWrapper {
-        ArticleRTFBuilder().build(
+    private func docx(
+        _ blocks: [ArticleContent.Block],
+        sourceURLString: String = "https://example.com/a"
+    ) -> Data {
+        ArticleDOCXBuilder().build(
             content: content(blocks), sourceURLString: sourceURLString,
             imagesDirectory: scratch)
     }
 
-    private func rtf(_ blocks: [ArticleContent.Block],
-                     sourceURLString: String = "https://example.com/a") -> String {
-        let data = rtfd(blocks, sourceURLString: sourceURLString)
-            .fileWrappers?["TXT.rtf"]?.regularFileContents ?? Data()
-        return String(data: data, encoding: .ascii) ?? ""
+    /// `ZipArchiveWriter` stores entries, so a tiny local-header reader is enough
+    /// to inspect DOCX parts without adding a ZIP dependency to the tests.
+    private func zipEntry(_ path: String, in archive: Data) -> Data? {
+        let bytes = [UInt8](archive)
+        func u16(_ offset: Int) -> Int {
+            Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
+        }
+        func u32(_ offset: Int) -> Int {
+            u16(offset) | (u16(offset + 2) << 16)
+        }
+        var offset = 0
+        while offset + 30 <= bytes.count,
+              Array(bytes[offset..<(offset + 4)]) == [0x50, 0x4B, 0x03, 0x04] {
+            let size = u32(offset + 18)
+            let nameLength = u16(offset + 26)
+            let extraLength = u16(offset + 28)
+            let nameStart = offset + 30
+            let dataStart = nameStart + nameLength + extraLength
+            guard dataStart + size <= bytes.count else { return nil }
+            let name = String(decoding: bytes[nameStart..<(nameStart + nameLength)], as: UTF8.self)
+            if name == path { return Data(bytes[dataStart..<(dataStart + size)]) }
+            offset = dataStart + size
+        }
+        return nil
     }
 
-    private func bundledImages(in wrapper: FileWrapper) -> [String: Data] {
-        (wrapper.fileWrappers ?? [:]).reduce(into: [:]) { result, entry in
-            guard entry.key != "TXT.rtf", let bytes = entry.value.regularFileContents
-            else { return }
-            result[entry.key] = bytes
+    func testDOCXIsARegularZipWithRequiredPartsAndLiveLinks() throws {
+        let data = docx([block(
+            .paragraph, "See the docs here.",
+            links: [ArticleContent.Link(
+                start: 8, length: 4, urlString: "https://example.com/docs")])])
+        XCTAssertEqual(data.prefix(4), Data([0x50, 0x4B, 0x03, 0x04]))
+        let document = String(decoding: try XCTUnwrap(
+            zipEntry("word/document.xml", in: data)), as: UTF8.self)
+        let relationships = String(decoding: try XCTUnwrap(
+            zipEntry("word/_rels/document.xml.rels", in: data)), as: UTF8.self)
+        XCTAssertTrue(document.contains("Title"), document)
+        XCTAssertTrue(document.contains("Ada"), document)
+        XCTAssertTrue(document.contains("<w:hyperlink r:id="), document)
+        XCTAssertTrue(relationships.contains("https://example.com/docs"), relationships)
+        let contentTypes = try XCTUnwrap(zipEntry("[Content_Types].xml", in: data))
+        let rootRelationships = try XCTUnwrap(zipEntry("_rels/.rels", in: data))
+        for xml in [Data(document.utf8), Data(relationships.utf8),
+                    contentTypes, rootRelationships] {
+            let parser = XMLParser(data: xml)
+            XCTAssertTrue(parser.parse(), parser.parserError?.localizedDescription ?? "invalid XML")
         }
     }
 
-    func testRTFDContainsAWellFormedAsciiRTFBody() {
-        let text = rtf([block(.paragraph, "Hello.")])
-        XCTAssertTrue(text.hasPrefix("{\\rtf1\\ansi"), String(text.prefix(40)))
-        XCTAssertTrue(text.hasSuffix("}"))
-        // Every brace is balanced, or no reader will open the file at all.
-        XCTAssertEqual(
-            text.filter { $0 == "{" }.count, text.filter { $0 == "}" }.count)
+    func testDOCXBundlesReadableBytesAndUsesDeclaredDisplaySize() throws {
+        let sourceBytes = try XCTUnwrap(encodedImage(as: .jpeg))
+        var image = imageBlock(
+            alt: "Photo", fileName: "source-photo.jpg", data: sourceBytes)
+        image.imageWidth = 120
+        image.imageHeight = 80
+        let data = docx([image])
+        try FileManager.default.removeItem(
+            at: scratch.appendingPathComponent("source-photo.jpg"))
+
+        let bundled = try XCTUnwrap(zipEntry("word/media/image001.jpg", in: data))
+        XCTAssertEqual(bundled, sourceBytes)
+        XCTAssertNotNil(UIImage(data: bundled))
+        let document = String(decoding: try XCTUnwrap(
+            zipEntry("word/document.xml", in: data)), as: UTF8.self)
+        XCTAssertTrue(document.contains("cx=\"1143000\" cy=\"762000\""), document)
+        XCTAssertFalse(document.contains(scratch.path), document)
     }
 
-    func testRTFHeaderCarriesTitleAuthorAndSource() {
-        let text = rtf([block(.paragraph, "Hello.")])
-        XCTAssertTrue(text.contains("Title"), text)
-        XCTAssertTrue(text.contains("Ada"), text)
-        XCTAssertTrue(text.contains("HYPERLINK \"https://example.com/a\""), text)
+    func testDOCXCapsOversizedDeclaredImageToThreeAndAHalfInches() throws {
+        let sourceBytes = try XCTUnwrap(encodedImage(as: .jpeg))
+        var image = imageBlock(alt: "Large", fileName: "large.jpg", data: sourceBytes)
+        image.imageWidth = 2_000
+        image.imageHeight = 1_000
+        let document = String(decoding: try XCTUnwrap(zipEntry(
+            "word/document.xml", in: docx([image]))), as: UTF8.self)
+        // 336 CSS px × 9,525 EMU = 3.5 inches; aspect remains 2:1.
+        XCTAssertTrue(document.contains("cx=\"3200400\" cy=\"1600200\""), document)
     }
 
-    /// Unlike PDF and plain text, RTF keeps link DESTINATIONS live.
-    func testRTFRendersInlineLinksAsHyperlinkFields() {
-        let text = rtf([block(
-            .paragraph, "See the docs here.",
-            links: [ArticleContent.Link(start: 8, length: 4, urlString: "https://example.com/d")])])
-        XCTAssertTrue(
-            text.contains("{\\field{\\*\\fldinst{HYPERLINK \"https://example.com/d\"}}"), text)
-        XCTAssertTrue(text.contains("docs"), text)
-    }
-
-    /// An in-page `#chapter` jump has no destination in a standalone file.
-    func testRTFSkipsInPageAnchorLinks() {
-        let text = rtf([block(
-            .paragraph, "Jump to part two.",
-            links: [ArticleContent.Link(
-                start: 8, length: 4, urlString: "#two", anchorID: "two")])])
-        XCTAssertFalse(text.contains("HYPERLINK \"#two\""), text)
-    }
-
-    /// RTF's body is 7-bit ASCII, so prose outside it must survive as `\uN?`
-    /// escapes rather than being dropped or corrupting the encode.
-    func testRTFEscapesControlCharactersAndNonASCII() {
-        let text = rtf([block(.paragraph, "Braces {a} and a backslash \\ and “curly” — em.")])
-        XCTAssertTrue(text.contains("\\{a\\}"), text)
-        XCTAssertTrue(text.contains("\\\\ and"), text)
-        // U+201C “ and U+2014 —
-        XCTAssertTrue(text.contains("\\u8220?"), text)
-        XCTAssertTrue(text.contains("\\u8212?"), text)
-    }
-
-    /// Same regression as the PDF: the file is on disk under its URL hash while
-    /// the content recorded no name. RTFD must copy those bytes into the package.
-    func testRTFDBundlesImageResolvedByURLHashWhenFileNameIsUnrecorded() {
-        let wrapper = rtfd([
-            hashNamedImageBlock(remote: "https://example.com/rtf-unrecorded.png"),
+    func testDOCXTranscodesUnsupportedImageAndKeepsMissingPlaceholder() throws {
+        let heic = try XCTUnwrap(encodedImage(as: .heic))
+        let converted = docx([
+            imageBlock(alt: "Shot", fileName: "shot.heic", data: heic),
         ])
-        XCTAssertEqual(bundledImages(in: wrapper).count, 1)
-        XCTAssertTrue(rtf([
-            hashNamedImageBlock(remote: "https://example.com/rtf-unrecorded-2.png"),
-        ]).contains("\\NeXTGraphic LunaImage-001.png"))
-    }
+        XCTAssertNotNil(zipEntry("word/media/image001.png", in: converted))
 
-    /// RTFD uses a PNG still for an animated GIF rather than dropping it.
-    func testRTFDBundlesAnimatedGIFAsAPNGStill() {
-        let wrapper = rtfd([imageBlock(
-            alt: "Loop", fileName: "loop.gif", data: animatedGIFData(frames: 4))])
-        let image = bundledImages(in: wrapper)
-        XCTAssertEqual(Array(image.keys), ["LunaImage-001.png"])
-        XCTAssertNotNil(image.values.first.flatMap(UIImage.init(data:)))
-        XCTAssertFalse(
-            String(data: wrapper.fileWrappers?["TXT.rtf"]?.regularFileContents ?? Data(),
-                   encoding: .ascii)?.contains("[Loop]") ?? true,
-            "fell back to the text placeholder")
-    }
-
-    /// A stored HEIC must transcode into the package, not vanish.
-    func testRTFDBundlesHEICAsAPNGStill() throws {
-        let bytes = try XCTUnwrap(encodedImage(as: .heic))
-        let wrapper = rtfd([imageBlock(alt: "Shot", fileName: "shot.heic", data: bytes)])
-        XCTAssertEqual(Array(bundledImages(in: wrapper).keys), ["LunaImage-001.png"])
-    }
-
-    func testRTFDBundlesDownloadedImageAndPlaceholdersAMissingOne() throws {
-        let embedded = rtfd([imageBlock(alt: "A chart")])
-        let bundled = try XCTUnwrap(bundledImages(in: embedded).values.first)
-        let bundledImage = try XCTUnwrap(UIImage(data: bundled))
-        let embeddedRTF = String(
-            data: embedded.fileWrappers?["TXT.rtf"]?.regularFileContents ?? Data(),
-            encoding: .ascii) ?? ""
-        XCTAssertTrue(embeddedRTF.contains("\\NeXTGraphic LunaImage-001.png"), embeddedRTF)
-        XCTAssertTrue(embeddedRTF.contains(
-            "\\width\(Int(bundledImage.size.width * 15)) "
-                + "\\height\(Int(bundledImage.size.height * 15))"), embeddedRTF)
-
-        let missingWrapper = rtfd([ArticleContent.Block(
+        let missing = docx([ArticleContent.Block(
             kind: .image, text: "A chart", links: [],
             imageURLString: "https://example.com/gone.png", imageFileName: nil)])
-        let missing = String(
-            data: missingWrapper.fileWrappers?["TXT.rtf"]?.regularFileContents ?? Data(),
-            encoding: .ascii) ?? ""
-        XCTAssertTrue(bundledImages(in: missingWrapper).isEmpty)
-        XCTAssertFalse(missing.contains("\\NeXTGraphic"), missing)
-        XCTAssertTrue(missing.contains("[A chart]"), missing)
+        XCTAssertNil(zipEntry("word/media/image001.png", in: missing))
+        let document = String(decoding: try XCTUnwrap(
+            zipEntry("word/document.xml", in: missing)), as: UTF8.self)
+        XCTAssertTrue(document.contains("[A chart]"), document)
     }
 
-    /// Regression for the returned App Intent document: its package owns real,
-    /// decodable bytes and the RTF references only that sibling attachment with
-    /// an explicit rendered size — never Luna's source path.
-    func testRTFDAttachmentIsSelfContainedSizedAndReadable() throws {
-        let sourceBytes = try XCTUnwrap(encodedImage(as: .jpeg))
-        let sourceName = "source-photo.jpg"
-        let block = imageBlock(alt: "Photo", fileName: sourceName, data: sourceBytes)
-        let wrapper = rtfd([block])
-        try FileManager.default.removeItem(at: scratch.appendingPathComponent(sourceName))
-
-        let images = bundledImages(in: wrapper)
-        let bundled = try XCTUnwrap(images["LunaImage-001.jpg"])
-        XCTAssertEqual(bundled, sourceBytes)
-        let bundledImage = try XCTUnwrap(
-            UIImage(data: bundled), "bundled attachment bytes must decode")
-
-        let text = String(
-            data: try XCTUnwrap(wrapper.fileWrappers?["TXT.rtf"]?.regularFileContents),
-            encoding: .ascii) ?? ""
-        XCTAssertTrue(text.contains("\\NeXTGraphic LunaImage-001.jpg"), text)
-        XCTAssertTrue(text.contains(
-            "\\width\(Int(bundledImage.size.width * 15)) "
-                + "\\height\(Int(bundledImage.size.height * 15))"), text)
-        XCTAssertFalse(text.contains(scratch.path), "RTFD must not reference Luna's files")
-
-        let documentURL = scratch.appendingPathComponent("Readable.rtfd", isDirectory: true)
-        try wrapper.write(to: documentURL, options: .atomic, originalContentsURL: nil)
-        let parsed = try NSAttributedString(
-            url: documentURL,
-            options: [.documentType: NSAttributedString.DocumentType.rtfd],
-            documentAttributes: nil)
-        var parsedImageBytes: Data?
-        parsed.enumerateAttribute(
-            .attachment, in: NSRange(location: 0, length: parsed.length)
-        ) { value, _, stop in
-            parsedImageBytes = (value as? NSTextAttachment)?.fileWrapper?.regularFileContents
-            if parsedImageBytes != nil { stop.pointee = true }
-        }
-        XCTAssertNotNil(parsedImageBytes, "a system RTFD reader must find the image")
-        XCTAssertNotNil(parsedImageBytes.flatMap(UIImage.init(data:)))
-    }
-
-    func testRTFRendersEveryBlockKind() {
-        let text = rtf([
-            block(.heading, "Heading"),
-            block(.paragraph, "Body."),
-            block(.quote, "Quoted."),
-            block(.listItem, "Bulleted"),
-            block(.tableOfContents, "Contents entry"),
-            block(.caption, "Credit line"),
+    func testDOCXResolvesHashNamedImageWhenFileNameWasNotRecorded() {
+        let data = docx([
+            hashNamedImageBlock(remote: "https://example.com/docx-unrecorded.png"),
         ])
-        for expected in [
-            "Heading", "Body.", "Quoted.", "Bulleted", "Contents entry", "Credit line",
-        ] {
-            XCTAssertTrue(text.contains(expected), "missing \(expected)")
-        }
-        // Bullets are an explicit character + tab, not a reader-specific list table.
-        XCTAssertTrue(text.contains("\\u8226 ?\\tab"), text)
+        XCTAssertNotNil(zipEntry("word/media/image001.png", in: data))
     }
 
     // MARK: - Format descriptors
 
     func testFormatExtensionsAreDistinct() {
         let extensions = ArticleExportFormat.allCases.map(\.fileExtension)
-        XCTAssertEqual(extensions, ["epub", "pdf", "md", "txt", "rtfd"])
+        XCTAssertEqual(extensions, ["epub", "pdf", "md", "txt", "docx"])
         XCTAssertEqual(Set(extensions).count, extensions.count)
     }
 
-    /// The share menu is a SUBSET of the serializers: `.richText` is built only
+    /// The share menu is a SUBSET of the serializers: `.document` is built only
     /// for a double save (claudedocs/double-save.md) and must never appear in
     /// "Export as…".
     func testShareMenuOmitsTheDoubleSaveOnlyFormat() {
         XCTAssertEqual(
             ArticleExportFormat.shareMenuFormats, [.epub, .pdf, .markdown, .plainText])
-        XCTAssertFalse(ArticleExportFormat.shareMenuFormats.contains(.richText))
+        XCTAssertFalse(ArticleExportFormat.shareMenuFormats.contains(.document))
     }
 
     func testFileNameSanitizesAndAppliesExtension() {

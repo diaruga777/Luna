@@ -122,6 +122,23 @@ final class ArticleExportServiceTests: XCTestCase {
         XCTAssertEqual(url.pathExtension, "md")
     }
 
+    func testDoubleSaveDocumentWaitsForTheFirstInFlightSaveContent() async throws {
+        let pending = store.add(urlString: "https://example.com/in-flight")
+        Task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let content = ArticleContent(
+                title: "Arrived",
+                blocks: [ArticleContent.Block(
+                    kind: .paragraph, text: "Now ready.", links: [])])
+            _ = self.store.saveContent(content, for: pending)
+        }
+
+        let url = try await ArticleExportService(store: store)
+            .writePreparingImagesWhenAvailable(.document, for: pending, timeout: 2)
+        XCTAssertEqual(url.pathExtension, "docx")
+        XCTAssertEqual(try Data(contentsOf: url).prefix(4), Data([0x50, 0x4B, 0x03, 0x04]))
+    }
+
     func testWriteEPUBProducesValidZipFileWithSanitizedName() throws {
         let item = readyItem(title: "Hello: World?", url: "https://example.com/a")
         let url = try ArticleExportService(store: store).writeEPUB(for: item)
@@ -160,15 +177,14 @@ final class ArticleExportServiceTests: XCTestCase {
         for format in ArticleExportFormat.allCases {
             let url = try service.write(format, for: item)
             XCTAssertEqual(url.pathExtension, format.fileExtension, "\(format)")
-            if format == .richText {
-                var isDirectory: ObjCBool = false
-                XCTAssertTrue(FileManager.default.fileExists(
-                    atPath: url.path, isDirectory: &isDirectory))
-                XCTAssertTrue(isDirectory.boolValue, "RTFD must be a document package")
-                XCTAssertFalse(try Data(
-                    contentsOf: url.appendingPathComponent("TXT.rtf")).isEmpty)
-            } else {
-                XCTAssertFalse(try Data(contentsOf: url).isEmpty, "\(format)")
+            var isDirectory: ObjCBool = false
+            XCTAssertTrue(FileManager.default.fileExists(
+                atPath: url.path, isDirectory: &isDirectory))
+            XCTAssertFalse(isDirectory.boolValue, "every share item must be a regular file")
+            let data = try Data(contentsOf: url)
+            XCTAssertFalse(data.isEmpty, "\(format)")
+            if format == .document {
+                XCTAssertEqual(data.prefix(4), Data([0x50, 0x4B, 0x03, 0x04]))
             }
             XCTAssertFalse(url.lastPathComponent.contains(":"), "\(format)")
             stems.insert(url.deletingPathExtension().lastPathComponent)

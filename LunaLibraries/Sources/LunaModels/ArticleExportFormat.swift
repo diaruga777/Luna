@@ -14,7 +14,7 @@ import Foundation
 /// extension so the two can never disagree about either.
 ///
 /// `allCases` is the SERIALIZER list, not the menu: `shareMenuFormats` is what
-/// "Export as…" offers. They differ because `.richText` exists only as the
+/// "Export as…" offers. They differ because `.document` exists only as the
 /// double-save return format (see claudedocs/double-save.md) and was
 /// deliberately kept out of the share menu.
 public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
@@ -26,15 +26,14 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     case markdown
     /// Prose only — no markup, no URLs in the body.
     case plainText
-    /// Rich Text with Attachments (`.rtfd`) — a styled, editable document package
-    /// with image bytes bundled and links live. Apple's flat RTF reader drops or
-    /// ignores attachments; RTFD is its native self-contained rich-document
-    /// representation and Quick Look renders the bundled images.
-    case richText
+    /// Word document (`.docx`) — one regular, editable file with image bytes
+    /// bundled and links live. Unlike directory-backed RTFD, it can be copied by
+    /// the Files share extension as well as previewed by Quick Look.
+    case document
 
     /// What the article "Export as…" menu offers, in menu order: EPUB first
     /// (the ereader-universal default and the only format Luna offered before),
-    /// then PDF, then the two text formats. `.richText` is intentionally absent.
+    /// then PDF, then the two text formats. `.document` is intentionally absent.
     public static let shareMenuFormats: [ArticleExportFormat] =
         [.epub, .pdf, .markdown, .plainText]
 
@@ -46,7 +45,7 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
         case .pdf: return "pdf"
         case .markdown: return "md"
         case .plainText: return "txt"
-        case .richText: return "rtfd"
+        case .document: return "docx"
         }
     }
 
@@ -57,7 +56,7 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
         case .pdf: return L10n.string("PDF")
         case .markdown: return L10n.string("Markdown")
         case .plainText: return L10n.string("Plain Text")
-        case .richText: return L10n.string("Rich Text Document")
+        case .document: return L10n.string("Word Document")
         }
     }
 
@@ -68,7 +67,7 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
         case .pdf: return "doc.richtext"
         case .markdown: return "chevron.left.forwardslash.chevron.right"
         case .plainText: return "doc.plaintext"
-        case .richText: return "doc.text"
+        case .document: return "doc.text"
         }
     }
 }

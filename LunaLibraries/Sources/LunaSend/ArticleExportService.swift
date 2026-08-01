@@ -39,6 +39,7 @@ public struct ArticleExportService {
     /// Heavy (zips images, or lays out every PDF page) — call off the main thread.
     public func write(_ format: ArticleExportFormat, for item: ReadingListItem) throws -> URL {
         guard let content = store.content(for: item) else { throw ExportError.noContent }
+        logImageResolution(for: content, format: format)
         let data = try self.data(format, content: content, sourceURLString: item.urlString)
         let fileName = ArticleSendCoordinator.fileName(
             forTitle: item.title ?? item.urlString, extension: format.fileExtension)
@@ -46,6 +47,28 @@ public struct ArticleExportService {
         try? FileManager.default.removeItem(at: fileURL)
         try data.write(to: fileURL, options: .atomic)
         return fileURL
+    }
+
+    /// Records what the export could actually see, so "my PDF has no pictures"
+    /// is answerable from the Diagnostics screen instead of by guesswork: how
+    /// many image blocks the content has, how many resolved to a file on disk,
+    /// and — when they differ — how the ones that didn't were named.
+    private func logImageResolution(for content: ArticleContent, format: ArticleExportFormat) {
+        let imageBlocks = content.blocks.filter { $0.kind == .image }
+        guard !imageBlocks.isEmpty else { return }
+        let directory = store.articlesDirectory
+        let resolved = imageBlocks.filter {
+            ArticleImageFiles.localFileName(for: $0, in: directory) != nil
+        }
+        var message = "export \(format.rawValue): \(resolved.count)/\(imageBlocks.count) images resolved"
+        if resolved.count < imageBlocks.count {
+            let unresolved = imageBlocks
+                .filter { ArticleImageFiles.localFileName(for: $0, in: directory) == nil }
+                .prefix(3)
+                .map { "recorded=\($0.imageFileName ?? "nil") url=\($0.imageURLString ?? "nil")" }
+            message += " — missing: \(unresolved.joined(separator: "; "))"
+        }
+        SharedDiagnosticLog.record(message, category: "export")
     }
 
     /// Serialized bytes for one format. The two text formats are UTF-8; a string

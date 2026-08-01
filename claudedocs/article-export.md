@@ -49,11 +49,11 @@ Serializers, one per format, all taking `ArticleContent`:
 
 |  | Images | Inline link destinations | Layout |
 | --- | --- | --- | --- |
-| EPUB | embedded (downloaded bytes) | yes (`<a href>`) | reflowable |
-| PDF | embedded (downloaded bytes) | styled, **not clickable** | fixed, paginated |
+| EPUB | embedded (downloaded bytes, **animation kept**) | yes (`<a href>`) | reflowable |
+| PDF | embedded (downloaded bytes, GIF → first frame) | styled, **not clickable** | fixed, paginated |
 | Markdown | referenced by remote URL | yes (`[label](url)`) | flat text |
 | Plain text | `[Image: alt]` placeholder | no | flat text |
-| Rich Text | embedded (downloaded bytes) | yes (`HYPERLINK` field) | reflowable |
+| Rich Text | embedded (PNG/JPEG blip; everything else → PNG still) | yes (`HYPERLINK` field) | reflowable |
 
 Deliberate choices behind that table:
 
@@ -88,6 +88,59 @@ page, and `documentInfo` gets the title/author.
   adding pages. It also stops on a container that consumes nothing, and caps at
   500 pages.
 
+## Images: resolved, then fetched
+
+Exports used to come out with **no pictures**, and the builders were not at
+fault — a PNG/JPEG/HEIC/GIF block does embed. They trusted
+`block.imageFileName`, and that field is routinely nil when the picture is
+already on disk (or fetchable):
+
+- `ArticleIngestHandler.persistArticle` flips an item `.ready` after fetching
+  only unknown-size images near the top; the rest download in a detached task
+  and re-save **afterwards**. A double-save export (7 s window) always beat it.
+- `ShareSurfaceDriver.persistArticle` (a share/action-extension save that never
+  opens the reader), `saveNewWithContent` (paste), and `IncomingMailImporter`
+  download no images at all.
+
+So an export must not read the recorded name and stop. Two pieces:
+
+`LunaModels/ArticleImageFiles` — the URL-hash file naming
+(`img-<sha256 prefix>.<ext>`) and `localFile(for:in:)`, which falls back from
+the recorded name to the hash-keyed file the downloader actually wrote. It sits
+in LunaModels because the writer (`ArticleImageDownloader`, LunaReaderUI) and
+the readers (`LunaSend`, `LunaEpub`) are in different link groups and **must**
+agree — `ArticleImageDownloader` delegates its own naming here so there is one
+definition. `ArticleImageReferer` picks the `Referer` an image fetch sends (the
+article URL; an imported email or document falls back to the image's origin).
+
+`LunaSend/ArticleExportImages.preparer` — the seam that FETCHES what still
+isn't local, bounded by `preparationTimeout` (15 s). The downloader is
+LunaReaderUI's, so each article app's `KindWiring` installs it; extensions leave
+it nil and export from local files only. Work cut off by the timeout isn't
+wasted — the files land on disk and the next export resolves them for free.
+
+`ArticleExportService.writePreparingImages(_:for:)` is the form every
+user-facing export calls (share sheet, the double save's App Intent return, and
+`ArticleSendCoordinator`'s Kindle EPUB — an auto-send fires exactly when an
+article becomes ready). It persists the enriched content via `saveContent`,
+which also registers the new files with `ImageReferenceStore` so they aren't
+collected as orphans. The plain synchronous `write` remains for callers with
+nothing to fetch.
+
+### Per-format image handling
+
+- **EPUB** embeds an animated GIF **whole** — the only export format that can
+  keep the animation. Non-core media types (WebP, HEIC, AVIF, and the `img`
+  unknown-type fallback) are **transcoded to JPEG/PNG**; previously WebP was
+  embedded as-is and the rest were dropped, and since WebP is not an EPUB core
+  media type, Kindle's converter and most reading systems discarded it anyway.
+  The chapter's `<img src>` points at the transcoded entry name.
+- **PDF** has no animation: a GIF contributes its first frame.
+- **Rich Text** has no GIF blip type (`\pngblip` / `\jpegblip` only), so a GIF —
+  and WebP/HEIC/AVIF — is re-encoded as a PNG still rather than dropped.
+- **Markdown** references the original remote URL (see above); **plain text**
+  drops images by design.
+
 ## Entry points
 
 Both go through `AppReaderShareProvider` (`Luna/Social/AppReaderProviders.swift`):
@@ -116,12 +169,19 @@ of what's wanted here.
 ## Tests
 
 - `LunaTests/ArticleExportServiceTests.swift` — per-format extension/bytes/UTType,
-  one shared file stem, and `noContent` for every format on an item with no
-  stored content.
+  one shared file stem, `noContent` for every format on an item with no stored
+  content, and the image preparation path (fetches, persists, skips when there's
+  nothing to do, and survives no seam installed).
+- `LunaTests/EpubBuilderImageTests.swift` — zip entries and manifest media types
+  read out of the built book: hash-resolved images, the animation kept whole,
+  non-core formats transcoded, one entry per repeated image, and a missing file
+  skipped in the zip AND the chapter at once.
 - `LunaTests/ArticleDocumentBuilderTests.swift` — Markdown block rendering,
   inline-link splicing, marker escaping, awkward-URL angle brackets,
   out-of-bounds link ranges; plain-text markup-freedom; PDF validity, media-box
-  size, pagination, image embedding, off-main build; RTF brace balance, ASCII
+  size, pagination, image embedding **counted as PDF image XObjects** (byte
+  counts can't tell a picture from a blank line), hash-resolved images, GIF and
+  every stored format surviving, off-main build; RTF brace balance, ASCII
   escaping, hyperlink fields, `{\pict}` embedding, and the share menu omitting
   it.
 - `LunaTests/ReaderShareSheetTests.swift` — the export submenu's contents, order,

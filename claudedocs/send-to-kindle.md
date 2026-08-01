@@ -218,3 +218,10 @@ multi-destination fan-out/retry/backoff, or for the legacy 12 s regime in
 `SavePressPolicy` — all three had test files at one point that were deleted as
 collateral damage in an unrelated cleanup commit; restoring them is tracked
 separately, not part of this doc.
+
+## Images
+
+`sendBuildingEPUB` calls `ArticleExportService.prepareImages` before building
+the book. An auto-send fires the moment an article becomes ready — which is
+before its pictures have finished downloading — so without this the Kindle got
+an illustration-free copy. See article-export.md.

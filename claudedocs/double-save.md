@@ -48,7 +48,12 @@ link, so the press only *asks*: the outcome reaches the intent as
 `IntentIngestHelper.ActionButtonSaveOutcome.exportRequested(item:format:)`, and
 `ActionButtonIntentSupport.exportFile` builds it through the
 `articleExporter` seam that `KindWiring+Luna` / `KindWiring+Reader` install
-(`ArticleExportService().write(format, for:)`).
+(`ArticleExportService().writePreparingImages(format, for:)`).
+
+The exporter uses `writePreparingImages`, so a double save taken seconds after
+the save still returns a file WITH the article's pictures — see
+article-export.md's "Images: resolved, then fetched"; without it the 7-second
+window always beat the image downloads.
 
 The returned file becomes the intent's **media** — `SaveResultEntity.media` /
 `ProvideContextResultEntity.media` — replacing the media download for that run

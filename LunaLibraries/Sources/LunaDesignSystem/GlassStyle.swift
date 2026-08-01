@@ -184,18 +184,25 @@ public enum GlassStyle {
     /// `prominent`: it takes a Luna-tinted glass fill and full-strength label,
     /// the rest stay plain glass with a quieter label. `compact` is the smaller
     /// metric for two or three pills sharing one line.
+    ///
+    /// `tint` is the fill of a prominent pill. It defaults to the fixed Luna
+    /// brand accent — the right choice wherever the surface should read as
+    /// "Luna" — but a per-app surface (the extensions' own screens) passes
+    /// `LunaSurfacePalette.baseColor` so its buttons carry the running app's
+    /// own colour.
     public static func actionButtonConfiguration(
-        title: String, symbol: String, prominent: Bool = false, compact: Bool = false
+        title: String, symbol: String, prominent: Bool = false, compact: Bool = false,
+        tint: UIColor = GlassStyle.lunaBrandAccent
     ) -> UIButton.Configuration {
         var config: UIButton.Configuration
         if #available(iOS 26.0, *) {
             config = .glass()
             config.baseBackgroundColor = prominent
-                ? lunaBrandAccent.withAlphaComponent(0.55) : LunaSurfacePalette.glassTint
+                ? tint.withAlphaComponent(0.55) : LunaSurfacePalette.glassTint
         } else {
             config = .filled()
             config.baseBackgroundColor = prominent
-                ? lunaBrandAccent.withAlphaComponent(0.55) : LunaColors.tertiaryFill
+                ? tint.withAlphaComponent(0.55) : LunaColors.tertiaryFill
         }
         config.image = UIImage(systemName: symbol)
         config.imagePadding = compact ? 5 : 8

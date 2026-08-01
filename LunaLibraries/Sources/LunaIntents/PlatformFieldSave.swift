@@ -41,7 +41,8 @@ public enum PlatformFieldSave {
 
     public static func save(
         platform: ContentPlatform, fields: [String], doubleSaveActionSurface: String?,
-        saveTimeout: TimeInterval = IntentSaveTimeout.standard
+        saveTimeout: TimeInterval = IntentSaveTimeout.standard,
+        attemptDate: Date = Date()
     ) async throws -> Result {
         switch platform {
         case .bluesky:
@@ -55,7 +56,7 @@ public enum PlatformFieldSave {
             else { throw SaveError.notFound }
             return await saveResolvedURL(
                 url, doubleSaveActionSurface: doubleSaveActionSurface,
-                saveTimeout: saveTimeout)
+                saveTimeout: saveTimeout, attemptDate: attemptDate)
 
         case .reddit:
             // subreddit + title, optional author.
@@ -69,7 +70,7 @@ public enum PlatformFieldSave {
             else { throw SaveError.notFound }
             return await saveResolvedURL(
                 url, doubleSaveActionSurface: doubleSaveActionSurface,
-                saveTimeout: saveTimeout)
+                saveTimeout: saveTimeout, attemptDate: attemptDate)
 
         case .x, .tiktok, .instagram, .facebook:
             // handle + phrase, optional date.
@@ -83,7 +84,7 @@ public enum PlatformFieldSave {
             else { throw SaveError.notFound }
             return await saveResolvedURL(
                 url, doubleSaveActionSurface: doubleSaveActionSurface,
-                saveTimeout: saveTimeout)
+                saveTimeout: saveTimeout, attemptDate: attemptDate)
         case .youtube, .web:
             // YouTube saves arrive as URLs (Safari/on-screen URL extraction); the
             // screenshot search path has no stable keyless video search contract.
@@ -93,12 +94,13 @@ public enum PlatformFieldSave {
     }
 
     private static func saveResolvedURL(
-        _ url: URL, doubleSaveActionSurface: String?, saveTimeout: TimeInterval
+        _ url: URL, doubleSaveActionSurface: String?, saveTimeout: TimeInterval,
+        attemptDate: Date
     ) async -> Result {
         let urlString = url.absoluteString
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString, doubleSaveActionSurface: doubleSaveActionSurface,
-            timeout: saveTimeout)
+            timeout: saveTimeout, attemptDate: attemptDate)
         return Result(resolvedURLString: urlString, outcome: outcome)
     }
 

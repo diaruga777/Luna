@@ -19,8 +19,8 @@ and finished by `SettingsViewController`.
   Settings table pushes `DiagnosticsViewController`; taps on rows and controls
   do not count.
 - Shortcut & Safari contains Safari suggestion visibility, on-screen URL
-  handling, the Double Save action, and shortcut actions. Media download size is
-  automatic, so there is no Download in Background setting. Double Save appears
+  handling, Double Save Articles, and shortcut actions. Media download size is
+  automatic, so there is no Download in Background setting. Double Save Articles appears
   only in Luna and Reader (see double-save.md) and defaults to Nothing.
 - Appearance contains only the theme choice. Reader eclipse navigation is always
   enabled unless the system Reduce Motion accessibility setting is on.
@@ -41,8 +41,8 @@ and finished by `SettingsViewController`.
   settings, address, and test send.
 - Contacts remains its own address-book page.
 
-Action Button double save has no settings. On Reader it sends to configured
-Kindle or does nothing; it cannot send to a contact.
+Double Save Articles offers Nothing, Send to Kindle, and View immediately. It
+cannot send to a contact and never applies to non-article items.
 
 ## Media apps
 

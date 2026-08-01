@@ -132,8 +132,8 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
     }
 
-    /// The article file a double save whose configured action is one of the
-    /// "Open …" formats should return. Nil for every other outcome, and for an
+    /// The article document a double save configured as "View immediately"
+    /// should return. Nil for every other outcome, and for an
     /// article with nothing to export — a double save must never fail the save
     /// that preceded it. When non-nil it IS this run's media, replacing the
     /// media download (an article has none).
@@ -145,13 +145,17 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<SaveResultEntity> & ProvidesDialog {
+        // Capture before setup/progress/runtime work. This timestamp follows the
+        // run to the atomic store reservation, so a second invocation does not
+        // have to wait for the first invocation to tear down.
+        let attemptDate = Date()
         LunaSetupStatusStore.shared.recordShortcutRun(
             isCentral: LunaApp.current == .luna)
         let reporter = IntentProgressReporter()
         // Which background runtime this is, and whether the system shows its own
         // progress, is decided by target membership — see `CaptureIntentRuntime`.
         let saved = try await withCaptureRuntime(reporter: reporter) {
-            try await self.save(reporter: reporter)
+            try await self.save(reporter: reporter, attemptDate: attemptDate)
         }
         return .result(value: saved.value, dialog: saved.dialog)
     }
@@ -159,7 +163,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     /// The intent body, independent of whether an extended runtime is wrapping
     /// it. Returns the value + dialog; `perform` packages the result.
     private func save(
-        reporter: IntentProgressReporter
+        reporter: IntentProgressReporter, attemptDate: Date
     ) async throws -> (value: SaveResultEntity, dialog: IntentDialog) {
         // A sibling Luna app owns the screen. This has to come before the
         // double-press path below, which would otherwise re-run the previous
@@ -187,11 +191,12 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             let outcome = await IntentIngestHelper.handleSavePress(
                 urlString: savedURLString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
-                timeout: captureSaveTimeout)
+                timeout: captureSaveTimeout, attemptDate: attemptDate)
             // Verify the re-press before recording it or downloading anything:
             // re-running a save whose item is gone or failed is a failure too.
             _ = try self.savedURLString(from: outcome)
-            ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+            ScreenshotDoublePressStore.record(
+                digest: digest, savedURLString: savedURLString, now: attemptDate)
             if let exported = await Self.exportedFile(from: outcome) {
                 reporter.enter(.finishing)
                 return (SaveResultEntity(media: exported), "Done.")
@@ -239,12 +244,12 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                     title: fields[0],
                     site: fields.count > 1 ? fields[1] : nil,
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
-                    saveTimeout: captureSaveTimeout)
+                    saveTimeout: captureSaveTimeout, attemptDate: attemptDate)
             } else if let platform = AppNamePlatform.platform(forAppName: app) {
                 let result = try await PlatformFieldSave.save(
                     platform: platform, fields: fields,
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
-                    saveTimeout: captureSaveTimeout)
+                    saveTimeout: captureSaveTimeout, attemptDate: attemptDate)
                 outcome = result.outcome
                 resolvedPlatformURLString = result.resolvedURLString
             } else {
@@ -263,7 +268,8 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
 
         let savedURLString = try self.savedURLString(from: outcome)
         if let savedURLString {
-            ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+            ScreenshotDoublePressStore.record(
+                digest: digest, savedURLString: savedURLString, now: attemptDate)
         }
         if let exported = await Self.exportedFile(from: outcome) {
             reporter.enter(.finishing)

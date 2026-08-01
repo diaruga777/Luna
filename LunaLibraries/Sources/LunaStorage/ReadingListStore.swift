@@ -184,6 +184,48 @@ public final class ReadingListStore {
         }
     }
 
+    /// The atomic first step of a save-button run. It either reserves a new URL
+    /// in the list or records the press time on the existing item, returning the
+    /// prior press time used by `SavePressPolicy`.
+    ///
+    /// Keeping lookup, insertion, and timestamp mutation inside ONE coordinated
+    /// read-modify-write closes the overlapping-App-Intent race where two runs
+    /// could both observe "not saved" before either inserted the item. `at` is
+    /// captured when the intent starts, not after extraction/ingest finishes.
+    public struct SaveAttemptReservation {
+        public let item: ReadingListItem
+        public let wasAdded: Bool
+        public let previousPressDate: Date?
+
+        public init(item: ReadingListItem, wasAdded: Bool, previousPressDate: Date?) {
+            self.item = item
+            self.wasAdded = wasAdded
+            self.previousPressDate = previousPressDate
+        }
+    }
+
+    public func reserveSaveAttempt(
+        urlString: String, source: CaptureSource = .manual, at date: Date
+    ) -> SaveAttemptReservation {
+        coordinatedMutate { all in
+            if let index = all.firstIndex(where: { $0.urlString == urlString }) {
+                let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
+                // Overlapping intents can reach this store in the opposite order
+                // from when they started. Never move the durable marker backward.
+                all[index].lastSaveAttemptDate = max(previous, date)
+                return SaveAttemptReservation(
+                    item: all[index], wasAdded: false, previousPressDate: previous)
+            }
+
+            var item = ReadingListItem(urlString: urlString)
+            item.dateAdded = date
+            item.captureSource = source
+            all.insert(item, at: 0)
+            return SaveAttemptReservation(
+                item: item, wasAdded: true, previousPressDate: nil)
+        }
+    }
+
     /// Adds a URL only when it isn't already saved, returning the new item, or nil
     /// when an item with that exact URL already exists. THE single URL-existence
     /// dedup authority for "drop a duplicate incoming item" (the recipient-side
@@ -457,8 +499,9 @@ public final class ReadingListStore {
     }
 
     /// Records a save press on an already-listed URL and returns the previous
-    /// press time (the item's save time, if this is the first repeat press) —
-    /// the primitive behind double-save-to-send detection.
+    /// press time (the item's save time, if this is the first repeat press).
+    /// New save-button entry points should use `reserveSaveAttempt`, which also
+    /// makes the initial insertion atomic; this remains for legacy callers.
     @discardableResult
     public func recordSaveAttempt(for itemID: UUID) -> Date? {
         coordinatedMutate { all in

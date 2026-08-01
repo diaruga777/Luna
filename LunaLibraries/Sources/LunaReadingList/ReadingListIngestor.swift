@@ -416,22 +416,27 @@ public final class ReadingListIngestor {
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
                                 prefetchedHTML: String? = nil,
                                 trustsPrefetchedHTML: Bool = false,
-                                doubleSaveActionSurface: String? = nil) async -> SavePressResult {
+                                doubleSaveActionSurface: String? = nil,
+                                attemptDate: Date = Date()) async -> SavePressResult {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
-        let existing = store.item(forURLString: urlString)
-        let previousPress = existing.map { store.recordSaveAttempt(for: $0.id) } ?? nil
+        // Reserve the URL and write this run's timing marker before any ingest
+        // work. Lookup + add/update is one cross-process coordinated mutation,
+        // so overlapping App Intent runs cannot both decide they are the first.
+        let reservation = store.reserveSaveAttempt(
+            urlString: urlString, source: source, at: attemptDate)
+        let existing = reservation.wasAdded ? nil : reservation.item
 
         let decision = SavePressPolicy.decide(
             existingItem: existing,
-            previousPressDate: previousPress,
-            now: Date(),
+            previousPressDate: reservation.previousPressDate,
+            now: attemptDate,
             doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [],
             intentAction: doubleSaveActionSurface.flatMap(Self.resolvedIntentAction(forSurface:)))
 
         switch decision {
         case .saveNew:
-            let item = store.add(urlString: urlString, source: source)
+            let item = reservation.item
             // App-Intent saves WAIT for the classified outcome (bounded by the
             // intent layer's own 12 s race, after which the ingest continues in
             // the background and persists pending work). Waiting is what lets an

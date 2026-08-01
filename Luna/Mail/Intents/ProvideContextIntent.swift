@@ -81,13 +81,16 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
+        // Keep the invocation's start time even if URL resolution takes a while;
+        // the store writes it before ingest so overlapping runs still pair up.
+        let attemptDate = Date()
         LunaSetupStatusStore.shared.recordShortcutRun(
             isCentral: LunaApp.current == .luna)
         let reporter = IntentProgressReporter()
         // Which background runtime this is, and whether the system shows its own
         // progress, is decided by target membership — see `CaptureIntentRuntime`.
         let value = try await withCaptureRuntime(reporter: reporter) {
-            try await self.provideContext(reporter: reporter)
+            try await self.provideContext(reporter: reporter, attemptDate: attemptDate)
         }
         return .result(value: value)
     }
@@ -95,7 +98,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     /// The intent body, independent of whether an extended runtime is wrapping
     /// it. Returns the entity; `perform` packages the result.
     private func provideContext(
-        reporter: IntentProgressReporter
+        reporter: IntentProgressReporter, attemptDate: Date
     ) async throws -> ProvideContextResultEntity {
         // A sibling Luna app owns the screen: nothing here is ours to save, and
         // that verdict outranks even a supplied on-screen URL (a link showing
@@ -127,7 +130,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             safariTrackedURLString: trackedURLString,
             isEnabled: AppIntentSettings.handleOnScreenURLs)
         if case let .save(urlString) = plan {
-            return try await saveURL(urlString, reporter: reporter)
+            return try await saveURL(
+                urlString, reporter: reporter, attemptDate: attemptDate)
         }
 
         if case .divergent = plan { throw ProvideContextError.multipleURLs }
@@ -165,7 +169,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 // nothing silently.
                 throw ProvideContextError.noTrackedPage
             }
-            return try await saveURL(urlString, reporter: reporter)
+            return try await saveURL(
+                urlString, reporter: reporter, attemptDate: attemptDate)
         }
     }
 
@@ -176,16 +181,16 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     /// counts as handled — the ingest task continues and persists its pending
     /// work in the background, so the item IS in the app.
     private func saveURL(
-        _ urlString: String, reporter: IntentProgressReporter
+        _ urlString: String, reporter: IntentProgressReporter, attemptDate: Date
     ) async throws -> ProvideContextResultEntity {
         reporter.enter(.saving)
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString,
             doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
-            timeout: captureSaveTimeout)
+            timeout: captureSaveTimeout, attemptDate: attemptDate)
 
         let savedURLString: String
-        // A double save whose action is an "Open …" format: the article file IS
+        // A double save whose action is "View immediately": the article document IS
         // this run's media, so it replaces the media download below (an article
         // has none anyway).
         var exportedFile: IntentFile?
@@ -255,8 +260,8 @@ enum ActionButtonIntentSupport {
         return try await mediaHandoff(urlString, foreground)
     }
 
-    /// Article-file export for a double save whose configured action is one of
-    /// the "Open …" formats. Installed by the two `KindWiring` variants that
+    /// Article-document export for a "View immediately" double save. Installed
+    /// by the two `KindWiring` variants that
     /// link LunaSend (Luna + Reader); nil elsewhere, matching
     /// `doubleSaveSurface`. Returns the temp file's URL.
     static var articleExporter: ((ReadingListItem, ArticleExportFormat) async -> URL?)?

@@ -126,10 +126,10 @@ There is no user setting for this threshold.
 The return value is a `TransientAppEntity` with optional `media: IntentFile`.
 Non-media saves and large/unknown media downloads return `media = nil`.
 
-`media` carries one other thing: when a **double save** (same URL twice within
-7 s) is configured as one of the "Open …" actions, the exported article file
-(PDF / Markdown / RTF) is returned there instead, and the media handoff is
-skipped for that run. Both Action Button intents do this. See double-save.md.
+`media` carries one other thing: when **Double Save Articles** (same article URL
+twice within 7 s) is configured as **View immediately**, a self-contained RTFD
+article document is returned there instead, and the media handoff is skipped for
+that run. Both Action Button intents do this. See double-save.md.
 
 0. **Sibling Luna app gate** — first, and specifically ahead of the double-press
    skip below, which would otherwise re-run the previous save without ever
@@ -143,6 +143,10 @@ skipped for that run. Both Action Button intents do this. See double-save.md.
    Kindle receives it (or nothing happens when Kindle is not configured), and the
    snapshot timestamp is refreshed. `ScreenshotDigest.similarityThreshold`
    still needs on-device tuning against status-bar clock/Dynamic Island noise.
+   Every intent captures its attempt timestamp at the start of `perform()`. Once
+   a URL resolves, `ReadingListStore.reserveSaveAttempt` atomically inserts it or
+   updates its press marker before ingest; zero-gap and reverse-arrival-order
+   overlapping runs count without a minimum threshold.
 2. Otherwise: prompt = `AppNamePlatform.safariScreenPrompt` ("title ; site")
    for Safari, else the per-platform `screenPrompt(forAppName:)`; run
    prompt+image through the vision seam (below); parse with

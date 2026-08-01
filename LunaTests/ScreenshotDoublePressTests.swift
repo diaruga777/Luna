@@ -28,6 +28,25 @@ final class ScreenshotDoublePressTests: XCTestCase {
             .treatAsDoublePress(savedURLString: "https://example.com/a"))
     }
 
+    func testSimilarWithNoGapIsDoublePress() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let previous = ScreenshotDoublePressSnapshot(
+            digest: digest(10), date: now, savedURLString: "https://example.com/a")
+        XCTAssertEqual(
+            ScreenshotDoublePress.decide(newDigest: digest(10), previous: previous, now: now),
+            .treatAsDoublePress(savedURLString: "https://example.com/a"))
+    }
+
+    func testSimilarOverlappingStartsMayArriveInReverseOrder() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let previous = ScreenshotDoublePressSnapshot(
+            digest: digest(10), date: now.addingTimeInterval(0.25),
+            savedURLString: "https://example.com/a")
+        XCTAssertEqual(
+            ScreenshotDoublePress.decide(newDigest: digest(10), previous: previous, now: now),
+            .treatAsDoublePress(savedURLString: "https://example.com/a"))
+    }
+
     func testSimilarButOldRunsModel() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let previous = ScreenshotDoublePressSnapshot(

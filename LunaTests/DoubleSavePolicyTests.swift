@@ -48,6 +48,28 @@ final class DoubleSavePolicyTests: XCTestCase {
             .sendToEreaders(destinationIDs: [kindle]))
     }
 
+    func testIntentDoublePressWithNoGapTriggers() {
+        XCTAssertEqual(
+            decideIntent(existingItem: item(), previousPressDate: now, action: .sendToKindle),
+            .sendToEreaders(destinationIDs: [kindle]))
+    }
+
+    func testOverlappingIntentStartDatesMayArriveInReverseOrder() {
+        XCTAssertEqual(
+            decideIntent(
+                existingItem: item(), previousPressDate: now.addingTimeInterval(0.25),
+                action: .exportArticle(format: .richText)),
+            .exportArticle(format: .richText))
+    }
+
+    func testReverseOrderedIntentStartsStillRespectTheSevenSecondWindow() {
+        XCTAssertEqual(
+            decideIntent(
+                existingItem: item(), previousPressDate: now.addingTimeInterval(7.1),
+                action: .exportArticle(format: .richText)),
+            .ignore)
+    }
+
     func testIntentDoublePressJustOutsideSevenSecondsIsIgnored() {
         XCTAssertEqual(
             decideIntent(
@@ -151,7 +173,7 @@ final class DoubleSavePolicyTests: XCTestCase {
             .saveNew)
     }
 
-    // MARK: - "Open …" file exports
+    // MARK: - Article file exports
 
     func testIntentExportReturnsTheRequestedFormat() {
         for format in [ArticleExportFormat.pdf, .markdown, .richText] {

@@ -37,10 +37,10 @@ final class DoubleSaveActionStoreTests: XCTestCase {
     }
 
     func testSettingsRoundTrip() {
-        store.setAction(.openMarkdown, forSurface: surface)
+        store.setAction(.openDocument, forSurface: surface)
         store.setFriendMode(.preset, forSurface: surface)
         store.setPresetFriendEmails(["a@b.com", "c@d.com"], forSurface: surface)
-        XCTAssertEqual(store.action(forSurface: surface), .openMarkdown)
+        XCTAssertEqual(store.action(forSurface: surface), .openDocument)
         XCTAssertEqual(store.friendMode(forSurface: surface), .preset)
         XCTAssertEqual(store.presetFriendEmails(forSurface: surface), ["a@b.com", "c@d.com"])
         // Surfaces are independent: Luna and Reader each keep their own action.
@@ -54,14 +54,20 @@ final class DoubleSaveActionStoreTests: XCTestCase {
         XCTAssertEqual(store.action(forSurface: surface), .nothing)
     }
 
-    /// Only the three "Open …" actions produce a file, and each maps to the
-    /// format the picker's wording promises.
+    func testRetiredFileChoicesMigrateToViewImmediately() {
+        for retiredValue in ["openPDF", "openMarkdown"] {
+            defaults.set(retiredValue, forKey: "doubleSave.action.\(surface)")
+            XCTAssertEqual(store.action(forSurface: surface), .openDocument)
+        }
+    }
+
+    /// The single View immediately action returns the self-contained Rich Text
+    /// document; the inert/Kindle actions return no file.
     func testExportFormats() {
         XCTAssertNil(DoubleSaveAction.nothing.exportFormat)
         XCTAssertNil(DoubleSaveAction.sendToKindle.exportFormat)
-        XCTAssertEqual(DoubleSaveAction.openPDF.exportFormat, .pdf)
-        XCTAssertEqual(DoubleSaveAction.openMarkdown.exportFormat, .markdown)
         XCTAssertEqual(DoubleSaveAction.openDocument.exportFormat, .richText)
+        XCTAssertEqual(DoubleSaveAction.openDocument.displayName, "View immediately")
     }
 
     func testPendingFriendPromptIsOneShot() {

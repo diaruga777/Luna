@@ -112,6 +112,65 @@ final class ReadingListStoreCacheTests: XCTestCase {
                        "a no-op mutation must skip the write entirely, not write identical bytes")
     }
 
+    // MARK: - Atomic save-attempt reservation
+
+    func testSaveAttemptReservationWritesTheInitialTimingStateImmediately() {
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let first = store.reserveSaveAttempt(
+            urlString: "https://example.com/intent", source: .appIntent, at: startedAt)
+
+        XCTAssertTrue(first.wasAdded)
+        XCTAssertNil(first.previousPressDate)
+        XCTAssertEqual(first.item.dateAdded, startedAt)
+        XCTAssertEqual(first.item.captureSource, .appIntent)
+        XCTAssertEqual(store.item(withID: first.item.id)?.dateAdded, startedAt)
+    }
+
+    func testSaveAttemptReservationDoesNotMoveMarkerBackwardForOverlappingRuns() {
+        let laterStart = Date(timeIntervalSince1970: 1_700_000_000.25)
+        let first = store.reserveSaveAttempt(
+            urlString: "https://example.com/overlap", source: .appIntent, at: laterStart)
+        let earlierStart = laterStart.addingTimeInterval(-0.25)
+        let overlapping = store.reserveSaveAttempt(
+            urlString: first.item.urlString, source: .appIntent, at: earlierStart)
+
+        XCTAssertFalse(overlapping.wasAdded)
+        XCTAssertEqual(overlapping.item.id, first.item.id)
+        XCTAssertEqual(overlapping.previousPressDate, laterStart)
+        XCTAssertEqual(store.item(withID: first.item.id)?.lastSaveAttemptDate, laterStart)
+    }
+
+    func testConcurrentSaveAttemptReservationsAddOneItem() {
+        let urlString = "https://example.com/concurrent-intent"
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let stores = (0..<12).map { _ in ReadingListStore(containerURL: scratchDirectory) }
+        let resultLock = NSLock()
+        var reservations: [ReadingListStore.SaveAttemptReservation] = []
+        let completion = expectation(description: "all reservations finished")
+        completion.expectedFulfillmentCount = stores.count
+
+        for concurrentStore in stores {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let reservation = concurrentStore.reserveSaveAttempt(
+                    urlString: urlString, source: .appIntent, at: startedAt)
+                resultLock.lock()
+                reservations.append(reservation)
+                resultLock.unlock()
+                completion.fulfill()
+            }
+        }
+        wait(for: [completion], timeout: 10)
+
+        XCTAssertEqual(reservations.filter(\.wasAdded).count, 1)
+        XCTAssertEqual(Set(reservations.map(\.item.id)).count, 1)
+        XCTAssertEqual(store.items().filter { $0.urlString == urlString }.count, 1)
+
+        // Drain the async reading-list notifications before the test returns.
+        let notificationsDrained = expectation(description: "notifications drained")
+        DispatchQueue.main.async { notificationsDrained.fulfill() }
+        wait(for: [notificationsDrained], timeout: 2)
+    }
+
     func testMarkFailedOnAMissingItemDoesNotPostReadingListChanged() {
         // markFailed uses coordinatedUpdate (the "only write when body reports a
         // change" sibling of coordinatedMutate) — a missing id is a no-op there too.

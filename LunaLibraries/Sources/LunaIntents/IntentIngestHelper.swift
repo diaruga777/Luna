@@ -90,12 +90,14 @@ public enum IntentIngestHelper {
     public static func handleSavePress(
         urlString: String,
         doubleSaveActionSurface surface: String?,
-        timeout: TimeInterval = IntentSaveTimeout.standard
+        timeout: TimeInterval = IntentSaveTimeout.standard,
+        attemptDate: Date = Date()
     ) async -> ActionButtonSaveOutcome {
         let pressedURLString = URLUnwrapper.ingestURL(from: urlString)?.absoluteString
             ?? urlString
         let result = await savePressRacingTimeout(
-            urlString: urlString, doubleSaveActionSurface: surface, timeout: timeout)
+            urlString: urlString, doubleSaveActionSurface: surface, timeout: timeout,
+            attemptDate: attemptDate)
         return verifiedOutcome(
             from: result, pressedURLString: pressedURLString,
             storedItem: currentStoreItem(for: result, pressedURLString: pressedURLString))
@@ -160,7 +162,8 @@ public enum IntentIngestHelper {
 
     /// Runs `handleSavePress` raced against `timeout`; nil ⇒ timed out.
     private static func savePressRacingTimeout(
-        urlString: String, doubleSaveActionSurface: String?, timeout: TimeInterval
+        urlString: String, doubleSaveActionSurface: String?, timeout: TimeInterval,
+        attemptDate: Date
     ) async -> ReadingListIngestor.SavePressResult? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
@@ -183,7 +186,8 @@ public enum IntentIngestHelper {
             Task {
                 let result = await ReadingListIngestor.shared.handleSavePress(
                     urlString: urlString, source: .appIntent,
-                    doubleSaveActionSurface: doubleSaveActionSurface)
+                    doubleSaveActionSurface: doubleSaveActionSurface,
+                    attemptDate: attemptDate)
                 finish(result)
             }
             Task {

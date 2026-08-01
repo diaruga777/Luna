@@ -249,7 +249,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         switch visibleSections[section] {
         case .suggestionButton: return L10n.string("\(safariButtonName) Button")
         case .onScreenURLs: return L10n.string("On-Screen URLs")
-        case .doubleSave: return L10n.string("Double Save")
+        case .doubleSave: return L10n.string("Double Save Articles")
         case .shortcut: return L10n.string("Action Button Shortcut")
         }
     }
@@ -261,7 +261,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         case .onScreenURLs:
             return L10n.string("When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling.")
         case .doubleSave:
-            return L10n.string("Press the Action Button twice on the same page within 7 seconds. Send to Kindle emails the article to your Kindle; the Open options hand the article back to the shortcut as a file in that format, ready to view or pass on. Only saved articles can be exported — videos and posts ignore the second press.")
+            return L10n.string("For saved articles only: press the Action Button twice on the same article within 7 seconds. Send to Kindle emails the article; View immediately returns a self-contained Rich Text document to the shortcut. Videos, posts, products, and imported documents ignore the second press.")
         case .shortcut:
             let base = L10n.string("Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)")
             return base
@@ -330,8 +330,8 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
 
     // MARK: - Double save
 
-    /// A pull-down picker (five options don't fit a segmented control) showing
-    /// what a second Action Button press on the same page does.
+    /// A pull-down picker showing what a second Action Button press on the same
+    /// saved article does.
     private func doubleSaveActionCell() -> UITableViewCell {
         let current = doubleSaveSurface.map {
             DoubleSaveActionStore.shared.action(forSurface: $0)
@@ -347,14 +347,14 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
-        content.text = L10n.string("Second Press")
+        content.text = L10n.string("Second article save")
         content.image = UIImage(systemName: "hand.tap")
         cell.contentConfiguration = content
 
         let button = UIButton(type: .system)
         button.setTitle(current.displayName, for: .normal)
         button.accessibilityIdentifier = "doubleSaveActionPicker"
-        button.accessibilityLabel = L10n.string("Second Press")
+        button.accessibilityLabel = L10n.string("Second article save")
         button.showsMenuAsPrimaryAction = true
         button.menu = menu
         button.sizeToFit()
@@ -381,7 +381,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     private func presentKindleSetupPrompt() {
         let alert = UIAlertController(
             title: L10n.string("Set up Kindle first"),
-            message: L10n.string("Double save can't email an article until your Luna email account and Kindle address are set up."),
+            message: L10n.string("Double Save Articles can't email an article until your Luna email account and Kindle address are set up."),
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
         alert.addAction(UIAlertAction(title: L10n.string("Set Up"), style: .default) {

@@ -34,7 +34,10 @@ public enum ScreenshotDoublePress {
         now: Date = Date()
     ) -> Decision {
         guard let previous else { return .runModel }
-        guard now.timeIntervalSince(previous.date) < SavePressPolicy.intentDoublePressWindow else {
+        // No minimum gap: overlapping runs can carry start timestamps whose
+        // persistence order is reversed. Only their absolute distance matters.
+        guard abs(now.timeIntervalSince(previous.date))
+                < SavePressPolicy.intentDoublePressWindow else {
             return .runModel
         }
         guard ScreenshotDigest.isSimilar(newDigest, previous.digest) else { return .runModel }

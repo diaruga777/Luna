@@ -84,7 +84,11 @@ public enum SavePressPolicy {
 
         if let intentAction {
             let isDoublePress = previousPressDate.map {
-                now.timeIntervalSince($0) < intentDoublePressWindow
+                // There is deliberately NO minimum gap. Overlapping App Intent
+                // runs may reserve the store in the opposite order from their
+                // start dates, so compare absolute distance: zero and a small
+                // negative interval are valid double saves too.
+                abs(now.timeIntervalSince($0)) < intentDoublePressWindow
             } ?? false
             guard isDoublePress else { return .ignore }
             switch intentAction {
@@ -115,7 +119,7 @@ public enum SavePressPolicy {
         guard !existingItem.isPlatformItem else { return .ignore }
 
         let isDoublePress = previousPressDate.map {
-            now.timeIntervalSince($0) < doublePressWindow
+            abs(now.timeIntervalSince($0)) < doublePressWindow
         } ?? false
         guard isDoublePress, !doubleSaveDestinationIDs.isEmpty else { return .ignore }
 

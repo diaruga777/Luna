@@ -367,6 +367,25 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
+    func testGrowingIntroStartsThePeriodsExitWithTheTailsArrival() {
+        let font = UIFont.systemFont(ofSize: 25, weight: .semibold)
+        let growing = MoonRevealGrowingLineView(
+            stem: "Read", tail: " more.", font: font)
+
+        // A period's ink sits about an x-height below “more”'s, and one front
+        // descending through the shared frame would reach it that much later —
+        // uncovering the top of the “m” while the period still stood beside it.
+        // The period's own front starts that far ahead so both tops go at once.
+        let xHeight = font.xHeight
+        XCTAssertGreaterThan(
+            growing.periodFrontLead, xHeight * 0.4,
+            "Without a real lead the period outlives the tail's first glyph")
+        XCTAssertLessThan(
+            growing.periodFrontLead, xHeight,
+            "The lead is a drop between two inks, not a whole glyph height")
+    }
+
+    @MainActor
     func testIntroRestoresCompletedSetupArtworkBeforeItsViewLoads() throws {
         let intro = OnboardingIntroCardContentViewController(
             introCopy: .twoLines(

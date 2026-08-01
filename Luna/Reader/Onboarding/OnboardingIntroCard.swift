@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import CoreText
 import LunaDesignSystem
 import UIKit
 import UniformTypeIdentifiers
@@ -480,6 +481,12 @@ final class MoonRevealLineView: UIView {
     /// Safari article amplifies its lines — at the wave's much faster front
     /// the reference gain read as too soft.
     var bloomGain: CGFloat = 1
+    /// How far along its own travel the front already is when the sweep
+    /// begins, measured along the sweep's direction. Lines laid out in one
+    /// shared frame get one shared front, which reaches each fragment's ink at
+    /// a different moment; a fragment whose ink sits LOWER than its
+    /// neighbour's asks for a lead so both change at the same instant.
+    private var frontLead: CGFloat = 0
 
     /// The distance the front travels while crossing this view: from the
     /// wide arc's edge first touching the top to its highest point clearing
@@ -590,6 +597,7 @@ final class MoonRevealLineView: UIView {
         isFullyConcealed = false
         didStartSweep = false
         sweepDirection = .reveal
+        frontLead = 0
         isAccessibilityElement = false
         finalLabel.isHidden = false
         installOcclusion()
@@ -628,11 +636,20 @@ final class MoonRevealLineView: UIView {
     /// Takes a revealed line back out under the same descending front. Only
     /// this line is touched: anything laid out beside it is untouched, which
     /// is what lets one fragment of a sentence leave while another arrives.
-    func conceal(duration: TimeInterval, completion: @escaping () -> Void) {
+    ///
+    /// `frontLead` starts that front already advanced, so the fragment leaving
+    /// and the fragment arriving beside it can be timed against their own ink
+    /// rather than against the frame they share.
+    func conceal(
+        duration: TimeInterval,
+        frontLead: CGFloat,
+        completion: @escaping () -> Void
+    ) {
         guard isFullyRevealed else {
             completion()
             return
         }
+        self.frontLead = frontLead
         sweepDirection = .conceal
         didStartSweep = false
         isFullyRevealed = false
@@ -777,7 +794,7 @@ final class MoonRevealLineView: UIView {
         }
         let circleFrame = CGRect(
             x: bounds.midX - radius,
-            y: initialTop,
+            y: initialTop + (sweepsUpward ? -frontLead : frontLead),
             width: diameter,
             height: diameter)
         initialCircleFrame = circleFrame
@@ -821,12 +838,18 @@ final class MoonRevealLineView: UIView {
 /// is centred without a single glyph translating. Three lines share one frame
 /// and one text block: each renders the whole composition with every fragment
 /// but its own in clear ink, so a fragment's position comes from the real
-/// typesetting of the sentence around it rather than a measured offset. The
-/// shared frame also gives all three the identical circle, so the second
-/// beat's front — bringing the tail in as the stem's period goes out — is one
-/// continuous edge. Their occluders are clear because they overlap: the front
-/// hides text by geometrically removing it from the mask, and a black disc
-/// wide enough to cover this line would cover its neighbours too.
+/// typesetting of the sentence around it rather than a measured offset. Their
+/// occluders are clear because they overlap: the front hides text by
+/// geometrically removing it from the mask, and a black disc wide enough to
+/// cover this line would cover its neighbours too.
+///
+/// The second beat is TWO fronts, started together — one bringing the tail in,
+/// one taking the stem's period out. A single shared edge would be wrong here:
+/// a period's ink sits a whole x-height below “more”'s, so one edge descending
+/// through the shared frame uncovers the top of the “m” a third of a second
+/// before it reaches the period still standing to its left. Each front is
+/// placed against its own fragment's ink instead, so the two tops start
+/// together and the sentence never reads as having both punctuations at once.
 final class MoonRevealGrowingLineView: UIView {
     let firstBeatText: String
     let finishedText: String
@@ -835,6 +858,10 @@ final class MoonRevealGrowingLineView: UIView {
     var fragments: (stem: MoonRevealLineView, period: MoonRevealLineView, tail: MoonRevealLineView) {
         (stemLine, periodLine, tailLine)
     }
+
+    /// How far the period's front starts ahead of the tail's — the drop from
+    /// the tail's highest ink to the period's, so the two tops go together.
+    let periodFrontLead: CGFloat
 
     private let stemLine: MoonRevealLineView
     private let periodLine: MoonRevealLineView
@@ -867,6 +894,8 @@ final class MoonRevealGrowingLineView: UIView {
             finished, font: font,
             visible: NSRange(location: 0, length: finishedLength)
         ).size().width
+        periodFrontLead = Self.inkTopDrop(
+            of: ".", below: tail, font: font)
 
         super.init(frame: .zero)
         isUserInteractionEnabled = false
@@ -904,13 +933,20 @@ final class MoonRevealGrowingLineView: UIView {
             completion: completion)
     }
 
-    /// The tail arrives under the same front that takes the period away. The
-    /// stem is not part of this beat at all.
+    /// The tail arrives as the period goes out: two fronts of the same pace,
+    /// started in the same turn, each already placed at its own fragment's ink
+    /// so the top of the “m” and the top of the period go together. The stem is
+    /// not part of this beat at all.
     func revealSecondBeat(duration: TimeInterval, completion: @escaping () -> Void) {
         sweep(
             [
                 { self.tailLine.reveal(duration: duration, completion: $0) },
-                { self.periodLine.conceal(duration: duration, completion: $0) },
+                {
+                    self.periodLine.conceal(
+                        duration: duration,
+                        frontLead: self.periodFrontLead,
+                        completion: $0)
+                },
             ],
             spokenText: finishedText,
             completion: completion)
@@ -949,6 +985,31 @@ final class MoonRevealGrowingLineView: UIView {
             textAlignment: .left,
             minimumScaleFactor: 1,
             occluderColor: .clear)
+    }
+
+    /// How far below `reference`'s highest ink this fragment's own highest ink
+    /// sits. Both are typeset on the sentence's one baseline, so the difference
+    /// of their ink heights above it is exactly how much later a shared front
+    /// would arrive — and so exactly the lead the fragment's own front needs.
+    ///
+    /// Ink, not typography: the line box of a period is as tall as the line box
+    /// of an “m”, and it is the visible dot that has to start when the “m” does.
+    private static func inkTopDrop(
+        of fragment: String,
+        below reference: String,
+        font: UIFont
+    ) -> CGFloat {
+        max(inkTopAboveBaseline(reference, font: font)
+            - inkTopAboveBaseline(fragment, font: font), 0)
+    }
+
+    private static func inkTopAboveBaseline(
+        _ string: String,
+        font: UIFont
+    ) -> CGFloat {
+        let line = CTLineCreateWithAttributedString(
+            NSAttributedString(string: string, attributes: [.font: font]))
+        return CTLineGetImageBounds(line, nil).maxY
     }
 
     /// The whole composition, with only `visible` in white ink. Kerning is
@@ -1319,13 +1380,26 @@ final class GlyphPixelBloomView: UIView {
         let previousStrip = currentStripRect()
         if let offsetProvider {
             if let offset = offsetProvider() {
-                didSampleOffset = true
                 // Signed travel: an upward sweep translates negatively, and
                 // the ratio of matching signs keeps progress in 0...1.
                 let divisor = abs(circleTravel) >= 1
                     ? circleTravel
                     : (circleTravel < 0 ? -1 : 1)
-                progress = min(max(offset / divisor, 0), 1)
+                let sampled = min(max(offset / divisor, 0), 1)
+                // An occluder added to the tree in the sweep's own turn has no
+                // presentation state yet, so `presentation()` hands back the
+                // MODEL layer — which the sweep has already moved to its
+                // finished transform. Read as a real sample that would end the
+                // light on its first tick, before a single pixel had emitted:
+                // the conceal that reinstalls its occluder went out as a plain
+                // top-down wipe. A FIRST sample of an already-finished sweep is
+                // therefore "not committed yet", not "over".
+                if didSampleOffset || sampled < 1 {
+                    didSampleOffset = true
+                    progress = sampled
+                } else {
+                    progress = 0
+                }
             } else {
                 // nil before the occluder's animation is committed, and again
                 // after it is removed: not-yet-started vs finished.

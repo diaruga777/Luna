@@ -136,6 +136,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private var progress: CGFloat = 0
     private var panStartProgress: CGFloat = 0
     private var laidOutSize = CGSize.zero
+    private var isRemovingSetupRows = false
     private var pullAvailable = false
     private var chromeHidden = false
     private var assumesShortcutInstalled = UserDefaults.standard.bool(
@@ -442,24 +443,51 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         applyProgress()
     }
 
-    /// Setup completion has a little physicality: the finished cards shrink and
-    /// fade, then the remaining arc closes up around the paste row.
-    private func removeCompletedSetupRows() {
-        let next = makeRows()
-        let completedIndexes = rows.indices.filter { index in
+    /// The indexes of `rows` holding a setup card that `next` no longer has —
+    /// the cards that have just earned their way off the arc.
+    private func completedSetupIndexes(against next: [LeftTrayRow]) -> [Int] {
+        rows.indices.filter { index in
             guard case let .setup(kind) = rows[index] else { return false }
             return !next.contains {
                 guard case let .setup(nextKind) = $0 else { return false }
                 return nextKind == kind
             }
         }
-        guard !completedIndexes.isEmpty else {
+    }
+
+    /// Setup completion has a little physicality: the finished cards shrink and
+    /// fade, then the remaining arc closes up around the paste row.
+    ///
+    /// Re-entrancy is the whole difficulty here, because the posters are App
+    /// Intents and ONE link shared through `SaveIntent` arrives up to three
+    /// times inside the 0.24 s fade: `recordShortcutRun`'s in-process
+    /// notification, that same call's Darwin echo (this process observes its own
+    /// cross-process post), and the save's own `.readingListChanged` rebuild.
+    /// Whichever landed second left the deletion below describing a row count
+    /// the collection view no longer had, which is a hard UIKit abort rather
+    /// than a glitch. So the snapshot taken before the fade is never trusted
+    /// after it: the completion re-derives, and anything that is no longer a
+    /// plain deletion of setup rows (a save that also ADDED a recent row)
+    /// reloads instead of animating.
+    private func removeCompletedSetupRows() {
+        // The in-flight fade re-derives when it completes, so it already covers
+        // whatever this later post is reporting.
+        guard !isRemovingSetupRows else { return }
+        guard !completedSetupIndexes(against: makeRows()).isEmpty else {
+            rebuildRows()
+            return
+        }
+        // Nothing to fade and nobody watching it: an App Intent routinely fires
+        // this with the app backgrounded, where a batch update against an
+        // off-screen collection view buys only the abort above.
+        guard collection.window != nil else {
             rebuildRows()
             return
         }
 
-        let indexPaths = completedIndexes.map { IndexPath(item: $0, section: 0) }
-        let visible = indexPaths.compactMap { collection.cellForItem(at: $0) }
+        let visible = completedSetupIndexes(against: makeRows())
+            .compactMap { collection.cellForItem(at: IndexPath(item: $0, section: 0)) }
+        isRemovingSetupRows = true
         UIView.animate(
             withDuration: 0.24,
             animations: {
@@ -470,10 +498,19 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             },
             completion: { [weak self] _ in
                 guard let self else { return }
-                self.rows = next
-                self.layout.itemHeights = next.map(\.height)
-                self.collection.performBatchUpdates({
-                    self.collection.deleteItems(at: indexPaths)
+                isRemovingSetupRows = false
+                let current = makeRows()
+                let removed = completedSetupIndexes(against: current)
+                guard !removed.isEmpty, current.count == rows.count - removed.count else {
+                    rebuildRows()
+                    centerPaste(animated: true)
+                    return
+                }
+                rows = current
+                layout.itemHeights = current.map(\.height)
+                collection.performBatchUpdates({
+                    self.collection.deleteItems(
+                        at: removed.map { IndexPath(item: $0, section: 0) })
                 }, completion: { _ in
                     self.layout.invalidateLayout()
                     self.centerPaste(animated: true)
@@ -1158,6 +1195,11 @@ private final class LeftTrayCell: UICollectionViewCell {
     required init?(coder: NSCoder) { nil }
 
     override func prepareForReuse() {
+        // The setup-completion fade leaves its card at alpha 0 and 0.78 scale.
+        // If a reload recycles that card instead of deleting it, it must come
+        // back as a card and not as an invisible one.
+        alpha = 1
+        transform = .identity
         pasteControl?.removeFromSuperview()
         pasteControl = nil
         imageView.image = nil

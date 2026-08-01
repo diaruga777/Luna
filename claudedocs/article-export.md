@@ -6,15 +6,19 @@ Four formats — **EPUB, PDF, Markdown, plain text** — offered on any saved ar
 whose content is unlocked (extracted and stored). Available in the two apps that
 link `LunaSend`: **Luna** (central) and **Luna Reader**.
 
+A fifth serializer, **Rich Text (`.rtf`)**, exists but is NOT in this menu: it is
+the double save's "Open Document" action only (double-save.md).
+
 ## Key files
 
 `LunaLibraries/Sources/LunaModels/ArticleExportFormat.swift`:
-- `ArticleExportFormat` — `.epub / .pdf / .markdown / .plainText`, carrying the
-  `fileExtension`, `displayName`, and `systemImage`. It lives in **LunaModels**
-  (the bottom layer) because the two ends sit in different link groups:
-  `LunaSend` builds the bytes and is an article-kind module, while
-  `LunaSocialUI` draws the options and is universal. `allCases` order IS menu
-  order.
+- `ArticleExportFormat` — `.epub / .pdf / .markdown / .plainText / .richText`,
+  carrying the `fileExtension`, `displayName`, and `systemImage`. It lives in
+  **LunaModels** (the bottom layer) because the two ends sit in different link
+  groups: `LunaSend` builds the bytes and is an article-kind module, while
+  `LunaSocialUI` draws the options and is universal. `allCases` is the
+  SERIALIZER list; **`shareMenuFormats` is the menu**, and its order IS menu
+  order. They differ by `.richText`.
 
 `LunaLibraries/Sources/LunaSend/ArticleExportService.swift`:
 - `write(_:for:) throws -> URL` — serializes the format and writes it to a temp
@@ -37,6 +41,9 @@ Serializers, one per format, all taking `ArticleContent`:
 - `LunaSend/ArticlePDFBuilder` — US-Letter PDF, images inline.
 - `LunaSend/ArticleMarkdownBuilder` — CommonMark.
 - `LunaSend/ArticlePlainTextBuilder` — UTF-8 prose.
+- `LunaSend/ArticleRTFBuilder` — hand-written RTF, images embedded as `{\pict}`
+  and links as `{\field HYPERLINK}`. Double-save only; see double-save.md for
+  why the markup is emitted directly instead of via `NSAttributedString`.
 
 ## What each format keeps
 
@@ -46,6 +53,7 @@ Serializers, one per format, all taking `ArticleContent`:
 | PDF | embedded (downloaded bytes) | styled, **not clickable** | fixed, paginated |
 | Markdown | referenced by remote URL | yes (`[label](url)`) | flat text |
 | Plain text | `[Image: alt]` placeholder | no | flat text |
+| Rich Text | embedded (downloaded bytes) | yes (`HYPERLINK` field) | reflowable |
 
 Deliberate choices behind that table:
 
@@ -113,6 +121,8 @@ of what's wanted here.
 - `LunaTests/ArticleDocumentBuilderTests.swift` — Markdown block rendering,
   inline-link splicing, marker escaping, awkward-URL angle brackets,
   out-of-bounds link ranges; plain-text markup-freedom; PDF validity, media-box
-  size, pagination, image embedding, off-main build.
+  size, pagination, image embedding, off-main build; RTF brace balance, ASCII
+  escaping, hyperlink fields, `{\pict}` embedding, and the share menu omitting
+  it.
 - `LunaTests/ReaderShareSheetTests.swift` — the export submenu's contents, order,
   and per-format callback, in both the menu and the row list.

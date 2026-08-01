@@ -9,8 +9,9 @@ and finished by `SettingsViewController`.
   Settings table pushes `DiagnosticsViewController`; taps on rows and controls
   do not count.
 - Shortcut & Safari contains Safari suggestion visibility, on-screen URL
-  handling, and shortcut actions. Media download size is automatic, so there is
-  no Download in Background setting.
+  handling, the Double Save action, and shortcut actions. Media download size is
+  automatic, so there is no Download in Background setting. Double Save appears
+  only in Luna and Reader (see double-save.md) and defaults to Nothing.
 - Appearance contains only the theme choice. Reader eclipse navigation is always
   enabled unless the system Reduce Motion accessibility setting is on.
 

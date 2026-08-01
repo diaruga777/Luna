@@ -2,9 +2,9 @@
 //  IntentProgressReporter.swift
 //  Luna
 //
-//  Stage-anchored progress for the capture intents. Ungated (plain Foundation),
-//  so the intent bodies report stages without knowing whether an extended
-//  runtime is actually consuming them.
+//  Stage-anchored progress for SaveIntent. Ungated (plain Foundation), so the
+//  intent body reports stages without knowing whether an extended runtime is
+//  actually consuming them.
 //
 
 import Foundation
@@ -14,7 +14,7 @@ import Foundation
 /// `LongRunningIntent` REVOKES the runtime extension if progress goes stale
 /// ("If you don't update this property regularly, the system can cancel the
 /// background runtime extension and end your task prematurely"), and most of
-/// what these intents do reports nothing: a 12 s ingest race, a keyless post
+/// what Save does reports nothing: an ingest race, a keyless post
 /// search, a resolve step. So real stage transitions snap the value forward and
 /// a heartbeat creeps it through the current stage's band in between.
 ///

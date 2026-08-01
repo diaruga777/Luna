@@ -158,7 +158,12 @@ final class IntentProgressReporterTests: XCTestCase {
         XCTAssertLessThan(IntentSaveTimeout.standard, 30)
     }
 
-    func testCaptureIntentsTakeTheRuntimesBudgetNotTheDefault() {
+    func testProvideContextUsesTwentySecondsOfTheNormalBudget() {
+        XCTAssertEqual(IntentSaveTimeout.provideContext, 20)
+        XCTAssertLessThan(IntentSaveTimeout.provideContext, 30)
+    }
+
+    func testSaveIntentTakesTheRuntimesBudgetNotTheDefault() {
         // Proves the concrete-type override actually shadows
         // `CaptureIntentRuntime`'s default. If it silently stopped winning, both
         // intents would quietly keep racing 12 s under the extended runtime —
@@ -173,7 +178,6 @@ final class IntentProgressReporterTests: XCTestCase {
         #else
         expected = IntentSaveTimeout.standard
         #endif
-        XCTAssertEqual(ProvideContextIntent().captureSaveTimeout, expected)
         XCTAssertEqual(SaveIntent().captureSaveTimeout, expected)
         XCTAssertEqual(CaptureIntentExtendedRuntime.saveTimeout, expected)
     }

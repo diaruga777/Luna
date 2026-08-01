@@ -10,39 +10,58 @@ import Foundation
 
 enum ProvideContextOutcome: String, AppEnum {
     case done
+    case screenshot
+    case download
     case unhandled
-    case requiresScreenshot
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Capture Outcome"
     static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .done: "Done",
+        .screenshot: "Screenshot",
+        .download: "Download",
         .unhandled: "Unhandled",
-        .requiresScreenshot: "Requires Screenshot",
     ]
 }
 
 struct ProvideContextResultEntity: TransientAppEntity {
-    @Property(title: "Outcome") var outcome: ProvideContextOutcome
     @Property(title: "Media") var media: IntentFile?
+    @Property(title: "Outcome") var outcome: ProvideContextOutcome
+    @Property(title: "Metadata") var metadata: String?
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Context Result"
 
     var displayRepresentation: DisplayRepresentation {
         switch outcome {
         case .done: return "Done"
+        case .screenshot: return "Screenshot"
+        case .download: return "Download"
         case .unhandled: return "Unhandled"
-        case .requiresScreenshot: return "Requires Screenshot"
         }
     }
 
     init() {
         outcome = .unhandled
         media = nil
+        metadata = nil
     }
 
-    init(outcome: ProvideContextOutcome, media: IntentFile? = nil) {
+    init(
+        outcome: ProvideContextOutcome,
+        media: IntentFile? = nil,
+        metadata: String? = nil
+    ) {
         self.outcome = outcome
-        self.media = media
+        switch outcome {
+        case .done:
+            self.media = media
+            self.metadata = nil
+        case .screenshot, .download:
+            self.media = nil
+            self.metadata = metadata
+        case .unhandled:
+            self.media = nil
+            self.metadata = nil
+        }
     }
 }
 

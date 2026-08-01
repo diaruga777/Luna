@@ -16,8 +16,9 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// Second step of the Action Button capture flow: given the current app and a
-/// screenshot of it, runs the app-specific screen-extraction prompt through the
+/// Long-running second step of the Action Button capture flow. It either resumes
+/// the opaque checkpoint returned by Provide Context or, given a screenshot,
+/// runs the app-specific screen-extraction prompt through the
 /// in-process FoundationModels vision session (Private Cloud Compute when
 /// available, else the on-device model), parses the " ; "-joined response, and
 /// saves the matching post/page through the action-button save path
@@ -25,28 +26,32 @@ import Foundation
 /// skips the model and re-runs the previous save so the configured double-save
 /// action fires. Returns a transient entity containing the downloaded image or
 /// video when synchronous intent media is enabled; throws descriptive errors.
-/// The background runtime and the Live-Activity permission this intent runs under
-/// are per-target composition: see `CaptureIntentRuntime.swift` (universal
-/// default) and `CaptureIntentRuntime+LongRunning.swift` (media apps only).
+/// See `CaptureIntentRuntime*.swift`: Save alone adopts the iOS 27 extended
+/// runtime in every app; stable-SDK builds retain the ordinary-runtime fallback.
 struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Save"
     static let description = IntentDescription("""
-        Second step of the Action Button shortcut. Pass the current app (from \
-        Get Current App) and a screenshot of it; Luna reads the screen with an \
-        on-device/Private Cloud Compute model and saves the matching post or \
-        page.
+        Long-running step of the Action Button shortcut. Pass the current app, \
+        optional screenshot, and optional Metadata from Provide Context. Luna \
+        resumes prepared work when possible, or reads the screenshot and saves \
+        from the top.
         """)
     static let openAppWhenRun: Bool = false
 
-    @Parameter(title: "App", description: "The current app, from Get Current App.")
-    var app: String
+    @Parameter(title: "CurrentApp", description: "The current app, from Get Current App.")
+    var currentApp: String
 
     @Parameter(
         title: "Screenshot",
-        description: "A screenshot of the current app's screen.",
+        description: "An optional screenshot of the current app's screen.",
         supportedContentTypes: [.image])
-    var screenshot: IntentFile
+    var screenshot: IntentFile?
+
+    @Parameter(
+        title: "Metadata",
+        description: "Optional opaque state returned by Provide Context.")
+    var metadata: String?
 
     enum SaveError: Error, CustomLocalizedStringResourceConvertible {
         case unsupportedApp
@@ -152,8 +157,8 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         LunaSetupStatusStore.shared.recordShortcutRun(
             isCentral: LunaApp.current == .luna)
         let reporter = IntentProgressReporter()
-        // Which background runtime this is, and whether the system shows its own
-        // progress, is decided by target membership — see `CaptureIntentRuntime`.
+        // Compiler/OS availability decides whether Save gets the iOS 27
+        // extended runtime and its system progress UI.
         let saved = try await withCaptureRuntime(reporter: reporter) {
             try await self.save(reporter: reporter, attemptDate: attemptDate)
         }
@@ -168,14 +173,19 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         // A sibling Luna app owns the screen. This has to come before the
         // double-press path below, which would otherwise re-run the previous
         // save without ever consulting the current app.
-        if AppNamePlatform.isSiblingLunaApp(app) {
+        if AppNamePlatform.isSiblingLunaApp(currentApp) {
             SharedDiagnosticLog.record(
-                "save: ignored — sibling Luna app frontmost (app=\(app))",
+                "save: ignored — sibling Luna app frontmost (app=\(currentApp))",
                 category: "intents")
             return (SaveResultEntity(), "Nothing to save from another Luna app.")
         }
 
+        if let resumed = try await resumeFromMetadataIfPossible(reporter: reporter) {
+            return resumed
+        }
+
         reporter.enter(.saving)
+        guard let screenshot else { throw SaveError.nothingIdentifiable }
         let imageData = screenshot.data
         guard let digest = ScreenshotDigest.digest(forImageData: imageData) else {
             // Undecodable image data — the model couldn't read it either.
@@ -221,12 +231,8 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                 reporter.enter(.finishing)
                 return (SaveResultEntity(media: exported), "Done.")
             }
-            reporter.enter(.downloading)
-            let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
-                for: savedURLString
-            ) {
-                try? await requestToContinueInForeground()
-            }
+            let media = try await downloadMedia(
+                for: savedURLString, reporter: reporter)
             reporter.enter(.finishing)
             if case .friendPromptRequested = outcome {
                 try? await requestToContinueInForeground()
@@ -234,11 +240,11 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             return (SaveResultEntity(media: media), "Done.")
         }
 
-        let isSafari = AppNamePlatform.isSafari(forAppName: app)
+        let isSafari = AppNamePlatform.isSafari(forAppName: currentApp)
         let prompt: String
         if isSafari {
             prompt = AppNamePlatform.safariScreenPrompt
-        } else if let screenPrompt = AppNamePlatform.screenPrompt(forAppName: app) {
+        } else if let screenPrompt = AppNamePlatform.screenPrompt(forAppName: currentApp) {
             prompt = screenPrompt
         } else {
             throw SaveError.unsupportedApp
@@ -266,7 +272,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
                     saveTimeout: captureSaveTimeout, attemptDate: attemptDate,
                     onResolvedURL: commitResolvedURL)
-            } else if let platform = AppNamePlatform.platform(forAppName: app) {
+            } else if let platform = AppNamePlatform.platform(forAppName: currentApp) {
                 let result = try await PlatformFieldSave.save(
                     platform: platform, fields: fields,
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
@@ -301,14 +307,10 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         // Use the platform finder's resolved URL even when duplicate/double-save
         // handling times out and reports no saved URL. Download handoff is an
         // independent consequence of resolving downloadable media.
-        reporter.enter(.downloading)
         let media: IntentFile?
         if let downloadURLString = resolvedPlatformURLString ?? savedURLString {
-            media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
-                for: downloadURLString
-            ) {
-                try? await requestToContinueInForeground()
-            }
+            media = try await downloadMedia(
+                for: downloadURLString, reporter: reporter)
         } else {
             media = nil
         }
@@ -319,6 +321,77 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
         reporter.enter(.finishing)
         return (SaveResultEntity(media: media), "Saved to Luna.")
+    }
+
+    /// Resumes a checkpoint emitted by Provide Context. Invalid/unknown/empty
+    /// metadata deliberately returns nil so Save falls back to the screenshot
+    /// flow above, preserving manually configured shortcuts.
+    private func resumeFromMetadataIfPossible(
+        reporter: IntentProgressReporter
+    ) async throws -> (value: SaveResultEntity, dialog: IntentDialog)? {
+        guard let state = CaptureIntentMetadata.decode(metadata) else { return nil }
+        if let encodedApp = state.currentApp,
+           encodedApp.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(
+                    currentApp.trimmingCharacters(in: .whitespacesAndNewlines)) != .orderedSame {
+            SharedDiagnosticLog.record(
+                "save: metadata current app differs from input; using CurrentApp input",
+                category: "intents")
+        }
+
+        switch state.phase {
+        case .screenshot:
+            return nil
+        case .save:
+            guard let prepared = state.preparedSave else { return nil }
+            reporter.enter(.saving)
+            let outcome = await IntentIngestHelper.performPreparedSavePress(
+                prepared, waitForCancelledFastPath: true)
+            let savedURLString = try self.savedURLString(from: outcome)
+                ?? state.resolvedURLString
+                ?? prepared.urlString
+            if let exported = await Self.exportedFile(from: outcome) {
+                IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
+                reporter.enter(.finishing)
+                return (SaveResultEntity(media: exported), "Done.")
+            }
+            let media = try await downloadMedia(
+                for: savedURLString, checkpoint: state.media,
+                reporter: reporter)
+            if case .friendPromptRequested = outcome {
+                try? await requestToContinueInForeground()
+            }
+            IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
+            reporter.enter(.finishing)
+            return (SaveResultEntity(media: media), "Saved to Luna.")
+        case .download:
+            guard let urlString = state.resolvedURLString else { return nil }
+            let media = try await downloadMedia(
+                for: urlString, checkpoint: state.media,
+                reporter: reporter)
+            IntentIngestHelper.finishSaveAttempt(urlString: urlString)
+            reporter.enter(.finishing)
+            return (SaveResultEntity(media: media), "Saved to Luna.")
+        }
+    }
+
+    private func downloadMedia(
+        for urlString: String,
+        checkpoint: IntentMediaCheckpoint? = nil,
+        reporter: IntentProgressReporter
+    ) async throws -> IntentFile? {
+        reporter.enter(.downloading)
+        reporter.setExpectedBytes(checkpoint?.expectedByteCount)
+        ActionButtonIntentSupport.byteProgress = { received, expected in
+            reporter.setExpectedBytes(expected)
+            reporter.setReceivedBytes(received)
+        }
+        defer { ActionButtonIntentSupport.byteProgress = nil }
+        return try await ActionButtonIntentSupport.downloadMediaIfNeeded(
+            for: urlString, checkpoint: checkpoint
+        ) {
+            try? await requestToContinueInForeground()
+        }
     }
 
 }

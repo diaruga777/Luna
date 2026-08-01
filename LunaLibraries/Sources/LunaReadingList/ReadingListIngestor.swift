@@ -111,6 +111,13 @@ public final class ReadingListIngestor {
                         trustsPrefetchedHTML: trustsPrefetchedHTML),
             fetcher: fetcher)
 
+        // A normal App Intent may cancel this work when its 20 s fast-path
+        // budget expires, then resume it under SaveIntent's extended runtime.
+        // Do not persist the losing task's result after cancellation: the
+        // pending placeholder is the durable checkpoint and the resumed run
+        // will apply exactly one result.
+        guard !Task.isCancelled else { return .supported }
+
         let decision = await applyResult(
             result, for: item, forceArticle: forceArticle,
             allowsInteractivePrompt: allowsInteractivePrompt)
@@ -401,6 +408,143 @@ public final class ReadingListIngestor {
         }
     }
 
+    /// A durable, Codable save-press decision. App Intents prepare this before
+    /// starting network work, so a normal-runtime intent can be cancelled at its
+    /// deadline and the LongRunning Save intent can resume without reserving the
+    /// URL a second time or accidentally turning the resume into a double save.
+    public struct PreparedSavePress: Codable, Equatable, Sendable {
+        public enum Action: Codable, Equatable, Sendable {
+            case saveNew
+            case sendToEreaders(destinationIDs: [String])
+            case sendToFriends(emails: [String])
+            case promptFriendSelector
+            case exportArticle(format: ArticleExportFormat)
+            case ignore
+        }
+
+        public let itemID: UUID
+        public let urlString: String
+        public let action: Action
+        public let isDoubleSave: Bool
+        public let doubleSaveActionSurface: String?
+        public let attemptDate: Date
+
+        public init(
+            itemID: UUID, urlString: String, action: Action,
+            isDoubleSave: Bool, doubleSaveActionSurface: String?, attemptDate: Date
+        ) {
+            self.itemID = itemID
+            self.urlString = urlString
+            self.action = action
+            self.isDoubleSave = isDoubleSave
+            self.doubleSaveActionSurface = doubleSaveActionSurface
+            self.attemptDate = attemptDate
+        }
+    }
+
+    /// Atomically reserves a save press and freezes its policy decision before
+    /// any asynchronous work begins. The returned value is safe to encode into
+    /// an App Intent handoff and execute later in another intent process.
+    public func prepareSavePress(
+        urlString: String, source: CaptureSource = .manual,
+        doubleSaveActionSurface: String? = nil,
+        attemptDate: Date = Date()
+    ) -> PreparedSavePress? {
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
+        let urlString = url.absoluteString
+        let reservation = store.reserveSaveAttempt(
+            urlString: urlString, source: source, at: attemptDate)
+        let existing = reservation.wasAdded ? nil : reservation.item
+        let isDoubleSave = existing != nil
+            && doubleSaveActionSurface != nil
+            && (reservation.previousPressDate.map {
+                abs(attemptDate.timeIntervalSince($0))
+                    < SavePressPolicy.intentDoublePressWindow
+            } ?? false)
+        let decision = SavePressPolicy.decide(
+            existingItem: existing,
+            previousPressDate: reservation.previousPressDate,
+            now: attemptDate,
+            doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [],
+            intentAction: doubleSaveActionSurface.flatMap(Self.resolvedIntentAction(forSurface:)))
+        return PreparedSavePress(
+            itemID: reservation.item.id,
+            urlString: urlString,
+            action: Self.preparedAction(from: decision),
+            isDoubleSave: isDoubleSave,
+            doubleSaveActionSurface: doubleSaveActionSurface,
+            attemptDate: attemptDate)
+    }
+
+    /// Executes a previously frozen save decision. `waitForInFlight` is used by
+    /// a resumed Save intent: the cancelled Provide Context task may still be
+    /// unwinding a URLSession/WebKit operation, and the resumed run must wait for
+    /// that cleanup instead of treating an in-flight no-op as completion.
+    @discardableResult
+    public func performPreparedSavePress(
+        _ prepared: PreparedSavePress,
+        prefetchedHTML: String? = nil,
+        trustsPrefetchedHTML: Bool = false,
+        waitForInFlight: Bool = false
+    ) async -> SavePressResult {
+        if waitForInFlight {
+            while isIngesting(prepared.itemID) {
+                guard !Task.isCancelled else { return .ignored }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        defer { store.finishSaveAttempt(for: prepared.itemID) }
+
+        switch prepared.action {
+        case .saveNew:
+            guard let item = store.item(withID: prepared.itemID) else {
+                // A prior attempt can legitimately dedupe the placeholder into
+                // an existing canonical item. Carrying an item in the result is
+                // how intent verification recognizes that successful case.
+                return .saved(ReadingListItem(urlString: prepared.urlString))
+            }
+            if item.state == .ready || item.state == .needsCaptcha { return .saved(item) }
+            let decision = await ingest(
+                item, prefetchedHTML: prefetchedHTML,
+                trustsPrefetchedHTML: trustsPrefetchedHTML)
+            switch decision {
+            case let .unsupported(owner): return .unsupportedKind(owner: owner)
+            case .supported: return .saved(item)
+            }
+        case .sendToEreaders(let destinationIDs):
+            guard let existing = store.item(withID: prepared.itemID) else { return .ignored }
+            for destinationID in destinationIDs {
+                await IngestorKindHandlers.article?.sendToDestination(
+                    existing, destinationID: destinationID)
+            }
+            return .sentToEreaders(existing)
+        case .sendToFriends(let emails):
+            guard let existing = store.item(withID: prepared.itemID) else { return .ignored }
+            do {
+                try await EmailShareCenter.shared.send(item: existing, to: emails)
+                SharedDiagnosticLog.record(
+                    "double save: emailed \(existing.urlString) to \(emails.count) friend(s)",
+                    category: "send")
+            } catch {
+                SharedDiagnosticLog.record(
+                    "double save: friend send failed: \(error)", category: "send")
+            }
+            return .sentToFriends(existing)
+        case .promptFriendSelector:
+            guard let existing = store.item(withID: prepared.itemID),
+                  let surface = prepared.doubleSaveActionSurface
+            else { return .ignored }
+            DoubleSaveActionStore.shared.setPendingFriendPrompt(
+                urlString: existing.urlString, forSurface: surface)
+            return .friendPromptRequested(existing)
+        case .exportArticle(let format):
+            guard let existing = store.item(withID: prepared.itemID) else { return .ignored }
+            return .exportRequested(existing, format)
+        case .ignore:
+            return .ignored
+        }
+    }
+
     /// The save-press entry point shared by the intents and the in-app add:
     /// first press saves and ingests; a second press within a few seconds
     /// triggers the configured double-save behavior; any other press on an
@@ -418,76 +562,26 @@ public final class ReadingListIngestor {
                                 trustsPrefetchedHTML: Bool = false,
                                 doubleSaveActionSurface: String? = nil,
                                 attemptDate: Date = Date()) async -> SavePressResult {
-        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
-        let urlString = url.absoluteString
-        // Reserve the URL and write this run's timing marker before any ingest
-        // work. Lookup + add/update is one cross-process coordinated mutation,
-        // so overlapping App Intent runs cannot both decide they are the first.
-        let reservation = store.reserveSaveAttempt(
-            urlString: urlString, source: source, at: attemptDate)
-        // The intent layer recommits after export/media handoff; this inner
-        // completion is the fallback for timed-out intents whose ingest task
-        // deliberately continues after the App Intent has returned.
-        defer { store.finishSaveAttempt(for: reservation.item.id) }
-        let existing = reservation.wasAdded ? nil : reservation.item
+        guard let prepared = prepareSavePress(
+            urlString: urlString, source: source,
+            doubleSaveActionSurface: doubleSaveActionSurface,
+            attemptDate: attemptDate)
+        else { return .ignored }
+        return await performPreparedSavePress(
+            prepared, prefetchedHTML: prefetchedHTML,
+            trustsPrefetchedHTML: trustsPrefetchedHTML)
+    }
 
-        let decision = SavePressPolicy.decide(
-            existingItem: existing,
-            previousPressDate: reservation.previousPressDate,
-            now: attemptDate,
-            doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [],
-            intentAction: doubleSaveActionSurface.flatMap(Self.resolvedIntentAction(forSurface:)))
-
+    private static func preparedAction(
+        from decision: SavePressPolicy.Decision
+    ) -> PreparedSavePress.Action {
         switch decision {
-        case .saveNew:
-            let item = reservation.item
-            // App-Intent saves WAIT for the classified outcome (bounded by the
-            // intent layer's own 12 s race, after which the ingest continues in
-            // the background and persists pending work). Waiting is what lets an
-            // intent report a real failure — a surface-dropped kind, an
-            // unreachable page — instead of exiting with silent success over an
-            // empty or `.failed` item. The central Luna app used to skip the wait
-            // because its gate can never drop a kind, but it can still fail to
-            // fetch, and that has to reach the user too.
-            let decision = await ingest(item, prefetchedHTML: prefetchedHTML,
-                                        trustsPrefetchedHTML: trustsPrefetchedHTML)
-            switch decision {
-            case let .unsupported(owner):
-                return .unsupportedKind(owner: owner)
-            case .supported:
-                return .saved(item)
-            }
-        case .sendToEreaders(let destinationIDs):
-            // The policy only returns this for an existing item.
-            guard let existing else { return .ignored }
-            for destinationID in destinationIDs {
-                await IngestorKindHandlers.article?.sendToDestination(
-                    existing, destinationID: destinationID)
-            }
-            return .sentToEreaders(existing)
-        case .sendToFriends(let emails):
-            guard let existing else { return .ignored }
-            do {
-                try await EmailShareCenter.shared.send(item: existing, to: emails)
-                SharedDiagnosticLog.record(
-                    "double save: emailed \(existing.urlString) to \(emails.count) friend(s)",
-                    category: "send")
-            } catch {
-                // A failed friend send must not fail the save intent.
-                SharedDiagnosticLog.record(
-                    "double save: friend send failed: \(error)", category: "send")
-            }
-            return .sentToFriends(existing)
-        case .promptFriendSelector:
-            guard let existing, let surface = doubleSaveActionSurface else { return .ignored }
-            DoubleSaveActionStore.shared.setPendingFriendPrompt(
-                urlString: existing.urlString, forSurface: surface)
-            return .friendPromptRequested(existing)
-        case .exportArticle(let format):
-            guard let existing else { return .ignored }
-            return .exportRequested(existing, format)
-        case .ignore:
-            return .ignored
+        case .saveNew: return .saveNew
+        case .sendToEreaders(let ids): return .sendToEreaders(destinationIDs: ids)
+        case .sendToFriends(let emails): return .sendToFriends(emails: emails)
+        case .promptFriendSelector: return .promptFriendSelector
+        case .exportArticle(let format): return .exportArticle(format: format)
+        case .ignore: return .ignore
         }
     }
 

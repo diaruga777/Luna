@@ -12,7 +12,7 @@
 import Foundation
 
 /// A single downloadable media item resolved from a social post.
-public struct MediaAsset: Equatable {
+public struct MediaAsset: Codable, Equatable {
     /// What the file is, which decides how it's saved to Photos and its extension.
     public enum Kind: String, Codable, Equatable {
         case image   // still photo (jpg/png)

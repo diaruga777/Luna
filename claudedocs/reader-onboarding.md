@@ -180,12 +180,19 @@ The root uses the production `CardCarouselViewController`:
    arrival pops out of its tail corner while the whole bottom-anchored thread
    springs up, the way iMessage lands a new message. Message text is 19pt
    (demonstration-size, not the real app's 17), the composer sits 30 points
-   above the home area to leave a strip for the later "or skip" button, and
-   the compose field is empty. Three staged bubbles
-   arrive one at a time — “You can press the Action Button and Luna saves any
-   link on screen”, “Woah! Like this?”, and the exact URL currently shown by
-   Safari (underlined link-blue, `https://luna.app/about` for the article
-   page). A 1.6-second reading beat separates arrivals. The Action Button
+   above the home area, and the compose field is empty.
+   **The user is on the receiving end of this conversation**, which is what
+   makes it a demonstration rather than the app talking to itself: the FRIEND
+   knows about the Action Button, and every instruction in the thread is
+   something they say. Five staged bubbles arrive one at a time —
+   “Yoooooo”, “You using your action button for anything?”, the user's own
+   “Nah. Its kinda dead tbh.”, “I use it to instant save any link on screen.
+   Check it:”, and the exact URL currently shown by Safari (underlined
+   link-blue, `https://luna.app/about` for the article page).
+   `stagedMessageDelays` gives each hand-off its OWN gap rather than one
+   metronome beat — the greeting's follow-up lands almost on top of it
+   (0.45s), the reply takes the beat it costs to type (1.05s), the link
+   follows its own “check it:” at once (0.4s). The Action Button
    press effect follows the final bubble — but see step 5a: in Messages the
    save resolves as a mock shortcut run, not the blackout crossfade.
 4. A solid-black, tall rounded deformation stretches continuously out of the
@@ -227,23 +234,39 @@ The root uses the production `CardCarouselViewController`:
    same article the Safari mock cleaned up. The sheet's card is laid out
    with bounds+center, never `frame` — a layout pass mid-slide with a
    transform applied corrupted the geometry and made the dismiss "pop" —
-   and it slides straight back down. While the sheet covers the screen, the
-   absorbed bubble quietly returns to the thread. Then the follow-up
-   outgoing message pops in: “Yeah just install this shortcut ⚡Luna” with
+   and it slides straight back down. The flying copy carries the departure,
+   so the real bubble only sinks to a faint ghost while it is gone and
+   un-fades as the flight lands — the thread never shows a hole. Then the
+   friend's follow-up arrives: “Just install this shortcut ⚡Luna” with
    the real Apple Shortcuts app icon (bundled `ShortcutsAppIcon.png`) on a
    purple-tinted pill that flows INLINE with the sentence — the pill is an
    `NSTextAttachment` placeholder in a UITextView with the live control
    seated over the attachment's laid-out rect, so line breaking stays
-   natural. Half a second later a grey “or skip” button fades in under the
-   composer, bottom-right (`onSkipSetup` → `finishOnboarding`). The
+   natural. (Two traps in that arrangement, both fixed and both silent:
+   an attachment with no contents draws the system's missing-image glyph
+   from behind the pill, so it carries an empty transparent image of the
+   pill's size; and `LunaColors.applyGlobalAppearance` dresses every
+   `UITextView` in the app's near-white ink, which UIKit applies on entering
+   a window and which overwrites the attributed colour — this light-mode
+   replica pins `textColor` on the instance so the proxy has nothing to
+   override.)
+
+   Half a second later the way OUT arrives, as the thread's last bubble:
+   an outgoing ghost — unfilled, sketched in a dotted faded-blue outline,
+   no tail — reading “Or ›skip setup”, carrying the same kind of pill but
+   never pulsing for the tap (`onSkipSetup` → `finishOnboarding`). The
    demonstration stops there (`onShortcutSetupMessagesShown` advances the
    journey to `actionButtonSetup` and stops the loop). The Settings message
-   — “And change your action button to that shortcut in ⚙Settings”, pill
-   inlined the same way — arrives only after the user has been to the
-   Shortcuts install and re-foregrounded the app
-   (`revealSettingsSetupMessage`). Both pills glow and pulse until tapped —
-   the shortcut pill runs the `BundledShortcut` installer, the Settings pill
-   opens the Action Button settings.
+   — “Then set your action button to it in ⚙Settings”, pill inlined the
+   same way — arrives only after the user has been to the Shortcuts install
+   and re-foregrounded the app (`revealSettingsSetupMessage`). **It is the
+   one bubble that arrives into the MIDDLE of the thread**, because the
+   skip-out beat it there: it waits collapsed (`isHidden`) between the two,
+   and unhiding it opens its space, shoves everything above it up and leaves
+   the skip where it is. Reveals are therefore driven by row identity
+   (`Row`), not by a running count. The two setup pills glow and pulse until
+   tapped — the shortcut pill runs the `BundledShortcut` installer, the
+   Settings pill opens the Action Button settings.
 6. Setup demonstrations mount the real production root behind the intro so the
    mock save wave has somewhere to land, but they put NOTHING in it — for a new
    user that root is its own empty state, and the save-wave raster is captured
@@ -325,8 +348,8 @@ The root uses the production `CardCarouselViewController`:
    restores the in-page prompt for another attempt. Choosing “Skip for now” or
    returning with verified extension evidence finishes the Safari lesson and
    app-switches back to the intro with its button checked. The Shortcut action
-   independently opens the Messages replica, which plays its three-bubble
-   sequence, the Action Button press, and the full mock shortcut run of step
+   independently opens the Messages replica, which plays its five-bubble
+   staged conversation, the Action Button press, and the full mock shortcut run of step
    5a, ending in place on the pill message(s). At the start of a press, the
    source URL gains a
    bright app-tint highlight; in Safari (Downloader/Price Tracker pages) it
@@ -428,7 +451,8 @@ Reader alias). `-onboardingStage prompt|setup|waiting` moves through the real
 direct card expansion and first shrink but begins at a deterministic overlay stage;
 `-onboardingStage messages` opens straight onto the Messages replica and runs
 its full demonstration (staged bubbles, ripple, Dynamic Island, app-switcher
-hop, pill messages) for visual inspection.
+hop, pill messages) for visual inspection. Reinstall the app between runs —
+relaunching alone can land on the Safari lesson instead.
 `-readerOnboardingStage` remains an alias. Add `-slowOnboardingAnimations` for
 a 6× inspection timeline, or `-onboardingAnimationScale <1...12>` for an
 explicit factor. The clock slows Core Animation, timers, and the display-link
@@ -438,8 +462,10 @@ liquid wave together.
 actions and hit-testing, exact surface
 copy/page mapping, one feature list shared by every article surface,
 the storage-free lessons and the legacy launch sweep, external-save completion,
-launch geometry, active-wave cancellation, the setup pills
-(identifiers, glow-until-tapped, and their shortcut/Settings callbacks),
-external-open fallback
+launch geometry, active-wave cancellation, the staged conversation's copy and
+per-hand-off cadence, the setup pills (identifiers, glow-until-tapped, the
+skip-out's deliberate refusal to pulse, and their shortcut/Settings/skip
+callbacks), the Settings message landing between the shortcut message and the
+skip-out that beat it there, external-open fallback
 actions, local-only HTML, bundled MP4 size, and attribution. The launch-art
 recorder remains skipped in ordinary test runs.

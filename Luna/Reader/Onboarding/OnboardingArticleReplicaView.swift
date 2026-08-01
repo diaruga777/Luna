@@ -244,8 +244,14 @@ final class OnboardingArticleReplicaView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let horizontalInset: CGFloat = 24
-        let contentWidth = bounds.width - horizontalInset * 2
+        // The fake page keeps a readable column on a wide screen, exactly as the
+        // real reader does. 17pt body copy run across an iPad is not what any
+        // publisher's article looks like, and the setup card that floats over it
+        // would stop being a card. On a phone this resolves to the same 24pt
+        // inset it always had.
+        let columnWidth = min(bounds.width - 48, LunaLayout.readableWidth)
+        let horizontalInset = ((bounds.width - columnWidth) / 2).rounded()
+        let contentWidth = columnWidth
 
         appIcon.frame = CGRect(x: horizontalInset, y: 31, width: 68, height: 68)
         headline.frame = CGRect(

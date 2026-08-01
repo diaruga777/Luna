@@ -66,8 +66,16 @@ final class DemoInstructionOverlay: UIView {
                 equalTo: heightAnchor,
                 multiplier: AppOnboardingLayout.contentTopRatio),
             content.topAnchor.constraint(equalTo: topGuide.bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -28),
+            content.centerXAnchor.constraint(equalTo: centerXAnchor),
+            content.leadingAnchor.constraint(
+                greaterThanOrEqualTo: leadingAnchor, constant: 28),
+            content.trailingAnchor.constraint(
+                lessThanOrEqualTo: trailingAnchor, constant: -28),
+            // The instructions are one 26pt sentence and a stack of buttons.
+            // Stretched across an iPad they read as a title bar with two banners
+            // under it, not as a step to follow.
+            content.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
             content.bottomAnchor.constraint(
                 lessThanOrEqualTo: safeAreaLayoutGuide.bottomAnchor, constant: -24),
         ])

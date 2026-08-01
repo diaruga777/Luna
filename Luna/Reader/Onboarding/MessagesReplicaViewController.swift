@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import UIKit
 
 enum OnboardingMessagesReplicaTiming {
@@ -639,9 +640,20 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         // arrival's rise) underneath the opaque composer.
         view.insertSubview(conversationStack, belowSubview: composer)
 
+        // The thread is a replica of a PHONE conversation, so it keeps phone width
+        // and centres on anything wider. Two bubbles pinned to opposite edges of
+        // an iPad, a thousand points apart, stop reading as a conversation. The
+        // header and composer bars stay full width, as they would in any
+        // single-pane iPad app.
+        let threadWidth = conversationStack.widthAnchor.constraint(
+            lessThanOrEqualToConstant: LunaLayout.phoneReplicaWidth)
+        let fullWidth = conversationStack.widthAnchor.constraint(
+            equalTo: view.widthAnchor)
+        fullWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            conversationStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            conversationStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            conversationStack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            threadWidth,
+            fullWidth,
             conversationStack.bottomAnchor.constraint(
                 equalTo: composer.topAnchor, constant: -12),
         ])

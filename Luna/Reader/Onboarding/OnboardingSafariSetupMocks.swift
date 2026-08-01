@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import UIKit
 
 /// Timing for the mock "enable the extension" pass the Safari demonstration
@@ -86,9 +87,13 @@ final class OnboardingManageExtensionsSheetView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         scrim.frame = bounds
-        // Transform-safe placement: the card slides via its transform.
+        // Transform-safe placement: the card slides via its transform. On a wide
+        // screen the sheet keeps a sheet's width and centres, the way a real
+        // iPad action sheet does, rather than becoming a bar with one toggle
+        // stranded at its far end.
+        let sheetWidth = min(bounds.width, LunaLayout.readableWidth)
         card.bounds = CGRect(
-            x: 0, y: 0, width: bounds.width, height: Self.cardHeight + 40)
+            x: 0, y: 0, width: sheetWidth, height: Self.cardHeight + 40)
         card.center = CGPoint(
             x: bounds.midX,
             y: bounds.height - Self.cardHeight + card.bounds.height / 2)

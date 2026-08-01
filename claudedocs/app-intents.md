@@ -126,6 +126,11 @@ There is no user setting for this threshold.
 The return value is a `TransientAppEntity` with optional `media: IntentFile`.
 Non-media saves and large/unknown media downloads return `media = nil`.
 
+`media` carries one other thing: when a **double save** (same URL twice within
+7 s) is configured as one of the "Open …" actions, the exported article file
+(PDF / Markdown / RTF) is returned there instead, and the media handoff is
+skipped for that run. Both Action Button intents do this. See double-save.md.
+
 0. **Sibling Luna app gate** — first, and specifically ahead of the double-press
    skip below, which would otherwise re-run the previous save without ever
    consulting the current app. Returns an empty `SaveResultEntity`.

@@ -82,7 +82,10 @@ flat file. See article-export.md.
 
 `ShortcutSettingsScreen` (universal, `Luna/Settings/SettingsViewController.swift`)
 draws the picker as a pull-down menu button — five options don't fit a segmented
-control. Picking "Send to Kindle" without a configured Kindle offers the setup it
+control. It sits inside the same `#available(iOS 27.0, *)` gate as the rest of
+the Action Button shortcut setup (app-intents.md): below iOS 27 there is no
+shortcut section, so there is nothing for a double save to be a behavior of.
+Picking "Send to Kindle" without a configured Kindle offers the setup it
 needs through `DoubleSaveSettingsSupport.kindleSetupLauncher` (article-only
 screens, installed by the same two `KindWiring` variants), and **keeps the
 choice** either way: it goes live the moment Kindle is set up, and does nothing

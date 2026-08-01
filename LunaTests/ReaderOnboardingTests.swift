@@ -63,7 +63,6 @@ final class ReaderOnboardingTests: XCTestCase {
 
     func testEveryOnboardingArticleSurfaceShowsTheSameFeatureList() {
         let plain = OnboardingLunaArticleCopy.plainText
-        XCTAssertEqual(OnboardingArticleReplicaView.fullArticleText, plain)
         XCTAssertTrue(plain.hasPrefix(OnboardingLunaArticleCopy.intro))
         for feature in OnboardingLunaArticleCopy.features {
             XCTAssertTrue(
@@ -75,6 +74,20 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             plain.components(separatedBy: "\n").count,
             OnboardingLunaArticleCopy.features.count + 1)
+
+        // Luna's own prose never says "paywall" — the pages ask you to
+        // subscribe, so every surface calls them subscription walls.
+        let everyLine = [
+            plain,
+            OnboardingSafariExtensionCopy.title,
+            OnboardingSafariExtensionCopy.explainer,
+            OnboardingSafariExtensionCopy.stepsHeading,
+        ] + OnboardingSafariExtensionCopy.steps(appName: "Luna").map(\.text)
+        for line in everyLine {
+            XCTAssertFalse(
+                line.lowercased().contains("paywall"),
+                "“\(line)” must not say paywall")
+        }
     }
 
     /// The demonstration is a picture, not a save. Every mock surface renders
@@ -162,7 +175,7 @@ final class ReaderOnboardingTests: XCTestCase {
             reader.supportingText,
             "Save onscreen links with one click.\nUnlock or read offline later.")
         XCTAssertEqual(reader.saveBenefit, "Read offline later")
-        XCTAssertEqual(reader.demoPages, [.lunaArticle])
+        XCTAssertEqual(reader.demoPages, [.lunaPage])
         XCTAssertEqual(
             reader.demoPages.first?.sharedURLString,
             "https://luna.app/about")
@@ -206,7 +219,7 @@ final class ReaderOnboardingTests: XCTestCase {
             luna.supportingText,
             "Save any link on your screen\nwith one click.")
         XCTAssertEqual(luna.saveBenefit, "Read, watch, track, anything")
-        XCTAssertEqual(luna.demoPages, [.lunaArticle, .instaTok, .amayzon])
+        XCTAssertEqual(luna.demoPages, [.lunaPage, .instaTok, .amayzon])
     }
 
     @MainActor
@@ -465,7 +478,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
     @MainActor
     func testMessagesReplicaShowsTheStagedConversationAndSafariURL() throws {
-        let urlString = OnboardingDemoPage.lunaArticle.sharedURLString
+        let urlString = OnboardingDemoPage.lunaPage.sharedURLString
         let messages = MessagesReplicaViewController(urlString: urlString)
         messages.loadViewIfNeeded()
         messages.view.frame = CGRect(
@@ -511,7 +524,7 @@ final class ReaderOnboardingTests: XCTestCase {
     @MainActor
     func testMessagesSetupPillsGlowUntilTheyDriveTheirSetupHops() throws {
         let messages = MessagesReplicaViewController(
-            urlString: OnboardingDemoPage.lunaArticle.sharedURLString)
+            urlString: OnboardingDemoPage.lunaPage.sharedURLString)
         messages.loadViewIfNeeded()
         messages.view.frame = CGRect(
             origin: .zero,
@@ -630,7 +643,7 @@ final class ReaderOnboardingTests: XCTestCase {
     func testCancellingAnActiveSaveReplayClearsItsTransientState() throws {
         let frame = CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize)
         let messages = MessagesReplicaViewController(
-            urlString: OnboardingDemoPage.lunaArticle.sharedURLString)
+            urlString: OnboardingDemoPage.lunaPage.sharedURLString)
         let window = UIWindow(frame: frame)
         window.rootViewController = messages
         window.makeKeyAndVisible()
@@ -926,66 +939,105 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testLunaArticleLoadsBuriedWithTheCardSharingTheScreen() throws {
-        let article = OnboardingArticleReplicaView()
-        article.frame = CGRect(
+    func testSafariPageIsTheExtensionExplainerAnchoredToItsActions() throws {
+        let appName = LunaApp.reader.displayName
+        let page = OnboardingSafariPageView(
+            configuration: .configuration(for: .reader))
+        page.frame = CGRect(
             origin: .zero,
             size: CGSize(
                 width: AppLaunchGeometry.referenceSize.width,
                 height: AppLaunchGeometry.referenceSize.height - 59))
-        article.layoutIfNeeded()
+        page.layoutIfNeeded()
 
-        let labels = article.descendants(of: UILabel.self).compactMap(\.text)
-        let revealLines = article.descendants(of: MoonRevealLineView.self)
+        let labels = page.descendants(of: UILabel.self).compactMap(\.text)
+        let revealLines = page.descendants(of: MoonRevealLineView.self)
 
         // The page loads fully readable underneath — nothing waits on a
-        // reveal — and the whole short article is there from the start.
+        // reveal — and it is the extension's own explanation, in the running
+        // app's name, not a fictional article.
         XCTAssertTrue(revealLines.allSatisfy(\.isFullyRevealed))
         let revealCopy = revealLines.compactMap(\.accessibilityLabel)
-        XCTAssertTrue(revealCopy.contains(OnboardingLunaArticleCopy.title))
-        XCTAssertTrue(revealCopy.contains(OnboardingLunaArticleCopy.byline))
+        XCTAssertTrue(revealCopy.contains(OnboardingSafariExtensionCopy.title))
         XCTAssertTrue(revealCopy.contains(
-            OnboardingArticleReplicaView.fullArticleText))
-
-        // The NASA composite banner sits between the byline and the body at
-        // its native wide aspect, with real bundled pixels.
-        let eclipse = try XCTUnwrap(article.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.eclipseImage"
-        })
-        let byline = try XCTUnwrap(revealLines.first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.byline"
-        })
-        let body = try XCTUnwrap(revealLines.first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.body"
-        })
-        XCTAssertGreaterThan(eclipse.frame.minY, byline.frame.maxY)
-        XCTAssertLessThan(eclipse.frame.maxY, body.frame.minY)
-        XCTAssertEqual(
-            eclipse.frame.width / eclipse.frame.height,
-            1920 / 708,
-            accuracy: 0.05)
-        XCTAssertNotNil(
-            eclipse.descendants(of: UIImageView.self).first?.image)
-
-        // The copy fills the page and runs past the fold, and the setup card
-        // floats OVER the content, hidden until its own post-wave reveal.
-        XCTAssertGreaterThanOrEqual(
-            body.frame.maxY, article.bounds.height,
-            "The body copy must fill the page past the fold — extend the feature list if this fails")
-        let card = try XCTUnwrap(
-            article.descendants(of: OnboardingSafariSetupCardView.self).first)
-        let overlay = try XCTUnwrap(card.superview)
+            OnboardingSafariExtensionCopy.byline(appName: appName)))
         XCTAssertTrue(
-            overlay.isHidden, "The card waits for the wave to finish")
-        XCTAssertGreaterThan(overlay.frame.minY, 0)
+            revealCopy.contains(OnboardingSafariExtensionCopy.explainer))
+        XCTAssertTrue(
+            revealCopy.contains(OnboardingSafariExtensionCopy.stepsHeading))
+
+        // Three enable steps, each beside a picture of the exact chrome it
+        // names: the browser bar's own page-menu symbol, the puzzle row it
+        // opens, and the app's real icon beside a switch already flipped on.
+        let steps = OnboardingSafariExtensionCopy.steps(appName: appName)
+        XCTAssertEqual(steps.count, 3)
+        let stepRows = try (0..<steps.count).map { index in
+            try XCTUnwrap(page.descendants(of: UIView.self).first {
+                $0.accessibilityIdentifier
+                    == "onboarding.safari.page.step.\(index)"
+            })
+        }
+        for (index, step) in steps.enumerated() {
+            XCTAssertEqual(stepRows[index].accessibilityLabel, step.text)
+        }
+        XCTAssertEqual(steps[2].text, "Switch on \(appName)")
+        XCTAssertTrue(steps[1].text.contains(
+            OnboardingSafariExtensionCopy.manageExtensionsTitle))
+        let visuals = try stepRows.map { row in
+            try XCTUnwrap(row.descendants(
+                of: OnboardingSafariChromeVisualView.self).first)
+        }
+        XCTAssertEqual(visuals[0].symbolName, SafariBottomBar.pageMenuSymbol)
+        XCTAssertEqual(visuals[1].symbolName, "puzzlepiece.extension.fill")
+        XCTAssertNotNil(
+            visuals[2].descendants(of: UIImageView.self).first?.image,
+            "The last step carries the app's real icon")
+        XCTAssertTrue(
+            visuals[2].subviews.contains {
+                $0.backgroundColor == OnboardingMockSwitchView.onColor
+            },
+            "…beside the switch the Manage Extensions sheet flips")
+
+        // The steps and the actions are ANCHORED to the bottom of the page,
+        // clear of the browser chrome, and the Safari action is the last thing
+        // on the page. There is no setup card anywhere.
+        let actions = try XCTUnwrap(
+            page.descendants(of: OnboardingSafariActionsView.self).first)
+        let actionsFrame = page.convert(actions.bounds, from: actions)
+        XCTAssertEqual(
+            actionsFrame.maxY,
+            page.bounds.height - OnboardingSafariPageView.chromeReserve,
+            accuracy: 0.5)
         XCTAssertLessThanOrEqual(
-            overlay.frame.maxY,
-            article.bounds.height - SafariBottomBar.chromeHeight)
+            actionsFrame.maxY,
+            page.bounds.height - SafariBottomBar.chromeHeight)
+        let explainer = try XCTUnwrap(revealLines.first {
+            $0.accessibilityIdentifier == "onboarding.safari.page.explainer"
+        })
+        let headline = try XCTUnwrap(revealLines.first {
+            $0.accessibilityIdentifier == "onboarding.safari.page.headline"
+        })
+        XCTAssertGreaterThan(stepRows[0].frame.minY, explainer.frame.maxY)
+        XCTAssertGreaterThan(actionsFrame.minY, stepRows[2].frame.maxY)
+        // A tall screen's slack collects ABOVE the header rather than in a hole
+        // between the prose and the steps: the page hangs from its actions.
+        XCTAssertGreaterThan(
+            headline.frame.minY,
+            stepRows[0].frame.minY - explainer.frame.maxY,
+            "The page must hang from the bottom, not split around a gap")
+        XCTAssertGreaterThanOrEqual(
+            headline.frame.minY, OnboardingSafariPageView.minimumTopInset)
+        XCTAssertTrue(
+            page.descendants(of: CardSurfaceView.self).isEmpty,
+            "The setup card is gone: the actions are the page's own content")
+        let scroll = try XCTUnwrap(page.descendants(of: UIScrollView.self).first)
+        XCTAssertFalse(scroll.isScrollEnabled, "The page never scrolls")
+        XCTAssertEqual(scroll.contentOffset, .zero)
 
         // Every fake obstruction is mounted, fully visible from the first
         // frame, and inert.
-        let clutter = try XCTUnwrap(article.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.clutter"
+        let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
         })
         XCTAssertFalse(clutter.isUserInteractionEnabled)
         XCTAssertTrue(clutter.subviews.allSatisfy { $0.alpha == 1 })
@@ -1008,6 +1060,46 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingExtensionEnableTiming.pageHoldDuration, 0.5)
         XCTAssertGreaterThanOrEqual(
             OnboardingExtensionEnableTiming.toggleDelay, 0.25)
+    }
+
+    /// The one-screen budget is real: on the shortest phone Luna ships to, the
+    /// whole explainer — header, prose, three steps and both actions — still
+    /// fits above the browser chrome without the prose being cut.
+    @MainActor
+    func testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse() throws {
+        let page = OnboardingSafariPageView(
+            configuration: .configuration(for: .reader))
+        page.frame = CGRect(x: 0, y: 0, width: 375, height: 667 - 20)
+        page.layoutIfNeeded()
+
+        let explainer = try XCTUnwrap(
+            page.descendants(of: MoonRevealLineView.self).first {
+                $0.accessibilityIdentifier == "onboarding.safari.page.explainer"
+            })
+        let naturalHeight = (OnboardingSafariExtensionCopy.explainer as NSString)
+            .boundingRect(
+                with: CGSize(
+                    width: explainer.frame.width,
+                    height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 17, weight: .regular),
+                    .paragraphStyle: {
+                        let style = NSMutableParagraphStyle()
+                        style.lineSpacing = 5
+                        return style
+                    }(),
+                ],
+                context: nil).height
+        XCTAssertGreaterThanOrEqual(
+            explainer.frame.height,
+            ceil(naturalHeight),
+            "Shorten the explainer copy: it no longer fits above the steps")
+        let header = try XCTUnwrap(
+            page.descendants(of: MoonRevealLineView.self).first {
+                $0.accessibilityIdentifier == "onboarding.safari.page.headline"
+            })
+        XCTAssertGreaterThan(explainer.frame.minY, header.frame.maxY)
     }
 
     /// The enable pass skips Safari's page menu entirely: the sheet is up, and
@@ -1036,13 +1128,13 @@ final class ReaderOnboardingTests: XCTestCase {
             sheet,
             "The pass must reach the Manage Extensions sheet with no page-menu step")
 
-        // The wipe's cue is the switch, not the sheet leaving: the article's
+        // The wipe's cue is the switch, not the sheet leaving: the page's
         // obstructions give way to their shatter tiles while the sheet is
         // still on screen sliding back down.
-        let article = try XCTUnwrap(safari.view.descendants(
-            of: OnboardingArticleReplicaView.self).first)
-        let clutter = try XCTUnwrap(article.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.clutter"
+        let page = try XCTUnwrap(safari.view.descendants(
+            of: OnboardingSafariPageView.self).first)
+        let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
         })
         let wipeDeadline = Date(timeIntervalSinceNow: 8)
         while Date() < wipeDeadline,
@@ -1055,72 +1147,76 @@ final class ReaderOnboardingTests: XCTestCase {
                 of: OnboardingManageExtensionsSheetView.self).first,
             "The wipe must start with the flip, not wait out the sheet's exit")
 
-        // And the sweep still finishes on the revealed, live setup card.
-        let cardDeadline = Date(timeIntervalSinceNow: 8)
-        let card = try XCTUnwrap(article.descendants(
+        // And the sweep still finishes on the page's own live actions.
+        let actionsDeadline = Date(timeIntervalSinceNow: 8)
+        let skip = try XCTUnwrap(page.descendants(
             of: UIButton.self).first { $0.accessibilityLabel == "Skip" })
-        while Date() < cardDeadline, !card.isUserInteractionEnabled {
+        while Date() < actionsDeadline, !skip.isUserInteractionEnabled {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         }
-        XCTAssertTrue(card.isUserInteractionEnabled)
+        XCTAssertTrue(skip.isUserInteractionEnabled)
         XCTAssertNil(
             safari.view.descendants(
                 of: OnboardingManageExtensionsSheetView.self).first)
     }
 
     @MainActor
-    func testCleanupShatterRevealsTheArticleAndCardUnderTheEclipseSweep() throws {
-        let article = OnboardingArticleReplicaView()
+    func testCleanupShatterRevealsThePageAndIgnitesTheActionCorona() throws {
+        let page = OnboardingSafariPageView(
+            configuration: .configuration(for: .reader))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
             size: CGSize(
                 width: AppLaunchGeometry.referenceSize.width,
                 height: AppLaunchGeometry.referenceSize.height - 59)))
         let host = UIViewController()
-        host.view = article
+        host.view = page
         window.rootViewController = host
         window.makeKeyAndVisible()
-        article.layoutIfNeeded()
+        page.layoutIfNeeded()
         defer { window.isHidden = true }
 
         let finished = expectation(description: "cleanup shatter")
-        article.cleanUpClutter {
+        page.cleanUpClutter {
             finished.fulfill()
         }
         wait(for: [finished], timeout: 15)
 
-        let body = try XCTUnwrap(
-            article.descendants(of: MoonRevealLineView.self).first {
-                $0.accessibilityIdentifier == "onboarding.safari.article.body"
+        let explainer = try XCTUnwrap(
+            page.descendants(of: MoonRevealLineView.self).first {
+                $0.accessibilityIdentifier == "onboarding.safari.page.explainer"
             })
         XCTAssertEqual(
-            body.accessibilityLabel,
-            OnboardingArticleReplicaView.fullArticleText)
-        XCTAssertTrue(body.isFullyRevealed)
-        let clutter = try XCTUnwrap(article.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.article.clutter"
+            explainer.accessibilityLabel,
+            OnboardingSafariExtensionCopy.explainer)
+        XCTAssertTrue(explainer.isFullyRevealed)
+        let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
         })
         XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
 
-        // The wave leaves the page clean and the card then materialises
-        // over the content — visible, mask gone, no scroll anywhere.
-        let card = try XCTUnwrap(
-            article.descendants(of: OnboardingSafariSetupCardView.self).first)
-        let overlay = try XCTUnwrap(card.superview)
-        XCTAssertFalse(
-            overlay.isHidden, "The card must be revealed after the wave")
-        XCTAssertNil(
-            overlay.layer.mask, "The card's reveal mask must be gone")
+        // The wave leaves the page clean, the actions live, and the corona lit
+        // behind the Safari button — every reveal mask torn down, no scroll
+        // anywhere.
+        let actions = try XCTUnwrap(
+            page.descendants(of: OnboardingSafariActionsView.self).first)
+        XCTAssertTrue(actions.activateButton.isUserInteractionEnabled)
+        XCTAssertTrue(actions.skipButton.isUserInteractionEnabled)
+        XCTAssertNil(actions.layer.mask, "The actions' reveal mask must be gone")
+        let corona = try XCTUnwrap(
+            page.descendants(of: EclipseCoronaView.self).first)
+        XCTAssertEqual(corona.alpha, 1, accuracy: 0.001)
         let scroll = try XCTUnwrap(
-            article.descendants(of: UIScrollView.self).first)
+            page.descendants(of: UIScrollView.self).first)
         XCTAssertEqual(scroll.contentOffset, .zero)
+        let actionsFrame = page.convert(actions.bounds, from: actions)
         XCTAssertLessThanOrEqual(
-            overlay.frame.maxY,
-            article.bounds.height - SafariBottomBar.chromeHeight)
+            actionsFrame.maxY,
+            page.bounds.height - SafariBottomBar.chromeHeight)
     }
 
     @MainActor
-    func testSetupCardSharesTheScreenWithGlassCoronaAndBothActions() throws {
+    func testPageActionsWearTheCoronaOnTheSafariButtonAndBothWork() throws {
         let safari = SafariReplicaViewController(
             configuration: .configuration(for: .reader))
         safari.loadViewIfNeeded()
@@ -1129,50 +1225,35 @@ final class ReaderOnboardingTests: XCTestCase {
             size: AppLaunchGeometry.referenceSize)
         safari.view.layoutIfNeeded()
 
-        let article = try XCTUnwrap(
-            safari.view.descendants(of: OnboardingArticleReplicaView.self).first)
-        let card = try XCTUnwrap(
-            article.descendants(of: OnboardingSafariSetupCardView.self).first)
-        let overlay = try XCTUnwrap(card.superview)
-        let scroll = try XCTUnwrap(
-            article.descendants(of: UIScrollView.self).first)
+        let page = try XCTUnwrap(
+            safari.view.descendants(of: OnboardingSafariPageView.self).first)
+        let actions = try XCTUnwrap(
+            page.descendants(of: OnboardingSafariActionsView.self).first)
 
-        // Floating over the content (hidden until its post-wave reveal),
-        // with no scrolling anywhere in the demonstration.
-        XCTAssertEqual(scroll.contentOffset, .zero)
-        XCTAssertLessThanOrEqual(overlay.frame.maxY, article.bounds.height)
-        XCTAssertFalse(scroll.isScrollEnabled, "The page never scrolls")
-
-        // The mini-card wears the usual black deck-card surface and rides the
-        // launch corona, which sits exactly behind its overlay.
-        let cardSurface = try XCTUnwrap(
-            card.descendants(of: CardSurfaceView.self).first)
-        XCTAssertEqual(cardSurface.backgroundColor, .black)
+        // The corona is the SAFARI BUTTON's, not the block's: exactly its
+        // capsule, exactly behind it.
         let corona = try XCTUnwrap(
-            article.descendants(of: EclipseCoronaView.self).first)
-        XCTAssertEqual(corona.frame, overlay.frame)
-
-        let labels = card.descendants(of: UILabel.self).compactMap(\.text)
-        XCTAssertTrue(labels.contains(
-            "Luna in Safari automatically gives you the web experience you want"))
-        let activate = try XCTUnwrap(
-            card.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Activate Safari"
-            })
-        let skip = try XCTUnwrap(
-            card.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Skip"
-            })
+            page.descendants(of: EclipseCoronaView.self).first)
+        let buttonFrame = page.convert(
+            actions.activateButton.bounds, from: actions.activateButton)
+        XCTAssertEqual(page.convert(corona.bounds, from: corona), buttonFrame)
+        XCTAssertGreaterThan(
+            actions.skipButton.frame.minY, actions.activateButton.frame.maxY,
+            "The skip sits under the button the corona surrounds")
+        // Dark until the wave has passed: a lit corona over the buried page
+        // would show through the clutter it is meant to be under.
+        XCTAssertEqual(corona.alpha, 0, accuracy: 0.001)
 
         var didActivate = false
         var didSkip = false
         safari.onSetUpSafari = { didActivate = true }
         safari.onSkipSafariSetup = { didSkip = true }
-        activate.sendActions(for: .touchUpInside)
+        actions.activateButton.sendActions(for: .touchUpInside)
         XCTAssertTrue(didActivate)
         XCTAssertFalse(didSkip)
         safari.restoreInPageSafariSetup()
-        skip.sendActions(for: .touchUpInside)
+        XCTAssertTrue(actions.activateButton.isUserInteractionEnabled)
+        actions.skipButton.sendActions(for: .touchUpInside)
         XCTAssertTrue(didSkip)
     }
 
@@ -1206,7 +1287,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testSetupCardButtonsAreHittableAfterTheCleanup() throws {
+    func testPageActionsAreHittableAfterTheCleanup() throws {
         let safari = SafariReplicaViewController(
             configuration: .configuration(for: .reader))
         let window = UIWindow(frame: CGRect(
@@ -1217,15 +1298,15 @@ final class ReaderOnboardingTests: XCTestCase {
         safari.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        let article = try XCTUnwrap(
-            safari.view.descendants(of: OnboardingArticleReplicaView.self).first)
+        let page = try XCTUnwrap(
+            safari.view.descendants(of: OnboardingSafariPageView.self).first)
         let cleaned = expectation(description: "cleanup")
-        article.cleanUpClutter { cleaned.fulfill() }
+        page.cleanUpClutter { cleaned.fulfill() }
         wait(for: [cleaned], timeout: 15)
 
         for label in ["Activate Safari", "Skip"] {
             let button = try XCTUnwrap(
-                article.descendants(of: UIButton.self).first {
+                page.descendants(of: UIButton.self).first {
                     $0.accessibilityLabel == label
                 })
             let point = window.convert(
@@ -1240,7 +1321,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testSetupCardButtonsAreHittableInsideTheFullOnboardingHierarchy() throws {
+    func testPageActionsAreHittableInsideTheFullOnboardingHierarchy() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -1267,19 +1348,19 @@ final class ReaderOnboardingTests: XCTestCase {
             })
         button.sendActions(for: .touchUpInside)
 
-        // Ride the real staged sequence — the buried page, the mock page
-        // menu, the Manage Extensions sheet with its toggle, then the wipe —
-        // until the setup card's buttons come out of the sweep hittable.
+        // Ride the real staged sequence — the buried page, the Manage
+        // Extensions sheet with its toggle, then the wipe — until the page's
+        // own actions come out of the sweep hittable.
         func hitView(for label: String) -> (button: UIButton, hit: UIView?)? {
-            guard let cardButton = onboarding.view
+            guard let action = onboarding.view
                 .descendants(of: UIButton.self).first(where: {
                     $0.accessibilityLabel == label
                 })
             else { return nil }
             let point = window.convert(
-                CGPoint(x: cardButton.bounds.midX, y: cardButton.bounds.midY),
-                from: cardButton)
-            return (cardButton, window.hitTest(point, with: nil))
+                CGPoint(x: action.bounds.midX, y: action.bounds.midY),
+                from: action)
+            return (action, window.hitTest(point, with: nil))
         }
         func isHittable(_ label: String) -> Bool {
             guard let probe = hitView(for: label) else { return false }
@@ -1294,11 +1375,11 @@ final class ReaderOnboardingTests: XCTestCase {
 
         for label in ["Activate Safari", "Skip"] {
             let probe = try XCTUnwrap(hitView(for: label))
-            let article = onboarding.view
-                .descendants(of: OnboardingArticleReplicaView.self).first
+            let lunaPage = onboarding.view
+                .descendants(of: OnboardingSafariPageView.self).first
             let buttonFrame = window.convert(
                 probe.button.bounds, from: probe.button)
-            let articleFrame = article.map {
+            let pageFrame = lunaPage.map {
                 window.convert($0.bounds, from: $0)
             }
             XCTAssertTrue(
@@ -1307,7 +1388,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 """
                 \(label) is shadowed by \(String(describing: probe.hit)); \
                 button in window: \(buttonFrame), \
-                article in window: \(String(describing: articleFrame)), \
+                page in window: \(String(describing: pageFrame)), \
                 button superview chain: \(sequence(
                     first: probe.button as UIView, next: \.superview)
                     .map { "\(type(of: $0)) \($0.frame) hidden=\($0.isHidden) alpha=\($0.alpha)" }

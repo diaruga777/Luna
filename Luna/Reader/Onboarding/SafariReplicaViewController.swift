@@ -45,7 +45,7 @@ final class SafariReplicaViewController:
     }()
 
     private let browserBar = SafariBottomBar()
-    private let articleView = OnboardingArticleReplicaView()
+    private let lunaPage: OnboardingSafariPageView
     private var instructionOverlay: DemoInstructionOverlay?
     private var extensionsSheet: OnboardingManageExtensionsSheetView?
     private var enableDemoGeneration = 0
@@ -56,7 +56,7 @@ final class SafariReplicaViewController:
     var hasInstructions: Bool { instructionOverlay != nil }
     override var sharedURLString: String {
         let pages = onboardingConfiguration.demoPages
-        guard !pages.isEmpty else { return OnboardingDemoPage.lunaArticle.sharedURLString }
+        guard !pages.isEmpty else { return OnboardingDemoPage.lunaPage.sharedURLString }
         return pages[pageIndex % pages.count].sharedURLString
     }
 
@@ -64,6 +64,7 @@ final class SafariReplicaViewController:
 
     init(configuration: OnboardingSurfaceConfiguration = .current) {
         self.onboardingConfiguration = configuration
+        lunaPage = OnboardingSafariPageView(configuration: configuration)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -76,12 +77,12 @@ final class SafariReplicaViewController:
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = articleView.backgroundColor
+        view.backgroundColor = lunaPage.backgroundColor
         configureBrowser()
-        articleView.onActivateSafari = { [weak self] in
+        lunaPage.onActivateSafari = { [weak self] in
             self?.onSetUpSafari?()
         }
-        articleView.onSkipSafariSetup = { [weak self] in
+        lunaPage.onSkipSafariSetup = { [weak self] in
             self?.onSkipSafariSetup?()
         }
         webView.navigationDelegate = self
@@ -102,9 +103,9 @@ final class SafariReplicaViewController:
     private func configureBrowser() {
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
-        articleView.translatesAutoresizingMaskIntoConstraints = false
-        articleView.isHidden = true
-        view.addSubview(articleView)
+        lunaPage.translatesAutoresizingMaskIntoConstraints = false
+        lunaPage.isHidden = true
+        view.addSubview(lunaPage)
         browserBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(browserBar)
         NSLayoutConstraint.activate([
@@ -112,16 +113,16 @@ final class SafariReplicaViewController:
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            articleView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            articleView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            articleView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            articleView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            lunaPage.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            lunaPage.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            lunaPage.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            lunaPage.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             browserBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             browserBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             browserBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             browserBar.heightAnchor.constraint(
-                equalToConstant: SafariBottomBar.chromeHeight + 34),
+                equalToConstant: SafariBottomBar.reservedPageHeight),
         ])
     }
 
@@ -136,14 +137,14 @@ final class SafariReplicaViewController:
         browserBar.setURL(
             page.sharedURLString,
             displayedHost: page.displayedHost)
-        if page == .lunaArticle {
+        if page == .lunaPage {
             webView.isHidden = true
-            articleView.isHidden = false
-            articleView.alpha = 1
+            lunaPage.isHidden = false
+            lunaPage.alpha = 1
             return
         }
 
-        articleView.isHidden = true
+        lunaPage.isHidden = true
         webView.isHidden = false
         guard let resourceName = page.resourceName,
               let url = Bundle.main.url(
@@ -183,7 +184,7 @@ final class SafariReplicaViewController:
     }
 
     private var visiblePageView: UIView {
-        articleView.isHidden ? webView : articleView
+        lunaPage.isHidden ? webView : lunaPage
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -200,7 +201,7 @@ final class SafariReplicaViewController:
     func beginDemonstration() {
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
-        if onboardingConfiguration.demoPages[pageIndex] == .lunaArticle {
+        if onboardingConfiguration.demoPages[pageIndex] == .lunaPage {
             runExtensionEnableDemonstration()
             return
         }
@@ -213,10 +214,12 @@ final class SafariReplicaViewController:
 
     // MARK: - The mock extension-enable pass
 
-    /// The buried article's rescue, told through Safari's own UI: the Manage
+    /// The buried page's rescue, told through Safari's own UI: the Manage
     /// Extensions sheet slides straight up over the page — no page menu, no
     /// hunt down its list — flips Luna's toggle on, and the wipe sets out on
-    /// that flip, playing while the sheet slides back down.
+    /// that flip, playing while the sheet slides back down. The page underneath
+    /// spells out those same steps, so the pass is a demonstration of what the
+    /// reader is about to read.
     private func runExtensionEnableDemonstration() {
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
@@ -229,7 +232,8 @@ final class SafariReplicaViewController:
     }
 
     private func presentExtensionsSheet(generation: Int) {
-        let sheet = OnboardingManageExtensionsSheetView(frame: view.bounds)
+        let sheet = OnboardingManageExtensionsSheetView(
+            frame: view.bounds, configuration: onboardingConfiguration)
         extensionsSheet = sheet
         view.addSubview(sheet)
         sheet.present { [weak self] in
@@ -248,11 +252,11 @@ final class SafariReplicaViewController:
                     // the sweep sets out with it — `cleanUpClutter` still
                     // holds its animations back one run-loop turn, so the
                     // short reveals at the top of the page keep their shine.
-                    self.articleView.prepareCleanUp()
+                    self.lunaPage.prepareCleanUp()
                     sheet.dismiss { [weak self] in
                         self?.extensionsSheet = nil
                     }
-                    self.articleView.cleanUpClutter()
+                    self.lunaPage.cleanUpClutter()
                 }
             }
         }
@@ -315,7 +319,7 @@ final class SafariReplicaViewController:
 
 
     func restoreInPageSafariSetup() {
-        articleView.reactivateSetupCard()
+        lunaPage.reactivateActions()
     }
 
     func showShortcutAndActionSetup() {

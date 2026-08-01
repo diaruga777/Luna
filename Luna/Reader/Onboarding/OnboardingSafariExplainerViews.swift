@@ -190,7 +190,7 @@ final class OnboardingSafariActionsView: UIView {
     static let skipHeight: CGFloat = 44
     /// Room enough that the corona around the Safari button has faded well
     /// down before it reaches the skip label.
-    static let interActionGap: CGFloat = 18
+    static let interActionGap: CGFloat = 16
     static var preferredHeight: CGFloat {
         activateHeight + interActionGap + skipHeight
     }

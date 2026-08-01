@@ -113,13 +113,13 @@ The root uses the production `CardCarouselViewController`:
    sequence begins after the card finishes expanding rather than during hidden
    preload. The page loads ALREADY BURIED: four garish ads, the newsletter
    popup, and the subscription wall are all in place from the first frame (no
-   entrance animations), over a short article — headline, byline, NASA
-   eclipse banner, and a seven-line body — sized so the setup card shares the
-   same screen and no scroll is ever needed. That body is a **short bulleted
-   list of what the reader actually does** (clutter and paywall removal, offline
-   copies, the speed reader, read-aloud with the screen off, inline links,
-   Kindle and export) rather than marketing prose — the article is the
-   demonstration's only chance to say what the app is for. The copy lives once
+   entrance animations), over an article — headline, byline, NASA eclipse
+   banner, and a body that FILLS the page and runs past the fold; the setup
+   card floats over the content and no scroll is ever needed. That body is a
+   **bulleted list of what Luna actually does** (clutter and paywall removal,
+   offline copies, the speed reader, read-aloud, exports, price tracking and
+   the rest) rather than marketing prose — the article is the demonstration's
+   only chance to say what the app is for. The copy lives once
    in `OnboardingLunaArticleCopy`, and all three surfaces showing this article
    read from there: this page, the mock action-extension sheet the Messages
    shortcut run slides up, and the temporary save the deck shows afterwards.

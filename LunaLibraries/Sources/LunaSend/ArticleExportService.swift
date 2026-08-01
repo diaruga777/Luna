@@ -65,6 +65,11 @@ public struct ArticleExportService {
                 content: content,
                 sourceURLString: sourceURLString,
                 imagesDirectory: store.articlesDirectory)
+        case .richText:
+            return ArticleRTFBuilder().build(
+                content: content,
+                sourceURLString: sourceURLString,
+                imagesDirectory: store.articlesDirectory)
         case .markdown:
             let text = ArticleMarkdownBuilder().build(
                 content: content, sourceURLString: sourceURLString)

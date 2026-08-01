@@ -61,7 +61,7 @@ final class AppReaderShareProviderTests: XCTestCase {
             urlString: "https://example.com/ready", title: "Shareable",
             from: presenter, sourceView: presenter.view)
         let submenu = menu?.children.last as? UIMenu
-        XCTAssertEqual(submenu?.children.count, ArticleExportFormat.allCases.count)
+        XCTAssertEqual(submenu?.children.count, ArticleExportFormat.shareMenuFormats.count)
     }
 
     /// A pending, failed or still-locked save has no extracted text, so every

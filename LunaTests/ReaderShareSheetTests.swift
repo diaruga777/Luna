@@ -30,8 +30,10 @@ final class ReaderShareSheetTests: XCTestCase {
         XCTAssertFalse(rows.contains { !$0.children.isEmpty })
     }
 
-    /// The export row is a submenu of every format, in `ArticleExportFormat` order,
-    /// and each child reports its own format.
+    /// The export row is a submenu of every SHARE-MENU format, in
+    /// `ArticleExportFormat.shareMenuFormats` order, and each child reports its
+    /// own format. `.richText` is deliberately not among them — it exists only
+    /// as a double-save return format (claudedocs/double-save.md).
     func testExportRowOffersEveryFormatInOrder() {
         var picked: [ArticleExportFormat] = []
         let rows = ReaderShareSheet.rows(
@@ -39,7 +41,7 @@ final class ReaderShareSheetTests: XCTestCase {
             onPickFriend: {}, onShareLink: {}, onCopyLink: {},
             onExport: { picked.append($0) })
         let children = rows.last?.children ?? []
-        XCTAssertEqual(children.count, ArticleExportFormat.allCases.count)
+        XCTAssertEqual(children.count, ArticleExportFormat.shareMenuFormats.count)
         XCTAssertEqual(children.map(\.title), ["EPUB", "PDF", "Markdown", "Plain Text"])
         for child in children { child.action() }
         XCTAssertEqual(picked, [.epub, .pdf, .markdown, .plainText])
@@ -82,7 +84,7 @@ final class ReaderShareSheetTests: XCTestCase {
         let submenu = menu.children.last as? UIMenu
         XCTAssertEqual(submenu?.title, "Export as…")
         let formatActions = (submenu?.children ?? []).compactMap { $0 as? UIAction }
-        XCTAssertEqual(formatActions.count, ArticleExportFormat.allCases.count)
+        XCTAssertEqual(formatActions.count, ArticleExportFormat.shareMenuFormats.count)
         XCTAssertTrue(formatActions.allSatisfy { $0.image != nil })
         for action in formatActions { action.performWithSender(nil, target: nil) }
         XCTAssertEqual(

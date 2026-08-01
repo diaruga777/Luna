@@ -8,7 +8,8 @@ import LunaSend
 import UIKit
 import XCTest
 
-/// The Markdown / plain-text / PDF serializers behind the "Export as…" formats.
+/// The Markdown / plain-text / PDF / RTF serializers behind the "Export as…"
+/// formats and the double-save "Open …" actions.
 final class ArticleDocumentBuilderTests: XCTestCase {
 
     private var scratch: URL!
@@ -232,12 +233,107 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         wait(for: [expectation], timeout: 10)
     }
 
+    // MARK: - Rich Text (RTF)
+
+    private func rtf(_ blocks: [ArticleContent.Block],
+                     sourceURLString: String = "https://example.com/a") -> String {
+        let data = ArticleRTFBuilder().build(
+            content: content(blocks), sourceURLString: sourceURLString,
+            imagesDirectory: scratch)
+        return String(data: data, encoding: .ascii) ?? ""
+    }
+
+    func testRTFIsAWellFormedAsciiDocument() {
+        let text = rtf([block(.paragraph, "Hello.")])
+        XCTAssertTrue(text.hasPrefix("{\\rtf1\\ansi"), String(text.prefix(40)))
+        XCTAssertTrue(text.hasSuffix("}"))
+        // Every brace is balanced, or no reader will open the file at all.
+        XCTAssertEqual(
+            text.filter { $0 == "{" }.count, text.filter { $0 == "}" }.count)
+    }
+
+    func testRTFHeaderCarriesTitleAuthorAndSource() {
+        let text = rtf([block(.paragraph, "Hello.")])
+        XCTAssertTrue(text.contains("Title"), text)
+        XCTAssertTrue(text.contains("Ada"), text)
+        XCTAssertTrue(text.contains("HYPERLINK \"https://example.com/a\""), text)
+    }
+
+    /// Unlike PDF and plain text, RTF keeps link DESTINATIONS live.
+    func testRTFRendersInlineLinksAsHyperlinkFields() {
+        let text = rtf([block(
+            .paragraph, "See the docs here.",
+            links: [ArticleContent.Link(start: 8, length: 4, urlString: "https://example.com/d")])])
+        XCTAssertTrue(
+            text.contains("{\\field{\\*\\fldinst{HYPERLINK \"https://example.com/d\"}}"), text)
+        XCTAssertTrue(text.contains("docs"), text)
+    }
+
+    /// An in-page `#chapter` jump has no destination in a standalone file.
+    func testRTFSkipsInPageAnchorLinks() {
+        let text = rtf([block(
+            .paragraph, "Jump to part two.",
+            links: [ArticleContent.Link(
+                start: 8, length: 4, urlString: "#two", anchorID: "two")])])
+        XCTAssertFalse(text.contains("HYPERLINK \"#two\""), text)
+    }
+
+    /// RTF's body is 7-bit ASCII, so prose outside it must survive as `\uN?`
+    /// escapes rather than being dropped or corrupting the encode.
+    func testRTFEscapesControlCharactersAndNonASCII() {
+        let text = rtf([block(.paragraph, "Braces {a} and a backslash \\ and “curly” — em.")])
+        XCTAssertTrue(text.contains("\\{a\\}"), text)
+        XCTAssertTrue(text.contains("\\\\ and"), text)
+        // U+201C “ and U+2014 —
+        XCTAssertTrue(text.contains("\\u8220?"), text)
+        XCTAssertTrue(text.contains("\\u8212?"), text)
+    }
+
+    func testRTFEmbedsDownloadedImageAndPlaceholdersAMissingOne() {
+        let embedded = rtf([imageBlock(alt: "A chart")])
+        XCTAssertTrue(embedded.contains("{\\pict\\pngblip"), String(embedded.prefix(400)))
+        XCTAssertTrue(embedded.contains("picwgoal"), embedded)
+
+        let missing = rtf([ArticleContent.Block(
+            kind: .image, text: "A chart", links: [],
+            imageURLString: "https://example.com/gone.png", imageFileName: nil)])
+        XCTAssertFalse(missing.contains("\\pict"), missing)
+        XCTAssertTrue(missing.contains("[A chart]"), missing)
+    }
+
+    func testRTFRendersEveryBlockKind() {
+        let text = rtf([
+            block(.heading, "Heading"),
+            block(.paragraph, "Body."),
+            block(.quote, "Quoted."),
+            block(.listItem, "Bulleted"),
+            block(.tableOfContents, "Contents entry"),
+            block(.caption, "Credit line"),
+        ])
+        for expected in [
+            "Heading", "Body.", "Quoted.", "Bulleted", "Contents entry", "Credit line",
+        ] {
+            XCTAssertTrue(text.contains(expected), "missing \(expected)")
+        }
+        // Bullets are an explicit character + tab, not a reader-specific list table.
+        XCTAssertTrue(text.contains("\\u8226 ?\\tab"), text)
+    }
+
     // MARK: - Format descriptors
 
     func testFormatExtensionsAreDistinct() {
         let extensions = ArticleExportFormat.allCases.map(\.fileExtension)
-        XCTAssertEqual(extensions, ["epub", "pdf", "md", "txt"])
+        XCTAssertEqual(extensions, ["epub", "pdf", "md", "txt", "rtf"])
         XCTAssertEqual(Set(extensions).count, extensions.count)
+    }
+
+    /// The share menu is a SUBSET of the serializers: `.richText` is built only
+    /// for a double save (claudedocs/double-save.md) and must never appear in
+    /// "Export as…".
+    func testShareMenuOmitsTheDoubleSaveOnlyFormat() {
+        XCTAssertEqual(
+            ArticleExportFormat.shareMenuFormats, [.epub, .pdf, .markdown, .plainText])
+        XCTAssertFalse(ArticleExportFormat.shareMenuFormats.contains(.richText))
     }
 
     func testFileNameSanitizesAndAppliesExtension() {

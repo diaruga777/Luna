@@ -3,6 +3,8 @@
 //  Luna
 //
 
+import LunaDesignSystem
+import LunaModels
 import UIKit
 
 /// Shared timing for the mock shortcut run the Messages demonstration plays
@@ -345,11 +347,21 @@ final class OnboardingMockTapIndicatorView: UIView {
 /// The mock "Read in Luna" action-extension presentation: the standard
 /// extension sheet slides up over the conversation with the scrolling reader
 /// inside, showing the same article the Safari mock just cleaned up.
+///
+/// The header matches the real extension's compact reader chrome
+/// (`ReaderViewController` under a nav controller): Done on the left, the mode
+/// switcher in the title slot, read-aloud on the right. It uses the SAME
+/// `LunaSegmentedControl` and `ReaderModeIcons` the reader does, so the mock
+/// can't drift from the screen it is impersonating. Two segments, not three:
+/// the action extension persists no page archive, so `.original` is never
+/// offered there (`ReaderViewController.baseModes`).
 final class OnboardingActionExtensionSheetView: UIView {
     private let scrim = UIView()
     private let card = UIView()
     private let grabber = UIView()
     private let doneChip = UILabel()
+    private let modeControl = LunaSegmentedControl()
+    private let audioButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let bylineLabel = UILabel()
     private let eclipseImage = UIImageView()
@@ -376,15 +388,27 @@ final class OnboardingActionExtensionSheetView: UIView {
         grabber.layer.cornerRadius = 2.5
         card.addSubview(grabber)
 
-        doneChip.text = "Done"
-        doneChip.font = .systemFont(ofSize: 15, weight: .semibold)
-        doneChip.textColor = .white
-        doneChip.textAlignment = .center
-        doneChip.backgroundColor = UIColor.white.withAlphaComponent(0.14)
-        doneChip.layer.cornerRadius = 16
-        doneChip.layer.cornerCurve = .continuous
-        doneChip.clipsToBounds = true
+        // A nav-bar Done: plain tinted text on the leading edge, not a chip.
+        doneChip.text = L10n.string("Done")
+        doneChip.font = .systemFont(ofSize: 17, weight: .semibold)
+        doneChip.textColor = GlassStyle.readingAccent
+        doneChip.textAlignment = .left
         card.addSubview(doneChip)
+
+        for (index, mode) in Self.extensionReaderModes.enumerated() {
+            modeControl.insertSegment(
+                with: ReaderModeIcons.image(for: mode), at: index, animated: false)
+        }
+        // The extension opens in the scrolling reader unless its own last-used
+        // mode says otherwise; the demonstration always shows that first open.
+        modeControl.selectedSegmentIndex = 0
+        card.addSubview(modeControl)
+
+        // Read-aloud rests off, exactly as it does on a freshly opened article.
+        audioButton.setImage(
+            UIImage(systemName: "speaker.slash"), for: .normal)
+        audioButton.tintColor = GlassStyle.readingAccent
+        card.addSubview(audioButton)
 
         titleLabel.text = OnboardingLunaArticleCopy.title
         titleLabel.font = .systemFont(ofSize: 27, weight: .bold)
@@ -435,6 +459,11 @@ final class OnboardingActionExtensionSheetView: UIView {
     /// The top edge of the presented card.
     private static let cardTop: CGFloat = 66
 
+    /// What the action extension's reader offers. It persists no page archive,
+    /// so `.original` never appears there.
+    private static let extensionReaderModes: [ReadingListItem.ReaderMode] =
+        [.scroll, .rsvp]
+
     override func layoutSubviews() {
         super.layoutSubviews()
         scrim.frame = bounds
@@ -452,12 +481,22 @@ final class OnboardingActionExtensionSheetView: UIView {
             y: Self.cardTop + card.bounds.height / 2)
         grabber.frame = CGRect(
             x: (card.bounds.width - 36) / 2, y: 6, width: 36, height: 5)
-        doneChip.frame = CGRect(
-            x: card.bounds.width - 66 - 16, y: 14, width: 66, height: 32)
         let inset: CGFloat = 24
         let width = card.bounds.width - inset * 2
+        // One nav-bar row: Done leading, mode switcher centred, audio trailing.
+        let barMidY: CGFloat = 34
+        doneChip.frame = CGRect(x: 16, y: barMidY - 12, width: 70, height: 24)
+        let modeSize = modeControl.intrinsicContentSize
+        modeControl.frame = CGRect(
+            x: (card.bounds.width - modeSize.width) / 2,
+            y: barMidY - modeSize.height / 2,
+            width: modeSize.width,
+            height: modeSize.height)
+        audioButton.frame = CGRect(
+            x: card.bounds.width - 16 - 34, y: barMidY - 17,
+            width: 34, height: 34)
         titleLabel.frame = CGRect(
-            x: inset, y: doneChip.frame.maxY + 14, width: width, height: 66)
+            x: inset, y: barMidY + 26, width: width, height: 66)
         bylineLabel.frame = CGRect(
             x: inset, y: titleLabel.frame.maxY + 6, width: width, height: 18)
         eclipseImage.frame = CGRect(

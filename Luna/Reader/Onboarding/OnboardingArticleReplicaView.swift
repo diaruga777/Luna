@@ -21,11 +21,22 @@ enum OnboardingArticleReplicaTiming {
     /// falloff bands stretch with the ratio, so every glyph's
     /// brighten-and-cool still takes exactly the intro's TIME; only the
     /// edge travels faster.
-    static let cascadeFrontSpeed: CGFloat = 140
-    /// The next element's reveal sets out when the one above it is this far
-    /// through — the cascade equivalent of the intro's reading beat between
-    /// its two lines.
-    static let cascadeOverlap: Double = 0.35
+    static let cascadeFrontSpeed: CGFloat = 420
+    /// The content reveals (and their bloom) set out this far behind the
+    /// shatter front: the tiles directly above a stretch of content are
+    /// mid-flight when its light arrives, and without the lag they obscured
+    /// the bloom underneath.
+    static let contentBloomLag: TimeInterval = 0.14
+    /// The article text's light, amplified past the intro reference — at the
+    /// wave's speed the reference gain read as too soft.
+    static let textBloomGain: CGFloat = 1.6
+    /// The images ride the same amplified light, backed off just enough that
+    /// a photograph blooms a shade less brightly than the glyph strokes.
+    static let imageBloomGain: CGFloat = 1.0
+    /// The luminance-keyed emitters clamp from below: even the image's dark
+    /// pixels (the eclipse sky) bloom under the front, just less brightly
+    /// than its bright ones.
+    static let imageLuminanceFloor: CGFloat = 0.55
 }
 
 /// Luna's fictional Safari article. The page loads already buried under ads,
@@ -33,7 +44,8 @@ enum OnboardingArticleReplicaTiming {
 /// completes, a wave CLIMBS the page — the clutter crumbles bottom-to-top
 /// while the content beneath reveals as a cascade of the SAME lunar reveals
 /// that opened the app, each element's edge rising. The setup card then
-/// materialises over the clean page, top to bottom, under its own bloom.
+/// materialises over the clean page, top to bottom, behind a uniform white
+/// horizon of light on the wavefront's backside.
 /// It is native instead of HTML so those glyph-level effects are possible.
 final class OnboardingArticleReplicaView: UIView {
     static let fullArticleText = OnboardingLunaArticleCopy.plainText
@@ -191,6 +203,9 @@ final class OnboardingArticleReplicaView: UIView {
         eclipseImage.accessibilityIdentifier =
             "onboarding.safari.article.eclipseImage"
         body.accessibilityIdentifier = "onboarding.safari.article.body"
+        for line in [headline, byline, body] {
+            line.bloomGain = OnboardingArticleReplicaTiming.textBloomGain
+        }
 
         scrollView.isScrollEnabled = false
         scrollView.showsVerticalScrollIndicator = false
@@ -337,13 +352,11 @@ final class OnboardingArticleReplicaView: UIView {
         preparedShatterPieces = clutterContainer.subviews.flatMap {
             buildShatterPieces(for: $0)
         }
-        // Strictly bottom-to-top, across every view at once: the cascade's
-        // overlapping legs make raw arrival dip at element boundaries (a
-        // higher element's light sets out while the one below is still
-        // mid-crossing), and those dips read as a chunk mid-popup flying
-        // before the rows beneath it. A running maximum up the page keeps
-        // each tile at or after every tile below it; the dipped stretches
-        // just detach together, textured by their scatter.
+        // Strictly bottom-to-top, across every view at once: the legs are
+        // cut from one continuous front, but the sagitta slack at element
+        // boundaries can still dip a raw arrival below the tile beneath it.
+        // A running maximum up the page keeps each tile at or after every
+        // tile below it, textured by their scatter.
         preparedShatterPieces.sort { $0.midY > $1.midY }
         var runningArrival: TimeInterval = 0
         for index in preparedShatterPieces.indices {
@@ -358,64 +371,49 @@ final class OnboardingArticleReplicaView: UIView {
     /// of the intro line's pace whose band stretch keeps each glyph's
     /// brighten-and-cool at the intro's exact TIME — the same deliberate
     /// light of “You want to read more.”, just a faster-travelling edge.
-    /// The reveals cascade: the icon and headline set out together (they
-    /// share the first row), and each following element sets out when the
-    /// one above it is `cascadeOverlap` through, echoing the intro's
-    /// line-after-line rhythm. The tiles and the setup-card curtain are cut
-    /// from the same schedule so nothing leads or trails the light.
+    /// ONE front climbs the page: it enters at the body's bottom edge and
+    /// every element's reveal sets out exactly when the front reaches its
+    /// OWN bottom, so the headline and header image reappear only after the
+    /// body content beneath them — nothing ever leads the wave. The tiles
+    /// ride the unlagged front; each reveal (and its bloom) trails it by
+    /// `contentBloomLag` so the tiles flying just above a stretch of content
+    /// have cleared before its light comes up.
     private func computeCascade() {
         let speed = OnboardingArticleReplicaTiming.cascadeFrontSpeed
-        // BOTTOM TO TOP: the body (which fills the page) ignites first and
-        // every element's own edge climbs; the icon and headline close the
-        // wave together at the top.
-        let rows: [[(view: UIView, crossing: CGFloat, reveal: (TimeInterval) -> Void)]] = [
-            [
-                (body, body.revealFrontCrossingDistance,
-                 { [body] in body.reveal(duration: $0) { } }),
-            ],
-            [
-                (eclipseImage, eclipseImage.revealFrontCrossingDistance,
-                 { [eclipseImage] in eclipseImage.reveal(duration: $0) }),
-            ],
-            [
-                (byline, byline.revealFrontCrossingDistance,
-                 { [byline] in byline.reveal(duration: $0) { } }),
-            ],
-            [
-                (appIcon, appIcon.revealFrontCrossingDistance,
-                 { [appIcon] in appIcon.reveal(duration: $0) }),
-                (headline, headline.revealFrontCrossingDistance,
-                 { [headline] in headline.reveal(duration: $0) { } }),
-            ],
+        let lag = OnboardingArticleReplicaTiming.contentBloomLag
+        // Listed bottom to top: `frontArrival` answers a gap between
+        // elements with the first leg at or below the queried y.
+        let elements: [(view: UIView, crossing: CGFloat, reveal: (TimeInterval) -> Void)] = [
+            (body, body.revealFrontCrossingDistance,
+             { [body] in body.reveal(duration: $0) { } }),
+            (eclipseImage, eclipseImage.revealFrontCrossingDistance,
+             { [eclipseImage] in eclipseImage.reveal(duration: $0) }),
+            (byline, byline.revealFrontCrossingDistance,
+             { [byline] in byline.reveal(duration: $0) { } }),
+            (appIcon, appIcon.revealFrontCrossingDistance,
+             { [appIcon] in appIcon.reveal(duration: $0) }),
+            (headline, headline.revealFrontCrossingDistance,
+             { [headline] in headline.reveal(duration: $0) { } }),
         ]
 
         revealSchedule = []
         frontLegs = []
-        var rowStart: TimeInterval = 0
-        var previousRowDuration: TimeInterval = 0
-        for (index, row) in rows.enumerated() {
-            if index > 0 {
-                rowStart += previousRowDuration
-                    * OnboardingArticleReplicaTiming.cascadeOverlap
+        let waveOrigin = elements.map { $0.view.frame.maxY }.max() ?? 0
+        for element in elements {
+            let start = TimeInterval(
+                (waveOrigin - element.view.frame.maxY) / speed)
+            let duration = TimeInterval(element.crossing / speed)
+            revealSchedule.append(CascadeEntry(
+                start: start + lag, duration: duration, reveal: element.reveal))
+            // The icon shares its band of the page with the wider headline;
+            // the headline's leg covers that stretch for tiles.
+            if element.view !== appIcon {
+                frontLegs.append(FrontLeg(
+                    top: element.view.frame.minY,
+                    bottom: element.view.frame.maxY,
+                    start: start,
+                    speed: speed))
             }
-            var rowDuration: TimeInterval = 0
-            for element in row {
-                let duration = TimeInterval(element.crossing / speed)
-                rowDuration = max(rowDuration, duration)
-                revealSchedule.append(CascadeEntry(
-                    start: rowStart, duration: duration, reveal: element.reveal))
-                // The icon shares its row with the wider headline; the
-                // headline's leg covers that band of the page for tiles.
-                if element.view !== appIcon {
-                    frontLegs.append(FrontLeg(
-                        top: element.view.frame.minY,
-                        bottom: element.view.frame.maxY,
-                        start: rowStart,
-                        speed: element.crossing
-                            / CGFloat(max(duration, 0.001))))
-                }
-            }
-            previousRowDuration = rowDuration
         }
     }
 
@@ -473,9 +471,9 @@ final class OnboardingArticleReplicaView: UIView {
 
     /// The card's own entrance, after the wave: a descending lunar edge
     /// materialises it over the clean page — the mask geometrically excludes
-    /// the unrevealed part (the page shows through) while a bloom of the
-    /// card's own luminance rides the edge, and the corona swells in behind.
-    /// Returns when the card is fully present.
+    /// the unrevealed part (the page shows through) while a uniform arc of
+    /// white light rides the backside of the black wavefront, and the corona
+    /// swells in behind. Returns when the card is fully present.
     private func revealSetupCard(after start: TimeInterval) -> TimeInterval {
         layoutIfNeeded()
         if UIAccessibility.isReduceMotionEnabled {
@@ -546,12 +544,15 @@ final class OnboardingArticleReplicaView: UIView {
         setupOverlay.isHidden = false
         CATransaction.commit()
 
-        // The luminance emitter is rendered with the mask lifted — the lift
-        // and restore happen between commits, so nothing flashes on screen.
-        setupOverlay.layer.mask = nil
-        let raster = Self.luminanceRaster(
-            of: setupOverlay, scale: traitCollection.displayScale)
-        setupOverlay.layer.mask = setupOverlayMask
+        // The card's light is NOT the content bloom: its emitter is a solid
+        // white slab of the card's silhouette, so a uniform arc of light
+        // rides the backside of the black wavefront as it descends — the
+        // brightness owes nothing to the (mostly black) card pixels being
+        // revealed, only the halo stylization is shared.
+        let raster = Self.solidHorizonEmitter(
+            size: setupOverlay.bounds.size,
+            cornerRadius: OnboardingSafariSetupCardView.cornerRadius,
+            scale: traitCollection.displayScale)
 
         let maskAnimation = CABasicAnimation(keyPath: "path")
         maskAnimation.fromValue = initialPath
@@ -578,32 +579,30 @@ final class OnboardingArticleReplicaView: UIView {
         probeAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         prober.add(probeAnimation, forKey: "cardReveal")
 
-        if let raster {
-            let padding = GlyphPixelBloomView.renderPadding
-            setupOverlayBloom.isUserInteractionEnabled = false
-            setupOverlayBloom.frame = setupOverlay.frame
-                .insetBy(dx: -padding, dy: -padding)
-            addSubview(setupOverlayBloom)
-            setupOverlayBloom.configure(
-                raster: raster,
-                rasterFrame: CGRect(
-                    x: padding,
-                    y: padding,
-                    width: setupOverlay.bounds.width,
-                    height: setupOverlay.bounds.height),
-                circleFrame: circle.offsetBy(dx: padding, dy: padding),
-                scale: traitCollection.displayScale)
-            let frontSpeed = travel / CGFloat(max(duration, 0.001))
-            setupOverlayBloom.reveal(
-                circleTravel: travel,
-                duration: OnboardingAnimationClock.displayLinkDuration(duration),
-                edgeBandScale: max(
-                    1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
-                emitterGain: 0.45,
-                offsetProvider: { [weak prober] in
-                    prober?.presentation().map { CGFloat($0.transform.m42) }
-                })
-        }
+        let padding = GlyphPixelBloomView.renderPadding
+        setupOverlayBloom.isUserInteractionEnabled = false
+        setupOverlayBloom.frame = setupOverlay.frame
+            .insetBy(dx: -padding, dy: -padding)
+        addSubview(setupOverlayBloom)
+        setupOverlayBloom.configure(
+            raster: raster,
+            rasterFrame: CGRect(
+                x: padding,
+                y: padding,
+                width: setupOverlay.bounds.width,
+                height: setupOverlay.bounds.height),
+            circleFrame: circle.offsetBy(dx: padding, dy: padding),
+            scale: traitCollection.displayScale)
+        let frontSpeed = travel / CGFloat(max(duration, 0.001))
+        setupOverlayBloom.reveal(
+            circleTravel: travel,
+            duration: OnboardingAnimationClock.displayLinkDuration(duration),
+            edgeBandScale: max(
+                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
+            emitterGain: OnboardingArticleReplicaTiming.textBloomGain,
+            offsetProvider: { [weak prober] in
+                prober?.presentation().map { CGFloat($0.transform.m42) }
+            })
 
         afterDelay(duration + 0.05) { view in
             view.setupOverlay.layer.mask = nil
@@ -619,42 +618,25 @@ final class OnboardingArticleReplicaView: UIView {
         }
     }
 
-    /// A raster of the view as displayed, its alpha rebuilt from LUMINANCE —
-    /// the bloom's shadows key off alpha, and an opaque surface would glow
-    /// uniformly (see MoonRevealImageView.rasterizedContent for the masking
-    /// rule).
-    private static func luminanceRaster(
-        of view: UIView, scale: CGFloat
-    ) -> UIImage? {
-        guard view.bounds.width > 0, view.bounds.height > 0 else { return nil }
+    /// The setup card's light source: a solid white rounded rect matching
+    /// the card's silhouette. Uniform alpha means the trailing bands render
+    /// as one unbroken, uniformly bright horizon hugging the wavefront,
+    /// independent of the card content beneath it.
+    private static func solidHorizonEmitter(
+        size: CGSize, cornerRadius: CGFloat, scale: CGFloat
+    ) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         format.opaque = false
-        let flat = UIGraphicsImageRenderer(
-            bounds: view.bounds, format: format
-        ).image { context in
-            view.layer.render(in: context.cgContext)
+        return UIGraphicsImageRenderer(
+            size: size, format: format
+        ).image { _ in
+            UIColor.white.setFill()
+            UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: size),
+                cornerRadius: cornerRadius
+            ).fill()
         }
-        guard let cgFlat = flat.cgImage else { return nil }
-        let width = cgFlat.width
-        let height = cgFlat.height
-        guard let gray = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue)
-        else { return flat }
-        let rect = CGRect(x: 0, y: 0, width: width, height: height)
-        gray.setFillColor(gray: 0, alpha: 1)
-        gray.fill(rect)
-        gray.draw(cgFlat, in: rect)
-        guard let luminance = gray.makeImage(),
-              let emitter = cgFlat.masking(luminance)
-        else { return flat }
-        return UIImage(cgImage: emitter, scale: flat.scale, orientation: .up)
     }
 
     /// Returning from Safari without the extension having run re-offers the
@@ -969,9 +951,9 @@ private final class MoonRevealImageView: UIView {
 
         // The image's own light: same front, same time-constant cooling as
         // the glyph bloom beside it, slaved to the same rendered edge. The
-        // lowered gain keeps a photograph's mid-tones from saturating —
-        // only its genuinely bright pixels go white-hot, the way only
-        // glyph strokes do in text.
+        // emitter's luminance floor guarantees even its dark pixels bloom;
+        // the gain sits below the text's so the image reads a shade dimmer
+        // than the glyph strokes beside it.
         let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
         pixelBloomView.reveal(
             circleTravel: signedTravel,
@@ -979,7 +961,7 @@ private final class MoonRevealImageView: UIView {
                 resolvedDuration),
             edgeBandScale: max(
                 1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
-            emitterGain: 0.45,
+            emitterGain: OnboardingArticleReplicaTiming.imageBloomGain,
             offsetProvider: { [weak moonLayer] in
                 moonLayer?.presentation().map { CGFloat($0.transform.m42) }
             })
@@ -1064,7 +1046,10 @@ private final class MoonRevealImageView: UIView {
         // the black-shows rule belongs to true image masks). The photo's
         // plain luminance therefore leaves alpha proportional to
         // brightness. Transparent raster regions (the corner mask) land on
-        // the black prefill: masked out, as they should be.
+        // the black prefill: masked out, as they should be. The luminance
+        // is then clamped from below WITHIN the photo's own alpha — a
+        // lighten fill clipped to it — so the image's dark pixels still
+        // bloom under the front while the corner-masked regions stay dark.
         let width = cgPhoto.width
         let height = cgPhoto.height
         guard let gray = CGContext(
@@ -1080,6 +1065,13 @@ private final class MoonRevealImageView: UIView {
         gray.setFillColor(gray: 0, alpha: 1)
         gray.fill(rect)
         gray.draw(cgPhoto, in: rect)
+        gray.saveGState()
+        gray.clip(to: rect, mask: cgPhoto)
+        gray.setBlendMode(.lighten)
+        gray.setFillColor(
+            gray: OnboardingArticleReplicaTiming.imageLuminanceFloor, alpha: 1)
+        gray.fill(rect)
+        gray.restoreGState()
         guard let luminance = gray.makeImage(),
               let emitter = cgPhoto.masking(luminance)
         else { return photo }

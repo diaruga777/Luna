@@ -455,6 +455,10 @@ final class MoonRevealLineView: UIView {
     private var initialCircleFrame = CGRect.zero
     private var edgeSagitta: CGFloat = 0
     private(set) var isFullyRevealed: Bool
+    /// The glyph light's strength. 1 is the intro's reference look; the mock
+    /// Safari article amplifies its lines — at the wave's much faster front
+    /// the reference gain read as too soft.
+    var bloomGain: CGFloat = 1
 
     /// The distance the front travels while crossing this view: from the
     /// wide arc's edge first touching the top to its highest point clearing
@@ -617,6 +621,7 @@ final class MoonRevealLineView: UIView {
                 resolvedDuration),
             edgeBandScale: max(
                 1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
+            emitterGain: bloomGain,
             offsetProvider: { [weak moonLayer] in
                 moonLayer?.presentation().map { CGFloat($0.transform.m42) }
             })
@@ -794,7 +799,10 @@ final class GlyphPixelBloomView: UIView {
     /// full 1 — their saturation to a white core is the intro's look. A
     /// dense raster (a photograph) saturates even its mid-tones under eight
     /// additive passes and reads as a white slab; its owner lowers the gain
-    /// so only genuinely bright pixels reach white heat.
+    /// so only genuinely bright pixels reach white heat. Gains above 1
+    /// amplify instead: the falloff bands and outer halos are pushed toward
+    /// full strength (each pass still clamps at 1), widening and whitening
+    /// the light without touching its geometry.
     private var emitterGain: CGFloat = 1
 
     var usesRasterizedGlyphPixels: Bool {
@@ -905,7 +913,7 @@ final class GlyphPixelBloomView: UIView {
         stop()
         self.circleTravel = circleTravel
         self.edgeBandScale = max(edgeBandScale, 1)
-        self.emitterGain = min(max(emitterGain, 0.05), 1)
+        self.emitterGain = min(max(emitterGain, 0.05), 2)
         self.offsetProvider = offsetProvider
         didSampleOffset = false
         revealDuration = max(duration, 0.001)
@@ -959,11 +967,12 @@ final class GlyphPixelBloomView: UIView {
                 offset: .zero,
                 blur: halo.radius,
                 color: UIColor.white
-                    .withAlphaComponent(halo.alpha * emitterGain).cgColor)
+                    .withAlphaComponent(min(halo.alpha * emitterGain, 1))
+                    .cgColor)
             emitter.image.draw(
                 in: emitter.rect,
                 blendMode: .plusLighter,
-                alpha: emitterGain)
+                alpha: min(emitterGain, 1))
             context.restoreGState()
         }
         context.restoreGState()
@@ -1028,7 +1037,7 @@ final class GlyphPixelBloomView: UIView {
                 glyphImage.draw(
                     in: glyphFrame,
                     blendMode: .normal,
-                    alpha: band.alpha)
+                    alpha: min(band.alpha * max(emitterGain, 1), 1))
                 context.restoreGState()
             }
         }

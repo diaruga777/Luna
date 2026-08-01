@@ -231,43 +231,52 @@ The root uses the production `CardCarouselViewController`:
    CLIMBS the page.** `computeCascade` gives every element its own intro
    reveal with the moon geometry MIRRORED (`sweepsUpward` on
    `MoonRevealLineView`/`MoonRevealImageView`; the shared classes default
-   to the intro's descending sweep, which stays byte-identical): the body
-   — whose copy deliberately fills the page past the fold — ignites first
-   from the page bottom, then the eclipse image, byline, and finally the
-   icon+headline row, each element's edge rising at `cascadeFrontSpeed`
-   (140pt/s; the bloom's falloff bands stretch with the ratio so every
-   glyph's brighten-and-cool takes exactly the intro's TIME). A fast
-   unified single front was tried repeatedly and always read as garbage
-   next to the intro — the per-element cascade at intro-derived pacing is
-   the shape that works. Each element sets out when the one below it is
-   `cascadeOverlap` through; there is no marker on any edge — no rim, no
-   line, only the light. Each obstruction tile (~11pt grains, with a
-   0–33ms trailing-only scatter) detaches at the instant the climbing
-   light beneath its center arrives — `FrontLeg`s map page-y to arrival
-   time, and a running maximum from the page bottom UP keeps detachment
-   strictly bottom-to-top — batched into one dispatch turn per frame-width
-   of delay. **The setup card takes no part in the wave**: it floats over
-   the page content (there is no card slot below the body any more), and
-   once the wave finishes it materialises top-to-bottom under its own
-   bloom — a mask geometrically excludes its unrevealed part so the page
-   shows through, an empty prober layer rides the same translation to
-   drive the light, and its luminance raster makes the explainer text and
-   button flare exactly like glyphs; the corona fades in only once the
-   card is whole (fading it alongside outlined the card's silhouette
-   before the surface existed). The Manage Extensions sheet's own
-   choreography is brisk: present 0.3s, toggle after 0.3s, dismiss 0.25s. The images ride the
-   same light pass: `MoonRevealImageView` feeds its own
-   `GlyphPixelBloomView` a raster of the image as displayed whose alpha is
-   rebuilt from LUMINANCE — Quartz shadows key off alpha, and an opaque
-   photograph's black sky would otherwise glow like a full moon (note the
-   masking rule: a grayscale masking image KEEPS samples where it is white,
-   the opposite of true image masks) — at a lowered emitter gain (0.45) so
-   only genuinely bright pixels (the NASA moons, the icon's dome and book)
-   flare white-hot and cool back to their normal colors exactly like glyph
-   strokes. The setup card comes out last from behind a page-coloured
-   curtain (`MoonRevealCurtainView`, occluder only, no rim, capped at
-   `curtainMaxDuration` since it carries no light) — there is no scroll and
-   the browser bar never moves. Its two buttons are
+   to the intro's descending sweep, which stays byte-identical): ONE front
+   enters at the body's bottom edge (the copy deliberately fills the page
+   past the fold) and climbs at `cascadeFrontSpeed` (420pt/s; the bloom's
+   falloff bands stretch with the ratio so every glyph's brighten-and-cool
+   takes exactly the intro's TIME). Every element's reveal sets out exactly
+   when the front reaches its OWN bottom edge — body, then eclipse image,
+   byline, and the icon+headline last — so the title and header image only
+   ever reappear behind the wave, never ahead of it (the old
+   `cascadeOverlap` row stagger let them ignite while the front was still
+   mid-body). There is no marker on any edge — no rim, no line, only the
+   light. Each obstruction tile (~11pt grains, with a 0–33ms trailing-only
+   scatter) detaches at the instant the climbing light beneath its center
+   arrives — `FrontLeg`s map page-y to arrival time, and a running maximum
+   from the page bottom UP keeps detachment strictly bottom-to-top —
+   batched into one dispatch turn per frame-width of delay. The content
+   reveals (and their light) trail that shatter front by `contentBloomLag`
+   (0.14s) so the tiles flying just above a stretch of content clear before
+   its bloom comes up underneath them. **The setup card takes no part in
+   the wave**: it floats over the page content (there is no card slot below
+   the body any more), and once the wave finishes it materialises
+   top-to-bottom — a mask geometrically excludes its unrevealed part so the
+   page shows through, and an empty prober layer rides the same translation
+   to drive the light. The card's light is NOT the content bloom: its
+   emitter is a solid white rounded rect of the card's silhouette
+   (`solidHorizonEmitter`), so a uniform bright horizon arc rides the
+   backside of the black wavefront regardless of the (mostly black) card
+   pixels being revealed — only the halo stylization is shared. The corona
+   fades in only once the card is whole (fading it alongside outlined the
+   card's silhouette before the surface existed). The Manage Extensions
+   sheet's own choreography is brisk: present 0.3s, toggle after 0.3s,
+   dismiss 0.25s. The images ride the same light pass:
+   `MoonRevealImageView` feeds its own `GlyphPixelBloomView` a raster of
+   the image as displayed whose alpha is rebuilt from LUMINANCE — Quartz
+   shadows key off alpha, and an opaque photograph's black sky would
+   otherwise cast alpha-shaped glow (note the masking rule: a grayscale
+   masking image KEEPS samples where it is white, the opposite of true
+   image masks) — with that luminance clamped from below at
+   `imageLuminanceFloor` (0.55, inside the photo's own alpha so corner-mask
+   regions stay dark): even the image's dark pixels bloom under the front,
+   just less brightly than the NASA moons or the glyph strokes. Gains:
+   the article's text lines are amplified to `textBloomGain` (1.6 — at the
+   wave's speed the intro reference gain of 1 read as too soft; gains above
+   1 push the falloff bands and outer halos toward full strength, each pass
+   clamping at 1), images ride `imageBloomGain` (1.0), the card horizon the
+   text gain; the intro card's own lines keep the reference look. There is
+   no scroll and the browser bar never moves. The card's two buttons are
    INERT until that sweep finishes: the clutter burying the card is
    non-interactive, so a tap at the card's position would otherwise reach a
    button nobody can see — and during the opening app-switcher hop it would

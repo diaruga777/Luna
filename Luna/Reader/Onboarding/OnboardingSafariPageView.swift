@@ -406,20 +406,25 @@ final class OnboardingSafariPageView: UIView {
         layOutActionsCorona()
     }
 
+    // Every one of these is spent against ONE budget: the shortest phone Luna
+    // ships to (375×667) has to hold the whole stack above the browser chrome
+    // with the prose at its natural height. There is about a line of slack at
+    // these numbers — `testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse`
+    // fails the moment a gap or the copy grows past it.
     /// The header's own row: the headline's two lines, with the app icon
     /// centred against them.
-    private static let headerHeight: CGFloat = 68
+    private static let headerHeight: CGFloat = 64
     private static let headerIconSide: CGFloat = 60
     private static let headerIconGap: CGFloat = 14
     private static let bylineHeight: CGFloat = 20
-    private static let bylineGap: CGFloat = 10
-    private static let proseGap: CGFloat = 12
+    private static let bylineGap: CGFloat = 8
+    private static let proseGap: CGFloat = 10
     private static let headingHeight: CGFloat = 18
     private static let headingGap: CGFloat = 8
-    private static let stepGap: CGFloat = 10
-    private static let stepsToActionsGap: CGFloat = 20
+    private static let stepGap: CGFloat = 8
+    private static let stepsToActionsGap: CGFloat = 18
     /// The least the prose above may be left from the steps below it.
-    private static let proseToStepsGap: CGFloat = 22
+    private static let proseToStepsGap: CGFloat = 20
     /// Where the page starts when there is no air left to give it.
     static let minimumTopInset: CGFloat = 24
 

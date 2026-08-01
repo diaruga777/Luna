@@ -442,7 +442,7 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingShortcutRunTiming.islandProgressDuration, 1.0,
             "The shortcut-run progress ring must read as real work")
         XCTAssertEqual(
-            OnboardingShortcutRunTiming.skipButtonDelay, 0.5, accuracy: 0.001,
+            OnboardingShortcutRunTiming.skipMessageDelay, 0.5, accuracy: 0.001,
             "The skip-out follows the shortcut-install message by half a second")
     }
 
@@ -490,19 +490,29 @@ final class ReaderOnboardingTests: XCTestCase {
 
         XCTAssertEqual(sender.text, "Johnny Appleseed")
         XCTAssertEqual(latestURL.text, urlString)
+        // The friend opens the thread, asks, hears the Action Button is dead,
+        // and offers what theirs does — then the link.
+        XCTAssertTrue(labels.contains("Yoooooo"))
         XCTAssertTrue(labels.contains(
-            "You can press the Action Button and Luna saves any link on screen"))
-        XCTAssertTrue(labels.contains("Woah! Like this?"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.firstOutgoing"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.secondIncoming"))
+            "You using your action button for anything?"))
+        XCTAssertTrue(labels.contains("Nah. Its kinda dead tbh."))
+        XCTAssertTrue(labels.contains(
+            "I use it to instant save any link on screen. Check it:"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.greeting"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.question"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.answer"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.pitch"))
         XCTAssertGreaterThan(
             messages.actionButtonReplayDelay,
             OnboardingDemoLoopTiming.sourceHoldDuration)
-        // The bubbles must land as distinct beats, but the beat's exact
-        // length is a tuning knob — only floor it.
-        XCTAssertGreaterThanOrEqual(
-            OnboardingMessagesReplicaTiming.interMessageDelay,
-            0.5)
+        // One gap per hand-off between the staged arrivals — five messages,
+        // four gaps. Their exact lengths are a tuning knob; only floor them,
+        // so every bubble still lands as its own beat.
+        XCTAssertEqual(
+            OnboardingMessagesReplicaTiming.stagedMessageDelays.count, 4)
+        for delay in OnboardingMessagesReplicaTiming.stagedMessageDelays {
+            XCTAssertGreaterThanOrEqual(delay, 0.3)
+        }
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)
         XCTAssertTrue(messages.isURLHighlighted)
@@ -523,29 +533,22 @@ final class ReaderOnboardingTests: XCTestCase {
         }
         XCTAssertTrue(bubbles.contains("onboarding.messages.shortcutSetup"))
         XCTAssertTrue(bubbles.contains("onboarding.messages.settingsSetup"))
+        XCTAssertTrue(bubbles.contains("onboarding.messages.skipSetup"))
         // Each pill flows INLINE with its sentence: the words live in a text
         // view whose attachment reserves the pill's spot in the line flow.
         let sentences = messages.view.descendants(of: UITextView.self)
             .compactMap(\.text)
         XCTAssertTrue(sentences.contains {
-            $0.hasPrefix("Yeah just install this shortcut")
+            $0.hasPrefix("Just install this shortcut")
         })
         XCTAssertTrue(sentences.contains {
-            $0.hasPrefix("And change your action button to that shortcut in")
+            $0.hasPrefix("Then set your action button to it in")
         })
+        XCTAssertTrue(sentences.contains { $0.hasPrefix("Or") })
         let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
         XCTAssertTrue(labels.contains("Luna"))
         XCTAssertTrue(labels.contains("Settings"))
-
-        // The skip-out waits below the raised composer, invisible until the
-        // shortcut-install message has landed.
-        let skip = try XCTUnwrap(
-            messages.view.descendants(of: UIButton.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.skip"
-            })
-        XCTAssertEqual(skip.alpha, 0)
-        XCTAssertFalse(skip.isUserInteractionEnabled)
-        XCTAssertEqual(skip.configuration?.title, "or skip")
+        XCTAssertTrue(labels.contains("skip setup"))
 
         let shortcutPill = try XCTUnwrap(
             messages.view.descendants(of: OnboardingMessagePillButton.self).first {
@@ -555,14 +558,28 @@ final class ReaderOnboardingTests: XCTestCase {
             messages.view.descendants(of: OnboardingMessagePillButton.self).first {
                 $0.accessibilityIdentifier == "onboarding.messages.settingsPill"
             })
+        let skipPill = try XCTUnwrap(
+            messages.view.descendants(of: OnboardingMessagePillButton.self).first {
+                $0.accessibilityIdentifier == "onboarding.messages.skipPill"
+            })
 
         // The demonstration hasn't reached the setup messages yet.
         XCTAssertFalse(messages.isShowingSetupMessages)
 
         var installedShortcut = false
         var openedSettings = false
+        var skipped = false
         messages.onInstallShortcut = { installedShortcut = true }
         messages.onSetActionButton = { openedSettings = true }
+        messages.onSkipSetup = { skipped = true }
+
+        // The way out never asks for the tap the two setup pills are asking
+        // for: no glow, no pulse.
+        skipPill.beginGlowPulse()
+        XCTAssertNil(
+            skipPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            "The skip-out must never pulse for attention")
+        XCTAssertEqual(skipPill.layer.shadowOpacity, 0)
 
         shortcutPill.beginGlowPulse()
         XCTAssertNotNil(
@@ -581,6 +598,53 @@ final class ReaderOnboardingTests: XCTestCase {
 
         settingsPill.sendActions(for: .touchUpInside)
         XCTAssertTrue(openedSettings)
+
+        skipPill.sendActions(for: .touchUpInside)
+        XCTAssertTrue(skipped)
+    }
+
+    /// The Settings message is the one bubble that does NOT arrive at the
+    /// bottom: by the time the user is back from the Shortcuts install the
+    /// skip-out is already sitting below the shortcut message, so Settings
+    /// has to open a space between the two.
+    @MainActor
+    func testTheSettingsMessageLandsAboveTheSkipOutThatBeatItThere() throws {
+        let messages = MessagesReplicaViewController(
+            urlString: OnboardingDemoPage.lunaArticle.sharedURLString)
+        let window = UIWindow(
+            frame: CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = messages
+        window.makeKeyAndVisible()
+        messages.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        func bubble(_ identifier: String) throws -> OnboardingMessageBubble {
+            try XCTUnwrap(
+                messages.view.descendants(of: OnboardingMessageBubble.self).first {
+                    $0.accessibilityIdentifier == identifier
+                })
+        }
+        let shortcut = try bubble("onboarding.messages.shortcutSetup")
+        let settings = try bubble("onboarding.messages.settingsSetup")
+        let skip = try bubble("onboarding.messages.skipSetup")
+
+        // Collapsed until it arrives, so the skip-out sits directly under the
+        // shortcut message rather than over an empty gap.
+        XCTAssertTrue(try XCTUnwrap(settings.superview).isHidden)
+
+        // Land the whole thread rather than waiting out the mock shortcut run.
+        messages.revealStagedConversationImmediately()
+        messages.revealSetupMessagesImmediately()
+        messages.view.layoutIfNeeded()
+
+        XCTAssertTrue(messages.isShowingSetupMessages)
+        XCTAssertFalse(try XCTUnwrap(settings.superview).isHidden)
+
+        func midY(_ view: UIView) -> CGFloat {
+            messages.view.convert(view.bounds, from: view).midY
+        }
+        XCTAssertLessThan(midY(shortcut), midY(settings))
+        XCTAssertLessThan(midY(settings), midY(skip))
     }
 
     @MainActor

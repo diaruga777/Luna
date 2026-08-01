@@ -49,6 +49,21 @@ public enum ArticleImageDownloader {
         }
     }
 
+    /// Downloads every image whose dimensions the page didn't declare, wherever it
+    /// sits in the article. Those are exactly the images that have no placeholder
+    /// to sit in, so they are the ones whose late arrival reflows the text under
+    /// the reader's feet: a surface that must show FINAL layout on its first frame
+    /// (the extension readers) awaits this before it displays anything. Images with
+    /// declared dimensions are left alone — their placeholders already hold the
+    /// right space, so they can load in behind them without moving a word.
+    public static func downloadUnknownSizeImages(
+        _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
+    ) async -> ArticleContent {
+        await download(content, itemID: itemID, store: store, refererURL: refererURL) { block, _ in
+            block.kind == .image && (block.imageWidth == nil || block.imageHeight == nil)
+        }
+    }
+
     private static func download(
         _ content: ArticleContent,
         itemID: UUID,

@@ -41,7 +41,15 @@ final class ShareSurfaceDriverTests: XCTestCase {
             self.readerMode = isActionExtension ? .reader : nil
         }
 
-        func presentModally(_ viewController: UIViewController) { presented.append(viewController) }
+        /// Fired for every presentation. The article leg is prepared
+        /// asynchronously (the reader is handed over finished), so its test waits
+        /// on this rather than reading `presented` on the next line.
+        var onPresent: ((UIViewController) -> Void)?
+
+        func presentModally(_ viewController: UIViewController) {
+            presented.append(viewController)
+            onPresent?(viewController)
+        }
         func confirmSavedThenComplete() { confirmedSaved = true }
         func completeSilently() { completedSilently = true }
         func autoDownloadThenComplete(urlString: String) { autoDownloadedURL = urlString }
@@ -261,14 +269,23 @@ final class ShareSurfaceDriverTests: XCTestCase {
 
     /// The action extension presents the in-sheet reader for an article and persists
     /// the content; the share extension completes with no UI.
+    ///
+    /// What it presents is the FINISHED reader, not the loading screen that used
+    /// to stand in for it: the article is prepared behind the host's own spinner,
+    /// so the surface never shows a second loading state.
     func testArticlePresentationDiffersByHostButPersistsBoth() {
         let urlString = "https://example.com/story"
 
         _ = store.add(urlString: urlString)
         let (actionDriver, actionHost) = makeDriver(isActionExtension: true)
+        let presentedReader = expectation(description: "reader presented")
+        actionHost.onPresent = { _ in presentedReader.fulfill() }
         actionDriver.present(.article(sampleContent(), html: "<html></html>"), url: url(urlString))
-        XCTAssertTrue(actionHost.presented.first is ShareReaderViewController,
+        wait(for: [presentedReader], timeout: 5)
+        XCTAssertTrue(actionHost.presented.first is ReaderViewController,
                       "action ext opens the in-sheet reader for an article")
+        XCTAssertFalse(actionHost.presented.contains { $0 is ShareReaderViewController },
+                       "no intermediate loading screen between the spinner and the article")
 
         // Fresh store item for the share-extension leg.
         store.delete(store.item(forURLString: urlString)!)

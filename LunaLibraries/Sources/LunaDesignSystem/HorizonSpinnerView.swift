@@ -23,7 +23,7 @@ public final class HorizonSpinnerView: UIView {
 
     /// The ring's share of the view's half-width. The rest is headroom: the
     /// head's bloom is wider than the ring's own stroke and spills outward.
-    private static let ringScale: CGFloat = 0.76
+    private static let ringScale: CGFloat = 0.88
     /// Bloom-to-core ratio, taken straight from `HorizonScrollIndicator`
     /// (26pt bloom around a 3pt core) so the point reads identically here.
     private static let bloomToCore: CGFloat = 26.0 / 3.0
@@ -36,14 +36,18 @@ public final class HorizonSpinnerView: UIView {
     /// One lap of the head. Its *angular speed* is not constant: it swells and
     /// eases `headSpeedCycles` times per lap, between `1 ± headSpeedSwing` of
     /// the mean — never stalling, the way a stalling spinner reads as stuck.
-    private static let lapDuration: CFTimeInterval = 1.7
+    ///
+    /// The lap and pulse durations are scaled with `ringScale`, so widening the
+    /// ring leaves the light travelling at the same speed *along* it rather than
+    /// whipping around a bigger circle in the same time.
+    private static let lapDuration: CFTimeInterval = 2.0
     private static let headSpeedSwing: CGFloat = 0.62
     private static let headSpeedCycles: CGFloat = 2
     /// The second point's own cycle: one relative lap, then a rest before it
     /// separates again. Deliberately not a multiple of `lapDuration`, so the
     /// merge lands somewhere new on the ring every time.
-    private static let pulseTravelDuration: CFTimeInterval = 2.1
-    private static let pulseCycleDuration: CFTimeInterval = 3.5
+    private static let pulseTravelDuration: CFTimeInterval = 2.45
+    private static let pulseCycleDuration: CFTimeInterval = 4.0
     /// Negative: the pulse drifts off the head slowly, races the far side, and
     /// eases back in rather than arriving at speed.
     private static let pulseSpeedSwing: CGFloat = -0.55
@@ -171,6 +175,11 @@ public final class HorizonSpinnerView: UIView {
     private func layoutLayers() {
         let radius = ringRadius
         guard radius > 0 else { return }
+        // Traits can settle after init — an ancestor applying the sky override
+        // before this view is in a hierarchy resolves colours here for the first
+        // time. Without this a spinner built inside a freshly-presented child
+        // keeps the palette of whatever sky was current at `init`.
+        applyColors()
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         // Everything rides the top of the ring; the orbit rotation carries it
         // around from there.

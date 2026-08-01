@@ -305,6 +305,29 @@ snapshot; it never reopens the publisher URL.
 Fixed behavior: the **share extension** (`com.apple.share-services`) always saves + dismisses, for every URL. The **"Read in Luna" action extension** (`com.apple.ui-services`) routes via `ShareViewController.presentSavedOrReader`:
 - **Article URLs** → `ShareKit/ShareReaderViewController` fetches + extracts (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` with a lightweight **`ExtensionReaderShareProvider`** (Feature D) — so the end-of-article share affordance works: it offers a friend picker (friends read from the App Group via `ExtensionFriendsReader`; the send is QUEUED to `pendingFriendShares.json` via `PendingFriendShareWriter` for the main app to deliver — no CloudKit in the extension) plus a link share. No suggestion engine in the extension, so no one-tap suggested send. The action ext keeps its OWN last-used mode in `ShareKit/ActionReaderMode` (private `UserDefaults.standard`); `ReaderViewController(persistsModePreference:false, onModeChange:)` writes there, not the shared `ReaderSettings`. If fetch/extract fails, `presentFailure()` shows a red error state (warning glyph + message) with Done available.
 
+**One hand-off, not three steps.** The extension surfaces show exactly ONE loading state — the
+host's own (`ShareViewController`'s centred spinner + `ArticleLoadingStatusCycler` label) — and go
+straight from it to the finished article. `ExtensionArticlePresenter.presentReader` no longer hands
+the host a `ShareReaderViewController` to display *its* loading screen: it awaits
+`ShareReaderViewController.preparedReader(url:mode:content:store:…)`, which persists the content,
+settles the image layout, and returns the built `ReaderViewController` (Done already installed).
+Only then does `presentModally` run, tearing the host's spinner down as the article appears. Before
+this the surface visibly reset mid-load — the spinner restarted a couple of points higher in a
+second screen, Done arrived a beat before the text, and only then did the reader swap in.
+
+**Image layout is settled BEFORE the article is shown**, so nothing reflows under the reader's
+feet. `preparedReader` → `settledImageLayout` resolves the images already on disk, then awaits
+`ArticleImageDownloader.downloadUnknownSizeImages` for the images whose dimensions the page never
+declared — precisely the ones `ArticleTextRenderer.attributedImagePlaceholder` cannot reserve space
+for, and therefore the ones whose late arrival shoves the text down. Images WITH declared sizes are
+not waited on: their placeholders already hold the right box, so `fetchMissingImagesIfNeeded` fills
+them in behind the reader without moving a word. The wait is bounded by
+`imagePreparationTimeout` (8s) and a timeout still keeps whatever landed (a second local resolve),
+so an unreachable image CDN can't strand the sheet on a spinner. `settleImagesOverride` substitutes
+the download in tests (`ExtensionReaderPreparationTests`, `SurfaceParityTests`) so a fixture's
+`<img>` tags never pull the suite onto the network. The standalone and archive→reader paths run the
+same settling behind `ShareReaderViewController`'s own spinner.
+
 All three reader modes, audio (foreground only), and the inline split-web link viewer work; a Done button exits the extension. Resume starts from the first fully-visible word (`ScrollReaderViewController.firstFullyVisibleWordIndex`).
 
 **Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). Schemes are per-app now — `lunareader://` (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker), via the per-target `LUNA_URL_SCHEME` build setting — and parsing accepts any of the three. The in-app "Share Link…" shares this link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)

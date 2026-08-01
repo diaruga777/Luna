@@ -144,20 +144,26 @@ the matching frame for the completed production root as egress finishes.
 loading indicator: `HorizonScrollIndicator`'s treatment — a faint app-tinted track with one
 white-hot point and its bloom riding it — bent into a closed ring. Nothing else is drawn (no
 moon disc, no swept tail). The head orbits forever at a pace that is deliberately **not**
-constant: its angular speed swells and eases twice per 1.7s lap, between 0.38× and 1.62× of
+constant: its angular speed swells and eases twice per 2.0s lap, between 0.38× and 1.62× of
 the mean, from the closed form `θ(t) = 2πt + (swing/cycles)·sin(2π·cycles·t)` sampled into a
 cubic keyframe animation. Because an integral cycle count ends the lap at both the angle and
-the speed it began, the infinite repeat is seamless. On its own slower 3.5s cycle a dimmer
+the speed it began, the infinite repeat is seamless. On its own slower 4.0s cycle a dimmer
 second point separates from the head, takes one lap *relative to it*, and merges back in a
 brief flare, exactly like `MoonHorizonProgressBar`'s activity pulse — implemented by rotating
 the pulse's own frame of reference inside the orbit layer, so it always departs from and
-returns to precisely where the head is, however fast the head is moving. The 3.5s pulse cycle
-is not a multiple of the 1.7s lap, so the merge lands somewhere new on the ring each time.
+returns to precisely where the head is, however fast the head is moving. The 4.0s pulse cycle
+is not a multiple of the 2.0s lap, so the merge lands somewhere new on the ring each time.
+The lap and pulse durations are tied to `ringScale` (0.88 of the view's half-width): widening
+the ring lengthens them in proportion, so the light keeps its speed *along* the ring instead of
+whipping faster around a bigger circle.
 Ring, bloom, and core all scale off the view's size — the scroll indicator's 26:3
 bloom-to-core ratio, capped so the halo never outgrows its own ring — so a 20pt spinner isn't
 the blob a fixed 26pt bloom made of it. It retains
 the familiar `startAnimating()`, `stopAnimating()`, and `hidesWhenStopped` API and honors
-Reduce Motion (head at rest atop the ring, no pulse). The email login cover resolves the ring
+Reduce Motion (head at rest atop the ring, no pulse). Colours are re-resolved in
+`layoutSubviews` as well as on `LunaSkyTrait` changes: a spinner built inside a
+freshly-presented child otherwise keeps whatever palette was current at `init` and reads
+visibly differently tinted from one built after the sky override settled. The email login cover resolves the ring
 into a drawn checkmark after successful verification.
 
 Article-loading labels use `EclipseBloomStatusLabel` with

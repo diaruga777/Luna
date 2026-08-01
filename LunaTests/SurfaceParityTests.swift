@@ -79,11 +79,23 @@ final class SurfaceParityTests: XCTestCase {
         func failOrComplete(_ message: String) { error = message }
         func openURL(_ url: URL) {}
 
+        /// True once the surface has done something conclusive. The article leg
+        /// presents asynchronously (its reader is prepared before hand-off), so
+        /// the caller pumps the main queue until this flips.
+        var hasSettled: Bool {
+            !presented.isEmpty || confirmedSaved || completedSilently
+                || autoDownloadedURL != nil || error != nil
+        }
+
         /// The intent the surface expressed (derived from what the driver did).
         var intent: SurfaceIntent {
             if let last = presented.last {
                 if last is PriceTrackingViewController { return .tracker }
-                if last is ShareReaderViewController { return .reader }
+                // The article reader arrives finished (`preparedReader`); the
+                // loading-screen form remains for the standalone/archive paths.
+                if last is ReaderViewController || last is ShareReaderViewController {
+                    return .reader
+                }
                 if last is SavedNonTextualViewController { return .nonTextual }
                 if last is ArchiveWebReaderViewController { return .archiveReader }
                 if last is RescueFailureViewController { return .rescue }
@@ -107,6 +119,11 @@ final class SurfaceParityTests: XCTestCase {
         // the frameworks, so the host app's launch registration isn't
         // necessarily visible through the registry here.
         ShareKindPresenterTestSupport.registerAll()
+        // The reader is now prepared before presentation, which in production
+        // downloads the fixture's unknown-size images first. This suite is about
+        // presentation parity, so stub that step out rather than let a fixture's
+        // <img> tags pull the suite onto the network.
+        ShareReaderViewController.settleImagesOverride = { content, _, _, _ in content }
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("SurfaceParity-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
@@ -114,6 +131,7 @@ final class SurfaceParityTests: XCTestCase {
     }
 
     override func tearDown() {
+        ShareReaderViewController.settleImagesOverride = nil
         try? FileManager.default.removeItem(at: scratch)
         super.tearDown()
     }
@@ -236,7 +254,9 @@ final class SurfaceParityTests: XCTestCase {
     /// outcome and a fake host, then read back what it presented. The surface gate is
     /// pinned to `.supported` — this test is about presentation parity, not the
     /// per-app content gate (see `ShareSurfaceDriverSurfaceTests` for that).
-    private func extensionIntent(for outcome: Outcome, link: Link, isAction: Bool) -> SurfaceIntent {
+    private func extensionIntent(
+        for outcome: Outcome, link: Link, isAction: Bool
+    ) async -> SurfaceIntent {
         // Each surface invocation needs its own freshly-saved item.
         let finalURLString = finalURL(for: link)
         if let existing = store.item(forURLString: finalURLString) { store.delete(existing) }
@@ -244,6 +264,12 @@ final class SurfaceParityTests: XCTestCase {
         let host = FakeExtensionHost(isActionExtension: isAction)
         let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
         driver.present(outcome, url: url(finalURLString))
+        // An article's reader is prepared before it is handed to the host, so
+        // yield the main actor until the surface has done something conclusive.
+        let deadline = Date().addingTimeInterval(10)
+        while !host.hasSettled, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
         return host.intent
     }
 
@@ -272,7 +298,7 @@ final class SurfaceParityTests: XCTestCase {
         for link in links() {
             let outcome = await process(link, source: .manual)
             let appIntent = mainAppIntent(for: outcome)
-            let actionIntent = extensionIntent(for: outcome, link: link, isAction: true)
+            let actionIntent = await extensionIntent(for: outcome, link: link, isAction: true)
             if appIntent == .error {
                 // URL Rescue (claudedocs/url-rescue.md): a `.failed` outcome now
                 // legitimately diverges by surface — the action extension presents
@@ -288,7 +314,7 @@ final class SurfaceParityTests: XCTestCase {
             // archive) and never mis-presents; for article/document it saves silently
             // (savedDocument) and for video it auto-downloads (nonTextual) — assert it
             // never diverges into the WRONG interactive UI.
-            let shareIntent = extensionIntent(for: outcome, link: link, isAction: false)
+            let shareIntent = await extensionIntent(for: outcome, link: link, isAction: false)
             switch appIntent {
             case .tracker, .archiveReader, .nonTextual:
                 XCTAssertEqual(shareIntent, appIntent,
@@ -315,7 +341,7 @@ final class SurfaceParityTests: XCTestCase {
         // Bluesky via the share extension.
         let bluesky = links().first { $0.name == "bluesky" }!
         let blueskyOutcome = await process(bluesky, source: .shareSheet)
-        _ = extensionIntent(for: blueskyOutcome, link: bluesky, isAction: false)
+        _ = await extensionIntent(for: blueskyOutcome, link: bluesky, isAction: false)
         let blueskySaved = store.item(forURLString: finalURL(for: bluesky))
         XCTAssertEqual(blueskySaved?.contentPlatform, .bluesky,
                        "bluesky saved via share ext keeps its platform")
@@ -324,7 +350,7 @@ final class SurfaceParityTests: XCTestCase {
         // Amazon via the action extension.
         let amazon = links().first { $0.name == "amazon" }!
         let amzOutcome = await process(amazon, source: .appIntent)
-        _ = extensionIntent(for: amzOutcome, link: amazon, isAction: true)
+        _ = await extensionIntent(for: amzOutcome, link: amazon, isAction: true)
         XCTAssertNotNil(store.item(forURLString: finalURL(for: amazon))?.priceTracker,
                         "amazon saved via action ext becomes a price tracker")
     }

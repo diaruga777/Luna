@@ -70,6 +70,110 @@ public final class ShareReaderViewController: UIViewController {
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    // MARK: - Prepared presentation (no intermediate loading screen)
+
+    /// How long a surface holds its loading state waiting for the images whose
+    /// size the page never declared. Bounded because an unreachable image CDN
+    /// must not strand the sheet on a spinner; whatever landed by the deadline is
+    /// still baked in.
+    public static let imagePreparationTimeout: TimeInterval = 8
+
+    /// Replaces the blocking half of the image settling. Nil (production) runs
+    /// the real bounded downloader; a test surface substitutes it so a fixture's
+    /// `<img>` tags don't pull a unit test onto the network.
+    public static var settleImagesOverride: ((
+        _ content: ArticleContent, _ itemID: UUID, _ url: URL, _ store: ReadingListStore
+    ) async -> ArticleContent)?
+
+    /// Builds the finished reader for an already-extracted article: persists the
+    /// content, settles the image layout, and hands back a reader whose FIRST
+    /// frame is final.
+    ///
+    /// The caller keeps its own loading UI up until this returns, which is the
+    /// point — the action extension used to tear its spinner down, install this
+    /// screen's second spinner (in a different place, under a Done button that
+    /// appeared a beat early), and only then swap in the reader. One prepared
+    /// hand-off replaces all three steps.
+    public static func preparedReader(
+        url: URL, mode: Mode, content: ArticleContent, store: ReadingListStore = .shared,
+        onModeChange: ((Mode) -> Void)?, onDone: @escaping () -> Void
+    ) async -> UIViewController {
+        // Reuse the row the extension already appended (`add` is idempotent), so
+        // the reader marks the same shared item opened/read.
+        let item = store.add(urlString: url.absoluteString)
+        let settled = await settledImageLayout(for: content, item: item, url: url, store: store)
+        let saved = store.saveContent(settled, for: item)
+        return makeReader(
+            item: saved, content: settled, mode: mode,
+            onModeChange: onModeChange, onDone: onDone)
+    }
+
+    /// Resolves the images already on disk, then downloads the ones the page gave
+    /// no dimensions for — those are exactly the images with no placeholder to
+    /// land in, so they are the ones whose late arrival shoves the text around.
+    /// Images with declared sizes keep their reserved space and are left to load
+    /// in behind it.
+    ///
+    /// On timeout the local resolve runs again, so files that did arrive before
+    /// the deadline are still baked into the first render.
+    public static func settledImageLayout(
+        for content: ArticleContent, item: ReadingListItem, url: URL, store: ReadingListStore
+    ) async -> ArticleContent {
+        let local = ArticleImageDownloader.resolveLocalImages(content, store: store)
+        let needsSettling = local.blocks.contains { block in
+            block.kind == .image && block.imageFileName == nil
+                && (block.imageWidth == nil || block.imageHeight == nil)
+        }
+        guard needsSettling else { return local }
+
+        let itemID = item.id
+        let timeout = imagePreparationTimeout
+        let settle = settleImagesOverride
+        let downloaded: ArticleContent? = await withTaskGroup(
+            of: ArticleContent?.self
+        ) { group in
+            group.addTask {
+                if let settle { return await settle(local, itemID, url, store) }
+                return await ArticleImageDownloader.downloadUnknownSizeImages(
+                    local, itemID: itemID, store: store, refererURL: url)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        return downloaded ?? ArticleImageDownloader.resolveLocalImages(local, store: store)
+    }
+
+    private static func makeReader(
+        item: ReadingListItem, content: ArticleContent, mode: Mode,
+        onModeChange: ((Mode) -> Void)?, onDone: @escaping () -> Void
+    ) -> ReaderViewController {
+        // A lightweight share provider (friend-share via the App Group queue +
+        // link share — no CloudKit in the extension) so the end-of-article share
+        // affordance works. The reader marks the (real, shared) item opened/read
+        // via ReadingListStore.
+        let reader = ReaderViewController(
+            item: item, content: content, forceMode: mode.readerMode,
+            shareProvider: ExtensionReaderShareProvider(),
+            // The action extension keeps its OWN last-used mode, separate from
+            // the main app — persist switches locally (via the injected
+            // `onModeChange`), don't touch the shared ReaderSettings.
+            persistsModePreference: false,
+            onModeChange: { onModeChange?(Mode(readerMode: $0)) })
+        reader.navigationItem.leftBarButtonItem = doneButton(onDone)
+        return reader
+    }
+
+    /// A Done item whose action lives in the closure (retained by the bar item),
+    /// so it still works after its view controller leaves the nav stack.
+    private static func doneButton(_ onDone: @escaping () -> Void) -> UIBarButtonItem {
+        UIBarButtonItem(systemItem: .done, primaryAction: UIAction { _ in onDone() })
+    }
+
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
@@ -98,12 +202,8 @@ public final class ShareReaderViewController: UIViewController {
         Task { await ingestAndPresent() }
     }
 
-    /// A Done item whose action lives in the closure (retained by the bar item),
-    /// so it still works after this VC is removed from the nav stack.
     private func doneButton() -> UIBarButtonItem {
-        let onDone = self.onDone
-        return UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { _ in onDone() })
+        Self.doneButton(onDone)
     }
 
     private func ingestAndPresent() async {
@@ -124,9 +224,13 @@ public final class ShareReaderViewController: UIViewController {
 
         switch outcome {
         case .article(let content, _):
-            // Persist the parsed content so the main app has it too.
-            let saved = ReadingListStore.shared.saveContent(content, for: item)
-            presentReader(item: saved, content: content)
+            // Settle the image layout BEFORE leaving the loading state, so the
+            // article's first frame is its final one. Persist the parsed content
+            // (with whatever images resolved) so the main app has it too.
+            let settled = await Self.settledImageLayout(
+                for: content, item: item, url: url, store: ReadingListStore.shared)
+            let saved = ReadingListStore.shared.saveContent(settled, for: item)
+            presentReader(item: saved, content: settled)
         case let .product(product, _):
             // A product page: save it as a price tracker silently (the reader can't
             // present the main-app price UI) and confirm — never paywall-treated.
@@ -168,7 +272,12 @@ public final class ShareReaderViewController: UIViewController {
             guard let self,
                   let fresh = ReadingListStore.shared.item(withID: item.id),
                   let content = ReadingListStore.shared.content(for: fresh) else { return }
-            self.presentReader(item: fresh, content: content)
+            Task { @MainActor in
+                let settled = await Self.settledImageLayout(
+                    for: content, item: fresh, url: self.url, store: ReadingListStore.shared)
+                let saved = ReadingListStore.shared.saveContent(settled, for: fresh)
+                self.presentReader(item: saved, content: settled)
+            }
         }
         navigationController?.setViewControllers([archive], animated: false)
     }
@@ -176,20 +285,9 @@ public final class ShareReaderViewController: UIViewController {
     private func presentReader(item: ReadingListItem, content: ArticleContent) {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
-        // A lightweight share provider (friend-share via the App Group queue +
-        // link share — no CloudKit in the extension) so the end-of-article share
-        // affordance works. The reader marks the (real, shared) item opened/read
-        // via ReadingListStore.
-        let onModeChange = self.onModeChange
-        let reader = ReaderViewController(
-            item: item, content: content, forceMode: mode.readerMode,
-            shareProvider: ExtensionReaderShareProvider(),
-            // The action extension keeps its OWN last-used mode, separate from
-            // the main app — persist switches locally (via the injected
-            // `onModeChange`), don't touch the shared ReaderSettings.
-            persistsModePreference: false,
-            onModeChange: { onModeChange?(Mode(readerMode: $0)) })
-        reader.navigationItem.leftBarButtonItem = doneButton()
+        let reader = Self.makeReader(
+            item: item, content: content, mode: mode,
+            onModeChange: onModeChange, onDone: onDone)
         // Replace this loading screen with the reader as the sole VC (no back).
         navigationController?.setViewControllers([reader], animated: false)
     }

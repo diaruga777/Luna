@@ -73,15 +73,31 @@ public final class ExtensionArticlePresenter {
 
     /// Presents the in-sheet article reader (action extension) in the host's
     /// modal chrome; `complete` is the reader's Done.
+    ///
+    /// The reader is PREPARED before it is handed over — content persisted and
+    /// image layout settled — so the host's own loading UI stays up until the
+    /// finished article is ready to appear. That removes the intermediate screen
+    /// the surface used to flash: a second spinner in a slightly different place,
+    /// under a Done button that arrived before the article did.
     public func presentReader(
         url: URL, mode: ShareReaderViewController.Mode, outcome: Outcome,
         onModeChange: ((ShareReaderViewController.Mode) -> Void)?,
-        presentModally: (UIViewController) -> Void,
+        presentModally: @escaping (UIViewController) -> Void,
         complete: @escaping () -> Void
     ) {
-        presentModally(ShareReaderViewController(
-            url: url, mode: mode, outcome: outcome, onModeChange: onModeChange,
-            onDone: complete))
+        guard case let .article(content, _) = outcome else {
+            // The driver only routes `.article` here; anything else keeps the
+            // standalone reader's own outcome handling rather than a blank sheet.
+            presentModally(ShareReaderViewController(
+                url: url, mode: mode, outcome: outcome, onModeChange: onModeChange,
+                onDone: complete))
+            return
+        }
+        Task { @MainActor in
+            presentModally(await ShareReaderViewController.preparedReader(
+                url: url, mode: mode, content: content,
+                onModeChange: onModeChange, onDone: complete))
+        }
     }
 
     /// Presents the archive-CAPTCHA reader for a paywalled article whose row
@@ -106,10 +122,11 @@ public final class ExtensionArticlePresenter {
             if let readerMode,
                let fresh = store.item(withID: itemID),
                let content = store.content(for: fresh) {
-                let reader = ShareReaderViewController(
-                    url: url, mode: readerMode, outcome: .article(content, html: ""),
-                    onModeChange: onModeChange, onDone: complete)
-                presentModally(reader)
+                Task { @MainActor in
+                    presentModally(await ShareReaderViewController.preparedReader(
+                        url: url, mode: readerMode, content: content,
+                        onModeChange: onModeChange, onDone: complete))
+                }
             } else {
                 complete()
             }

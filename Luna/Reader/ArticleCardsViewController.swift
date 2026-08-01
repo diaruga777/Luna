@@ -1685,6 +1685,9 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     ) {
         guard card.isCentered, inlineColumn == nil, hasRoomForColumn else { return }
         inlineColumn = column
+        // Two readers now share the screen: only one of them may voice or march
+        // a word at a time (`ReaderPlaybackArbiter`).
+        ReaderPlaybackArbiter.isPaired = true
 
         // Reading dismissed the deck's chrome; a paired layout brings it back.
         // The card becomes a card again BEFORE it travels, so what slides left is
@@ -1733,6 +1736,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     func closeInlineColumn(_ column: SplitWebOverlayViewController) {
         guard inlineColumn === column else { return }
         inlineColumn = nil
+        ReaderPlaybackArbiter.isPaired = false
         carousel.setColumnAside(shift: 0, animated: true)
         UIView.animate(
             withDuration: 0.36, delay: 0,

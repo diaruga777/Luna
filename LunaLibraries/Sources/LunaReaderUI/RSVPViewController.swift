@@ -1091,6 +1091,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             currentIndex = 0
             currentChunkIndex = 0
         }
+        // The silent reader's word timer is per-instance, so nothing else stops
+        // it when the column beside this one starts playing.
+        ReaderPlaybackArbiter.claim(self)
         isPlaying = true
         updateContextVisibility(animated: true, duration: 0.05)
         dispatchOnMode(
@@ -1114,6 +1117,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     private func playViaCenter(_ center: AudioPlaybackCenter) {
+        ReaderPlaybackArbiter.claim(self)
         if centerOwnsItem {
             if center.currentSnapshot.isAudiblyPlaying { return }
             if case .paused = center.state { center.resume(); return }
@@ -1147,6 +1151,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             saveProgress()
             return
         }
+        ReaderPlaybackArbiter.resign(self)
         isPlaying = false
         timer?.invalidate()
         timer = nil
@@ -1575,6 +1580,20 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         didRevealShare = true
         shareView.isHidden = false
         UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }
+    }
+}
+
+extension RSVPViewController: ReaderPlaybackPausable {
+    /// The reader beside this one started. Stop, whichever engine is running:
+    /// the app-wide voice if it is speaking this article, otherwise the local
+    /// word timer.
+    public func pauseForExclusivePlayback() {
+        if let center = speechCenter, centerOwnsItem,
+           center.currentSnapshot.isAudiblyPlaying {
+            center.pause()
+        } else if isPlaying {
+            pause()
+        }
     }
 }
 

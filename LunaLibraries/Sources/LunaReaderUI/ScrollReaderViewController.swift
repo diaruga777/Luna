@@ -1182,6 +1182,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// In-app: hand off to the app-wide playback center (background audio,
     /// autoplay, the window-level mini-player replaces the private footer).
     private func startSpeechViaCenter(_ center: AudioPlaybackCenter) {
+        ReaderPlaybackArbiter.claim(self)
         // Already voicing this very article (e.g. a mode switch back to
         // scroll, or reopening the playing article with audio on): keep
         // going rather than restarting — unless a position was explicitly
@@ -1220,6 +1221,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
         footer.isHidden = false
         layoutShareView()
+        ReaderPlaybackArbiter.claim(self)
         speech?.play(fromWordIndex: resumeWordIndex)
         // First-ever read-aloud: nudge the user toward higher-quality voices.
         // Non-blocking — playback above has already begun. No-op in extensions.
@@ -1703,6 +1705,21 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 }
 
 // MARK: - SpeechControllerDelegate
+
+extension ScrollReaderViewController: ReaderPlaybackPausable {
+    /// The reader beside this one started. Silence whichever voice is running:
+    /// the app-wide centre when it is speaking this article, otherwise the
+    /// extension-only private controller.
+    public func pauseForExclusivePlayback() {
+        if let center = ReaderAudioLauncher.center,
+           center.currentItemInfo?.itemID == item.id,
+           center.currentSnapshot.isAudiblyPlaying {
+            center.pause()
+            return
+        }
+        if speech?.isPlaying == true { speech?.pause() }
+    }
+}
 
 extension ScrollReaderViewController: SpeechControllerDelegate {
     public func speech(_ controller: SpeechController, willSpeakAttributedRange range: NSRange, wordIndex: Int?) {

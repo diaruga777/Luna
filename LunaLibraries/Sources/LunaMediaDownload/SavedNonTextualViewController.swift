@@ -20,9 +20,11 @@ import UIKit
 ///
 /// For downloadable platforms (X / Instagram / TikTok / Facebook) the media is
 /// fetched and shown INLINE: when the "Auto-download media" setting is ON the file
-/// downloads automatically on appear (spinner while it streams to disk); when OFF
-/// the preview starts PENDING (media icon + "Download" button) and downloads only
-/// on tap. A video gets a play-button overlay (tap → AVPlayer); an image just
+/// downloads automatically on appear; when OFF the preview starts PENDING (media
+/// icon + "Download" button) and downloads only on tap. Progress belongs to the
+/// thing being fetched, so the bar is drawn INSIDE the media placeholder, under
+/// the media icon — there is no separate spinner (two indicators for one wait).
+/// A video gets a play-button overlay (tap → AVPlayer); an image just
 /// displays. Once downloaded (auto or manual) a "Save to Photos" button enables;
 /// saving writes to the Photos library AND marks the item read in the reading list.
 public final class SavedNonTextualViewController: UIViewController {
@@ -30,7 +32,9 @@ public final class SavedNonTextualViewController: UIViewController {
     private let articleURLString: String
     private let onDone: () -> Void
 
-    private let savedLabel = UILabel()
+    /// The app's own colour — the extensions inherit their host app's tint, so
+    /// the Downloader's buttons read orange and the central app's indigo.
+    private static var tint: UIColor { LunaSurfacePalette.baseColor }
 
     // MARK: - Downloadable-media state machine
 
@@ -65,12 +69,11 @@ public final class SavedNonTextualViewController: UIViewController {
     private var unsavedPreviewFileURL: URL?
 
     // A fixed-height media preview area. Reserves space from load so the layout
-    // never shifts as the media state resolves: it hosts the spinner, the still
-    // image / video poster, the play overlay, the pending media icon, and any
-    // load-failure placeholder.
+    // never shifts as the media state resolves: it hosts the still image / video
+    // poster, the play overlay, the pending media icon, the download progress
+    // bar, and any load-failure placeholder.
     private let previewContainer = UIView()
     private let previewImageView = UIImageView()
-    private let previewSpinner = HorizonSpinnerView(side: 36)
     /// A large media icon shown in the pending state (before any download starts).
     private let pendingIconView = UIImageView()
     /// A play overlay shown when the downloaded media is a video.
@@ -80,15 +83,17 @@ public final class SavedNonTextualViewController: UIViewController {
     private static let previewHeight: CGFloat = 220
 
     // The action row: a primary button that is "Download media" (pending) /
-    // "Downloading…" / hidden (ready), and a "Save to Photos" button enabled once a
-    // file exists. A status label carries errors. All hold layout space from load.
+    // hidden (downloading, ready), then Share + "Save to Photos" side by side
+    // (enabled once a file exists) over the destructive Delete. A status label
+    // carries errors. All hold layout space from load.
     private let downloadButton = UIButton(type: .system)
     private let downloadButtonSlot = UIView()
     private let shareButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
     private let deleteButton = UIButton(type: .system)
+    /// Drawn inside the media placeholder, not under the buttons — see the type
+    /// comment. Hidden except while the file is streaming to disk.
     private let downloadProgress = MoonHorizonProgressBar()
-    private let downloadProgressSlot = UIView()
     private let downloadStatus = UILabel()
     private var didSaveToPhotos = false
     private var isDeleting = false
@@ -113,35 +118,31 @@ public final class SavedNonTextualViewController: UIViewController {
         }
     }
 
+    /// The screen carries its own header pill and its own floating exit button,
+    /// so the host's navigation bar would be an empty strip above them.
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: false)
+    }
+
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        title = L10n.string("Luna Downloader")
 
-        let onDone = self.onDone
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { _ in onDone() })
-
-        let badge = UIImageView(image: UIImage(
-            systemName: "checkmark.circle.fill",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 44, weight: .semibold)))
-        badge.tintColor = GlassStyle.readingAccent
-        badge.contentMode = .center
-
-        savedLabel.text = L10n.string("Saved")
-        savedLabel.font = .preferredFont(forTextStyle: .body)
-        savedLabel.textColor = LunaColors.secondaryText
-        savedLabel.textAlignment = .center
-        savedLabel.numberOfLines = 0
+        // The header states the one fact this screen exists to report. It used
+        // to be a 44pt checkmark, the word "Saved", AND a navigation title
+        // hard-coded to "Luna Downloader" (wrong in the three other apps that
+        // present this screen) — three pieces of chrome for one sentence.
+        let savedBadge = GlassConfirmationBadge(title: L10n.string("Saved to Luna"))
 
         // Confirmation + download controls sit at the TOP.
         // All platforms use the same confirmation header. Downloadable media,
         // including YouTube videos, renders only in the extension playback area
         // below so there is one resolver, one preview, and one set of controls.
-        let topStack = UIStackView(arrangedSubviews: [badge, savedLabel] + mediaDownloadViews())
+        let topStack = UIStackView(arrangedSubviews: [savedBadge] + mediaDownloadViews())
         topStack.axis = .vertical
-        topStack.spacing = 16
-        topStack.setCustomSpacing(24, after: savedLabel)
+        topStack.spacing = 14
+        topStack.setCustomSpacing(24, after: savedBadge)
         topStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(topStack)
         NSLayoutConstraint.activate([
@@ -149,6 +150,8 @@ public final class SavedNonTextualViewController: UIViewController {
             topStack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             topStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
         ])
+
+        ExtensionExitButton.install(in: self) { [weak self] in self?.onDone() }
 
         beginMediaFlow()
     }
@@ -184,9 +187,11 @@ public final class SavedNonTextualViewController: UIViewController {
         pendingIconView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(pendingIconView)
 
-        previewSpinner.hidesWhenStopped = true
-        previewSpinner.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.addSubview(previewSpinner)
+        // Progress lives IN the placeholder, low enough to read as the media's
+        // own loading state rather than a control.
+        downloadProgress.translatesAutoresizingMaskIntoConstraints = false
+        downloadProgress.isHidden = true
+        previewContainer.addSubview(downloadProgress)
 
         // A system-style play badge over the still — revealed only for video media;
         // tapping the preview then plays it.
@@ -223,18 +228,20 @@ public final class SavedNonTextualViewController: UIViewController {
             previewPlaceholder.trailingAnchor.constraint(
                 equalTo: previewContainer.trailingAnchor, constant: -12),
             previewPlaceholder.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
-            previewSpinner.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
-            previewSpinner.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
+            downloadProgress.leadingAnchor.constraint(
+                equalTo: previewContainer.leadingAnchor, constant: 20),
+            downloadProgress.trailingAnchor.constraint(
+                equalTo: previewContainer.trailingAnchor, constant: -20),
+            downloadProgress.bottomAnchor.constraint(
+                equalTo: previewContainer.bottomAnchor, constant: -18),
+            downloadProgress.heightAnchor.constraint(equalToConstant: 20),
             playOverlay.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
             playOverlay.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
         ])
 
-        var dlConfig = UIButton.Configuration.filled()
-        dlConfig.title = L10n.string("Download media")
-        dlConfig.image = UIImage(systemName: "arrow.down.circle")
-        dlConfig.imagePadding = 8
-        dlConfig.baseBackgroundColor = GlassStyle.readingAccent
-        downloadButton.configuration = dlConfig
+        downloadButton.configuration = GlassStyle.actionButtonConfiguration(
+            title: L10n.string("Download media"), symbol: "arrow.down.circle",
+            prominent: true, tint: Self.tint)
         downloadButton.addAction(
             UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
         downloadButtonSlot.translatesAutoresizingMaskIntoConstraints = false
@@ -248,39 +255,23 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadButton.trailingAnchor.constraint(equalTo: downloadButtonSlot.trailingAnchor),
         ])
 
-        var shareConfig = UIButton.Configuration.tinted()
-        shareConfig.title = L10n.string("Share")
-        shareConfig.image = UIImage(systemName: "square.and.arrow.up")
-        shareConfig.imagePadding = 8
-        shareConfig.baseForegroundColor = GlassStyle.readingAccent
-        shareButton.configuration = shareConfig
+        shareButton.configuration = GlassStyle.actionButtonConfiguration(
+            title: L10n.string("Share"), symbol: "square.and.arrow.up", tint: Self.tint)
         shareButton.addAction(
             UIAction { [weak self] _ in self?.shareDownloadedMedia() }, for: .touchUpInside)
         shareButton.isEnabled = false
         // Hold layout space (visible but disabled) so the row height is stable.
 
-        var saveConfig = UIButton.Configuration.tinted()
-        saveConfig.title = L10n.string("Save to Photos")
-        saveConfig.image = UIImage(systemName: "photo.badge.arrow.down")
-        saveConfig.imagePadding = 8
-        saveConfig.baseForegroundColor = GlassStyle.readingAccent
-        saveButton.configuration = saveConfig
+        setSaveButton(savedToPhotos: false)
         saveButton.addAction(
             UIAction { [weak self] _ in self?.saveToPhotos() }, for: .touchUpInside)
         saveButton.isEnabled = false
         // Hold layout space (visible but disabled) so the row height is stable.
 
-        downloadProgressSlot.translatesAutoresizingMaskIntoConstraints = false
-        downloadProgressSlot.addSubview(downloadProgress)
-        downloadProgress.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            downloadProgressSlot.heightAnchor.constraint(equalToConstant: 20),
-            downloadProgress.centerYAnchor.constraint(equalTo: downloadProgressSlot.centerYAnchor),
-            downloadProgress.leadingAnchor.constraint(equalTo: downloadProgressSlot.leadingAnchor),
-            downloadProgress.trailingAnchor.constraint(equalTo: downloadProgressSlot.trailingAnchor),
-            downloadProgress.heightAnchor.constraint(equalToConstant: 20),
-        ])
-        downloadProgress.isHidden = true
+        let mediaActions = UIStackView(arrangedSubviews: [shareButton, saveButton])
+        mediaActions.axis = .horizontal
+        mediaActions.spacing = 10
+        mediaActions.distribution = .fillEqually
 
         downloadStatus.isHidden = true
         downloadStatus.font = .preferredFont(forTextStyle: .subheadline)
@@ -289,18 +280,16 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadStatus.numberOfLines = 0
 
         return [
-            previewContainer, downloadButtonSlot, downloadProgressSlot, shareButton, saveButton,
-            deleteButton, downloadStatus
+            previewContainer, downloadButtonSlot, mediaActions, deleteButton, downloadStatus
         ]
     }
 
     private func configureDeleteButton() {
         guard deleteButton.configuration == nil else { return }
-        var config = UIButton.Configuration.tinted()
-        config.title = L10n.string("Delete and exit")
-        config.image = UIImage(systemName: "trash")
-        config.imagePadding = 8
-        config.baseForegroundColor = .systemRed
+        var config = GlassStyle.actionButtonConfiguration(
+            title: L10n.string("Delete and exit"), symbol: "trash", tint: Self.tint)
+        // Quiet glass, but the label and glyph stay unmistakably destructive.
+        config.baseForegroundColor = LunaColors.errorAccent
         deleteButton.configuration = config
         deleteButton.addAction(
             UIAction { [weak self] _ in self?.deleteAndExit() }, for: .touchUpInside)
@@ -337,7 +326,6 @@ public final class SavedNonTextualViewController: UIViewController {
         }
         switch state {
         case .pending:
-            previewSpinner.stopAnimating()
             pendingIconView.isHidden = false
             previewImageView.isHidden = true
             playOverlay.isHidden = true
@@ -349,8 +337,9 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadStatus.isHidden = true
 
         case .downloading:
-            previewSpinner.startAnimating()
-            pendingIconView.isHidden = true
+            // The placeholder icon STAYS: the progress bar under it is the
+            // media's own loading state, drawn where the media will appear.
+            pendingIconView.isHidden = false
             previewImageView.isHidden = true
             playOverlay.isHidden = true
             previewPlaceholder.isHidden = true
@@ -364,7 +353,6 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadStatus.isHidden = false
 
         case .ready(let media):
-            previewSpinner.stopAnimating()
             pendingIconView.isHidden = true
             downloadButton.isHidden = true
             downloadProgress.isHidden = true
@@ -375,7 +363,6 @@ public final class SavedNonTextualViewController: UIViewController {
             persistToDownloaderLibraryIfNeeded(media)
 
         case .alreadyDownloaded(let item):
-            previewSpinner.stopAnimating()
             pendingIconView.isHidden = true
             downloadButton.isHidden = true
             downloadProgress.isHidden = true
@@ -386,7 +373,6 @@ public final class SavedNonTextualViewController: UIViewController {
             showAlreadyDownloadedPreview(item)
 
         case .failed(let message):
-            previewSpinner.stopAnimating()
             pendingIconView.isHidden = false
             previewImageView.isHidden = true
             playOverlay.isHidden = true
@@ -720,14 +706,43 @@ public final class SavedNonTextualViewController: UIViewController {
         }
     }
 
+    /// The Photos button, in either state. It is the prominent action of its row
+    /// (the app's tint fills the glass) and BOTH states carry the Photos mark
+    /// itself, set inline before the word "Photos" — the destination is the
+    /// point of the button, so it shouldn't disappear the moment it's reached.
     private func setSaveButton(savedToPhotos: Bool) {
-        var config = saveButton.configuration
-        config?.title = savedToPhotos ? L10n.string("Saved to Photos") : L10n.string("Save to Photos")
-        config?.image = UIImage(
-            systemName: savedToPhotos ? "checkmark.circle.fill" : "photo.badge.arrow.down")
-        config?.baseForegroundColor = savedToPhotos ? .systemGreen : GlassStyle.readingAccent
+        var config = GlassStyle.actionButtonConfiguration(
+            title: "", symbol: "checkmark", prominent: true, tint: Self.tint)
+        // The title carries its own (multicolour) glyph; a second leading symbol
+        // would just crowd the pill. Saved state keeps the checkmark.
+        config.image = savedToPhotos ? UIImage(systemName: "checkmark") : nil
+        config.attributedTitle = Self.photosTitle(savedToPhotos: savedToPhotos)
         saveButton.configuration = config
         saveButton.isEnabled = !savedToPhotos
+    }
+
+    /// "Save to 🌸 Photos" — the Photos mark placed inline, at the position the
+    /// localized string chooses (the marker is a format argument, so a
+    /// translation can move it with the noun it belongs to).
+    @MainActor
+    private static func photosTitle(savedToPhotos: Bool) -> AttributedString {
+        let marker = "\u{FFFC}"   // OBJECT REPLACEMENT CHARACTER
+        let text = savedToPhotos
+            ? L10n.string("Saved to \(marker) Photos")
+            : L10n.string("Save to \(marker) Photos")
+        let font = UIFont.systemFont(ofSize: 15, weight: .semibold)
+        let string = NSMutableAttributedString(string: text, attributes: [.font: font])
+        guard let range = text.range(of: marker) else { return AttributedString(string) }
+
+        let side: CGFloat = 15
+        let attachment = NSTextAttachment()
+        attachment.image = PhotosAppGlyph.image(side: side)
+        // Optically centre the glyph on the cap height rather than the baseline.
+        attachment.bounds = CGRect(
+            x: 0, y: (font.capHeight - side) / 2, width: side, height: side)
+        string.replaceCharacters(
+            in: NSRange(range, in: text), with: NSAttributedString(attachment: attachment))
+        return AttributedString(string)
     }
 
     private func deleteAndExit() {

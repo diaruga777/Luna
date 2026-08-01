@@ -179,10 +179,20 @@ Photos references remain governed by the user's Photos library.
   `SavedMediaStore.existingDownloadedItem(forURLString:)`; a duplicate link renders
   directly from the existing local file or Photos asset (`alreadyDownloaded`) with no
   network fetch — Save-to-Photos stays enabled for a local-file duplicate (still copies it
-  to Photos) and is disabled once the match is already Photos-backed. The button remains
-  disabled with a green checkmark after either an automatic or manual Photos save. The
-  download and progress rows retain fixed layout slots while their contents change, so
-  completion does not pull the Share/Save controls upward. **Delete and exit** removes a
+  to Photos) and is disabled once the match is already Photos-backed. The button keeps the
+  Photos pinwheel (`PhotosAppGlyph`, drawn — a sandboxed app can't read another app's icon)
+  set inline before the word "Photos" in BOTH states, and reads "Saved to Photos", disabled,
+  after either an automatic or manual Photos save. Download progress is drawn INSIDE the
+  media placeholder (`MoonHorizonProgressBar` under the media icon) rather than in a row of
+  its own, and there is no separate spinner — one indicator for one wait. The download row
+  retains a fixed layout slot while its contents change, so completion does not pull the
+  Share/Save controls upward. Its chrome is the extensions' shared chrome: a
+  `GlassConfirmationBadge` header ("Saved to Luna" — the screen used to carry a navigation
+  title hard-coded to "Luna Downloader" in all four apps), Liquid Glass action pills in the
+  host app's own tint (`GlassStyle.actionButtonConfiguration(tint:)`), and the floating
+  `ExtensionExitButton` bottom-right in place of a navigation bar holding one Done.
+  Leaving completes SILENTLY — the host's "Saved" checkmark card used to animate in over a
+  screen the user had just dismissed, re-stating the header it replaced. **Delete and exit** removes a
   Photos asset first when one backs the item, then removes the Downloader and reading-list
   records; a Photos permission failure retains the Luna records. The separate
   `autoDownloadMediaInPreview` setting, also default on, decides whether a genuinely new

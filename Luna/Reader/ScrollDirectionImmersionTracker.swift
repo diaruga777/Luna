@@ -61,6 +61,28 @@ final class ScrollDirectionImmersionTracker {
     /// (A settling scroll can stop a point or two short of the exact maximum.)
     private static let bottomRestoreTolerance: CGFloat = 12
 
+    /// A dead zone may never be more than this much of the whole scroll range.
+    /// The zone above is a fraction of the VIEWPORT measured from the end of the
+    /// CONTENT, so on an article only a little longer than one screen it covers
+    /// the entire scroll range — and then no downward gesture anywhere in the
+    /// article can dismiss the chrome at all. Keeping it proportional to the
+    /// article as well leaves the dismissal reachable on a short one (`0.25`
+    /// leaves the fade-out's own travel clear for any range over ~133pt, below
+    /// which there is barely a card's worth of content to immerse into).
+    private static let bottomDismissalDeadZoneRangeFraction: CGFloat = 0.25
+
+    /// Where the bottom dead zone begins, as a distance from the article's end.
+    /// A long article takes the viewport-proportional zone unchanged; a short one
+    /// is capped by its own length so it keeps a region where reading on still
+    /// dismisses the chrome.
+    static func dismissalDeadZoneStart(
+        viewportHeight: CGFloat, scrollableRange: CGFloat, bottomExtension: CGFloat
+    ) -> CGFloat {
+        let desired = max(
+            bottomExtension, viewportHeight * bottomDismissalDeadZoneViewportFraction)
+        return min(desired, max(0, scrollableRange) * bottomDismissalDeadZoneRangeFraction)
+    }
+
     /// Hooks the immersion triggers onto `root`'s live content (KVO on every
     /// scroll view, play-state callbacks on every RSVP controller). Idempotent
     /// for scroll views (already-observed ones are skipped) — call again
@@ -108,9 +130,10 @@ final class ScrollDirectionImmersionTracker {
                 + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
         let remainingToBottom = max(0, maximumPosition - position)
         let bottomExtension = max(0, immersionBottomExtension?() ?? 0)
-        let dismissalDeadZoneStart = max(
-            bottomExtension,
-            scrollView.bounds.height * Self.bottomDismissalDeadZoneViewportFraction)
+        let dismissalDeadZoneStart = Self.dismissalDeadZoneStart(
+            viewportHeight: scrollView.bounds.height,
+            scrollableRange: maximumPosition,
+            bottomExtension: bottomExtension)
         let reachedArticleEnd = remainingToBottom <= Self.bottomRestoreTolerance
 
         // Position exceptions do not need a directional run. At the top the

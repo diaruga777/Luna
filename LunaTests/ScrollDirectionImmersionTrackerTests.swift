@@ -164,6 +164,50 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertEqual(events.first?.immersed, true)
     }
 
+    // MARK: - A short article keeps somewhere to dismiss from
+
+    /// The dead zone is a fraction of the VIEWPORT measured from the end of the
+    /// CONTENT, so on an article only a little longer than one screen it covered
+    /// the whole scroll range — and then no downward gesture ANYWHERE in the
+    /// article could dismiss the chrome. (What a truncated extraction looks like
+    /// from the reader: every card's chrome stuck on, from the very top.)
+    func testShortArticleStillDismissesChromeOnTheWayDown() {
+        // Maximum position 400 — half the 800pt viewport, so the uncapped dead
+        // zone would start at the article's very first point.
+        scrollView.contentSize = CGSize(width: 400, height: 1_200)
+        drag(to: 0)
+        drag(to: 40)
+        drag(to: 110) // cumulative run 110 >= fadeOutTravel
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.immersed, true)
+    }
+
+    /// Capped, not removed: a short article still owes its last stretch to the
+    /// position-driven bottom restore.
+    func testShortArticleStillKeepsAQuietTailForTheBottomRestore() {
+        scrollView.contentSize = CGSize(width: 400, height: 1_200) // dead zone: last 100pt
+        scrollView.fakeIsDragging = false
+        scrollView.contentOffset = CGPoint(x: 0, y: 290)
+        drag(to: 310) // 90pt remains — inside the capped dead zone
+        drag(to: 360)
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testDeadZoneIsUnchangedOnAnArticleLongEnoughToAffordIt() {
+        XCTAssertEqual(
+            ScrollDirectionImmersionTracker.dismissalDeadZoneStart(
+                viewportHeight: 800, scrollableRange: 3_200, bottomExtension: 100),
+            400, accuracy: 0.001, "half a viewport, as before")
+        XCTAssertEqual(
+            ScrollDirectionImmersionTracker.dismissalDeadZoneStart(
+                viewportHeight: 800, scrollableRange: 400, bottomExtension: 100),
+            100, accuracy: 0.001, "a quarter of a short article, not half a viewport")
+        XCTAssertEqual(
+            ScrollDirectionImmersionTracker.dismissalDeadZoneStart(
+                viewportHeight: 800, scrollableRange: 0, bottomExtension: 100),
+            0, accuracy: 0.001, "an unscrollable article has no tail to protect")
+    }
+
     // MARK: - The re-entrancy guard
 
     func testSyntheticOffsetChangeDuringTheCallbackDoesNotDoubleFire() {

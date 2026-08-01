@@ -88,8 +88,18 @@ Fullscreen, share-extension, and non-carousel readers keep the original inline t
 
 Reader and Downloader carousel cards share the same restrained glass rim: a 1.5pt
 effect ring with a 0.5pt low-contrast highlight. Reader scroll chrome dismisses after
-24pt of downward travel and returns after 10pt upward, enough to ignore tiny jitter
-without making the reader reverse a large part of the page.
+100pt of downward travel and returns after 50pt upward, enough to ignore tiny jitter
+without making the reader reverse a large part of the page. Two positions override the
+directional rule outright (`ScrollDirectionImmersionTracker`): at the very top the
+chrome always returns, and it returns again as the end of the content lands on the
+viewport's bottom edge. Because that bottom restore is about to take ownership, a
+downward gesture near the end must NOT dismiss — the last half-viewport is a dead zone.
+**That zone is capped at a quarter of the whole scroll range**, because it is a
+fraction of the VIEWPORT measured from the end of the CONTENT: on an article only a
+little longer than one screen the uncapped zone covered the entire scroll range, so no
+downward gesture anywhere in the article could dismiss the chrome at all — every card
+read as permanently surfaced. A long article is unaffected (the cap sits far above half
+a viewport). Tests: `ScrollDirectionImmersionTrackerTests`.
 
 Original mode applies the same stable top content inset directly to its WKWebView.
 Archive **capture** enables content JavaScript and waits for the DOM/CSS/font/layout

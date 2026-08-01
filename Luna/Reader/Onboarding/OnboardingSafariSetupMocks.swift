@@ -19,8 +19,10 @@ enum OnboardingExtensionEnableTiming {
     static let sheetDismissDuration: TimeInterval = 0.25
 }
 
-/// The Manage Extensions bottom sheet: the current app's icon and name with
-/// the permission toggle that flips on.
+/// The Manage Extensions bottom sheet: the extension's icon and name with the
+/// permission toggle that flips on. Title and name are the page's too — the mock
+/// page lists this sheet as the step that reaches it, and both read from
+/// `OnboardingSafariExtensionCopy`.
 final class OnboardingManageExtensionsSheetView: UIView {
     private static let cardHeight: CGFloat = 252
 
@@ -52,7 +54,7 @@ final class OnboardingManageExtensionsSheetView: UIView {
         grabber.layer.cornerRadius = 2.5
         card.addSubview(grabber)
 
-        title.text = "Manage Extensions"
+        title.text = OnboardingSafariExtensionCopy.manageExtensionsTitle
         title.font = .systemFont(ofSize: 17, weight: .semibold)
         title.textColor = UIColor(white: 0.08, alpha: 1)
         title.textAlignment = .center
@@ -71,7 +73,7 @@ final class OnboardingManageExtensionsSheetView: UIView {
         appIcon.clipsToBounds = true
         appRow.addSubview(appIcon)
 
-        appName.text = "Luna"
+        appName.text = OnboardingSafariExtensionCopy.extensionName
         appName.font = .systemFont(ofSize: 17)
         appName.textColor = UIColor(white: 0.08, alpha: 1)
         appRow.addSubview(appName)
@@ -176,6 +178,11 @@ final class OnboardingManageExtensionsSheetView: UIView {
 
 /// A pixel-faithful stand-in for UISwitch that can be flipped on cue.
 final class OnboardingMockSwitchView: UIView {
+    /// The light-appearance system green — the app pins dark app-wide, so the
+    /// dynamic color would resolve wrong on Safari's white chrome. Shared with
+    /// the mock page's own picture of this switch.
+    static let onColor = UIColor(red: 0.20, green: 0.78, blue: 0.35, alpha: 1)
+
     private let knob = UIView()
     private(set) var isOn = false
 
@@ -220,10 +227,7 @@ final class OnboardingMockSwitchView: UIView {
             initialSpringVelocity: 0.4,
             options: [.curveEaseOut, .beginFromCurrentState]
         ) {
-            // The light-appearance system green — the app pins dark app-wide,
-            // so the dynamic color would resolve wrong here.
-            self.backgroundColor = UIColor(
-                red: 0.20, green: 0.78, blue: 0.35, alpha: 1)
+            self.backgroundColor = Self.onColor
             self.knob.center = CGPoint(
                 x: self.bounds.width - 15.5,
                 y: self.bounds.midY)

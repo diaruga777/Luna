@@ -6,12 +6,15 @@
 import LunaModels
 import Foundation
 
-/// The ONE copy behind Luna's fictional onboarding article. Three surfaces show
-/// it and they must never drift apart: the native Safari mock
-/// (`OnboardingArticleReplicaView`), the mock action-extension sheet the
-/// shortcut run slides over the Messages conversation
+/// The ONE copy behind Luna's fictional onboarding article — the page a friend
+/// sends in the Messages lesson, which the mock shortcut run then saves. Two
+/// surfaces show it and they must never drift apart: the mock action-extension
+/// sheet the shortcut run slides over the conversation
 /// (`OnboardingActionExtensionSheetView`), and the temporary save the deck
 /// shows the moment onboarding ends (`BundledLunaArticle`).
+///
+/// The Safari lesson's page is NOT this: it is Luna's own page about the
+/// extension (`OnboardingSafariExtensionCopy`).
 ///
 /// The body is a plain list of what the reader actually does, written the way
 /// you'd tell a friend — the article is the demonstration's only chance to say
@@ -22,12 +25,13 @@ enum OnboardingLunaArticleCopy {
 
     static let intro = "What you get, minus the pitch:"
 
-    /// Deliberately one short line each, and deliberately MANY: the Safari
-    /// mock's body must fill its whole page plus a little past the fold (the
-    /// setup card floats OVER the content and the wipe sweeps the full
-    /// height), so the list runs long — every line a real Luna feature.
+    /// Deliberately one short line each, and deliberately MANY: the mock
+    /// action-extension sheet reads as a real article only if the body runs
+    /// past its own fold, so the list runs long — every line a real Luna
+    /// feature. Luna's own prose never says "paywall": the pages ask you to
+    /// subscribe, so the copy calls them subscription walls.
     static let features = [
-        "Ads, popups and paywalls: gone.",
+        "Ads, popups and subscription walls: gone.",
         "Saved offline, ready on any flight.",
         "Speed-read a word at a time.",
         "Read aloud with the screen off.",
@@ -39,7 +43,7 @@ enum OnboardingLunaArticleCopy {
         "Share a save straight to a friend.",
         "Read-aloud rolls into the next piece.",
         "Eye tracking pauses when you glance away.",
-        "Paywalled pages, readable again.",
+        "Walled-off pages, readable again.",
         "PDFs and documents, same reader.",
         "A card deck, not another inbox.",
         "The Action Button saves from anywhere.",

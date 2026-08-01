@@ -8,6 +8,16 @@ import UIKit
 
 final class SafariBottomBar: UIView {
     static let chromeHeight: CGFloat = 58
+    /// The home-area strip beneath the bar's controls.
+    static let homeAreaHeight: CGFloat = 34
+    /// What the bar covers at the bottom of the page it floats over. The bar
+    /// takes this as its own height, and the mock page anchors its content
+    /// above it.
+    static var reservedPageHeight: CGFloat { chromeHeight + homeAreaHeight }
+    /// Safari's page menu, at the leading edge of the address field. The mock
+    /// page's own enable steps draw the same symbol, so the step and the button
+    /// it points at can never diverge.
+    static let pageMenuSymbol = "text.justify.leading"
 
     private let backdrop = UIVisualEffectView(
         effect: UIBlurEffect(style: .systemThinMaterialLight))
@@ -47,7 +57,7 @@ final class SafariBottomBar: UIView {
         nav.translatesAutoresizingMaskIntoConstraints = false
         backForward.contentView.addSubview(nav)
 
-        let page = icon("text.justify.leading", alpha: 0.86)
+        let page = icon(Self.pageMenuSymbol, alpha: 0.86)
         hostLabel.text = "luna.app"
         hostLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         hostLabel.textColor = UIColor(white: 0.10, alpha: 1)

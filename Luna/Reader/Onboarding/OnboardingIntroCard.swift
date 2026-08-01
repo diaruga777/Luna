@@ -516,6 +516,10 @@ final class MoonRevealLineView: UIView {
         numberOfLines: Int = 1,
         minimumScaleFactor: CGFloat = 0.72,
         lineSpacing: CGFloat = 0,
+        /// The line's own ink. Quieter type (a page's byline, a section
+        /// heading) still blooms white under the front — the light comes from
+        /// the glyph alpha, not the colour.
+        textColor: UIColor = .white,
         occluderColor: UIColor = .black,
         sweepsUpward: Bool = false
     ) {
@@ -534,9 +538,13 @@ final class MoonRevealLineView: UIView {
         clippedContent.isUserInteractionEnabled = false
         addSubview(clippedContent)
 
+        finalLabel.textColor = textColor
+        // The emitter stays pure white whatever the ink: the light is the
+        // front's, and quiet type flaring more dimly than the copy beside it
+        // read as a rendering bug rather than a hierarchy.
+        illuminationMaskLabel.textColor = .white
         for label in [finalLabel, illuminationMaskLabel] {
             label.font = font
-            label.textColor = .white
             label.textAlignment = textAlignment
             label.numberOfLines = numberOfLines
             label.lineBreakMode = .byWordWrapping

@@ -127,24 +127,39 @@ The root uses the production `CardCarouselViewController`:
    shared store exactly as the user left it (see "The demonstration is never
    saved" below). The mock save wave's destination snapshot is captured lazily,
    when the wave actually needs it.
-3. The Reader's Safari content is a native, fictional `luna.app` article so its
-   sequence begins after the card finishes expanding rather than during hidden
+3. The Reader's Safari content is a native `luna.app` page (`OnboardingSafariPageView`)
+   so its sequence begins after the card finishes expanding rather than during hidden
    preload. The page loads ALREADY BURIED: four garish ads, the newsletter
    popup, and the subscription wall are all in place from the first frame (no
-   entrance animations), over an article — headline, byline, NASA eclipse
-   banner, and a body that FILLS the page and runs past the fold; the setup
-   card floats over the content and no scroll is ever needed. That body is a
-   **bulleted list of what Luna actually does** (clutter and paywall removal,
-   offline copies, the speed reader, read-aloud, exports, price tracking and
-   the rest) rather than marketing prose — the article is the demonstration's
-   only chance to say what the app is for. The copy lives once
-   in `OnboardingLunaArticleCopy`, and all three surfaces showing this article
-   read from there: this page and the mock action-extension sheet the Messages
-   shortcut run slides up.
-   **One short line per bullet is a layout constraint, not a style choice**: the
-   one-screen budget leaves the body about seven lines, so a bullet long enough
-   to wrap costs two of them and pushes the setup card under the browser chrome
-   (`testLunaArticleLoadsBuriedWithTheCardSharingTheScreen` is the guard).
+   entrance animations). Underneath is **Luna's own page about the Safari
+   extension**, not a fictional article: app icon and headline, a byline naming
+   the running app, one short paragraph of what the extension does for you
+   (clutter and subscription walls come off on their own, it happens on your
+   device, anything you keep saves to Luna in one tap), then **the three steps
+   that switch it on** — each beside a picture of the exact chrome it names: the
+   browser bar's OWN page-menu symbol (`SafariBottomBar.pageMenuSymbol`, shared,
+   so the step and the button below it can never diverge), the puzzle-piece
+   `Manage Extensions` row (title shared with the mock sheet), and the extension's own
+   name beside a switch already flipped on — "Luna" in every host app, because all
+   four embed the same extension bundle and it declares one `extensionName`, so a
+   step naming the running app would send a Reader user hunting for a row Manage
+   Extensions never shows. The copy lives once in
+   `OnboardingSafariExtensionCopy`. **The word "paywall" appears in no Luna
+   prose** — the pages ask you to subscribe, so every surface says subscription
+   wall (`testEveryOnboardingArticleSurfaceShowsTheSameFeatureList` guards it).
+   `OnboardingLunaArticleCopy` is now only the Messages lesson's article (the
+   mock action-extension sheet and the deck's temporary save).
+   **The whole page is ANCHORED TO THE BOTTOM**: the extension's call to action is
+   the page's last content — the Safari button wearing the launch eclipse corona,
+   with the skip beneath it — sitting on `SafariBottomBar.reservedPageHeight`, and
+   everything else stacks upward from there. A taller screen simply starts the page
+   lower (air collects above the header, never as a hole mid-page, so the wave has
+   no dead middle to climb); on a screen too short for all of it the PROSE gives
+   way — it truncates rather than let the actions slide under the browser chrome,
+   which is why the paragraph must stay inside about four rendered lines
+   (`testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse` is the guard, and
+   `testSafariPageIsTheExtensionExplainerAnchoredToItsActions` pins the rest).
+   There is no setup card any more, and no scroll is ever needed.
    The mock page alone uses a dark
    neutral grey that keeps white copy legible. The demonstration then plays a
    mock extension-enable pass through Safari's own UI
@@ -248,20 +263,22 @@ The root uses the production `CardCarouselViewController`:
    analysis, and remember the `-skipNotificationAuthPrompt` DEBUG arg so the
    permission alert doesn't sit over the recording; a 6×
    `-slowOnboardingAnimations` run hides commit-latency bugs entirely).
-   **THE ARTICLE IS THE INTRO'S ANIMATION, ELEMENT BY ELEMENT — a wave that
+   **THE PAGE IS THE INTRO'S ANIMATION, ELEMENT BY ELEMENT — a wave that
    CLIMBS the page.** `computeCascade` gives every element its own intro
    reveal with the moon geometry MIRRORED (`sweepsUpward` on
-   `MoonRevealLineView`/`MoonRevealImageView`; the shared classes default
+   `MoonRevealLineView`/`MoonRevealContentView`; the shared classes default
    to the intro's descending sweep, which stays byte-identical): ONE front
-   enters at the body's bottom edge (the copy deliberately fills the page
-   past the fold) and climbs at `cascadeFrontSpeed` (420pt/s; the bloom's
-   falloff bands stretch with the ratio so every glyph's brighten-and-cool
-   takes exactly the intro's TIME). Every element's reveal sets out exactly
-   when the front reaches its OWN bottom edge — body, then eclipse image,
-   byline, and the icon+headline last — so the title and header image only
-   ever reappear behind the wave, never ahead of it (the old
-   `cascadeOverlap` row stagger let them ignite while the front was still
-   mid-body). There is no marker on any edge — no rim, no line, only the
+   enters at the BOTTOM-MOST element's own bottom edge — the actions block,
+   anchored to the page's bottom — and climbs at `cascadeFrontSpeed`
+   (420pt/s; the bloom's falloff bands stretch with the ratio so every
+   glyph's brighten-and-cool takes exactly the intro's TIME). Every
+   element's reveal sets out exactly when the front reaches its OWN bottom
+   edge — actions, the three steps, the steps heading, the prose, the
+   byline, the icon+headline last — so nothing ever reappears ahead of the
+   wave (the old `cascadeOverlap` row stagger let the headline ignite while
+   the front was still mid-body). The element order is SORTED by `maxY`
+   rather than hand-listed, so a layout change cannot send the wave down
+   the page. There is no marker on any edge — no rim, no line, only the
    light. Each obstruction tile (~11pt grains, with a 0–33ms trailing-only
    scatter) detaches at the instant the climbing light beneath its center
    arrives — `FrontLeg`s map page-y to arrival time, and a running maximum
@@ -269,40 +286,40 @@ The root uses the production `CardCarouselViewController`:
    batched into one dispatch turn per frame-width of delay. The content
    reveals (and their light) trail that shatter front by `contentBloomLag`
    (0.14s) so the tiles flying just above a stretch of content clear before
-   its bloom comes up underneath them. **The setup card takes no part in
-   the wave**: it floats over the page content (there is no card slot below
-   the body any more), and once the wave finishes it materialises
-   top-to-bottom — a mask geometrically excludes its unrevealed part so the
-   page shows through, and an empty prober layer rides the same translation
-   to drive the light. The card's light is NOT the content bloom: its
-   emitter is a solid white rounded rect of the card's silhouette
-   (`solidHorizonEmitter`), so a uniform bright horizon arc rides the
-   backside of the black wavefront regardless of the (mostly black) card
-   pixels being revealed — only the halo stylization is shared. The corona
-   fades in only once the card is whole (fading it alongside outlined the
-   card's silhouette before the surface existed). The Manage Extensions
-   sheet's own choreography is brisk: present 0.3s, toggle after 0.3s,
-   dismiss 0.25s. The images ride the same light pass:
-   `MoonRevealImageView` feeds its own `GlyphPixelBloomView` a raster of
-   the image as displayed whose alpha is rebuilt from LUMINANCE — Quartz
+   its bloom comes up underneath them. **The actions ride the wave like
+   everything else**: `MoonRevealContentView` is the picture reveal
+   generalised to LIVE content, so the block of real buttons is crossed by
+   the same edge with the same luminance-keyed light, and the clutter
+   container sits ABOVE the whole page (actions included) so no element's
+   page-coloured occluder can paint over a white popup mid-wave. The
+   Manage Extensions sheet's own choreography is brisk: present 0.3s,
+   toggle after 0.3s, dismiss 0.25s. Pictures ride the same light pass:
+   `MoonRevealContentView` feeds its own `GlyphPixelBloomView` a raster of
+   its content as displayed whose alpha is rebuilt from LUMINANCE — Quartz
    shadows key off alpha, and an opaque photograph's black sky would
    otherwise cast alpha-shaped glow (note the masking rule: a grayscale
    masking image KEEPS samples where it is white, the opposite of true
    image masks) — with that luminance clamped from below at
-   `imageLuminanceFloor` (0.55, inside the photo's own alpha so corner-mask
-   regions stay dark): even the image's dark pixels bloom under the front,
-   just less brightly than the NASA moons or the glyph strokes. Gains:
-   the article's text lines are amplified to `textBloomGain` (1.6 — at the
+   `imageLuminanceFloor` (0.55, inside the content's own alpha so
+   corner-mask regions stay dark): even dark pixels bloom under the front,
+   just less brightly than the glyph strokes. Gains:
+   the page's text lines are amplified to `textBloomGain` (1.6 — at the
    wave's speed the intro reference gain of 1 read as too soft; gains above
    1 push the falloff bands and outer halos toward full strength, each pass
-   clamping at 1), images ride `imageBloomGain` (1.0), the card horizon the
-   text gain; the intro card's own lines keep the reference look. There is
-   no scroll and the browser bar never moves. The card's two buttons are
-   INERT until that sweep finishes: the clutter burying the card is
-   non-interactive, so a tap at the card's position would otherwise reach a
-   button nobody can see — and during the opening app-switcher hop it would
-   drop the setup leg (`skipSafariSetupAndContinue` bails while a hop is in
-   flight).
+   clamping at 1) and pictures ride `imageBloomGain` (1.0); the intro
+   card's own lines keep the reference look. Quiet type (byline, steps
+   heading) takes its own colour while its bloom EMITTER stays pure white —
+   quiet copy flaring dimly read as a rendering bug, not a hierarchy. There
+   is no scroll and the browser bar never moves. **The eclipse corona is
+   the Safari BUTTON's**, taking its exact capsule geometry and lighting up
+   only once the whole page is clean — bringing it up mid-wave put a lamp
+   behind the one element the light had already left, and the skip's 20pt
+   of air below the button is what keeps the halo off its label. The two
+   actions are INERT until that sweep finishes: the clutter burying them is
+   non-interactive, and a layer mask does not stop hit-testing, so a tap at
+   their position would otherwise reach a button nobody can see — and
+   during the opening app-switcher hop it would drop the setup leg
+   (`skipSafariSetupAndContinue` bails while a hop is in flight).
    Only after the cleanup finishes does onboarding start the
    Safari PiP guide and open real Safari. If the extension has not run, return
    restores the in-page prompt for another attempt. Choosing “Skip for now” or

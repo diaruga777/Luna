@@ -6,13 +6,13 @@
 import LunaModels
 
 enum OnboardingDemoPage: CaseIterable, Equatable {
-    case lunaArticle
+    case lunaPage
     case instaTok
     case amayzon
 
     var resourceName: String? {
         switch self {
-        case .lunaArticle: return nil
+        case .lunaPage: return nil
         case .instaTok: return "InstaTok"
         case .amayzon: return "Amayzon"
         }
@@ -20,7 +20,7 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
 
     var displayedHost: String {
         switch self {
-        case .lunaArticle: return "luna.app"
+        case .lunaPage: return "luna.app"
         case .instaTok: return "instatok.local"
         case .amayzon: return "amayzon.local"
         }
@@ -30,7 +30,7 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
     /// latest incoming Messages bubble during the onboarding loop.
     var sharedURLString: String {
         switch self {
-        case .lunaArticle: return "https://luna.app/about"
+        case .lunaPage: return "https://luna.app/about"
         case .instaTok: return "https://instatok.local/@moonwatch/lunar-eclipse"
         case .amayzon: return "https://amayzon.local/eyephone-air"
         }
@@ -75,7 +75,7 @@ struct OnboardingSurfaceConfiguration {
                 supportingText:
                     "Save onscreen links with one click.\nUnlock or read offline later.",
                 saveBenefit: "Read offline later",
-                demoPages: [.lunaArticle],
+                demoPages: [.lunaPage],
                 seedTitle: "Save anything in Safari",
                 seedSymbol: "safari.fill")
         case .downloader:

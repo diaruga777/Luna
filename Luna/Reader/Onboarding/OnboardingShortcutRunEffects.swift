@@ -435,7 +435,7 @@ final class OnboardingActionExtensionSheetView: UIView {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 5
         bodyLabel.attributedText = NSAttributedString(
-            string: OnboardingArticleReplicaView.fullArticleText,
+            string: OnboardingLunaArticleCopy.plainText,
             attributes: [
                 .font: UIFont.systemFont(ofSize: 17),
                 .foregroundColor: UIColor.white.withAlphaComponent(0.92),

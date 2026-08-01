@@ -719,6 +719,10 @@ public final class SavedNonTextualViewController: UIViewController {
         config.attributedTitle = Self.photosTitle(savedToPhotos: savedToPhotos)
         saveButton.configuration = config
         saveButton.isEnabled = !savedToPhotos
+        // The title carries an image attachment in place of a word, so spell the
+        // label out rather than letting VoiceOver read around the glyph.
+        saveButton.accessibilityLabel = savedToPhotos
+            ? L10n.string("Saved to Photos") : L10n.string("Save to Photos")
     }
 
     /// "Save to 🌸 Photos" — the Photos mark placed inline, at the position the

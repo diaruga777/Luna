@@ -1261,6 +1261,9 @@
     "Save threshold" : {
 
     },
+    "Save to %@ Photos" : {
+
+    },
     "Save to Luna with your Action Button" : {
 
     },
@@ -1274,6 +1277,9 @@
 
     },
     "Saved Downloader links appear here after Luna downloads the media." : {
+
+    },
+    "Saved to %@ Photos" : {
 
     },
     "Saved to Luna" : {

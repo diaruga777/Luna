@@ -351,6 +351,32 @@ app-switcher steps become plain fades. The two saves reuse one Core Image
 context,
 avoiding device-context and shader-cache setup between Safari and Messages.
 
+## Wide screens (iPad)
+
+Onboarding roots on the production `CardCarouselViewController`, so its intro card
+comes out half-width and centered on a wide screen for free (see
+`claudedocs/card-carousel.md`), and the reconstructed intro corona follows the
+resting card frame with it.
+
+The full-screen demonstrations do not get that for free, so each keeps a column of
+its own:
+
+- The fake publisher's article (`OnboardingArticleReplicaView`) uses
+  `LunaLayout.readableWidth`, the same column the real reader does — 17pt body copy
+  run across an iPad is not what any publisher's page looks like, and the setup card
+  that floats over it would stop being a card. The ad clutter is deliberately left
+  full-bleed, because that is what ads do.
+- The Messages thread (`conversationStack`) keeps **phone** width and centers: it is
+  a replica of a phone conversation, and two bubbles pinned to opposite edges a
+  thousand points apart stop reading as one. Its header and composer bars stay full
+  width, as they would in any single-pane iPad app.
+- `DemoInstructionOverlay` and the mock Manage Extensions sheet cap and center, so
+  one 26pt sentence over two buttons doesn't read as a title bar over two banners.
+
+The app-switcher hop (`OnboardingAppSwitcherView`) is deliberately untouched: it
+snapshots full-screen views into full-screen cards, which is exactly what the
+switcher it imitates does on an iPad too.
+
 ## The demonstration is never saved
 
 The mock article, video and tracker are shown, not stored. Every surface that

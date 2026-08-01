@@ -5,6 +5,16 @@ and finished by `SettingsViewController`.
 
 ## Shared navigation
 
+- Every settings screen is a `NavHeaderTableController`, and on a wide container
+  that base holds the rows in a readable column
+  (`LunaLayout.contentHorizontalInset`) instead of stretching a toggle a thousand
+  points from its label. `.insetGrouped` derives each section's inset from the
+  table's own layout margins, so widening those narrows the whole column —
+  backgrounds, separators and content together. The safe-area contribution is
+  switched off first, or a landscape iPad's own insets would be added on top and
+  the column would drift off centre. The header BAR is deliberately not inset:
+  bar buttons belong at the screen's edges, which is where every iPad navigation
+  bar puts them.
 - Diagnostics has no visible row. Five taps in blank space on the top-level
   Settings table pushes `DiagnosticsViewController`; taps on rows and controls
   do not count.

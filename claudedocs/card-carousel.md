@@ -21,6 +21,12 @@ surface-agnostic** and lives in `LunaLibraries/Sources/LunaDesignSystem/CardCaro
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
   (unit-tested in `CardCarouselMetricsTests`).
+- **On a wide container the card is capped at half the width minus padding**
+  (`LunaLayout.cardWidthCap`; see "Wide containers" below). The subtracted inset
+  is `wideEdgePadding + columnGap / 2`, so TWO capped cards plus the gap between
+  them span exactly the container minus one padding each side — which is what
+  lets the side-by-side inline reader reuse one card width for both columns
+  instead of resizing the card it slides aside.
 - All three roots have no header bar. The Downloader scrub strip is bounded between
   the inner edges of the 44pt Liquid Glass Settings and Share circles (64pt
   horizontal inset), with no edge blur that could show as a band on black.
@@ -38,6 +44,44 @@ surface-agnostic** and lives in `LunaLibraries/Sources/LunaDesignSystem/CardCaro
   glass) pinned bottom-trailing. Nothing floats above this bottom chrome:
   download progress is drawn inside the downloading item's own card (see
   "Store plumbing" below).
+
+## Wide containers (iPad)
+
+`LunaLayout` (LunaDesignSystem) is the ONE answer to "is there more room here",
+asked as pure geometry over a container **width** rather than the device idiom —
+an iPad in half-screen Split View and an iPhone are the same layout problem, and a
+13" iPad in landscape is a different one from the same device in portrait. The
+threshold is 700pt: above every iPhone (widest 440), below every iPad in portrait
+(narrowest 744). Unit-tested through `CardCarouselMetricsTests`' wide cases.
+
+Consequences for the deck:
+
+- The card is capped at half the width minus padding, for **every** `CardFit`.
+- That cap makes an `.aspectFromBottom` card SHORTER than the room instead of
+  taller, so the overflow-upward branch has nothing to do and would strand the
+  card under a band of dead space. It grows into the room and centers instead,
+  bounded at `LunaLayout.tallestCardAspectRatio` (1:2) so it never becomes a
+  sliver. `.aspectCentered` (media) is deliberately excluded — its content IS
+  9:16, and a taller frame would only letterbox it.
+- Everything pinned to the screen edges came loose from the card, so it follows
+  the card's column instead: the scrub strip
+  (`CardCarouselViewController.alignScrubberToCardColumn`, keeping the exact
+  clearance it has on a phone) and the flanking Settings/Share circles
+  (`CardCarouselHostViewController.alignBottomControlsToCardColumn`, each edge
+  resolved independently so a deck stepped aside for a second column doesn't
+  leave the trailing circle floating in the gap). Phone-shaped containers are
+  left literally unchanged.
+- The two edge drawers were fractions of the screen — two thirds of a 13" iPad is
+  911pt of archive arc for its 128pt cells. The fraction is kept and then capped
+  (`LunaLayout.drawerWidth`), and the deck cedes exactly the width the drawer
+  takes rather than two thirds regardless.
+- `setColumnAside(shift:animated:)` steps the whole deck sideways to make room for
+  a second card (the side-by-side reader, `claudedocs/readers.md`). It is NOT
+  immersion: the card keeps its chrome, its rim, its resting geometry and every
+  touch — only its peeking neighbours leave, because they would sit underneath the
+  new column, and paging/scrubbing are off while paired. Because
+  `restingCenteredCardFrame` reports the shifted frame, host chrome anchored to
+  the card travels with it for free.
 
 ## Interaction model
 

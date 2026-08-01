@@ -132,6 +132,26 @@ stable Xcode 26.2.
 > collection (as `PriceGraphEmailSnapshot` does). The one deliberate hold-out is the Live
 > Activity widget, which keeps system semantics and so still goes light with the OS.
 
+> **iPad: one answer to "is there more room here", and it is a WIDTH.** Every app ships
+> to iPhone and iPad from these same sources (`TARGETED_DEVICE_FAMILY = "1,2"`; iPhone is
+> portrait-only, iPad takes all four orientations), so `LunaLayout` (LunaDesignSystem) is
+> the single place that decides — as pure geometry over a container width, **never
+> `UIUserInterfaceIdiom` or a size class**. An iPad in half-screen Split View and an
+> iPhone are the same layout problem; a 13" iPad in landscape is a different one from the
+> same device in portrait. The threshold is 700pt: above every iPhone (widest 440), below
+> every iPad in portrait (narrowest 744). Three consequences worth knowing before touching
+> layout: **(1)** a carousel card is capped at half the container minus padding, and the
+> inset is `wideEdgePadding + columnGap / 2` precisely so two capped cards plus their gap
+> span the container minus one padding each side — so the side-by-side reader reuses ONE
+> card width for both columns (`claudedocs/card-carousel.md`). **(2)** On a wide screen a
+> nested reader is a second CARD beside the first, not a tab over it, installed as a CHILD
+> rather than a modal — a presentation container swallows every touch outside the presented
+> frame, which is exactly the touches the card next door needs (`claudedocs/readers.md`).
+> **(3)** Everything else that was a full-width band keeps a readable column instead
+> (`LunaLayout.readableWidth`); the decks' own chrome follows the CARD's column rather than
+> the screen edges. Phone-shaped containers are left byte-identical throughout, which is why
+> the existing snapshot references still hold.
+
 ## Agent workflow
 
 - Always commit completed work in small, logical chunks as you go — don't wait for

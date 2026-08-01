@@ -19,6 +19,16 @@ TWO reading modes for extracted articles, with read-aloud, nested inline readers
 
 **Position carry-over across mode switches** (`ReaderPositionTracking` protocol, `ReaderProviders.swift`): before tearing the outgoing child down, the host reads its `currentReadingWordIndex` and passes it as `resumeWordIndex` to the next child. Scroll plain-mode's reported index is **gated so opening/closing alone never moves the carried position** — the bug was recomputing `firstFullyVisibleWordIndex` on every switch, which drifted the index even when the user did nothing. The decision is a PURE, unit-tested function (`ReaderResumePositionResolver.reportedWordIndex(resumeIndex:scrolledPastThreshold:firstFullyVisibleIndex:)`, `ReaderKit/ReaderResumePositionResolver.swift`): the scroll reader records the content offset at open and reports the freshly-computed first FULLY-visible word (`firstFullyVisibleWordIndex` — first line not clipped by the top edge) ONLY if the user scrolled past a threshold (`scrolledPastThresholdPoints = 44pt` from the open offset); else it returns the incoming `resumeWordIndex` UNCHANGED (a no-op). (Active read-aloud / chunk playback still reports the live playback word. A FRESH open with no carried index — straight from the list — has no position to protect, so it reports the first-visible word so the first switch resumes correctly.) Entering scroll mode scrolls the carried word to 25% from the top (`scrollWord(_:toFractionFromTop:)`, clamped, no overscroll). Highlight/audio start playback at the word (follow-scroll centers it). RSVP reports/accepts its `currentIndex`. First open (no switch) keeps the persisted defaults (lastScrollOffset / lastWordIndex). Tests: `ReaderResumePositionResolverTests`.
 
+**Both readers keep a column on a wide screen.** The scroll reader caps its prose
+at `LunaLayout.readableWidth` (680pt), centered. RSVP needed more than a cap: its
+focal column was a fraction of the VIEW, so on an iPad it flung the fixation point
+a third of a metre from where the eye was resting, and the surrounding prose spread
+past what one fixation can take in — which is the entire premise of the mode.
+Everything in RSVP now lays out inside one centered `contentColumn` (capped at
+600pt): the focal/ORP column, the phrase panel, the context labels, and the link
+pill. Inside a carousel card neither cap ever binds, because the card is already
+narrower than both.
+
 **Audio session (PiP-safe)**: the silent speed readers NEVER instantiate a speech synthesizer or touch `AVAudioSession` (instantiating `AVSpeechSynthesizer` can interrupt Picture-in-Picture). RSVP's synthesizer is `lazy` (read-aloud only); `.playback` is activated only when read-aloud actually plays, and deactivated with `.notifyOthersOnDeactivation` on pause/exit (in both RSVP and `SpeechController`) so other audio/PiP RESUMES.
 
 - **Scroll**: plain scrolling text (audio off) or read-aloud word-follow (audio on).
@@ -150,6 +160,47 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   navigation push. `InlineReaderPageViewController` keeps the existing cached article
   probe, themed-web fallback, and reader-mode switching, and now reports extracted or
   WebKit titles for tab updates.
+- **On a wide screen a nested reader is a second CARD, not a tab.**
+  `InlineReaderPlacement` decides, and every reader that can activate a link routes
+  through one `InlineReaderOpener` — three copies of that decision is how a
+  phone-only behaviour survives onto an iPad. `.overlay` is everything below, and
+  is unchanged. `.column` (offered by a host with room for two columns; on the
+  deck, `ArticleCardsViewController.hasRoomForColumn`) slides the outer card into
+  the left column — restoring its card chrome and resting footprint rather than
+  leaving it immersed — and pops the linked page as its own card on the right,
+  where its nested layers keep stacking. The left card keeps every touch: scroll
+  it, and a link tapped in it joins the RIGHT card's stack
+  (`inlineReaderPushIntoOpenColumn`) instead of opening a third card. Closing the
+  right card returns the left one to center.
+  - A column is a **child** of its host, not a modal. A presentation container is
+    a full-screen view that swallows every touch outside the presented frame —
+    exactly the touches the card next door needs. `InlineReaderEclipseScene`
+    already ran against any container, so the same eclipse plays either way
+    (`animateColumnAppearance` / `animateColumnDismissal`).
+  - Both columns are the same card: the left one is MOVED, never resized, so the
+    right column is derived from it by one offset. That is what the half-width cap
+    in `claudedocs/card-carousel.md` is for.
+  - A column carries its OWN controls — one floating glass bar inside its card's
+    bottom edge with close, the mode switcher, read-aloud and share. The deck's
+    screen-level pill row belongs to the card next door, which is still being
+    read, and read-aloud in particular has to be reachable on both cards for the
+    exclusivity rule below to mean anything. The bar sits at the BOTTOM because
+    the top of a reader is where the first line is.
+  - **Two columns, one moving word** (`ReaderPlaybackArbiter`). Read-aloud was
+    already exclusive — every in-app voice goes through the single
+    `AudioPlaybackCenter`, which plays one item at a time. The silent speed
+    reader's word timer is per-instance, so paired columns would both march, and a
+    silent column would keep marching while the other was spoken. RSVP claims on
+    both of its play paths, the scroll reader on both of its read-aloud paths, and
+    the holder is asked to stop whichever engine it is actually running. It only
+    ENFORCES while paired (`isPaired`, set by the deck): Luna deliberately keeps
+    read-aloud going when you navigate away, so an unconditional rule would
+    silence a backgrounded article the moment you opened another card.
+  - While paired, the deck refuses to immerse, page or scrub, and both trays
+    refuse to open — a paired layout IS the surfaced state. A rotation that leaves
+    the screen too narrow for two columns closes the column rather than stranding
+    it half off screen. Covered by `InlineReaderColumnTests` and
+    `ReaderPlaybackArbiterTests`.
 - The inline surface has no Close, Save, or duplicate mode control. Its only local
   chrome is the ancestor-tab strip outside and above the reader card, inset on both
   sides by the card's 22pt corner radius. Each system-background tab (white in light,

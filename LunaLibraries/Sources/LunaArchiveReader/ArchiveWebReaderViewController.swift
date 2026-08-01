@@ -688,21 +688,11 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         return stage == "content-root" && didLeaveHomepage ? .attemptExtract : .wait
     }
 
-    /// A WKWebView pre-stage page: the page is the (hopefully un-paywalled) article
-    /// itself (no archive, no CAPTCHA), so just poll its text + try extracting. Two
-    /// ways to leave the current pre-stage early instead of stalling:
-    /// - a "please enable JavaScript" gate: detected on a SHORT body so a real
-    ///   article that merely mentions JavaScript can't trip it → advance immediately.
-    /// - otherwise, `bypassPollLimit` ticks without a readable extraction (the trick
-    ///   stopped working / a paywall is still up / the service didn't render) →
-    ///   advance to the next pre-stage, or fall back to archive.today when exhausted.
-    private func checkDirectBypassStage() {
-        // The pre-stage uses semantic extraction as its readiness test too: a long
-        // status page must not become an article merely because it has verbose text.
-        // It ALSO detects a bot/verification CAPTCHA on the original site (DataDome,
-        // reCAPTCHA, Cloudflare, hCaptcha) so the overlay can be lifted for the user
-        // to solve it — the same courtesy the archive.today flow gives.
-        let probe = """
+    /// The direct-unlock pre-stage readiness probe, exposed so its behaviour is
+    /// testable without a live page: returns `'content-root'` when the article has
+    /// rendered, `'challenge'` when an access CAPTCHA is blocking it, else the
+    /// page's text (which the caller polls).
+    public static let directBypassStageProbeJavaScript = """
         (function () {
             // CONTENT FIRST: if the article body already rendered, the page ISN'T gated —
             // extract it, even when a reCAPTCHA/consent iframe is ALSO on the page. A
@@ -710,7 +700,29 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             // slots (dianomi/Google) that embed `recaptcha` iframes; the old challenge-
             // first order mistook those AD reCAPTCHAs for an access gate, revealed the
             // page, and paused forever without ever extracting the visible article.
-            if (document.querySelector('article, [itemprop=articleBody], main article, [class*=article-body], #CONTENT')) {
+            // A container merely EXISTING is not readiness. WSJ wraps TEASER CARDS in
+            // their own <article> (the same shape that made node-isolated extraction
+            // pick a tiny node — see `extractAndSave`), so on a page whose real body
+            // has not hydrated yet the first match is a headline and a line of
+            // standfirst. Declaring that ready let the whole-document extraction run
+            // against teaser prose + page furniture, which can still clear the
+            // readable gate — a SHORT article saved over the real one, with no retry
+            // and no archive fallback, because the flow believed it had succeeded.
+            //
+            // So: scan EVERY match (not just the first) and require one that actually
+            // holds an article's worth of text. The bar is the extractor's own
+            // threshold, so the probe can't call a page ready that extraction would
+            // then reject. A page that never gets there keeps polling and falls
+            // through to the next pre-stage / archive.today, which is the outcome a
+            // thin teaser deserves.
+            var roots = document.querySelectorAll(
+                'article, [itemprop=articleBody], main article, [class*=article-body], #CONTENT');
+            var richest = 0;
+            for (var r = 0; r < roots.length; r++) {
+                var rootLen = (roots[r].innerText || '').length;
+                if (rootLen > richest) { richest = rootLen; }
+            }
+            if (richest >= \(ArticleContent.readableBodyThreshold)) {
                 return 'content-root';
             }
             var t = document.body ? document.body.innerText : '';
@@ -737,6 +749,22 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             return t;
         })()
         """
+
+    /// A WKWebView pre-stage page: the page is the (hopefully un-paywalled) article
+    /// itself (no archive, no CAPTCHA), so just poll its text + try extracting. Two
+    /// ways to leave the current pre-stage early instead of stalling:
+    /// - a "please enable JavaScript" gate: detected on a SHORT body so a real
+    ///   article that merely mentions JavaScript can't trip it → advance immediately.
+    /// - otherwise, `bypassPollLimit` ticks without a readable extraction (the trick
+    ///   stopped working / a paywall is still up / the service didn't render) →
+    ///   advance to the next pre-stage, or fall back to archive.today when exhausted.
+    private func checkDirectBypassStage() {
+        // The pre-stage uses semantic extraction as its readiness test too: a long
+        // status page must not become an article merely because it has verbose text.
+        // It ALSO detects a bot/verification CAPTCHA on the original site (DataDome,
+        // reCAPTCHA, Cloudflare, hCaptcha) so the overlay can be lifted for the user
+        // to solve it — the same courtesy the archive.today flow gives.
+        let probe = Self.directBypassStageProbeJavaScript
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
             guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting else { return }
             let text = (result as? String) ?? ""
@@ -895,7 +923,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         })()
         """ : """
         (function () {
-            var root = document.querySelector('article, [itemprop="articleBody"], main article, [class*="article-body"], #CONTENT');
+            // The RICHEST match, not the first: a snapshot of a publisher that wraps
+            // teaser cards in their own <article> (WSJ) otherwise isolates that tiny
+            // node and the real article is never recognized. Still isolation, so
+            // archive.today's own page chrome stays walled off.
+            var roots = document.querySelectorAll('article, [itemprop="articleBody"], main article, [class*="article-body"], #CONTENT');
+            var root = null, best = -1;
+            for (var i = 0; i < roots.length; i++) {
+                var len = (roots[i].innerText || '').length;
+                if (len > best) { best = len; root = roots[i]; }
+            }
             if (!root) { return null; }
             return '<html><head><title>' + document.title + '</title></head><body>' + root.outerHTML + '</body></html>';
         })()

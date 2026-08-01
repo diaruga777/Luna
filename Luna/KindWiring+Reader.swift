@@ -69,6 +69,23 @@ enum KindWiring {
             AudioPlaybackCenter.shared.play(item: item, content: content)
         }
 
+        // The Action Button double save (claudedocs/double-save.md): its
+        // "Open …" actions return an article file, and its Kindle action needs
+        // the account/Kindle setup screens. Both are article-only, so both are
+        // installed here — matching `ActionButtonIntentSupport.doubleSaveSurface`,
+        // which arms double save in exactly the apps that link LunaSend.
+        ActionButtonIntentSupport.articleExporter = { item, format in
+            try? ArticleExportService().write(format, for: item)
+        }
+        DoubleSaveSettingsSupport.kindleSetupLauncher = { presenter in
+            guard EmailAccountStore.shared.isConfigured else {
+                EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+                return
+            }
+            presenter.navigationController?.pushViewController(
+                KindleSettingsScreen(), animated: true)
+        }
+
         // Voice status and installation now live on the Audio settings page.
         VoiceFirstRunPrompt.openVoiceSettings = { presenter in
             let audio = AudioSettingsScreen()

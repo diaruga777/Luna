@@ -12,6 +12,7 @@ import LunaIntents
 import LunaModels
 import LunaStorage
 import Foundation
+import UniformTypeIdentifiers
 
 /// First step of the Action Button capture flow. Pass the current app (from
 /// Get Current App); the intent decides what the Shortcut should do next and
@@ -184,10 +185,18 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             timeout: captureSaveTimeout)
 
         let savedURLString: String
+        // A double save whose action is an "Open …" format: the article file IS
+        // this run's media, so it replaces the media download below (an article
+        // has none anyway).
+        var exportedFile: IntentFile?
         switch outcome {
         case let .friendPromptRequested(savedURL):
             try? await requestToContinueInForeground()
             savedURLString = savedURL
+        case let .exportRequested(item, format):
+            savedURLString = item.urlString
+            exportedFile = await ActionButtonIntentSupport.exportFile(
+                for: item, format: format)
         case let .completed(savedURL):
             // Nil means only that the save race expired. The ingest task
             // continues, exactly as it does for a Safari-extension URL.
@@ -197,6 +206,11 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 message: IntentIngestHelper.unsupportedDialogText(owner: owner))
         case let .saveFailed(failure):
             throw ProvideContextError(saveFailure: failure)
+        }
+
+        if let exportedFile {
+            reporter.enter(.finishing)
+            return ProvideContextResultEntity(outcome: .done, media: exportedFile)
         }
 
         reporter.enter(.downloading)
@@ -241,11 +255,34 @@ enum ActionButtonIntentSupport {
         return try await mediaHandoff(urlString, foreground)
     }
 
-    /// The double-save action (send to Kindle / friend on a repeat press within
-    /// 7 s) is armed only for the Reader app's Action Button saves — every other
-    /// surface and save path keeps the plain save behavior.
+    /// Article-file export for a double save whose configured action is one of
+    /// the "Open …" formats. Installed by the two `KindWiring` variants that
+    /// link LunaSend (Luna + Reader); nil elsewhere, matching
+    /// `doubleSaveSurface`. Returns the temp file's URL.
+    static var articleExporter: ((ReadingListItem, ArticleExportFormat) async -> URL?)?
+
+    /// Builds the double save's article file and wraps it as the intent's
+    /// returned media. Nil when the seam isn't installed or the article has no
+    /// content to export — a double save must never fail the save that
+    /// preceded it.
+    static func exportFile(
+        for item: ReadingListItem, format: ArticleExportFormat
+    ) async -> IntentFile? {
+        guard let fileURL = await articleExporter?(item, format) else { return nil }
+        return IntentFile(
+            fileURL: fileURL,
+            filename: fileURL.lastPathComponent,
+            type: UTType(filenameExtension: fileURL.pathExtension) ?? .data)
+    }
+
+    /// The double-save action (Settings → Shortcut & Safari) is armed only for
+    /// the Action Button saves of the two apps that hold articles AND can build
+    /// article files — the central Luna app and Reader. Every other surface and
+    /// save path keeps the plain save behavior.
     static var doubleSaveSurface: String? {
-        guard LunaApp.current == .reader else { return nil }
-        return LunaApp.current.storageIdentifier
+        switch LunaApp.current {
+        case .luna, .reader: return LunaApp.current.storageIdentifier
+        case .downloader, .priceTracker: return nil
+        }
     }
 }

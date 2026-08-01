@@ -120,6 +120,8 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             return saved
         case let .friendPromptRequested(saved):
             return saved
+        case let .exportRequested(item, _):
+            return item.urlString
         case let .unsupportedKind(owner):
             // Foreign-kind save: the item was discarded — the dialog carries
             // the generic unsupported-kind explanation.
@@ -128,6 +130,18 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         case let .saveFailed(failure):
             throw SaveError(saveFailure: failure)
         }
+    }
+
+    /// The article file a double save whose configured action is one of the
+    /// "Open …" formats should return. Nil for every other outcome, and for an
+    /// article with nothing to export — a double save must never fail the save
+    /// that preceded it. When non-nil it IS this run's media, replacing the
+    /// media download (an article has none).
+    private static func exportedFile(
+        from outcome: IntentIngestHelper.ActionButtonSaveOutcome
+    ) async -> IntentFile? {
+        guard case let .exportRequested(item, format) = outcome else { return nil }
+        return await ActionButtonIntentSupport.exportFile(for: item, format: format)
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<SaveResultEntity> & ProvidesDialog {
@@ -178,6 +192,10 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             // re-running a save whose item is gone or failed is a failure too.
             _ = try self.savedURLString(from: outcome)
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+            if let exported = await Self.exportedFile(from: outcome) {
+                reporter.enter(.finishing)
+                return (SaveResultEntity(media: exported), "Done.")
+            }
             reporter.enter(.downloading)
             let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: savedURLString
@@ -246,6 +264,10 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         let savedURLString = try self.savedURLString(from: outcome)
         if let savedURLString {
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+        }
+        if let exported = await Self.exportedFile(from: outcome) {
+            reporter.enter(.finishing)
+            return (SaveResultEntity(media: exported), "Saved to Luna.")
         }
         // Use the platform finder's resolved URL even when duplicate/double-save
         // handling times out and reports no saved URL. Download handoff is an

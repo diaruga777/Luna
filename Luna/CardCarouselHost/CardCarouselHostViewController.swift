@@ -121,6 +121,10 @@ class CardCarouselHostViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // The carousel resolves its card metrics in its own pass, which runs
+        // after this one, so settle it before reading the card column back.
+        carousel.view.layoutIfNeeded()
+        alignBottomControlsToCardColumn()
         archiveTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
         leftTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
     }
@@ -144,24 +148,56 @@ class CardCarouselHostViewController: UIViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    private var bottomControlLeadingConstraint: NSLayoutConstraint?
+    private var bottomControlTrailingConstraint: NSLayoutConstraint?
+
     /// Pins two already-`configureBottomButton`-ed buttons to the bottom
     /// corners, flanking the scrub strip: 12pt from each side edge, 26pt above
     /// the safe area, 44×44.
+    ///
+    /// On a wide container the pair follows the card's column instead of the
+    /// screen's (see `alignBottomControlsToCardColumn`) — the deck reads as one
+    /// object, and two circles a thousand points apart do not.
     final func mountBottomControls(leading: UIButton, trailing: UIButton) {
         view.addSubview(leading)
         view.addSubview(trailing)
+        let leadingConstraint = leading.leadingAnchor.constraint(
+            equalTo: view.leadingAnchor, constant: 12)
+        let trailingConstraint = trailing.trailingAnchor.constraint(
+            equalTo: view.trailingAnchor, constant: -12)
+        bottomControlLeadingConstraint = leadingConstraint
+        bottomControlTrailingConstraint = trailingConstraint
         NSLayoutConstraint.activate([
-            leading.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            leadingConstraint,
             leading.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
             leading.widthAnchor.constraint(equalToConstant: 44),
             leading.heightAnchor.constraint(equalToConstant: 44),
-            trailing.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            trailingConstraint,
             trailing.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
             trailing.widthAnchor.constraint(equalToConstant: 44),
             trailing.heightAnchor.constraint(equalToConstant: 44),
         ])
+    }
+
+    /// Keeps the flanking circles just outside the centered card's edges on a
+    /// wide container — the same 12pt they keep from the screen edges on a phone,
+    /// where the card very nearly IS the screen.
+    private func alignBottomControlsToCardColumn() {
+        guard let leadingConstraint = bottomControlLeadingConstraint,
+              let trailingConstraint = bottomControlTrailingConstraint
+        else { return }
+        let inset: CGFloat
+        if LunaLayout.isWide(containerWidth: view.bounds.width) {
+            let column = carousel.restingCardColumn(in: view)
+            inset = max(12, column.lowerBound + 12)
+        } else {
+            inset = 12
+        }
+        guard abs(leadingConstraint.constant - inset) > 0.5 else { return }
+        leadingConstraint.constant = inset
+        trailingConstraint.constant = -inset
     }
 
     // MARK: - Pasteboard-offset index math

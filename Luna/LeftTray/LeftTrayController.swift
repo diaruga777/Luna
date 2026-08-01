@@ -264,8 +264,12 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         applyProgress()
     }
 
+    /// 82% of a phone screen, capped on a wide container: past a point the tray
+    /// is not a drawer over the deck any more, it is a second screen.
     private func trayWidth(for hostWidth: CGFloat) -> CGFloat {
-        min(hostWidth - 12, max(280, hostWidth * 0.82))
+        min(
+            hostWidth - 12,
+            max(280, LunaLayout.drawerWidth(forContainerWidth: hostWidth, fraction: 0.82)))
     }
 
     func refreshPullAvailability(animated: Bool) {

@@ -150,6 +150,14 @@ final class ArchiveTrayController: NSObject {
     /// the cells themselves.
     private static let peek: CGFloat = 26
 
+    /// The drawer takes the right two thirds of a phone screen. On a wide one
+    /// that fraction runs away with itself (911pt of arc on a 13" iPad), so it
+    /// is capped — and the deck cedes exactly the width the drawer takes, never
+    /// two thirds of the screen regardless.
+    private static func openWidth(forHostWidth width: CGFloat) -> CGFloat {
+        LunaLayout.drawerWidth(forContainerWidth: width, fraction: 2.0 / 3.0)
+    }
+
     init(
         host: UIViewController,
         shiftedViews: @escaping () -> [UIView],
@@ -266,7 +274,7 @@ final class ArchiveTrayController: NSObject {
         laidOutSize = bounds.size
         if isFirstLayout { pullAvailable = canPull() }
         dismissControl.frame = bounds
-        let width = bounds.width * 2 / 3
+        let width = Self.openWidth(forHostWidth: bounds.width)
         let top = safeAreaInsets.top + 8
         let bottom = safeAreaInsets.bottom + 8
         tray.bounds = CGRect(x: 0, y: 0, width: width, height: max(0, bounds.height - top - bottom))
@@ -289,7 +297,7 @@ final class ArchiveTrayController: NSObject {
         case .began:
             panStartProgress = progress
         case .changed:
-            let travel = max(1, laidOutSize.width * 2 / 3 - Self.peek)
+            let travel = max(1, Self.openWidth(forHostWidth: laidOutSize.width) - Self.peek)
             progress = min(max(panStartProgress - gesture.translation(in: host?.view).x / travel, 0), 1)
             applyProgress()
         case .ended, .cancelled:
@@ -315,7 +323,7 @@ final class ArchiveTrayController: NSObject {
 
     private func applyProgress() {
         guard laidOutSize.width > 0 else { return }
-        let width = laidOutSize.width * 2 / 3
+        let width = Self.openWidth(forHostWidth: laidOutSize.width)
         // Closed, the arc is wholly offscreen — unless the rightmost card is
         // centered AND the archive has items, when the apex cells peek in
         // where the old pull tab used to.
@@ -325,7 +333,7 @@ final class ArchiveTrayController: NSObject {
         let openX = laidOutSize.width - width
         tray.frame.origin.x = closedX + (openX - closedX) * progress
         // The card (or empty state) clears the arc's full region.
-        let shift = -laidOutSize.width * 2 / 3 * progress
+        let shift = -width * progress
         shiftedViews().forEach { $0.transform = CGAffineTransform(translationX: shift, y: 0) }
         openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01

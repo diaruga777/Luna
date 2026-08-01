@@ -102,6 +102,21 @@ public enum LunaLayout {
         max(0, (width - contentWidth(forContainerWidth: width)) / 2)
     }
 
+    /// Widest an edge drawer (the archive arc, the left setup tray) gets. Their
+    /// phone widths are fractions of the screen, and a two-thirds drawer on a 13"
+    /// iPad is 911 points of arc carrying 128pt-tall cells — the fraction has to
+    /// stop somewhere.
+    public static let maximumDrawerWidth: CGFloat = 520
+
+    /// A drawer `fraction` of the container wide, capped on a wide container.
+    public static func drawerWidth(
+        forContainerWidth width: CGFloat, fraction: CGFloat
+    ) -> CGFloat {
+        let proportional = width * fraction
+        guard isWide(containerWidth: width) else { return proportional }
+        return min(proportional, maximumDrawerWidth)
+    }
+
     /// Insets that center a phone-proportioned replica inside `width`.
     public static func phoneReplicaHorizontalInset(forContainerWidth width: CGFloat) -> CGFloat {
         guard isWide(containerWidth: width) else { return 0 }

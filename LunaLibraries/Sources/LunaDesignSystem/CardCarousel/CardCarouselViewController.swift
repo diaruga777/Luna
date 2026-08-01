@@ -297,6 +297,8 @@ public final class CardCarouselViewController: UIViewController {
 
     private let cardArea = UIView()
     private var cardAreaTopConstraint: NSLayoutConstraint!
+    private var scrubberLeadingConstraint: NSLayoutConstraint!
+    private var scrubberTrailingConstraint: NSLayoutConstraint!
     private lazy var scrubber = CarouselScrubberView(style: style.scrubberStyle)
     private lazy var scrubPreview = CarouselScrubPreviewController(carousel: self, cardArea: cardArea)
     /// True while the scrub strip's live preview is drawing the deck. The real
@@ -366,11 +368,13 @@ public final class CardCarouselViewController: UIViewController {
         playbackScrubProgress.accessibilityLabel = L10n.string("Video position")
         cardArea.addSubview(playbackScrubProgress)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
+        scrubberLeadingConstraint = scrubber.leadingAnchor.constraint(
+            equalTo: view.leadingAnchor, constant: style.scrubberHorizontalInset)
+        scrubberTrailingConstraint = scrubber.trailingAnchor.constraint(
+            equalTo: view.trailingAnchor, constant: -style.scrubberHorizontalInset)
         NSLayoutConstraint.activate([
-            scrubber.leadingAnchor.constraint(
-                equalTo: view.leadingAnchor, constant: style.scrubberHorizontalInset),
-            scrubber.trailingAnchor.constraint(
-                equalTo: view.trailingAnchor, constant: -style.scrubberHorizontalInset),
+            scrubberLeadingConstraint,
+            scrubberTrailingConstraint,
             scrubber.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
             cardAreaTopConstraint,
             cardArea.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -412,6 +416,7 @@ public final class CardCarouselViewController: UIViewController {
                 fit: style.cardFit,
                 topOverflow: style.cardTopOverflow)
         }
+        alignScrubberToCardColumn()
         // Render the eclipse corona for this exact card geometry now, in the
         // background, rather than on whichever tap first starts a transition.
         EclipseCorona.prewarm(
@@ -471,6 +476,41 @@ public final class CardCarouselViewController: UIViewController {
         applyMuteState()
         if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
         delegate?.carousel(self, didCenterCardAt: currentIndex)
+    }
+
+    /// On a wide container the card no longer spans the screen, so a scrub strip
+    /// still pinned to the screen edges would run out from under it on both
+    /// sides and stop reading as this deck's own control. It follows the card's
+    /// column instead, keeping the exact clearance it has on a phone: the strip
+    /// is inset from the card's edges by however much `scrubberHorizontalInset`
+    /// exceeds the card's own `peek + edgeGap` inset there.
+    ///
+    /// Phone-shaped containers are left literally alone — the style's inset from
+    /// the screen edges, as before.
+    private func alignScrubberToCardColumn() {
+        let inset: CGFloat
+        if LunaLayout.isWide(containerWidth: view.bounds.width), let metrics {
+            let cardFrame = cardArea.convert(metrics.centeredCardFrame(), to: view)
+            let clearanceInsideCard =
+                style.scrubberHorizontalInset - (style.peek + style.edgeGap)
+            inset = max(0, cardFrame.minX + clearanceInsideCard)
+        } else {
+            inset = style.scrubberHorizontalInset
+        }
+        guard abs(scrubberLeadingConstraint.constant - inset) > 0.5 else { return }
+        scrubberLeadingConstraint.constant = inset
+        scrubberTrailingConstraint.constant = -inset
+    }
+
+    /// The centered card's resting horizontal bounds in `target`'s space, or the
+    /// container's own when the metrics haven't resolved yet. Hosts that flank
+    /// the deck with floating controls anchor them to this so those controls stay
+    /// beside the CARD rather than stranded at the edges of a wide screen.
+    public func restingCardColumn(in target: UIView) -> ClosedRange<CGFloat> {
+        guard let frame = restingCenteredCardFrame(in: target) else {
+            return target.bounds.minX...target.bounds.maxX
+        }
+        return frame.minX...frame.maxX
     }
 
     /// The card view showing `index`, if mounted — e.g. a share-sheet popover source.

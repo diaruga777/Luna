@@ -835,6 +835,13 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         guard fingerprint != appliedFingerprint else { return }
         appliedFingerprint = fingerprint
 
+        // A real reload unmounts every slot, and with it the card that owns the
+        // open column's coordinator. Left standing, the column would keep drawing
+        // beside a card that no longer exists and its own close button — routed
+        // through that dead (weak) coordinator — would do nothing. Send it away
+        // first, while there is still something to send it back to.
+        if let inlineColumn { closeInlineColumn(inlineColumn) }
+
         let wasPasteboardCentered = renderedPasteboardState != nil && carousel.currentIndex == 0
         let oldItemIndex = carousel.currentIndex - cardOffset
         let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil

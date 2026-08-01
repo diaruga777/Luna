@@ -24,11 +24,7 @@ final class InlineReaderColumnTests: XCTestCase {
     /// An iPhone-sized deck, which keeps the overlay behaviour.
     private static let narrowSize = CGSize(width: 402, height: 874)
 
-    private var window: UIWindow?
-
     override func tearDown() {
-        window?.isHidden = true
-        window = nil
         ReadingListStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
@@ -142,6 +138,23 @@ final class InlineReaderColumnTests: XCTestCase {
             accuracy: 0.5)
     }
 
+    /// A real reload unmounts every card, including the one that owns the
+    /// column's coordinator. A column left standing would draw beside a card that
+    /// no longer exists, and its own close button — routed through that dead weak
+    /// reference — would do nothing at all.
+    func testAReloadSendsTheOpenColumnAway() throws {
+        let controller = makeController(size: Self.wideSize)
+        _ = try XCTUnwrap(openColumn(on: controller))
+
+        seed(itemCount: 3)
+        withAnimationsDisabled {
+            NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        }
+
+        XCTAssertNil(controller.openInlineColumn)
+        XCTAssertEqual(controller.carousel.columnAsideShift, 0, accuracy: 0.01)
+    }
+
     // MARK: - Stacking
 
     /// Nested layers stack on the RIGHT card. A link tapped on the left one
@@ -168,6 +181,23 @@ final class InlineReaderColumnTests: XCTestCase {
     private func makeController(
         size: CGSize, itemCount: Int = 1
     ) -> ArticleCardsViewController {
+        seed(itemCount: itemCount)
+        // Deliberately window-less, exactly as `ArticleCardsChromeTests` builds
+        // its deck. Handing the controller to a live window lets UIKit own the
+        // appearance state machine, and it then ignores the explicit transition
+        // below — so the carousel never reaches `viewDidAppear`, never centers a
+        // card, and every guard that (correctly) requires a centered card
+        // silently declines.
+        let controller = ArticleCardsViewController()
+        controller.loadViewIfNeeded()
+        controller.view.frame = CGRect(origin: .zero, size: size)
+        controller.beginAppearanceTransition(true, animated: false)
+        controller.endAppearanceTransition()
+        controller.view.layoutIfNeeded()
+        return controller
+    }
+
+    private func seed(itemCount: Int) {
         var items: [ReadingListItem] = []
         var contents: [UUID: ArticleContent] = [:]
         for index in 0..<itemCount {
@@ -182,17 +212,6 @@ final class InlineReaderColumnTests: XCTestCase {
             contents[item.id] = UITestFixtures.sampleArticleContent(title: "Column \(index)")
         }
         ReadingListStore.shared.seedForTesting(items: items, contents: contents)
-
-        let controller = ArticleCardsViewController()
-        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        window.rootViewController = controller
-        window.isHidden = false
-        self.window = window
-        controller.beginAppearanceTransition(true, animated: false)
-        controller.endAppearanceTransition()
-        window.layoutIfNeeded()
-        controller.view.layoutIfNeeded()
-        return controller
     }
 
     private func openColumn(

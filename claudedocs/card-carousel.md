@@ -206,6 +206,30 @@ A reload arriving mid-transition is deferred until the transition settles
 would strand its captured card views as duplicates — and `removeOrphanCardViews`
 structurally guarantees no card view outlives its slot.
 
+## A new save takes the center
+
+Every deck — Reader's, the central app's all-kinds deck, Downloader's, Price
+Tracker's — moves to a save it has never shown, whatever added it and whenever
+it arrived: the paste card or left tray here, the share/action/Safari extension,
+an App Intent, the mailbox importer, or a sibling app writing the shared store
+while this one was suspended or dead.
+
+The decks don't ask each entry point to announce itself. Every reload hands its
+card ids to `CardCarouselHostViewController.newSaveItemIndex(cardIDs:offstageIDs:)`,
+which compares them against the previous snapshot: any id that wasn't there
+arrived since, however it got here, and its index wins the centering — ahead of
+the card the user was parked on, the leading pasteboard card, and an in-flight
+archive transition. With several new saves, the first in card order centers,
+which on every deck's newest-first ordering is the most recent one.
+
+Two things deliberately don't count as new. `offstageIDs` (archived rows) are
+passed in as seen, so unarchiving one reads as the return of a known card and
+leaves the archive tray's own transition in charge of where it lands. And the
+first snapshot only seeds the set — a deck that has shown nothing has nothing
+new, and its newest-first default already opens on the most recent save.
+
+Covered by `NewSaveCenteringTests`.
+
 ## Store plumbing (Downloader host)
 
 `SavedMediaCardsViewController` keeps the grid's plumbing: cross-process Darwin
@@ -215,7 +239,8 @@ menu (Download / Share / Save to Photos / Archive / Delete), and mark-opened on
 centering. Reloads are fingerprinted
 (`id|thumbnail|storageState` per item) so store notifications that change nothing
 visible don't rebuild live card content mid-playback; real changes reload while
-keeping the currently centered item centered by id.
+keeping the currently centered item centered by id — unless the change brought a
+new save, which takes the center (above).
 
 **Download progress is never floating chrome.** The app-level
 `DownloaderProgressFooterView` was deleted: an in-flight download is drawn inside

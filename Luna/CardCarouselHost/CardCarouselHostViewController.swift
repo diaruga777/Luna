@@ -178,6 +178,40 @@ class CardCarouselHostViewController: UIViewController {
         return (0..<itemCount).contains(itemIndex) ? itemIndex : nil
     }
 
+    // MARK: - Centering on a new save
+
+    /// Every id this deck has already accounted for: the cards it showed plus
+    /// the rows it holds offstage.
+    private var seenItemIDs: Set<UUID> = []
+    private var hasSeenASnapshot = false
+
+    /// Where a reload should center because it turned up a save this deck has
+    /// never shown — nil when it turned up none.
+    ///
+    /// A save reaches a deck from a dozen places (this app's own paste/left
+    /// tray, its share/action/Safari extension, an App Intent, the mailbox
+    /// importer, a sibling app writing the shared store) and at any moment,
+    /// including while this process was suspended or dead. Rather than have
+    /// every entry point announce itself, every reload simply compares ids
+    /// against the previous snapshot: whatever is new arrived since, however it
+    /// got here, and the deck moves to it.
+    ///
+    /// `cardIDs` is the deck's card order minus any leading pasteboard card, so
+    /// the result is an ITEM index — add `cardOffset` before centering.
+    /// `offstageIDs` are ids the deck knows but doesn't show (archived rows):
+    /// counting them as seen keeps unarchiving one from reading as a new save.
+    /// The first snapshot only seeds the set — nothing is "new" on a deck that
+    /// has shown nothing yet, and its newest-first default already opens on the
+    /// most recent save.
+    final func newSaveItemIndex(cardIDs: [UUID], offstageIDs: Set<UUID> = []) -> Int? {
+        defer {
+            seenItemIDs = Set(cardIDs).union(offstageIDs)
+            hasSeenASnapshot = true
+        }
+        guard hasSeenASnapshot else { return nil }
+        return cardIDs.firstIndex { !seenItemIDs.contains($0) }
+    }
+
     // MARK: - Empty state
 
     /// The image + title + subtitle stack both hosts use for "nothing saved

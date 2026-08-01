@@ -137,7 +137,12 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         archivedItems = archived
         let centeredID = pendingCenteredID ?? oldCenteredID
         pendingCenteredID = nil
-        let centeredIndex = centeredID.flatMap { id in items.firstIndex { $0.id == id } }
+        // A tracker saved since the last snapshot — here, in a sibling app, or
+        // through an extension while this one was away — takes the center.
+        let newSaveIndex = newSaveItemIndex(
+            cardIDs: items.map(\.id), offstageIDs: Set(archivedItems.map(\.id)))
+        let centeredIndex = newSaveIndex
+            ?? centeredID.flatMap { id in items.firstIndex { $0.id == id } }
             ?? min(carousel.currentIndex, max(items.count - 1, 0))
 
         carousel.reloadData(centeringAt: centeredIndex)

@@ -328,13 +328,23 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         let archivedIDs = Set(archivedItems.map(\.id))
         archiveDownloadProgress = archiveDownloadProgress.filter { archivedIDs.contains($0.key) }
         renderedPasteboardState = pasteboardState
+        // A save that arrived since the last snapshot — from anywhere, at any
+        // time — takes the center from the card the user was left on. Failed
+        // saves are cards too, and sit after the media ones, so they join the
+        // same ordered id list.
+        let newSaveIndex = newSaveItemIndex(
+            cardIDs: items.map(\.id) + failedSaves.map(\.id),
+            offstageIDs: Set(archivedItems.map(\.id)))
         let pendingIndex = pendingPasteboardDownloadURLString.flatMap { pending in
             items.firstIndex { $0.sourceURLString == pending }
         }
-        let centeredIndex = wasPasteboardCentered && renderedPasteboardState != nil ? 0 : centeredID.flatMap { id in
+        let preservedIndex = wasPasteboardCentered && renderedPasteboardState != nil
+            ? 0
+            : centeredID.flatMap { id in
             items.firstIndex { $0.id == id }.map { $0 + cardOffset }
         } ?? pendingIndex.map { $0 + cardOffset }
             ?? (items.isEmpty ? 0 : cardOffset)
+        let centeredIndex = newSaveIndex.map { $0 + cardOffset } ?? preservedIndex
         if pendingIndex != nil { pendingPasteboardDownloadURLString = nil }
         carousel.reloadData(centeringAt: centeredIndex)
         let hasAnyCard = !items.isEmpty || !failedSaves.isEmpty

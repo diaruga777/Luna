@@ -824,6 +824,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         archivedItems = updatedArchive
         renderedPasteboardState = pasteboardState
         let newOffset = cardOffset
+        // A save that arrived since the last snapshot wins over everything the
+        // deck would otherwise hold onto — the card the user was on, the paste
+        // card, an in-flight archive transition.
+        let newSaveIndex = newSaveItemIndex(
+            cardIDs: items.map(\.id), offstageIDs: Set(archivedItems.map(\.id)))
         let pendingIndex = pendingPasteboardSavedID.flatMap { id in
             items.firstIndex { $0.id == id }
         }
@@ -835,7 +840,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             : centeredID.flatMap { id in
             items.firstIndex { $0.id == id }.map { $0 + newOffset }
         }
-        let centeredIndex = transitionIndex ?? preservedIndex
+        let centeredIndex = newSaveIndex.map { $0 + newOffset }
+            ?? transitionIndex ?? preservedIndex
             ?? pendingIndex.map { $0 + newOffset }
             ?? (items.isEmpty ? 0 : newOffset)
         pendingTransitionCenteredID = nil

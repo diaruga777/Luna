@@ -175,10 +175,14 @@ final class ArticleExportImagePipelineTests: XCTestCase {
             String(decoding: epub, as: UTF8.self).contains("<img src=\"images/\(fileName)\""),
             "EPUB lost the image")
 
-        let rtf = try Data(contentsOf: service.write(.richText, for: item))
+        let rtfd = try service.write(.richText, for: item)
+        let rtf = try Data(contentsOf: rtfd.appendingPathComponent("TXT.rtf"))
         XCTAssertTrue(
-            String(decoding: rtf, as: UTF8.self).contains("{\\pict\\jpegblip"),
-            "RTF lost the image")
+            String(decoding: rtf, as: UTF8.self)
+                .contains("\\NeXTGraphic LunaImage-001.jpg"),
+            "RTFD lost the image reference")
+        let image = try Data(contentsOf: rtfd.appendingPathComponent("LunaImage-001.jpg"))
+        XCTAssertNotNil(UIImage(data: image), "RTFD lost the readable image bytes")
 
         // Plain text drops images by design; Markdown references the remote URL.
         let markdown = String(decoding: try Data(contentsOf: service.write(.markdown, for: item)),

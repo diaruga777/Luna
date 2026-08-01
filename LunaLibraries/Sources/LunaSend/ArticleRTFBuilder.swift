@@ -6,15 +6,17 @@
 import LunaModels
 import UIKit
 
-/// Renders extracted article content as a Rich Text (`.rtf`) document — the
-/// "open a document" double-save format (claudedocs/double-save.md).
+/// Renders extracted article content as a Rich Text with Attachments (`.rtfd`)
+/// document package — the "View immediately" double-save format
+/// (claudedocs/double-save.md).
 ///
-/// RTF is written by hand rather than through
-/// `NSAttributedString.data(from:documentAttributes:)` because that path drops
-/// `NSTextAttachment`s on iOS (RTF carries no attachments; RTFD does, and RTFD
-/// is a bundle, not a file a Shortcut can hand onward). Emitting the markup
-/// directly is what lets this format keep BOTH the downloaded images
-/// (`{\pict}`) and live hyperlinks (`{\field HYPERLINK}`) in one flat file.
+/// Apple's flat-RTF writer explicitly omits attachments, and Apple's Quick Look
+/// ignores standard inline `{\pict}` groups even though Word/LibreOffice render
+/// them. RTFD is Apple's native rich-document package: `TXT.rtf` contains
+/// relative `\NeXTGraphic` references and the same package contains a COPY of
+/// every image's bytes. Nothing points back into Luna's container. Emitting the
+/// RTF ourselves preserves live hyperlinks and records each attachment's display
+/// width/height explicitly in twips.
 ///
 /// Colours are hard-coded black-on-white, not `LunaColors`: the file leaves the
 /// app and must not inherit Luna's near-black sky (both Luna appearances are
@@ -33,14 +35,15 @@ public struct ArticleRTFBuilder {
 
     // MARK: - Build
 
-    /// Builds the RTF bytes. `imagesDirectory` is where the ingestor saved the
-    /// blocks' `imageFileName` files; an image with no downloaded bytes falls
-    /// back to a plain-text placeholder rather than being dropped, so the
+    /// Builds one self-contained RTFD file wrapper. `imagesDirectory` is where
+    /// the ingestor saved the blocks' `imageFileName` files; each resolved image
+    /// is copied into the returned wrapper. An image with no downloaded bytes
+    /// falls back to a plain-text placeholder rather than being dropped, so the
     /// article's own captions still make sense.
     ///
-    /// Heavy (hex-encodes every image) — call off the main thread.
+    /// Heavy (loads/transcodes/copies every image) — call off the main thread.
     public func build(content: ArticleContent, sourceURLString: String,
-                      imagesDirectory: URL) -> Data {
+                      imagesDirectory: URL) -> FileWrapper {
         var rtf = """
             {\\rtf1\\ansi\\ansicpg1252\\uc1\\deff0\
             {\\fonttbl{\\f0\\froman\\fcharset0 Times New Roman;}\
@@ -49,6 +52,8 @@ public struct ArticleRTFBuilder {
             \\viewkind4\\cf1
 
             """
+        var fileWrappers: [String: FileWrapper] = [:]
+        var imageNumber = 0
 
         rtf += paragraph(Self.escape(content.title), style: "\\sa160\\f1\\fs44\\b", closing: "\\b0")
         if let author = content.author, !author.isEmpty {
@@ -90,14 +95,27 @@ public struct ArticleRTFBuilder {
                     Self.inline(block), style: "\\qc\\sa180\\f0\\fs20\\i\\cf3",
                     closing: "\\i0\\cf1")
             case .image:
-                rtf += imageParagraph(block, imagesDirectory: imagesDirectory)
+                if let picture = Self.picture(for: block, imagesDirectory: imagesDirectory) {
+                    imageNumber += 1
+                    let fileName = String(
+                        format: "LunaImage-%03d.%@", imageNumber, picture.fileExtension)
+                    fileWrappers[fileName] = FileWrapper(
+                        regularFileWithContents: picture.bytes)
+                    rtf += paragraph(
+                        Self.attachmentReference(fileName: fileName, picture: picture),
+                        style: "\\qc\\sa180")
+                } else {
+                    rtf += missingImageParagraph(block)
+                }
             }
         }
 
         rtf += "}"
         // RTF is 7-bit ASCII by construction (everything else is \uN-escaped),
         // so this encode cannot fail; `.utf8` is the belt-and-braces fallback.
-        return rtf.data(using: .ascii) ?? Data(rtf.utf8)
+        let rtfData = rtf.data(using: .ascii) ?? Data(rtf.utf8)
+        fileWrappers["TXT.rtf"] = FileWrapper(regularFileWithContents: rtfData)
+        return FileWrapper(directoryWithFileWrappers: fileWrappers)
     }
 
     // MARK: - Paragraphs
@@ -106,25 +124,35 @@ public struct ArticleRTFBuilder {
         "\\pard\(style) \(body)\(closing)\\par\n"
     }
 
-    /// A centered `{\pict}` for a downloaded image, or an italic placeholder
-    /// when the bytes aren't on disk (never downloaded, or pruned).
-    private func imageParagraph(
-        _ block: ArticleContent.Block, imagesDirectory: URL
-    ) -> String {
-        guard let picture = Self.picture(for: block, imagesDirectory: imagesDirectory) else {
-            let alt = block.text.isEmpty ? L10n.string("Image") : block.text
-            return paragraph(
-                Self.escape("[\(alt)]"), style: "\\qc\\sa180\\f0\\fs20\\i\\cf3",
-                closing: "\\i0\\cf1")
-        }
-        return paragraph(picture, style: "\\qc\\sa180")
+    /// Italic placeholder when image bytes aren't on disk (never downloaded or
+    /// pruned).
+    private func missingImageParagraph(_ block: ArticleContent.Block) -> String {
+        let alt = block.text.isEmpty ? L10n.string("Image") : block.text
+        return paragraph(
+            Self.escape("[\(alt)]"), style: "\\qc\\sa180\\f0\\fs20\\i\\cf3",
+            closing: "\\i0\\cf1")
     }
 
-    /// Hex-encoded `{\pict}` group for the block's downloaded image. PNG and
-    /// JPEG bytes are embedded as-is (`\pngblip` / `\jpegblip`); anything else
-    /// — WebP, HEIC, AVIF, and **animated GIF**, which RTF has no blip type for
-    /// — is re-encoded as a PNG still, the only other thing RTF readers agree
-    /// on. A GIF therefore embeds as its first frame rather than being dropped.
+    private struct Picture {
+        let bytes: Data
+        let fileExtension: String
+        let widthTwips: Int
+        let heightTwips: Int
+    }
+
+    /// RTFD's relative attachment reference. `\width` / `\height` are twips.
+    /// The U+FFFC object-replacement character is emitted as signed RTF Unicode
+    /// (`-4`) so the whole `TXT.rtf` stays ASCII.
+    private static func attachmentReference(fileName: String, picture: Picture) -> String {
+        "{{\\NeXTGraphic \(fileName) \\width\(picture.widthTwips)"
+            + " \\height\(picture.heightTwips)}\\u-4?}"
+    }
+
+    /// Bytes and display geometry for the block's downloaded image. PNG and
+    /// JPEG bytes are copied as-is; anything else — WebP, HEIC, AVIF, and
+    /// **animated GIF** — is re-encoded as a PNG still, the format every RTFD
+    /// reader supports. A GIF therefore embeds as its first frame rather than
+    /// being dropped.
     ///
     /// The file is resolved through `ArticleImageFiles`, NOT from
     /// `block.imageFileName` alone: content is persisted before its images
@@ -132,22 +160,22 @@ public struct ArticleRTFBuilder {
     /// recorded yet".
     private static func picture(
         for block: ArticleContent.Block, imagesDirectory: URL
-    ) -> String? {
+    ) -> Picture? {
         guard let fileURL = ArticleImageFiles.localFile(for: block, in: imagesDirectory),
               let data = try? Data(contentsOf: fileURL),
               !data.isEmpty
         else { return nil }
 
-        let blip: String
+        let fileExtension: String
         let bytes: Data
         if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
-            blip = "\\pngblip"
+            fileExtension = "png"
             bytes = data
         } else if data.starts(with: [0xFF, 0xD8, 0xFF]) {
-            blip = "\\jpegblip"
+            fileExtension = "jpg"
             bytes = data
         } else if let png = UIImage(data: data)?.pngData(), !png.isEmpty {
-            blip = "\\pngblip"
+            fileExtension = "png"
             bytes = png
         } else {
             return nil
@@ -156,9 +184,6 @@ public struct ArticleRTFBuilder {
         guard let image = UIImage(data: bytes),
               image.size.width > 0, image.size.height > 0
         else { return nil }
-        let pixelWidth = Int(image.size.width * image.scale)
-        let pixelHeight = Int(image.size.height * image.scale)
-
         // Scale to the column, never up, and cap the height.
         let aspect = image.size.height / image.size.width
         var widthTwips = min(columnWidthTwips, Int(image.size.width * 15))
@@ -169,24 +194,10 @@ public struct ArticleRTFBuilder {
         }
         guard widthTwips > 0, heightTwips > 0 else { return nil }
 
-        return "{\\pict\(blip)\\picw\(pixelWidth)\\pich\(pixelHeight)"
-            + "\\picwgoal\(widthTwips)\\pichgoal\(heightTwips)\n\(hex(bytes))}"
+        return Picture(
+            bytes: bytes, fileExtension: fileExtension,
+            widthTwips: widthTwips, heightTwips: heightTwips)
     }
-
-    /// Lowercase hex, wrapped so no RTF line runs away (readers tolerate long
-    /// lines, but 128-column hex is the convention and keeps files diffable).
-    private static func hex(_ data: Data) -> String {
-        var result = ""
-        result.reserveCapacity(data.count * 2 + data.count / 64)
-        for (index, byte) in data.enumerated() {
-            if index > 0, index % 64 == 0 { result.append("\n") }
-            result.append(hexDigits[Int(byte >> 4)])
-            result.append(hexDigits[Int(byte & 0x0F)])
-        }
-        return result
-    }
-
-    private static let hexDigits = Array("0123456789abcdef")
 
     // MARK: - Inline rendering
 

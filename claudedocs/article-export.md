@@ -6,8 +6,9 @@ Four formats — **EPUB, PDF, Markdown, plain text** — offered on any saved ar
 whose content is unlocked (extracted and stored). Available in the two apps that
 link `LunaSend`: **Luna** (central) and **Luna Reader**.
 
-A fifth serializer, **Rich Text (`.rtf`)**, exists but is NOT in this menu: it is
-the double save's "Open Document" action only (double-save.md).
+A fifth serializer, **Rich Text with Attachments (`.rtfd`)**, exists but is NOT
+in this menu: it is the double save's "View immediately" action only
+(double-save.md).
 
 ## Key files
 
@@ -22,7 +23,8 @@ the double save's "Open Document" action only (double-save.md).
 
 `LunaLibraries/Sources/LunaSend/ArticleExportService.swift`:
 - `write(_:for:) throws -> URL` — serializes the format and writes it to a temp
-  file named via `ArticleSendCoordinator.fileName(forTitle:extension:)`. Throws
+  file (or `.rtfd` document package) named via
+  `ArticleSendCoordinator.fileName(forTitle:extension:)`. Throws
   `ExportError.noContent` when the item has no stored content — the one gate
   that keeps still-locked and media items out of **every** format. Heavy —
   call off-main.
@@ -41,7 +43,8 @@ Serializers, one per format, all taking `ArticleContent`:
 - `LunaSend/ArticlePDFBuilder` — US-Letter PDF, images inline.
 - `LunaSend/ArticleMarkdownBuilder` — CommonMark.
 - `LunaSend/ArticlePlainTextBuilder` — UTF-8 prose.
-- `LunaSend/ArticleRTFBuilder` — hand-written RTF, images embedded as `{\pict}`
+- `LunaSend/ArticleRTFBuilder` — hand-written RTFD package: `TXT.rtf` plus copied
+  image-byte attachments referenced with sized `\NeXTGraphic` entries
   and links as `{\field HYPERLINK}`. Double-save only; see double-save.md for
   why the markup is emitted directly instead of via `NSAttributedString`.
 
@@ -53,7 +56,7 @@ Serializers, one per format, all taking `ArticleContent`:
 | PDF | embedded (downloaded bytes, GIF → first frame) | styled, **not clickable** | fixed, paginated |
 | Markdown | referenced by remote URL | yes (`[label](url)`) | flat text |
 | Plain text | `[Image: alt]` placeholder | no | flat text |
-| Rich Text | embedded (PNG/JPEG blip; everything else → PNG still) | yes (`HYPERLINK` field) | reflowable |
+| Rich Text (RTFD) | bundled sibling bytes (JPEG/PNG; everything else → PNG still) | yes (`HYPERLINK` field) | reflowable |
 
 Deliberate choices behind that table:
 
@@ -136,8 +139,10 @@ nothing to fetch.
   media type, Kindle's converter and most reading systems discarded it anyway.
   The chapter's `<img src>` points at the transcoded entry name.
 - **PDF** has no animation: a GIF contributes its first frame.
-- **Rich Text** has no GIF blip type (`\pngblip` / `\jpegblip` only), so a GIF —
-  and WebP/HEIC/AVIF — is re-encoded as a PNG still rather than dropped.
+- **Rich Text (RTFD)** keeps JPEG/PNG bytes directly; a GIF (including animation)
+  and WebP/HEIC/AVIF are re-encoded as a PNG still rather than dropped. Every
+  attachment is copied inside the `.rtfd` package and receives explicit twip
+  geometry; `TXT.rtf` never points back into Luna's container.
 - **Markdown** references the original remote URL (see above); **plain text**
   drops images by design.
 
@@ -181,8 +186,8 @@ of what's wanted here.
   out-of-bounds link ranges; plain-text markup-freedom; PDF validity, media-box
   size, pagination, image embedding **counted as PDF image XObjects** (byte
   counts can't tell a picture from a blank line), hash-resolved images, GIF and
-  every stored format surviving, off-main build; RTF brace balance, ASCII
-  escaping, hyperlink fields, `{\pict}` embedding, and the share menu omitting
-  it.
+  every stored format surviving, off-main build; RTFD package/body balance,
+  ASCII escaping, hyperlink fields, copied readable image bytes, explicit
+  attachment geometry, system-reader round trip, and the share menu omitting it.
 - `LunaTests/ReaderShareSheetTests.swift` — the export submenu's contents, order,
   and per-format callback, in both the menu and the row list.

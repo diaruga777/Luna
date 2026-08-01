@@ -1,18 +1,18 @@
-# Double save (Action Button only)
+# Double Save Articles (Action Button only)
 
-Saving the exact same URL twice within 7 seconds through the Action Button
-intents performs the action the user picked in **Settings → Shortcut & Safari →
-Double Save**. Five choices, in picker order:
+Saving the exact same ARTICLE URL twice within 7 seconds through the Action
+Button intents performs the action the user picked in **Settings → Shortcut &
+Safari → Double Save Articles**. Three choices, in picker order:
 
 | Choice | What the second press does |
 | --- | --- |
 | **Nothing** (default) | No-op. |
 | Send to Kindle | Emails the article's EPUB to the configured Kindle address. |
-| Open PDF | Returns the article as a `.pdf` from the App Intent. |
-| Open Markdown | Returns it as a `.md`. |
-| Open Document | Returns it as a `.rtf`. |
+| View immediately | Returns a self-contained `.rtfd` Rich Text document package from the App Intent, ready for Quick Look. |
 
 Nothing is the default because a double save is easy to trigger by accident.
+This behavior is strictly article-only: videos, social posts, audio, products,
+and imported documents ignore the second press.
 
 The setting exists only in the two apps that can act on it — **Luna** (central)
 and **Luna Reader**, the two that link `LunaSend` — and is stored **per app**
@@ -27,6 +27,15 @@ manual add, mail import, and every in-app save keep normal save semantics.
 screenshot inside the same seven-second window re-runs the previous save without
 another model call, so it reaches the same decision.
 
+Intent timing is captured at the very start of `perform()`, before setup,
+Foundation Models, search, or ingest work. Once the URL resolves,
+`ReadingListStore.reserveSaveAttempt` atomically performs URL lookup + initial
+insert/press-timestamp update in one cross-process coordinated mutation. Two
+overlapping intent runs therefore cannot both observe an absent URL and behave
+as first saves. The policy compares the absolute distance between the two start
+times and has **no minimum gap**: zero-gap starts and starts whose store-arrival
+order is reversed both count, provided they are less than seven seconds apart.
+
 ## Flow
 
 The Action Button intents pass a non-nil `doubleSaveActionSurface` through
@@ -40,7 +49,8 @@ always stays in the 7 s intent regime rather than falling through to the legacy
 A repeat inside `intentDoublePressWindow` (7 s) then becomes:
 
 - `.sendToEreaders([kindle])`, retaining the 24-hour resend cooldown; or
-- `.exportArticle(format:)` → `SavePressResult.exportRequested(item, format)`.
+- `.exportArticle(format: .richText)` →
+  `SavePressResult.exportRequested(item, .richText)`.
 
 **The file is not built in the ingestor.** Serialization lives in `LunaSend`, an
 article-kind module that the universal `LunaReadingList` / `LunaIntents` can't
@@ -55,7 +65,7 @@ the save still returns a file WITH the article's pictures — see
 article-export.md's "Images: resolved, then fetched"; without it the 7-second
 window always beat the image downloads.
 
-The returned file becomes the intent's **media** — `SaveResultEntity.media` /
+The returned document becomes the intent's **media** — `SaveResultEntity.media` /
 `ProvideContextResultEntity.media` — replacing the media download for that run
 (an article has none anyway). An export that can't be built returns no file
 rather than throwing: a double save must never fail the save that preceded it.
@@ -68,26 +78,35 @@ whose capture-source mode is `.doubleSave`; it also only sends to that ereader.
 It is now unreachable from an Action Button save.
 
 Legacy `DoubleSaveActionStore` values may remain in an existing App Group. The
-retired `sendToFriend` action no longer decodes and reads back as `.nothing`;
-the friend-prompt hand-off and preset-email storage survive unused, and pending
-contact prompts are not consumed on foreground.
+retired `openPDF` and `openMarkdown` values migrate to `.openDocument` (View
+immediately). The retired `sendToFriend` action no longer decodes and reads back
+as `.nothing`; the friend-prompt hand-off and preset-email storage survive
+unused, and pending contact prompts are not consumed on foreground.
 
-## Why RTF for "Open Document"
+## Why RTFD for "View immediately"
 
-RTF is the open document format iOS Quick Look — what the Shortcuts "Quick Look"
-action shows — renders natively. `.odt` it will not preview at all, and `.docx`
-would need a full OOXML writer for no gain. `ArticleRTFBuilder` writes the markup
-by hand rather than going through
-`NSAttributedString.data(from:documentAttributes:)`, whose RTF path drops
-`NSTextAttachment`s on iOS — that's what lets this format keep BOTH the
-downloaded images (`{\pict}`) and live hyperlinks (`{\field HYPERLINK}`) in one
-flat file. See article-export.md.
+The previous flat `.rtf` did contain standard hex-encoded `{\pict}` JPEG/PNG
+payloads, but Apple's RTF importer/Quick Look ignores those groups. That made the
+document appear picture-less even though Word and LibreOffice could read the
+same bytes. Apple's own flat-RTF writer likewise documents that it omits
+attachment attributes.
+
+RTFD is Apple's native Rich Text with Attachments document package and Quick
+Look renders it. `ArticleRTFBuilder` now returns a `FileWrapper` containing:
+
+- `TXT.rtf`, with live `HYPERLINK` fields and relative `\NeXTGraphic` entries;
+- one `LunaImage-NNN.jpg|png` sibling per resolved picture, containing a COPY of
+  the actual bytes (unsupported formats/GIF animations become PNG stills); and
+- explicit `\widthN \heightN` display geometry in twips on every attachment.
+
+No attachment path points at Luna's App Group/Documents directory. Moving the
+`.rtfd` package away from Luna therefore keeps every picture readable.
 
 ## Settings UI
 
 `ShortcutSettingsScreen` (universal, `Luna/Settings/SettingsViewController.swift`)
-draws the picker as a pull-down menu button — five options don't fit a segmented
-control. It sits inside the same `#available(iOS 27.0, *)` gate as the rest of
+draws the three-choice picker as a pull-down menu button. It sits inside the same
+`#available(iOS 27.0, *)` gate as the rest of
 the Action Button shortcut setup (app-intents.md): below iOS 27 there is no
 shortcut section, so there is nothing for a double save to be a behavior of.
 Picking "Send to Kindle" without a configured Kindle offers the setup it
@@ -98,12 +117,14 @@ until then.
 
 ## Tests
 
-- `DoubleSavePolicyTests` — the seven-second boundary, the Kindle cooldown,
-  platform-item exclusion for both Kindle and exports, each format round-tripping
-  through the decision, and that `.doNothing` never falls back to the legacy
-  ereader send.
+- `DoubleSavePolicyTests` — the seven-second boundary, zero-gap and reverse-order
+  overlapping starts, the Kindle cooldown, platform-item exclusion, and that
+  `.doNothing` never falls back to the legacy ereader send.
 - `DoubleSaveActionStoreTests` — the `.nothing` default, per-surface
-  independence, the retired `sendToFriend` value reading back as the default, and
-  the action → `ArticleExportFormat` mapping.
+  independence, retired-value migration, and the single document action →
+  `ArticleExportFormat.richText` mapping.
+- `ReadingListStoreCacheTests` — atomic first-invocation reservation across
+  concurrent store instances and monotonic timing state.
 - `SavePressPolicyTests` — the older in-app ereader regime.
-- `ArticleDocumentBuilderTests` — the RTF serializer.
+- `ArticleDocumentBuilderTests` — RTFD package structure, copied/decodable image
+  bytes, explicit dimensions, no Luna paths, and a system-reader round trip.

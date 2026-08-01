@@ -33,19 +33,28 @@ public struct ArticleExportService {
         self.store = store
     }
 
-    /// Builds `format` and writes it to a temp file, returning its URL. Throws
+    /// Builds `format` and writes it to a temporary file/package, returning its URL. Throws
     /// `ExportError.noContent` when the item has no extracted content — the one
     /// gate that keeps still-locked and media items out of every format.
     /// Heavy (zips images, or lays out every PDF page) — call off the main thread.
     public func write(_ format: ArticleExportFormat, for item: ReadingListItem) throws -> URL {
         guard let content = store.content(for: item) else { throw ExportError.noContent }
         logImageResolution(for: content, format: format)
-        let data = try self.data(format, content: content, sourceURLString: item.urlString)
         let fileName = ArticleSendCoordinator.fileName(
             forTitle: item.title ?? item.urlString, extension: format.fileExtension)
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: fileURL)
-        try data.write(to: fileURL, options: .atomic)
+        if format == .richText {
+            let wrapper = ArticleRTFBuilder().build(
+                content: content,
+                sourceURLString: item.urlString,
+                imagesDirectory: store.articlesDirectory)
+            try wrapper.write(to: fileURL, options: .atomic, originalContentsURL: nil)
+        } else {
+            let data = try self.data(
+                format, content: content, sourceURLString: item.urlString)
+            try data.write(to: fileURL, options: .atomic)
+        }
         return fileURL
     }
 
@@ -89,10 +98,7 @@ public struct ArticleExportService {
                 sourceURLString: sourceURLString,
                 imagesDirectory: store.articlesDirectory)
         case .richText:
-            return ArticleRTFBuilder().build(
-                content: content,
-                sourceURLString: sourceURLString,
-                imagesDirectory: store.articlesDirectory)
+            preconditionFailure("RTFD is a package and is written directly by write(_:for:)")
         case .markdown:
             let text = ArticleMarkdownBuilder().build(
                 content: content, sourceURLString: sourceURLString)

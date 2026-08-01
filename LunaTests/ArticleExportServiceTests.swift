@@ -160,7 +160,16 @@ final class ArticleExportServiceTests: XCTestCase {
         for format in ArticleExportFormat.allCases {
             let url = try service.write(format, for: item)
             XCTAssertEqual(url.pathExtension, format.fileExtension, "\(format)")
-            XCTAssertFalse(try Data(contentsOf: url).isEmpty, "\(format)")
+            if format == .richText {
+                var isDirectory: ObjCBool = false
+                XCTAssertTrue(FileManager.default.fileExists(
+                    atPath: url.path, isDirectory: &isDirectory))
+                XCTAssertTrue(isDirectory.boolValue, "RTFD must be a document package")
+                XCTAssertFalse(try Data(
+                    contentsOf: url.appendingPathComponent("TXT.rtf")).isEmpty)
+            } else {
+                XCTAssertFalse(try Data(contentsOf: url).isEmpty, "\(format)")
+            }
             XCTAssertFalse(url.lastPathComponent.contains(":"), "\(format)")
             stems.insert(url.deletingPathExtension().lastPathComponent)
         }

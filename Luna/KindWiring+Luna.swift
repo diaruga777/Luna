@@ -116,7 +116,7 @@ enum KindWiring {
         }
 
         // The Action Button double save (claudedocs/double-save.md): its
-        // "Open …" actions return an article file, and its Kindle action needs
+        // "View immediately" returns an article document, and Kindle needs
         // the account/Kindle setup screens. Both are article-only, so both are
         // installed here — matching `ActionButtonIntentSupport.doubleSaveSurface`,
         // which arms double save in exactly the apps that link LunaSend.

@@ -26,11 +26,10 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     case markdown
     /// Prose only — no markup, no URLs in the body.
     case plainText
-    /// Rich Text (`.rtf`) — a styled, editable word-processor document with
-    /// images embedded and links live. Chosen over `.odt`/`.docx` for the
-    /// double-save "open a document" action because RTF is the open document
-    /// format iOS Quick Look — what the Shortcuts "Quick Look" action shows —
-    /// renders natively; ODT it will not preview at all.
+    /// Rich Text with Attachments (`.rtfd`) — a styled, editable document package
+    /// with image bytes bundled and links live. Apple's flat RTF reader drops or
+    /// ignores attachments; RTFD is its native self-contained rich-document
+    /// representation and Quick Look renders the bundled images.
     case richText
 
     /// What the article "Export as…" menu offers, in menu order: EPUB first
@@ -47,7 +46,7 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
         case .pdf: return "pdf"
         case .markdown: return "md"
         case .plainText: return "txt"
-        case .richText: return "rtf"
+        case .richText: return "rtfd"
         }
     }
 

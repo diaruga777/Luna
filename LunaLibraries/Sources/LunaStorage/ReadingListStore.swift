@@ -219,10 +219,27 @@ public final class ReadingListStore {
 
             var item = ReadingListItem(urlString: urlString)
             item.dateAdded = date
+            // Persist the exact policy timestamp too; dateAdded remains a legacy
+            // fallback, not the only durable record for a first save attempt.
+            item.lastSaveAttemptDate = date
             item.captureSource = source
             all.insert(item, at: 0)
             return SaveAttemptReservation(
                 item: item, wasAdded: true, previousPressDate: nil)
+        }
+    }
+
+    /// Extends an attempt's seven-second marker to its actual completion time.
+    /// The start timestamp is already durable from `reserveSaveAttempt`; this
+    /// second commit makes the window effectively run from start while work is
+    /// active, then from completion once it finishes.
+    public func finishSaveAttempt(for itemID: UUID, at date: Date = Date()) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
+            guard date > previous else { return false }
+            all[index].lastSaveAttemptDate = date
+            return true
         }
     }
 

@@ -103,6 +103,19 @@ public enum IntentIngestHelper {
             storedItem: currentStoreItem(for: result, pressedURLString: pressedURLString))
     }
 
+    /// Recommits the intent's URL-level timing marker at the end of every
+    /// remaining handoff (document build, download, foreground continuation).
+    /// `ReadingListIngestor` also finishes its own marker so a timed-out ingest
+    /// that outlives the intent still advances to its true completion time.
+    public static func finishSaveAttempt(
+        urlString: String, at date: Date = Date()
+    ) {
+        guard let normalized = URLUnwrapper.ingestURL(from: urlString)?.absoluteString,
+              let item = ReadingListStore.shared.item(forURLString: normalized)
+        else { return }
+        ReadingListStore.shared.finishSaveAttempt(for: item.id, at: date)
+    }
+
     /// Re-reads the store for what the press actually left behind: by item id
     /// when the press produced one (the id survives an unwrap repoint, the URL
     /// doesn't), else by the pressed URL for a duplicate/ignored press.

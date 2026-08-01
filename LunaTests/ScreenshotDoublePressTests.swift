@@ -107,4 +107,52 @@ final class ScreenshotDoublePressTests: XCTestCase {
         XCTAssertEqual(last?.savedURLString, "https://example.com/b")
         XCTAssertEqual(last?.date, now)
     }
+
+    func testStoreCompletionExtendsTimestampAndNeverMovesItBackward() {
+        let suiteName = "ScreenshotDoublePressTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)
+        ScreenshotDoublePressStore.testDefaultsOverride = defaults
+        defer {
+            ScreenshotDoublePressStore.testDefaultsOverride = nil
+            defaults?.removePersistentDomain(forName: suiteName)
+        }
+
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let url = "https://example.com/end-window"
+        ScreenshotDoublePressStore.record(
+            digest: digest(42), savedURLString: url, now: startedAt)
+        let completedAt = startedAt.addingTimeInterval(18)
+        ScreenshotDoublePressStore.finish(
+            digest: digest(42), savedURLString: url, at: completedAt)
+        XCTAssertEqual(ScreenshotDoublePressStore.last()?.date, completedAt)
+
+        ScreenshotDoublePressStore.record(
+            digest: digest(42), savedURLString: url,
+            now: startedAt.addingTimeInterval(2))
+        XCTAssertEqual(ScreenshotDoublePressStore.last()?.date, completedAt)
+    }
+
+    func testOlderRunCannotFinishOverANewerDifferentScreenshot() {
+        let suiteName = "ScreenshotDoublePressTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)
+        ScreenshotDoublePressStore.testDefaultsOverride = defaults
+        defer {
+            ScreenshotDoublePressStore.testDefaultsOverride = nil
+            defaults?.removePersistentDomain(forName: suiteName)
+        }
+
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        ScreenshotDoublePressStore.record(
+            digest: digest(10), savedURLString: "https://example.com/old", now: now)
+        ScreenshotDoublePressStore.record(
+            digest: digest(200), savedURLString: "https://example.com/new",
+            now: now.addingTimeInterval(1))
+        ScreenshotDoublePressStore.finish(
+            digest: digest(10), savedURLString: "https://example.com/old",
+            at: now.addingTimeInterval(20))
+
+        XCTAssertEqual(ScreenshotDoublePressStore.last()?.digest, digest(200))
+        XCTAssertEqual(
+            ScreenshotDoublePressStore.last()?.savedURLString, "https://example.com/new")
+    }
 }

@@ -127,7 +127,7 @@ The return value is a `TransientAppEntity` with optional `media: IntentFile`.
 Non-media saves and large/unknown media downloads return `media = nil`.
 
 `media` carries one other thing: when **Double Save Articles** (same article URL
-twice within 7 s) is configured as **View immediately**, a self-contained RTFD
+twice within 7 s) is configured as **View immediately**, a self-contained DOCX
 article document is returned there instead, and the media handoff is skipped for
 that run. Both Action Button intents do this. See double-save.md.
 
@@ -144,9 +144,14 @@ that run. Both Action Button intents do this. See double-save.md.
    snapshot timestamp is refreshed. `ScreenshotDigest.similarityThreshold`
    still needs on-device tuning against status-bar clock/Dynamic Island noise.
    Every intent captures its attempt timestamp at the start of `perform()`. Once
-   a URL resolves, `ReadingListStore.reserveSaveAttempt` atomically inserts it or
-   updates its press marker before ingest; zero-gap and reverse-arrival-order
-   overlapping runs count without a minimum threshold.
+   a URL resolves, `ReadingListStore.reserveSaveAttempt` atomically inserts it and
+   its explicit `lastSaveAttemptDate`, or updates the existing marker, before
+   ingest. Save's screenshot slot is also committed as one App-Group value at
+   URL resolution, before ingest/fetch. At the end, the intent recommits both
+   markers with completion time; the still-running ingest task does the same if
+   it outlives an intent timeout. The seven-second window is therefore live from
+   start during work and from completion afterward. Zero-gap and reverse-arrival
+   overlaps count without a minimum threshold.
 2. Otherwise: prompt = `AppNamePlatform.safariScreenPrompt` ("title ; site")
    for Safari, else the per-platform `screenPrompt(forAppName:)`; run
    prompt+image through the vision seam (below); parse with

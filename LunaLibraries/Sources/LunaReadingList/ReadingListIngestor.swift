@@ -425,6 +425,10 @@ public final class ReadingListIngestor {
         // so overlapping App Intent runs cannot both decide they are the first.
         let reservation = store.reserveSaveAttempt(
             urlString: urlString, source: source, at: attemptDate)
+        // The intent layer recommits after export/media handoff; this inner
+        // completion is the fallback for timed-out intents whose ingest task
+        // deliberately continues after the App Intent has returned.
+        defer { store.finishSaveAttempt(for: reservation.item.id) }
         let existing = reservation.wasAdded ? nil : reservation.item
 
         let decision = SavePressPolicy.decide(

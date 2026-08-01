@@ -10,7 +10,7 @@ import Foundation
 /// `ScreenshotDigest` in `LunaIntents`), when it was saved, and the URL it
 /// resolved to — so a near-immediate repeat run of the same screenshot can
 /// skip the model and repeat that save instead (see `ScreenshotDoublePress`).
-public struct ScreenshotDoublePressSnapshot: Equatable {
+public struct ScreenshotDoublePressSnapshot: Codable, Equatable {
     public let digest: Data
     public let date: Date
     public let savedURLString: String
@@ -32,6 +32,7 @@ public enum ScreenshotDoublePressStore {
     static let digestKey = "screenshotDoublePress.digest"
     static let dateKey = "screenshotDoublePress.date"
     static let urlKey = "screenshotDoublePress.savedURLString"
+    static let snapshotKey = "screenshotDoublePress.snapshot"
 
     /// Overridable so tests can inject an isolated App-Group suite instead of
     /// the real container — mirrors `SafariURLStore`'s test-only hook.
@@ -46,7 +47,14 @@ public enum ScreenshotDoublePressStore {
     /// the record is only partially present, which shouldn't happen outside
     /// of tests poking individual keys).
     public static func last() -> ScreenshotDoublePressSnapshot? {
-        guard let defaults = resolvedDefaults,
+        guard let defaults = resolvedDefaults else { return nil }
+        if let data = defaults.data(forKey: snapshotKey),
+           let snapshot = try? JSONDecoder().decode(
+               ScreenshotDoublePressSnapshot.self, from: data) {
+            return snapshot
+        }
+        // One-release migration from the former three-key representation.
+        guard
               let digest = defaults.data(forKey: digestKey),
               let interval = defaults.object(forKey: dateKey) as? Double,
               let savedURLString = defaults.string(forKey: urlKey)
@@ -55,11 +63,33 @@ public enum ScreenshotDoublePressStore {
             digest: digest, date: Date(timeIntervalSince1970: interval), savedURLString: savedURLString)
     }
 
-    /// Overwrites the single slot with a fresh snapshot.
+    /// Commits the single slot as ONE encoded value, then explicitly flushes the
+    /// App Group defaults. For the same screenshot/URL, a late-arriving run may
+    /// extend the timestamp but can never move it backward.
     public static func record(digest: Data, savedURLString: String, now: Date = Date()) {
         guard let defaults = resolvedDefaults else { return }
-        defaults.set(digest, forKey: digestKey)
-        defaults.set(now.timeIntervalSince1970, forKey: dateKey)
-        defaults.set(savedURLString, forKey: urlKey)
+        let current = last()
+        let committedDate: Date
+        if current?.digest == digest, current?.savedURLString == savedURLString,
+           let currentDate = current?.date {
+            committedDate = max(currentDate, now)
+        } else {
+            committedDate = now
+        }
+        let snapshot = ScreenshotDoublePressSnapshot(
+            digest: digest, date: committedDate, savedURLString: savedURLString)
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        defaults.set(data, forKey: snapshotKey)
+        defaults.synchronize()
+    }
+
+    /// Recommits completion time only if this is still the current screenshot.
+    /// A different, newer page must never be replaced by an older run finishing.
+    public static func finish(
+        digest: Data, savedURLString: String, at date: Date = Date()
+    ) {
+        guard let current = last(), current.digest == digest,
+              current.savedURLString == savedURLString else { return }
+        record(digest: digest, savedURLString: savedURLString, now: date)
     }
 }

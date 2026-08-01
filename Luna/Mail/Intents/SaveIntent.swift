@@ -182,12 +182,34 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             throw SaveError.nothingIdentifiable
         }
 
+        // Two-phase durable state. As soon as a URL is known, commit the
+        // screenshot/URL/start timestamp before ingest or export. At every exit,
+        // extend both screenshot and reading-list markers to completion time.
+        var timingURLString: String?
+        let commitResolvedURL: (String) -> Void = { urlString in
+            timingURLString = urlString
+            ScreenshotDoublePressStore.record(
+                digest: digest, savedURLString: urlString, now: attemptDate)
+        }
+        defer {
+            if let urlString = timingURLString {
+                let completedAt = Date()
+                ScreenshotDoublePressStore.finish(
+                    digest: digest, savedURLString: urlString, at: completedAt)
+                IntentIngestHelper.finishSaveAttempt(
+                    urlString: urlString, at: completedAt)
+            }
+        }
+
         // Double-press: a near-immediate repeat of the same screenshot skips
         // the model and re-runs the previous save, so the configured
         // double-save action (Kindle / friend / prompt) fires.
         if case .treatAsDoublePress(let savedURLString) = ScreenshotDoublePress.decide(
-            newDigest: digest, previous: ScreenshotDoublePressStore.last()
+            newDigest: digest, previous: ScreenshotDoublePressStore.last(), now: attemptDate
         ) {
+            // This is deliberately before handleSavePress: a third overlapping
+            // invocation must see this run even while its action is still busy.
+            commitResolvedURL(savedURLString)
             let outcome = await IntentIngestHelper.handleSavePress(
                 urlString: savedURLString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
@@ -195,8 +217,6 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             // Verify the re-press before recording it or downloading anything:
             // re-running a save whose item is gone or failed is a failure too.
             _ = try self.savedURLString(from: outcome)
-            ScreenshotDoublePressStore.record(
-                digest: digest, savedURLString: savedURLString, now: attemptDate)
             if let exported = await Self.exportedFile(from: outcome) {
                 reporter.enter(.finishing)
                 return (SaveResultEntity(media: exported), "Done.")
@@ -244,12 +264,14 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                     title: fields[0],
                     site: fields.count > 1 ? fields[1] : nil,
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
-                    saveTimeout: captureSaveTimeout, attemptDate: attemptDate)
+                    saveTimeout: captureSaveTimeout, attemptDate: attemptDate,
+                    onResolvedURL: commitResolvedURL)
             } else if let platform = AppNamePlatform.platform(forAppName: app) {
                 let result = try await PlatformFieldSave.save(
                     platform: platform, fields: fields,
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
-                    saveTimeout: captureSaveTimeout, attemptDate: attemptDate)
+                    saveTimeout: captureSaveTimeout, attemptDate: attemptDate,
+                    onResolvedURL: commitResolvedURL)
                 outcome = result.outcome
                 resolvedPlatformURLString = result.resolvedURLString
             } else {
@@ -268,8 +290,9 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
 
         let savedURLString = try self.savedURLString(from: outcome)
         if let savedURLString {
-            ScreenshotDoublePressStore.record(
-                digest: digest, savedURLString: savedURLString, now: attemptDate)
+            // Ingest may unwrap/repoint the URL. Make that durable while keeping
+            // the original start timestamp; defer extends it to completion.
+            commitResolvedURL(savedURLString)
         }
         if let exported = await Self.exportedFile(from: outcome) {
             reporter.enter(.finishing)

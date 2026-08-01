@@ -183,6 +183,11 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     private func saveURL(
         _ urlString: String, reporter: IntentProgressReporter, attemptDate: Date
     ) async throws -> ProvideContextResultEntity {
+        var timingURLString = urlString
+        defer {
+            IntentIngestHelper.finishSaveAttempt(
+                urlString: timingURLString, at: Date())
+        }
         reporter.enter(.saving)
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString,
@@ -212,6 +217,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         case let .saveFailed(failure):
             throw ProvideContextError(saveFailure: failure)
         }
+        timingURLString = savedURLString
 
         if let exportedFile {
             reporter.enter(.finishing)

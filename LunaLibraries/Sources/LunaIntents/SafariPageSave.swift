@@ -57,12 +57,15 @@ public enum SafariPageSave {
     public static func save(
         title: String, site: String?, doubleSaveActionSurface: String?,
         saveTimeout: TimeInterval = IntentSaveTimeout.standard,
-        attemptDate: Date = Date()
+        attemptDate: Date = Date(),
+        onResolvedURL: ((String) -> Void)? = nil
     ) async throws -> IntentIngestHelper.ActionButtonSaveOutcome {
         let query = searchQuery(title: title, site: site)
         guard !query.isEmpty, let results = await DuckDuckGoSearch.results(forQuery: query)
         else { throw SaveError.notFound }
         guard let match = filterArticleCandidates(results).first else { throw SaveError.notFound }
+        // Let the Save intent durably arm screenshot reuse before ingest/fetch.
+        onResolvedURL?(match.absoluteString)
         return await IntentIngestHelper.handleSavePress(
             urlString: match.absoluteString, doubleSaveActionSurface: doubleSaveActionSurface,
             timeout: saveTimeout, attemptDate: attemptDate)

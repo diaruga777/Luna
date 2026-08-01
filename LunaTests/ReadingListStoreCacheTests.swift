@@ -122,8 +122,27 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertTrue(first.wasAdded)
         XCTAssertNil(first.previousPressDate)
         XCTAssertEqual(first.item.dateAdded, startedAt)
+        XCTAssertEqual(first.item.lastSaveAttemptDate, startedAt)
         XCTAssertEqual(first.item.captureSource, .appIntent)
         XCTAssertEqual(store.item(withID: first.item.id)?.dateAdded, startedAt)
+        XCTAssertEqual(store.item(withID: first.item.id)?.lastSaveAttemptDate, startedAt)
+    }
+
+    func testSaveAttemptCompletionExtendsTheDurableWindowFromTheEnd() {
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let reservation = store.reserveSaveAttempt(
+            urlString: "https://example.com/completion", source: .appIntent, at: startedAt)
+        let completedAt = startedAt.addingTimeInterval(18)
+
+        store.finishSaveAttempt(for: reservation.item.id, at: completedAt)
+        XCTAssertEqual(
+            store.item(withID: reservation.item.id)?.lastSaveAttemptDate, completedAt)
+
+        // A delayed callback carrying an older time cannot shorten the window.
+        store.finishSaveAttempt(
+            for: reservation.item.id, at: startedAt.addingTimeInterval(4))
+        XCTAssertEqual(
+            store.item(withID: reservation.item.id)?.lastSaveAttemptDate, completedAt)
     }
 
     func testSaveAttemptReservationDoesNotMoveMarkerBackwardForOverlappingRuns() {

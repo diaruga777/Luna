@@ -108,9 +108,11 @@ regeneration command, first-run sequence, and visual validation flags.
 
 ## Onboarding Safari/Messages/card journey
 
-The initial onboarding card retains the launch corona until “Show me how” is
-pressed. The card-to-browser takeover itself does not use an eclipse: the
-button removes that corona and grows the intro card to the screen edges. The
+The initial onboarding card retains the launch corona until either independent
+Safari or Shortcut lesson is pressed. Each card-to-replica takeover uses the
+mock app-switcher transition rather than an eclipse; completing the lesson
+app-switches back, replaces that action's icon with a checkmark, and leaves the
+other lesson plus the paste action available. The
 Reader's native `luna.app` article then stages four text components with the
 intro's glyph-level bright eclipse reveal; between them, an initially absent
 radial-striped ad slides in and rotates, then an oversized “Subscribe!” popup
@@ -129,12 +131,12 @@ the isolated link rests on black for half a second, then the whole frame
 simply crossfades into the target app's complete production root at its exact
 centered card state, including its normal card chrome and carousel. The live
 hierarchy is committed beneath the final composited frame.
-Safari saves before its dedicated Safari-setup overlay appears. Returning from
-Safari dismisses that overlay and begins the Messages animation; Messages then
-saves before the shortcut/Action Button overlay appears. Each saved state stays
-clear for a reading beat before its overlay, and no source animation loops
-behind setup. Completion settles on the card and performs a short stationary
-crossfade into the completed root card.
+Safari saves before its dedicated Safari-setup overlay appears. Messages saves
+before its shortcut/Action Button setup messages appear. Each saved state stays
+clear for a reading beat before its setup UI, and no source animation loops
+behind setup. A successful intro paste captures the real saved card, adds it to
+the right of onboarding long enough to run the normal card eclipse, then swaps
+the matching frame for the completed production root as egress finishes.
 
 ## Loading spinner (`EclipseHorizonSpinnerView`)
 

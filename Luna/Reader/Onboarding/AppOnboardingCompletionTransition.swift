@@ -11,7 +11,18 @@ enum AppOnboardingCompletionTransition {
 
     static func run(in window: UIWindow, to root: UIViewController) {
         let bounds = window.bounds
+        guard window.windowScene?.activationState == .foregroundActive else {
+            detachFromOnboardingParent(root)
+            window.rootViewController = root
+            window.makeKeyAndVisible()
+            root.view.frame = bounds
+            root.view.layoutIfNeeded()
+            root.descendantNavigationController()?.installLunarEclipseTransition()
+            OnboardingAnimationClock.restoreNormalSpeed(in: window)
+            return
+        }
         guard let snapshot = window.snapshotView(afterScreenUpdates: true) else {
+            detachFromOnboardingParent(root)
             window.rootViewController = root
             window.makeKeyAndVisible()
             OnboardingAnimationClock.restoreNormalSpeed(in: window)
@@ -19,6 +30,7 @@ enum AppOnboardingCompletionTransition {
         }
         snapshot.frame = bounds
 
+        detachFromOnboardingParent(root)
         window.rootViewController = root
         window.makeKeyAndVisible()
         root.view.frame = bounds
@@ -41,6 +53,14 @@ enum AppOnboardingCompletionTransition {
             target?.appLaunchTransitionDidFinish()
             OnboardingAnimationClock.restoreNormalSpeed(in: window)
         }
+    }
+
+    private static func detachFromOnboardingParent(_ root: UIViewController) {
+        guard root.parent != nil else { return }
+        root.willMove(toParent: nil)
+        root.view.removeFromSuperview()
+        root.removeFromParent()
+        root.view.alpha = 1
     }
 }
 

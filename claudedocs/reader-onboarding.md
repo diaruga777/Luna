@@ -83,32 +83,28 @@ The root uses the production `CardCarouselViewController`:
    white core briefly overwhelms legibility, and each pixel's bloom illuminates
    its neighbors before resolving to ordinary text. The copy
    starts one third of the way down the card. After the second line finishes,
-   the “Show me how” button appears, using a restrained 24% wash of the current
-   app surface tint in its glass background. The intro card remains black and
+   three actions appear as a vertical stack: **Remove popups and walls for
+   me** with Safari's compass, **Save on-screen links with the Action Button**
+   with the bundled Shortcuts icon, and a real `UIPasteControl` labelled
+   **Paste a url**. The setup buttons use a restrained 24% wash of the current
+   app surface tint; completing either lesson replaces its icon with a
+   checkmark and disables/greys that action. The intro card remains black and
    contains no icon cluster or supporting copy. A new UIKit corona
    independently reconstructs the splash's static peak behind this initial card
    for the entire intro; neither the launch raster nor its overlay hierarchy is
    retained.
-2. “Show me how” does not page or invoke `CardEclipseTransition`, and it does
-   not grow the card to the display edges either. It hands off with the SAME
-   mock app-switcher hop the Safari-setup return uses
-   (`OnboardingAppSwitcherView`): the intro deck slides out as a rounded card
-   while `SafariReplicaViewController`, staged full screen and snapshotted at
-   rest, slides in and fills the screen. The centered intro corona is removed
-   as the hop starts (its own black backdrop covers the deck from the first
-   frame). Once Safari is full-screen, the hidden carousel
-   prepares the saved-content slot without animating between cards. Everything
-   the demonstration needs — the setup guide players (AVFoundation, kept off
-   the launch frame), the temporary save, the mounted production root, the
-   saved-card wave raster, and both source replicas (hidden, so Safari's
-   WKWebView loads its bundled page early) — is preloaded in STAGES, one per
-   run-loop turn, starting when the first line's reveal completes
-   (`onFirstLineRevealed`). Staging is load-bearing: heavy work sharing a
-   run-loop turn with a just-added CAAnimation delays that animation's first
-   commit, and the render server then starts it visibly partway through its
-   duration. The button press pays only for the expansion animation itself. A
-   failed temporary-save install stops the chain silently; the press retries
-   it and surfaces the failure alert.
+2. The Safari and Shortcut actions are independent lessons. Either leaves the
+   intro through `OnboardingAppSwitcherView`: the intro deck shrinks and exits
+   left while the chosen Safari or Messages replica enters from the right and
+   fills the screen. Finishing or skipping that lesson runs the same transition
+   back to the intro and checks only its originating button; it never chains
+   into the other lesson and never completes onboarding. The replicas, guide
+   players, and an empty production root warm in separate run-loop turns after
+   the first line reveal, but this preload does **not** install demo content.
+   The temporary demonstration save is installed only after a setup button is
+   pressed, and its destination snapshot is captured lazily when the mock save
+   wave actually needs it. Paste-first onboarding therefore leaves the shared
+   store untouched.
 3. The Reader's Safari content is a native, fictional `luna.app` article so its
    sequence begins after the card finishes expanding rather than during hidden
    preload. The page loads ALREADY BURIED: four garish ads, the newsletter
@@ -211,14 +207,12 @@ The root uses the production `CardCarouselViewController`:
    (`revealSettingsSetupMessage`). Both pills glow and pulse until tapped —
    the shortcut pill runs the `BundledShortcut` installer, the Settings pill
    opens the Action Button settings.
-6. Before Safari opens, onboarding installs the target's temporary save and
-   lazily mounts the complete production root returned by that app's
-   `AppOnboardingCompletion`. The final crossfade lands on that root
-   carousel's exact centered card state; the live hierarchy is committed under
-   the final composited frame.
-   Reader, Downloader, Price Tracker, and central Luna therefore show their
-   ordinary saved-card UI, chrome, scrubber, controls, and placement—not an
-   onboarding remake or a Safari view clipped smaller.
+6. Setup demonstrations still install the target's temporary save so their
+   mock save can land on the real production card. The production root itself
+   is already mounted empty behind the intro; installing the demo item reloads
+   it in place, and the save-wave raster is captured only when requested.
+   Returning from a lesson leaves that temporary item available for the other
+   lesson, but does not mark onboarding complete.
 7. Setup deliberately splits the demonstrations. The first Safari stage has no
    separate setup overlay: the mock extension-enable pass of step 3 ends on the
    switch flipping on, and THAT is the wipe's cue. `prepareCleanUp` (swapping
@@ -281,17 +275,13 @@ The root uses the production `CardCarouselViewController`:
    flight).
    Only after the cleanup finishes does onboarding start the
    Safari PiP guide and open real Safari. If the extension has not run, return
-   restores the in-page prompt for another attempt. Choosing “Skip for now”
-   completes onboarding without opening Safari. A verified extension return —
-   or the skip — hands off with the mock app-switcher hop
-   (`transitionToMessagesViaAppSwitcher`): whatever is on screen slides out
-   as a rounded card while the conversation, snapshotted at rest, slides in
-   and fills the screen; there is no more URL-bar zoom or second save wave in
-   Safari. The Messages replica then plays its
-   three-bubble sequence, the Action Button press, and the full mock
-   shortcut run of step 5a, ending in place on the pill message(s) — the
-   shortcut and Action Button setup now lives in the conversation instead of
-   an overlay. At the start of a press, the source URL gains a
+   restores the in-page prompt for another attempt. Choosing “Skip for now” or
+   returning with verified extension evidence finishes the Safari lesson and
+   app-switches back to the intro with its button checked. The Shortcut action
+   independently opens the Messages replica, which plays its three-bubble
+   sequence, the Action Button press, and the full mock shortcut run of step
+   5a, ending in place on the pill message(s). At the start of a press, the
+   source URL gains a
    bright app-tint highlight; in Safari (Downloader/Price Tracker pages) it
    survives the blackout wave until the saved view replaces it, in Messages
    it holds through the island and extension-sheet mock. The setup actions
@@ -305,15 +295,25 @@ The root uses the production `CardCarouselViewController`:
    shortcut pill's tail hands off to it); a return from Settings shows the
    “Press the action button to finish” overlay with its “Set up later”
    escape.
-8. After Settings return, a real App Intent invocation completes the flow
-   through `LunaSetupStatusStore.didChange`; “Set up later” reaches the same
-   completion path.
-9. Completion stops any active presentation and, unless it is already there, shrinks to the
-   card once more. The real save and production root are already present, so it
-   marks onboarding complete and crossfades the stationary production card into
-   the fresh completed root—no eclipse or second geometry change. The payload
-   is the fictional `luna.app` article for Reader and central Luna, local video for
-   Downloader, and a real price tracker for Price Tracker.
+8. After Settings return, a real App Intent invocation reports through
+   `LunaSetupStatusStore.didChange`; “Set up later” reaches the same Shortcut
+   lesson completion path. Both app-switch back to the intro and check/disable
+   the Shortcut button. Neither setup lesson completes onboarding.
+9. The paste row is the completion action. `UIPasteControl` supplies the value
+   without a paste-permission alert. Luna unwraps and runs the shared classifier
+   before writing: non-URL and non-article outcomes turn the row red with
+   **article URLs only**; extraction/network/persistence failures turn it red
+   with **unable to load page**. A successfully extracted article is saved,
+   the temporary demo item (if any) is removed, and a fresh production root is
+   laid out around that real card. The onboarding carousel temporarily gains a
+   snapshot of the real saved card to its right and pages there through the
+   production `CardEclipseTransition`; after egress the pixel-matched live root
+   replaces it, leaving the ordinary left tray where the onboarding card's peek
+   had been. A new shared-store identifier observed while the intro card is up
+   (share/action extension or App Intent) follows the same completion semantics
+   without inventing a tap-origin eclipse. Saves made while a mock lesson is up
+   are folded into the baseline when that lesson returns, so the lesson still
+   returns to the three-action intro as promised.
 
 With Reduce Motion enabled, Safari's full-screen Core Image wave is replaced by
 a short source-to-saved-card crossfade; the Messages ripple is skipped (the
@@ -323,29 +323,14 @@ context,
 avoiding device-context and shader-cache setup between Safari and Messages.
 
 The demonstration save is temporary — the mock content is never permanently
-stored. Its exact UUID is recorded only when onboarding created a new item. It
-exists for one reason: so the deck that replaces the journey isn't an empty
-screen. Three things retire it, and its contents match the mock views exactly
-(same title, same feature list, as real `.listItem` article structure) so the
-card reads as the article the demonstration just saved:
-
-- **The user's first real save**, immediately. `OnboardingDemoSaveEvictor` is
-  armed the moment onboarding marks itself complete and watches every store this
-  app saves into — `changeNotifications` + `storedIdentifiers` on
-  `OnboardingTemporarySave`, which is why the central app and the Downloader
-  name both `.readingListChanged` and `.savedMediaChanged` while Reader and Price
-  Tracker name only the reading list. The watch is **id-based, not count-based**:
-  it snapshots the stored ids when it arms, so content the user already had (a
-  diagnostics onboarding reset leaves real saves in place) is not mistaken for a
-  new one. The demonstration item disappearing on its own — a swipe-delete, the
-  background cleanup — just ends the watch.
-- **The first background callback** after onboarding completes, which deletes
-  that exact save and its local media/image, then clears the UUID.
-- **Launch**, which also sweeps a marker left by an abandoned or terminated run.
-
-The save deliberately survives the incomplete onboarding background hops to
-Safari, Shortcuts, and Settings because the production root needs it for each
-replay. A pre-existing matching user save is never claimed or removed.
+stored. Its exact UUID is recorded only when onboarding created a new item, and
+its contents match the mock views exactly so each lesson's save lands on the
+article/video/tracker it just showed. It survives the incomplete Safari,
+Shortcuts, and Settings hops and the app-switcher return to the intro, because
+the other independent lesson may still use it. A pasted or externally observed
+real save removes the demo synchronously before the completed root is built;
+launch also sweeps a marker left by an abandoned run. A pre-existing matching
+user save is never claimed or removed.
 
 If iOS terminates an app while Safari or Settings is foreground, the next
 launch starts incomplete onboarding from its first card; completion is not
@@ -364,10 +349,10 @@ a 6× inspection timeline, or `-onboardingAnimationScale <1...12>` for an
 explicit factor. The clock slows Core Animation, timers, and the display-link
 liquid wave together.
 
-`ReaderOnboardingTests` covers independent per-app completion, exact surface
+`ReaderOnboardingTests` covers independent per-app completion, the three intro
+actions and hit-testing, exact surface
 copy/page mapping, one feature list shared by every article surface,
-temporary-save ownership, eviction on the first real save (and only on a real
-one), idempotent offline article
+temporary-save ownership, external-save completion, idempotent offline article
 installation, launch geometry, active-wave cancellation, the setup pills
 (identifiers, glow-until-tapped, and their shortcut/Settings callbacks),
 external-open fallback

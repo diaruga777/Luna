@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import UIKit
+import UniformTypeIdentifiers
 
 enum OnboardingAppIcon {
     static func image(bundle: Bundle = .main) -> UIImage? {
@@ -48,15 +49,22 @@ enum OnboardingIntroTiming {
 }
 
 final class OnboardingIntroCardContentViewController: CardContentViewController {
-    var onContinue: (() -> Void)?
+    var onSafari: (() -> Void)?
+    var onShortcut: (() -> Void)?
+    var onPaste: ((String) -> Void)?
     /// Fired when the first line's reveal completes — the host preloads the
     /// demonstration in the reading pause, never inside a reveal's own turn.
     var onFirstLineRevealed: (() -> Void)?
 
     private let firstLine: MoonRevealLineView
     private let secondLine: MoonRevealLineView
-    private let button = UIButton(type: .system)
+    private let safariButton = UIButton(type: .system)
+    private let shortcutButton = UIButton(type: .system)
+    private let pasteButton = OnboardingPasteControl()
+    private let buttonStack = UIStackView()
     private var didStart = false
+    private var safariCompleted = false
+    private var shortcutCompleted = false
 
     init(
         firstLine: String,
@@ -77,21 +85,54 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         view.addSubview(firstLine)
         view.addSubview(secondLine)
 
-        button.configuration = GlassStyle.actionButtonConfiguration(
-            title: "Let's go",
-            symbol: "arrow.right",
-            prominent: true)
-        // Carry this app's identity into the glass, but keep it a quiet wash
-        // rather than the stronger shared prominent-action fill.
-        button.configuration?.baseBackgroundColor =
-            LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
-        button.configuration?.imagePlacement = .trailing
-        button.accessibilityLabel = "Let's go"
-        button.alpha = 0
-        button.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
-        button.isUserInteractionEnabled = false
-        button.addTarget(self, action: #selector(continueTapped), for: .touchUpInside)
-        view.addSubview(button)
+        configure(
+            safariButton,
+            title: "Remove popups and walls for me",
+            symbol: "safari.fill",
+            action: #selector(safariTapped))
+        configure(
+            shortcutButton,
+            title: "Save on-screen links with the Action Button",
+            symbol: "bolt.fill",
+            action: #selector(shortcutTapped))
+        shortcutButton.configuration?.titleLineBreakMode = .byWordWrapping
+        var shortcutAttributes = AttributeContainer()
+        shortcutAttributes.font = .systemFont(ofSize: 13, weight: .semibold)
+        shortcutButton.configuration?.attributedTitle = AttributedString(
+            "Save on-screen links with the Action Button",
+            attributes: shortcutAttributes)
+        shortcutButton.titleLabel?.numberOfLines = 2
+        if let shortcutIcon = UIImage(
+            contentsOfFile: Bundle.main.path(
+                forResource: "ShortcutsAppIcon", ofType: "png") ?? "")
+        {
+            shortcutButton.configuration?.image = Self.buttonIcon(shortcutIcon)
+        }
+        // Setup evidence is supplied before the carousel asks this controller
+        // for its view, so restore completed artwork after configuring buttons.
+        update(safariButton, completed: safariCompleted, symbol: "safari.fill")
+        update(shortcutButton, completed: shortcutCompleted, symbol: "bolt.fill")
+
+        pasteButton.onPaste = { [weak self] value in self?.onPaste?(value) }
+
+        buttonStack.axis = .vertical
+        buttonStack.spacing = 10
+        buttonStack.alignment = .fill
+        buttonStack.distribution = .fillEqually
+        for action in [safariButton, shortcutButton, pasteButton] {
+            action.alpha = 0
+            action.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+            action.isUserInteractionEnabled = false
+            if let button = action as? UIButton { button.isEnabled = false }
+            buttonStack.addArrangedSubview(action)
+        }
+        view.addSubview(buttonStack)
+
+        pasteConfiguration = UIPasteConfiguration(
+            acceptableTypeIdentifiers: [
+                UTType.url.identifier,
+                UTType.plainText.identifier,
+            ])
     }
 
     override func viewDidLayoutSubviews() {
@@ -106,13 +147,13 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         secondLine.frame = CGRect(
             x: inset, y: firstLine.frame.maxY + gap,
             width: view.bounds.width - inset * 2, height: lineHeight)
-        let buttonSize = button.sizeThatFits(CGSize(
-            width: view.bounds.width - 40, height: 60))
-        button.frame = CGRect(
-            x: (view.bounds.width - max(170, buttonSize.width)) / 2,
-            y: view.bounds.height - max(54, buttonSize.height) - 24,
-            width: max(170, buttonSize.width),
-            height: max(54, buttonSize.height))
+        let stackWidth = view.bounds.width - inset * 2
+        let buttonHeight: CGFloat = 56
+        buttonStack.frame = CGRect(
+            x: inset,
+            y: view.bounds.height - buttonHeight * 3 - buttonStack.spacing * 2 - 24,
+            width: stackWidth,
+            height: buttonHeight * 3 + buttonStack.spacing * 2)
     }
 
     func start() {
@@ -148,28 +189,247 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                         delay: 0.16,
                         options: [.curveEaseOut, .beginFromCurrentState]
                     ) {
-                        self.button.alpha = 1
-                        self.button.transform = .identity
+                        for action in self.buttonStack.arrangedSubviews {
+                            action.alpha = 1
+                            action.transform = .identity
+                        }
                     } completion: { _ in
-                        self.button.isUserInteractionEnabled = true
+                        self.setActionsEnabled(true)
                         UIAccessibility.post(
                             notification: .layoutChanged,
-                            argument: self.button)
+                            argument: self.safariButton)
                     }
                 }
             }
         }
     }
 
-    @objc private func continueTapped() {
-        button.isUserInteractionEnabled = false
-        UIView.animate(
-            withDuration: 0.16,
-            animations: {
-                self.button.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
-                self.button.alpha = 0.72
-            },
-            completion: { [weak self] _ in self?.onContinue?() })
+    func setCompleted(safari: Bool, shortcut: Bool) {
+        safariCompleted = safari
+        shortcutCompleted = shortcut
+        update(safariButton, completed: safari, symbol: "safari.fill")
+        update(shortcutButton, completed: shortcut, symbol: "bolt.fill")
+    }
+
+    func setActionsEnabled(_ enabled: Bool) {
+        safariButton.isUserInteractionEnabled = true
+        shortcutButton.isUserInteractionEnabled = true
+        safariButton.isEnabled = enabled && !safariCompleted
+        shortcutButton.isEnabled = enabled && !shortcutCompleted
+        pasteButton.isUserInteractionEnabled = enabled
+    }
+
+    func setPasteLoading() {
+        pasteButton.setState(.loading)
+        safariButton.isEnabled = false
+        shortcutButton.isEnabled = false
+    }
+
+    func setPasteError(_ message: String) {
+        pasteButton.setState(.failure(message))
+        safariButton.isEnabled = !safariCompleted
+        shortcutButton.isEnabled = !shortcutCompleted
+    }
+
+    func resetPaste() {
+        pasteButton.setState(.idle)
+        safariButton.isEnabled = !safariCompleted
+        shortcutButton.isEnabled = !shortcutCompleted
+    }
+
+    override func paste(itemProviders: [NSItemProvider]) {
+        if let provider = itemProviders.first(where: {
+            $0.canLoadObject(ofClass: URL.self)
+        }) {
+            _ = provider.loadObject(ofClass: URL.self) { [weak self] url, _ in
+                guard let url else { return }
+                DispatchQueue.main.async { self?.onPaste?(url.absoluteString) }
+            }
+            return
+        }
+        guard let provider = itemProviders.first(where: {
+            $0.canLoadObject(ofClass: NSString.self)
+        }) else {
+            setPasteError("article URLs only")
+            return
+        }
+        _ = provider.loadObject(ofClass: NSString.self) { [weak self] value, _ in
+            guard let value = value as? NSString else { return }
+            DispatchQueue.main.async { self?.onPaste?(value as String) }
+        }
+    }
+
+    private func configure(
+        _ button: UIButton,
+        title: String,
+        symbol: String,
+        action: Selector
+    ) {
+        button.configuration = GlassStyle.actionButtonConfiguration(
+            title: title, symbol: symbol, prominent: true)
+        button.configuration?.baseBackgroundColor =
+            LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
+        button.configuration?.imagePlacement = .leading
+        button.configuration?.titleLineBreakMode = .byTruncatingTail
+        button.accessibilityLabel = title
+        button.addTarget(self, action: action, for: .touchUpInside)
+    }
+
+    private func update(_ button: UIButton, completed: Bool, symbol: String) {
+        button.isEnabled = !completed
+        if completed {
+            button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
+            button.configuration?.baseForegroundColor = UIColor.white.withAlphaComponent(0.42)
+            button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.08)
+            button.accessibilityValue = "Completed"
+        } else {
+            button.configuration?.image = UIImage(systemName: symbol)
+            if button === shortcutButton,
+               let path = Bundle.main.path(forResource: "ShortcutsAppIcon", ofType: "png")
+            {
+                button.configuration?.image = UIImage(contentsOfFile: path).map {
+                    Self.buttonIcon($0)
+                }
+            }
+            button.configuration?.baseForegroundColor = LunaColors.primaryText
+            button.configuration?.baseBackgroundColor =
+                LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
+            button.accessibilityValue = nil
+        }
+    }
+
+    @objc private func safariTapped() {
+        setActionsEnabled(false)
+        onSafari?()
+    }
+
+    @objc private func shortcutTapped() {
+        setActionsEnabled(false)
+        onShortcut?()
+    }
+
+    private static func buttonIcon(_ image: UIImage) -> UIImage {
+        let size = CGSize(width: 22, height: 22)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }.withRenderingMode(.alwaysOriginal)
+    }
+}
+
+private final class OnboardingPasteControl: UIView {
+    enum State {
+        case idle
+        case loading
+        case failure(String)
+    }
+
+    var onPaste: ((String) -> Void)?
+
+    private let control: UIPasteControl
+    private let surface = UIView()
+    private let icon = UIImageView()
+    private let label = UILabel()
+
+    override init(frame: CGRect) {
+        let configuration = UIPasteControl.Configuration()
+        configuration.displayMode = .iconOnly
+        configuration.cornerStyle = .capsule
+        configuration.baseBackgroundColor =
+            LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
+        configuration.baseForegroundColor = .clear
+        control = UIPasteControl(configuration: configuration)
+        super.init(frame: frame)
+
+        accessibilityIdentifier = "onboarding.intro.paste"
+        control.target = nil
+        control.accessibilityLabel = "Paste a url"
+        // UIPasteControl remains the full-size hit target and native paste
+        // dispatcher; its private artwork sits beneath our stateful surface.
+        control.layer.opacity = 0
+        addSubview(control)
+
+        surface.backgroundColor =
+            LunaSurfacePalette.baseColor.withAlphaComponent(0.34)
+        surface.isUserInteractionEnabled = false
+        surface.layer.zPosition = 10
+        addSubview(surface)
+
+        icon.image = UIImage(systemName: "doc.on.clipboard")
+        icon.tintColor = LunaColors.primaryText
+        icon.contentMode = .scaleAspectFit
+        icon.isUserInteractionEnabled = false
+        icon.layer.zPosition = 11
+        addSubview(icon)
+
+        label.text = "Paste a url"
+        label.textColor = LunaColors.primaryText
+        label.font = .systemFont(ofSize: 15, weight: .semibold)
+        label.textAlignment = .center
+        label.isUserInteractionEnabled = false
+        label.layer.zPosition = 11
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        var responder: UIResponder? = self
+        while let next = responder?.next {
+            if let target = next as? UIViewController {
+                control.target = target
+                break
+            }
+            responder = next
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        control.frame = bounds
+        surface.frame = bounds
+        surface.layer.cornerRadius = bounds.height / 2
+        let contentWidth = min(bounds.width - 32, 210)
+        let iconSide: CGFloat = 20
+        let gap: CGFloat = 8
+        let labelSize = label.sizeThatFits(CGSize(
+            width: contentWidth - iconSide - gap, height: bounds.height))
+        let totalWidth = iconSide + gap + labelSize.width
+        icon.frame = CGRect(
+            x: (bounds.width - totalWidth) / 2,
+            y: (bounds.height - iconSide) / 2,
+            width: iconSide,
+            height: iconSide)
+        label.frame = CGRect(
+            x: icon.frame.maxX + gap,
+            y: 0,
+            width: labelSize.width,
+            height: bounds.height)
+    }
+
+    func setState(_ state: State) {
+        switch state {
+        case .idle:
+            label.text = "Paste a url"
+            icon.image = UIImage(systemName: "doc.on.clipboard")
+            surface.backgroundColor =
+                LunaSurfacePalette.baseColor.withAlphaComponent(0.34)
+            control.isEnabled = true
+        case .loading:
+            label.text = "Loading page…"
+            icon.image = UIImage(systemName: "arrow.triangle.2.circlepath")
+            surface.backgroundColor =
+                LunaSurfacePalette.baseColor.withAlphaComponent(0.22)
+            control.isEnabled = false
+        case .failure(let message):
+            label.text = message
+            icon.image = UIImage(systemName: "exclamationmark.triangle.fill")
+            surface.backgroundColor = LunaColors.errorAccent
+            control.isEnabled = true
+        }
+        control.accessibilityLabel = label.text
+        setNeedsLayout()
     }
 }
 

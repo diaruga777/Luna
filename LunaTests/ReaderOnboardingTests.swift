@@ -26,6 +26,45 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertFalse(downloader.isCompleted)
     }
 
+    @MainActor
+    func testExternalSaveWhileIntroIsVisibleCompletesOnboarding() {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let registry = AppOnboardingStore(app: .reader, defaults: defaults)
+        let changed = Notification.Name("onboarding.externalSave.\(UUID())")
+        var identifiers: Set<UUID> = [UUID()]
+        var cleanupCount = 0
+        let productionRoot = UIViewController()
+        productionRoot.view.backgroundColor = .black
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: registry,
+            completion: AppOnboardingCompletion(
+                temporarySave: OnboardingTemporarySave(
+                    install: { true },
+                    cleanup: { cleanupCount += 1 },
+                    changeNotifications: [changed],
+                    storedIdentifiers: { identifiers }),
+                makeCompletedRootViewController: { productionRoot }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        identifiers.insert(UUID())
+        NotificationCenter.default.post(name: changed, object: nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertTrue(registry.isCompleted)
+        XCTAssertTrue(window.rootViewController === productionRoot)
+        XCTAssertEqual(cleanupCount, 1)
+    }
+
     func testBundledLunaArticleInstallsAsARealIdempotentOfflineSave() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ReaderOnboardingTests-\(UUID().uuidString)")
@@ -180,8 +219,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(lines[1].occluderIsFullyOpaque)
         XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
 
-        let button = try XCTUnwrap(
-            intro.view.subviews.compactMap { $0 as? UIButton }.first)
+        let buttons = intro.view.descendants(of: UIButton.self)
         XCTAssertEqual(intro.view.backgroundColor, .black)
         XCTAssertFalse(intro.view.subviews.contains {
             $0.accessibilityIdentifier == "onboarding.intro.iconCluster"
@@ -190,13 +228,69 @@ final class ReaderOnboardingTests: XCTestCase {
             intro.view.subviews.compactMap { $0 as? UILabel }.allSatisfy {
                 $0.accessibilityIdentifier != "onboarding.intro.supportingText"
             })
-        XCTAssertEqual(
-            button.configuration?.title,
-            "Let's go")
-        XCTAssertEqual(button.accessibilityLabel, "Let's go")
+        XCTAssertTrue(buttons.contains {
+            $0.accessibilityLabel == "Remove popups and walls for me"
+                && $0.configuration?.image != nil
+        })
+        XCTAssertTrue(buttons.contains {
+            $0.accessibilityLabel
+                == "Save on-screen links with the Action Button"
+                && $0.configuration?.image != nil
+        })
+        XCTAssertNotNil(intro.view.descendants(of: UIPasteControl.self).first)
+        XCTAssertTrue(intro.view.descendants(of: UILabel.self).contains {
+            $0.text == "Paste a url"
+        })
+        let button = try XCTUnwrap(buttons.first {
+            $0.accessibilityLabel == "Remove popups and walls for me"
+        })
         let tintAlpha = try XCTUnwrap(
             button.configuration?.baseBackgroundColor?.cgColor.alpha)
         XCTAssertEqual(tintAlpha, 0.24, accuracy: 0.001)
+
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = intro
+        window.makeKeyAndVisible()
+        intro.view.frame = window.bounds
+        intro.view.layoutIfNeeded()
+        for action in intro.view.descendants(of: UIControl.self) {
+            action.alpha = 1
+        }
+        intro.setActionsEnabled(true)
+        defer { window.isHidden = true }
+        let point = window.convert(
+            CGPoint(x: button.bounds.midX, y: button.bounds.midY),
+            from: button)
+        let hit = window.hitTest(point, with: nil)
+        XCTAssertTrue(
+            hit === button || hit?.isDescendant(of: button) == true,
+            "Safari intro action is shadowed by \(String(describing: hit))")
+    }
+
+    @MainActor
+    func testIntroRestoresCompletedSetupArtworkBeforeItsViewLoads() throws {
+        let intro = OnboardingIntroCardContentViewController(
+            firstLine: "You want to read more.",
+            secondLine: "Let’s make that happen.",
+            supportingText: "")
+        intro.setCompleted(safari: true, shortcut: true)
+        intro.loadViewIfNeeded()
+
+        for label in [
+            "Remove popups and walls for me",
+            "Save on-screen links with the Action Button",
+        ] {
+            let button = try XCTUnwrap(
+                intro.view.descendants(of: UIButton.self).first {
+                    $0.accessibilityLabel == label
+                })
+            XCTAssertFalse(button.isEnabled)
+            XCTAssertEqual(button.accessibilityValue, "Completed")
+            XCTAssertEqual(
+                button.configuration?.image,
+                UIImage(systemName: "checkmark.circle.fill"))
+        }
     }
 
     func testIntroWaveAndDemoLoopTimingsStayDeliberateButBrisk() {
@@ -277,8 +371,8 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(stage.completedSave(from: .safari), .safari)
         XCTAssertEqual(stage, .safariSetup)
         XCTAssertNil(stage.completedSave(from: .messages))
-        XCTAssertTrue(stage.completedSafariSetup())
-        XCTAssertEqual(stage, .messagesDemonstration)
+
+        stage = .messagesDemonstration
         XCTAssertEqual(stage.completedSave(from: .messages), .actionButton)
         XCTAssertEqual(stage, .actionButtonSetup)
     }
@@ -554,7 +648,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testOnboardingKeepsLaunchCoronaUntilShowMeHowThenExpandsWithoutIt() throws {
+    func testOnboardingKeepsLaunchCoronaUntilSafariSetupThenExpandsWithoutIt() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -592,7 +686,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Let's go"
+                $0.accessibilityLabel == "Remove popups and walls for me"
             })
         UIView.setAnimationsEnabled(false)
         defer {
@@ -626,11 +720,11 @@ final class ReaderOnboardingTests: XCTestCase {
         // intro's direct-subview corona must be gone.
         XCTAssertTrue(
             onboarding.view.subviews.compactMap { $0 as? EclipseCoronaView }.isEmpty,
-            "Pressing Show me how must remove the retained corona before expansion")
+            "Starting Safari setup must remove the retained corona before expansion")
     }
 
     @MainActor
-    func testFirstLineRevealRunsTheStagedDemonstrationPreload() throws {
+    func testFirstLineRevealLeavesSaveStoresUntouchedUntilAFlowStarts() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -638,13 +732,17 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let productionRoot = UINavigationController(
             rootViewController: UIViewController())
+        var installCount = 0
         let onboarding = AppOnboardingViewController(
             configuration: .configuration(for: .reader),
             onboardingStore: AppOnboardingStore(
                 app: .reader, defaults: defaults),
             completion: AppOnboardingCompletion(
                 temporarySave: OnboardingTemporarySave(
-                    install: { true },
+                    install: {
+                        installCount += 1
+                        return true
+                    },
                     cleanup: {}),
                 makeCompletedRootViewController: { productionRoot }))
         let window = UIWindow(frame: CGRect(
@@ -656,31 +754,18 @@ final class ReaderOnboardingTests: XCTestCase {
         defer { window.isHidden = true }
 
         onboarding.firstIntroLineDidReveal()
-        // The preload runs one stage per run-loop turn; keep spinning until
-        // the final stage mounts the replicas (or the deadline trips).
-        let deadline = Date(timeIntervalSinceNow: 2)
-        while Date() < deadline,
-              onboarding.children.compactMap({
-                  $0 as? SafariReplicaViewController
-              }).isEmpty {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
-        }
-
-        let safari = try XCTUnwrap(
-            onboarding.children.compactMap {
-                $0 as? SafariReplicaViewController
-            }.first,
-            "Show me how must not pay for replica creation; it is preloaded behind the intro")
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        XCTAssertNotNil(onboarding.children.first {
+            $0 is SafariReplicaViewController
+        })
+        XCTAssertNotNil(onboarding.children.first {
+            $0 is MessagesReplicaViewController
+        })
         XCTAssertTrue(
-            safari.view.isHidden,
-            "The preloaded Safari replica must stay invisible behind the intro card")
-        XCTAssertNotNil(
-            onboarding.children.compactMap {
-                $0 as? MessagesReplicaViewController
-            }.first)
-        XCTAssertTrue(
-            onboarding.savedRootViewControllerForTesting === productionRoot,
-            "The production root is prepared before Show me how is pressed")
+            onboarding.savedRootViewControllerForTesting === productionRoot)
+        XCTAssertEqual(
+            installCount, 0,
+            "Showing the paste button must not install the demonstration save")
         XCTAssertFalse(
             onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
             "Preloading must not retire the intro corona early")
@@ -1108,7 +1193,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Let's go"
+                $0.accessibilityLabel == "Remove popups and walls for me"
             })
         button.sendActions(for: .touchUpInside)
 
@@ -1160,25 +1245,28 @@ final class ReaderOnboardingTests: XCTestCase {
                 """)
         }
 
-        // Skipping must ride the same rails as a completed Safari setup: the
-        // staged save plays and hands off to the Messages demonstration.
+        // Skipping finishes only the Safari lesson and app-switches back to
+        // the three-action intro card.
         let skip = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
                 $0.accessibilityLabel == "Skip"
             })
         skip.sendActions(for: .touchUpInside)
-        let messagesDeadline = Date(timeIntervalSinceNow: 15)
-        var messages: MessagesReplicaViewController?
-        while Date() < messagesDeadline {
+        let introDeadline = Date(timeIntervalSinceNow: 15)
+        var safariIntroButton: UIButton?
+        while Date() < introDeadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            messages = onboarding.children.compactMap {
-                $0 as? MessagesReplicaViewController
-            }.first
-            if let messages, !messages.view.isHidden { break }
+            safariIntroButton = onboarding.view.descendants(of: UIButton.self)
+                .first {
+                    $0.accessibilityLabel == "Remove popups and walls for me"
+                }
+            if safariIntroButton?.isEnabled == false,
+               onboarding.view.descendants(of: UIPasteControl.self).first?.isHidden == false {
+                break
+            }
         }
-        XCTAssertEqual(
-            try XCTUnwrap(messages).view.isHidden, false,
-            "Skip must continue into the Messages demonstration")
+        XCTAssertFalse(try XCTUnwrap(safariIntroButton).isEnabled)
+        XCTAssertEqual(safariIntroButton?.accessibilityValue, "Completed")
     }
 
     func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {

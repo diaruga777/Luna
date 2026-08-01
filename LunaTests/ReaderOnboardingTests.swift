@@ -82,7 +82,7 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingSafariExtensionCopy.title,
             OnboardingSafariExtensionCopy.explainer,
             OnboardingSafariExtensionCopy.stepsHeading,
-        ] + OnboardingSafariExtensionCopy.steps(appName: "Luna").map(\.text)
+        ] + OnboardingSafariExtensionCopy.steps.map(\.text)
         for line in everyLine {
             XCTAssertFalse(
                 line.lowercased().contains("paywall"),
@@ -940,9 +940,8 @@ final class ReaderOnboardingTests: XCTestCase {
 
     @MainActor
     func testSafariPageIsTheExtensionExplainerAnchoredToItsActions() throws {
-        let appName = LunaApp.reader.displayName
-        let page = OnboardingSafariPageView(
-            configuration: .configuration(for: .reader))
+        let extensionName = OnboardingSafariExtensionCopy.extensionName
+        let page = OnboardingSafariPageView()
         page.frame = CGRect(
             origin: .zero,
             size: CGSize(
@@ -959,8 +958,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(revealLines.allSatisfy(\.isFullyRevealed))
         let revealCopy = revealLines.compactMap(\.accessibilityLabel)
         XCTAssertTrue(revealCopy.contains(OnboardingSafariExtensionCopy.title))
-        XCTAssertTrue(revealCopy.contains(
-            OnboardingSafariExtensionCopy.byline(appName: appName)))
+        XCTAssertTrue(revealCopy.contains(OnboardingSafariExtensionCopy.byline))
         XCTAssertTrue(
             revealCopy.contains(OnboardingSafariExtensionCopy.explainer))
         XCTAssertTrue(
@@ -969,7 +967,7 @@ final class ReaderOnboardingTests: XCTestCase {
         // Three enable steps, each beside a picture of the exact chrome it
         // names: the browser bar's own page-menu symbol, the puzzle row it
         // opens, and the app's real icon beside a switch already flipped on.
-        let steps = OnboardingSafariExtensionCopy.steps(appName: appName)
+        let steps = OnboardingSafariExtensionCopy.steps
         XCTAssertEqual(steps.count, 3)
         let stepRows = try (0..<steps.count).map { index in
             try XCTUnwrap(page.descendants(of: UIView.self).first {
@@ -980,7 +978,11 @@ final class ReaderOnboardingTests: XCTestCase {
         for (index, step) in steps.enumerated() {
             XCTAssertEqual(stepRows[index].accessibilityLabel, step.text)
         }
-        XCTAssertEqual(steps[2].text, "Switch on \(appName)")
+        // Safari calls the extension "Luna" in every host app — naming the
+        // step after the running app would send a Reader user hunting for a row
+        // that doesn't exist.
+        XCTAssertEqual(steps[2].text, "Switch on \(extensionName)")
+        XCTAssertEqual(extensionName, "Luna")
         XCTAssertTrue(steps[1].text.contains(
             OnboardingSafariExtensionCopy.manageExtensionsTitle))
         let visuals = try stepRows.map { row in
@@ -1067,8 +1069,7 @@ final class ReaderOnboardingTests: XCTestCase {
     /// fits above the browser chrome without the prose being cut.
     @MainActor
     func testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse() throws {
-        let page = OnboardingSafariPageView(
-            configuration: .configuration(for: .reader))
+        let page = OnboardingSafariPageView()
         page.frame = CGRect(x: 0, y: 0, width: 375, height: 667 - 20)
         page.layoutIfNeeded()
 
@@ -1162,8 +1163,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
     @MainActor
     func testCleanupShatterRevealsThePageAndIgnitesTheActionCorona() throws {
-        let page = OnboardingSafariPageView(
-            configuration: .configuration(for: .reader))
+        let page = OnboardingSafariPageView()
         let window = UIWindow(frame: CGRect(
             origin: .zero,
             size: CGSize(

@@ -19,10 +19,10 @@ enum OnboardingExtensionEnableTiming {
     static let sheetDismissDuration: TimeInterval = 0.25
 }
 
-/// The Manage Extensions bottom sheet: the current app's icon and name with
-/// the permission toggle that flips on. Its title and the app's name are the
-/// page's too — the mock page lists this sheet as the step that reaches it, and
-/// reads both from `OnboardingSafariExtensionCopy` / the same configuration.
+/// The Manage Extensions bottom sheet: the extension's icon and name with the
+/// permission toggle that flips on. Title and name are the page's too — the mock
+/// page lists this sheet as the step that reaches it, and both read from
+/// `OnboardingSafariExtensionCopy`.
 final class OnboardingManageExtensionsSheetView: UIView {
     private static let cardHeight: CGFloat = 252
 
@@ -35,10 +35,7 @@ final class OnboardingManageExtensionsSheetView: UIView {
     private let appName = UILabel()
     private let toggle = OnboardingMockSwitchView()
 
-    init(
-        frame: CGRect,
-        configuration: OnboardingSurfaceConfiguration = .current
-    ) {
+    override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         accessibilityIdentifier = "onboarding.safari.manageExtensionsSheet"
@@ -76,7 +73,7 @@ final class OnboardingManageExtensionsSheetView: UIView {
         appIcon.clipsToBounds = true
         appRow.addSubview(appIcon)
 
-        appName.text = configuration.app.displayName
+        appName.text = OnboardingSafariExtensionCopy.extensionName
         appName.font = .systemFont(ofSize: 17)
         appName.textColor = UIColor(white: 0.08, alpha: 1)
         appRow.addSubview(appName)

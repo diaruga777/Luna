@@ -200,9 +200,9 @@ Photos references remain governed by the user's Photos library.
   destination policy above; sibling apps retain their legacy Photos behavior.
 - **Ingest, App Intents, and short-lived extensions** — normal ingestion calls
   `MediaAutoDownloader`, while `.appIntent` ingestion deliberately skips the awaited inline
-  downloader and any automatic Downloader-host Live Activity; the Save/Provide Context intent
-  owns the single handoff after the reading-list result is known. The handoff resolves
-  the asset and its advertised/HEAD content length. Known files up to **100 MiB** run through the
+  downloader and any automatic Downloader-host Live Activity. Provide Context resolves
+  the asset and its advertised/HEAD content length, checks storage, and returns a
+  versioned opaque checkpoint; Save owns the only actual transfer. Known files up to **100 MiB** run through the
   Live Activity/background URLSession engine and are awaited so the intent can return an optional
   `IntentFile`. Larger or indeterminate files are handed to that engine and the intent returns
   immediately with no file. Existing local files are reused and Photos-backed rows are copied to
@@ -217,12 +217,12 @@ Photos references remain governed by the user's Photos library.
   `failed`). `MediaIntentHandoff` throws `downloadFailed`/`notAuthorized` for anything that
   isn't `isDownloadHandled`; already-downloaded and Wi-Fi-deferred remain legitimate
   no-file returns (see `app-intents.md`, "Error reporting").
-  **Who shows progress:** in the media-handling apps (Downloader + central Luna — the only
-  targets that compile `CaptureIntentRuntime+LongRunning.swift`) the capture intents conform
-  to `LiveActivityIntent`, which is
+  **Who shows progress:** SaveIntent compiles the guarded long-running runtime in
+  every app, while only Downloader + central Luna install the media handoff and
+  can start a transfer. Save conforms to `LiveActivityIntent`, which is
   what lets `Activity.request` succeed from a background Action Button run at all — before
   that it threw and the transfer ran invisibly. On iOS 27 builds compiled with Xcode 27 the
-  intents also run under `LongRunningIntent`, whose own system progress UI covers the
+  Save also runs under `LongRunningIntent`, whose own system progress UI covers the
   AWAITED leg; `LiveMediaDownloadManager.systemProvidesProgressUI` (a task local bound by
   `MediaIntentHandoff`) suppresses Luna's activity for exactly that leg so the two don't
   stack. The background leg always keeps Luna's activity — the system's ends when the

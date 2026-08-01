@@ -233,27 +233,35 @@ The root uses the production `CardCarouselViewController`:
    analysis, and remember the `-skipNotificationAuthPrompt` DEBUG arg so the
    permission alert doesn't sit over the recording; a 6×
    `-slowOnboardingAnimations` run hides commit-latency bugs entirely).
-   **THE ARTICLE IS THE INTRO'S ANIMATION, ELEMENT BY ELEMENT — not a fast
-   page wipe.** `computeCascade` gives every element (icon+headline
-   together, then byline, eclipse image, body, setup-card curtain) its own
-   intro reveal: each edge crosses its element at exactly the intro line's
-   speed (`GlyphPixelBloomView.referenceFrontSpeed`, ~46pt/s), which keeps
-   the bloom's band scale at 1 — the IDENTICAL deliberate light of “You
-   want to read more.”, with zero band scaling, zero derivative tuning. A
-   fast unified 2.2s front was tried repeatedly and always read as garbage
-   next to the intro: at ~370pt/s the four falloff bands stretched into
-   line-height slabs (text "blinking"), the per-frame emitter strips grew
-   ~8× and starved the display link, and every mitigation (fine gradient
-   bands, prerendered lit layers, display-link-driven masks) changed the
-   intro's own perfect look — the speed WAS the problem. Each element in
-   the cascade sets out when the one above it is halfway through
-   (`cascadeOverlap`), echoing the intro's line-after-line rhythm; the
-   whole cleanup takes ~7s. There is no marker on any edge — no rim, no
-   line, only the light. Each obstruction tile (~32pt, with a 0–33ms
-   trailing-only scatter so rows don't pop off in lockstep) detaches at the
-   instant the cascading light beneath its center arrives — `FrontLeg`s map
-   page-y to arrival time across the elements' staggered schedules — batched
-   into one dispatch turn per frame-width of delay. The images ride the
+   **THE ARTICLE IS THE INTRO'S ANIMATION, ELEMENT BY ELEMENT — a wave that
+   CLIMBS the page.** `computeCascade` gives every element its own intro
+   reveal with the moon geometry MIRRORED (`sweepsUpward` on
+   `MoonRevealLineView`/`MoonRevealImageView`; the shared classes default
+   to the intro's descending sweep, which stays byte-identical): the body
+   — whose copy deliberately fills the page past the fold — ignites first
+   from the page bottom, then the eclipse image, byline, and finally the
+   icon+headline row, each element's edge rising at `cascadeFrontSpeed`
+   (140pt/s; the bloom's falloff bands stretch with the ratio so every
+   glyph's brighten-and-cool takes exactly the intro's TIME). A fast
+   unified single front was tried repeatedly and always read as garbage
+   next to the intro — the per-element cascade at intro-derived pacing is
+   the shape that works. Each element sets out when the one below it is
+   `cascadeOverlap` through; there is no marker on any edge — no rim, no
+   line, only the light. Each obstruction tile (~11pt grains, with a
+   0–33ms trailing-only scatter) detaches at the instant the climbing
+   light beneath its center arrives — `FrontLeg`s map page-y to arrival
+   time, and a running maximum from the page bottom UP keeps detachment
+   strictly bottom-to-top — batched into one dispatch turn per frame-width
+   of delay. **The setup card takes no part in the wave**: it floats over
+   the page content (there is no card slot below the body any more), and
+   once the wave finishes it materialises top-to-bottom under its own
+   bloom — a mask geometrically excludes its unrevealed part so the page
+   shows through, an empty prober layer rides the same translation to
+   drive the light, and its luminance raster makes the explainer text and
+   button flare exactly like glyphs; the corona fades in only once the
+   card is whole (fading it alongside outlined the card's silhouette
+   before the surface existed). The Manage Extensions sheet's own
+   choreography is brisk: present 0.3s, toggle after 0.3s, dismiss 0.25s. The images ride the
    same light pass: `MoonRevealImageView` feeds its own
    `GlyphPixelBloomView` a raster of the image as displayed whose alpha is
    rebuilt from LUMINANCE — Quartz shadows key off alpha, and an opaque

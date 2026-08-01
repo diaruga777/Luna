@@ -22,12 +22,10 @@ enum OnboardingLunaArticleCopy {
 
     static let intro = "What you get, minus the pitch:"
 
-    /// Deliberately one short line each. The Safari mock lays the article and
-    /// the setup card out on ONE screen with no scroll (see
-    /// `OnboardingArticleReplicaView.layoutSubviews`), which leaves the body
-    /// about seven lines; a bullet long enough to wrap costs two of them and
-    /// pushes the card under the browser chrome.
-    /// `testLunaArticleLoadsBuriedWithTheCardSharingTheScreen` is the guard.
+    /// Deliberately one short line each, and deliberately MANY: the Safari
+    /// mock's body must fill its whole page plus a little past the fold (the
+    /// setup card floats OVER the content and the wipe sweeps the full
+    /// height), so the list runs long — every line a real Luna feature.
     static let features = [
         "Ads, popups and paywalls: gone.",
         "Saved offline, ready on any flight.",
@@ -35,6 +33,23 @@ enum OnboardingLunaArticleCopy {
         "Read aloud with the screen off.",
         "Open links without losing your place.",
         "Send to Kindle, or export anywhere.",
+        "EPUB, PDF, Markdown or plain text.",
+        "Long X threads read like articles.",
+        "Newsletters pulled from your inbox.",
+        "Share a save straight to a friend.",
+        "Read-aloud rolls into the next piece.",
+        "Eye tracking pauses when you glance away.",
+        "Paywalled pages, readable again.",
+        "PDFs and documents, same reader.",
+        "A card deck, not another inbox.",
+        "The Action Button saves from anywhere.",
+        "One share-sheet save in every app.",
+        "Track a product's price while you wait.",
+        "Videos and audio, kept for the plane.",
+        "Everything on device, searchable offline.",
+        "No account. No feed. No streaks.",
+        "Night-sky dark, down to the last pixel.",
+        "Built to disappear while you read.",
     ]
 
     /// The list as one rendered string, for the two mock surfaces that draw the

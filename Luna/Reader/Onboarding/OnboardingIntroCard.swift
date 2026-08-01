@@ -44,7 +44,7 @@ enum OnboardingIntroTiming {
     static let lineRevealDuration: TimeInterval = 1.55
     /// A short reading beat keeps the two sentences distinct without making the
     /// second feel like a separate stage.
-    static let interLineDelay: TimeInterval = 0.32
+    static let interLineDelay: TimeInterval = 0.15
 }
 
 final class OnboardingIntroCardContentViewController: CardContentViewController {
@@ -187,6 +187,10 @@ final class MoonRevealLineView: UIView {
     private let pixelBloomView = GlyphPixelBloomView()
     private let lineSpacing: CGFloat
     private let occluderColor: UIColor
+    /// The intro's moon descends; the article's bottom-to-top wave asks for
+    /// the mirror: the circle covers everything ABOVE its bottom arc and
+    /// climbs, exposing the view from the bottom up with the same light.
+    private let sweepsUpward: Bool
     private var didStartReveal = false
     private var initialCircleFrame = CGRect.zero
     private var edgeSagitta: CGFloat = 0
@@ -226,10 +230,12 @@ final class MoonRevealLineView: UIView {
         numberOfLines: Int = 1,
         minimumScaleFactor: CGFloat = 0.72,
         lineSpacing: CGFloat = 0,
-        occluderColor: UIColor = .black
+        occluderColor: UIColor = .black,
+        sweepsUpward: Bool = false
     ) {
         self.lineSpacing = lineSpacing
         self.occluderColor = occluderColor
+        self.sweepsUpward = sweepsUpward
         self.isFullyRevealed = initiallyRevealed
         super.init(frame: .zero)
         isUserInteractionEnabled = false
@@ -314,9 +320,10 @@ final class MoonRevealLineView: UIView {
         didStartReveal = true
         layoutIfNeeded()
         let travel = revealFrontCrossingDistance
+        let signedTravel = sweepsUpward ? -travel : travel
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
-        let transform = CATransform3DMakeTranslation(0, travel, 0)
-        let finalCircleFrame = initialCircleFrame.offsetBy(dx: 0, dy: travel)
+        let transform = CATransform3DMakeTranslation(0, signedTravel, 0)
+        let finalCircleFrame = initialCircleFrame.offsetBy(dx: 0, dy: signedTravel)
         let initialRevealPath = revealPath(excluding: initialCircleFrame)
         let finalRevealPath = revealPath(excluding: finalCircleFrame)
 
@@ -345,7 +352,7 @@ final class MoonRevealLineView: UIView {
         // translation, so it can never run ahead of or behind the mask edge.
         let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
         pixelBloomView.reveal(
-            circleTravel: travel,
+            circleTravel: signedTravel,
             duration: OnboardingAnimationClock.displayLinkDuration(
                 resolvedDuration),
             edgeBandScale: max(
@@ -412,10 +419,13 @@ final class MoonRevealLineView: UIView {
         let halfWidth = bounds.width / 2
         let sagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
         edgeSagitta = sagitta
-        // At the line's extreme left/right the edge begins one point above
-        // the view's top, so no antialiased pixel leaks out early and the
-        // reveal starts exactly as a shared front reaches the view.
-        let initialTop = -1 - sagitta
+        // At the line's extreme left/right the edge begins one point outside
+        // the view (above for the descending moon, below for the climbing
+        // one), so no antialiased pixel leaks out early and the reveal
+        // starts exactly as its front reaches the view.
+        let initialTop = sweepsUpward
+            ? bounds.height + 1 + sagitta - diameter
+            : -1 - sagitta
         let circleFrame = CGRect(
             x: bounds.midX - radius,
             y: initialTop,
@@ -605,10 +615,16 @@ final class GlyphPixelBloomView: UIView {
     }
 
     private func currentStripRect() -> CGRect {
-        let edgeTop = initialCircleFrame.minY + circleTravel * progress
+        // The bands trail the moving edge: above a descending circle's top
+        // arc, below a climbing one's bottom arc.
+        let circle = initialCircleFrame.offsetBy(
+            dx: 0, dy: circleTravel * progress)
+        let y = circleTravel < 0
+            ? circle.maxY - edgeSagitta - 8
+            : circle.minY - scaledFalloffReach - 4
         return CGRect(
             x: 0,
-            y: edgeTop - scaledFalloffReach - 4,
+            y: y,
             width: bounds.width,
             height: stripHeight)
     }
@@ -699,7 +715,12 @@ final class GlyphPixelBloomView: UIView {
         if let offsetProvider {
             if let offset = offsetProvider() {
                 didSampleOffset = true
-                progress = min(max(offset / max(circleTravel, 1), 0), 1)
+                // Signed travel: an upward sweep translates negatively, and
+                // the ratio of matching signs keeps progress in 0...1.
+                let divisor = abs(circleTravel) >= 1
+                    ? circleTravel
+                    : (circleTravel < 0 ? -1 : 1)
+                progress = min(max(offset / divisor, 0), 1)
             } else {
                 // nil before the occluder's animation is committed, and again
                 // after it is removed: not-yet-started vs finished.

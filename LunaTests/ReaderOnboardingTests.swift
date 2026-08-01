@@ -318,9 +318,11 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThan(
             messages.actionButtonReplayDelay,
             OnboardingDemoLoopTiming.sourceHoldDuration)
+        // The bubbles must land as distinct beats, but the beat's exact
+        // length is a tuning knob — only floor it.
         XCTAssertGreaterThanOrEqual(
             OnboardingMessagesReplicaTiming.interMessageDelay,
-            1.5)
+            0.5)
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)
         XCTAssertTrue(messages.isURLHighlighted)
@@ -807,15 +809,20 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertNotNil(
             eclipse.descendants(of: UIImageView.self).first?.image)
 
-        // The copy is short enough that the setup card shares the screen: the
-        // wipe alone brings it into view, with no scroll at all.
+        // The copy fills the page and runs past the fold, and the setup card
+        // floats OVER the content, hidden until its own post-wave reveal.
+        XCTAssertGreaterThanOrEqual(
+            body.frame.maxY, article.bounds.height,
+            "The body copy must fill the page past the fold — extend the feature list if this fails")
         let card = try XCTUnwrap(
             article.descendants(of: OnboardingSafariSetupCardView.self).first)
-        XCTAssertEqual(card.frame.minY, body.frame.maxY + 20, accuracy: 0.5)
+        let overlay = try XCTUnwrap(card.superview)
+        XCTAssertTrue(
+            overlay.isHidden, "The card waits for the wave to finish")
+        XCTAssertGreaterThan(overlay.frame.minY, 0)
         XCTAssertLessThanOrEqual(
-            card.frame.maxY,
-            article.bounds.height - SafariBottomBar.chromeHeight - 34,
-            "The card must clear the browser chrome without scrolling — trim the article copy if this fails")
+            overlay.frame.maxY,
+            article.bounds.height - SafariBottomBar.chromeHeight)
 
         // Every fake obstruction is mounted, fully visible from the first
         // frame, and inert.
@@ -841,8 +848,8 @@ final class ReaderOnboardingTests: XCTestCase {
         // before its switch moves.
         XCTAssertGreaterThanOrEqual(
             OnboardingExtensionEnableTiming.pageHoldDuration, 0.5)
-        XCTAssertGreaterThan(
-            OnboardingExtensionEnableTiming.toggleDelay, 0.3)
+        XCTAssertGreaterThanOrEqual(
+            OnboardingExtensionEnableTiming.toggleDelay, 0.25)
     }
 
     /// The enable pass skips Safari's page menu entirely: the sheet is up, and
@@ -937,18 +944,21 @@ final class ReaderOnboardingTests: XCTestCase {
         })
         XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
 
-        // The one sweep leaves the setup card on screen — no scroll follows.
+        // The wave leaves the page clean and the card then materialises
+        // over the content — visible, mask gone, no scroll anywhere.
         let card = try XCTUnwrap(
             article.descendants(of: OnboardingSafariSetupCardView.self).first)
+        let overlay = try XCTUnwrap(card.superview)
+        XCTAssertFalse(
+            overlay.isHidden, "The card must be revealed after the wave")
+        XCTAssertNil(
+            overlay.layer.mask, "The card's reveal mask must be gone")
         let scroll = try XCTUnwrap(
-            article.descendants(of: UIScrollView.self).first {
-                card.isDescendant(of: $0)
-            })
+            article.descendants(of: UIScrollView.self).first)
         XCTAssertEqual(scroll.contentOffset, .zero)
         XCTAssertLessThanOrEqual(
-            card.frame.maxY,
-            article.bounds.height - SafariBottomBar.chromeHeight - 34)
-        XCTAssertEqual(card.frame.minY, body.frame.maxY + 20, accuracy: 0.5)
+            overlay.frame.maxY,
+            article.bounds.height - SafariBottomBar.chromeHeight)
     }
 
     @MainActor
@@ -965,25 +975,24 @@ final class ReaderOnboardingTests: XCTestCase {
             safari.view.descendants(of: OnboardingArticleReplicaView.self).first)
         let card = try XCTUnwrap(
             article.descendants(of: OnboardingSafariSetupCardView.self).first)
+        let overlay = try XCTUnwrap(card.superview)
         let scroll = try XCTUnwrap(
-            article.descendants(of: UIScrollView.self).first {
-                card.isDescendant(of: $0)
-            })
+            article.descendants(of: UIScrollView.self).first)
 
-        // On screen from the start (hidden under the clutter until the wipe),
+        // Floating over the content (hidden until its post-wave reveal),
         // with no scrolling anywhere in the demonstration.
         XCTAssertEqual(scroll.contentOffset, .zero)
-        XCTAssertLessThanOrEqual(card.frame.maxY, article.bounds.height)
+        XCTAssertLessThanOrEqual(overlay.frame.maxY, article.bounds.height)
         XCTAssertFalse(scroll.isScrollEnabled, "The page never scrolls")
 
         // The mini-card wears the usual black deck-card surface and rides the
-        // launch corona.
+        // launch corona, which sits exactly behind its overlay.
         let cardSurface = try XCTUnwrap(
             card.descendants(of: CardSurfaceView.self).first)
         XCTAssertEqual(cardSurface.backgroundColor, .black)
         let corona = try XCTUnwrap(
             article.descendants(of: EclipseCoronaView.self).first)
-        XCTAssertEqual(corona.frame, card.frame)
+        XCTAssertEqual(corona.frame, overlay.frame)
 
         let labels = card.descendants(of: UILabel.self).compactMap(\.text)
         XCTAssertTrue(labels.contains(

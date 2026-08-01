@@ -11,11 +11,11 @@ import UIKit
 enum OnboardingExtensionEnableTiming {
     /// The buried page registers before the sheet slides up.
     static let pageHoldDuration: TimeInterval = 0.9
-    static let sheetPresentDuration: TimeInterval = 0.45
+    static let sheetPresentDuration: TimeInterval = 0.3
     /// The sheet rests, read, before the switch moves.
-    static let toggleDelay: TimeInterval = 0.55
-    static let toggleDuration: TimeInterval = 0.3
-    static let sheetDismissDuration: TimeInterval = 0.4
+    static let toggleDelay: TimeInterval = 0.3
+    static let toggleDuration: TimeInterval = 0.22
+    static let sheetDismissDuration: TimeInterval = 0.25
 }
 
 /// The Manage Extensions bottom sheet: the current app's icon and name with

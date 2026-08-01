@@ -95,7 +95,7 @@ enum EmailLoginUI {
 /// title, `GlassStyle.lunaBrandAccent` fill, cornerRadius 14. Disabling dims to
 /// 50% alpha (the stock disabled state barely dims a solid fill).
 final class EmailLoginActionButton: UIButton {
-    private let spinner = EclipseHorizonSpinnerView(side: 20)
+    private let spinner = HorizonSpinnerView(side: 20)
     private var restingTitle: String
 
     init(title: String) {

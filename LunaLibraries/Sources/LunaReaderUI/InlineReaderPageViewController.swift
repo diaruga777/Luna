@@ -46,7 +46,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     public weak var delegate: InlineReaderPageDelegate?
 
-    private let spinner = EclipseHorizonSpinnerView()
+    private let spinner = HorizonSpinnerView()
     private var articleProbe: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var articleContent: ArticleContent?

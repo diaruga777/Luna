@@ -70,7 +70,7 @@ public final class SavedNonTextualViewController: UIViewController {
     // load-failure placeholder.
     private let previewContainer = UIView()
     private let previewImageView = UIImageView()
-    private let previewSpinner = EclipseHorizonSpinnerView(side: 36)
+    private let previewSpinner = HorizonSpinnerView(side: 36)
     /// A large media icon shown in the pending state (before any download starts).
     private let pendingIconView = UIImageView()
     /// A play overlay shown when the downloaded media is a video.

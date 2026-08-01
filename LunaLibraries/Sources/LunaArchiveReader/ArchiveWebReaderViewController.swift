@@ -34,7 +34,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private let itemID: UUID?
     private let store: ReadingListStore
     private let webView: WKWebView
-    private let progress = EclipseHorizonSpinnerView()
+    private let progress = HorizonSpinnerView()
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
     /// archive.today navigation (home page, form fill/submit, snapshot load). It's
     /// removed only while a CAPTCHA is up — the one moment the user must see and
@@ -48,7 +48,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// exposing a user-facing experimental setting. Once revealed, disabling the
     /// overlay's interaction lets scroll gestures reach the web view below.
     private var archiveCoverTapCount = 0
-    private let overlaySpinner = EclipseHorizonSpinnerView(side: 36)
+    private let overlaySpinner = HorizonSpinnerView(side: 36)
     private let overlayLabel = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
     /// An "Open in Safari" escape shown INSIDE the overlay alongside an error /

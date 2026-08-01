@@ -77,7 +77,7 @@ reading accent, so the screen reads as "Luna" whatever the reading accent is.
 - **`EmailLoginActionButton`** — the filled 52pt/cornerRadius-14 Sign In button.
   `isEnabled` dims to 50% alpha (a stock disabled state barely dims
   a solid fill). `setLoading(true)` swaps the title for a small embedded white
-  `EclipseHorizonSpinnerView` and blocks taps. Restoring the
+  `HorizonSpinnerView` and blocks taps. Restoring the
   correct `isEnabled` afterward is the caller's job — `setLoading` only undoes
   the title swap.
 - **`ProviderBadgeView`** / **`ProviderBadgeText`** — the small capsule chip
@@ -144,7 +144,7 @@ Both verification paths — `CredentialViewController.signIn`'s IMAP/SMTP
 `verifyCredentials()`, and the OAuth token exchange — install one
 `EmailLoginLoadingCover` over `navigationController?.view` (not just the
 screen's own view, so the Cancel/back bar buttons are covered too): an opaque
-.systemBackground` view with a centered `EclipseHorizonSpinnerView(side: 40)`.
+.systemBackground` view with a centered `HorizonSpinnerView(side: 40)`.
 Nothing under it is tappable. On failure the cover is torn down (`hide()`) and the screen's own UI (button, field
 interaction) is explicitly re-enabled before the error alert is shown — never
 left disabled with no cover and no way to retry.
@@ -161,13 +161,13 @@ way — no success or failure handling is gated on its outcome.
 
 ### Success beat: checkmark resolve
 
-`EclipseHorizonSpinnerView.resolveToCheckmark(completion:)`
-(`LunaLibraries/Sources/LunaDesignSystem/EclipseHorizonSpinnerView.swift`) stops
-the orbit, fades the moon and horizon, and draws a centered white-hot "✓" before
+`HorizonSpinnerView.resolveToCheckmark(completion:)`
+(`LunaLibraries/Sources/LunaDesignSystem/HorizonSpinnerView.swift`) stops
+the orbit, fades the ring and its lights, and draws a centered white-hot "✓" before
 calling `completion`. Both verification paths call this on success and hand back
 from the completion, so the user sees a compact success beat before the screen
 changes. Its basic activity-view contract is covered by
-`LunaTests/DotMatrixSpinnerViewTests.swift`.
+`LunaTests/HorizonSpinnerViewTests.swift`.
 
 ## Error copy
 

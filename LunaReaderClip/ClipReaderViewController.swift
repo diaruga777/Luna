@@ -20,7 +20,7 @@ final class ClipReaderViewController: UIViewController {
 
     private var state: State = .waiting
     private var task: Task<Void, Never>?
-    private let spinner = EclipseHorizonSpinnerView(side: 36)
+    private let spinner = HorizonSpinnerView(side: 36)
     private let titleLabel = UILabel()
     private let detailLabel = UILabel()
     private let retryButton = UIButton(type: .system)

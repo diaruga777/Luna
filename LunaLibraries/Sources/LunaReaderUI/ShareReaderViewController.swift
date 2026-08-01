@@ -52,7 +52,7 @@ public final class ShareReaderViewController: UIViewController {
     /// A pre-computed `Outcome` to present (the action extension already ran the
     /// shared `IngestPipeline`), or nil to run the pipeline itself on `viewDidLoad`.
     private let precomputedOutcome: Outcome?
-    private let spinner = EclipseHorizonSpinnerView(side: 36)
+    private let spinner = HorizonSpinnerView(side: 36)
     private let loadingStatus = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
 

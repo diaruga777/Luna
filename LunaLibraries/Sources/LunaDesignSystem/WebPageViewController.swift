@@ -23,7 +23,7 @@ public final class WebPageViewController: UIViewController {
 
     private let url: URL
     private let webView: WKWebView
-    private let progress = EclipseHorizonSpinnerView()
+    private let progress = HorizonSpinnerView()
 
     /// Called when the user taps Done. Defaults to dismissing the presentation.
     public var onClose: (() -> Void)?

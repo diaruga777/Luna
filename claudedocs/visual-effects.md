@@ -138,16 +138,27 @@ behind setup. A successful intro paste captures the real saved card, adds it to
 the right of onboarding long enough to run the normal card eclipse, then swaps
 the matching frame for the completed production root as egress finishes.
 
-## Loading spinner (`EclipseHorizonSpinnerView`)
+## Loading spinner (`HorizonSpinnerView`)
 
-`LunaLibraries/Sources/LunaDesignSystem/EclipseHorizonSpinnerView.swift` is the shared
-loading indicator. It is a solid black moon, encircled by the same dim horizon, dawn glow,
-and white-hot point used by the moon-horizon progress bar. Its head makes a continuous
-orbit; on every other orbit a dimmer point separates, travels one counter-clockwise lap at
-an uneven speed, and merges back in a brief flare. It retains the familiar
-`startAnimating()`, `stopAnimating()`, and `hidesWhenStopped` API and honors Reduce Motion.
-The email login cover resolves the eclipse into a drawn checkmark after successful
-verification.
+`LunaLibraries/Sources/LunaDesignSystem/HorizonSpinnerView.swift` is the shared
+loading indicator: `HorizonScrollIndicator`'s treatment — a faint app-tinted track with one
+white-hot point and its bloom riding it — bent into a closed ring. Nothing else is drawn (no
+moon disc, no swept tail). The head orbits forever at a pace that is deliberately **not**
+constant: its angular speed swells and eases twice per 1.7s lap, between 0.38× and 1.62× of
+the mean, from the closed form `θ(t) = 2πt + (swing/cycles)·sin(2π·cycles·t)` sampled into a
+cubic keyframe animation. Because an integral cycle count ends the lap at both the angle and
+the speed it began, the infinite repeat is seamless. On its own slower 3.5s cycle a dimmer
+second point separates from the head, takes one lap *relative to it*, and merges back in a
+brief flare, exactly like `MoonHorizonProgressBar`'s activity pulse — implemented by rotating
+the pulse's own frame of reference inside the orbit layer, so it always departs from and
+returns to precisely where the head is, however fast the head is moving. The 3.5s pulse cycle
+is not a multiple of the 1.7s lap, so the merge lands somewhere new on the ring each time.
+Ring, bloom, and core all scale off the view's size — the scroll indicator's 26:3
+bloom-to-core ratio, capped so the halo never outgrows its own ring — so a 20pt spinner isn't
+the blob a fixed 26pt bloom made of it. It retains
+the familiar `startAnimating()`, `stopAnimating()`, and `hidesWhenStopped` API and honors
+Reduce Motion (head at rest atop the ring, no pulse). The email login cover resolves the ring
+into a drawn checkmark after successful verification.
 
 Article-loading labels use `EclipseBloomStatusLabel` with
 `ArticleLoadingStatusCycler`: the current initial message enters through the onboarding's

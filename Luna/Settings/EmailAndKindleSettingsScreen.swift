@@ -179,7 +179,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                     content.textProperties.color = view.tintColor ?? .systemBlue
                     cell.selectionStyle = isConnecting ? .none : .default
                     if isConnecting {
-                        let spinner = EclipseHorizonSpinnerView(side: 20)
+                        let spinner = HorizonSpinnerView(side: 20)
                         spinner.startAnimating()
                         cell.accessoryView = spinner
                     } else {
@@ -204,7 +204,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 content.image = UIImage(systemName: "person.badge.key")
                 cell.selectionStyle = canConnect ? .default : .none
                 if isConnecting {
-                    let spinner = EclipseHorizonSpinnerView(side: 20)
+                    let spinner = HorizonSpinnerView(side: 20)
                     spinner.startAnimating()
                     cell.accessoryView = spinner
                 }

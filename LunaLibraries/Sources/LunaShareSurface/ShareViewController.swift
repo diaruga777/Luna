@@ -30,7 +30,7 @@ open class ShareViewController: UIViewController {
         return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
     }
 
-    private let spinner = EclipseHorizonSpinnerView(side: 36)
+    private let spinner = HorizonSpinnerView(side: 36)
     private let statusLabel = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
     private let closeButton = UIButton(type: .system)
@@ -561,7 +561,7 @@ open class ShareViewController: UIViewController {
         badge.layer.cornerCurve = .continuous
         badge.clipsToBounds = true
 
-        let spinner = EclipseHorizonSpinnerView(side: 36)
+        let spinner = HorizonSpinnerView(side: 36)
         spinner.color = GlassStyle.readingAccent
         spinner.startAnimating()
         let label = UILabel()

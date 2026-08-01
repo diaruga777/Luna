@@ -14,13 +14,13 @@ import UIKit
 
 final class EmailLoginLoadingCover {
     private let coverView = UIView()
-    private let spinner: EclipseHorizonSpinnerView
+    private let spinner: HorizonSpinnerView
 
     /// Installs the cover over `host` (pass `navigationController?.view` so the
     /// bar buttons are covered too, falling back to the view controller's own
     /// view if it isn't in a navigation controller).
     init(host: UIView) {
-        spinner = EclipseHorizonSpinnerView(side: 40)
+        spinner = HorizonSpinnerView(side: 40)
         coverView.backgroundColor = LunaColors.background
         coverView.isUserInteractionEnabled = true
         coverView.translatesAutoresizingMaskIntoConstraints = false

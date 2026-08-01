@@ -22,15 +22,20 @@ import Foundation
 enum OnboardingSafariExtensionCopy {
     static let title = "Read the page, not the popups"
 
-    /// What Safari calls the extension, which is what the last enable step must
-    /// tell you to look for. Every host app ships the SAME extension bundle, so
-    /// all four declare this one name — `extensionName` in
-    /// `LunaSafari/Resources/_locales/en/messages.json`. Naming the step after
-    /// the running app instead would send a Luna Reader user hunting Manage
-    /// Extensions for a row that says "Luna Reader"; there isn't one.
-    static let extensionName = "Luna"
-
-    static let byline = "A Safari extension • by \(extensionName)"
+    /// What Safari lists the extension as is the RUNNING APP's name — Luna,
+    /// Luna Reader, Luna Downloader, Luna Price Tracker — so that is what the
+    /// last enable step, the mock Manage Extensions sheet and this byline all
+    /// say. The four hosts build the same extension SOURCE, but each target
+    /// gives its copy its own bundle name
+    /// (`INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader"`
+    /// and friends, in `project.pbxproj`), and Safari shows that. Do not take
+    /// the name from `extensionName` in
+    /// `LunaSafari/Resources/_locales/en/messages.json` — that string is one
+    /// shared resource every target compiles identically, and the bundle name
+    /// overrides it.
+    static func byline(appName: String) -> String {
+        "A Safari extension • by \(appName)"
+    }
 
     /// Every claim, deliberately short. The page's one-screen budget leaves
     /// this paragraph about four rendered lines on the shortest phone Luna
@@ -66,9 +71,13 @@ enum OnboardingSafariExtensionCopy {
         let text: String
     }
 
-    static let steps: [Step] = [
-        Step(chrome: .pageMenu, text: "Tap the page menu in the address bar"),
-        Step(chrome: .manageExtensions, text: "Choose “\(manageExtensionsTitle)”"),
-        Step(chrome: .app, text: "Switch on \(extensionName)"),
-    ]
+    static func steps(appName: String) -> [Step] {
+        [
+            Step(chrome: .pageMenu, text: "Tap the page menu in the address bar"),
+            Step(
+                chrome: .manageExtensions,
+                text: "Choose “\(manageExtensionsTitle)”"),
+            Step(chrome: .app, text: "Switch on \(appName)"),
+        ]
+    }
 }

@@ -122,6 +122,33 @@ final class NewSaveCenteringTests: XCTestCase {
         _ = window
     }
 
+    /// The Reader must not depend on an extension's in-process notification:
+    /// those posts never cross the process boundary. Foregrounding itself is
+    /// therefore a reload trigger, and the root deck must move from the card
+    /// the user last navigated to the item saved while it was suspended.
+    @MainActor
+    func testArticleDeckMovesToABackgroundSaveWhenForegrounded() {
+        let seeded = seedArticles(count: 3)
+        let deck = ArticleCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        deck.carousel.reloadData(centeringAt: 2)
+        XCTAssertEqual(deck.carousel.currentIndex, 2)
+
+        seedArticles(
+            count: 1,
+            seedPrefix: "saved-in-background",
+            startingAt: Date().addingTimeInterval(60),
+            existing: seeded)
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+
+        XCTAssertEqual(
+            deck.carousel.currentIndex, 0,
+            "foregrounding must center the item saved while the app was suspended")
+        _ = window
+    }
+
     /// The already-shown cards keep their own centering rules: a store change
     /// that adds nothing (here, a title edit) leaves the user where they were.
     @MainActor

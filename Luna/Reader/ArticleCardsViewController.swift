@@ -270,6 +270,14 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .friendsListChanged, object: nil)
+        // A save can be committed by an extension or App Intent while this app
+        // is suspended, so no in-process `.readingListChanged` reaches this
+        // controller. Reload on foreground in addition to SceneDelegate's
+        // catch-up post: the shared-store stat check reads the new snapshot and
+        // `newSaveItemIndex` makes that new card take the carousel center.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reload),
+            name: UIApplication.willEnterForegroundNotification, object: nil)
         // A media download finishing turns a placeholder card into a player,
         // and it lands in a store this file cannot name.
         for name in cardProvider?.changeNotificationNames ?? [] {

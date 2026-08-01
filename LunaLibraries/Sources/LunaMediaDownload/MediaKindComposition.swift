@@ -38,7 +38,7 @@ struct MediaSharePresenter: ShareMediaPresenting {
         presenter.presentNonTextual(
             urlString: urlString, interactive: host.readerMode != nil,
             presentModally: { [weak host] in host?.presentModally($0) },
-            confirmSavedThenComplete: { [weak host] in host?.confirmSavedThenComplete() },
+            completeOnExit: { [weak host] in host?.completeSilently() },
             autoDownloadThenComplete: { [weak host] in host?.autoDownloadThenComplete(urlString: $0) })
     }
 

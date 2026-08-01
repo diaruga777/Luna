@@ -22,15 +22,20 @@ public final class ExtensionMediaPresenter {
     /// action extension) so the user can explicitly choose the media download;
     /// non-downloadable items retain the share extension's silent-save terminal
     /// (`autoDownloadThenComplete`, a confirm when nothing is downloadable).
+    ///
+    /// Leaving the saved-content screen completes SILENTLY (`completeOnExit`,
+    /// not the host's saved-checkmark chrome): that screen's own header already
+    /// says "Saved to Luna", so the badge was a second confirmation card
+    /// animating in over a screen the user had just dismissed.
     public func presentNonTextual(
         urlString: String, interactive: Bool,
         presentModally: (UIViewController) -> Void,
-        confirmSavedThenComplete: @escaping () -> Void,
+        completeOnExit: @escaping () -> Void,
         autoDownloadThenComplete: (String) -> Void
     ) {
         if interactive || MediaDownloadablePlatform.supports(urlString) {
             presentModally(SavedNonTextualViewController(
-                articleURLString: urlString, onDone: confirmSavedThenComplete))
+                articleURLString: urlString, onDone: completeOnExit))
         } else {
             autoDownloadThenComplete(urlString)
         }

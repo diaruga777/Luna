@@ -179,14 +179,17 @@ final class OnboardingSafariPageView: UIView {
     private var revealSchedule: [CascadeEntry] = []
     private var frontLegs: [FrontLeg] = []
 
-    override init(frame: CGRect) {
+    init(configuration: OnboardingSurfaceConfiguration = .current) {
+        // Safari lists this app's own extension under this app's own name; the
+        // page's steps have to say the same thing (see the copy's note).
+        let appName = configuration.app.displayName
         let background = OnboardingSafariPagePalette.background
         appIcon = MoonRevealContentView(
             image: OnboardingAppIcon.image()
                 ?? UIImage(systemName: "moon.stars.fill"),
             occluderColor: background,
             cornerRadius: 17,
-            accessibilityLabel: OnboardingSafariExtensionCopy.extensionName,
+            accessibilityLabel: appName,
             initiallyRevealed: true,
             sweepsUpward: true)
         headline = MoonRevealLineView(
@@ -199,7 +202,7 @@ final class OnboardingSafariPageView: UIView {
             occluderColor: background,
             sweepsUpward: true)
         byline = MoonRevealLineView(
-            text: OnboardingSafariExtensionCopy.byline,
+            text: OnboardingSafariExtensionCopy.byline(appName: appName),
             initiallyRevealed: true,
             font: .systemFont(ofSize: 13, weight: .semibold),
             textAlignment: .left,
@@ -228,14 +231,15 @@ final class OnboardingSafariPageView: UIView {
             textColor: OnboardingSafariPagePalette.quietCopy,
             occluderColor: background,
             sweepsUpward: true)
-        stepRows = OnboardingSafariExtensionCopy.steps.map { step in
-            MoonRevealContentView(
-                content: OnboardingSafariEnableStepRowView(step: step),
-                occluderColor: background,
-                accessibilityLabel: step.text,
-                initiallyRevealed: true,
-                sweepsUpward: true)
-        }
+        stepRows = OnboardingSafariExtensionCopy.steps(appName: appName)
+            .map { step in
+                MoonRevealContentView(
+                    content: OnboardingSafariEnableStepRowView(step: step),
+                    occluderColor: background,
+                    accessibilityLabel: step.text,
+                    initiallyRevealed: true,
+                    sweepsUpward: true)
+            }
         let actionsView = OnboardingSafariActionsView()
         self.actionsView = actionsView
         actions = MoonRevealContentView(
@@ -245,7 +249,7 @@ final class OnboardingSafariPageView: UIView {
             initiallyRevealed: true,
             sweepsUpward: true)
 
-        super.init(frame: frame)
+        super.init(frame: .zero)
         backgroundColor = background
         accessibilityIdentifier = "onboarding.safari.lunaPage"
 

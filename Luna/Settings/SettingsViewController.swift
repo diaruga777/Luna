@@ -167,16 +167,43 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
 
 // (`ReaderSettingsScreen` lives in `ReaderSettingsScreens.swift` — article-kind,
 // per-target compiled.)
+
+/// Article-kind seams the universal `ShortcutSettingsScreen` needs for its
+/// double-save picker. Installed by the two `KindWiring` variants that link
+/// LunaSend (Luna + Reader); nil in the other two apps, which don't show the
+/// section at all.
+enum DoubleSaveSettingsSupport {
+    /// Pushes whichever setup the user is missing — the sign-in form when no
+    /// email account is connected, otherwise the Kindle address screen.
+    static var kindleSetupLauncher: ((UIViewController) -> Void)?
+
+    /// Whether a repeat press could actually reach a Kindle right now.
+    static var isKindleConfigured: Bool {
+        IngestorKindHandlers.article?.isDestinationConfigured(
+            ArticleDestinationID.kindle) ?? false
+    }
+}
+
 // MARK: - Shortcut & Safari
 
 final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Section 0: the Safari extension's surface-specific button visibility.
-    /// Then the Action-Button shortcut's URL preference and actions.
+    /// Then the Action-Button shortcut's URL preference, double-save action,
+    /// and actions.
     private enum Section: Int, CaseIterable {
-        case suggestionButton, onScreenURLs, shortcut
+        case suggestionButton, onScreenURLs, doubleSave, shortcut
     }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
+    /// The double-save action is keyed per app (Luna and Reader each keep their
+    /// own), and only those two arm it — see
+    /// `ActionButtonIntentSupport.doubleSaveSurface`.
+    private let doubleSaveSurface: String? = {
+        switch LunaApp.current {
+        case .luna, .reader: return LunaApp.current.storageIdentifier
+        case .downloader, .priceTracker: return nil
+        }
+    }()
     private var safariButtonName: String {
         switch LunaApp.current {
         case .luna: return L10n.string("Luna")
@@ -187,7 +214,14 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     }
     private var visibleSections: [Section] {
         var sections: [Section] = [.suggestionButton]
-        if #available(iOS 27.0, *) { sections += [.onScreenURLs, .shortcut] }
+        if #available(iOS 27.0, *) {
+            sections.append(.onScreenURLs)
+            // Double save is a behavior of the Action Button shortcut, so it
+            // only shows where that shortcut does — and only in the apps that
+            // can act on it.
+            if doubleSaveSurface != nil { sections.append(.doubleSave) }
+            sections.append(.shortcut)
+        }
         return sections
     }
 
@@ -206,6 +240,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         switch visibleSections[section] {
         case .suggestionButton: return 1
         case .onScreenURLs: return 1
+        case .doubleSave: return 1
         case .shortcut: return Row.allCases.count
         }
     }
@@ -214,6 +249,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         switch visibleSections[section] {
         case .suggestionButton: return L10n.string("\(safariButtonName) Button")
         case .onScreenURLs: return L10n.string("On-Screen URLs")
+        case .doubleSave: return L10n.string("Double Save")
         case .shortcut: return L10n.string("Action Button Shortcut")
         }
     }
@@ -224,6 +260,8 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
             return L10n.string("When browsing in Safari (with the Luna extension enabled), show the \"\(safariButtonName)\" button when it applies. Choose when it appears.")
         case .onScreenURLs:
             return L10n.string("When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling.")
+        case .doubleSave:
+            return L10n.string("Press the Action Button twice on the same page within 7 seconds. Send to Kindle emails the article to your Kindle; the Open options hand the article back to the shortcut as a file in that format, ready to view or pass on. Only saved articles can be exported — videos and posts ignore the second press.")
         case .shortcut:
             let base = L10n.string("Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)")
             return base
@@ -255,6 +293,10 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
             return cell
         }
 
+        if visibleSections[indexPath.section] == .doubleSave {
+            return doubleSaveActionCell()
+        }
+
         if visibleSections[indexPath.section] == .onScreenURLs {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             cell.selectionStyle = .none
@@ -284,6 +326,70 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         }
         cell.contentConfiguration = content
         return cell
+    }
+
+    // MARK: - Double save
+
+    /// A pull-down picker (five options don't fit a segmented control) showing
+    /// what a second Action Button press on the same page does.
+    private func doubleSaveActionCell() -> UITableViewCell {
+        let current = doubleSaveSurface.map {
+            DoubleSaveActionStore.shared.action(forSurface: $0)
+        } ?? DoubleSaveAction.nothing
+        let menu = UIMenu(children: DoubleSaveAction.allCases.map { action in
+            UIAction(
+                title: action.displayName, state: action == current ? .on : .off
+            ) { [weak self] _ in
+                self?.apply(action)
+            }
+        })
+
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = L10n.string("Second Press")
+        content.image = UIImage(systemName: "hand.tap")
+        cell.contentConfiguration = content
+
+        let button = UIButton(type: .system)
+        button.setTitle(current.displayName, for: .normal)
+        button.accessibilityIdentifier = "doubleSaveActionPicker"
+        button.accessibilityLabel = L10n.string("Second Press")
+        button.showsMenuAsPrimaryAction = true
+        button.menu = menu
+        button.sizeToFit()
+        cell.accessoryView = button
+        return cell
+    }
+
+    /// Stores the choice, then — for Kindle without a configured destination —
+    /// offers the setup it needs. The choice is kept either way: it becomes
+    /// live the moment Kindle is set up, and a repeat press does nothing until
+    /// then (`ReadingListIngestor.resolvedIntentAction`).
+    private func apply(_ action: DoubleSaveAction) {
+        guard let surface = doubleSaveSurface else { return }
+        DoubleSaveActionStore.shared.setAction(action, forSurface: surface)
+        if let section = visibleSections.firstIndex(of: .doubleSave) {
+            tableView.reloadSections(IndexSet(integer: section), with: .none)
+        }
+        guard action == .sendToKindle, !DoubleSaveSettingsSupport.isKindleConfigured else {
+            return
+        }
+        presentKindleSetupPrompt()
+    }
+
+    private func presentKindleSetupPrompt() {
+        let alert = UIAlertController(
+            title: L10n.string("Set up Kindle first"),
+            message: L10n.string("Double save can't email an article until your Luna email account and Kindle address are set up."),
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Set Up"), style: .default) {
+            [weak self] _ in
+            guard let self else { return }
+            DoubleSaveSettingsSupport.kindleSetupLauncher?(self)
+        })
+        present(alert, animated: true)
     }
 
     @objc private func suggestionModeChanged(_ control: UISegmentedControl) {

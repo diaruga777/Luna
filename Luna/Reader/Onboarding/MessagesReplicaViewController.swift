@@ -8,7 +8,7 @@ import UIKit
 
 enum OnboardingMessagesReplicaTiming {
     static let firstMessageDelay: TimeInterval = 0.18
-    static let interMessageDelay: TimeInterval = 1.6
+    static let interMessageDelay: TimeInterval = 0.8
     static let messageDuration: TimeInterval = 0.42
     static let saveDelayAfterLastMessage: TimeInterval = 0.75
 
@@ -57,6 +57,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private var extensionSheet: OnboardingActionExtensionSheetView?
     private var hidesStatusBarForIsland = false
     private(set) var isShowingSetupMessages = false
+    /// How far the real bubble sinks while its flying copy carries the
+    /// departure — a faint ghost rather than a hard gap in the thread.
+    private static let bubbleFlightFadeAlpha: CGFloat = 0.15
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
     override var prefersStatusBarHidden: Bool { hidesStatusBarForIsland }
@@ -324,7 +327,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         generation: Int
     ) {
         if UIAccessibility.isReduceMotionEnabled {
-            UIView.animate(withDuration: 0.25) { self.urlBubble.alpha = 0 }
+            UIView.animate(withDuration: 0.25) {
+                self.urlBubble.alpha = Self.bubbleFlightFadeAlpha
+            }
             return
         }
         guard urlBubble.alpha > 0, let row = urlBubble.superview else { return }
@@ -346,7 +351,10 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             from: row)
         view.insertSubview(flying, belowSubview: island)
         flyingBubble = flying
-        urlBubble.alpha = 0
+        // The copy carries the departure; the real bubble stays put but sinks
+        // to a faint ghost so the thread doesn't leave a hard gap while it's
+        // gone, then un-fades as the flight lands.
+        urlBubble.alpha = Self.bubbleFlightFadeAlpha
 
         let start = flying.center
         let target = CGPoint(
@@ -390,6 +398,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             self.flyingBubble?.removeFromSuperview()
             self.flyingBubble = nil
             island.absorb()
+            UIView.animate(withDuration: 0.22) {
+                self.urlBubble.alpha = 1
+            }
         }
     }
 
@@ -424,9 +435,6 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         view.addSubview(sheet)
         sheet.present { [weak self] in
             guard let self, generation == self.sequenceGeneration else { return }
-            // The absorbed bubble quietly returns to the thread while the
-            // sheet covers it, so the conversation is whole again afterwards.
-            self.urlBubble.alpha = 1
             self.afterDelay(
                 OnboardingShortcutRunTiming.extensionSheetHoldDuration,
                 generation: generation

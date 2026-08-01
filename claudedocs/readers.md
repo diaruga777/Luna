@@ -631,3 +631,23 @@ The scroll reader's first-open cost was laying out an ENORMOUS attributed string
 **Entry-animation hooks** (each calls `prepareFullContent()`, which is idempotent): the standard `ReaderViewController` push (via `ScrollReaderViewController.viewDidAppear`'s transition coordinator — the reader self-triggers regardless of host as a backstop); the split inline reader (`SplitWebOverlayViewController.animateOpen` completion → `InlineReaderPageViewController.entryAnimationDidFinish()`); and the RabbitHole stacked reader (`RabbitHoleReaderViewController` root via `viewDidAppear`, dives via the `runTransition` completion → `RabbitHoleLayerViewController.entryAnimationDidFinish()`). **Phase 2 is SKIPPED** when the prefix already covers a short article, and the FULL render is done up front (no prefix) for read-aloud (audio reads the whole article from the top) and for opens that restore a saved/carried position beyond the prefix (`openPositionLikelyBeyondPrefix`). Tests: `ArticleTextRendererProgressiveTests`.
 
 The Reader carousel adds a stricter host gate around the same mechanism. Side cards and mini-carousel previews mount the real `RabbitHoleReaderViewController`, but `defersFullContentUntilPrimary` keeps ordinary appearance callbacks at Phase 1. When the exact preview controller is promoted into the centered slot, `activatePrimaryContent()` permanently opens the gate for its current and future inline layers and starts Phase 2. Thus the visible preview window is identical to the selected card without paying whole-document text-layout and image-loading costs while scrubbing. Deep saved-position restores remain the exception because Phase 1 must contain the requested viewport.
+
+**That gate is opened by ONE appearance callback, so a reparented deck must be
+given it back.** `CardCarouselViewController` promotes its centered slot from
+`viewDidAppear` (and from `reloadData` when already visible) — nothing retries, by
+design: re-running `cardDidBecomeCentered()` would restart a media card's
+playback. Onboarding, though, mounts the production root as a HIDDEN CHILD long
+before the handoff (`mountCompletedRootIfNeeded`, so the deck can be laid out and
+snapshotted for the app-switcher hop), which leaves UIKit with an appearance
+transition in flight — `viewWillAppear` delivered, `viewDidAppear` not. Reparenting
+mid-transition unbalances that bookkeeping and the tree settles in the
+**disappeared** state while its views are on screen: `viewDidAppear` never arrives
+at all, `isViewVisible` stays false, the centered card is never promoted, and EVERY
+card sits on its 700-character Phase-1 prefix until the app is force-quit (which is
+exactly how the bug read from the outside — "saves are dropping most of their
+content"). `AppOnboardingCompletionTransition.install` therefore drives the
+transition itself (`beginAppearanceTransition(true)` / `endAppearanceTransition()`)
+after installing the root, but only when the root actually WAS reparented — the
+freshly-built root of the external-save path gets its appearance from UIKit
+normally. Tests: `OnboardingHandoffFullContentTests` (cold-launch baseline, the
+fresh-root handoff, and the preloaded-root handoff that regressed).

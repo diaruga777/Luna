@@ -1,0 +1,173 @@
+//
+//  OnboardingHandoffFullContentTests.swift
+//  LunaTests
+//
+
+import LunaModels
+import LunaReaderUI
+import LunaStorage
+import UIKit
+import XCTest
+@testable import Luna
+
+/// The deck's cards open on the Phase-1 prefix and expand to the whole article
+/// only when the carousel tells the centered card it is primary. Landing on the
+/// deck straight out of onboarding must reach that promotion exactly as a cold
+/// launch does — otherwise every card is stuck showing a few hundred characters
+/// of its save until the app is force-quit.
+final class OnboardingHandoffFullContentTests: XCTestCase {
+
+    override func tearDown() {
+        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        super.tearDown()
+    }
+
+    /// Baseline: a deck that appears as the window's root promotes its centered
+    /// card, so the card's reader completes the Phase-2 full-content swap.
+    @MainActor
+    func testDeckAsWindowRootLoadsFullContent() {
+        seedLongArticle()
+        let deck = ArticleCardsViewController()
+        let window = makeWindow(rootViewController: UINavigationController(rootViewController: deck))
+        defer { window.isHidden = true }
+
+        XCTAssertTrue(
+            waitForFullContent(in: deck),
+            "a cold-launched deck must expand its centered card to the full article")
+    }
+
+    /// The regression: onboarding builds the production root, hands it to the
+    /// window, and the deck lands already centered on a card. That card must
+    /// still be promoted to primary.
+    @MainActor
+    func testDeckHandedOffFromOnboardingLoadsFullContent() throws {
+        seedLongArticle()
+        let suite = "OnboardingHandoffFullContentTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppOnboardingStore(app: .reader, defaults: defaults)
+        let changed = Notification.Name("onboarding.handoff.\(UUID())")
+        var identifiers: Set<UUID> = [UUID()]
+        var deck: ArticleCardsViewController?
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: store,
+            completion: AppOnboardingCompletion(
+                contentWatch: OnboardingContentWatch(
+                    changeNotifications: [changed],
+                    storedIdentifiers: { identifiers }),
+                makeCompletedRootViewController: {
+                    let cards = ArticleCardsViewController()
+                    deck = cards
+                    return UINavigationController(rootViewController: cards)
+                }))
+        let window = makeWindow(rootViewController: onboarding)
+        defer { window.isHidden = true }
+
+        // A save arriving while the intro is up ends onboarding and hands the
+        // freshly built production root to the window.
+        identifiers.insert(UUID())
+        NotificationCenter.default.post(name: changed, object: nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertTrue(store.isCompleted)
+        let cards = try XCTUnwrap(deck)
+        XCTAssertTrue(
+            waitForFullContent(in: cards),
+            "the deck handed off from onboarding must expand its centered card "
+                + "to the full article, not leave it on the Phase-1 prefix")
+    }
+
+    /// The path a user actually takes out of onboarding: both setup lessons
+    /// finish, and the root handed to the window is the one PRELOADED behind the
+    /// intro copy (mounted as a hidden child long before the handoff) rather than
+    /// a freshly built one. Its deck must still expand the centered card.
+    @MainActor
+    func testPreloadedDeckHandedOffFromOnboardingLoadsFullContent() throws {
+        seedLongArticle()
+        let suite = "OnboardingHandoffFullContentTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        var deck: ArticleCardsViewController?
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: AppOnboardingStore(app: .reader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: {
+                    let cards = ArticleCardsViewController()
+                    deck = cards
+                    return UINavigationController(rootViewController: cards)
+                }))
+        let window = makeWindow(rootViewController: onboarding)
+        defer { window.isHidden = true }
+
+        // Preload the production root behind the intro, exactly as the reveal does.
+        onboarding.firstIntroLineDidReveal()
+        let deadline = Date().addingTimeInterval(5)
+        while onboarding.savedRootViewControllerForTesting == nil, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        let root = try XCTUnwrap(onboarding.savedRootViewControllerForTesting)
+        let cards = try XCTUnwrap(deck)
+
+        // Finish: hand the preloaded root to the window.
+        AppOnboardingCompletionTransition.run(in: window, to: root)
+
+        XCTAssertTrue(
+            waitForFullContent(in: cards),
+            "the PRELOADED deck handed off at the end of onboarding must expand its "
+                + "centered card to the full article, not leave it on the Phase-1 prefix")
+    }
+
+    // MARK: - Helpers
+
+    private func seedLongArticle() {
+        let item = ReadingListItem(
+            seed: "onboarding-handoff",
+            urlString: "https://example.com/onboarding-handoff",
+            title: "Onboarding Handoff",
+            dateAdded: Date(),
+            state: .ready,
+            wordCount: 480)
+        ReadingListStore.shared.seedForTesting(
+            items: [item],
+            contents: [item.id: UITestFixtures.sampleArticleContent(title: "Onboarding Handoff")])
+    }
+
+    @MainActor
+    private func makeWindow(rootViewController: UIViewController) -> UIWindow {
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = rootViewController
+        window.makeKeyAndVisible()
+        rootViewController.view.layoutIfNeeded()
+        return window
+    }
+
+    /// Pumps the run loop until the deck's centered card carries a scroll reader
+    /// that finished the Phase-2 swap.
+    @MainActor
+    private func waitForFullContent(in deck: ArticleCardsViewController) -> Bool {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if let reader = firstScrollReader(in: deck), reader.didLoadFullContentForTesting {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        return false
+    }
+
+    @MainActor
+    private func firstScrollReader(in controller: UIViewController) -> ScrollReaderViewController? {
+        if let reader = controller as? ScrollReaderViewController { return reader }
+        for child in controller.children {
+            if let found = firstScrollReader(in: child) { return found }
+        }
+        return nil
+    }
+}

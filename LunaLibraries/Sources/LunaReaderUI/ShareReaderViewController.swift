@@ -207,8 +207,13 @@ public final class ShareReaderViewController: UIViewController {
             spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -16),
             loadingStatus.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
-            loadingStatus.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            loadingStatus.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            loadingStatus.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            loadingStatus.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            loadingStatus.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+            loadingStatus.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
         ])
         spinner.startAnimating()
         articleLoadingStatus = ArticleLoadingStatusCycler(

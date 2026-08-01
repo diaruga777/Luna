@@ -38,10 +38,12 @@ public enum LunaLayout {
     /// Gap between the two columns of a side-by-side reader.
     public static let columnGap: CGFloat = 24
 
-    /// Widest a body of running text stays readable. Beyond roughly this, line
-    /// length costs more than the extra room gains — settings tables, forms,
-    /// and status screens are centered at this width instead of stretched.
-    public static let readableWidth: CGFloat = 640
+    /// Widest a body of running text — or a column of form rows — stays
+    /// readable. Beyond roughly this, line length costs more than the extra room
+    /// gains, so prose, settings tables, and status screens are centered at this
+    /// width instead of stretched. Deliberately close to UIKit's own
+    /// `readableContentGuide`, which is the same judgement.
+    public static let readableWidth: CGFloat = 680
 
     /// Width the onboarding replicas (Messages, Safari) are drawn at. They are
     /// deliberate imitations of a PHONE, so on a wide container they keep phone

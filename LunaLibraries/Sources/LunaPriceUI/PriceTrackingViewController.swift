@@ -212,23 +212,38 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         footer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(footer)
 
+        // Every band of the editor sits in one centered column rather than
+        // stretching: a threshold slider a thousand points wide, or a seller name
+        // that far from its price, is not a form any more. The cap is expressed
+        // as a constraint pair, so it needs no layout code and follows a rotation
+        // or a Split View resize on its own.
+        let column = UILayoutGuide()
+        view.addLayoutGuide(column)
+        let fullWidth = column.widthAnchor.constraint(equalTo: view.widthAnchor)
+        fullWidth.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
+            column.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            column.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
+            fullWidth,
+
             productHeader.topAnchor.constraint(equalTo: navHeader.bottomAnchor),
-            productHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            productHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            productHeader.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            productHeader.trailingAnchor.constraint(equalTo: column.trailingAnchor),
             productTitleLabel.topAnchor.constraint(equalTo: productHeader.topAnchor, constant: 12),
             productTitleLabel.leadingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.leadingAnchor),
             productTitleLabel.trailingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.trailingAnchor),
             productTitleLabel.bottomAnchor.constraint(equalTo: productHeader.bottomAnchor, constant: -10),
             tableView.topAnchor.constraint(equalTo: productHeader.bottomAnchor),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: column.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: graphContainer.topAnchor),
-            graphContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            graphContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            graphContainer.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            graphContainer.trailingAnchor.constraint(equalTo: column.trailingAnchor),
             graphContainer.bottomAnchor.constraint(equalTo: footer.topAnchor),
-            footer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            footer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            footer.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: column.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
 

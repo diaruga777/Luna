@@ -121,8 +121,15 @@ final class ClipReaderViewController: UIViewController {
 
         view.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor),
+            // A clip opens full screen, so on an iPad this waiting state would
+            // otherwise be one line of copy stretched across thirteen inches.
+            stack.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
             stack.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
             retryButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
         ])

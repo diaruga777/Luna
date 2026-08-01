@@ -140,8 +140,15 @@ open class ShareViewController: UIViewController {
             spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
-            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            statusLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            statusLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+            // A wide extension sheet would otherwise draw one line of status copy
+            // right across it.
+            statusLabel.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
             closeButton.trailingAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.trailingAnchor,
                 constant: -ExtensionExitButton.edgeInset),

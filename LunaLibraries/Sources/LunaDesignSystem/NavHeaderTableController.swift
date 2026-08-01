@@ -88,6 +88,28 @@ open class NavHeaderTableController: UITableViewController {
             tableView.contentInset.top = NavHeaderBar.barHeight
             tableView.verticalScrollIndicatorInsets.top = NavHeaderBar.barHeight
         }
+        updateReadableColumn()
+    }
+
+    /// Holds the rows in a readable column on a wide screen instead of stretching
+    /// a settings toggle a thousand points from its label.
+    ///
+    /// `.insetGrouped` derives each section's inset from the table's own layout
+    /// margins, so widening those narrows the whole column — group backgrounds,
+    /// separators and content together. The safe-area contribution is switched
+    /// off first, or a landscape iPad's own insets would be added on top and the
+    /// column would drift off center.
+    ///
+    /// The header bar is deliberately NOT inset: bar buttons belong at the
+    /// screen's edges, which is where every iPad navigation bar puts them.
+    private func updateReadableColumn() {
+        let inset = LunaLayout.contentHorizontalInset(forContainerWidth: view.bounds.width)
+        guard abs(tableView.layoutMargins.left - inset) > 0.5 else { return }
+        tableView.insetsLayoutMarginsFromSafeArea = false
+        tableView.preservesSuperviewLayoutMargins = false
+        tableView.layoutMargins = UIEdgeInsets(
+            top: tableView.layoutMargins.top, left: inset,
+            bottom: tableView.layoutMargins.bottom, right: inset)
     }
 
     open override func scrollViewDidScroll(_ scrollView: UIScrollView) {

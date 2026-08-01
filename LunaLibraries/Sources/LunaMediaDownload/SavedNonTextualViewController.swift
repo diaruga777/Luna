@@ -147,8 +147,15 @@ public final class SavedNonTextualViewController: UIViewController {
         view.addSubview(topStack)
         NSLayoutConstraint.activate([
             topStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            topStack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            topStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            topStack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            topStack.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
+            topStack.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor),
+            // A wide extension sheet on iPad would otherwise stretch the media
+            // preview and its two buttons the whole way across.
+            topStack.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
         ])
 
         ExtensionExitButton.install(in: self) { [weak self] in self?.onDone() }

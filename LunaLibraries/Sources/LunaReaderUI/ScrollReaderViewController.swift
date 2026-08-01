@@ -627,7 +627,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // Keep the text in a readable column on wide screens (iPad / landscape).
-        let horizontal = max(20, (view.bounds.width - 680) / 2)
+        let horizontal = max(20, (view.bounds.width - LunaLayout.readableWidth) / 2)
         if abs(textView.textContainerInset.left - horizontal) > 0.5 {
             textView.textContainerInset = UIEdgeInsets(
                 top: 20, left: horizontal, bottom: 40, right: horizontal)

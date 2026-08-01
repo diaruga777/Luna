@@ -113,8 +113,14 @@ public final class RescueFailureViewController: UIViewController {
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             cardView.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            cardView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            cardView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            cardView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            cardView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
+            cardView.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor, constant: -16),
+            // The failure card is a card, not a banner across an iPad sheet.
+            cardView.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
 
             stack.topAnchor.constraint(
                 equalTo: cardView.contentContainer.topAnchor, constant: Self.webInset),

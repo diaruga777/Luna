@@ -197,8 +197,16 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private let pressAndHoldGesture = UILongPressGestureRecognizer()
     private var isSpeedHeld = false
 
-    /// Horizontal position of the focal (ORP) column, as a fraction of width.
+    /// Horizontal position of the focal (ORP) column, as a fraction of the
+    /// reading COLUMN (see `contentColumn`) — not of the view. On a wide screen
+    /// the two differ, and a fraction of the view would fling the focal word a
+    /// third of a metre from where the eye is resting.
     private static let focalFraction: CGFloat = 0.4
+    /// Widest the speed reader's own column gets. Beyond it the focal word, the
+    /// phrase panel and the surrounding prose would spread out far enough that
+    /// a single fixation could no longer take them in — which is the entire
+    /// premise of the mode.
+    private static let maximumColumnWidth: CGFloat = 600
     /// Target characters visible on one line — the font is sized so a word this
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
@@ -370,12 +378,27 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// The centered reading column every element of the speed reader is laid out
+    /// in. Identical to the view's own width on a phone; capped and centered on
+    /// anything wider.
+    private var contentColumn: CGRect {
+        let width = min(view.bounds.width, Self.maximumColumnWidth)
+        return CGRect(
+            x: (view.bounds.width - width) / 2, y: 0,
+            width: width, height: view.bounds.height)
+    }
+
+    /// The focal (ORP) column's x, inside the reading column.
+    private var focalColumnX: CGFloat {
+        let column = contentColumn
+        return column.minX + column.width * Self.focalFraction
+    }
+
     /// Where the reader's eyes are expected to be: the ORP column in Words, the
     /// centre of the phrase panel in Phrases. Published because eye tracking
     /// measures every glance against it.
     public var focalGazePoint: CGPoint {
-        let x = displayMode == .phrases
-            ? view.bounds.midX : view.bounds.width * Self.focalFraction
+        let x = displayMode == .phrases ? view.bounds.midX : focalColumnX
         return CGPoint(x: x, y: focalCenterY)
     }
 
@@ -574,7 +597,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// crossing behind it. The extra gap comes out of the clear lane around the
     /// focal column (`focalCenterY`'s clearances), so nothing else moves.
     private func layoutFocusReticule() {
-        let focalX = view.bounds.width * Self.focalFraction
+        let focalX = focalColumnX
         let centerY = focalCenterY
         let verticalPadding: CGFloat = 12
         let height = ceil(wordFont.capHeight + verticalPadding * 2)
@@ -611,7 +634,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// focal band.
     private func layoutPhrasePanel() {
         let horizontalMargin: CGFloat = 24
-        let maxWidth = max(160, min(view.bounds.width, 600) - horizontalMargin * 2)
+        let maxWidth = max(160, contentColumn.width - horizontalMargin * 2)
         let lineHeight = ceil(phraseFont.lineHeight)
         let labelHeight = lineHeight * 2
         let panelHeight = labelHeight + 28
@@ -649,7 +672,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func layoutContext() {
         let centerY = focalCenterY
         let horizontalMargin: CGFloat = 28
-        let width = max(0, view.bounds.width - horizontalMargin * 2)
+        let column = contentColumn
+        let width = max(0, column.width - horizontalMargin * 2)
+        let contextX = column.minX + horizontalMargin
         // The preceding-context lane grows upward into the freed top of the
         // screen, so it must stop below the eye-tracking toggle when that
         // corner is occupied.
@@ -665,7 +690,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let upperHeight: CGFloat = displayMode == .phrases ? 120 : 220
         let upperBottom = centerY - bandHalf
         previousContextLabel.frame = CGRect(
-            x: horizontalMargin,
+            x: contextX,
             y: max(topLimit, upperBottom - upperHeight),
             width: width,
             height: max(0, min(upperHeight, upperBottom - topLimit)))
@@ -680,7 +705,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             : centerY + bandHalf + 32
         let lowerHeight: CGFloat = displayMode == .phrases ? 120 : 96
         nextContextLabel.frame = CGRect(
-            x: horizontalMargin,
+            x: contextX,
             y: lowerY,
             width: width,
             height: max(0, min(lowerHeight, controlsTop - lowerY - 12)))
@@ -709,7 +734,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// the lower context text.
     private func layoutLinkPill() {
         let centerY = focalCenterY
-        let maxWidth = view.bounds.width - 64
+        let maxWidth = contentColumn.width - 64
         let fitted = linkPill.systemLayoutSizeFitting(
             CGSize(width: maxWidth, height: 40),
             withHorizontalFittingPriority: .fittingSizeLevel,
@@ -1002,7 +1027,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         wordLabel.sizeToFit()
 
         let (prefixWidth, orpWidth) = RSVPWordDisplay.orpOffsets(for: word, font: wordFont)
-        let focalX = view.bounds.width * Self.focalFraction
+        let focalX = focalColumnX
         let centerY = focalCenterY
         wordLabel.frame.origin = CGPoint(
             x: focalX - prefixWidth - orpWidth / 2,

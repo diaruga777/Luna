@@ -119,8 +119,15 @@ final class ClipDownloadViewController: UIViewController {
 
         view.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor),
+            // A clip opens full screen; a Download button thirteen inches wide is
+            // not a button.
+            stack.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
             stack.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
             actionButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
             retryButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),

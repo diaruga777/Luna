@@ -285,6 +285,9 @@ class CardCarouselHostViewController: UIViewController {
             stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 32),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -32),
+            // One long line of explanatory copy across an iPad reads as a banner,
+            // not a sentence.
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: LunaLayout.readableWidth),
         ])
         return container
     }

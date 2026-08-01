@@ -395,6 +395,13 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// changes across those.
     public var focusedContentScrollView: UIScrollView? { layers[safe: focus]?.contentScrollView }
 
+    /// The focused layer's RSVP playback state, or nil when the focused layer
+    /// is not showing the speed reader. A host whose chrome follows the reader
+    /// asks this on `readerContentHierarchyDidChange`: RSVP's chrome state IS
+    /// its playback state (playing fades the chrome, paused restores it), so a
+    /// mode switch into a paused speed reader must surface the host again.
+    public var focusedRSVPIsPlaying: Bool? { layers[safe: focus]?.isRSVPPlaying }
+
     /// Whether returning from an inline reader should also surface the root
     /// card carousel: a scroll reader already at its top, or a paused RSVP.
     public var shouldSurfaceAfterInlineReaderDismissal: Bool {

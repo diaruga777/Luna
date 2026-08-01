@@ -555,17 +555,23 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             name: UIApplication.willEnterForegroundNotification, object: nil)
     }
 
-    /// Mirrors the host's read-aloud circle across the reader: the same corner
-    /// inset from the top-LEADING corner that the deck's chrome row takes from
-    /// the card's top-trailing one, so the two toggles read as a pair.
+    /// The same corner inset the deck's chrome row takes from the card's
+    /// top-trailing corner — but measured from the first line the READER owns,
+    /// not from the card's edge. `topContentInset` is the host chrome standing
+    /// over the top of this reader (the card's opaque title header), and that
+    /// header is a sibling ABOVE the reader's own view: a toggle placed level
+    /// with the deck's circles is not merely crowded by it, it is behind it, and
+    /// the control disappears from the speed reader entirely.
     /// `safeAreaInsets.top` is 0 while the reader is inside a card and non-zero
-    /// when it owns the whole screen, so one expression serves both hosts.
+    /// when it owns the whole screen; `topContentInset` is 0 in the standalone
+    /// and extension hosts — so one expression serves all of them.
     private func layoutEyeTrackingButton() {
         guard !eyeTrackingButton.isHidden else { return }
         let size = EyeTrackingToggleButton.diameter
         let inset = Self.eyeTrackingCornerInset
         eyeTrackingButton.frame = CGRect(
-            x: inset, y: view.safeAreaInsets.top + inset, width: size, height: size)
+            x: inset, y: view.safeAreaInsets.top + topContentInset + inset,
+            width: size, height: size)
     }
 
     /// Matches `ArticleCardsViewController.chromeCardCornerInset`.

@@ -124,6 +124,27 @@ final class RSVPEyeTrackingTests: XCTestCase {
         XCTAssertEqual(button.frame.width, EyeTrackingToggleButton.diameter, accuracy: 0.5)
     }
 
+    /// Inside a card the host's chrome — an OPAQUE title header — stands over
+    /// the top of the reader as a SIBLING ABOVE its view. A toggle placed level
+    /// with the deck's own circles is therefore not merely crowded by that
+    /// header, it is behind it, and the control vanishes from the speed reader.
+    /// The reader's first usable line is `topContentInset` down.
+    func testToggleClearsHostChromeStandingOverTheReader() throws {
+        let reader = makeReader()
+        let button = try toggle(in: reader)
+        let headerHeight: CGFloat = 84
+
+        reader.topContentInset = headerHeight
+        reader.view.setNeedsLayout()
+        reader.view.layoutIfNeeded()
+
+        XCTAssertEqual(button.frame.minX, 12, accuracy: 0.5)
+        XCTAssertEqual(
+            button.frame.minY, reader.view.safeAreaInsets.top + headerHeight + 12,
+            accuracy: 0.5,
+            "the toggle must sit below the host chrome, not underneath it")
+    }
+
     // MARK: - The three states
 
     func testDefaultsToDisabledAndPersistsOnceEnabled() throws {

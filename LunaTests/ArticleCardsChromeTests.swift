@@ -285,6 +285,44 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(rsvp.topContentInset, topInset, accuracy: 0.5)
     }
 
+    /// The bottom mode switcher exists only while the card chrome is dismissed,
+    /// so a switch INTO RSVP always starts from an immersed deck — and RSVP's
+    /// chrome state is its playback state, which on arrival is paused. Landing
+    /// in a card still stretched over the footer lane, with its chrome faded
+    /// out, laid the fixed speed-reader column out against a frame it does not
+    /// keep. Arriving surfaces the whole deck again.
+    func testSwitchingToRSVPSurfacesTheWholeCardChrome() throws {
+        let controller = makeArticleController(seed: "rsvp-surfaces", title: "RSVP Surfaces")
+        let modeSwitcher = try XCTUnwrap(
+            controller.view.subviews.compactMap { $0 as? LunaSegmentedControl }.first)
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+        XCTAssertTrue(controller.carousel.isImmersed)
+
+        modeSwitcher.selectedSegmentIndex = 1
+        modeSwitcher.sendActions(for: .valueChanged)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        controller.view.layoutIfNeeded()
+
+        let rsvp = try XCTUnwrap(firstController(of: RSVPViewController.self, under: controller))
+        XCTAssertFalse(
+            controller.carousel.isImmersed,
+            "a paused speed reader is a surfaced card")
+        XCTAssertEqual(
+            modeSwitcher.alpha, 0, accuracy: 0.001,
+            "the bottom lane goes back to the mini carousel with the rest of the chrome")
+        let resting = try XCTUnwrap(
+            controller.carousel.restingCenteredCardFrame(in: controller.view))
+        let readerFrame = rsvp.view.convert(rsvp.view.bounds, to: controller.view)
+        XCTAssertEqual(
+            readerFrame.maxY, resting.maxY, accuracy: 0.5,
+            "the speed reader lays out against the card's resting footprint")
+    }
+
     func testWebArchiveTitleLivesInItsScrollContentAndUsesStableInset() throws {
         let title = "Archived Page Title"
         let controller = makeArticleController(seed: "archive-title", title: title)

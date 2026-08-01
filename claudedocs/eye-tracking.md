@@ -10,6 +10,14 @@ A Liquid Glass circle in the reader's **top-left** corner —
 `EyeTrackingToggleButton`, the same `GlassStyle.circularButtonConfiguration`
 circle as the reader chrome's read-aloud button, 38pt. Four states:
 
+Its corner is the READER's, not the card's: the 12pt inset is measured from
+`safeAreaInsets.top + topContentInset`, and inside a Reader card that inset is
+the opaque title header standing over the top of the speed reader. That header
+is a sibling ABOVE the reader's view, so a toggle placed level with the deck's
+own circles is not crowded by it — it is behind it, and the control disappears
+from RSVP altogether (`layoutEyeTrackingButton`, test
+`RSVPEyeTrackingTests.testToggleClearsHostChromeStandingOverTheReader`).
+
 | State | Glyph | Colour | When |
 | --- | --- | --- | --- |
 | `.disabled` | closed eyelid | grey (`LunaColors.secondaryText`) | not watching |

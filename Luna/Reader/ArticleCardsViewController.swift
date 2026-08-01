@@ -2144,8 +2144,20 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // The new mode may want a different immersed card: a scrolling surface
         // extends into the freed strip room, RSVP's fixed column must not.
         if isCentered {
-            delegate?.readerCard(
-                self, didChangeCardExtension: rabbitHoleReader?.focusedContentScrollView != nil)
+            if let isPlaying = rabbitHoleReader?.focusedRSVPIsPlaying {
+                // RSVP's chrome state IS its playback state, so arriving in the
+                // speed reader is exactly the paused case: bring the whole card
+                // chrome back rather than leaving the dismissed state the
+                // outgoing scroll reader put the deck in. Its column is laid out
+                // against the card's frame and the room below it, so reading it
+                // inside a card still stretched over the footer lane — with the
+                // chrome that names the mode faded away — put the controls where
+                // nothing could reach them.
+                delegate?.readerCard(self, didChangeImmersion: isPlaying, extendsCard: false)
+            } else {
+                delegate?.readerCard(
+                    self, didChangeCardExtension: rabbitHoleReader?.focusedContentScrollView != nil)
+            }
         }
         DispatchQueue.main.async {
             if let root = self.reader { self.immersionTracker.observe(root) }

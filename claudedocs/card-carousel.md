@@ -374,10 +374,12 @@ Differences from the Downloader, via `CardCarouselStyle`:
   bottom edges via a gradient mask on the card's content container. The scroll
   reader reserves the top fade run with `contentInset.top`
   (`externalChromeContentInset`), so the resting first line starts fully
-  legible; scrolled content fades away as it approaches an edge. RSVP
-  reserves the same run for its Words/Phrases switcher
-  (`RSVPViewController.topContentInset`), so the switcher sits below the
-  fade instead of dissolving into it.
+  legible; scrolled content fades away as it approaches an edge. RSVP takes
+  the same measure as `RSVPViewController.topContentInset`: its reading
+  layout deliberately ignores it (a centered word makes no use of the extra
+  room), but the eye-tracking toggle is placed below it — the pinned title
+  header is opaque and sits ABOVE the reader's view, so a toggle at the
+  card's own corner would be behind it rather than beside it.
 - **"Fullscreen" is a chrome fade, nothing more** — no navigation push, no
   card-geometry choreography. `CardCarouselViewController.setImmersed(_:extendsCard:animated:)`
   fades the peeking side cards and the scrub strip out and — for the scroll
@@ -399,6 +401,18 @@ Differences from the Downloader, via `CardCarouselStyle`:
   card. The screen-level corner controls and the flanking Settings/Share
   circles PERSIST through immersion; the bottom mode switcher appears only
   after carousel chrome is dismissed.
+  **Arriving in RSVP surfaces the deck.** RSVP's chrome state IS its playback
+  state, and a mode switch lands on a paused reader — so
+  `readerContentHierarchyDidChange` asks
+  `RabbitHoleReaderViewController.focusedRSVPIsPlaying` and reports that as the
+  immersion state (`ReaderCardContentViewController`), rather than only
+  retracting the outgoing scroll reader's card extension. Because the bottom
+  mode switcher exists ONLY while chrome is dismissed, every switch into RSVP
+  starts immersed; leaving the deck that way laid the fixed speed-reader column
+  out against a card still stretched over the footer lane, with the chrome that
+  named the mode faded away. Tapping the card immerses again and hands the lane
+  back to the switcher. Test:
+  `ArticleCardsChromeTests.testSwitchingToRSVPSurfacesTheWholeCardChrome`.
   The card content drives it directionally from the embedded reader (KVO on
   its scroll views, re-swept via
   `RabbitHoleReaderViewController.onContentHierarchyChanged` when a dive/pop/

@@ -303,7 +303,21 @@ snapshot; it never reopens the publisher URL.
 ## Share-sheet reader experience
 
 Fixed behavior: the **share extension** (`com.apple.share-services`) always saves + dismisses, for every URL. The **"Read in Luna" action extension** (`com.apple.ui-services`) routes via `ShareViewController.presentSavedOrReader`:
-- **Article URLs** → `ShareKit/ShareReaderViewController` fetches + extracts (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` with a lightweight **`ExtensionReaderShareProvider`** (Feature D) — so the end-of-article share affordance works: it offers a friend picker (friends read from the App Group via `ExtensionFriendsReader`; the send is QUEUED to `pendingFriendShares.json` via `PendingFriendShareWriter` for the main app to deliver — no CloudKit in the extension) plus a link share. No suggestion engine in the extension, so no one-tap suggested send. The action ext keeps its OWN last-used mode in `ShareKit/ActionReaderMode` (private `UserDefaults.standard`); `ReaderViewController(persistsModePreference:false, onModeChange:)` writes there, not the shared `ReaderSettings`. If fetch/extract fails, `presentFailure()` shows a red error state (warning glyph + message) with Done available.
+- **Article URLs** → `ShareKit/ShareReaderViewController` fetches + extracts (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` with a lightweight **`ExtensionReaderShareProvider`** (Feature D) — so the end-of-article share affordance works: it offers a friend picker (friends read from the App Group via `ExtensionFriendsReader`; the send is QUEUED to `pendingFriendShares.json` via `PendingFriendShareWriter` for the main app to deliver — no CloudKit in the extension) plus a link share. No suggestion engine in the extension, so no one-tap suggested send. The action ext keeps its OWN last-used mode in `ShareKit/ActionReaderMode` (private `UserDefaults.standard`); `ReaderViewController(persistsModePreference:false, onModeChange:)` writes there, not the shared `ReaderSettings`. If fetch/extract fails, `presentFailure()` shows a red error state (warning glyph + message) with the exit available.
+
+**Exits.** Every extension screen whose bottom-right corner is free carries the same
+floating Liquid Glass exit (`ExtensionExitButton`, LunaDesignSystem) instead of a
+navigation bar holding one "Done": the media save screen, the action extension's
+status/error screen, and `ShareReaderViewController`'s loading / saved / failure states —
+which hide the host's bar for exactly that reason. A checkmark where something WAS saved,
+an `xmark` where the screen is an error (never a checkmark over a failure). Two screens
+deliberately keep their existing exit: the in-sheet **reader** (its bottom-right is the
+floating share control, and two hovering circles in one corner is worse than one bar
+button — `ShareReaderViewController.doneButton` documents this) and the extension **price
+editor** (its bottom-right is the alert-threshold footer, and it is the same object in-app,
+where the header control is the one the user already knows). The archive-CAPTCHA reader
+keeps its own bar buttons, so `presentArchiveReader` restores the navigation bar before
+handing the stack over.
 
 **One hand-off, not three steps.** The extension surfaces show exactly ONE loading state — the
 host's own (`ShareViewController`'s centred spinner + `ArticleLoadingStatusCycler` label) — and go

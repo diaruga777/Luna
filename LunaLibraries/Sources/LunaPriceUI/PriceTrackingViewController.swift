@@ -300,6 +300,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         case .back:
             leftControl = NavHeaderBar.backButton(target: self, action: #selector(leftButtonTapped))
         case .done:
+            // NOT the extensions' floating glass exit (`ExtensionExitButton`):
+            // this screen's bottom-right corner is its alert-threshold footer,
+            // and the editor is the same object in-app, where the header control
+            // is the one the user already knows.
             leftControl = NavHeaderBar.textButton(
                 title: L10n.string("Done"), target: self, action: #selector(leftButtonTapped), bold: true)
         }

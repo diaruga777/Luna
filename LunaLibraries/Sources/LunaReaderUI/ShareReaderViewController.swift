@@ -170,8 +170,25 @@ public final class ShareReaderViewController: UIViewController {
 
     /// A Done item whose action lives in the closure (retained by the bar item),
     /// so it still works after its view controller leaves the nav stack.
+    ///
+    /// The READER keeps its exit in the navigation bar: its own bottom-right
+    /// corner is already taken by the floating share control, and two hovering
+    /// circles in one corner is worse than one bar button. Every screen that
+    /// doesn't have that conflict — this one's loading / saved / failure states,
+    /// and the other extension surfaces — uses `ExtensionExitButton` instead.
     private static func doneButton(_ onDone: @escaping () -> Void) -> UIBarButtonItem {
         UIBarButtonItem(systemItem: .done, primaryAction: UIAction { _ in onDone() })
+    }
+
+    /// This screen's own exit: the shared floating glass button, bottom-right.
+    private lazy var exitButton = ExtensionExitButton.make { [weak self] in self?.onDone() }
+
+    /// The loading / saved / failure states carry the floating exit instead of a
+    /// navigation bar holding nothing else. The reader that replaces this screen
+    /// puts the bar back itself (`ReaderViewController.viewWillAppear`).
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: false)
     }
 
     public override func viewDidLoad() {
@@ -197,13 +214,21 @@ public final class ShareReaderViewController: UIViewController {
         articleLoadingStatus = ArticleLoadingStatusCycler(
             label: loadingStatus, initialText: L10n.string("Opening in Luna…"))
         articleLoadingStatus?.start()
-        navigationItem.leftBarButtonItem = doneButton()
+        installExitButton()
 
         Task { await ingestAndPresent() }
     }
 
-    private func doneButton() -> UIBarButtonItem {
-        Self.doneButton(onDone)
+    private func installExitButton() {
+        view.addSubview(exitButton)
+        NSLayoutConstraint.activate([
+            exitButton.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -ExtensionExitButton.edgeInset),
+            exitButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -ExtensionExitButton.edgeInset),
+        ])
     }
 
     private func ingestAndPresent() async {
@@ -262,6 +287,9 @@ public final class ShareReaderViewController: UIViewController {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
         ReadingListStore.shared.markNeedsCaptcha(item.id, title: fallbackTitle)
+        // The archive reader keeps its Done (and "open in Safari") in the bar this
+        // screen hid — put it back before handing the stack over.
+        navigationController?.setNavigationBarHidden(false, animated: false)
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
         let onDone = self.onDone
         archive.onClose = { onDone() }
@@ -328,6 +356,9 @@ public final class ShareReaderViewController: UIViewController {
     private func presentFailure() {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
+        // Nothing was read — the exit stops claiming otherwise.
+        exitButton.configuration?.image = UIImage(systemName: "xmark")
+        exitButton.accessibilityLabel = L10n.string("Close")
 
         let icon = UIImageView(image: UIImage(
             systemName: "exclamationmark.triangle.fill",

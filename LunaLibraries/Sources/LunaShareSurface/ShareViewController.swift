@@ -33,7 +33,9 @@ open class ShareViewController: UIViewController {
     private let spinner = HorizonSpinnerView(side: 36)
     private let statusLabel = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
-    private let closeButton = UIButton(type: .system)
+    private lazy var closeButton = ExtensionExitButton.make(
+        symbol: "xmark", accessibilityLabel: L10n.string("Close")
+    ) { [weak self] in self?.complete() }
     /// The action extension owns one navigation context for its entire lifetime.
     /// Replacing its root avoids stacking a second modal over the extension sheet.
     private var actionNavigationController: UINavigationController?
@@ -127,10 +129,10 @@ open class ShareViewController: UIViewController {
         statusLabel.font = .preferredFont(forTextStyle: .body)
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.setTitle(L10n.string("Close"), for: .normal)
+        // The same floating glass exit every other extension screen uses, in the
+        // same corner — an `xmark` rather than a checkmark, because this button
+        // only ever appears under an error (nothing to affirm).
         closeButton.isHidden = true
-        closeButton.addAction(UIAction { [weak self] _ in self?.complete() }, for: .touchUpInside)
         view.addSubview(spinner)
         view.addSubview(statusLabel)
         view.addSubview(closeButton)
@@ -140,8 +142,12 @@ open class ShareViewController: UIViewController {
             statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-            closeButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 20),
-            closeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            closeButton.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -ExtensionExitButton.edgeInset),
+            closeButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -ExtensionExitButton.edgeInset),
         ])
         articleLoadingStatus = ArticleLoadingStatusCycler(
             label: statusLabel, initialText: L10n.string("Opening in Luna…"))

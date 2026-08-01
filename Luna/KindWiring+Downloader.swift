@@ -17,7 +17,17 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    private static let onboardingDemoSave = DownloaderOnboardingDemoSave.service
+    /// A media save lands in both stores, so the watch covers both.
+    private static let onboardingContentWatch = OnboardingContentWatch(
+        changeNotifications: [.readingListChanged, .savedMediaChanged],
+        storedIdentifiers: {
+            Set(ReadingListStore.shared.items().map(\.id))
+                .union(SavedMediaStore.shared.items().map(\.id))
+        })
+
+    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
+    private static let legacyOnboardingDemoSave =
+        DownloaderOnboardingDemoSave.legacyCleanup
 
     @MainActor
     static func install() {
@@ -57,7 +67,7 @@ enum KindWiring {
             ? SavedMediaCardsViewController()
             : AppOnboardingViewController(
                 completion: AppOnboardingCompletion(
-                    temporarySave: onboardingDemoSave,
+                    contentWatch: onboardingContentWatch,
                     makeCompletedRootViewController: makeCompletedRootViewController))
         return UINavigationController(rootViewController: content)
     }
@@ -81,7 +91,7 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
-        onboardingDemoSave.cleanup()
+        legacyOnboardingDemoSave.cleanup()
         // Sweep any downloaded-but-never-saved media preview files orphaned by a
         // previous run that was killed before its preview screen could clean up.
         // Also apply the saved-media retention policy. Safe at launch (no
@@ -94,9 +104,6 @@ enum KindWiring {
     }
 
     static func appDidEnterBackground() {
-        if AppOnboardingStore.shared.isCompleted {
-            onboardingDemoSave.cleanup()
-        }
         LiveMediaDownloadManager.shared.resumeLiveActivities()
     }
 

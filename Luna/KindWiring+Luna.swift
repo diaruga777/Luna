@@ -29,19 +29,18 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    /// The central app's deck draws every kind, so ANY new save — article,
-    /// media, tracker — is the real content that retires the demonstration item.
-    static let onboardingDemoSave = OnboardingTemporarySave(
-        install: {
-            BundledLunaArticle.installTemporary(
-                urlString: "https://luna.app?onboarding=luna")
-        },
-        cleanup: { BundledLunaArticle.cleanupTemporary() },
+    /// The central app's deck draws every kind, so a save into EITHER store —
+    /// article, media, tracker — is the real content onboarding completes around.
+    static let onboardingContentWatch = OnboardingContentWatch(
         changeNotifications: [.readingListChanged, .savedMediaChanged],
         storedIdentifiers: {
             Set(ReadingListStore.shared.items().map(\.id))
                 .union(SavedMediaStore.shared.items().map(\.id))
         })
+
+    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
+    static let legacyOnboardingDemoSave = OnboardingLegacyDemoSave(
+        cleanup: { BundledLunaArticle.cleanupLegacyTemporarySave() })
 
     @MainActor
     static func install() {
@@ -168,7 +167,7 @@ enum KindWiring {
             ? ArticleCardsViewController()
             : AppOnboardingViewController(
                 completion: AppOnboardingCompletion(
-                    temporarySave: onboardingDemoSave,
+                    contentWatch: onboardingContentWatch,
                     makeCompletedRootViewController: makeCompletedRootViewController))
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
@@ -218,7 +217,7 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
-        onboardingDemoSave.cleanup()
+        legacyOnboardingDemoSave.cleanup()
         // The all-kinds deck draws real media cards, so it needs the same
         // cross-process bridge the Downloader has: a save or delete made by an
         // extension is a different process, and only a Darwin notification
@@ -237,9 +236,6 @@ enum KindWiring {
     }
 
     static func appDidEnterBackground() {
-        if AppOnboardingStore.shared.isCompleted {
-            onboardingDemoSave.cleanup()
-        }
         ArticleSendCoordinator.shared.retryPendingSends()
         LiveMediaDownloadManager.shared.resumeLiveActivities()
     }

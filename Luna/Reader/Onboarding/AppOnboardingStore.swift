@@ -37,13 +37,21 @@ final class AppOnboardingStore {
         defaults.removeObject(forKey: completionKey)
     }
 
+    /// The demonstration item an OLDER build installed into the shared store.
+    /// Nothing records one any more — onboarding writes nothing — so this is
+    /// read only by the launch sweep that takes such an item back out
+    /// (`OnboardingLegacyDemoSave`).
     var temporarySaveIdentifier: UUID? {
         defaults.string(forKey: temporarySaveKey).flatMap(UUID.init(uuidString:))
     }
 
-    func recordTemporarySave(identifier: UUID) {
+    #if DEBUG
+    /// Writes the marker an older build would have left, so the launch sweep
+    /// can be tested. Nothing in the app records one.
+    func recordLegacyTemporarySaveForTesting(identifier: UUID) {
         defaults.set(identifier.uuidString, forKey: temporarySaveKey)
     }
+    #endif
 
     func clearTemporarySaveIdentifier() {
         defaults.removeObject(forKey: temporarySaveKey)

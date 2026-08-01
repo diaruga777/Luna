@@ -8,53 +8,61 @@ import LunaDesignSystem
 import LunaStorage
 import UIKit
 
-/// Target-specific persistence behind the shared visual journey.
+/// How the shared journey notices a REAL save arriving while it is on screen —
+/// a share/action extension or an App Intent writing to the store behind the
+/// intro card, which completes onboarding around that item.
 ///
-/// `install` returns false when the real save could not be created. The
-/// onboarding marker is never written in that case, so a transient disk or
-/// bundle failure cannot strand the user in an empty completed state.
-///
-/// The demonstration item exists ONLY so the deck isn't empty the moment
-/// onboarding ends. `changeNotifications` and `storedIdentifiers` are what let
-/// `OnboardingDemoSaveEvictor` notice the user's first real save and take the
-/// mock content straight back out — see `claudedocs/reader-onboarding.md`.
-struct OnboardingTemporarySave {
-    let install: () -> Bool
-    let cleanup: () -> Void
+/// **Onboarding itself never writes.** The mock Safari page and the mock
+/// Messages conversation render their article/video/tracker entirely inside
+/// their own replica views; no demonstration item is stored, not even for the
+/// length of a lesson, so every id this reports is content the user really
+/// saved — see `claudedocs/reader-onboarding.md`.
+struct OnboardingContentWatch {
     /// Every notification this app's content stores post when their contents
     /// change. Each app names its own: a foreign kind's notification lives in a
     /// module that app doesn't link.
     let changeNotifications: [Notification.Name]
-    /// The ids currently stored across every store this app saves into,
-    /// including the demonstration item itself.
+    /// The ids currently stored across every store this app saves into.
     let storedIdentifiers: () -> Set<UUID>
 
     init(
-        install: @escaping () -> Bool,
-        cleanup: @escaping () -> Void,
         changeNotifications: [Notification.Name] = [.readingListChanged],
         storedIdentifiers: @escaping () -> Set<UUID> = {
             Set(ReadingListStore.shared.items().map(\.id))
         }
     ) {
-        self.install = install
-        self.cleanup = cleanup
         self.changeNotifications = changeNotifications
         self.storedIdentifiers = storedIdentifiers
+    }
+}
+
+/// Takes out a demonstration item an OLDER build installed.
+///
+/// Builds up to this one saved the mock article/video/tracker into the shared
+/// store so the deck behind a lesson wasn't empty, and swept it at the next
+/// launch. An install updating across that change can still be holding one, so
+/// each app sweeps its own marker once at launch. Nothing writes one any more:
+/// this is migration only, and can be deleted once no install in the field
+/// predates the change.
+struct OnboardingLegacyDemoSave {
+    let cleanup: () -> Void
+
+    init(cleanup: @escaping () -> Void) {
+        self.cleanup = cleanup
     }
 }
 
 /// Everything the shared controller needs to cross into a target-specific root.
 /// Keeping this immutable and injected avoids mutable process-wide closure slots.
 struct AppOnboardingCompletion {
-    let temporarySave: OnboardingTemporarySave
+    let contentWatch: OnboardingContentWatch
     let makeCompletedRootViewController: () -> UIViewController
 
     init(
-        temporarySave: OnboardingTemporarySave,
+        contentWatch: OnboardingContentWatch = OnboardingContentWatch(),
         makeCompletedRootViewController: @escaping () -> UIViewController
     ) {
-        self.temporarySave = temporarySave
+        self.contentWatch = contentWatch
         self.makeCompletedRootViewController = makeCompletedRootViewController
     }
 }

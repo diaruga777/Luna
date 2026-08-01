@@ -38,6 +38,22 @@ enum OnboardingSetupPrompt: Equatable {
     case actionButton
 }
 
+enum OnboardingSetupOutcome {
+    case completed
+    case skipped
+}
+
+/// Each intro button's artwork: untouched, genuinely finished (checkmark,
+/// disabled), or skipped (a distinct icon, but still enabled so the lesson
+/// can be tried again).
+enum OnboardingSetupButtonState: Equatable {
+    case pending
+    case completed
+    case skipped
+
+    var isFinished: Bool { self != .pending }
+}
+
 /// Each independently launched mock source tracks its corresponding setup
 /// prompt while it is active.
 enum OnboardingJourneyStage: Equatable {
@@ -94,7 +110,6 @@ final class AppOnboardingViewController: UIViewController {
     private var savedCardWaveSnapshot: UIImage?
     private var introCorona: EclipseCoronaView?
     private var keepsIntroCorona = true
-    private var temporarySaveInstallResult: Bool?
     private var externalReturn = ExternalReturn.none
     private var didConfigureGuides = false
     private var isDemonstrationPreloaded = false
@@ -114,9 +129,8 @@ final class AppOnboardingViewController: UIViewController {
     private var knownContentIdentifiers: Set<UUID> = []
     private var savedCardPreviewImage: UIImage?
     private var isHandlingPaste = false
-    private var isInstallingDemonstration = false
-    private var completedSafariFlow = false
-    private var completedShortcutFlow = false
+    private var safariSetupState = OnboardingSetupButtonState.pending
+    private var shortcutSetupState = OnboardingSetupButtonState.pending
     #if DEBUG
     private var debugSafariStage: String?
     var savedRootViewControllerForTesting: UIViewController? {
@@ -226,13 +240,11 @@ final class AppOnboardingViewController: UIViewController {
         intro.onFirstLineRevealed = { [weak self] in
             self?.firstIntroLineDidReveal()
         }
-        completedSafariFlow = LunaSetupStatusStore.shared.safariHasRun(
-            isCentral: configuration.isCentralApp)
-        completedShortcutFlow = LunaSetupStatusStore.shared.shortcutHasRun(
-            isCentral: configuration.isCentralApp)
-        intro.setCompleted(
-            safari: completedSafariFlow,
-            shortcut: completedShortcutFlow)
+        safariSetupState = LunaSetupStatusStore.shared.safariHasRun(
+            isCentral: configuration.isCentralApp) ? .completed : .pending
+        shortcutSetupState = LunaSetupStatusStore.shared.shortcutHasRun(
+            isCentral: configuration.isCentralApp) ? .completed : .pending
+        intro.setState(safari: safariSetupState, shortcut: shortcutSetupState)
         carousel.reloadData(centeringAt: 0)
     }
 
@@ -284,7 +296,7 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func configureLifecycleObservers() {
-        knownContentIdentifiers = completion.temporarySave.storedIdentifiers()
+        knownContentIdentifiers = completion.contentWatch.storedIdentifiers()
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
@@ -300,7 +312,7 @@ final class AppOnboardingViewController: UIViewController {
             Task { @MainActor in self?.setupStatusChanged() }
         }
         LunaSetupStatusStore.startObservingCrossProcessChanges()
-        contentObservers = completion.temporarySave.changeNotifications.map { name in
+        contentObservers = completion.contentWatch.changeNotifications.map { name in
             NotificationCenter.default.addObserver(
                 forName: name,
                 object: nil,
@@ -329,9 +341,7 @@ final class AppOnboardingViewController: UIViewController {
         // The replicas are store-free and safe to warm while the user reads.
         // In particular, giving Safari's WKWebView a run-loop turn to load its
         // bundled page keeps a first button tap from synchronously waiting on
-        // `drawHierarchy(afterScreenUpdates:)`. The temporary demo save and
-        // production root still wait until a setup lesson is actually chosen,
-        // so the paste-first route never mutates storage.
+        // `drawHierarchy(afterScreenUpdates:)`.
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.didExpandSafari else { return }
             self.mountSourceReplicas()
@@ -342,26 +352,25 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
-    /// Builds the store-free replica assets behind the intro copy: the setup
-    /// guide players, the temporary save (disk + article parse), the complete
-    /// production root, the wave's saved-card raster, and both source
-    /// replicas (Safari's WKWebView loads its bundled page asynchronously).
-    /// The button then only has to run the expansion animation.
+    /// Builds the replica assets behind the intro copy: the setup guide
+    /// players, the complete production root, the wave's saved-card raster, and
+    /// both source replicas (Safari's WKWebView loads its bundled page
+    /// asynchronously). The button then only has to run the expansion
+    /// animation. Nothing here touches storage — the mock article, video and
+    /// tracker live in the replica views alone.
     ///
     /// One stage per run-loop turn, deliberately: heavy work sharing a turn
     /// with a just-added CAAnimation delays that animation's first commit, and
     /// the render server then starts it partway through its duration — the
     /// intro reveal visibly "jumped ahead" when the whole preload ran in the
-    /// reveal's own turn. A failed temporary-save install stops the chain
-    /// silently; the button press retries via `preloadDemonstrationIfNeeded`
-    /// and surfaces the failure alert.
+    /// reveal's own turn.
     private func runPreloadStage(_ stage: Int) {
         guard !isDemonstrationPreloaded, !didExpandSafari else { return }
         switch stage {
         case 0:
             configureGuidesIfNeeded()
         case 1:
-            guard prepareSavedRootIfNeeded() else { return }
+            mountCompletedRootIfNeeded()
         case 2:
             savedCardWaveSnapshot = captureSavedCardWaveSnapshot()
         default:
@@ -379,7 +388,7 @@ final class AppOnboardingViewController: UIViewController {
     private func preloadDemonstrationIfNeeded() {
         guard !isDemonstrationPreloaded, !didExpandSafari else { return }
         configureGuidesIfNeeded()
-        guard prepareSavedRootIfNeeded() else { return }
+        mountCompletedRootIfNeeded()
         isDemonstrationPreloaded = true
         mountSourceReplicas()
     }
@@ -394,7 +403,7 @@ final class AppOnboardingViewController: UIViewController {
         safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
         safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
         safari.onSetUpLater = { [weak self] in
-            self?.completeSetupFlow(.messages)
+            self?.completeSetupFlow(.messages, outcome: .skipped)
         }
         safari.makeActionButtonDestinationSnapshot = { [weak self] in
             self?.makeSavedCardSnapshot()
@@ -416,7 +425,7 @@ final class AppOnboardingViewController: UIViewController {
             self?.messagesDemonstrationDidPresentSetup()
         }
         messages.onSkipSetup = { [weak self] in
-            self?.completeSetupFlow(.messages)
+            self?.completeSetupFlow(.messages, outcome: .skipped)
         }
         messagesReplica = messages
         addChild(messages)
@@ -451,9 +460,8 @@ final class AppOnboardingViewController: UIViewController {
               appSwitcher == nil
         else { return }
         preloadDemonstrationIfNeeded()
-        guard isDemonstrationPreloaded, let messages = messagesReplica else {
+        guard let messages = messagesReplica else {
             intro.setActionsEnabled(true)
-            presentSavePreparationFailure()
             return
         }
         didExpandSafari = true
@@ -506,9 +514,8 @@ final class AppOnboardingViewController: UIViewController {
     private func expandSafariCard() {
         guard !didExpandSafari, appSwitcher == nil else { return }
         preloadDemonstrationIfNeeded()
-        guard isDemonstrationPreloaded, let safari = safariReplica else {
+        guard let safari = safariReplica else {
             intro.setActionsEnabled(true)
-            presentSavePreparationFailure()
             return
         }
         didExpandSafari = true
@@ -913,7 +920,7 @@ final class AppOnboardingViewController: UIViewController {
               journeyStage == .safariDemonstration
         else { return }
         journeyStage = .safariSetup
-        completeSetupFlow(.safari)
+        completeSetupFlow(.safari, outcome: .skipped)
     }
 
     private func switcherSnapshot(
@@ -983,7 +990,7 @@ final class AppOnboardingViewController: UIViewController {
                 safariReplica?.restoreInPageSafariSetup()
                 return
             }
-            completeSetupFlow(.safari)
+            completeSetupFlow(.safari, outcome: .completed)
         case .shortcut:
             // Importing the signed file is an external Shortcuts hop, but the
             // setup isn't complete until the hardware Action Button is
@@ -1011,7 +1018,7 @@ final class AppOnboardingViewController: UIViewController {
               LunaSetupStatusStore.shared.shortcutHasRun(
                 isCentral: configuration.isCentralApp)
         else { return }
-        completeSetupFlow(.messages)
+        completeSetupFlow(.messages, outcome: .completed)
     }
 
     private func pasteArticleURL(_ value: String) {
@@ -1063,16 +1070,13 @@ final class AppOnboardingViewController: UIViewController {
         guard !didExpandSafari,
               appSwitcher == nil,
               !isHandlingPaste,
-              !isInstallingDemonstration,
               !isFinishing,
               savedCardPreviewImage == nil
         else { return }
-        let current = completion.temporarySave.storedIdentifiers()
-        let temporary = onboardingStore.temporarySaveIdentifier
-        let newIdentifiers = current.subtracting(knownContentIdentifiers).filter {
-            $0 != temporary
-        }
-        guard !newIdentifiers.isEmpty else { return }
+        // Onboarding never writes, so every unseen id here is a save the user
+        // really made — through a share/action extension or an App Intent.
+        let current = completion.contentWatch.storedIdentifiers()
+        guard !current.subtracting(knownContentIdentifiers).isEmpty else { return }
         completeOnboardingWithRealSave(animated: false)
     }
 
@@ -1080,7 +1084,6 @@ final class AppOnboardingViewController: UIViewController {
         guard !isFinishing else { return }
         isFinishing = true
         pauseDemoPresentationPlayback()
-        completion.temporarySave.cleanup()
         replaceSavedRootWithCurrentContent()
         guard let window = view.window,
               let root = savedRootViewController
@@ -1113,7 +1116,6 @@ final class AppOnboardingViewController: UIViewController {
             oldRoot.view.removeFromSuperview()
             oldRoot.removeFromParent()
         }
-        temporarySaveInstallResult = nil
         savedCardWaveSnapshot = nil
         let root = completion.makeCompletedRootViewController()
         savedRootViewController = root
@@ -1145,18 +1147,25 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
-    private func completeSetupFlow(_ source: OnboardingDemoSource) {
+    private func completeSetupFlow(
+        _ source: OnboardingDemoSource,
+        outcome: OnboardingSetupOutcome
+    ) {
         guard didExpandSafari, !isFinishing else { return }
+        let state: OnboardingSetupButtonState =
+            outcome == .completed ? .completed : .skipped
         switch source {
         case .safari:
-            completedSafariFlow = true
+            safariSetupState = state
         case .messages:
-            completedShortcutFlow = true
+            shortcutSetupState = state
         }
-        intro.setCompleted(
-            safari: completedSafariFlow,
-            shortcut: completedShortcutFlow)
-        returnToIntroViaAppSwitcher()
+        intro.setState(safari: safariSetupState, shortcut: shortcutSetupState)
+        if safariSetupState.isFinished, shortcutSetupState.isFinished {
+            finishOnboardingViaAppSwitcher()
+        } else {
+            returnToIntroViaAppSwitcher()
+        }
     }
 
     private func returnToIntroViaAppSwitcher() {
@@ -1195,13 +1204,54 @@ final class AppOnboardingViewController: UIViewController {
             self.externalReturn = .none
             self.intro.setActionsEnabled(true)
             self.knownContentIdentifiers =
-                self.completion.temporarySave.storedIdentifiers()
+                self.completion.contentWatch.storedIdentifiers()
             switcher.removeFromSuperview()
             self.appSwitcher = nil
             self.setNeedsStatusBarAppearanceUpdate()
             UIAccessibility.post(
                 notification: .layoutChanged,
                 argument: self.intro.view)
+        }
+    }
+
+    /// Both setup lessons are finished (skipped or completed): the same
+    /// app-switcher hop other returns use lands on the real production root
+    /// instead of looping back to the intro card, and onboarding ends for
+    /// good. The hop's frozen final frame is pixel-identical to the root it
+    /// snapshotted, so handing off to it as the window's actual root is
+    /// seamless.
+    private func finishOnboardingViaAppSwitcher() {
+        guard appSwitcher == nil,
+              let source = sourceController(for: activeDemoSource),
+              let window = view.window,
+              let root = savedRootViewController
+        else { return }
+        isFinishing = true
+        pauseDemoPresentationPlayback()
+        safariGuide.stopPictureInPicture()
+        actionGuide.stopPictureInPicture()
+        safariReplica?.dismissInstructions(animated: false) {}
+
+        root.view.alpha = 1
+        root.view.layoutIfNeeded()
+        let outgoing = switcherSnapshot(of: source.view, afterScreenUpdates: false)
+        let incoming = switcherSnapshot(of: root.view, afterScreenUpdates: true)
+        root.view.alpha = 0
+
+        carousel.view.isHidden = true
+        carousel.view.alpha = 0
+        dismissIntroCorona()
+
+        let switcher = OnboardingAppSwitcherView(
+            frame: view.bounds, from: outgoing, to: incoming)
+        appSwitcher = switcher
+        view.addSubview(switcher)
+        switcher.playForward { [weak self, weak window, weak root] in
+            guard let self, let window, let root else { return }
+            self.onboardingStore.markCompleted()
+            AppOnboardingCompletionTransition.run(in: window, to: root)
+            switcher.removeFromSuperview()
+            self.appSwitcher = nil
         }
     }
 
@@ -1234,21 +1284,6 @@ final class AppOnboardingViewController: UIViewController {
         return snapshot
     }
 
-    private func prepareSavedRootIfNeeded() -> Bool {
-        if let temporarySaveInstallResult {
-            return temporarySaveInstallResult
-        }
-
-        mountCompletedRootIfNeeded()
-        isInstallingDemonstration = true
-        let installed = completion.temporarySave.install()
-        isInstallingDemonstration = false
-        temporarySaveInstallResult = installed
-        guard installed else { return false }
-        savedRootViewController?.view.layoutIfNeeded()
-        return true
-    }
-
     private func mountCompletedRootIfNeeded() {
         guard savedRootViewController == nil else { return }
         let root = completion.makeCompletedRootViewController()
@@ -1272,22 +1307,6 @@ final class AppOnboardingViewController: UIViewController {
                 safeAreaInsets: view.safeAreaInsets)
         }
         return view.convert(frame, from: window)
-    }
-
-    private func presentSavePreparationFailure() {
-        let alert = UIAlertController(
-            title: "Couldn’t create the offline example",
-            message: "Try the onboarding demonstration again.",
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(
-            title: "Try again",
-            style: .default,
-            handler: { [weak self] _ in
-                self?.completion.temporarySave.cleanup()
-                self?.temporarySaveInstallResult = nil
-                self?.showSafariCard()
-            }))
-        present(alert, animated: true)
     }
 
     #if DEBUG

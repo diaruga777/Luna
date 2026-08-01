@@ -20,7 +20,9 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    private static let onboardingDemoSave = PriceTrackerOnboardingDemoSave.service
+    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
+    private static let legacyOnboardingDemoSave =
+        PriceTrackerOnboardingDemoSave.legacyCleanup
 
     @MainActor
     static func install() {
@@ -58,7 +60,6 @@ enum KindWiring {
             ? PriceTrackerCardsViewController()
             : AppOnboardingViewController(
                 completion: AppOnboardingCompletion(
-                    temporarySave: onboardingDemoSave,
                     makeCompletedRootViewController: makeCompletedRootViewController))
         return UINavigationController(rootViewController: content)
     }
@@ -77,14 +78,10 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
-        onboardingDemoSave.cleanup()
+        legacyOnboardingDemoSave.cleanup()
     }
 
-    static func appDidEnterBackground() {
-        if AppOnboardingStore.shared.isCompleted {
-            onboardingDemoSave.cleanup()
-        }
-    }
+    static func appDidEnterBackground() {}
 
     static func sceneDidForeground() {}
 

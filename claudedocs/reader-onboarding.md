@@ -100,11 +100,11 @@ The root uses the production `CardCarouselViewController`:
    back to the intro and checks only its originating button; it never chains
    into the other lesson and never completes onboarding. The replicas, guide
    players, and an empty production root warm in separate run-loop turns after
-   the first line reveal, but this preload does **not** install demo content.
-   The temporary demonstration save is installed only after a setup button is
-   pressed, and its destination snapshot is captured lazily when the mock save
-   wave actually needs it. Paste-first onboarding therefore leaves the shared
-   store untouched.
+   the first line reveal. **No lesson stores anything**: the mock article,
+   video and tracker exist only in the replica views, so onboarding leaves the
+   shared store exactly as the user left it (see "The demonstration is never
+   saved" below). The mock save wave's destination snapshot is captured lazily,
+   when the wave actually needs it.
 3. The Reader's Safari content is a native, fictional `luna.app` article so its
    sequence begins after the card finishes expanding rather than during hidden
    preload. The page loads ALREADY BURIED: four garish ads, the newsletter
@@ -117,8 +117,8 @@ The root uses the production `CardCarouselViewController`:
    the rest) rather than marketing prose — the article is the demonstration's
    only chance to say what the app is for. The copy lives once
    in `OnboardingLunaArticleCopy`, and all three surfaces showing this article
-   read from there: this page, the mock action-extension sheet the Messages
-   shortcut run slides up, and the temporary save the deck shows afterwards.
+   read from there: this page and the mock action-extension sheet the Messages
+   shortcut run slides up.
    **One short line per bullet is a layout constraint, not a style choice**: the
    one-screen budget leaves the body about seven lines, so a bullet long enough
    to wrap costs two of them and pushes the setup card under the browser chrome
@@ -207,12 +207,11 @@ The root uses the production `CardCarouselViewController`:
    (`revealSettingsSetupMessage`). Both pills glow and pulse until tapped —
    the shortcut pill runs the `BundledShortcut` installer, the Settings pill
    opens the Action Button settings.
-6. Setup demonstrations still install the target's temporary save so their
-   mock save can land on the real production card. The production root itself
-   is already mounted empty behind the intro; installing the demo item reloads
-   it in place, and the save-wave raster is captured only when requested.
-   Returning from a lesson leaves that temporary item available for the other
-   lesson, but does not mark onboarding complete.
+6. Setup demonstrations mount the real production root behind the intro so the
+   mock save wave has somewhere to land, but they put NOTHING in it — for a new
+   user that root is its own empty state, and the save-wave raster is captured
+   only when requested. Returning from a lesson does not mark onboarding
+   complete.
 7. Setup deliberately splits the demonstrations. The first Safari stage has no
    separate setup overlay: the mock extension-enable pass of step 3 ends on the
    switch flipping on, and THAT is the wipe's cue. `prepareCleanUp` (swapping
@@ -312,9 +311,8 @@ The root uses the production `CardCarouselViewController`:
    without a paste-permission alert. Luna unwraps and runs the shared classifier
    before writing: non-URL and non-article outcomes turn the row red with
    **article URLs only**; extraction/network/persistence failures turn it red
-   with **unable to load page**. A successfully extracted article is saved,
-   the temporary demo item (if any) is removed, and a fresh production root is
-   laid out around that real card. The onboarding carousel temporarily gains a
+   with **unable to load page**. A successfully extracted article is saved and a fresh
+   production root is laid out around that real card. The onboarding carousel temporarily gains a
    snapshot of the real saved card to its right and pages there through the
    production `CardEclipseTransition`; after egress the pixel-matched live root
    replaces it, leaving the ordinary left tray where the onboarding card's peek
@@ -331,15 +329,28 @@ app-switcher steps become plain fades. The two saves reuse one Core Image
 context,
 avoiding device-context and shader-cache setup between Safari and Messages.
 
-The demonstration save is temporary — the mock content is never permanently
-stored. Its exact UUID is recorded only when onboarding created a new item, and
-its contents match the mock views exactly so each lesson's save lands on the
-article/video/tracker it just showed. It survives the incomplete Safari,
-Shortcuts, and Settings hops and the app-switcher return to the intro, because
-the other independent lesson may still use it. A pasted or externally observed
-real save removes the demo synchronously before the completed root is built;
-launch also sweeps a marker left by an abandoned run. A pre-existing matching
-user save is never claimed or removed.
+## The demonstration is never saved
+
+The mock article, video and tracker are shown, not stored. Every surface that
+displays them — the Safari page, the mock action-extension sheet — renders the
+copy directly, and no lesson writes to `readingList.json`, `savedMedia.json`, or
+any content directory, not even for the length of a lesson. What the user finds
+in the deck when onboarding ends is exactly what they saved themselves; a run
+that saved nothing lands on the deck's ordinary empty state.
+
+Earlier builds did install a demonstration item, so that the deck behind a
+lesson wasn't empty, and swept it at the next launch. An install updating across
+that change can still hold one, so each app runs a one-time sweep at launch
+(`OnboardingLegacyDemoSave`, per-app cleanup in `KindWiring.appDidLaunch()`).
+Ownership is by exact UUID under `<app>.onboarding.temporarySave.v1`, so a
+matching save the user made themselves is never touched. Nothing records that
+marker any more — the sweep and the key can both be deleted once no install in
+the field predates the change.
+
+`AppOnboardingCompletion` still watches the content stores, but only to notice a
+REAL save arriving from a share/action extension or an App Intent while the
+intro card is up (`OnboardingContentWatch`); with nothing of its own in the
+store, every unseen id it sees is genuinely the user's.
 
 If iOS terminates an app while Safari or Settings is foreground, the next
 launch starts incomplete onboarding from its first card; completion is not
@@ -361,8 +372,8 @@ liquid wave together.
 `ReaderOnboardingTests` covers independent per-app completion, the three intro
 actions and hit-testing, exact surface
 copy/page mapping, one feature list shared by every article surface,
-temporary-save ownership, external-save completion, idempotent offline article
-installation, launch geometry, active-wave cancellation, the setup pills
+the storage-free lessons and the legacy launch sweep, external-save completion,
+launch geometry, active-wave cancellation, the setup pills
 (identifiers, glow-until-tapped, and their shortcut/Settings callbacks),
 external-open fallback
 actions, local-only HTML, bundled MP4 size, and attribution. The launch-art

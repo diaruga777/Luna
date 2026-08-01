@@ -36,16 +36,13 @@ final class ReaderOnboardingTests: XCTestCase {
         let registry = AppOnboardingStore(app: .reader, defaults: defaults)
         let changed = Notification.Name("onboarding.externalSave.\(UUID())")
         var identifiers: Set<UUID> = [UUID()]
-        var cleanupCount = 0
         let productionRoot = UIViewController()
         productionRoot.view.backgroundColor = .black
         let onboarding = AppOnboardingViewController(
             configuration: .configuration(for: .reader),
             onboardingStore: registry,
             completion: AppOnboardingCompletion(
-                temporarySave: OnboardingTemporarySave(
-                    install: { true },
-                    cleanup: { cleanupCount += 1 },
+                contentWatch: OnboardingContentWatch(
                     changeNotifications: [changed],
                     storedIdentifiers: { identifiers }),
                 makeCompletedRootViewController: { productionRoot }))
@@ -62,41 +59,6 @@ final class ReaderOnboardingTests: XCTestCase {
 
         XCTAssertTrue(registry.isCompleted)
         XCTAssertTrue(window.rootViewController === productionRoot)
-        XCTAssertEqual(cleanupCount, 1)
-    }
-
-    func testBundledLunaArticleInstallsAsARealIdempotentOfflineSave() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ReaderOnboardingTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(
-            at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let store = ReadingListStore(containerURL: directory)
-        let first = BundledLunaArticle.install(in: store)
-        let second = BundledLunaArticle.install(in: store)
-        let content = try XCTUnwrap(store.content(for: first.item))
-
-        XCTAssertTrue(first.wasCreated)
-        XCTAssertFalse(second.wasCreated)
-        XCTAssertEqual(first.item.id, second.item.id)
-        XCTAssertEqual(first.item.urlString, BundledLunaArticle.urlString)
-        XCTAssertEqual(first.item.state, .ready)
-        XCTAssertNil(content.author)
-
-        // The card the deck shows is the very article the mocks just cleaned
-        // up and saved: same title, same feature list, as real `.listItem`
-        // structure rather than a wall of prose.
-        XCTAssertEqual(content.title, OnboardingLunaArticleCopy.title)
-        XCTAssertEqual(content.blocks.first?.kind, .paragraph)
-        XCTAssertEqual(content.blocks.first?.text, OnboardingLunaArticleCopy.intro)
-        XCTAssertEqual(
-            content.blocks.dropFirst().map(\.text),
-            OnboardingLunaArticleCopy.features)
-        XCTAssertTrue(content.blocks.dropFirst().allSatisfy { $0.kind == .listItem })
-        // The renderer draws the bullet and the hanging indent; a block that
-        // carried its own would show two.
-        XCTAssertFalse(content.blocks.contains { $0.text.hasPrefix("•") })
     }
 
     func testEveryOnboardingArticleSurfaceShowsTheSameFeatureList() {
@@ -115,7 +77,52 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingLunaArticleCopy.features.count + 1)
     }
 
-    func testTemporaryArticleCleanupDeletesOnlyTheSaveOnboardingCreated() throws {
+    /// The demonstration is a picture, not a save. Every mock surface renders
+    /// `OnboardingLunaArticleCopy` itself, so entering a lesson must leave the
+    /// deck exactly as empty as the user left it.
+    @MainActor
+    func testEnteringALessonWritesNothingToTheStore() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let registry = AppOnboardingStore(app: .reader, defaults: defaults)
+        let productionRoot = UINavigationController(
+            rootViewController: UIViewController())
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: registry,
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { productionRoot }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+
+        let before = Set(ReadingListStore.shared.items().map(\.id))
+        let button = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == "Remove popups and walls for me"
+            })
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+        button.sendActions(for: .touchUpInside)
+        // The preload — where the demonstration item used to be installed —
+        // runs one stage per run-loop turn.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+
+        XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
+        XCTAssertNil(registry.temporarySaveIdentifier)
+    }
+
+    /// An install updating from a build that DID store the demonstration item
+    /// loses it at the next launch — and only it.
+    func testLaunchSweepRemovesOnlyTheLegacyDemonstrationSave() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ReaderOnboardingTests-\(UUID().uuidString)")
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
@@ -130,24 +137,21 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let contentStore = ReadingListStore(containerURL: directory)
         let registry = AppOnboardingStore(app: .luna, defaults: defaults)
-        let temporaryURL = "https://luna.app?test=temporary"
-        XCTAssertTrue(BundledLunaArticle.installTemporary(
-            urlString: temporaryURL, registry: registry, in: contentStore))
-        let temporaryID = try XCTUnwrap(registry.temporarySaveIdentifier)
-        XCTAssertNotNil(contentStore.item(withID: temporaryID))
+        let userSave = contentStore.add(urlString: "https://example.com/real")
+        let legacy = contentStore.add(urlString: BundledLunaArticle.urlString)
+        registry.recordLegacyTemporarySaveForTesting(identifier: legacy.id)
 
-        BundledLunaArticle.cleanupTemporary(
+        BundledLunaArticle.cleanupLegacyTemporarySave(
             registry: registry, in: contentStore)
-        XCTAssertNil(contentStore.item(withID: temporaryID))
+
+        XCTAssertNil(contentStore.item(withID: legacy.id))
+        XCTAssertEqual(contentStore.item(withID: userSave.id)?.id, userSave.id)
         XCTAssertNil(registry.temporarySaveIdentifier)
 
-        let existing = contentStore.add(urlString: temporaryURL)
-        XCTAssertTrue(BundledLunaArticle.installTemporary(
-            urlString: temporaryURL, registry: registry, in: contentStore))
-        XCTAssertNil(registry.temporarySaveIdentifier)
-        BundledLunaArticle.cleanupTemporary(
+        // A second launch has nothing to claim: an unmarked store is untouched.
+        BundledLunaArticle.cleanupLegacyTemporarySave(
             registry: registry, in: contentStore)
-        XCTAssertEqual(contentStore.item(withID: existing.id)?.id, existing.id)
+        XCTAssertEqual(contentStore.items().count, 1)
     }
 
     func testEverySurfaceHasItsExactCopyAndDemoPage() {
@@ -274,7 +278,7 @@ final class ReaderOnboardingTests: XCTestCase {
             firstLine: "You want to read more.",
             secondLine: "Let’s make that happen.",
             supportingText: "")
-        intro.setCompleted(safari: true, shortcut: true)
+        intro.setState(safari: .completed, shortcut: .completed)
         intro.loadViewIfNeeded()
 
         for label in [
@@ -661,9 +665,6 @@ final class ReaderOnboardingTests: XCTestCase {
             onboardingStore: AppOnboardingStore(
                 app: .reader, defaults: defaults),
             completion: AppOnboardingCompletion(
-                temporarySave: OnboardingTemporarySave(
-                    install: { true },
-                    cleanup: {}),
                 makeCompletedRootViewController: { productionRoot }))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
@@ -724,7 +725,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testFirstLineRevealLeavesSaveStoresUntouchedUntilAFlowStarts() throws {
+    func testFirstLineRevealPreloadsTheReplicasAndProductionRoot() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -732,18 +733,11 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let productionRoot = UINavigationController(
             rootViewController: UIViewController())
-        var installCount = 0
         let onboarding = AppOnboardingViewController(
             configuration: .configuration(for: .reader),
             onboardingStore: AppOnboardingStore(
                 app: .reader, defaults: defaults),
             completion: AppOnboardingCompletion(
-                temporarySave: OnboardingTemporarySave(
-                    install: {
-                        installCount += 1
-                        return true
-                    },
-                    cleanup: {}),
                 makeCompletedRootViewController: { productionRoot }))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
@@ -763,9 +757,6 @@ final class ReaderOnboardingTests: XCTestCase {
         })
         XCTAssertTrue(
             onboarding.savedRootViewControllerForTesting === productionRoot)
-        XCTAssertEqual(
-            installCount, 0,
-            "Showing the paste button must not install the demonstration save")
         XCTAssertFalse(
             onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
             "Preloading must not retire the intro corona early")
@@ -1177,9 +1168,6 @@ final class ReaderOnboardingTests: XCTestCase {
             configuration: .configuration(for: .reader),
             onboardingStore: AppOnboardingStore(app: .reader, defaults: defaults),
             completion: AppOnboardingCompletion(
-                temporarySave: OnboardingTemporarySave(
-                    install: { true },
-                    cleanup: {}),
                 makeCompletedRootViewController: {
                     UINavigationController(rootViewController: UIViewController())
                 }))
@@ -1246,7 +1234,8 @@ final class ReaderOnboardingTests: XCTestCase {
         }
 
         // Skipping finishes only the Safari lesson and app-switches back to
-        // the three-action intro card.
+        // the three-action intro card — still enabled, marked skipped rather
+        // than completed, since the shortcut lesson isn't done yet.
         let skip = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
                 $0.accessibilityLabel == "Skip"
@@ -1260,13 +1249,14 @@ final class ReaderOnboardingTests: XCTestCase {
                 .first {
                     $0.accessibilityLabel == "Remove popups and walls for me"
                 }
-            if safariIntroButton?.isEnabled == false,
-               onboarding.view.descendants(of: UIPasteControl.self).first?.isHidden == false {
+            if onboarding.view.descendants(of: UIPasteControl.self)
+                .first?.isHidden == false
+            {
                 break
             }
         }
-        XCTAssertFalse(try XCTUnwrap(safariIntroButton).isEnabled)
-        XCTAssertEqual(safariIntroButton?.accessibilityValue, "Completed")
+        XCTAssertTrue(try XCTUnwrap(safariIntroButton).isEnabled)
+        XCTAssertEqual(safariIntroButton?.accessibilityValue, "Skipped")
     }
 
     func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {

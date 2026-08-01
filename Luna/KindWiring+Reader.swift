@@ -25,9 +25,9 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    private static let onboardingDemoSave = OnboardingTemporarySave(
-        install: { BundledLunaArticle.installTemporary() },
-        cleanup: { BundledLunaArticle.cleanupTemporary() })
+    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
+    private static let legacyOnboardingDemoSave = OnboardingLegacyDemoSave(
+        cleanup: { BundledLunaArticle.cleanupLegacyTemporarySave() })
 
     @MainActor
     static func install() {
@@ -101,7 +101,6 @@ enum KindWiring {
             ? ArticleCardsViewController()
             : AppOnboardingViewController(
                 completion: AppOnboardingCompletion(
-                    temporarySave: onboardingDemoSave,
                     makeCompletedRootViewController: makeCompletedRootViewController))
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
@@ -148,18 +147,11 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
-        onboardingDemoSave.cleanup()
+        legacyOnboardingDemoSave.cleanup()
         ArticleSendCoordinator.shared.retryPendingSends()
     }
 
     static func appDidEnterBackground() {
-        // The temporary save is installed before the Safari demonstration so
-        // the reveal can use this real root. Keep it through onboarding's
-        // required Safari/Settings hops; completed onboarding removes it on the
-        // first ordinary background, while launch still sweeps abandoned runs.
-        if AppOnboardingStore.shared.isCompleted {
-            onboardingDemoSave.cleanup()
-        }
         // A finished-reading completion recorded during this session becomes an
         // archive move now, so the next launch starts settled.
         ReadingListStore.shared.archivePendingFinishedItems()

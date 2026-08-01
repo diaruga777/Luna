@@ -71,6 +71,12 @@ public struct CardCarouselMetrics: Equatable {
     /// aspect. Since that height is spent from the card's own bottom padding
     /// upward, a clamped card's top edge stops `verticalPadding` short of the
     /// allowance rather than flush against it.
+    ///
+    /// On a container wide enough to have room to spare (`LunaLayout.isWide`),
+    /// the card is additionally capped at `LunaLayout.cardWidthCap` — half the
+    /// container minus padding — for EVERY fit. A card stretched across an iPad
+    /// reads as a blown-up phone layout, and the cap is what leaves room for the
+    /// side-by-side reader's second column at the identical width.
     public static func resolve(
         containerSize: CGSize,
         peek: CGFloat = 14,
@@ -81,7 +87,10 @@ public struct CardCarouselMetrics: Equatable {
         topOverflow: CGFloat = 0
     ) -> CardCarouselMetrics {
         let availableHeight = max(40, containerSize.height - verticalPadding * 2)
-        let availableWidth = max(40, containerSize.width - (peek + edgeGap) * 2)
+        let widthCap = LunaLayout.cardWidthCap(forContainerWidth: containerSize.width)
+        let availableWidth = min(
+            max(40, containerSize.width - (peek + edgeGap) * 2),
+            widthCap ?? .greatestFiniteMagnitude)
         var height = availableHeight
         var width: CGFloat
         var centerY = containerSize.height / 2
@@ -102,9 +111,19 @@ public struct CardCarouselMetrics: Equatable {
                 height = maxHeight
                 width = height * cardAspectRatio
             }
-            // The bottom edge stays exactly where a `.fill` card's was: every
-            // extra point of height is added at the TOP.
-            centerY = containerSize.height - verticalPadding - height / 2
+            if height < availableHeight {
+                // Only reachable on a wide container, where the width cap makes
+                // the exact-aspect card SHORTER than the room instead of taller.
+                // Anchoring its bottom would strand it under a band of empty
+                // space, so it grows into the room (bounded by
+                // `tallestCardAspectRatio`) and centers in what's left.
+                height = min(availableHeight, width / LunaLayout.tallestCardAspectRatio)
+                centerY = containerSize.height / 2
+            } else {
+                // The bottom edge stays exactly where a `.fill` card's was:
+                // every extra point of height is added at the TOP.
+                centerY = containerSize.height - verticalPadding - height / 2
+            }
         }
         return CardCarouselMetrics(
             containerSize: containerSize,

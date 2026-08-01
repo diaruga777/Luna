@@ -595,18 +595,21 @@ public final class CardCarouselViewController: UIViewController {
 
     /// Pages by `step` cards. Single steps run the eclipse transition (unless
     /// Reduce Motion or off-window); anything else is a crossfade jump.
-    public func page(by step: Int) {
+    public func page(by step: Int, completion: (() -> Void)? = nil) {
         let target = min(max(currentIndex + step, 0), max(0, count - 1))
         guard count > 0, target != currentIndex, !isTransitioning, !isImmersed
-        else { return }
+        else {
+            completion?()
+            return
+        }
         reportNavigationTarget(target)
         if abs(target - currentIndex) == 1,
            !UIAccessibility.isReduceMotionEnabled,
            view.window != nil,
            slots[target] != nil {
-            runEclipse(to: target)
+            runEclipse(to: target, completion: completion)
         } else {
-            jump(to: target)
+            jump(to: target, completion: completion)
         }
     }
 
@@ -779,16 +782,25 @@ public final class CardCarouselViewController: UIViewController {
 
     private func runEclipse(
         to target: Int,
-        duration: TimeInterval = CardEclipseTransition.duration
+        duration: TimeInterval = CardEclipseTransition.duration,
+        completion: (() -> Void)? = nil
     ) {
         guard let transition = makeEclipseTransition(to: target, duration: duration) else {
-            jump(to: target)
+            jump(to: target, completion: completion)
             return
         }
         // Non-interactive runs block all input for their duration; interactive
         // runs (handlePagePan) keep the driving pan alive instead.
         view.isUserInteractionEnabled = false
         transition.animateToFinish()
+        if let completion {
+            let delay = UIAccessibility.isReduceMotionEnabled
+                ? CarouselAnimationTiming.crossfadeDuration
+                : duration + 0.05
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + delay,
+                execute: completion)
+        }
     }
 
     /// Builds one eclipse page transition to `target`, staging an unmounted
@@ -954,8 +966,11 @@ public final class CardCarouselViewController: UIViewController {
 
     /// Non-eclipse move (Reduce Motion, off-window updates, and generic
     /// multi-card jumps).
-    private func jump(to target: Int) {
-        guard target != currentIndex, !isTransitioning else { return }
+    private func jump(to target: Int, completion: (() -> Void)? = nil) {
+        guard target != currentIndex, !isTransitioning else {
+            completion?()
+            return
+        }
         slots[currentIndex]?.content.cardDidLeaveCenter()
         currentIndex = target
         UIView.transition(
@@ -969,7 +984,7 @@ public final class CardCarouselViewController: UIViewController {
                 self.slots[slot.index] = nil
             }
             self.mountWindow()
-        }
+        } completion: { _ in completion?() }
         applyMuteState()
         if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
         scrubber.setSelectedIndex(currentIndex, animated: true)

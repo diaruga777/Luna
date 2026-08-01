@@ -139,8 +139,11 @@ The root uses the production `CardCarouselViewController`:
    that switch it on** — each beside a picture of the exact chrome it names: the
    browser bar's OWN page-menu symbol (`SafariBottomBar.pageMenuSymbol`, shared,
    so the step and the button below it can never diverge), the puzzle-piece
-   `Manage Extensions` row (title shared with the mock sheet), and the app's real
-   icon beside a switch already flipped on. The copy lives once in
+   `Manage Extensions` row (title shared with the mock sheet), and the extension's own
+   name beside a switch already flipped on — "Luna" in every host app, because all
+   four embed the same extension bundle and it declares one `extensionName`, so a
+   step naming the running app would send a Reader user hunting for a row Manage
+   Extensions never shows. The copy lives once in
    `OnboardingSafariExtensionCopy`. **The word "paywall" appears in no Luna
    prose** — the pages ask you to subscribe, so every surface says subscription
    wall (`testEveryOnboardingArticleSurfaceShowsTheSameFeatureList` guards it).

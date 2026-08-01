@@ -7,20 +7,47 @@ import LunaAppConfig
 import Foundation
 import LunaModels
 
-/// What a Reader double save (the same URL saved twice within 7 seconds via the
-/// Action Button's Save App Intent — no other save surface) should do.
+/// What a double save (the same URL saved twice within 7 seconds via the Action
+/// Button's Save App Intent — no other save surface) should do. Chosen in
+/// Settings → Shortcut & Safari, in the two apps that can build article files
+/// (Luna and Luna Reader). See claudedocs/double-save.md.
+///
+/// `allCases` is the picker's order.
 public enum DoubleSaveAction: String, CaseIterable {
+    /// The second press does nothing. The default — a double save is easy to
+    /// trigger by accident, so it stays inert until the user opts in. Spelled
+    /// `nothing`, not `none`, so it never collides with `Optional.none` at a
+    /// call site.
+    case nothing
     /// Email the article's EPUB to the configured Kindle address (the existing
-    /// send-to-Kindle pipeline). The default.
+    /// send-to-Kindle pipeline).
     case sendToKindle
-    /// Email the article to one or more friends (the existing email-based
-    /// friend-sharing pipeline), per `DoubleSaveFriendMode`.
-    case sendToFriend
+    /// Return the article as a PDF from the App Intent, for the Shortcut to
+    /// open, view, or pass onward.
+    case openPDF
+    /// Return the article as CommonMark (`.md`).
+    case openMarkdown
+    /// Return the article as a Rich Text document (`.rtf`).
+    case openDocument
 
     public var displayName: String {
         switch self {
+        case .nothing: return L10n.string("Nothing")
         case .sendToKindle: return L10n.string("Send to Kindle")
-        case .sendToFriend: return L10n.string("Send to Contact")
+        case .openPDF: return L10n.string("Open PDF")
+        case .openMarkdown: return L10n.string("Open Markdown")
+        case .openDocument: return L10n.string("Open Document")
+        }
+    }
+
+    /// The file the App Intent should return for this action, or nil when the
+    /// action isn't an export (`.nothing` / `.sendToKindle`).
+    public var exportFormat: ArticleExportFormat? {
+        switch self {
+        case .nothing, .sendToKindle: return nil
+        case .openPDF: return .pdf
+        case .openMarkdown: return .markdown
+        case .openDocument: return .richText
         }
     }
 }
@@ -85,9 +112,11 @@ public final class DoubleSaveActionStore {
 
     // MARK: - Settings
 
+    /// Defaults to `.nothing`. A stored value from a retired case (the old
+    /// `sendToFriend`) doesn't decode and lands on the same default.
     public func action(forSurface surface: String) -> DoubleSaveAction {
         defaults.string(forKey: actionKey(forSurface: surface))
-            .flatMap(DoubleSaveAction.init(rawValue:)) ?? .sendToKindle
+            .flatMap(DoubleSaveAction.init(rawValue:)) ?? .nothing
     }
 
     public func setAction(_ action: DoubleSaveAction, forSurface surface: String) {

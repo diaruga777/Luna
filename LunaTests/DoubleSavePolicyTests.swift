@@ -123,6 +123,80 @@ final class DoubleSavePolicyTests: XCTestCase {
             .promptFriendSelector)
     }
 
+    // MARK: - "Nothing" (the default action)
+
+    func testIntentDoNothingIgnoresDoublePress() {
+        XCTAssertEqual(
+            decideIntent(
+                existingItem: item(),
+                previousPressDate: now.addingTimeInterval(-5), action: .doNothing),
+            .ignore)
+    }
+
+    /// The whole point of `.doNothing` over a nil `intentAction`: an Action
+    /// Button save whose setting is "Nothing" must not slip into the legacy
+    /// 12 s ereader regime and send anyway.
+    func testIntentDoNothingDoesNotFallBackToLegacyEreaderSend() {
+        XCTAssertEqual(
+            SavePressPolicy.decide(
+                existingItem: item(),
+                previousPressDate: now.addingTimeInterval(-5), now: now,
+                doubleSaveDestinationIDs: [kindle], intentAction: .doNothing),
+            .ignore)
+    }
+
+    func testIntentDoNothingStillSavesANewURL() {
+        XCTAssertEqual(
+            decideIntent(existingItem: nil, previousPressDate: nil, action: .doNothing),
+            .saveNew)
+    }
+
+    // MARK: - "Open …" file exports
+
+    func testIntentExportReturnsTheRequestedFormat() {
+        for format in [ArticleExportFormat.pdf, .markdown, .richText] {
+            XCTAssertEqual(
+                decideIntent(
+                    existingItem: item(),
+                    previousPressDate: now.addingTimeInterval(-5),
+                    action: .exportArticle(format: format)),
+                .exportArticle(format: format))
+        }
+    }
+
+    func testIntentExportOutsideTheWindowIsIgnored() {
+        XCTAssertEqual(
+            decideIntent(
+                existingItem: item(),
+                previousPressDate: now.addingTimeInterval(-7.1),
+                action: .exportArticle(format: .pdf)),
+            .ignore)
+    }
+
+    /// Exports are built from stored article content, which a video/post has
+    /// none of.
+    func testIntentExportOnPlatformItemIsIgnored() {
+        var video = item()
+        video.platform = .tiktok
+        XCTAssertEqual(
+            decideIntent(
+                existingItem: video,
+                previousPressDate: now.addingTimeInterval(-5),
+                action: .exportArticle(format: .pdf)),
+            .ignore)
+    }
+
+    /// The Kindle resend cooldown is about not re-emailing the same article; an
+    /// export sends nothing, so building the file again is always fine.
+    func testIntentExportIgnoresTheResendCooldown() {
+        XCTAssertEqual(
+            decideIntent(
+                existingItem: item(sendState: .sent, dateSent: now.addingTimeInterval(-60)),
+                previousPressDate: now.addingTimeInterval(-5),
+                action: .exportArticle(format: .markdown)),
+            .exportArticle(format: .markdown))
+    }
+
     func testNoPreviousPressDoesNotTrigger() {
         XCTAssertEqual(
             decideIntent(existingItem: item(), previousPressDate: nil, action: .sendToKindle),

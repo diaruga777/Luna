@@ -183,7 +183,10 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
             guard let self else { return }
             switch result {
             case .saved(let item), .sentToEreaders(let item),
-                 .sentToFriends(let item), .friendPromptRequested(let item):
+                 .sentToFriends(let item), .friendPromptRequested(let item),
+                 // In-app saves pass no double-save surface, so no export is
+                 // ever requested here — the item is what matters either way.
+                 .exportRequested(let item, _):
                 self.pendingCenteredID = item.id
             case .ignored:
                 self.pendingCenteredID = self.store.item(forURLString: urlString)?.id

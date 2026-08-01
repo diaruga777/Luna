@@ -54,6 +54,10 @@ public enum IntentIngestHelper {
         /// selector can appear. `savedURLString` is the saved item's URL (the
         /// item exists before the prompt is answered).
         case friendPromptRequested(savedURLString: String)
+        /// Double save whose configured action is a file export: the intent
+        /// should build `item` in `format` (through the app shell's article
+        /// exporter seam) and return it as its media.
+        case exportRequested(item: ReadingListItem, format: ArticleExportFormat)
         /// Foreign-kind save (`SurfaceSupport`) — the item was DISCARDED. The
         /// intent throws an error dialog with the generic explanation.
         case unsupportedKind(owner: LunaApp)
@@ -80,8 +84,9 @@ public enum IntentIngestHelper {
     /// success.
     ///
     /// `doubleSaveActionSurface` is non-nil only where the configured
-    /// double-save action is armed (today: Reader), mirroring the decision the
-    /// Provide Context / Save intents make.
+    /// double-save action is armed (Luna and Reader — the two apps that can
+    /// build article files), mirroring the decision the Provide Context / Save
+    /// intents make.
     public static func handleSavePress(
         urlString: String,
         doubleSaveActionSurface surface: String?,
@@ -143,6 +148,11 @@ public enum IntentIngestHelper {
             }
             if case .friendPromptRequested = settled {
                 return .friendPromptRequested(savedURLString: storedItem.urlString)
+            }
+            if case let .exportRequested(_, format) = settled {
+                // The STORED item, not the one the press carried: the export
+                // reads content that only the verified copy is known to have.
+                return .exportRequested(item: storedItem, format: format)
             }
             return .completed(savedURLString: storedItem.urlString)
         }

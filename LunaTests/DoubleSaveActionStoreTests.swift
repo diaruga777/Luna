@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaModels
 import LunaStorage
 import XCTest
 
@@ -27,21 +28,40 @@ final class DoubleSaveActionStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    /// A double save is easy to trigger by accident, so nothing happens until
+    /// the user picks an action.
     func testDefaults() {
-        XCTAssertEqual(store.action(forSurface: surface), .sendToKindle)
+        XCTAssertEqual(store.action(forSurface: surface), .nothing)
         XCTAssertEqual(store.friendMode(forSurface: surface), .askEveryTime)
         XCTAssertEqual(store.presetFriendEmails(forSurface: surface), [])
     }
 
     func testSettingsRoundTrip() {
-        store.setAction(.sendToFriend, forSurface: surface)
+        store.setAction(.openMarkdown, forSurface: surface)
         store.setFriendMode(.preset, forSurface: surface)
         store.setPresetFriendEmails(["a@b.com", "c@d.com"], forSurface: surface)
-        XCTAssertEqual(store.action(forSurface: surface), .sendToFriend)
+        XCTAssertEqual(store.action(forSurface: surface), .openMarkdown)
         XCTAssertEqual(store.friendMode(forSurface: surface), .preset)
         XCTAssertEqual(store.presetFriendEmails(forSurface: surface), ["a@b.com", "c@d.com"])
-        // Surfaces are independent.
-        XCTAssertEqual(store.action(forSurface: "downloader"), .sendToKindle)
+        // Surfaces are independent: Luna and Reader each keep their own action.
+        XCTAssertEqual(store.action(forSurface: "luna"), .nothing)
+    }
+
+    /// The retired `sendToFriend` value can still be sitting in the shared App
+    /// Group. It must read back as the inert default, not crash or linger.
+    func testRetiredStoredActionFallsBackToNothing() {
+        defaults.set("sendToFriend", forKey: "doubleSave.action.\(surface)")
+        XCTAssertEqual(store.action(forSurface: surface), .nothing)
+    }
+
+    /// Only the three "Open …" actions produce a file, and each maps to the
+    /// format the picker's wording promises.
+    func testExportFormats() {
+        XCTAssertNil(DoubleSaveAction.nothing.exportFormat)
+        XCTAssertNil(DoubleSaveAction.sendToKindle.exportFormat)
+        XCTAssertEqual(DoubleSaveAction.openPDF.exportFormat, .pdf)
+        XCTAssertEqual(DoubleSaveAction.openMarkdown.exportFormat, .markdown)
+        XCTAssertEqual(DoubleSaveAction.openDocument.exportFormat, .richText)
     }
 
     func testPendingFriendPromptIsOneShot() {

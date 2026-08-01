@@ -375,6 +375,12 @@ public final class ReadingListIngestor {
         /// (the pending prompt is already recorded; the intent's caller returns
         /// the open-Luna token so the Shortcut foregrounds the app).
         case friendPromptRequested(ReadingListItem)
+        /// Double press — the caller should build this item in this format and
+        /// return the file as the App Intent's media. The file itself is NOT
+        /// built here: serialization lives in LunaSend, an article-kind module
+        /// this universal one can't link, so the intent layer does it through
+        /// an injected seam.
+        case exportRequested(ReadingListItem, ArticleExportFormat)
         /// Duplicate press — nothing happened.
         case ignored
 
@@ -386,7 +392,8 @@ public final class ReadingListIngestor {
         public var item: ReadingListItem? {
             switch self {
             case let .saved(item), let .sentToEreaders(item),
-                 let .sentToFriends(item), let .friendPromptRequested(item):
+                 let .sentToFriends(item), let .friendPromptRequested(item),
+                 let .exportRequested(item, _):
                 return item
             case .unsupportedKind, .ignored:
                 return nil
@@ -396,14 +403,15 @@ public final class ReadingListIngestor {
 
     /// The save-press entry point shared by the intents and the in-app add:
     /// first press saves and ingests; a second press within a few seconds
-    /// triggers the fixed Kindle double-save behavior; any other press on an
+    /// triggers the configured double-save behavior; any other press on an
     /// existing URL is ignored. Awaits the resulting work (callers bound it
     /// with a timeout).
     ///
     /// `doubleSaveActionSurface`: non-nil ONLY for saves arriving through the
-    /// Action Button's Save App Intent on a surface with the double-save action
-    /// enabled (today: Reader). It switches a repeat press into the 7 s
-    /// Kindle-or-no-op regime instead of the legacy ereader double save.
+    /// Action Button's Save App Intent on a surface that can act on a double
+    /// save (the two article-file apps: Luna and Reader). It switches a repeat
+    /// press into the 7 s `DoubleSaveAction` regime instead of the legacy
+    /// ereader double save.
     @discardableResult
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
                                 prefetchedHTML: String? = nil,
@@ -466,19 +474,34 @@ public final class ReadingListIngestor {
             DoubleSaveActionStore.shared.setPendingFriendPrompt(
                 urlString: existing.urlString, forSurface: surface)
             return .friendPromptRequested(existing)
+        case .exportArticle(let format):
+            guard let existing else { return .ignored }
+            return .exportRequested(existing, format)
         case .ignore:
             return .ignored
         }
     }
 
-    /// Arms the fixed Action Button double-save behavior. A configured Kindle
-    /// receives the article; without one, the repeat press does nothing.
+    /// Arms the Action Button double-save behavior from the user's setting
+    /// (Settings → Shortcut & Safari). Never returns nil: an Action Button save
+    /// always stays in the 7 s intent regime, so an unset or unusable action is
+    /// an explicit no-op rather than a fall-through to the legacy in-app
+    /// double save. "Send to Kindle" without a configured Kindle degrades the
+    /// same way.
     private static func resolvedIntentAction(
-        forSurface _: String
+        forSurface surface: String
     ) -> SavePressPolicy.IntentAction? {
-        guard IngestorKindHandlers.article?.isDestinationConfigured(
-            ArticleDestinationID.kindle) ?? false else { return nil }
-        return .sendToKindle
+        switch DoubleSaveActionStore.shared.action(forSurface: surface) {
+        case .nothing:
+            return .doNothing
+        case .sendToKindle:
+            guard IngestorKindHandlers.article?.isDestinationConfigured(
+                ArticleDestinationID.kindle) ?? false else { return .doNothing }
+            return .sendToKindle
+        case let action:
+            guard let format = action.exportFormat else { return .doNothing }
+            return .exportArticle(format: format)
+        }
     }
 
     /// Saves `urlString` as a normal article, bypassing product-page detection. Used

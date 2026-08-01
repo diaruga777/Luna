@@ -15,8 +15,11 @@ import Foundation
 ///   ereader destination in double-save mode (skipping any sent in the past day).
 /// - **Action Button (Save App Intent)**: when the caller passes an
 ///   `intentAction` (only the Action Button save path does), a second press
-///   within 7 s performs that resolved action. The app currently resolves only
-///   configured Kindle; contact actions are retained here as inert legacy cases.
+///   within 7 s performs that resolved action — the user's `DoubleSaveAction`
+///   setting, already checked against what's configured. Passing `.doNothing`
+///   (the default setting, or a Kindle that isn't set up) still selects this
+///   regime, so an Action Button save NEVER falls back to the legacy one.
+///   Contact actions are retained here as inert legacy cases.
 public enum SavePressPolicy {
 
     public enum Decision: Equatable {
@@ -29,6 +32,9 @@ public enum SavePressPolicy {
         case sendToFriends(emails: [String])
         /// Double press detected — open the app's friend selector for the item.
         case promptFriendSelector
+        /// Double press detected — build the existing article in this format and
+        /// hand the file back as the App Intent's returned media.
+        case exportArticle(format: ArticleExportFormat)
         /// Duplicate press — do nothing.
         case ignore
     }
@@ -36,8 +42,13 @@ public enum SavePressPolicy {
     /// The configured Action Button double-save action, resolved by the caller
     /// (settings + configuration checks) so the policy itself stays pure.
     public enum IntentAction: Equatable {
+        /// The user's setting is "Nothing", or the action they picked isn't
+        /// usable (Kindle not configured). A repeat press is a no-op.
+        case doNothing
         /// Send to Kindle (the caller verified Kindle is configured).
         case sendToKindle
+        /// Return the article as a file in this format.
+        case exportArticle(format: ArticleExportFormat)
         /// Email these preset friend addresses (caller verified non-empty).
         case sendToFriends(emails: [String])
         /// Open the friend selector in the app.
@@ -77,6 +88,13 @@ public enum SavePressPolicy {
             } ?? false
             guard isDoublePress else { return .ignore }
             switch intentAction {
+            case .doNothing:
+                return .ignore
+            case .exportArticle(let format):
+                // Exports are built from stored article content, which platform
+                // items (videos, posts, tracks) don't have.
+                guard !existingItem.isPlatformItem else { return .ignore }
+                return .exportArticle(format: format)
             case .sendToKindle:
                 // Platform items (videos, posts, tracks) have no ereader EPUB
                 // target — a Kindle double press on one is a no-op.

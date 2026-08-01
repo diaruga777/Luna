@@ -263,7 +263,10 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             let item: ReadingListItem?
             switch result {
             case .saved(let value), .sentToEreaders(let value),
-                 .sentToFriends(let value), .friendPromptRequested(let value):
+                 .sentToFriends(let value), .friendPromptRequested(let value),
+                 // In-app saves pass no double-save surface, so no export is
+                 // ever requested here — the item is what matters either way.
+                 .exportRequested(let value, _):
                 item = value
             case .ignored:
                 item = ReadingListStore.shared.item(forURLString: urlString)

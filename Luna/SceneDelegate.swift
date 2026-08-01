@@ -164,7 +164,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             switch result {
             case .saved(let item),
                  .sentToEreaders(let item),
-                 .sentToFriends(let item), .friendPromptRequested(let item):
+                 .sentToFriends(let item), .friendPromptRequested(let item),
+                 // In-app opens pass no double-save surface, so this can't
+                 // arise here — but the item is the one to open either way.
+                 .exportRequested(let item, _):
                 itemID = item.id
             case .ignored: itemID = ReadingListStore.shared.item(forURLString: urlString)?.id
             case .unsupportedKind:

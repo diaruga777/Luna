@@ -1081,6 +1081,13 @@ private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
         textView.isScrollEnabled = false
         textView.isUserInteractionEnabled = false
         textView.backgroundColor = .clear
+        // The app dresses every UITextView through the appearance proxy
+        // (`LunaColors.applyGlobalAppearance` — near-white ink for the black
+        // sky), and UIKit applies that the moment this one enters a window,
+        // repainting the attributed string it was given. This replica is a
+        // LIGHT-mode facsimile of Messages, so pin the colour on the instance:
+        // an explicitly set property is left alone by the proxy.
+        textView.textColor = contentColor
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.isAccessibilityElement = false
@@ -1091,6 +1098,11 @@ private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
             string: text + " ",
             attributes: [.font: font, .foregroundColor: contentColor])
         let placeholder = NSTextAttachment()
+        // An attachment with no contents draws the system's missing-image
+        // glyph, which peeks out from behind the pill seated over it. An
+        // empty transparent image of the pill's own size reserves the spot
+        // and draws nothing.
+        placeholder.image = UIGraphicsImageRenderer(size: pillSize).image { _ in }
         placeholder.bounds = CGRect(
             x: 0,
             y: (font.capHeight - pillSize.height) / 2,

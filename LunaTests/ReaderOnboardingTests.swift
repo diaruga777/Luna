@@ -156,8 +156,8 @@ final class ReaderOnboardingTests: XCTestCase {
 
     func testEverySurfaceHasItsExactCopyAndDemoPage() {
         let reader = OnboardingSurfaceConfiguration.configuration(for: .reader)
-        XCTAssertEqual(reader.firstLine, "You want to read more.")
-        XCTAssertEqual(reader.secondLine, "Let’s make that happen.")
+        XCTAssertEqual(
+            reader.introCopy, .growingLine(stem: "Read", tail: " more."))
         XCTAssertEqual(
             reader.supportingText,
             "Save onscreen links with one click.\nUnlock or read offline later.")
@@ -168,8 +168,11 @@ final class ReaderOnboardingTests: XCTestCase {
             "https://luna.app/about")
 
         let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
-        XCTAssertEqual(downloader.firstLine, "App signup required? So annoying.")
-        XCTAssertEqual(downloader.secondLine, "Watch and share instantly instead.")
+        XCTAssertEqual(
+            downloader.introCopy,
+            .twoLines(
+                first: "App signup required? So annoying.",
+                second: "Watch and share instantly instead."))
         XCTAssertEqual(
             downloader.supportingText,
             "Download any video link in one click,\nno signup required.")
@@ -180,8 +183,11 @@ final class ReaderOnboardingTests: XCTestCase {
             "https://instatok.local/@moonwatch/lunar-eclipse")
 
         let price = OnboardingSurfaceConfiguration.configuration(for: .priceTracker)
-        XCTAssertEqual(price.firstLine, "Overpaid? Missed a sale?")
-        XCTAssertEqual(price.secondLine, "Never miss out again.")
+        XCTAssertEqual(
+            price.introCopy,
+            .twoLines(
+                first: "Overpaid? Missed a sale?",
+                second: "Never miss out again."))
         XCTAssertEqual(
             price.supportingText,
             "Track sales for any link\nin one click.")
@@ -192,8 +198,10 @@ final class ReaderOnboardingTests: XCTestCase {
             "https://amayzon.local/eyephone-air")
 
         let luna = OnboardingSurfaceConfiguration.configuration(for: .luna)
-        XCTAssertEqual(luna.firstLine, "All your Luna saves.")
-        XCTAssertEqual(luna.secondLine, "In a single app.")
+        XCTAssertEqual(
+            luna.introCopy,
+            .twoLines(
+                first: "All your Luna saves.", second: "In a single app."))
         XCTAssertEqual(
             luna.supportingText,
             "Save any link on your screen\nwith one click.")
@@ -204,15 +212,16 @@ final class ReaderOnboardingTests: XCTestCase {
     @MainActor
     func testIntroStagesTheSameRevealAcrossBothLines() throws {
         let intro = OnboardingIntroCardContentViewController(
-            firstLine: "You want to read more.",
-            secondLine: "Let’s make that happen.",
+            introCopy: .twoLines(
+                first: "You want to read more.",
+                second: "Let’s make that happen."),
             supportingText:
                 "Save onscreen links with one click.\nUnlock or read offline later.")
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
         intro.view.layoutIfNeeded()
 
-        let lines = intro.view.subviews.compactMap { $0 as? MoonRevealLineView }
+        let lines = intro.view.descendants(of: MoonRevealLineView.self)
         XCTAssertEqual(lines.count, 2)
         XCTAssertFalse(lines[0].isFullyRevealed)
         XCTAssertFalse(lines[1].isFullyRevealed)
@@ -273,10 +282,83 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
+    func testGrowingIntroCentresTheFinishedSentenceAndNeverMovesItsStem() throws {
+        let intro = OnboardingIntroCardContentViewController(
+            introCopy: .growingLine(stem: "Read", tail: " more."),
+            supportingText: "")
+        intro.loadViewIfNeeded()
+        intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
+        intro.view.layoutIfNeeded()
+
+        let headline = try XCTUnwrap(
+            intro.view.subviews.compactMap {
+                $0 as? OnboardingIntroHeadlineView
+            }.first)
+        let growing = try XCTUnwrap(headline.growingLine)
+        let (stem, period, tail) = growing.fragments
+
+        XCTAssertEqual(
+            headline.frame.minY,
+            AppOnboardingLayout.contentTop(in: intro.view.bounds),
+            accuracy: 0.01,
+            "One line keeps the vertical position the first of two lines had")
+        XCTAssertEqual(headline.frame.height, 44, accuracy: 0.01)
+
+        // One frame and one typesetting for all three fragments: the second
+        // beat has nothing to translate.
+        XCTAssertEqual(stem.frame, period.frame)
+        XCTAssertEqual(stem.frame, tail.frame)
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 25, weight: .semibold),
+            .kern: 0,
+        ]
+        func width(_ string: String) -> CGFloat {
+            NSAttributedString(string: string, attributes: attributes).size().width
+        }
+        let origin = stem.frame.minX
+        XCTAssertEqual(
+            origin + width("Read more.") / 2, growing.bounds.midX, accuracy: 1,
+            "The finished sentence is what is centred")
+        XCTAssertLessThan(
+            origin + width("Read.") / 2, growing.bounds.midX - 20,
+            "“Read.” therefore lands left of centre, which is the point")
+
+        for fragment in [stem, period, tail] {
+            XCTAssertFalse(fragment.isFullyRevealed)
+            XCTAssertTrue(fragment.usesGlyphEdgeIllumination)
+            XCTAssertFalse(fragment.occluderHasVisibleChrome)
+        }
+
+        let firstBeat = expectation(description: "stem and its period arrive")
+        growing.revealFirstBeat(duration: 0.02) { firstBeat.fulfill() }
+        wait(for: [firstBeat], timeout: 5)
+        XCTAssertTrue(stem.isFullyRevealed)
+        XCTAssertTrue(period.isFullyRevealed)
+        XCTAssertFalse(tail.isFullyRevealed)
+        XCTAssertEqual(growing.accessibilityLabel, "Read.")
+
+        let stemFrame = stem.frame
+        let secondBeat = expectation(description: "the tail replaces the period")
+        growing.revealSecondBeat(duration: 0.02) { secondBeat.fulfill() }
+        wait(for: [secondBeat], timeout: 5)
+        XCTAssertTrue(tail.isFullyRevealed)
+        XCTAssertTrue(period.isFullyConcealed)
+        XCTAssertFalse(period.isFullyRevealed)
+        XCTAssertTrue(
+            stem.isFullyRevealed, "The second beat does not touch the stem")
+        XCTAssertEqual(stem.frame, stemFrame)
+        XCTAssertEqual(growing.accessibilityLabel, "Read more.")
+        XCTAssertTrue(growing.isAccessibilityElement)
+        XCTAssertFalse(stem.isAccessibilityElement)
+    }
+
+    @MainActor
     func testIntroRestoresCompletedSetupArtworkBeforeItsViewLoads() throws {
         let intro = OnboardingIntroCardContentViewController(
-            firstLine: "You want to read more.",
-            secondLine: "Let’s make that happen.",
+            introCopy: .twoLines(
+                first: "You want to read more.",
+                second: "Let’s make that happen."),
             supportingText: "")
         intro.setState(safari: .completed, shortcut: .completed)
         intro.loadViewIfNeeded()

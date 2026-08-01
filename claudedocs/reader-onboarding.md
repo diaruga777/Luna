@@ -46,12 +46,34 @@ rim, tint, or star table, run
 
 ## Per-app configuration
 
-| App | Intro lines | Demonstration | Save benefit |
+| App | Intro headline | Demonstration | Save benefit |
 |---|---|---|---|
-| Reader | “You want to read more.” / “Let’s make that happen.” | native `luna.app` article sequence | “Read offline later” |
+| Reader | “Read.” growing into “Read more.” | native `luna.app` article sequence | “Read offline later” |
 | Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” | bundled InstaTok page and eclipse video | “Watch or share” |
 | Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” | bundled amayzon eyePhone page | “Never miss a sale” |
 | Luna | “All your Luna saves.” / “In a single app.” | continually rotates through all three pages | “Read, watch, track, anything” |
+
+`OnboardingIntroCopy` gives the headline two shapes, both spending the same two
+beats of the same sweep. Three apps take `.twoLines`: a sentence each, stacked.
+The Reader takes `.growingLine(stem: "Read", tail: " more.")`, one sentence that
+grows — the first beat brings in “Read” with a period of its own, the second
+adds “ more.” under the same descending front that takes that period back out.
+
+Nothing moves between the beats, because it is the FINISHED sentence that is
+centred: “Read.” lands deliberately left of centre. `MoonRevealGrowingLineView`
+typesets all three fragments — stem, first-beat period, tail — into one shared
+frame, each rendering the whole composition with every fragment but its own in
+clear ink. A fragment's position therefore comes from the real typesetting of
+the sentence around it rather than a measured offset (kerning is off so the
+compositions agree on where each one begins), and the shared frame gives all
+three the identical circle, so a beat driving two of them is one continuous
+front. Their occluders are clear rather than black because they overlap: the
+front hides text by geometrically removing it from the mask, and a disc wide
+enough to cover one fragment would cover its neighbours too. The period leaves
+through `MoonRevealLineView.conceal`, the exact mirror of a reveal — the same
+circle descending at the same pace, entering with its BOTTOM arc so the glyphs
+are swallowed from the top down, their light trailing below the edge instead of
+above it.
 
 The InstaTok page is a deliberately fictional full-bleed video site whose
 signup modal blocks a bundled NASA SVS lunar-eclipse clip. The source, SHA-256,
@@ -71,8 +93,8 @@ The root uses the production `CardCarouselViewController`:
 1. A brief 0.15-second settling beat after the launch splash begins its
    near-instant fade, a
    completely borderless black circle
-   moves slowly down across the surface-specific first line. After a brief
-   0.32-second reading beat, the same reveal plays across the second line. The
+   moves slowly down across the surface-specific headline's first beat. After a
+   brief 0.32-second reading beat, the same reveal plays across the second. The
    circle is fully opaque, while
    the ordinary glyph layer is also geometrically excluded from its interior,
    preventing subpixel text from bleeding through. Four narrow illumination
@@ -82,7 +104,7 @@ The root uses the production `CardCarouselViewController`:
    brightness falls steeply with distance from the circle edge, the clipped
    white core briefly overwhelms legibility, and each pixel's bloom illuminates
    its neighbors before resolving to ordinary text. The copy
-   starts one third of the way down the card. After the second line finishes,
+   starts one third of the way down the card. After the second beat finishes,
    three actions appear as a vertical stack: **Remove popups and walls for
    me** with Safari's compass, **Save on-screen links with the Action Button**
    with the bundled Shortcuts icon, and a real `UIPasteControl` labelled

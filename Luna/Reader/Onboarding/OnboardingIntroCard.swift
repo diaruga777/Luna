@@ -41,10 +41,10 @@ enum OnboardingIntroTiming {
     /// enough to separate the reveal from the launch itself while still
     /// reading as immediate.
     static let firstLineDelay: TimeInterval = 0.15
-    /// Both sentences use the same deliberate top-down lunar sweep.
+    /// Both beats use the same deliberate top-down lunar sweep.
     static let lineRevealDuration: TimeInterval = 1.55
-    /// A short reading beat keeps the two sentences distinct without making the
-    /// second feel like a separate stage.
+    /// A short reading beat keeps the two distinct without making the second
+    /// feel like a separate stage.
     static let interLineDelay: TimeInterval = 0.15
 }
 
@@ -52,27 +52,24 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     var onSafari: (() -> Void)?
     var onShortcut: (() -> Void)?
     var onPaste: ((String) -> Void)?
-    /// Fired when the first line's reveal completes — the host preloads the
+    /// Fired when the headline's first beat completes — the host preloads the
     /// demonstration in the reading pause, never inside a reveal's own turn.
     var onFirstLineRevealed: (() -> Void)?
 
-    private let firstLine: MoonRevealLineView
-    private let secondLine: MoonRevealLineView
+    private let headline: OnboardingIntroHeadlineView
     private let safariButton = UIButton(type: .system)
     private let shortcutButton = UIButton(type: .system)
     private let pasteButton = OnboardingPasteControl()
     private let buttonStack = UIStackView()
     private var didStart = false
-    private var safariCompleted = false
-    private var shortcutCompleted = false
+    private var safariState = OnboardingSetupButtonState.pending
+    private var shortcutState = OnboardingSetupButtonState.pending
 
     init(
-        firstLine: String,
-        secondLine: String,
+        introCopy: OnboardingIntroCopy,
         supportingText _: String
     ) {
-        self.firstLine = MoonRevealLineView(text: firstLine)
-        self.secondLine = MoonRevealLineView(text: secondLine)
+        headline = OnboardingIntroHeadlineView(copy: introCopy)
         super.init()
     }
 
@@ -82,8 +79,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        view.addSubview(firstLine)
-        view.addSubview(secondLine)
+        view.addSubview(headline)
 
         configure(
             safariButton,
@@ -110,8 +106,8 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         }
         // Setup evidence is supplied before the carousel asks this controller
         // for its view, so restore completed artwork after configuring buttons.
-        update(safariButton, completed: safariCompleted, symbol: "safari.fill")
-        update(shortcutButton, completed: shortcutCompleted, symbol: "bolt.fill")
+        update(safariButton, state: safariState, symbol: "safari.fill")
+        update(shortcutButton, state: shortcutState, symbol: "bolt.fill")
 
         pasteButton.onPaste = { [weak self] value in self?.onPaste?(value) }
 
@@ -138,15 +134,10 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         let inset: CGFloat = 24
-        let lineHeight: CGFloat = 44
-        let gap: CGFloat = 3
         let contentTop = AppOnboardingLayout.contentTop(in: view.bounds)
-        firstLine.frame = CGRect(
+        headline.frame = CGRect(
             x: inset, y: contentTop,
-            width: view.bounds.width - inset * 2, height: lineHeight)
-        secondLine.frame = CGRect(
-            x: inset, y: firstLine.frame.maxY + gap,
-            width: view.bounds.width - inset * 2, height: lineHeight)
+            width: view.bounds.width - inset * 2, height: headline.height)
         let stackWidth = view.bounds.width - inset * 2
         let buttonHeight: CGFloat = 56
         buttonStack.frame = CGRect(
@@ -165,12 +156,12 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                 OnboardingIntroTiming.firstLineDelay)
         ) { [weak self] in
             guard let self else { return }
-            self.revealFirstLine()
+            self.revealHeadline()
         }
     }
 
-    private func revealFirstLine() {
-        firstLine.reveal(
+    private func revealHeadline() {
+        headline.revealFirstBeat(
             duration: OnboardingIntroTiming.lineRevealDuration
         ) { [weak self] in
             guard let self else { return }
@@ -180,7 +171,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                     OnboardingIntroTiming.interLineDelay)
             ) { [weak self] in
                 guard let self else { return }
-                self.secondLine.reveal(
+                self.headline.revealSecondBeat(
                     duration: OnboardingIntroTiming.lineRevealDuration
                 ) { [weak self] in
                     guard let self else { return }
@@ -204,18 +195,21 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         }
     }
 
-    func setCompleted(safari: Bool, shortcut: Bool) {
-        safariCompleted = safari
-        shortcutCompleted = shortcut
-        update(safariButton, completed: safari, symbol: "safari.fill")
-        update(shortcutButton, completed: shortcut, symbol: "bolt.fill")
+    func setState(
+        safari: OnboardingSetupButtonState,
+        shortcut: OnboardingSetupButtonState
+    ) {
+        safariState = safari
+        shortcutState = shortcut
+        update(safariButton, state: safari, symbol: "safari.fill")
+        update(shortcutButton, state: shortcut, symbol: "bolt.fill")
     }
 
     func setActionsEnabled(_ enabled: Bool) {
         safariButton.isUserInteractionEnabled = true
         shortcutButton.isUserInteractionEnabled = true
-        safariButton.isEnabled = enabled && !safariCompleted
-        shortcutButton.isEnabled = enabled && !shortcutCompleted
+        safariButton.isEnabled = enabled && safariState != .completed
+        shortcutButton.isEnabled = enabled && shortcutState != .completed
         pasteButton.isUserInteractionEnabled = enabled
     }
 
@@ -227,14 +221,14 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     func setPasteError(_ message: String) {
         pasteButton.setState(.failure(message))
-        safariButton.isEnabled = !safariCompleted
-        shortcutButton.isEnabled = !shortcutCompleted
+        safariButton.isEnabled = safariState != .completed
+        shortcutButton.isEnabled = shortcutState != .completed
     }
 
     func resetPaste() {
         pasteButton.setState(.idle)
-        safariButton.isEnabled = !safariCompleted
-        shortcutButton.isEnabled = !shortcutCompleted
+        safariButton.isEnabled = safariState != .completed
+        shortcutButton.isEnabled = shortcutState != .completed
     }
 
     override func paste(itemProviders: [NSItemProvider]) {
@@ -275,14 +269,27 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
-    private func update(_ button: UIButton, completed: Bool, symbol: String) {
-        button.isEnabled = !completed
-        if completed {
+    private func update(
+        _ button: UIButton,
+        state: OnboardingSetupButtonState,
+        symbol: String
+    ) {
+        button.isEnabled = state != .completed
+        switch state {
+        case .completed:
             button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
             button.configuration?.baseForegroundColor = UIColor.white.withAlphaComponent(0.42)
             button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.08)
             button.accessibilityValue = "Completed"
-        } else {
+        case .skipped:
+            // Still enabled: skipping is a choice to come back to, not a
+            // finished lesson, so it never earns the disabled checkmark.
+            button.configuration?.image = UIImage(systemName: "forward.fill")
+            button.configuration?.baseForegroundColor = LunaColors.primaryText
+            button.configuration?.baseBackgroundColor =
+                LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
+            button.accessibilityValue = "Skipped"
+        case .pending:
             button.configuration?.image = UIImage(systemName: symbol)
             if button === shortcutButton,
                let path = Bundle.main.path(forResource: "ShortcutsAppIcon", ofType: "png")
@@ -439,6 +446,12 @@ private final class OnboardingPasteControl: UIView {
 /// emitter with stacked near, middle, and wide halos, then cools rapidly back
 /// to normal white as the edge moves away.
 final class MoonRevealLineView: UIView {
+    /// Which way the front works the line. `conceal` is the exact mirror of
+    /// `reveal`: the same circle descending at the same pace, entering with
+    /// its BOTTOM arc so the line is swallowed from the top down instead of
+    /// uncovered, its glyphs flaring one last time just ahead of the edge.
+    private enum SweepDirection { case reveal, conceal }
+
     private let clippedContent = UIView()
     private let finalLabel = UILabel()
     private let illuminationMaskLabel = UILabel()
@@ -447,14 +460,22 @@ final class MoonRevealLineView: UIView {
     private let pixelBloomView = GlyphPixelBloomView()
     private let lineSpacing: CGFloat
     private let occluderColor: UIColor
+    /// Supplied glyphs, when a caller needs one fragment of a sentence typeset
+    /// in the position the whole sentence gives it.
+    private var styledText: NSAttributedString?
     /// The intro's moon descends; the article's bottom-to-top wave asks for
     /// the mirror: the circle covers everything ABOVE its bottom arc and
     /// climbs, exposing the view from the bottom up with the same light.
     private let sweepsUpward: Bool
-    private var didStartReveal = false
+    private var sweepDirection = SweepDirection.reveal
+    private var didStartSweep = false
     private var initialCircleFrame = CGRect.zero
     private var edgeSagitta: CGFloat = 0
     private(set) var isFullyRevealed: Bool
+    /// True once a conceal has run its course: nothing of this line is left on
+    /// screen, and unlike a line that has simply never been revealed, it is
+    /// not waiting behind a front either.
+    private(set) var isFullyConcealed = false
     /// The glyph light's strength. 1 is the intro's reference look; the mock
     /// Safari article amplifies its lines — at the wave's much faster front
     /// the reference gain read as too soft.
@@ -488,6 +509,7 @@ final class MoonRevealLineView: UIView {
 
     init(
         text: String,
+        styledText: NSAttributedString? = nil,
         initiallyRevealed: Bool = false,
         font: UIFont = .systemFont(ofSize: 25, weight: .semibold),
         textAlignment: NSTextAlignment = .center,
@@ -497,6 +519,7 @@ final class MoonRevealLineView: UIView {
         occluderColor: UIColor = .black,
         sweepsUpward: Bool = false
     ) {
+        self.styledText = styledText
         self.lineSpacing = lineSpacing
         self.occluderColor = occluderColor
         self.sweepsUpward = sweepsUpward
@@ -554,10 +577,13 @@ final class MoonRevealLineView: UIView {
     /// Returns an already-visible line to its occluded state so `reveal` can
     /// play again — the cleanup pass re-reveals content that loaded plainly.
     func prepareToRevealAgain() {
-        guard isFullyRevealed || didStartReveal else { return }
+        guard isFullyRevealed || didStartSweep else { return }
         isFullyRevealed = false
-        didStartReveal = false
+        isFullyConcealed = false
+        didStartSweep = false
+        sweepDirection = .reveal
         isAccessibilityElement = false
+        finalLabel.isHidden = false
         installOcclusion()
         setNeedsLayout()
         layoutIfNeeded()
@@ -570,9 +596,15 @@ final class MoonRevealLineView: UIView {
         super.layoutSubviews()
         clippedContent.frame = bounds
         finalLabel.frame = bounds
-        guard !isFullyRevealed, !didStartReveal, bounds.width > 0, bounds.height > 0
-        else { return }
+        guard needsSweepLayers, bounds.width > 0, bounds.height > 0 else { return }
         prepareRevealLayers()
+    }
+
+    /// A sweep that has not begun still needs its circle placed — and a
+    /// conceal needs it placed even though the line is currently revealed.
+    private var needsSweepLayers: Bool {
+        guard !didStartSweep else { return false }
+        return sweepDirection == .conceal || !isFullyRevealed
     }
 
     func reveal(duration: TimeInterval, completion: @escaping () -> Void) {
@@ -580,9 +612,34 @@ final class MoonRevealLineView: UIView {
             completion()
             return
         }
-        guard !didStartReveal else { return }
-        didStartReveal = true
+        guard !didStartSweep else { return }
+        sweepDirection = .reveal
+        sweep(duration: duration, completion: completion)
+    }
+
+    /// Takes a revealed line back out under the same descending front. Only
+    /// this line is touched: anything laid out beside it is untouched, which
+    /// is what lets one fragment of a sentence leave while another arrives.
+    func conceal(duration: TimeInterval, completion: @escaping () -> Void) {
+        guard isFullyRevealed else {
+            completion()
+            return
+        }
+        sweepDirection = .conceal
+        didStartSweep = false
+        isFullyRevealed = false
+        isAccessibilityElement = false
+        installOcclusion()
+        setNeedsLayout()
         layoutIfNeeded()
+        sweep(duration: duration, completion: completion)
+    }
+
+    private func sweep(duration: TimeInterval, completion: @escaping () -> Void) {
+        layoutIfNeeded()
+        guard !didStartSweep else { return }
+        didStartSweep = true
+        let concealing = sweepDirection == .conceal
         let travel = revealFrontCrossingDistance
         let signedTravel = sweepsUpward ? -travel : travel
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
@@ -619,6 +676,9 @@ final class MoonRevealLineView: UIView {
             circleTravel: signedTravel,
             duration: OnboardingAnimationClock.displayLinkDuration(
                 resolvedDuration),
+            // A conceal descends on its BOTTOM arc, so its light trails below
+            // the edge — over the glyphs about to go out — rather than above.
+            edge: concealing ? .bottomArc : nil,
             edgeBandScale: max(
                 1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
             emitterGain: bloomGain,
@@ -638,8 +698,12 @@ final class MoonRevealLineView: UIView {
             deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
         ) { [weak self] in
             guard let self else { return }
-            self.isFullyRevealed = true
-            self.isAccessibilityElement = true
+            self.isFullyRevealed = !concealing
+            self.isFullyConcealed = concealing
+            self.isAccessibilityElement = !concealing
+            // A concealed line keeps nothing on screen: dropping the mask
+            // would hand back the very glyphs the front just took away.
+            self.finalLabel.isHidden = concealing
             self.finalLabel.layer.mask = nil
             self.moonLayer.removeFromSuperlayer()
             self.pixelBloomView.stop()
@@ -649,15 +713,20 @@ final class MoonRevealLineView: UIView {
     }
 
     func setText(_ text: String) {
+        styledText = nil
         apply(text: text, to: finalLabel)
         apply(text: text, to: illuminationMaskLabel)
         accessibilityLabel = text
-        if !didStartReveal {
+        if !didStartSweep {
             setNeedsLayout()
         }
     }
 
     private func apply(text: String, to label: UILabel) {
+        if let styledText {
+            label.attributedText = styledText
+            return
+        }
         guard lineSpacing > 0 else {
             label.attributedText = nil
             label.text = text
@@ -688,9 +757,16 @@ final class MoonRevealLineView: UIView {
         // the view (above for the descending moon, below for the climbing
         // one), so no antialiased pixel leaks out early and the reveal
         // starts exactly as its front reaches the view.
-        let initialTop = sweepsUpward
-            ? bounds.height + 1 + sagitta - diameter
-            : -1 - sagitta
+        //
+        // A conceal starts with the whole circle clear of the view, its bottom
+        // arc one point above the top: the same descent then covers the line
+        // instead of uncovering it, over exactly the same travel.
+        let initialTop: CGFloat
+        switch (sweepDirection, sweepsUpward) {
+        case (.conceal, _): initialTop = -1 - diameter
+        case (.reveal, true): initialTop = bounds.height + 1 + sagitta - diameter
+        case (.reveal, false): initialTop = -1 - sagitta
+        }
         let circleFrame = CGRect(
             x: bounds.midX - radius,
             y: initialTop,
@@ -730,6 +806,249 @@ final class MoonRevealLineView: UIView {
     }
 }
 
+/// One sentence delivered in two beats, with nothing moving between them.
+///
+/// The stem is typeset where it sits in the FINISHED sentence, so the first
+/// beat's “Read.” reads a little left of centre and the finished “Read more.”
+/// is centred without a single glyph translating. Three lines share one frame
+/// and one text block: each renders the whole composition with every fragment
+/// but its own in clear ink, so a fragment's position comes from the real
+/// typesetting of the sentence around it rather than a measured offset. The
+/// shared frame also gives all three the identical circle, so the second
+/// beat's front — bringing the tail in as the stem's period goes out — is one
+/// continuous edge. Their occluders are clear because they overlap: the front
+/// hides text by geometrically removing it from the mask, and a black disc
+/// wide enough to cover this line would cover its neighbours too.
+final class MoonRevealGrowingLineView: UIView {
+    let firstBeatText: String
+    let finishedText: String
+
+    /// The three lines the sentence is typeset across.
+    var fragments: (stem: MoonRevealLineView, period: MoonRevealLineView, tail: MoonRevealLineView) {
+        (stemLine, periodLine, tailLine)
+    }
+
+    private let stemLine: MoonRevealLineView
+    private let periodLine: MoonRevealLineView
+    private let tailLine: MoonRevealLineView
+    private let textWidth: CGFloat
+
+    init(
+        stem: String,
+        tail: String,
+        font: UIFont = .systemFont(ofSize: 25, weight: .semibold)
+    ) {
+        let finished = stem + tail
+        let firstBeat = stem + "."
+        let stemLength = (stem as NSString).length
+        let finishedLength = (finished as NSString).length
+        firstBeatText = firstBeat
+        finishedText = finished
+
+        stemLine = Self.line(
+            firstBeat, font: font,
+            visible: NSRange(location: 0, length: stemLength))
+        periodLine = Self.line(
+            firstBeat, font: font,
+            visible: NSRange(location: stemLength, length: 1))
+        tailLine = Self.line(
+            finished, font: font,
+            visible: NSRange(
+                location: stemLength, length: finishedLength - stemLength))
+        textWidth = Self.composition(
+            finished, font: font,
+            visible: NSRange(location: 0, length: finishedLength)
+        ).size().width
+
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        clipsToBounds = false
+        // The period is behind its neighbours so its own bloom never washes
+        // over them, and in front of nothing it could hide.
+        for line in [periodLine, stemLine, tailLine] { addSubview(line) }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Left-aligned from one shared origin: every fragment then lands where
+        // the sentence puts it, whatever the trailing glyphs of its own
+        // composition are. The two points of slack keep a label whose text
+        // measures its own width from shrinking to fit itself.
+        let block = CGRect(
+            x: max(((bounds.width - textWidth) / 2).rounded(), 0),
+            y: 0,
+            width: min(textWidth.rounded(.up) + 2, bounds.width),
+            height: bounds.height)
+        for line in [periodLine, stemLine, tailLine] { line.frame = block }
+    }
+
+    /// The stem arrives with a period of its own.
+    func revealFirstBeat(duration: TimeInterval, completion: @escaping () -> Void) {
+        sweep(
+            [
+                { self.stemLine.reveal(duration: duration, completion: $0) },
+                { self.periodLine.reveal(duration: duration, completion: $0) },
+            ],
+            spokenText: firstBeatText,
+            completion: completion)
+    }
+
+    /// The tail arrives under the same front that takes the period away. The
+    /// stem is not part of this beat at all.
+    func revealSecondBeat(duration: TimeInterval, completion: @escaping () -> Void) {
+        sweep(
+            [
+                { self.tailLine.reveal(duration: duration, completion: $0) },
+                { self.periodLine.conceal(duration: duration, completion: $0) },
+            ],
+            spokenText: finishedText,
+            completion: completion)
+    }
+
+    private func sweep(
+        _ operations: [(@escaping () -> Void) -> Void],
+        spokenText: String,
+        completion: @escaping () -> Void
+    ) {
+        var remaining = operations.count
+        let finish = { [weak self] in
+            remaining -= 1
+            guard remaining == 0, let self else { return }
+            // One sentence, one element: the fragments are typography, not
+            // three separate things to swipe through.
+            for line in [self.periodLine, self.stemLine, self.tailLine] {
+                line.isAccessibilityElement = false
+            }
+            self.isAccessibilityElement = true
+            self.accessibilityLabel = spokenText
+            completion()
+        }
+        for operation in operations { operation(finish) }
+    }
+
+    private static func line(
+        _ string: String,
+        font: UIFont,
+        visible: NSRange
+    ) -> MoonRevealLineView {
+        MoonRevealLineView(
+            text: (string as NSString).substring(with: visible),
+            styledText: composition(string, font: font, visible: visible),
+            font: font,
+            textAlignment: .left,
+            minimumScaleFactor: 1,
+            occluderColor: .clear)
+    }
+
+    /// The whole composition, with only `visible` in white ink. Kerning is
+    /// switched off so every fragment's advance widths are the plain sum of
+    /// its glyphs' and the compositions agree on where each one begins.
+    private static func composition(
+        _ string: String,
+        font: UIFont,
+        visible: NSRange
+    ) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .left
+        paragraph.lineBreakMode = .byClipping
+        let text = NSMutableAttributedString(
+            string: string,
+            attributes: [
+                .font: font,
+                .kern: 0,
+                .foregroundColor: UIColor.clear,
+                .paragraphStyle: paragraph,
+            ])
+        text.addAttribute(.foregroundColor, value: UIColor.white, range: visible)
+        return text
+    }
+}
+
+/// The intro's headline, in whichever shape its app's copy takes. Both take
+/// two beats of the same sweep, so the card drives them the same way.
+final class OnboardingIntroHeadlineView: UIView {
+    static let lineHeight: CGFloat = 44
+    private static let lineGap: CGFloat = 3
+
+    private enum Shape {
+        case pair(MoonRevealLineView, MoonRevealLineView)
+        case growing(MoonRevealGrowingLineView)
+    }
+
+    private let shape: Shape
+
+    init(copy: OnboardingIntroCopy) {
+        switch copy {
+        case .twoLines(let first, let second):
+            shape = .pair(
+                MoonRevealLineView(text: first),
+                MoonRevealLineView(text: second))
+        case .growingLine(let stem, let tail):
+            shape = .growing(MoonRevealGrowingLineView(stem: stem, tail: tail))
+        }
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        clipsToBounds = false
+        switch shape {
+        case .pair(let first, let second):
+            addSubview(first)
+            addSubview(second)
+        case .growing(let line):
+            addSubview(line)
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    var height: CGFloat {
+        switch shape {
+        case .pair: return Self.lineHeight * 2 + Self.lineGap
+        case .growing: return Self.lineHeight
+        }
+    }
+
+    var growingLine: MoonRevealGrowingLineView? {
+        guard case .growing(let line) = shape else { return nil }
+        return line
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        switch shape {
+        case .pair(let first, let second):
+            first.frame = CGRect(
+                x: 0, y: 0, width: bounds.width, height: Self.lineHeight)
+            second.frame = CGRect(
+                x: 0, y: first.frame.maxY + Self.lineGap,
+                width: bounds.width, height: Self.lineHeight)
+        case .growing(let line):
+            line.frame = bounds
+        }
+    }
+
+    func revealFirstBeat(duration: TimeInterval, completion: @escaping () -> Void) {
+        switch shape {
+        case .pair(let first, _):
+            first.reveal(duration: duration, completion: completion)
+        case .growing(let line):
+            line.revealFirstBeat(duration: duration, completion: completion)
+        }
+    }
+
+    func revealSecondBeat(duration: TimeInterval, completion: @escaping () -> Void) {
+        switch shape {
+        case .pair(_, let second):
+            second.reveal(duration: duration, completion: completion)
+        case .growing(let line):
+            line.revealSecondBeat(duration: duration, completion: completion)
+        }
+    }
+}
+
 /// Draws the transient light separately from the ordinary text.
 ///
 /// The emitter is rebuilt at display cadence by intersecting the descending
@@ -751,6 +1070,10 @@ final class GlyphPixelBloomView: UIView {
         let radius: CGFloat
         let alpha: CGFloat
     }
+
+    /// Which arc of the circle is the working front, and so which side of it
+    /// the emitting bands trail on.
+    enum Edge { case topArc, bottomArc }
 
     static let renderPadding: CGFloat = 42
 
@@ -791,6 +1114,7 @@ final class GlyphPixelBloomView: UIView {
     private var displayLink: CADisplayLink?
     private var emitterRenderer: UIGraphicsImageRenderer?
     private var edgeSagitta: CGFloat = 0
+    private var edge = Edge.topArc
     private var edgeBandScale: CGFloat = 1
     private var rasterScale: CGFloat = 1
     private var offsetProvider: (() -> CGFloat?)?
@@ -884,10 +1208,10 @@ final class GlyphPixelBloomView: UIView {
 
     private func currentStripRect() -> CGRect {
         // The bands trail the moving edge: above a descending circle's top
-        // arc, below a climbing one's bottom arc.
+        // arc, below a climbing (or concealing) one's bottom arc.
         let circle = initialCircleFrame.offsetBy(
             dx: 0, dy: circleTravel * progress)
-        let y = circleTravel < 0
+        let y = edge == .bottomArc
             ? circle.maxY - edgeSagitta - 8
             : circle.minY - scaledFalloffReach - 4
         return CGRect(
@@ -906,12 +1230,16 @@ final class GlyphPixelBloomView: UIView {
     func reveal(
         circleTravel: CGFloat,
         duration: CFTimeInterval,
+        edge: Edge? = nil,
         edgeBandScale: CGFloat = 1,
         emitterGain: CGFloat = 1,
         offsetProvider: (() -> CGFloat?)? = nil
     ) {
         stop()
         self.circleTravel = circleTravel
+        // A sweep that uncovers works its leading arc: the top one going down,
+        // the bottom one coming up. Only a conceal names its edge outright.
+        self.edge = edge ?? (circleTravel < 0 ? .bottomArc : .topArc)
         self.edgeBandScale = max(edgeBandScale, 1)
         self.emitterGain = min(max(emitterGain, 0.05), 2)
         self.offsetProvider = offsetProvider

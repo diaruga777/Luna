@@ -37,12 +37,23 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
     }
 }
 
+/// How an app's headline is staged. Both shapes take exactly two beats of the
+/// same lunar sweep, so the journey's timing is identical either way.
+enum OnboardingIntroCopy: Equatable {
+    /// Two sentences, each swept in whole, the second under the first.
+    case twoLines(first: String, second: String)
+    /// One sentence that grows. The first beat brings in `stem` with a period
+    /// of its own; the second adds `tail` while that period sweeps back out.
+    /// `stem` is laid out where it sits in the FINISHED sentence, so the beat
+    /// between them moves nothing.
+    case growingLine(stem: String, tail: String)
+}
+
 /// The animation and setup journey are shared. Only copy, demo content, final
 /// save plumbing, and Action Button evidence vary by host app.
 struct OnboardingSurfaceConfiguration {
     let app: LunaApp
-    let firstLine: String
-    let secondLine: String
+    let introCopy: OnboardingIntroCopy
     let supportingText: String
     let saveBenefit: String
     let demoPages: [OnboardingDemoPage]
@@ -60,8 +71,7 @@ struct OnboardingSurfaceConfiguration {
         case .reader:
             return Self(
                 app: app,
-                firstLine: "You want to read more.",
-                secondLine: "Let’s make that happen.",
+                introCopy: .growingLine(stem: "Read", tail: " more."),
                 supportingText:
                     "Save onscreen links with one click.\nUnlock or read offline later.",
                 saveBenefit: "Read offline later",
@@ -71,8 +81,9 @@ struct OnboardingSurfaceConfiguration {
         case .downloader:
             return Self(
                 app: app,
-                firstLine: "App signup required? So annoying.",
-                secondLine: "Watch and share instantly instead.",
+                introCopy: .twoLines(
+                    first: "App signup required? So annoying.",
+                    second: "Watch and share instantly instead."),
                 supportingText:
                     "Download any video link in one click,\nno signup required.",
                 saveBenefit: "Watch or share",
@@ -82,8 +93,9 @@ struct OnboardingSurfaceConfiguration {
         case .priceTracker:
             return Self(
                 app: app,
-                firstLine: "Overpaid? Missed a sale?",
-                secondLine: "Never miss out again.",
+                introCopy: .twoLines(
+                    first: "Overpaid? Missed a sale?",
+                    second: "Never miss out again."),
                 supportingText:
                     "Track sales for any link\nin one click.",
                 saveBenefit: "Never miss a sale",
@@ -93,8 +105,9 @@ struct OnboardingSurfaceConfiguration {
         case .luna:
             return Self(
                 app: app,
-                firstLine: "All your Luna saves.",
-                secondLine: "In a single app.",
+                introCopy: .twoLines(
+                    first: "All your Luna saves.",
+                    second: "In a single app."),
                 supportingText:
                     "Save any link on your screen\nwith one click.",
                 saveBenefit: "Read, watch, track, anything",

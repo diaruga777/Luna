@@ -136,6 +136,11 @@ final class AppOnboardingViewController: UIViewController {
     var savedRootViewControllerForTesting: UIViewController? {
         savedRootViewController
     }
+
+    /// The handoff a successful paste runs, without the ingest in front of it.
+    func completeOnboardingWithRealSaveForTesting(animated: Bool) {
+        completeOnboardingWithRealSave(animated: animated)
+    }
     #endif
 
     init(
@@ -331,6 +336,16 @@ final class AppOnboardingViewController: UIViewController {
         }
         #endif
         intro.start()
+        #if DEBUG
+        // Inspection seam: `UIPasteControl` is privacy-gated and cannot be
+        // driven by synthetic taps, so the paste handoff is otherwise
+        // unreachable from an automated run.
+        if let url = Self.requestedDebugPasteURL {
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + OnboardingAnimationClock.delay(4.2)
+            ) { [weak self] in self?.intro.didPaste(url) }
+        }
+        #endif
     }
 
     /// Intro callback (and test seam): the first line has finished its
@@ -840,7 +855,14 @@ final class AppOnboardingViewController: UIViewController {
             sourceController(for: source)?.cancelActionButtonSaveEffect()
         }
 
-        guard let source = sourceController(for: activeDemoSource) else { return }
+        // Only a demonstration that is actually on screen has a presentation to
+        // freeze. Re-applying one from the intro card would stage the source
+        // replica full screen (`.fullScreen` is the resting default) and blank
+        // the carousel — the paste handoff, which pauses playback on its way
+        // out, then flashed the mock browser over its own card eclipse.
+        guard didExpandSafari,
+              let source = sourceController(for: activeDemoSource)
+        else { return }
         demoTransitionGeneration += 1
         isDemoGeometryTransitioning = false
         source.view.layer.removeAllAnimations()
@@ -1340,6 +1362,14 @@ final class AppOnboardingViewController: UIViewController {
         let flag = arguments.firstIndex(of: "-onboardingStage")
             ?? arguments.firstIndex(of: "-readerOnboardingStage")
         guard let flag,
+              arguments.indices.contains(flag + 1)
+        else { return nil }
+        return arguments[flag + 1]
+    }
+
+    private static var requestedDebugPasteURL: String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-onboardingPasteURL"),
               arguments.indices.contains(flag + 1)
         else { return nil }
         return arguments[flag + 1]

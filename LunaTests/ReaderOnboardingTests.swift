@@ -330,9 +330,23 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             orLabel.text, OnboardingStrings.Intro.orSeparator.value())
         XCTAssertEqual(orLabel.textAlignment, .center)
-        let orFrame = intro.view.convert(orLabel.bounds, from: orLabel)
-        let shortcutFrame = intro.view.convert(shortcut.bounds, from: shortcut)
-        let rowFrame = intro.view.convert(row.bounds, from: row)
+        // The actions still wear the reveal's 0.92 entrance scale here, so read
+        // laid-out geometry (unscaled `bounds` about a transform-independent
+        // `center`) rather than the presented frame.
+        func layoutFrame(_ target: UIView) -> CGRect {
+            let size = target.bounds.size
+            let center = target.superview
+                .map { $0.convert(target.center, to: intro.view) }
+                ?? target.center
+            return CGRect(
+                x: center.x - size.width / 2,
+                y: center.y - size.height / 2,
+                width: size.width,
+                height: size.height)
+        }
+        let orFrame = layoutFrame(orLabel)
+        let shortcutFrame = layoutFrame(shortcut)
+        let rowFrame = layoutFrame(row)
         XCTAssertGreaterThan(orFrame.minY, shortcutFrame.maxY)
         XCTAssertLessThan(orFrame.maxY, rowFrame.minY)
         XCTAssertEqual(orFrame.midX, intro.view.bounds.midX, accuracy: 0.5)
@@ -341,8 +355,24 @@ final class ReaderOnboardingTests: XCTestCase {
             shortcutFrame.maxY
                 + OnboardingIntroActionMetrics.orSpacing * 2
                 + OnboardingIntroActionMetrics.orHeight
-                + OnboardingIntroActionMetrics.buttonHeight,
+                + OnboardingIntroActionMetrics.pasteRowHeight,
             accuracy: 0.5)
+
+        // The row is shorter than the setup buttons and reaches wider than the
+        // content inset they keep, so the field gets the width.
+        XCTAssertEqual(
+            rowFrame.height,
+            OnboardingIntroActionMetrics.pasteRowHeight,
+            accuracy: 0.5)
+        XCTAssertEqual(
+            rowFrame.width,
+            shortcutFrame.width
+                + OnboardingIntroActionMetrics.pasteRowOutset * 2,
+            accuracy: 0.5)
+        XCTAssertEqual(rowFrame.midX, intro.view.bounds.midX, accuracy: 0.5)
+        // Widened row, narrower control, tighter gap — all of it the field's,
+        // which runs out to the row's own trailing edge.
+        XCTAssertEqual(field.frame.maxX, row.bounds.width, accuracy: 0.5)
 
         // The field is beside the control, and starts on its placeholder.
         XCTAssertGreaterThanOrEqual(field.frame.minX, control.frame.maxX)
@@ -1077,6 +1107,65 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertFalse(
             onboarding.view.descendants(of: EclipseCoronaView.self).isEmpty,
             "Preloading must not retire the intro corona early")
+    }
+
+    /// A paste is answered from the intro card: no demonstration ever ran, so
+    /// the handoff must leave the preloaded replicas where preloading put them
+    /// — hidden — and hand the screen to its own card eclipse. Pausing demo
+    /// playback used to re-stage the Safari replica full screen (`.fullScreen`
+    /// is the resting default) and blank the carousel, flashing the mock
+    /// browser over the eclipse it was hiding.
+    @MainActor
+    func testPasteHandoffNeverRevealsTheSourceReplicasOrBlanksTheDeck() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let productionRoot = UINavigationController(
+            rootViewController: UIViewController())
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: AppOnboardingStore(
+                app: .reader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { productionRoot }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+
+        onboarding.firstIntroLineDidReveal()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        let safari = try XCTUnwrap(onboarding.children.compactMap {
+            $0 as? SafariReplicaViewController
+        }.first)
+        let messages = try XCTUnwrap(onboarding.children.compactMap {
+            $0 as? MessagesReplicaViewController
+        }.first)
+        let carousel = try XCTUnwrap(onboarding.children.compactMap {
+            $0 as? CardCarouselViewController
+        }.first)
+        XCTAssertTrue(safari.view.isHidden, "Preloading mounts Safari hidden")
+
+        onboarding.completeOnboardingWithRealSaveForTesting(animated: true)
+
+        XCTAssertTrue(
+            safari.view.isHidden,
+            "The paste handoff must never show the mock browser")
+        XCTAssertTrue(
+            messages.view.isHidden,
+            "The paste handoff must never show the mock conversation")
+        XCTAssertEqual(
+            carousel.view.alpha, 1, accuracy: 0.001,
+            "The deck stays visible — the card eclipse plays on it")
     }
 
     func testLaunchArtworkUsesTheReferenceRootCardsExactSize() {

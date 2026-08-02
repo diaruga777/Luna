@@ -72,6 +72,7 @@ enum OnboardingStrings {
     enum Intro {
         static let safariAction = Definition(shared: "Stop popups and paywalls")
         static let shortcutAction = Definition(shared: "Show me one click save")
+        static let shareAction = Definition(shared: "Show me 2-tap save")
         /// The paste row's placeholder, and the paste control's own label.
         static let paste = Definition(shared: "Paste a link")
         /// The seam between the two setup lessons and the paste row.
@@ -111,11 +112,11 @@ enum OnboardingStrings {
         static let instaTokHost = Definition(shared: "instatok.local")
         static let amayzonHost = Definition(shared: "amayzon.local")
 
-        static let lunaURL = Definition(shared: "https://luna.app/about")
+        static let lunaURL = Definition(shared: ShareSetupPractice.lunaURLString)
         static let instaTokURL = Definition(
-            shared: "https://instatok.local/@moonwatch/lunar-eclipse")
+            shared: ShareSetupPractice.instaTokURLString)
         static let amayzonURL = Definition(
-            shared: "https://amayzon.local/eyephone-air")
+            shared: ShareSetupPractice.amayzonURLString)
 
         static let lunaSeedTitle = Definition(shared: "Anything")
         static let readerSeedTitle = Definition(shared: "Save anything in Safari")
@@ -282,6 +283,14 @@ enum OnboardingStrings {
         static let settingsPillAccessibilityLabel = Definition(shared: "Open Settings")
         static let skipPillTitle = Definition(shared: "skip setup")
         static let skipPillAccessibilityLabel = Definition(shared: "Skip setup")
+
+        static let shareAnswer = Definition(shared: "Not another login wall...")
+        static let sharePitch = Definition(shared: "Nah, its easy. Check it")
+        static let shareTryIt = Definition(shared: "Try it:")
+        static let shareAside = Definition(
+            shared: "(You can also just share in the link normally tbf)")
+        static let sharePillAccessibilityLabel = Definition(
+            shared: "Share the example link")
     }
 
     enum Instruction {
@@ -315,34 +324,10 @@ enum OnboardingStrings {
     }
 
     enum Article {
-        static let title = Definition(shared: "An article you want to read")
-        static let byline = Definition(shared: "A safari extension • by Luna")
-        static let intro = Definition(shared: "What you get, minus the pitch:")
-        static let features = [
-            Definition(shared: "Ads, popups and subscription walls: gone."),
-            Definition(shared: "Saved offline, ready on any flight."),
-            Definition(shared: "Speed-read a word at a time."),
-            Definition(shared: "Read aloud with the screen off."),
-            Definition(shared: "Open links without losing your place."),
-            Definition(shared: "Send to Kindle, or export anywhere."),
-            Definition(shared: "EPUB, PDF, Markdown or plain text."),
-            Definition(shared: "Long X threads read like articles."),
-            Definition(shared: "Newsletters pulled from your inbox."),
-            Definition(shared: "Share a save straight to a friend."),
-            Definition(shared: "Read-aloud rolls into the next piece."),
-            Definition(shared: "Eye tracking pauses when you glance away."),
-            Definition(shared: "Walled-off pages, readable again."),
-            Definition(shared: "PDFs and documents, same reader."),
-            Definition(shared: "A card deck, not another inbox."),
-            Definition(shared: "The Action Button saves from anywhere."),
-            Definition(shared: "One share-sheet save in every app."),
-            Definition(shared: "Track a product's price while you wait."),
-            Definition(shared: "Videos and audio, kept for the plane."),
-            Definition(shared: "Everything on device, searchable offline."),
-            Definition(shared: "No account. No feed. No streaks."),
-            Definition(shared: "Night-sky dark, down to the last pixel."),
-            Definition(shared: "Built to disappear while you read."),
-        ]
+        static let title = Definition(shared: ShareSetupPractice.title)
+        static let byline = Definition(shared: ShareSetupPractice.byline)
+        static let intro = Definition(shared: ShareSetupPractice.intro)
+        static let features = ShareSetupPractice.features.map(Definition.init(shared:))
 
         static var featureValues: [String] {
             features.map { $0.value() }

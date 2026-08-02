@@ -305,7 +305,7 @@ final class OnboardingMockTapIndicatorView: UIView {
     func play(
         at point: CGPoint,
         in host: UIView,
-        pressing island: OnboardingDynamicIslandRunView?,
+        pressing target: UIView?,
         completion: @escaping () -> Void
     ) {
         center = point
@@ -334,7 +334,13 @@ final class OnboardingMockTapIndicatorView: UIView {
             self.alpha = 0.95
             self.transform = .identity
         } completion: { _ in
-            island?.pressDown()
+            if let island = target as? OnboardingDynamicIslandRunView {
+                island.pressDown()
+            } else {
+                UIView.animate(withDuration: 0.12) {
+                    target?.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
+                }
+            }
             UIView.animate(
                 withDuration: 0.22,
                 delay: 0.14,
@@ -343,7 +349,52 @@ final class OnboardingMockTapIndicatorView: UIView {
                 self.alpha = 0
                 self.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
             } completion: { _ in
-                island?.release()
+                if let island = target as? OnboardingDynamicIslandRunView {
+                    island.release()
+                } else {
+                    UIView.animate(
+                        withDuration: 0.28,
+                        delay: 0,
+                        usingSpringWithDamping: 0.65,
+                        initialSpringVelocity: 0.3
+                    ) {
+                        target?.transform = .identity
+                    }
+                }
+                self.removeFromSuperview()
+                completion()
+            }
+        }
+    }
+
+    /// A visibly deliberate hold used on the Messages link before its context
+    /// menu appears. It shares the same fingertip artwork as ordinary taps but
+    /// stays down long enough to read as a long press.
+    func playLongPress(
+        at point: CGPoint,
+        in host: UIView,
+        pressing target: UIView?,
+        completion: @escaping () -> Void
+    ) {
+        center = point
+        host.addSubview(self)
+        transform = CGAffineTransform(scaleX: 1.6, y: 1.6)
+        UIView.animate(withDuration: 0.16, animations: {
+            self.alpha = 0.95
+            self.transform = .identity
+        }) { _ in
+            UIView.animate(withDuration: 0.16) {
+                target?.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
+            }
+            UIView.animate(
+                withDuration: 0.18,
+                delay: OnboardingAnimationClock.delay(0.58),
+                options: [.curveEaseIn]
+            ) {
+                self.alpha = 0
+                self.transform = CGAffineTransform(scaleX: 0.72, y: 0.72)
+                target?.transform = .identity
+            } completion: { _ in
                 self.removeFromSuperview()
                 completion()
             }

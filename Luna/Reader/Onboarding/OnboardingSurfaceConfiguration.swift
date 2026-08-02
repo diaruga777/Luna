@@ -41,6 +41,7 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
 /// save plumbing, and Action Button evidence vary by host app.
 struct OnboardingSurfaceConfiguration {
     let app: LunaApp
+    let saveSetupMode: OnboardingSaveSetupMode
     let introCopy: OnboardingIntroCopy
     let supportingText: String
     let saveBenefit: String
@@ -54,11 +55,15 @@ struct OnboardingSurfaceConfiguration {
         configuration(for: .current)
     }
 
-    static func configuration(for app: LunaApp) -> Self {
+    static func configuration(
+        for app: LunaApp,
+        saveSetupMode: OnboardingSaveSetupMode = .current
+    ) -> Self {
         switch app {
         case .reader:
             return Self(
                 app: app,
+                saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
@@ -68,6 +73,7 @@ struct OnboardingSurfaceConfiguration {
         case .downloader:
             return Self(
                 app: app,
+                saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
@@ -77,6 +83,7 @@ struct OnboardingSurfaceConfiguration {
         case .priceTracker:
             return Self(
                 app: app,
+                saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
@@ -86,6 +93,7 @@ struct OnboardingSurfaceConfiguration {
         case .luna:
             return Self(
                 app: app,
+                saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),

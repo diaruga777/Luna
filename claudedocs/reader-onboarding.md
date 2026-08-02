@@ -117,9 +117,11 @@ The root uses the production `CardCarouselViewController`:
    its neighbors before resolving to ordinary text. The copy
    starts one third of the way down the card. After the second beat finishes,
    three actions appear as a vertical stack: **Remove popups and walls for
-   me** with Safari's compass, **Save on-screen links with the Action Button**
-   with the bundled Shortcuts icon, then a small centred **or**, then the
-   paste row. The setup buttons use a restrained 24% wash of the current
+   me** with Safari's compass, then a capability-selected save lesson. Devices
+   running iOS 27+ with an Action Button show **Show me one click save** and
+   the bundled Shortcuts icon. Every other device shows
+   **Show me 2-tap save** and the current Luna app icon. A small centred
+   **or** and the paste row follow. The setup buttons use a restrained 24% wash of the current
    app surface tint; completing either lesson replaces its icon with a
    checkmark and disables/greys that action. The paste row is the real
    `UIPasteControl`, drawn by the system with nothing painted over it (which
@@ -134,7 +136,7 @@ The root uses the production `CardCarouselViewController`:
    independently reconstructs the splash's static peak behind this initial card
    for the entire intro; neither the launch raster nor its overlay hierarchy is
    retained.
-2. The Safari and Shortcut actions are independent lessons. Either leaves the
+2. The Safari and save-setup actions are independent lessons. Either leaves the
    intro through `OnboardingAppSwitcherView`: the intro deck shrinks and exits
    left while the chosen Safari or Messages replica enters from the right and
    fills the screen. Finishing or skipping that lesson runs the same transition
@@ -210,6 +212,11 @@ The root uses the production `CardCarouselViewController`:
    surfaces remain bundled, noninteractive `WKWebView` pages with a
    nonpersistent data store and JavaScript disabled; central Luna rotates its
    local pages every 3.4 seconds.
+   `OnboardingDeviceCapabilities` selects the Messages journey once per
+   onboarding controller. The one-click shortcut branch requires BOTH iOS 27+
+   and known Action Button hardware; simulators, iPads, older OS versions, and
+   iPhones without the button use the two-tap share-sheet branch.
+
    The second source is a native UIKit iMessage facsimile headed **Johnny
    Appleseed**, styled like the real app: `#007AFF` outgoing / `#E9E9EB`
    incoming bubbles with the classic outward tail curl on the last bubble of
@@ -261,7 +268,7 @@ The root uses the production `CardCarouselViewController`:
    whole frame simply crossfades, uniformly across the screen, into the
    saved-card snapshot.
 
-   5a. Messages instead uses `.rippleOnly` — the press cue and in-place
+   5a. On Action Button-capable iOS 27+ devices, Messages uses `.rippleOnly` — the press cue and in-place
    ripple play with the screen untouched (no URL highlight at all), and the
    save then resolves as a mock shortcut run
    (`OnboardingShortcutRunEffects.swift`): the status bar fades OUT and a
@@ -317,6 +324,34 @@ The root uses the production `CardCarouselViewController`:
    (`Row`), not by a running count. The two setup pills breathe an ECLIPSE
    CORONA until tapped — the shortcut pill runs the `BundledShortcut`
    installer, the Settings pill opens the Action Button settings.
+
+   5b. Every other device keeps the same sender-change pacing but stages only
+   the example link, the user's “Not another login wall...”, and Johnny's
+   “Nah, its easy. Check it”. A fingertip visibly holds the link, taps Share in
+   its context menu, and opens `OnboardingMockShareSheetView`. The finite mock
+   shows an AirDrop Laptop plus one person (Johnny Appleseed); AirDrop,
+   Messages, Reminders, and More in the app row; Copy alone in the horizontal
+   actions; and only Save to Files / Add to Reading List below. It scrolls to
+   Edit Actions, opens the edit screen with Copy under Favorites and the
+   current Luna action plus those two system actions under Other Actions, taps
+   Luna's green plus, animates Luna beside Copy in Favorites, exits, scrolls
+   back, and clearly taps the newly visible Luna action. The same mock action
+   extension preview used by 5a appears and dismisses back to Messages.
+
+   After that rehearsal Johnny sends “Try it:”, a breathing pill containing
+   the system share symbol and example URL. Its attention treatment is the same
+   `EclipseCoronaView` used by the Shortcut-install and Settings pills (neutral
+   moonlight on the white Messages surface, not a generic blue shadow). Johnny
+   then sends the requested aside
+   “(You can also just share in the link normally tbf)”. The pill opens a real
+   `UIActivityViewController` with that URL. All per-host share and action
+   extensions recognize the three bundled mock URLs through
+   `ShareSetupPractice`, show the deterministic preview instead of fetching or
+   appending anything, and record a separate App-Group share-action marker.
+   Returning with that marker completes this lesson. Returning after any other
+   activity or cancel reveals the ordinary outgoing ghost “skip setup” message;
+   tapping it marks the lesson skipped. Practice never writes a reading-list
+   row.
 
    That breath is the app's own `EclipseCoronaView`, not a drop shadow, and
    three things about it are load-bearing. **(1) Phase.** The corona reaches
@@ -431,10 +466,9 @@ The root uses the production `CardCarouselViewController`:
    Safari PiP guide and open real Safari. If the extension has not run, return
    restores the in-page prompt for another attempt. Choosing “Skip for now” or
    returning with verified extension evidence finishes the Safari lesson and
-   app-switches back to the intro with its button checked. The Shortcut action
-   independently opens the Messages replica, which plays its five-bubble
-   staged conversation, the Action Button press, and the full mock shortcut run of step
-   5a, ending in place on the pill message(s). At the start of a press, the
+   app-switches back to the intro with its button checked. The save-setup action
+   independently opens the Messages replica and plays either the Action Button
+   journey in 5a or the share-sheet journey in 5b. At the start of an Action Button press, the
    source URL gains a
    bright app-tint highlight; in Safari (Downloader/Price Tracker pages) it
    survives the blackout wave until the saved view replaces it, in Messages
@@ -449,10 +483,12 @@ The root uses the production `CardCarouselViewController`:
    shortcut pill's tail hands off to it); a return from Settings shows the
    “Press the action button to finish” overlay with its “Set up later”
    escape.
-8. After Settings return, a real App Intent invocation reports through
+8. In the iOS 27+/Action Button branch, after Settings return, a real App Intent invocation reports through
    `LunaSetupStatusStore.didChange`; “Set up later” reaches the same Shortcut
    lesson completion path. Both app-switch back to the intro and check/disable
-   the Shortcut button. Neither setup lesson completes onboarding.
+   the Shortcut button. In the fallback branch, a real Luna extension invocation
+   reports through the separate share-action marker and takes that same lesson
+   completion path. Neither setup lesson completes onboarding.
 9. The paste row is the completion action. `UIPasteControl` supplies the value
    without a paste-permission alert, and whatever it hands over — URL or not —
    is shown in the field the instant it arrives, before anything has been

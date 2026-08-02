@@ -90,6 +90,7 @@ final class AppOnboardingViewController: UIViewController {
         case safari
         case shortcut
         case actionButton
+        case shareSheetPractice
     }
 
     private enum DemoPresentation {
@@ -153,7 +154,8 @@ final class AppOnboardingViewController: UIViewController {
         self.completion = completion
         self.intro = OnboardingIntroCardContentViewController(
             introCopy: configuration.introCopy,
-            supportingText: configuration.supportingText)
+            supportingText: configuration.supportingText,
+            saveSetupMode: configuration.saveSetupMode)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -246,8 +248,7 @@ final class AppOnboardingViewController: UIViewController {
         }
         safariSetupState = LunaSetupStatusStore.shared.safariHasRun(
             isCentral: configuration.isCentralApp) ? .completed : .pending
-        shortcutSetupState = LunaSetupStatusStore.shared.shortcutHasRun(
-            isCentral: configuration.isCentralApp) ? .completed : .pending
+        shortcutSetupState = saveSetupHasRun ? .completed : .pending
         intro.setState(safari: safariSetupState, shortcut: shortcutSetupState)
         carousel.reloadData(centeringAt: 0)
     }
@@ -428,7 +429,9 @@ final class AppOnboardingViewController: UIViewController {
         safariReplica = safari
 
         let messages = MessagesReplicaViewController(
-            urlString: safari.sharedURLString)
+            urlString: safari.sharedURLString,
+            saveSetupMode: configuration.saveSetupMode,
+            appName: configuration.app.displayName)
         // The Messages demonstration finishes in place: its mock shortcut run
         // ends on the setup messages whose pills carry the setup hops.
         messages.onInstallShortcut = { [weak self] in self?.installShortcut() }
@@ -440,6 +443,9 @@ final class AppOnboardingViewController: UIViewController {
         }
         messages.onSkipSetup = { [weak self] in
             self?.completeSetupFlow(.messages, outcome: .skipped)
+        }
+        messages.onOpenShareSheet = { [weak self] in
+            self?.openPracticeShareSheet()
         }
         messagesReplica = messages
         addChild(messages)
@@ -852,7 +858,7 @@ final class AppOnboardingViewController: UIViewController {
         appSwitcher?.removeFromSuperview()
         appSwitcher = nil
         for source in OnboardingDemoSource.allCases {
-            sourceController(for: source)?.cancelActionButtonSaveEffect()
+            sourceController(for: source)?.cancelSaveDemonstration()
         }
 
         // Only a demonstration that is actually on screen has a presentation to
@@ -914,7 +920,7 @@ final class AppOnboardingViewController: UIViewController {
                   self.demoPresentation == .fullScreen
             else { return }
             self.sourceController(
-                for: self.activeDemoSource)?.replayActionButtonSaveEffect()
+                for: self.activeDemoSource)?.replaySaveDemonstration()
         }
     }
 
@@ -993,6 +999,51 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    private var saveSetupHasRun: Bool {
+        let setup = LunaSetupStatusStore.shared
+        switch configuration.saveSetupMode {
+        case .actionButtonShortcut:
+            return setup.shortcutHasRun(isCentral: configuration.isCentralApp)
+        case .shareSheet:
+            return setup.shareActionHasRun(isCentral: configuration.isCentralApp)
+        }
+    }
+
+    private func openPracticeShareSheet() {
+        guard externalReturn == .none,
+              let messages = messagesReplica,
+              let url = URL(string: messages.sharedURLString)
+        else { return }
+        pauseDemoPresentationPlayback()
+        externalReturn = .shareSheetPractice
+        let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = activity.popoverPresentationController {
+            popover.sourceView = messages.view
+            popover.sourceRect = CGRect(
+                x: messages.view.bounds.midX,
+                y: messages.view.bounds.maxY - 110,
+                width: 1,
+                height: 1)
+        }
+        activity.completionWithItemsHandler = { [weak self] _, _, _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.externalReturn = .none
+                self.resolvePracticeShareSheetReturn()
+            }
+        }
+        present(activity, animated: true)
+    }
+
+    private func resolvePracticeShareSheetReturn() {
+        guard configuration.saveSetupMode == .shareSheet else { return }
+        if saveSetupHasRun {
+            completeSetupFlow(.messages, outcome: .completed)
+        } else {
+            messagesReplica?.revealShareSheetSkipMessage()
+        }
+    }
+
     private func externalOpenFailed(_ expectedReturn: ExternalReturn) {
         guard externalReturn == expectedReturn else { return }
         externalReturn = .none
@@ -1007,6 +1058,8 @@ final class AppOnboardingViewController: UIViewController {
             safariReplica?.showExternalOpenFailure(destination: .shortcuts)
         case .actionButton:
             safariReplica?.showExternalOpenFailure(destination: .settings)
+        case .shareSheetPractice:
+            break
         }
     }
 
@@ -1042,6 +1095,11 @@ final class AppOnboardingViewController: UIViewController {
             actionGuide.stopPictureInPicture()
             safariReplica?.showWaitingForActionButton()
             setupStatusChanged()
+        case .shareSheetPractice:
+            // The activity controller owns its own return/completion timing.
+            // Keep this state live until its completion handler can tell a
+            // successful extension invocation from another activity/cancel.
+            externalReturn = .shareSheetPractice
         }
     }
 
@@ -1049,8 +1107,7 @@ final class AppOnboardingViewController: UIViewController {
         guard didExpandSafari,
               externalReturn == .none,
               activeDemoSource == .messages,
-              LunaSetupStatusStore.shared.shortcutHasRun(
-                isCentral: configuration.isCentralApp)
+              saveSetupHasRun
         else { return }
         completeSetupFlow(.messages, outcome: .completed)
     }

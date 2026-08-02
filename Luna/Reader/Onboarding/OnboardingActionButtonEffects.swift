@@ -102,6 +102,17 @@ class OnboardingSaveSourceViewController: UIViewController {
     /// Sources with staged follow-up work cancel it here.
     func saveEffectWasCancelled() {}
 
+    /// The source's complete save demonstration. Action-Button sources use
+    /// the shared hardware ripple; the share-sheet fallback overrides this to
+    /// play its long-press/context-menu/share-sheet walkthrough instead.
+    func replaySaveDemonstration() {
+        replayActionButtonSaveEffect()
+    }
+
+    func cancelSaveDemonstration() {
+        cancelActionButtonSaveEffect()
+    }
+
     /// Plays the same press gesture for every mock source. Isolating saves
     /// highlight the URL before the source snapshot is captured, so it remains
     /// lit until the advancing wave replaces it with the saved-card view;

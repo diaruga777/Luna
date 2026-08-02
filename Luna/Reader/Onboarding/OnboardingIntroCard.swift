@@ -90,6 +90,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     var onFirstLineRevealed: (() -> Void)?
 
     private let headline: OnboardingIntroHeadlineView
+    private let saveSetupMode: OnboardingSaveSetupMode
     private let safariButton = UIButton(type: .system)
     private let shortcutButton = UIButton(type: .system)
     private let orLabel = UILabel()
@@ -105,9 +106,11 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     init(
         introCopy: OnboardingIntroCopy,
-        supportingText _: String
+        supportingText _: String,
+        saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut
     ) {
         headline = OnboardingIntroHeadlineView(copy: introCopy)
+        self.saveSetupMode = saveSetupMode
         super.init()
     }
 
@@ -124,23 +127,23 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             title: OnboardingStrings.Intro.safariAction.value(),
             symbol: "safari.fill",
             action: #selector(safariTapped))
+        let saveActionTitle = saveSetupMode == .actionButtonShortcut
+            ? OnboardingStrings.Intro.shortcutAction.value()
+            : OnboardingStrings.Intro.shareAction.value()
         configure(
             shortcutButton,
-            title: OnboardingStrings.Intro.shortcutAction.value(),
+            title: saveActionTitle,
             symbol: "bolt.fill",
             action: #selector(shortcutTapped))
         shortcutButton.configuration?.titleLineBreakMode = .byWordWrapping
         var shortcutAttributes = AttributeContainer()
         shortcutAttributes.font = .systemFont(ofSize: 13, weight: .semibold)
         shortcutButton.configuration?.attributedTitle = AttributedString(
-            OnboardingStrings.Intro.shortcutAction.value(),
+            saveActionTitle,
             attributes: shortcutAttributes)
         shortcutButton.titleLabel?.numberOfLines = 2
-        if let shortcutIcon = UIImage(
-            contentsOfFile: Bundle.main.path(
-                forResource: "ShortcutsAppIcon", ofType: "png") ?? "")
-        {
-            shortcutButton.configuration?.image = Self.buttonIcon(shortcutIcon)
+        if let saveIcon = saveActionIcon() {
+            shortcutButton.configuration?.image = Self.buttonIcon(saveIcon)
         }
         // Setup evidence is supplied before the carousel asks this controller
         // for its view, so restore completed artwork after configuring buttons.
@@ -377,12 +380,8 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             button.accessibilityValue = OnboardingStrings.Intro.completed.value()
         case .pending, .skipped:
             button.configuration?.image = UIImage(systemName: symbol)
-            if button === shortcutButton,
-               let path = Bundle.main.path(forResource: "ShortcutsAppIcon", ofType: "png")
-            {
-                button.configuration?.image = UIImage(contentsOfFile: path).map {
-                    Self.buttonIcon($0)
-                }
+            if button === shortcutButton, let saveIcon = saveActionIcon() {
+                button.configuration?.image = Self.buttonIcon(saveIcon)
             }
             button.configuration?.baseForegroundColor = LunaColors.primaryText
             button.configuration?.baseBackgroundColor =
@@ -406,6 +405,18 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         return UIGraphicsImageRenderer(size: size).image { _ in
             image.draw(in: CGRect(origin: .zero, size: size))
         }.withRenderingMode(.alwaysOriginal)
+    }
+
+    private func saveActionIcon() -> UIImage? {
+        switch saveSetupMode {
+        case .actionButtonShortcut:
+            guard let path = Bundle.main.path(
+                forResource: "ShortcutsAppIcon", ofType: "png")
+            else { return nil }
+            return UIImage(contentsOfFile: path)
+        case .shareSheet:
+            return OnboardingAppIcon.image()
+        }
     }
 }
 

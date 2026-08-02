@@ -429,9 +429,13 @@ User setup:
    prompts to allow sharing app info with Luna; choose Always Allow.
 3. Settings → Action Button → Shortcut → pick "Send To Luna".
 
-The Action Button shortcut setup section is hidden below iOS 27. Action Button
-can't be assigned programmatically; the simulator has no Action Button (test
-by running the shortcut from the Shortcuts app). On-device QA still owed: real
+The Action Button shortcut setup section is hidden below iOS 27. The onboarding
+Messages lesson also requires known Action Button hardware; otherwise it teaches
+the ordinary two-tap share/action-extension route and verifies it with a separate
+App-Group marker (see `reader-onboarding.md`). Action Button can't be assigned
+programmatically; the simulator therefore exercises the share-sheet fallback
+(test the intent itself by running the shortcut from the Shortcuts app).
+On-device QA still owed: real
 Action Button run on an iOS 27 device (FM vision/PCC can't run in CI sims),
 digest threshold tuning, and the fuzzy Safari title→search save across sites.
 

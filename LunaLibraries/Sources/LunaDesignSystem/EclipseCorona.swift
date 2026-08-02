@@ -108,11 +108,12 @@ public enum EclipseCorona {
     @MainActor private static var prewarming: Set<String> = []
 
     private static func exteriorKey(
-        silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor
+        silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor,
+        reach: CGFloat
     ) -> String {
         cacheKey(
             "ext", silhouetteSize.width, silhouetteSize.height, cornerRadius,
-            reach(for: silhouetteSize), tint: tint)
+            reach, tint: tint)
     }
 
     /// The corona around an opaque rounded-rect silhouette, as an image whose
@@ -123,18 +124,26 @@ public enum EclipseCorona {
     /// A cache miss renders synchronously, which is a visible hitch on the frame
     /// that asks — call `prewarm(bodySize:cornerRadius:tint:)` as soon as the
     /// geometry is known so a transition never hits that path.
+    ///
+    /// `reach` overrides how far the light throws. The default suits a card;
+    /// a body far smaller than one (a pill-sized button) wants a shorter throw
+    /// than the 56pt floor, or its streamers dwarf the thing they surround.
     @MainActor
     public static func exteriorImage(
         silhouetteSize: CGSize,
         cornerRadius: CGFloat,
-        tint: UIColor
+        tint: UIColor,
+        reach: CGFloat? = nil
     ) -> UIImage? {
         guard silhouetteSize.width > 1, silhouetteSize.height > 1 else { return nil }
+        let throwDistance = reach ?? EclipseCorona.reach(for: silhouetteSize)
         let key = exteriorKey(
-            silhouetteSize: silhouetteSize, cornerRadius: cornerRadius, tint: tint)
+            silhouetteSize: silhouetteSize, cornerRadius: cornerRadius,
+            tint: tint, reach: throwDistance)
         if let cached = exteriorCache[key] { return cached }
         let image = renderExterior(
-            silhouetteSize: silhouetteSize, cornerRadius: cornerRadius, tint: tint)
+            silhouetteSize: silhouetteSize, cornerRadius: cornerRadius,
+            tint: tint, reach: throwDistance)
         if let image { exteriorCache[key] = image }
         return image
     }
@@ -149,15 +158,19 @@ public enum EclipseCorona {
     /// Idempotent, and cheap to call on every layout pass.
     @MainActor
     public static func prewarm(
-        bodySize: CGSize, cornerRadius: CGFloat, tint: UIColor
+        bodySize: CGSize, cornerRadius: CGFloat, tint: UIColor,
+        reach: CGFloat? = nil
     ) {
         guard bodySize.width > 1, bodySize.height > 1 else { return }
+        let throwDistance = reach ?? EclipseCorona.reach(for: bodySize)
         let key = exteriorKey(
-            silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint)
+            silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint,
+            reach: throwDistance)
         guard exteriorCache[key] == nil, prewarming.insert(key).inserted else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             let image = renderExterior(
-                silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint)
+                silhouetteSize: bodySize, cornerRadius: cornerRadius,
+                tint: tint, reach: throwDistance)
             Task { @MainActor in
                 prewarming.remove(key)
                 if let image, exteriorCache[key] == nil { exteriorCache[key] = image }
@@ -170,9 +183,9 @@ public enum EclipseCorona {
     /// context thread-local, and every colour here is static (never a dynamic
     /// `UIColor` needing trait resolution).
     private static func renderExterior(
-        silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor
+        silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor,
+        reach: CGFloat
     ) -> UIImage? {
-        let reach = reach(for: silhouetteSize)
         let size = CGSize(
             width: silhouetteSize.width + reach * 2,
             height: silhouetteSize.height + reach * 2)
@@ -481,21 +494,43 @@ public final class EclipseCoronaView: UIView {
     /// limb stays razor-sharp while the smooth passes rasterise cheaply at 1x.
     private var chromosphere: [CAShapeLayer] = []
 
-    public init(bodySize: CGSize, cornerRadius: CGFloat, tint: UIColor) {
+    /// - Parameters:
+    ///   - light: Recolours the whole corona to a single hue instead of the
+    ///     photographic pearl. The pearl is the right answer over Luna's black
+    ///     sky and invisible over a white one, so a surface that borrows the
+    ///     corona for a light-mode replica passes the colour it needs here.
+    ///     The falloff, streamers and chromosphere are unchanged — only the
+    ///     colour is, taken from the render's own alpha.
+    ///   - reach: How far the light throws past the limb, overriding the
+    ///     card-sized default.
+    public init(
+        bodySize: CGSize,
+        cornerRadius: CGFloat,
+        tint: UIColor,
+        light: UIColor? = nil,
+        reach: CGFloat? = nil
+    ) {
         self.cornerRadius = cornerRadius
         super.init(frame: CGRect(origin: .zero, size: bodySize))
         isUserInteractionEnabled = false
         clipsToBounds = false
         backgroundColor = .clear
 
-        let reach = EclipseCorona.reach(for: bodySize)
+        let reach = reach ?? EclipseCorona.reach(for: bodySize)
         halo.frame = bounds.insetBy(dx: -reach, dy: -reach)
         // Fixed (negative) margins with a flexible core: the overhang stays put
         // when the body resizes.
         halo.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         halo.contentMode = .scaleToFill
-        halo.image = EclipseCorona.exteriorImage(
-            silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint)
+        let image = EclipseCorona.exteriorImage(
+            silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint,
+            reach: reach)
+        if let light {
+            halo.image = image?.withRenderingMode(.alwaysTemplate)
+            halo.tintColor = light
+        } else {
+            halo.image = image
+        }
         addSubview(halo)
 
         // Only the outer half of each stroke is ever visible: every call site
@@ -503,7 +538,7 @@ public final class EclipseCoronaView: UIView {
         for stroke in EclipseCorona.chromosphereStrokes {
             let rim = CAShapeLayer()
             rim.fillColor = nil
-            rim.strokeColor = EclipseCorona.chromosphereColor
+            rim.strokeColor = (light ?? EclipseCorona.chromosphereColor)
                 .withAlphaComponent(stroke.alpha).cgColor
             rim.lineWidth = stroke.width
             layer.addSublayer(rim)

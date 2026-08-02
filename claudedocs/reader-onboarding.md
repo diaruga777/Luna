@@ -204,8 +204,13 @@ The root uses the production `CardCarouselViewController`:
    link-blue, `https://luna.app/about` for the article page).
    `stagedMessageDelays` gives each hand-off its OWN gap rather than one
    metronome beat — the greeting's follow-up lands almost on top of it
-   (0.45s), the reply takes the beat it costs to type (1.05s), the link
-   follows its own “check it:” at once (0.4s). The Action Button
+   (0.85s), the reply takes the beat it costs to type (2.0s), the link
+   follows its own “check it:” at once (0.75s). Those gaps are paced off
+   somebody typing quickly, not off an animation timeline: the RATIOS make
+   the thread read as two people, the absolute scale makes it read as
+   typing, and an earlier set that ran the same ratios at ~55% landed five
+   sentences in under three seconds — a transcript replaying rather than a
+   conversation happening. The Action Button
    press effect follows the final bubble — but see step 5a: in Messages the
    save resolves as a mock shortcut run, not the blackout crossfade.
 4. A solid-black, tall rounded deformation stretches continuously out of the
@@ -216,7 +221,11 @@ The root uses the production `CardCarouselViewController`:
    forms; a custom Core Image warp then sets out just as the fully grown bulge
    starts to recede. This first, thick wave is displacement-only: it passes
    through the source pixels without replacing them, and finishes before the
-   next phase starts.
+   next phase starts. It is sized to carry the press ON ITS OWN (52pt of
+   throw through a 74pt front), because Messages renders nothing else for
+   the press — the blackout and crossfade below are Safari's alone. The
+   source is `clampedToExtent()` and the ROI is grown by the displacement,
+   so raising the amplitude cannot smear black in from off-screen.
 5. In Safari (`OnboardingSaveEffectStyle.isolateAndCrossfade`) a second wave
    then creeps in from the display edges, closing in on the
    rounded boundary of the highlighted Safari URL bar.
@@ -264,10 +273,14 @@ The root uses the production `CardCarouselViewController`:
    replica pins `textColor` on the instance so the proxy has nothing to
    override.)
 
-   Half a second later the way OUT arrives, as the thread's last bubble:
-   an outgoing ghost — unfilled, sketched in a dotted faded-blue outline,
-   no tail — reading “Or ›skip setup”, carrying the same kind of pill but
-   never pulsing for the tap (`onSkipSetup` → `finishOnboarding`). The
+   A couple of beats later (`skipMessageDelay`) the way OUT arrives, as the
+   thread's last bubble: an outgoing ghost — unfilled, sketched in a dotted
+   faded-blue outline, no tail — reading “Or ›skip setup”, carrying the same
+   kind of pill but never pulsing for the tap (`onSkipSetup` →
+   `finishOnboarding`). It deliberately does NOT land in the same breath as
+   the install pill: offering the exit alongside the ask reads as the app
+   not believing its own pitch, so the install pill gets the screen — and
+   its corona — to itself first. The
    demonstration stops there (`onShortcutSetupMessagesShown` advances the
    journey to `actionButtonSetup` and stops the loop). The Settings message
    — “Then set your action button to it in ⚙Settings”, pill inlined the
@@ -277,9 +290,33 @@ The root uses the production `CardCarouselViewController`:
    skip-out beat it there: it waits collapsed (`isHidden`) between the two,
    and unhiding it opens its space, shoves everything above it up and leaves
    the skip where it is. Reveals are therefore driven by row identity
-   (`Row`), not by a running count. The two setup pills glow and pulse until
-   tapped — the shortcut pill runs the `BundledShortcut` installer, the
-   Settings pill opens the Action Button settings.
+   (`Row`), not by a running count. The two setup pills breathe an ECLIPSE
+   CORONA until tapped — the shortcut pill runs the `BundledShortcut`
+   installer, the Settings pill opens the Action Button settings.
+
+   That breath is the app's own `EclipseCoronaView`, not a drop shadow, and
+   three things about it are load-bearing. **(1) Phase.** The corona reaches
+   totality BEFORE the pill finishes swelling, holds through the top of the
+   breath, and burns back down as the pill settles — the light is the event,
+   the scale is the pill reacting to it. **(2) Colour and reach.** The
+   photographic pearl is built to burn against Luna's black sky and is
+   invisible on a white Messages replica, so the view takes a `light:`
+   colour that recolours the render from its own alpha, plus a `reach:`
+   that overrides a default whose 56pt floor is sized for a CARD — left
+   alone, a 34pt chip gets streamers twice its own height. The corona sits
+   INSIDE the pill, behind icon and label: the renderer clips the
+   silhouette's interior out of its raster, so all that lands over the
+   pill's fill is the chromosphere's inner half, which reads as a lit limb.
+   **(3) It must be re-armed.** iOS strips running animations off a layer
+   when the app leaves, so a pill still waiting for its tap picks its breath
+   back up on `didBecomeActive` and on re-entering a window. (Before that,
+   the install pill sat dead after the Shortcuts hop while Settings — whose
+   pulse starts on the way back IN — looked fine.) Related trap, since it
+   cost a real regression: the pulse used to be a `CAAnimationGroup` whose
+   members kept their default duration. **A group does not scale its
+   children to its own duration, it CLIPS them** — what ran was a
+   quarter-second twitch inside a two-second cycle. Every keyframe now
+   carries the cycle length itself.
 6. Setup demonstrations mount the real production root behind the intro so the
    mock save wave has somewhere to land, but they put NOTHING in it — for a new
    user that root is its own empty state, and the save-wave raster is captured

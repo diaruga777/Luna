@@ -27,8 +27,11 @@ enum OnboardingShortcutRunTiming {
     /// The mock extension sheet rests long enough to register as "it's saved".
     static let extensionSheetHoldDuration: TimeInterval = 1.0
     static let followUpMessageDelay: TimeInterval = 0.55
-    /// The skip-out message appears shortly after the shortcut-install one.
-    static let skipMessageDelay: TimeInterval = 0.5
+    /// The skip-out arrives well after the shortcut-install message: offering
+    /// the way out in the same breath as the thing being asked for reads as
+    /// the app not believing its own pitch. The install pill gets its corona
+    /// loop to itself for a couple of beats first.
+    static let skipMessageDelay: TimeInterval = 2.6
 }
 
 /// The compact-expanded Dynamic Island treatment iOS shows while an Action

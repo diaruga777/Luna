@@ -473,9 +473,10 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThan(
             OnboardingShortcutRunTiming.islandProgressDuration, 1.0,
             "The shortcut-run progress ring must read as real work")
-        XCTAssertEqual(
-            OnboardingShortcutRunTiming.skipMessageDelay, 0.5, accuracy: 0.001,
-            "The skip-out follows the shortcut-install message by half a second")
+        XCTAssertGreaterThanOrEqual(
+            OnboardingShortcutRunTiming.skipMessageDelay, 2.0,
+            "The install pill gets the screen to itself before the way out "
+                + "is offered alongside it")
     }
 
     func testJourneySeparatesSafariAndMessagesWithTheirSetupPrompts() {
@@ -543,7 +544,10 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             OnboardingMessagesReplicaTiming.stagedMessageDelays.count, 4)
         for delay in OnboardingMessagesReplicaTiming.stagedMessageDelays {
-            XCTAssertGreaterThanOrEqual(delay, 0.3)
+            XCTAssertGreaterThanOrEqual(
+                delay, 0.6,
+                "Even the tightest hand-off is somebody typing, not a "
+                    + "transcript unrolling")
         }
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)
@@ -606,26 +610,37 @@ final class ReaderOnboardingTests: XCTestCase {
         messages.onSkipSetup = { skipped = true }
 
         // The way out never asks for the tap the two setup pills are asking
-        // for: no glow, no pulse.
-        skipPill.beginGlowPulse()
+        // for: no corona, no pulse.
+        let pulseKey = OnboardingMessagePillButton.pulseAnimationKey
+        skipPill.beginAttentionPulse()
         XCTAssertNil(
-            skipPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            skipPill.layer.animation(forKey: pulseKey),
             "The skip-out must never pulse for attention")
-        XCTAssertEqual(skipPill.layer.shadowOpacity, 0)
+        XCTAssertTrue(
+            skipPill.descendants(of: EclipseCoronaView.self).isEmpty,
+            "The skip-out must never wear a corona")
 
-        shortcutPill.beginGlowPulse()
+        shortcutPill.beginAttentionPulse()
         XCTAssertNotNil(
-            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            shortcutPill.layer.animation(forKey: pulseKey),
             "The shortcut pill must pulse until tapped")
+        let shortcutCorona = try XCTUnwrap(
+            shortcutPill.descendants(of: EclipseCoronaView.self).first,
+            "The shortcut pill's attention cue is its corona")
+        XCTAssertNotNil(
+            shortcutCorona.layer.animation(forKey: pulseKey),
+            "The corona breathes with the pill it surrounds")
+
         shortcutPill.sendActions(for: .touchUpInside)
         XCTAssertTrue(installedShortcut)
         XCTAssertTrue(shortcutPill.wasActivated)
         XCTAssertNil(
-            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
-            "Tapping the pill must stop its glow pulse")
-        shortcutPill.beginGlowPulse()
+            shortcutPill.layer.animation(forKey: pulseKey),
+            "Tapping the pill must stop its corona pulse")
+        XCTAssertEqual(shortcutCorona.alpha, 0)
+        shortcutPill.beginAttentionPulse()
         XCTAssertNil(
-            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            shortcutPill.layer.animation(forKey: pulseKey),
             "An activated pill never resumes pulsing")
 
         settingsPill.sendActions(for: .touchUpInside)

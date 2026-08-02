@@ -623,7 +623,7 @@ final class ReaderOnboardingTests: XCTestCase {
     @MainActor
     func testTheSettingsMessageLandsAboveTheSkipOutThatBeatItThere() throws {
         let messages = MessagesReplicaViewController(
-            urlString: OnboardingDemoPage.lunaArticle.sharedURLString)
+            urlString: OnboardingDemoPage.lunaPage.sharedURLString)
         let window = UIWindow(
             frame: CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = messages

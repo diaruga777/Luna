@@ -173,9 +173,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// inside a share/action extension, the corner stays empty.
     private let eyeTrackingButton = EyeTrackingToggleButton()
     private var gazeCoordinator: RSVPGazeCoordinator?
-    /// Diagnostics-only gaze overlay; exists only while the hidden setting is
-    /// on (`ReaderSettings.gazeDebugOverlayEnabled`).
-    private var gazeDebugOverlay: RSVPGazeDebugOverlay?
     /// Test seam: substitutes the gaze source. Must be set before the view loads.
     public var gazeTrackerOverride: GazeTracking?
 
@@ -215,10 +212,16 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private static let targetCharactersAcross = 15
     private static let contextWordCount = 55
     /// Vertical center of the focal word / phrase. It is derived from the actual
-    /// space between the title-aware mode switcher and the playback controls so a
-    /// tall title header can never push the reading display over the controls.
+    /// space between the host chrome standing over the reader and the playback
+    /// controls, so a tall title header can never cover the reticule and the
+    /// controls can never be overrun. `topContentInset` is load-bearing here:
+    /// inside a card it is the (possibly multi-line) title header's real
+    /// height, and a focal band measured from the view's own top sat under it.
+    /// The resting target is slightly BELOW the view's midpoint — the freed
+    /// top of the screen belongs to the paused preceding-context lane, which
+    /// needs the room far more than the lane under the word does.
     private var focalCenterY: CGFloat {
-        let top = view.safeAreaInsets.top + 18
+        let top = view.safeAreaInsets.top + topContentInset + 18
         let controlsTop = controlsStack.frame.minY > 0
             ? controlsStack.frame.minY
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
@@ -231,7 +234,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         guard maximumCenter >= minimumCenter else {
             return (top + controlsTop) / 2
         }
-        return min(max(view.bounds.midY - 40, minimumCenter), maximumCenter)
+        return min(max(view.bounds.midY + 24, minimumCenter), maximumCenter)
     }
 
     /// Sized at init from the device width so `targetCharactersAcross`
@@ -473,7 +476,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         super.viewDidAppear(animated)
         updateMeldAnchor()
         gazeCoordinator?.setVisible(true)
-        syncGazeDebugOverlay()
     }
 
     public override func viewDidLayoutSubviews() {
@@ -485,7 +487,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         layoutLinkPill()
         layoutFinishedBadge()
         refreshDisplay()
-        if let gazeDebugOverlay { view.bringSubviewToFront(gazeDebugOverlay) }
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -560,23 +561,36 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             name: UIApplication.willEnterForegroundNotification, object: nil)
     }
 
-    /// The same corner inset the deck's chrome row takes from the card's
-    /// top-trailing corner — but measured from the first line the READER owns,
-    /// not from the card's edge. `topContentInset` is the host chrome standing
-    /// over the top of this reader (the card's opaque title header), and that
-    /// header is a sibling ABOVE the reader's own view: a toggle placed level
-    /// with the deck's circles is not merely crowded by it, it is behind it, and
-    /// the control disappears from the speed reader entirely.
-    /// `safeAreaInsets.top` is 0 while the reader is inside a card and non-zero
-    /// when it owns the whole screen; `topContentInset` is 0 in the standalone
-    /// and extension hosts — so one expression serves all of them.
+    /// The toggle's REAL seat inside a card is the host's chrome row — the
+    /// card's top-left, level with the deck's read-aloud circle — reached via
+    /// `hostAdoptableEyeTrackingToggle`. A toggle kept in the reader's own
+    /// view cannot sit there: the card's opaque title header is a sibling
+    /// ABOVE the reader, so a card-corner placement would bury the control
+    /// behind it. This fallback placement (used by hosts that never adopt —
+    /// standalone, extensions) therefore measures from the first line the
+    /// reader owns: below `safeAreaInsets.top + topContentInset`.
     private func layoutEyeTrackingButton() {
         guard !eyeTrackingButton.isHidden else { return }
+        // Released by a host that adopted it earlier: take it back.
+        if eyeTrackingButton.superview == nil { view.addSubview(eyeTrackingButton) }
+        // Adopted into a host's chrome row: the host frames it.
+        guard eyeTrackingButton.superview === view else { return }
         let size = EyeTrackingToggleButton.diameter
         let inset = Self.eyeTrackingCornerInset
         eyeTrackingButton.frame = CGRect(
             x: inset, y: view.safeAreaInsets.top + topContentInset + inset,
             width: size, height: size)
+    }
+
+    /// The eye-tracking toggle, offered to a host that renders the reader's
+    /// chrome outside the reader (the card deck's circle row). Nil where the
+    /// feature can never run. The reader keeps driving the button's state and
+    /// handling its taps; the host only gives it a seat beside its own
+    /// circles — and must return it (remove from superview) when the reader
+    /// leaves RSVP.
+    public var hostAdoptableEyeTrackingToggle: UIButton? {
+        guard isViewLoaded, !eyeTrackingButton.isHidden else { return nil }
+        return eyeTrackingButton
     }
 
     /// Matches `ArticleCardsViewController.chromeCardCornerInset`.
@@ -590,28 +604,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     @objc private func eyeTrackingToggled() {
         gazeCoordinator?.toggle(presenting: self)
-    }
-
-    /// Installs or removes the diagnostics gaze overlay to match the hidden
-    /// setting. Checked on every appearance so flipping the switch in
-    /// Settings → Diagnostics takes effect on the next visit, no relaunch.
-    private func syncGazeDebugOverlay() {
-        guard let gazeCoordinator, gazeCoordinator.isAvailable,
-              ReaderSettings.gazeDebugOverlayEnabled
-        else {
-            gazeCoordinator?.debugFrameHandler = nil
-            gazeDebugOverlay?.removeFromSuperview()
-            gazeDebugOverlay = nil
-            return
-        }
-        let overlay = gazeDebugOverlay ?? RSVPGazeDebugOverlay(frame: view.bounds)
-        overlay.frame = view.bounds
-        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(overlay)
-        gazeDebugOverlay = overlay
-        gazeCoordinator.debugFrameHandler = { [weak self] frame in
-            self?.gazeDebugOverlay?.render(frame)
-        }
     }
 
     @objc private func applicationDidEnterBackground() {
@@ -709,11 +701,17 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let width = max(0, column.width - horizontalMargin * 2)
         let contextX = column.minX + horizontalMargin
         // The preceding-context lane grows upward into the freed top of the
-        // screen, so it must stop below the eye-tracking toggle when that
-        // corner is occupied.
-        let topLimit = eyeTrackingButton.isHidden
-            ? view.safeAreaInsets.top + 20
-            : max(view.safeAreaInsets.top + 20, eyeTrackingButton.frame.maxY + 12)
+        // screen: it must clear whatever host chrome stands over the reader
+        // (`topContentInset` — the card's opaque title header), and stop
+        // below the eye-tracking toggle when that corner is occupied by the
+        // reader's own fallback placement (a host-adopted toggle lives in the
+        // host's chrome row, above the header, and takes no reader room).
+        let chromeFloor = view.safeAreaInsets.top + topContentInset + 20
+        let toggleInReader = !eyeTrackingButton.isHidden
+            && eyeTrackingButton.superview === view
+        let topLimit = toggleInReader
+            ? max(chromeFloor, eyeTrackingButton.frame.maxY + 12)
+            : chromeFloor
 
         let bandHalf: CGFloat = displayMode == .phrases
             ? phrasePanel.bounds.height / 2 + 14 : 84
@@ -1668,6 +1666,11 @@ extension RSVPViewController: RSVPGazeCoordinatorDelegate {
     func gazeCoordinatorRequestsPause(_ coordinator: RSVPGazeCoordinator) {
         guard isPlaying else { return }
         pause(deliberate: false)
+    }
+
+    func gazeCoordinatorRequestsResume(_ coordinator: RSVPGazeCoordinator) {
+        guard !isPlaying, speechCenter == nil || !isSpeechMode else { return }
+        play()
     }
 
     func gazeCoordinatorDidChangeDisplayState(_ coordinator: RSVPGazeCoordinator) {

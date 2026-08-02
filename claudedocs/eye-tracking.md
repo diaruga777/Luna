@@ -6,17 +6,23 @@ entirely in `LunaReaderUI`.
 
 ## The toggle
 
-A Liquid Glass circle in the reader's **top-left** corner —
-`EyeTrackingToggleButton`, the same `GlassStyle.circularButtonConfiguration`
-circle as the reader chrome's read-aloud button, 38pt. Four states:
+A Liquid Glass circle at the **card's top-left**, level with the deck's
+read-aloud circle on the right — `EyeTrackingToggleButton`, the same
+`GlassStyle.circularButtonConfiguration` circle, 38pt. Four states:
 
-Its corner is the READER's, not the card's: the 12pt inset is measured from
-`safeAreaInsets.top + topContentInset`, and inside a Reader card that inset is
-the opaque title header standing over the top of the speed reader. That header
-is a sibling ABOVE the reader's view, so a toggle placed level with the deck's
-own circles is not crowded by it — it is behind it, and the control disappears
-from RSVP altogether (`layoutEyeTrackingButton`, test
-`RSVPEyeTrackingTests.testToggleClearsHostChromeStandingOverTheReader`).
+**Placement is adoption, not ownership transfer.** The reader always creates
+and drives the button (state, taps); inside a card the deck ADOPTS it into
+its own chrome row (`ArticleCardsViewController.syncAdoptedEyeTrackingToggle`
+← `RabbitHoleReaderViewController.focusedEyeTrackingToggle`, non-nil only
+while the focused layer renders RSVP — so the toggle appears in RSVP and in
+no other mode). The reader's own view CANNOT seat it at the card corner: the
+card's opaque title header is a sibling ABOVE the reader, and a toggle placed
+level with the deck's circles from inside the reader is behind it. Hosts that
+never adopt (standalone, extensions) keep the in-reader fallback: 12pt inset
+below `safeAreaInsets.top + topContentInset` (`layoutEyeTrackingButton`, test
+`RSVPEyeTrackingTests.testToggleClearsHostChromeStandingOverTheReader`). A
+releasing host just removes the button from its superview; the reader
+reclaims it on its next layout pass.
 
 | State | Glyph | Colour | When |
 | --- | --- | --- | --- |
@@ -99,20 +105,6 @@ edges (a bias big enough to push a fixated gaze off-screen is exactly what
 calibration rescues); the coordinator classifies on/off-display AFTER
 subtracting the offset.
 
-## Debug overlay (hidden diagnostics)
-
-`RSVPGazeDebugOverlay` draws the raw estimate (small grey dot), the calibrated
-estimate (accent dot), the focus-radius circle and a numeric readout (raw/cal
-deltas, learned offset, away %) over the reader — enough to tell a systematic
-projection bias from noise on a real device, which is the one thing the
-simulator suite can never see (`GazeScreenProjectionTests` validate the maths
-against its own convention; only hardware validates the convention). Off by
-default, per-user (`ReaderSettings.gazeDebugOverlayEnabled`), and toggled ONLY
-from the hidden Diagnostics screen (five taps anywhere on Settings). The
-reader checks the flag on each appearance (`syncGazeDebugOverlay`), so
-flipping it needs no relaunch. The overlay is touch-transparent and installed
-above the reader's chrome.
-
 ## When it pauses
 
 `GazeAttentionPolicy` turns distance-from-the-focal-word into a dwell
@@ -146,6 +138,17 @@ distinction is load-bearing: a gaze pause resets the clock while the reader's
 eyes have not moved back, and `isAway` is exactly what a following play press
 consults to recognise itself as an override.
 
+## When it resumes
+
+A pause the gaze caused, the gaze can undo: the camera keeps watching, and
+once the eyes settle back inside the focus radius for `resumeDwell` (0.4s —
+so a saccade passing across the word doesn't flap playback), the coordinator
+clears its latch and asks the reader to play. An auto-resume is NOT an
+override — tracking stays enabled, and the resume's own `setPlaying(true)`
+re-anchors the calibration warm-up. Deliberate pauses are never resumed; a
+hunt abandoned by leaving the reader ends with the camera (see "Camera
+lifetime"), and the next play press is an ordinary one.
+
 ## Where the gaze comes from
 
 `ARFaceGazeTracker` runs a bare `ARSession` with `ARFaceTrackingConfiguration`
@@ -177,17 +180,22 @@ unit-tested on the simulator, where face tracking is never available:
 The coordinator then subtracts the window's screen position (iPad Split View)
 and lets UIKit walk the view hierarchy.
 
-## Camera lifetime
+## Camera lifetime — aggressive by design
 
-`RSVPGazeCoordinator.syncTracker` runs the session exactly while the feature is
-watching AND the reader is on screen AND camera access is granted — never
-merely because the reader is open, and never once the toggle is off or
-read-aloud has taken over. It stops on `viewWillDisappear` and on
-`didEnterBackground`.
+`RSVPGazeCoordinator.syncTracker` runs the session exactly while the feature
+is watching a **PLAYING** reader on screen with camera access granted — plus
+ONE exception: after a gaze-caused pause the camera keeps seeking the eyes'
+return, because that is the only way "look back to resume" can work. The hunt
+has deliberately NO timeout; only a user action ends it — a play press (the
+override, which stands tracking down), or leaving (viewWillDisappear /
+`didEnterBackground`), which kills the session AND clears the latch, so
+coming back never relights the camera by itself: the next play press does.
+Everything else is dark: opening the reader, turning the toggle on, pausing
+deliberately, other cards, Settings, onboarding.
 
-The session keeps running **while paused**, not only while playing. That is
-what makes the play-override honest: the only way to know the reader is looking
-away at the moment they press play is to still be looking.
+Consequences: the permission prompt still belongs to the toggle tap, but the
+green camera dot belongs to playback (and to an in-progress resume hunt); a
+play press after an abandoned hunt is an ordinary play, tracking still on.
 
 ## Permission
 
@@ -209,5 +217,5 @@ toggle off and offers Settings. `GazeTrackingPermission.statusOverride` and
 - `GazeScreenProjectionTests` — ray/plane intersection, the x mirror, rotation.
 - `RSVPEyeTrackingTests` — the whole feature through the reader against a stub
   gaze source: toggle states, the pause, the play-override and its reversion,
-  read-aloud suppression, camera lifetime, the systematic-bias calibration
-  regression, and the diagnostics overlay's presence rules.
+  read-aloud suppression, camera lifetime, and the systematic-bias
+  calibration regression.

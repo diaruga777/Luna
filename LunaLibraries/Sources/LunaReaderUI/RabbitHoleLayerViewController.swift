@@ -833,6 +833,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         readerMode == .rsvp ? rsvpReader.isPlaying : nil
     }
 
+    /// The RSVP eye-tracking toggle, for a host chrome row to adopt — non-nil
+    /// only while this layer actually renders the speed reader (and the
+    /// feature can run in this process at all).
+    public var eyeTrackingToggleForHostChrome: UIButton? {
+        guard readerMode == .rsvp, readerChild === rsvpReader else { return nil }
+        return rsvpReader.hostAdoptableEyeTrackingToggle
+    }
+
     #if DEBUG
     /// Regression hook: a descriptor restored directly into Original must have
     /// mounted the archive reader, not merely selected the mode in chrome.

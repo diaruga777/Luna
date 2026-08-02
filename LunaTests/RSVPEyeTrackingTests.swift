@@ -42,7 +42,6 @@ final class RSVPEyeTrackingTests: XCTestCase {
         GazeTrackingAvailability.supportOverride = true
         GazeTrackingPermission.statusOverride = .granted
         ReaderSettings.eyeTrackingEnabled = false
-        ReaderSettings.gazeDebugOverlayEnabled = false
         ReaderSettings.rsvpMode = .words
         tracker = StubGazeTracker()
     }
@@ -51,7 +50,6 @@ final class RSVPEyeTrackingTests: XCTestCase {
         GazeTrackingAvailability.supportOverride = nil
         GazeTrackingPermission.statusOverride = nil
         ReaderSettings.eyeTrackingEnabled = false
-        ReaderSettings.gazeDebugOverlayEnabled = false
         window = nil
         super.tearDown()
     }
@@ -157,13 +155,31 @@ final class RSVPEyeTrackingTests: XCTestCase {
 
         button.sendActions(for: .touchUpInside)
         XCTAssertEqual(button.trackingState, .enabled)
-        XCTAssertTrue(tracker.isRunning)
+        XCTAssertFalse(tracker.isRunning,
+                       "opting in must not light the camera — only playback does")
         XCTAssertTrue(ReaderSettings.eyeTrackingEnabled, "the setting survives a relaunch")
 
         button.sendActions(for: .touchUpInside)
         XCTAssertEqual(button.trackingState, .disabled)
         XCTAssertFalse(tracker.isRunning)
         XCTAssertFalse(ReaderSettings.eyeTrackingEnabled)
+    }
+
+    /// The camera lifetime is aggressive: playing lights it, a deliberate
+    /// pause darkens it immediately.
+    func testCameraRunsOnlyWhilePlaying() throws {
+        let reader = makeReader()
+        try toggle(in: reader).sendActions(for: .touchUpInside)
+        XCTAssertFalse(tracker.isRunning)
+
+        try playButton(in: reader).sendActions(for: .touchUpInside)
+        XCTAssertTrue(reader.isPlaying)
+        XCTAssertTrue(tracker.isRunning)
+
+        try playButton(in: reader).sendActions(for: .touchUpInside)
+        XCTAssertFalse(reader.isPlaying)
+        XCTAssertFalse(tracker.isRunning,
+                       "a deliberate pause must tear the camera down at once")
     }
 
     func testBecomesActiveOnlyWhilePlaying() throws {
@@ -264,35 +280,57 @@ final class RSVPEyeTrackingTests: XCTestCase {
                       "calibration must not swallow genuine excursions")
     }
 
-    // MARK: - Debug overlay
+    // MARK: - Auto-resume
 
-    /// The gaze overlay is a diagnostics tool: absent by default, installed
-    /// only while the hidden Diagnostics switch is on, gone again once it is
-    /// turned back off.
-    func testGazeDebugOverlayFollowsTheHiddenDiagnosticsSetting() throws {
+    /// A pause caused by the gaze undoes itself: the camera keeps watching,
+    /// and once the eyes settle back on the word playback resumes — with
+    /// tracking still enabled, because nobody overrode anything.
+    func testLookingBackAtTheWordResumesAGazePause() throws {
         let reader = makeReader()
-        XCTAssertTrue(
-            reader.view.subviews.compactMap { $0 as? RSVPGazeDebugOverlay }.isEmpty,
-            "no overlay unless the diagnostics switch was flipped")
+        let button = try toggle(in: reader)
+        button.sendActions(for: .touchUpInside)
+        try playButton(in: reader).sendActions(for: .touchUpInside)
 
-        ReaderSettings.gazeDebugOverlayEnabled = true
+        let focus = reader.focalGazePoint
+        let reading = CGPoint(x: focus.x + 320, y: focus.y - 200)
+        feed(.point(reading), timeout: 2.5, until: { false })  // calibrates
+        XCTAssertTrue(reader.isPlaying)
+
+        let away = CGPoint(x: reading.x, y: reading.y + 600)
+        XCTAssertTrue(feed(.point(away), until: { !reader.isPlaying }))
+        XCTAssertTrue(tracker.isRunning,
+                      "the camera keeps watching for the eyes to come back")
+
+        XCTAssertTrue(feed(.point(reading), until: { reader.isPlaying }),
+                      "settling back on the word should resume playback by itself")
+        XCTAssertEqual(button.trackingState, .active, "an auto-resume is not an override")
+    }
+
+    /// The resume hunt has no timeout — but leaving the reader mid-hunt kills
+    /// the camera, and coming back must NOT relight it: only a play press
+    /// does, and that press is an ordinary one (tracking stays enabled).
+    func testLeavingDuringAGazePauseEndsTheHuntUntilTheNextPlay() throws {
+        let reader = makeReader()
+        let button = try toggle(in: reader)
+        button.sendActions(for: .touchUpInside)
+        try playButton(in: reader).sendActions(for: .touchUpInside)
+        XCTAssertTrue(feed(.offScreen, until: { !reader.isPlaying }))
+        XCTAssertTrue(tracker.isRunning, "the hunt for the returning gaze is on")
+
         reader.beginAppearanceTransition(false, animated: false)
         reader.endAppearanceTransition()
-        reader.beginAppearanceTransition(true, animated: false)
-        reader.endAppearanceTransition()
-        let overlay = reader.view.subviews.compactMap { $0 as? RSVPGazeDebugOverlay }.first
-        XCTAssertNotNil(overlay)
-        XCTAssertEqual(overlay?.isUserInteractionEnabled, false,
-                       "the overlay must never eat the reader's touches")
+        XCTAssertFalse(tracker.isRunning, "leaving the reader kills the camera outright")
 
-        ReaderSettings.gazeDebugOverlayEnabled = false
-        reader.beginAppearanceTransition(false, animated: false)
-        reader.endAppearanceTransition()
         reader.beginAppearanceTransition(true, animated: false)
         reader.endAppearanceTransition()
-        XCTAssertTrue(
-            reader.view.subviews.compactMap { $0 as? RSVPGazeDebugOverlay }.isEmpty,
-            "turning the switch off removes the overlay on the next appearance")
+        XCTAssertFalse(tracker.isRunning,
+                       "coming back must not relight the camera by itself")
+
+        try playButton(in: reader).sendActions(for: .touchUpInside)
+        XCTAssertTrue(reader.isPlaying)
+        XCTAssertEqual(button.trackingState, .active,
+                       "play after an abandoned hunt is not an override — tracking stays on")
+        XCTAssertTrue(tracker.isRunning, "playback lights the camera again")
     }
 
     // MARK: - Play override
@@ -356,6 +394,7 @@ final class RSVPEyeTrackingTests: XCTestCase {
     func testCameraStopsWhenTheReaderLeavesTheScreen() throws {
         let reader = makeReader()
         try toggle(in: reader).sendActions(for: .touchUpInside)
+        try playButton(in: reader).sendActions(for: .touchUpInside)
         XCTAssertTrue(tracker.isRunning)
 
         reader.beginAppearanceTransition(false, animated: false)

@@ -402,6 +402,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// mode switch into a paused speed reader must surface the host again.
     public var focusedRSVPIsPlaying: Bool? { layers[safe: focus]?.isRSVPPlaying }
 
+    /// The focused layer's RSVP eye-tracking toggle for the host's chrome row
+    /// to adopt (see `RSVPViewController.hostAdoptableEyeTrackingToggle`).
+    public var focusedEyeTrackingToggle: UIButton? {
+        layers[safe: focus]?.eyeTrackingToggleForHostChrome
+    }
+
     /// Whether returning from an inline reader should also surface the root
     /// card carousel: a scroll reader already at its top, or a paused RSVP.
     public var shouldSurfaceAfterInlineReaderDismissal: Bool {

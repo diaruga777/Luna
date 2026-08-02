@@ -127,6 +127,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private let settingsButton = UIButton(type: .system)
     // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
     private let readerChromeRow = UIView()
+    /// The focused RSVP reader's eye-tracking toggle while this deck has
+    /// adopted it into `readerChromeRow` (see `syncAdoptedEyeTrackingToggle`).
+    private weak var adoptedEyeTrackingToggle: UIButton?
     private let readerBackButton = UIButton(type: .system)
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
@@ -453,6 +456,40 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             width: max(trailing - leading, Self.chromeButtonDiameter * 2),
             height: Self.topChromeClearance)
         readerChromeRow.layoutIfNeeded()
+        layoutAdoptedEyeTrackingToggle()
+    }
+
+    /// The RSVP eye-tracking toggle is the reader's own control — the reader
+    /// keeps driving its state and handling its taps — but its seat is this
+    /// row's LEADING edge: the card's top-left, mirroring the read-aloud
+    /// circle on the right. Adopted while the focused card renders RSVP,
+    /// released the moment it doesn't (the reader reclaims it on its next
+    /// layout pass, and hosts that never adopt keep the in-reader fallback).
+    private func syncAdoptedEyeTrackingToggle() {
+        let toggle = (readerForChrome as? RabbitHoleReaderViewController)?
+            .focusedEyeTrackingToggle
+        guard toggle !== adoptedEyeTrackingToggle else {
+            layoutAdoptedEyeTrackingToggle()
+            return
+        }
+        adoptedEyeTrackingToggle?.removeFromSuperview()
+        adoptedEyeTrackingToggle = toggle
+        if let toggle {
+            readerChromeRow.addSubview(toggle)
+            layoutAdoptedEyeTrackingToggle()
+        }
+    }
+
+    /// Framed manually (the toggle returns to a manually-framed life inside
+    /// the reader when released, so it never carries Auto Layout constraints).
+    /// It yields the very corner to the back circle when a dive is showing.
+    private func layoutAdoptedEyeTrackingToggle() {
+        guard let toggle = adoptedEyeTrackingToggle else { return }
+        let diameter = Self.chromeButtonDiameter
+        let x = readerBackButton.isHidden ? 0 : diameter + 8
+        toggle.frame = CGRect(
+            x: x, y: (readerChromeRow.bounds.height - diameter) / 2,
+            width: diameter, height: diameter)
     }
 
     private func configureChromeButton(
@@ -571,6 +608,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         let state = readerForChrome?.chromeState
         readerChromeRow.isHidden = state == nil
         readerBackButton.isHidden = state?.showsBack != true
+        syncAdoptedEyeTrackingToggle()
         guard let state else {
             readerAudioButton.isHidden = true
             readerModeControl.isHidden = true

@@ -323,6 +323,45 @@ final class ArticleCardsChromeTests: XCTestCase {
             "the speed reader lays out against the card's resting footprint")
     }
 
+    /// The RSVP eye-tracking toggle's seat is the deck's chrome row — the
+    /// card's top-left, level with the read-aloud circle on the right — and it
+    /// is there exactly while the focused card renders the speed reader.
+    func testEyeTrackingToggleJoinsTheChromeRowOnlyInRSVP() throws {
+        GazeTrackingAvailability.supportOverride = true
+        defer { GazeTrackingAvailability.supportOverride = nil }
+        let controller = makeArticleController(seed: "rsvp-eye-chrome", title: "RSVP Eye Chrome")
+        let modeSwitcher = try XCTUnwrap(
+            controller.view.subviews.compactMap { $0 as? LunaSegmentedControl }.first)
+        let row = try XCTUnwrap(
+            allSubviews(in: controller.view)
+                .first { $0.accessibilityIdentifier == "cards.readerChromeRow" })
+        func eyeToggle() -> EyeTrackingToggleButton? {
+            row.subviews.compactMap { $0 as? EyeTrackingToggleButton }.first
+        }
+        XCTAssertNil(eyeToggle(), "the scroll reader has no gaze to watch")
+
+        modeSwitcher.selectedSegmentIndex = 1
+        modeSwitcher.sendActions(for: .valueChanged)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        controller.view.layoutIfNeeded()
+
+        let toggle = try XCTUnwrap(eyeToggle(), "RSVP seats its toggle in the deck's row")
+        let audio = try XCTUnwrap(
+            row.subviews.compactMap { $0 as? UIButton }
+                .first { $0.accessibilityLabel == L10n.string("Read Aloud") })
+        XCTAssertEqual(toggle.frame.minX, 0, accuracy: 0.5,
+                       "top-left of the card: the row's leading edge (back is hidden at the root)")
+        XCTAssertEqual(toggle.center.y, audio.center.y, accuracy: 0.5,
+                       "level with the read-aloud circle — one row across the card's top")
+        XCTAssertEqual(toggle.frame.width, audio.frame.width, accuracy: 0.5)
+
+        modeSwitcher.selectedSegmentIndex = 0
+        modeSwitcher.sendActions(for: .valueChanged)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        controller.view.layoutIfNeeded()
+        XCTAssertNil(eyeToggle(), "leaving RSVP releases the toggle from the row")
+    }
+
     func testWebArchiveTitleLivesInItsScrollContentAndUsesStableInset() throws {
         let title = "Archived Page Title"
         let controller = makeArticleController(seed: "archive-title", title: title)

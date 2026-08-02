@@ -62,6 +62,34 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
             "The did-center refresh reveals the tab at animation completion")
     }
 
+    @MainActor
+    func testClosedLeftTrayDoesNotResetOpenArchiveShiftDuringLayout() throws {
+        let host = TestHost()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let cardDeck = UIView()
+        let emptyState = UIView()
+        let shiftedViews = { [cardDeck, emptyState] }
+        host.mountArchiveTray(shifting: shiftedViews, canPull: { true })
+        host.mountLeftTray(
+            shifting: shiftedViews,
+            canPull: { true },
+            savedURL: { _, _, _ in })
+        host.viewDidLayoutSubviews()
+
+        let archiveTray = try XCTUnwrap(host.archiveTray)
+        archiveTray.setOpenForTesting(true)
+        XCTAssertEqual(cardDeck.transform.tx, -260, accuracy: 0.5)
+        XCTAssertEqual(emptyState.transform.tx, -260, accuracy: 0.5)
+
+        // Both trays lay out on every host pass. The closed left tray must
+        // preserve the archive tray's contribution instead of writing identity.
+        host.viewDidLayoutSubviews()
+
+        XCTAssertEqual(cardDeck.transform.tx, -260, accuracy: 0.5)
+        XCTAssertEqual(emptyState.transform.tx, -260, accuracy: 0.5)
+    }
+
     // MARK: - No leading pasteboard card: carousel index == item index
 
     func testNoPasteboardCardMapsCarouselIndexDirectlyToItemIndex() {

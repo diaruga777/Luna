@@ -94,8 +94,10 @@ Consequences for the deck:
   can still be pulled open (the empty carousel state also allows the pull). The
   drawer is absent from the carousel count and scrubber. A leftward pull opens it
   over the right 2/3 of the screen while the card/empty UX translates left by the
-  same 2/3, ceding that space. The gesture is interactive in both directions;
-  tapping the exposed outside area spring-dismisses it. `ArchiveTrayController`
+  same 2/3, ceding that space. Each edge tray owns an additive translation
+  contribution, so the closed left tray's recurring layout pass cannot reset an
+  open archive tray's card/empty-state shift. The gesture is interactive in both
+  directions; tapping the exposed outside area spring-dismisses it. `ArchiveTrayController`
   owns this shared presentation; `ArchiveArcLayout` (a custom
   `UICollectionViewLayout`) arranges an "archive" header cell plus narrowed item
   cells (drawer width − 56) along a circular arc whose pivot sits far off the right

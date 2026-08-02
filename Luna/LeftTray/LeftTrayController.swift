@@ -120,7 +120,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     static var emailRecoveryLauncher: ((UIViewController) -> Void)?
 
     private weak var host: UIViewController?
-    private let shiftedViews: () -> [UIView]
+    private let shiftContribution: TrayShiftContribution
     private let canPull: () -> Bool
     private let savedURL: (String, CaptureSource, UIView) -> Void
     private let openStateChanged: (Bool) -> Void
@@ -160,7 +160,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         openStateChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.host = host
-        self.shiftedViews = shiftedViews
+        shiftContribution = TrayShiftContribution(shiftedViews: shiftedViews)
         self.canPull = canPull
         self.savedURL = savedURL
         self.openStateChanged = openStateChanged
@@ -585,7 +585,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         let closedX = pullAvailable ? -width + Self.peek : -width
         tray.frame.origin.x = closedX + (0 - closedX) * progress
         let shift = width * progress
-        shiftedViews().forEach { $0.transform = CGAffineTransform(translationX: shift, y: 0) }
+        shiftContribution.apply(shift)
         openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01
         dismissControl.alpha = progress * 0.18

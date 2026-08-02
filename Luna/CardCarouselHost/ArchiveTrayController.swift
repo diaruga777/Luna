@@ -118,7 +118,7 @@ final class ArchiveArcLayout: UICollectionViewLayout {
 /// left by the same two thirds, ceding that space to the arc.
 final class ArchiveTrayController: NSObject {
     private weak var host: UIViewController?
-    private let shiftedViews: () -> [UIView]
+    private let shiftContribution: TrayShiftContribution
     private let canPull: () -> Bool
     private let openStateChanged: (Bool) -> Void
     /// Invisible container that carries the arc's horizontal reveal. It still
@@ -165,7 +165,7 @@ final class ArchiveTrayController: NSObject {
         openStateChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.host = host
-        self.shiftedViews = shiftedViews
+        shiftContribution = TrayShiftContribution(shiftedViews: shiftedViews)
         self.canPull = canPull
         self.openStateChanged = openStateChanged
         collection = UICollectionView(frame: .zero, collectionViewLayout: arcLayout)
@@ -334,7 +334,7 @@ final class ArchiveTrayController: NSObject {
         tray.frame.origin.x = closedX + (openX - closedX) * progress
         // The card (or empty state) clears the arc's full region.
         let shift = -width * progress
-        shiftedViews().forEach { $0.transform = CGAffineTransform(translationX: shift, y: 0) }
+        shiftContribution.apply(shift)
         openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01
         dismissControl.alpha = progress * 0.18

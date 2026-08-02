@@ -31,6 +31,38 @@ enum PasteboardCommitPolicy {
     }
 }
 
+/// Owns one edge tray's horizontal contribution to views shared by both trays.
+/// Each tray adjusts only the delta from its previous value, so applying a
+/// closed tray's zero contribution cannot erase the opposite tray's open shift.
+final class TrayShiftContribution {
+    private let shiftedViews: () -> [UIView]
+    private var appliedShiftByView: [ObjectIdentifier: CGFloat] = [:]
+
+    init(shiftedViews: @escaping () -> [UIView]) {
+        self.shiftedViews = shiftedViews
+    }
+
+    func apply(_ shift: CGFloat) {
+        let views = shiftedViews()
+        let liveIDs = Set(views.map { ObjectIdentifier($0) })
+        for view in views {
+            let id = ObjectIdentifier(view)
+            let previous = appliedShiftByView[id] ?? 0
+            let delta = shift - previous
+            if abs(delta) > 0.001 {
+                var transform = view.transform
+                transform.tx += delta
+                view.transform = transform
+            }
+            appliedShiftByView[id] = shift
+        }
+        let staleIDs = appliedShiftByView.keys.filter { !liveIDs.contains($0) }
+        for id in staleIDs {
+            appliedShiftByView.removeValue(forKey: id)
+        }
+    }
+}
+
 /// The shared skeleton behind Reader's and Downloader's root screens: both
 /// present one `CardCarouselViewController` full-screen, flank its scrub strip
 /// with two persistent Liquid Glass circles (Settings + a share/action button),

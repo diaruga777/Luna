@@ -65,6 +65,54 @@ rules fall out for free rather than needing bookkeeping:
 `isWatching == userEnabled && !playOverridden && !audioPlaybackOn`, and
 `displayState` is `.disabled` unless watching, then `.active` while playing.
 
+## Calibration — the estimate is judged relative, never absolute
+
+ARKit's `lookAtPoint` carries a systematic per-user, per-posture bias —
+commonly several degrees, worst vertically — that easily exceeds the focus
+radius. Uncalibrated, that meant a fixated reader drained the near tolerance
+continuously and was paused ~1.8s into every playback. `GazeCalibration`
+(owned by the coordinator) removes it implicitly, with no calibration UI:
+
+- **Warm-up.** Every playback start opens a warm-up: the eyes just left the
+  play button, the strongest ground truth the feature ever gets. The first 45
+  playing samples' residuals (raw point − focal point) are collected and their
+  per-axis MEDIAN becomes the offset subtracted from every later sample.
+  Median, not mean — a glance away during warm-up is an outlier to survive.
+  Until the first offset exists, point samples are learned from but never
+  judged (`.offScreen` — no plane intersection — still is: it needs no
+  calibration). A re-anchor keeps the old offset in force while collecting.
+- **Re-centring.** Samples whose CALIBRATED point sits inside the focus radius
+  nudge the offset toward their residual (1%/frame) — slow drift correction
+  for settling posture that can never chase a genuine look-away.
+- **Lifetime.** The offset dies with the tracker session (`syncTracker` stop)
+  and is re-anchored at every playback start; a focal jump (scrub/skip) drops
+  a warm-up's partial residuals but leaves an established offset alone — bias
+  is a property of the estimator, not of the word's position.
+- **Stated trade-off:** warm-up trusts playback as ground truth. Starting
+  playback and immediately looking away for the whole warm-up anchors the
+  offset wrongly until the next play press; the alternative — trusting
+  ARKit's absolute accuracy — paused every reader every time.
+
+Because only the calibrated point says where the reader is actually looking,
+the tracker emits every plane intersection as `.point` even beyond the display
+edges (a bias big enough to push a fixated gaze off-screen is exactly what
+calibration rescues); the coordinator classifies on/off-display AFTER
+subtracting the offset.
+
+## Debug overlay (hidden diagnostics)
+
+`RSVPGazeDebugOverlay` draws the raw estimate (small grey dot), the calibrated
+estimate (accent dot), the focus-radius circle and a numeric readout (raw/cal
+deltas, learned offset, away %) over the reader — enough to tell a systematic
+projection bias from noise on a real device, which is the one thing the
+simulator suite can never see (`GazeScreenProjectionTests` validate the maths
+against its own convention; only hardware validates the convention). Off by
+default, per-user (`ReaderSettings.gazeDebugOverlayEnabled`), and toggled ONLY
+from the hidden Diagnostics screen (five taps anywhere on Settings). The
+reader checks the flag on each appearance (`syncGazeDebugOverlay`), so
+flipping it needs no relaunch. The overlay is touch-transparent and installed
+above the reader's chrome.
+
 ## When it pauses
 
 `GazeAttentionPolicy` turns distance-from-the-focal-word into a dwell
@@ -157,7 +205,9 @@ toggle off and offers Settings. `GazeTrackingPermission.statusOverride` and
 
 - `EyeTrackingStateTests` — the three display states and both suppressions.
 - `GazeAttentionTests` — the distance curve, the allowance, discontinuities.
+- `GazeCalibrationTests` — warm-up median, re-anchoring, slow re-centring.
 - `GazeScreenProjectionTests` — ray/plane intersection, the x mirror, rotation.
 - `RSVPEyeTrackingTests` — the whole feature through the reader against a stub
   gaze source: toggle states, the pause, the play-override and its reversion,
-  read-aloud suppression, camera lifetime.
+  read-aloud suppression, camera lifetime, the systematic-bias calibration
+  regression, and the diagnostics overlay's presence rules.

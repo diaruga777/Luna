@@ -173,6 +173,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// inside a share/action extension, the corner stays empty.
     private let eyeTrackingButton = EyeTrackingToggleButton()
     private var gazeCoordinator: RSVPGazeCoordinator?
+    /// Diagnostics-only gaze overlay; exists only while the hidden setting is
+    /// on (`ReaderSettings.gazeDebugOverlayEnabled`).
+    private var gazeDebugOverlay: RSVPGazeDebugOverlay?
     /// Test seam: substitutes the gaze source. Must be set before the view loads.
     public var gazeTrackerOverride: GazeTracking?
 
@@ -470,6 +473,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         super.viewDidAppear(animated)
         updateMeldAnchor()
         gazeCoordinator?.setVisible(true)
+        syncGazeDebugOverlay()
     }
 
     public override func viewDidLayoutSubviews() {
@@ -481,6 +485,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         layoutLinkPill()
         layoutFinishedBadge()
         refreshDisplay()
+        if let gazeDebugOverlay { view.bringSubviewToFront(gazeDebugOverlay) }
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -585,6 +590,28 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     @objc private func eyeTrackingToggled() {
         gazeCoordinator?.toggle(presenting: self)
+    }
+
+    /// Installs or removes the diagnostics gaze overlay to match the hidden
+    /// setting. Checked on every appearance so flipping the switch in
+    /// Settings → Diagnostics takes effect on the next visit, no relaunch.
+    private func syncGazeDebugOverlay() {
+        guard let gazeCoordinator, gazeCoordinator.isAvailable,
+              ReaderSettings.gazeDebugOverlayEnabled
+        else {
+            gazeCoordinator?.debugFrameHandler = nil
+            gazeDebugOverlay?.removeFromSuperview()
+            gazeDebugOverlay = nil
+            return
+        }
+        let overlay = gazeDebugOverlay ?? RSVPGazeDebugOverlay(frame: view.bounds)
+        overlay.frame = view.bounds
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(overlay)
+        gazeDebugOverlay = overlay
+        gazeCoordinator.debugFrameHandler = { [weak self] frame in
+            self?.gazeDebugOverlay?.render(frame)
+        }
     }
 
     @objc private func applicationDidEnterBackground() {

@@ -355,6 +355,75 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
     }
 }
 
+final class CardCarouselPagePanSimultaneityPolicyTests: XCTestCase {
+
+    func testReaderContentKeepsItsGesturesWhileTheSwipeIsStillJustADrag() {
+        XCTAssertTrue(
+            allowsSimultaneousRecognition(
+                otherIsScrollViewPan: true, pagePanIsTrackingTheTouch: false))
+    }
+
+    func testAPageSwipeDoesNotAlsoScrollTheCardItStartedOn() {
+        XCTAssertFalse(
+            allowsSimultaneousRecognition(
+                otherIsScrollViewPan: true, pagePanIsTrackingTheTouch: true))
+    }
+
+    func testNonScrollingContentGesturesStillCoexistWithAPageInFlight() {
+        XCTAssertTrue(
+            allowsSimultaneousRecognition(
+                otherIsScrollViewPan: false, pagePanIsTrackingTheTouch: true))
+    }
+
+    func testSurfacesWithoutInCardPagingShareNothing() {
+        XCTAssertFalse(
+            CardCarouselPagePanSimultaneityPolicy.allowsSimultaneousRecognition(
+                pagesOnInCardSwipes: false,
+                otherIsScrollViewPan: false,
+                pagePanIsTrackingTheTouch: false))
+    }
+
+    private func allowsSimultaneousRecognition(
+        otherIsScrollViewPan: Bool,
+        pagePanIsTrackingTheTouch: Bool
+    ) -> Bool {
+        CardCarouselPagePanSimultaneityPolicy.allowsSimultaneousRecognition(
+            pagesOnInCardSwipes: true,
+            otherIsScrollViewPan: otherIsScrollViewPan,
+            pagePanIsTrackingTheTouch: pagePanIsTrackingTheTouch)
+    }
+}
+
+@MainActor
+final class CardCarouselScrollViewSearchTests: XCTestCase {
+
+    func testEveryNestedScrollViewIsFoundOutermostFirst() {
+        // A mounted reader card: the article scroller, with a web frame's own
+        // scroll view inside it.
+        let cardArea = UIView()
+        let card = UIView()
+        let article = UIScrollView()
+        let webFrame = UIScrollView()
+        cardArea.addSubview(card)
+        card.addSubview(article)
+        article.addSubview(UIView())
+        article.addSubview(webFrame)
+
+        let found = CardCarouselScrollViews.nested(in: cardArea)
+
+        XCTAssertEqual(found.count, 2)
+        XCTAssertTrue(found.first === article)
+        XCTAssertTrue(found.last === webFrame)
+    }
+
+    func testACardAreaWithNoScrollingContentFindsNothing() {
+        let cardArea = UIView()
+        cardArea.addSubview(UIView())
+
+        XCTAssertTrue(CardCarouselScrollViews.nested(in: cardArea).isEmpty)
+    }
+}
+
 @MainActor
 final class CardCarouselScrubberTapPagingTests: XCTestCase {
 

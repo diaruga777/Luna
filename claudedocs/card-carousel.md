@@ -323,7 +323,22 @@ Differences from the Downloader, via `CardCarouselStyle`:
   strongly-horizontal drags — EXCEPT over a `UISlider`: a drag that starts on
   a horizontal control (the RSVP scrubber) is a scrub, and near the track's
   ends it reads exactly like a page-worthy swipe, so `pagePan` refuses to
-  begin there rather than paging the card out from under the thumb), `.miniCards` scrubber: each chip is a miniature
+  begin there rather than paging the card out from under the thumb.
+  **A swipe that BECOMES a page stops being anything else.** Simultaneous
+  recognition is what keeps links, taps and scrolling alive on a card that is
+  not being paged, so by the time the horizontal gate opens, the reader under
+  the finger has usually begun its own scroll on the same touch — and every
+  vertical wobble of the rest of the swipe scrolled the article while the deck
+  paged it away. Most visible starting on a peeking side card, whose reader is
+  live too: the finger arrived at the newly centered card already scrolled off
+  its first line. `pagePan`'s `.began` now cancels every scroll view inside
+  `cardArea` that is tracking that touch (`CardCarouselScrollViews.nested`;
+  toggling `isEnabled` is the only mid-sequence cancel, and the state check
+  leaves a card decelerating from an earlier flick alone), and
+  `CardCarouselPagePanSimultaneityPolicy` refuses a scroll view that asks to
+  start *after* the pan is already tracking. The reverse case is untouched: a
+  drag that starts vertical fails the horizontal gate, so `pagePan` never
+  begins and the article scrolls as before), `.miniCards` scrubber: each chip is a miniature
   article card — a tiny `.systemBackground` surface with skeleton headline/body
   bars and a source badge as its masthead. The badge (`CarouselSourceBadge` in
   LunaDesignSystem, rendered by `CarouselSourceBadgeView`) is the site's

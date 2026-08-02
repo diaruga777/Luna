@@ -106,10 +106,6 @@ stable Xcode 26.2.
 > `claudedocs/surface-support.md`. UI prose says
 > "Luna"; each app has its own `AppIcon{Luna,Reader,Downloader,PriceTracker}` (PNG appiconsets in
 > `SharedIconAssets.xcassets`; `scripts/make_icons.py` is retired — update the PNGs directly).
-> Icon masters MUST keep pure-black outer edges (artwork inset 34px on a black canvas, like
-> `AppIconLuna1024.png`): SpringBoard paints the app open/close zoom straight from the icon
-> PNG and stretches its outermost pixel bands to fill the shrinking window, so any non-black
-> edge color flashes as an ugly smeared band behind the icon mid-animation.
 > The ACTION extensions use separate `{Luna,Reader,Downloader,PriceTracker}ActionExtIcon`-style
 > sets (`ReaderActionExtIcon`, `LunaActionExtIcon`, …): iOS
 > renders action-extension icons as monochrome templates from the icon's ALPHA channel, so an

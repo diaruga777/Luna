@@ -72,8 +72,10 @@ enum OnboardingStrings {
     enum Intro {
         static let safariAction = Definition(shared: "Stop popups and paywalls")
         static let shortcutAction = Definition(shared: "Show me one click save")
-        static let paste = Definition(shared: "Paste a url")
-        static let loading = Definition(shared: "Loading page…")
+        /// The paste row's placeholder, and the paste control's own label.
+        static let paste = Definition(shared: "Paste a link")
+        /// The seam between the two setup lessons and the paste row.
+        static let orSeparator = Definition(shared: "or")
         static let articleURLsOnly = Definition(shared: "article URLs only")
         static let unableToLoadPage = Definition(shared: "unable to load page")
         static let completed = Definition(shared: "Completed")
@@ -384,6 +386,8 @@ enum OnboardingStrings {
         static let introIconCluster = Definition(shared: "onboarding.intro.iconCluster")
         static let introSupportingText = Definition(shared: "onboarding.intro.supportingText")
         static let introPaste = Definition(shared: "onboarding.intro.paste")
+        static let introPasteField = Definition(shared: "onboarding.intro.pasteField")
+        static let introOr = Definition(shared: "onboarding.intro.or")
         static let messagesReplica = Definition(shared: "onboarding.messages.replica")
         static let messagesDynamicIsland = Definition(shared: "onboarding.messages.dynamicIsland")
         static let messagesMockTap = Definition(shared: "onboarding.messages.mockTap")

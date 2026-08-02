@@ -1053,17 +1053,27 @@ final class AppOnboardingViewController: UIViewController {
                     content: content,
                     source: .paste)
                 await MainActor.run {
-                    self.isHandlingPaste = false
                     guard let saved,
                           let current = ReadingListStore.shared.item(
                             withID: saved.id),
                           current.state == .ready
                     else {
+                        self.isHandlingPaste = false
                         self.intro.setPasteError(
                             OnboardingStrings.Intro.unableToLoadPage.value())
                         return
                     }
-                    self.completeOnboardingWithRealSave(animated: true)
+                    // The spinner answers before the deck arrives: the
+                    // checkmark IS the save, and the eclipse follows it. The
+                    // paste stays "in flight" across that beat — our own save
+                    // reaches the store during it, and `contentStoreDidChange`
+                    // would otherwise read it as an external one and finish
+                    // onboarding without the transition.
+                    self.intro.setPasteSucceeded { [weak self] in
+                        guard let self else { return }
+                        self.isHandlingPaste = false
+                        self.completeOnboardingWithRealSave(animated: true)
+                    }
                 }
             case .failed, .needsArchive:
                 await MainActor.run {

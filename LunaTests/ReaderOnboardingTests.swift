@@ -263,9 +263,13 @@ final class ReaderOnboardingTests: XCTestCase {
                 == OnboardingStrings.Intro.shortcutAction.value()
                 && $0.configuration?.image != nil
         })
-        XCTAssertNotNil(intro.view.descendants(of: UIPasteControl.self).first)
-        XCTAssertTrue(intro.view.descendants(of: UILabel.self).contains {
-            $0.text == OnboardingStrings.Intro.paste.value()
+        let pasteControl = try XCTUnwrap(
+            intro.view.descendants(of: UIPasteControl.self).first)
+        // The system draws it: nothing of ours is painted over the control.
+        XCTAssertEqual(pasteControl.layer.opacity, 1)
+        XCTAssertTrue(intro.view.descendants(of: UITextField.self).contains {
+            $0.placeholder == OnboardingStrings.Intro.paste.value()
+                && !$0.isUserInteractionEnabled
         })
         let button = try XCTUnwrap(buttons.first {
             $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
@@ -292,6 +296,103 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(
             hit === button || hit?.isDescendant(of: button) == true,
             "Safari intro action is shadowed by \(String(describing: hit))")
+    }
+
+    @MainActor
+    func testPasteRowShowsWhatWasPastedAndResolvesItsSpinnerInPlace() throws {
+        let intro = OnboardingIntroCardContentViewController(
+            introCopy: .growingLine(stem: "Read", tail: " more."),
+            supportingText: "")
+        intro.loadViewIfNeeded()
+        intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
+        intro.view.layoutIfNeeded()
+
+        let row = try XCTUnwrap(
+            intro.view.descendants(of: OnboardingPasteRow.self).first)
+        let field = try XCTUnwrap(
+            row.descendants(of: UITextField.self).first)
+        let status = row.status
+        let control = try XCTUnwrap(
+            row.descendants(of: UIPasteControl.self).first)
+
+        // The “or” sits between the shortcut action and the paste row, and is
+        // centred on the same column they share.
+        let shortcut = try XCTUnwrap(
+            intro.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel
+                    == OnboardingStrings.Intro.shortcutAction.value()
+            })
+        let orLabel = try XCTUnwrap(
+            intro.view.descendants(of: UILabel.self).first {
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.introOr.value()
+            })
+        XCTAssertEqual(
+            orLabel.text, OnboardingStrings.Intro.orSeparator.value())
+        XCTAssertEqual(orLabel.textAlignment, .center)
+        let orFrame = intro.view.convert(orLabel.bounds, from: orLabel)
+        let shortcutFrame = intro.view.convert(shortcut.bounds, from: shortcut)
+        let rowFrame = intro.view.convert(row.bounds, from: row)
+        XCTAssertGreaterThan(orFrame.minY, shortcutFrame.maxY)
+        XCTAssertLessThan(orFrame.maxY, rowFrame.minY)
+        XCTAssertEqual(orFrame.midX, intro.view.bounds.midX, accuracy: 0.5)
+        XCTAssertEqual(
+            rowFrame.maxY,
+            shortcutFrame.maxY
+                + OnboardingIntroActionMetrics.orSpacing * 2
+                + OnboardingIntroActionMetrics.orHeight
+                + OnboardingIntroActionMetrics.buttonHeight,
+            accuracy: 0.5)
+
+        // The field is beside the control, and starts on its placeholder.
+        XCTAssertGreaterThanOrEqual(field.frame.minX, control.frame.maxX)
+        XCTAssertEqual(
+            field.placeholder, OnboardingStrings.Intro.paste.value())
+        XCTAssertTrue(field.text?.isEmpty ?? true)
+        XCTAssertEqual(field.leftViewMode, .never)
+        XCTAssertEqual(status.symbol, .none)
+
+        // A paste shows its text immediately; the spinner prefixes it while
+        // Luna works.
+        intro.didPaste(" https://example.com/story ")
+        XCTAssertEqual(field.text, "https://example.com/story")
+        intro.setPasteLoading()
+        XCTAssertEqual(field.leftViewMode, .always)
+        XCTAssertTrue(status.isSpinning)
+        XCTAssertEqual(field.text, "https://example.com/story")
+        XCTAssertEqual(
+            field.textRect(forBounds: field.bounds).minX,
+            field.leftViewRect(forBounds: field.bounds).maxX + 8,
+            accuracy: 0.5,
+            "The spinner is a prefix to the text, not an overlay on it")
+
+        // A failure resolves the same slot into a cross and states why.
+        let reason = OnboardingStrings.Intro.articleURLsOnly.value()
+        intro.setPasteError(reason)
+        XCTAssertEqual(field.text, reason)
+        XCTAssertEqual(field.textColor, LunaColors.errorAccent)
+        XCTAssertEqual(status.symbol, .failure)
+        XCTAssertNotNil(status.markImage)
+        // The spinner keeps turning under the mark springing in over it, and
+        // leaves once that crossfade is done.
+        let spinnerDeadline = Date(timeIntervalSinceNow: 3)
+        while status.isSpinning, Date() < spinnerDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+        XCTAssertFalse(status.isSpinning)
+
+        // A success resolves it into a checkmark, and only then hands over.
+        var handedOver = false
+        intro.didPaste("https://example.com/story")
+        intro.setPasteLoading()
+        intro.setPasteSucceeded { handedOver = true }
+        XCTAssertEqual(status.symbol, .success)
+        XCTAssertFalse(handedOver, "The checkmark is shown before the deck")
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while !handedOver, Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+        XCTAssertTrue(handedOver)
     }
 
     @MainActor

@@ -118,10 +118,18 @@ The root uses the production `CardCarouselViewController`:
    starts one third of the way down the card. After the second beat finishes,
    three actions appear as a vertical stack: **Remove popups and walls for
    me** with Safari's compass, **Save on-screen links with the Action Button**
-   with the bundled Shortcuts icon, and a real `UIPasteControl` labelled
-   **Paste a url**. The setup buttons use a restrained 24% wash of the current
+   with the bundled Shortcuts icon, then a small centred **or**, then the
+   paste row. The setup buttons use a restrained 24% wash of the current
    app surface tint; completing either lesson replaces its icon with a
-   checkmark and disables/greys that action. The intro card remains black and
+   checkmark and disables/greys that action. The paste row is the real
+   `UIPasteControl`, drawn by the system with nothing painted over it (which
+   is what reads the clipboard without a paste-permission alert), and beside
+   it a display-only `UITextField` (`onboarding.intro.pasteField`, never
+   interactive) that is always present, starting on its **Paste a link**
+   placeholder. The control is the one action FILLED rather than washed — its
+   tint is mixed by hand, 55% of the app colour over black, because the system
+   drops an alpha component on that colour — since it is the completion
+   action. The intro card remains black and
    contains no icon cluster or supporting copy. A new UIKit corona
    independently reconstructs the splash's static peak behind this initial card
    for the entire intro; neither the launch raster nor its overlay hierarchy is
@@ -446,10 +454,19 @@ The root uses the production `CardCarouselViewController`:
    lesson completion path. Both app-switch back to the intro and check/disable
    the Shortcut button. Neither setup lesson completes onboarding.
 9. The paste row is the completion action. `UIPasteControl` supplies the value
-   without a paste-permission alert. Luna unwraps and runs the shared classifier
-   before writing: non-URL and non-article outcomes turn the row red with
-   **article URLs only**; extraction/network/persistence failures turn it red
-   with **unable to load page**. A successfully extracted article is saved and a fresh
+   without a paste-permission alert, and whatever it hands over — URL or not —
+   is shown in the field the instant it arrives, before anything has been
+   decided about it. A spinner then takes the slot AHEAD of that text (the
+   field's `leftView`, so it is a prefix to the content rather than an overlay
+   on it) while Luna unwraps the value and runs the shared classifier. That one
+   slot is where the answer lands: the spinner keeps turning until a mark
+   springs in over it and crossfades it out — a checkmark in the app's own
+   progress tint, held half a second before the deck transition sets out, or a
+   red cross with the field's text replaced by the reason. Non-URL and
+   non-article outcomes say **article URLs only**; extraction/network/persistence
+   failures say **unable to load page**. Nothing else in the row moves, and the
+   two setup buttons go inert while a paste is in flight.
+   A successfully extracted article is saved and a fresh
    production root is laid out around that real card. The onboarding carousel temporarily gains a
    snapshot of the real saved card to its right and pages there through the
    production `CardEclipseTransition`; after egress the pixel-matched live root
@@ -536,7 +553,10 @@ liquid wave together.
 
 `ReaderOnboardingTests` covers independent per-app completion, the three intro
 actions and hit-testing, the skipped Safari lesson replaying whole on re-entry
-(both at the page's own level and through the full hierarchy), exact surface
+(both at the page's own level and through the full hierarchy), the paste row
+(the “or” between the shortcut action and the row, the pasted text arriving in
+the field, the spinner as a prefix to it, and its resolution into a checkmark
+before the hand-over or a cross with the reason), exact surface
 copy/page mapping, one feature list shared by every article surface,
 the storage-free lessons and the legacy launch sweep, external-save completion,
 launch geometry, active-wave cancellation, the staged conversation's copy and

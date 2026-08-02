@@ -47,6 +47,26 @@ enum OnboardingIntroTiming {
     /// A short reading beat keeps the two distinct without making the second
     /// feel like a separate stage.
     static let interLineDelay: TimeInterval = 0.15
+    /// How long the resolved checkmark is held before onboarding leaves for
+    /// the real deck: long enough to read as an answer, short enough that the
+    /// save still feels like the tap's own result.
+    static let pasteSuccessHold: TimeInterval = 0.5
+}
+
+/// The intro's action block: two setup buttons, the “or”, and the paste row.
+/// The heights are fixed here so the block's total is one expression the card
+/// can position from the bottom of its surface.
+enum OnboardingIntroActionMetrics {
+    static let buttonHeight: CGFloat = 56
+    static let spacing: CGFloat = 10
+    /// The “or” sits closer to what it separates than the setup buttons sit to
+    /// each other — it belongs to the seam, not to either side.
+    static let orSpacing: CGFloat = 7
+    static let orHeight: CGFloat = 17
+
+    static var stackHeight: CGFloat {
+        buttonHeight * 3 + spacing + orSpacing * 2 + orHeight
+    }
 }
 
 final class OnboardingIntroCardContentViewController: CardContentViewController {
@@ -60,7 +80,8 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     private let headline: OnboardingIntroHeadlineView
     private let safariButton = UIButton(type: .system)
     private let shortcutButton = UIButton(type: .system)
-    private let pasteButton = OnboardingPasteControl()
+    private let orLabel = UILabel()
+    private let pasteRow = OnboardingPasteRow()
     private let buttonStack = UIStackView()
     private var didStart = false
     private var safariState = OnboardingSetupButtonState.pending
@@ -110,19 +131,40 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         update(safariButton, state: safariState, symbol: "safari.fill")
         update(shortcutButton, state: shortcutState, symbol: "bolt.fill")
 
-        pasteButton.onPaste = { [weak self] value in self?.onPaste?(value) }
+        orLabel.text = OnboardingStrings.Intro.orSeparator.value()
+        orLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        orLabel.textColor = LunaColors.quaternaryText
+        orLabel.textAlignment = .center
+        orLabel.accessibilityIdentifier =
+            OnboardingStrings.Accessibility.introOr.value()
+        orLabel.isAccessibilityElement = false
 
         buttonStack.axis = .vertical
-        buttonStack.spacing = 10
+        buttonStack.spacing = OnboardingIntroActionMetrics.spacing
         buttonStack.alignment = .fill
-        buttonStack.distribution = .fillEqually
-        for action in [safariButton, shortcutButton, pasteButton] {
+        buttonStack.distribution = .fill
+        for action in [safariButton, shortcutButton, orLabel, pasteRow] {
             action.alpha = 0
             action.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
             action.isUserInteractionEnabled = false
             if let button = action as? UIButton { button.isEnabled = false }
             buttonStack.addArrangedSubview(action)
         }
+        // The seam belongs to the “or”, not to the actions on either side.
+        buttonStack.setCustomSpacing(
+            OnboardingIntroActionMetrics.orSpacing, after: shortcutButton)
+        buttonStack.setCustomSpacing(
+            OnboardingIntroActionMetrics.orSpacing, after: orLabel)
+        NSLayoutConstraint.activate([
+            safariButton.heightAnchor.constraint(
+                equalToConstant: OnboardingIntroActionMetrics.buttonHeight),
+            shortcutButton.heightAnchor.constraint(
+                equalToConstant: OnboardingIntroActionMetrics.buttonHeight),
+            orLabel.heightAnchor.constraint(
+                equalToConstant: OnboardingIntroActionMetrics.orHeight),
+            pasteRow.heightAnchor.constraint(
+                equalToConstant: OnboardingIntroActionMetrics.buttonHeight),
+        ])
         view.addSubview(buttonStack)
 
         pasteConfiguration = UIPasteConfiguration(
@@ -140,12 +182,12 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             x: inset, y: contentTop,
             width: view.bounds.width - inset * 2, height: headline.height)
         let stackWidth = view.bounds.width - inset * 2
-        let buttonHeight: CGFloat = 56
+        let stackHeight = OnboardingIntroActionMetrics.stackHeight
         buttonStack.frame = CGRect(
             x: inset,
-            y: view.bounds.height - buttonHeight * 3 - buttonStack.spacing * 2 - 24,
+            y: view.bounds.height - stackHeight - 24,
             width: stackWidth,
-            height: buttonHeight * 3 + buttonStack.spacing * 2)
+            height: stackHeight)
     }
 
     func start() {
@@ -211,23 +253,33 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         shortcutButton.isUserInteractionEnabled = true
         safariButton.isEnabled = enabled && safariState != .completed
         shortcutButton.isEnabled = enabled && shortcutState != .completed
-        pasteButton.isUserInteractionEnabled = enabled
+        pasteRow.isUserInteractionEnabled = enabled
     }
 
     func setPasteLoading() {
-        pasteButton.setState(.loading)
+        pasteRow.setState(.loading)
         safariButton.isEnabled = false
         shortcutButton.isEnabled = false
     }
 
     func setPasteError(_ message: String) {
-        pasteButton.setState(.failure(message))
+        pasteRow.setState(.failure(message))
         safariButton.isEnabled = safariState != .completed
         shortcutButton.isEnabled = shortcutState != .completed
     }
 
+    /// The spinner resolves into a checkmark and is held just long enough to
+    /// read before the caller leaves for the real deck.
+    func setPasteSucceeded(completion: @escaping () -> Void) {
+        pasteRow.setState(.success)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(
+                OnboardingIntroTiming.pasteSuccessHold)
+        ) { completion() }
+    }
+
     func resetPaste() {
-        pasteButton.setState(.idle)
+        pasteRow.setState(.idle)
         safariButton.isEnabled = safariState != .completed
         shortcutButton.isEnabled = shortcutState != .completed
     }
@@ -238,7 +290,9 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         }) {
             _ = provider.loadObject(ofClass: URL.self) { [weak self] url, _ in
                 guard let url else { return }
-                DispatchQueue.main.async { self?.onPaste?(url.absoluteString) }
+                DispatchQueue.main.async {
+                    self?.didPaste(url.absoluteString)
+                }
             }
             return
         }
@@ -250,8 +304,16 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         }
         _ = provider.loadObject(ofClass: NSString.self) { [weak self] value, _ in
             guard let value = value as? NSString else { return }
-            DispatchQueue.main.async { self?.onPaste?(value as String) }
+            DispatchQueue.main.async { self?.didPaste(value as String) }
         }
+    }
+
+    /// Every paste — whatever the clipboard held, whether it turns out to be a
+    /// URL at all — lands in the field first. The row shows what it was given
+    /// before anyone has decided anything about it.
+    func didPaste(_ value: String) {
+        pasteRow.showPastedValue(value)
+        onPaste?(value)
     }
 
     private func configure(
@@ -316,58 +378,69 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     }
 }
 
-private final class OnboardingPasteControl: UIView {
-    enum State {
+/// The completion action: the system's own paste control, and beside it a
+/// field that always says what the row currently holds.
+///
+/// The control is the REAL `UIPasteControl`, drawn by the system — nothing is
+/// painted over it — so the clipboard is read without a paste-permission
+/// alert. Everything stateful lives in the field next to it: the pasted text
+/// arrives there the instant it is pasted, prefixed by a spinner while Luna
+/// works, and that spinner resolves in place into a checkmark or a cross.
+final class OnboardingPasteRow: UIView {
+    enum State: Equatable {
         case idle
         case loading
+        case success
         case failure(String)
     }
 
-    var onPaste: ((String) -> Void)?
+    static var placeholder: String { OnboardingStrings.Intro.paste.value() }
+    private static let controlWidth: CGFloat = 68
+    private static let gap: CGFloat = 10
 
     private let control: UIPasteControl
-    private let surface = UIView()
-    private let icon = UIImageView()
-    private let label = UILabel()
+    private let field = OnboardingPasteField()
+    /// The one status slot, ahead of the text. It is the field's `leftView`,
+    /// so it only joins the view hierarchy while it has something to say —
+    /// the row keeps the reference either way.
+    let status = OnboardingPasteStatusView()
+    private(set) var state = State.idle
 
     override init(frame: CGRect) {
         let configuration = UIPasteControl.Configuration()
         configuration.displayMode = .iconOnly
         configuration.cornerStyle = .capsule
-        configuration.baseBackgroundColor =
-            LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
-        configuration.baseForegroundColor = .clear
+        // The system fills the control with this colour opaquely — an alpha
+        // component is dropped, so the wash the setup buttons get from 24% of
+        // the tint is mixed by hand here, a shade stronger because this one is
+        // the completion action.
+        configuration.baseBackgroundColor = LunaSurfacePalette.blended(
+            .black, toward: LunaSurfacePalette.baseColor, amount: 0.55)
+        configuration.baseForegroundColor = LunaColors.primaryText
         control = UIPasteControl(configuration: configuration)
         super.init(frame: frame)
 
         accessibilityIdentifier = OnboardingStrings.Accessibility.introPaste.value()
         control.target = nil
-        control.accessibilityLabel = OnboardingStrings.Intro.paste.value()
-        // UIPasteControl remains the full-size hit target and native paste
-        // dispatcher; its private artwork sits beneath our stateful surface.
-        control.layer.opacity = 0
+        control.accessibilityLabel = Self.placeholder
         addSubview(control)
 
-        surface.backgroundColor =
-            LunaSurfacePalette.baseColor.withAlphaComponent(0.34)
-        surface.isUserInteractionEnabled = false
-        surface.layer.zPosition = 10
-        addSubview(surface)
-
-        icon.image = UIImage(systemName: "doc.on.clipboard")
-        icon.tintColor = LunaColors.primaryText
-        icon.contentMode = .scaleAspectFit
-        icon.isUserInteractionEnabled = false
-        icon.layer.zPosition = 11
-        addSubview(icon)
-
-        label.text = OnboardingStrings.Intro.paste.value()
-        label.textColor = LunaColors.primaryText
-        label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textAlignment = .center
-        label.isUserInteractionEnabled = false
-        label.layer.zPosition = 11
-        addSubview(label)
+        field.accessibilityIdentifier =
+            OnboardingStrings.Accessibility.introPasteField.value()
+        // Display only: it shows what was pasted, it is never typed in.
+        field.isUserInteractionEnabled = false
+        field.borderStyle = .none
+        field.font = .systemFont(ofSize: 15, weight: .regular)
+        field.textColor = LunaColors.primaryText
+        field.attributedPlaceholder = NSAttributedString(
+            string: Self.placeholder,
+            attributes: [.foregroundColor: LunaColors.quaternaryText])
+        field.backgroundColor =
+            LunaSurfacePalette.baseColor.withAlphaComponent(0.14)
+        field.layer.cornerCurve = .continuous
+        field.leftView = status
+        field.leftViewMode = .never
+        addSubview(field)
     }
 
     @available(*, unavailable)
@@ -387,49 +460,198 @@ private final class OnboardingPasteControl: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        control.frame = bounds
-        surface.frame = bounds
-        surface.layer.cornerRadius = bounds.height / 2
-        let contentWidth = min(bounds.width - 32, 210)
-        let iconSide: CGFloat = 20
-        let gap: CGFloat = 8
-        let labelSize = label.sizeThatFits(CGSize(
-            width: contentWidth - iconSide - gap, height: bounds.height))
-        let totalWidth = iconSide + gap + labelSize.width
-        icon.frame = CGRect(
-            x: (bounds.width - totalWidth) / 2,
-            y: (bounds.height - iconSide) / 2,
-            width: iconSide,
-            height: iconSide)
-        label.frame = CGRect(
-            x: icon.frame.maxX + gap,
+        control.frame = CGRect(
+            x: 0, y: 0, width: Self.controlWidth, height: bounds.height)
+        let fieldX = control.frame.maxX + Self.gap
+        field.frame = CGRect(
+            x: fieldX,
             y: 0,
-            width: labelSize.width,
+            width: max(bounds.width - fieldX, 0),
             height: bounds.height)
+        field.layer.cornerRadius = bounds.height / 2
+    }
+
+    /// What the clipboard actually held, shown before anything has been
+    /// decided about it.
+    func showPastedValue(_ value: String) {
+        field.text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        field.textColor = LunaColors.primaryText
     }
 
     func setState(_ state: State) {
+        self.state = state
         switch state {
         case .idle:
-            label.text = OnboardingStrings.Intro.paste.value()
-            icon.image = UIImage(systemName: "doc.on.clipboard")
-            surface.backgroundColor =
-                LunaSurfacePalette.baseColor.withAlphaComponent(0.34)
+            field.text = nil
+            field.textColor = LunaColors.primaryText
+            status.setSymbol(.none, animated: false)
+            setStatusVisible(false)
             control.isEnabled = true
         case .loading:
-            label.text = OnboardingStrings.Intro.loading.value()
-            icon.image = UIImage(systemName: "arrow.triangle.2.circlepath")
-            surface.backgroundColor =
-                LunaSurfacePalette.baseColor.withAlphaComponent(0.22)
+            setStatusVisible(true)
+            status.setSymbol(.spinner, animated: false)
+            control.isEnabled = false
+        case .success:
+            setStatusVisible(true)
+            status.setSymbol(.success, animated: true)
             control.isEnabled = false
         case .failure(let message):
-            label.text = message
-            icon.image = UIImage(systemName: "exclamationmark.triangle.fill")
-            surface.backgroundColor = LunaColors.errorAccent
+            field.text = message
+            field.textColor = LunaColors.errorAccent
+            setStatusVisible(true)
+            status.setSymbol(.failure, animated: true)
             control.isEnabled = true
+            UIAccessibility.post(notification: .announcement, argument: message)
         }
-        control.accessibilityLabel = label.text
+        field.accessibilityValue = field.text
         setNeedsLayout()
+    }
+
+    private func setStatusVisible(_ visible: Bool) {
+        field.leftViewMode = visible ? .always : .never
+        field.setNeedsLayout()
+    }
+}
+
+/// A field that reserves its own insets, including the fixed slot the status
+/// symbol occupies ahead of the text.
+private final class OnboardingPasteField: UITextField {
+    private let horizontalInset: CGFloat = 14
+
+    private var showsStatus: Bool {
+        leftView != nil && leftViewMode == .always
+    }
+
+    private var textLeadingEdge: CGFloat {
+        showsStatus
+            ? horizontalInset + OnboardingPasteStatusView.side + 8
+            : horizontalInset
+    }
+
+    override func leftViewRect(forBounds bounds: CGRect) -> CGRect {
+        CGRect(
+            x: horizontalInset,
+            y: ((bounds.height - OnboardingPasteStatusView.side) / 2).rounded(),
+            width: OnboardingPasteStatusView.side,
+            height: OnboardingPasteStatusView.side)
+    }
+
+    override func textRect(forBounds bounds: CGRect) -> CGRect {
+        contentRect(forBounds: bounds)
+    }
+
+    override func placeholderRect(forBounds bounds: CGRect) -> CGRect {
+        contentRect(forBounds: bounds)
+    }
+
+    override func editingRect(forBounds bounds: CGRect) -> CGRect {
+        contentRect(forBounds: bounds)
+    }
+
+    private func contentRect(forBounds bounds: CGRect) -> CGRect {
+        let leading = textLeadingEdge
+        return CGRect(
+            x: leading,
+            y: 0,
+            width: max(bounds.width - leading - horizontalInset, 0),
+            height: bounds.height)
+    }
+}
+
+/// The spinner and the mark it becomes, in one 20-point slot.
+///
+/// The two are separate views crossfading in place rather than one image
+/// swapped: the spinner has to keep turning right up to the moment the mark
+/// springs in over it, which a single view cannot do.
+final class OnboardingPasteStatusView: UIView {
+    enum Symbol: Equatable { case none, spinner, success, failure }
+
+    static let side: CGFloat = 20
+
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let mark = UIImageView()
+    private(set) var symbol = Symbol.none
+
+    var isSpinning: Bool { spinner.isAnimating }
+    var markImage: UIImage? { mark.image }
+
+    override init(frame: CGRect) {
+        super.init(frame: CGRect(
+            x: 0, y: 0, width: Self.side, height: Self.side))
+        isUserInteractionEnabled = false
+        spinner.color = LunaColors.primaryText
+        spinner.hidesWhenStopped = true
+        addSubview(spinner)
+        mark.contentMode = .scaleAspectFit
+        mark.alpha = 0
+        addSubview(mark)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: Self.side, height: Self.side)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        spinner.frame = bounds
+        mark.frame = bounds
+    }
+
+    func setSymbol(_ next: Symbol, animated: Bool) {
+        guard next != symbol else { return }
+        symbol = next
+        switch next {
+        case .none:
+            spinner.stopAnimating()
+            spinner.alpha = 1
+            mark.image = nil
+            mark.alpha = 0
+            mark.transform = .identity
+        case .spinner:
+            mark.alpha = 0
+            mark.image = nil
+            spinner.alpha = 1
+            spinner.startAnimating()
+        case .success, .failure:
+            let configuration = UIImage.SymbolConfiguration(
+                pointSize: 17, weight: .semibold)
+            mark.image = UIImage(
+                systemName: next == .success
+                    ? "checkmark.circle.fill"
+                    : "xmark.circle.fill",
+                withConfiguration: configuration)
+            mark.tintColor = next == .success
+                ? LunaSurfacePalette.progressAccent
+                : LunaColors.errorAccent
+            guard animated, !UIAccessibility.isReduceMotionEnabled else {
+                spinner.stopAnimating()
+                spinner.alpha = 1
+                mark.alpha = 1
+                mark.transform = .identity
+                return
+            }
+            mark.alpha = 0
+            mark.transform = CGAffineTransform(scaleX: 0.4, y: 0.4)
+            UIView.animate(withDuration: 0.16) {
+                self.spinner.alpha = 0
+            } completion: { _ in
+                self.spinner.stopAnimating()
+                self.spinner.alpha = 1
+            }
+            UIView.animate(
+                withDuration: 0.42,
+                delay: 0.06,
+                usingSpringWithDamping: 0.62,
+                initialSpringVelocity: 0.4,
+                options: [.beginFromCurrentState]
+            ) {
+                self.mark.alpha = 1
+                self.mark.transform = .identity
+            }
+        }
     }
 }
 

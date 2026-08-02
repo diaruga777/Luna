@@ -60,7 +60,13 @@ enum OnboardingIntroActionMetrics {
     static let buttonHeight: CGFloat = 56
     /// The paste row is a field, not a third setup button, and reads as one:
     /// well short of the two above it so the block resolves downward.
-    static let pasteRowHeight: CGFloat = 38
+    /// 40 is the floor, not a preference. `UIPasteControl` is drawn by the
+    /// system and silently abandons its capsule and its glyph — leaving a bare
+    /// tinted square — once it is squeezed below this at `controlWidth`. It
+    /// reports a zero intrinsic size, so nothing warns you; the only signal is
+    /// the blank button. Anything shorter means giving up the real paste
+    /// control, and with it paste without a permission alert.
+    static let pasteRowHeight: CGFloat = 40
     /// How far the paste row reaches past the content inset the setup buttons
     /// keep. Everything it buys goes to the field.
     static let pasteRowOutset: CGFloat = 8

@@ -19,9 +19,6 @@
     "1×" : {
 
     },
-    "A screenshot of the current app's screen." : {
-
-    },
     "Action Button Shortcut" : {
 
     },
@@ -61,7 +58,7 @@
     "Also Send to Kindle" : {
 
     },
-    "App" : {
+    "An optional screenshot of the current app's screen." : {
 
     },
     "App password" : {
@@ -136,6 +133,9 @@
     "Clear Diagnostics?" : {
 
     },
+    "Clears onboarding completion and the Safari extension and Shortcut run evidence. Full onboarding will show again on the next launch." : {
+
+    },
     "Close email setup" : {
 
     },
@@ -193,6 +193,9 @@
     "Create an app password…" : {
 
     },
+    "CurrentApp" : {
+
+    },
     "Custom provider · IMAP setup" : {
 
     },
@@ -206,6 +209,12 @@
 
     },
     "Done." : {
+
+    },
+    "Double Save Articles" : {
+
+    },
+    "Double Save Articles can't email an article until your Luna email account and Kindle address are set up." : {
 
     },
     "Download" : {
@@ -262,10 +271,13 @@
     "Filter Active" : {
 
     },
-    "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, or requires a screenshot." : {
+    "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, needs a screenshot, or must continue in Save." : {
 
     },
     "Font" : {
+
+    },
+    "For saved articles only: press the Action Button twice on the same article within 7 seconds. Send to Kindle emails the article; View immediately returns a self-contained Word document to the shortcut. Videos, posts, products, and imported documents ignore the second press." : {
 
     },
     "Forwarding Settings" : {
@@ -338,6 +350,9 @@
     "Locked Only" : {
 
     },
+    "Long-running step of the Action Button shortcut. Pass the current app, optional screenshot, and optional Metadata from Provide Context. Luna resumes prepared work when possible, or reads the screenshot and saves from the top." : {
+
+    },
     "Luna" : {
 
     },
@@ -372,6 +387,9 @@
 
     },
     "Media" : {
+
+    },
+    "Metadata" : {
 
     },
     "name@example.com" : {
@@ -425,6 +443,9 @@
     "Not Now" : {
 
     },
+    "Nothing to save from another Luna app." : {
+
+    },
     "off" : {
 
     },
@@ -441,6 +462,9 @@
 
     },
     "On-Screen URLs" : {
+
+    },
+    "Onboarding Reset" : {
 
     },
     "One more step! Set your action button to %@" : {
@@ -477,6 +501,9 @@
 
     },
     "Opens when this tray is opened" : {
+
+    },
+    "Optional opaque state returned by Provide Context." : {
 
     },
     "Or change %@ to “Allow”" : {
@@ -551,6 +578,9 @@
     "Provide Context" : {
 
     },
+    "Quit and relaunch the app to see the full onboarding." : {
+
+    },
     "Read Aloud" : {
 
     },
@@ -584,7 +614,13 @@
     "Remove %@" : {
 
     },
-    "Requires Screenshot" : {
+    "Reset" : {
+
+    },
+    "Reset Onboarding" : {
+
+    },
+    "Reset Onboarding?" : {
 
     },
     "S" : {
@@ -651,7 +687,7 @@
     "Screenshot" : {
 
     },
-    "Second step of the Action Button shortcut. Pass the current app (from Get Current App) and a screenshot of it; Luna reads the screen with an on-device/Private Cloud Compute model and saves the matching post or page." : {
+    "Second article save" : {
 
     },
     "Send articles and import links · Tap to continue" : {
@@ -666,7 +702,13 @@
     "Send To Luna" : {
 
     },
+    "Set Up" : {
+
+    },
     "Set up email first" : {
+
+    },
+    "Set up Kindle first" : {
 
     },
     "Settings" : {

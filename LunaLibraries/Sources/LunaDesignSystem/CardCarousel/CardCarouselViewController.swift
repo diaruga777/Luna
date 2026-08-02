@@ -1418,6 +1418,15 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             return abs(velocity.x) > abs(velocity.y)
         }
         if gestureRecognizer === pagePan {
+            // A horizontal control under the finger — the RSVP scrubber, any
+            // slider inside a card — owns horizontal drags outright. A scrub
+            // toward either end of the track reads exactly like a page-worthy
+            // swipe, and paging mid-scrub yanks the card out from under the
+            // thumb, so the pan must refuse rather than merely coexist.
+            if let hit = cardArea.hitTest(gestureRecognizer.location(in: cardArea), with: nil),
+               sequence(first: hit, next: { $0.superview }).contains(where: { $0 is UISlider }) {
+                return false
+            }
             let velocity = pagePan.velocity(in: cardArea)
             let decision = CardCarouselPagePanStartPolicy.decision(
                 isTransitioning: isTransitioning,

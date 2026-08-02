@@ -320,7 +320,10 @@ Differences from the Downloader, via `CardCarouselStyle`:
   (card closer to the screen edges), `pagesOnInCardSwipes` (horizontal swipes
   inside the card page — readers have no timeline to scrub; the page pan
   recognizes simultaneously with the reader's own gestures, gated to
-  strongly-horizontal drags), `.miniCards` scrubber: each chip is a miniature
+  strongly-horizontal drags — EXCEPT over a `UISlider`: a drag that starts on
+  a horizontal control (the RSVP scrubber) is a scrub, and near the track's
+  ends it reads exactly like a page-worthy swipe, so `pagePan` refuses to
+  begin there rather than paging the card out from under the thumb), `.miniCards` scrubber: each chip is a miniature
   article card — a tiny `.systemBackground` surface with skeleton headline/body
   bars and a source badge as its masthead. The badge (`CarouselSourceBadge` in
   LunaDesignSystem, rendered by `CarouselSourceBadgeView`) is the site's

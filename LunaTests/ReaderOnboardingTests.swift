@@ -454,9 +454,10 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertGreaterThan(
             OnboardingShortcutRunTiming.islandProgressDuration, 1.0,
             "The shortcut-run progress ring must read as real work")
-        XCTAssertEqual(
-            OnboardingShortcutRunTiming.skipMessageDelay, 0.5, accuracy: 0.001,
-            "The skip-out follows the shortcut-install message by half a second")
+        XCTAssertGreaterThanOrEqual(
+            OnboardingShortcutRunTiming.skipMessageDelay, 2.0,
+            "The install pill gets the screen to itself before the way out "
+                + "is offered alongside it")
     }
 
     func testJourneySeparatesSafariAndMessagesWithTheirSetupPrompts() {

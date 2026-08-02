@@ -162,13 +162,17 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
         let origin = (faceToCamera * eyeMidpoint).xyz
         let target = (faceToCamera * simd_float4(face.lookAtPoint, 1)).xyz
 
-        let size = screenSize
+        // The point is emitted even when it lands beyond the display: the
+        // coordinator subtracts the calibrated bias BEFORE deciding whether
+        // the reader is looking past the phone, and a bias large enough to
+        // push a fixated gaze off the display is exactly the case calibration
+        // exists to rescue. `.offScreen` is reserved for a ray that never
+        // meets the display plane at all.
         guard let point = GazeScreenProjection.screenPoint(
             eyeOrigin: origin, lookAt: target,
-            screenSize: size, pointsPerMetre: pointsPerMetre)
+            screenSize: screenSize, pointsPerMetre: pointsPerMetre)
         else { return .offScreen }
-        return GazeScreenProjection.isOnScreen(point, screenSize: size)
-            ? .point(point) : .offScreen
+        return .point(point)
     }
 
     private func emit(_ sample: GazeSample) {

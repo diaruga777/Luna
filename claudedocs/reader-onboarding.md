@@ -57,7 +57,7 @@ rim, tint, or star table, run
 beats of the same sweep. Three apps take `.twoLines`: a sentence each, stacked.
 The Reader takes `.growingLine(stem: "Read", tail: " more.")`, one sentence that
 grows — the first beat brings in “Read” with a period of its own, the second
-adds “ more.” under the same descending front that takes that period back out.
+adds “ more.” while that period sweeps back out beside it.
 
 Nothing moves between the beats, because it is the FINISHED sentence that is
 centred: “Read.” lands deliberately left of centre. `MoonRevealGrowingLineView`
@@ -65,15 +65,26 @@ typesets all three fragments — stem, first-beat period, tail — into one shar
 frame, each rendering the whole composition with every fragment but its own in
 clear ink. A fragment's position therefore comes from the real typesetting of
 the sentence around it rather than a measured offset (kerning is off so the
-compositions agree on where each one begins), and the shared frame gives all
-three the identical circle, so a beat driving two of them is one continuous
-front. Their occluders are clear rather than black because they overlap: the
-front hides text by geometrically removing it from the mask, and a disc wide
-enough to cover one fragment would cover its neighbours too. The period leaves
-through `MoonRevealLineView.conceal`, the exact mirror of a reveal — the same
-circle descending at the same pace, entering with its BOTTOM arc so the glyphs
-are swallowed from the top down, their light trailing below the edge instead of
-above it.
+compositions agree on where each one begins). Their occluders are clear rather
+than black because they overlap: the front hides text by geometrically removing
+it from the mask, and a disc wide enough to cover one fragment would cover its
+neighbours too. The period leaves through `MoonRevealLineView.conceal`, the
+exact mirror of a reveal — the same circle descending at the same pace, entering
+with its BOTTOM arc so the glyphs are swallowed from the top down, their light
+trailing below the edge instead of above it.
+
+**The second beat is two fronts, not one.** The fragments share a frame, so a
+single edge descending through it reaches each one's ink at a different moment —
+and a period's ink sits a whole x-height below “more”'s, which had the top of
+the “m” uncovered a third of a second before the period beside it started to
+go. Each front is placed against its OWN fragment's ink instead: `conceal` takes
+a `frontLead` that starts its circle already advanced, and
+`MoonRevealGrowingLineView` measures that lead as the drop from the tail's
+highest ink to the period's (`CTLineGetImageBounds`, not the line box — a
+period's line box is as tall as an “m”'s, and it is the visible dot that has to
+start when the “m” does). Both sweeps still run the same travel over the same
+duration and start in the same turn, so the two tops go together and the
+sentence never reads “Read. more”.
 
 The InstaTok page is a deliberately fictional full-bleed video site whose
 signup modal blocks a bundled NASA SVS lunar-eclipse clip. The source, SHA-256,
@@ -334,7 +345,17 @@ The root uses the production `CardCarouselViewController`:
    clamping at 1) and pictures ride `imageBloomGain` (1.0); the intro
    card's own lines keep the reference look. Quiet type (byline, steps
    heading) takes its own colour while its bloom EMITTER stays pure white —
-   quiet copy flaring dimly read as a rendering bug, not a hierarchy. There
+   quiet copy flaring dimly read as a rendering bug, not a hierarchy.
+   **The light is slaved to the occluder's PRESENTATION layer**, not to a
+   wall clock, so it can never run ahead of or behind the mask edge — with
+   one trap: a layer added to the tree in the sweep's own turn has no
+   presentation state yet, so `presentation()` hands back the MODEL layer,
+   which the sweep has already moved to its finished transform. That is what
+   the growing headline's conceal hits (it REINSTALLS its occluder), and
+   taken at face value it ends the light on its first display-link tick,
+   before a pixel has emitted — the period used to go out as a plain
+   top-down wipe. A FIRST sample of an already-finished sweep is therefore
+   read as “not committed yet”, not “over”. There
    is no scroll and the browser bar never moves. **The eclipse corona is
    the Safari BUTTON's**, taking its exact capsule geometry and lighting up
    only once the whole page is clean — bringing it up mid-wave put a lamp

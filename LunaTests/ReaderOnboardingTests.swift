@@ -591,26 +591,37 @@ final class ReaderOnboardingTests: XCTestCase {
         messages.onSkipSetup = { skipped = true }
 
         // The way out never asks for the tap the two setup pills are asking
-        // for: no glow, no pulse.
-        skipPill.beginGlowPulse()
+        // for: no corona, no pulse.
+        let pulseKey = OnboardingMessagePillButton.pulseAnimationKey
+        skipPill.beginAttentionPulse()
         XCTAssertNil(
-            skipPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            skipPill.layer.animation(forKey: pulseKey),
             "The skip-out must never pulse for attention")
-        XCTAssertEqual(skipPill.layer.shadowOpacity, 0)
+        XCTAssertTrue(
+            skipPill.descendants(of: EclipseCoronaView.self).isEmpty,
+            "The skip-out must never wear a corona")
 
-        shortcutPill.beginGlowPulse()
+        shortcutPill.beginAttentionPulse()
         XCTAssertNotNil(
-            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            shortcutPill.layer.animation(forKey: pulseKey),
             "The shortcut pill must pulse until tapped")
+        let shortcutCorona = try XCTUnwrap(
+            shortcutPill.descendants(of: EclipseCoronaView.self).first,
+            "The shortcut pill's attention cue is its corona")
+        XCTAssertNotNil(
+            shortcutCorona.layer.animation(forKey: pulseKey),
+            "The corona breathes with the pill it surrounds")
+
         shortcutPill.sendActions(for: .touchUpInside)
         XCTAssertTrue(installedShortcut)
         XCTAssertTrue(shortcutPill.wasActivated)
         XCTAssertNil(
-            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
-            "Tapping the pill must stop its glow pulse")
-        shortcutPill.beginGlowPulse()
+            shortcutPill.layer.animation(forKey: pulseKey),
+            "Tapping the pill must stop its corona pulse")
+        XCTAssertEqual(shortcutCorona.alpha, 0)
+        shortcutPill.beginAttentionPulse()
         XCTAssertNil(
-            shortcutPill.layer.animation(forKey: "onboarding.pill.pulse"),
+            shortcutPill.layer.animation(forKey: pulseKey),
             "An activated pill never resumes pulsing")
 
         settingsPill.sendActions(for: .touchUpInside)

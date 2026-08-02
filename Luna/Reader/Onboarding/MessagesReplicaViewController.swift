@@ -529,7 +529,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             generation: generation
         ) {
             self.reveal(.shortcut)
-            self.shortcutPill.beginGlowPulse()
+            self.shortcutPill.beginAttentionPulse()
             self.isShowingSetupMessages = true
             self.onShortcutSetupMessagesShown?()
             self.afterDelay(
@@ -549,7 +549,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         else { return }
         shortcutBubble?.setShowsTail(false)
         reveal(.settings)
-        settingsPill.beginGlowPulse()
+        settingsPill.beginAttentionPulse()
     }
 
     private func setStatusBarHiddenForIsland(_ hidden: Bool) {
@@ -1154,8 +1154,9 @@ private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
 }
 
 /// The tappable in-bubble chip: the Shortcuts-purple "Luna" shortcut install,
-/// the grey system-Settings link, and the skip-out. The first two glow and
-/// pulse until tapped; the skip-out never asks for the tap, so it does not.
+/// the grey system-Settings link, and the skip-out. The first two breathe an
+/// eclipse corona until tapped; the skip-out never asks for the tap, so it
+/// does not.
 final class OnboardingMessagePillButton: UIControl {
     enum Style {
         case shortcuts
@@ -1165,9 +1166,12 @@ final class OnboardingMessagePillButton: UIControl {
 
     var onActivate: (() -> Void)?
     private(set) var wasActivated = false
+    /// The colour the pill's corona burns. (A drop shadow in this colour used
+    /// to be the whole effect.)
     private let glowColor: UIColor
     private let pulsesForAttention: Bool
     private var isPulsing = false
+    private var corona: EclipseCoronaView?
 
     private static let shortcutsPurple = UIColor(
         red: 0.46, green: 0.29, blue: 0.96, alpha: 1)
@@ -1226,10 +1230,6 @@ final class OnboardingMessagePillButton: UIControl {
         accessibilityTraits = .button
         backgroundColor = fill
         layer.cornerCurve = .continuous
-        layer.shadowColor = glowColor.cgColor
-        layer.shadowOffset = .zero
-        layer.shadowOpacity = 0
-        layer.shadowRadius = 6
 
         let iconView = UIImageView(image: icon)
         iconView.translatesAutoresizingMaskIntoConstraints = false
@@ -1260,6 +1260,14 @@ final class OnboardingMessagePillButton: UIControl {
         ])
 
         addTarget(self, action: #selector(activated), for: .touchUpInside)
+        // Setting the Action Button is a trip out of the app and back, and
+        // iOS strips every running animation off a layer on the way out. A
+        // pill still waiting for its tap has to pick its breath back up.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(resumePulseIfNeeded),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil)
     }
 
     @available(*, unavailable)
@@ -1268,6 +1276,12 @@ final class OnboardingMessagePillButton: UIControl {
     override func layoutSubviews() {
         super.layoutSubviews()
         layer.cornerRadius = bounds.height / 2
+        installCoronaIfNeeded()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        resumePulseIfNeeded()
     }
 
     override var isHighlighted: Bool {
@@ -1284,51 +1298,106 @@ final class OnboardingMessagePillButton: UIControl {
         }
     }
 
-    /// The pill demands its tap: a slow shadow-and-scale breath that runs
+    /// How far the pill's corona throws. `EclipseCorona`'s own default has a
+    /// 56pt floor sized for a card; on a 34pt chip that hands it streamers
+    /// twice the height of the thing they surround.
+    private static let coronaReach: CGFloat = 30
+    /// One full breath. The corona is not in phase with it — see below.
+    private static let pulseCycle: CFTimeInterval = 1.9
+    static let pulseAnimationKey = "onboarding.pill.pulse"
+
+    /// The corona lives INSIDE the pill, behind its icon and label. It can:
+    /// `EclipseCorona` clips the silhouette's interior out of its raster, so
+    /// the only thing drawn over the pill's own fill is the chromosphere's
+    /// inner half — which reads as a lit rim, exactly what a limb should do.
+    private func installCoronaIfNeeded() {
+        guard pulsesForAttention, bounds.width > 1, bounds.height > 1 else { return }
+        if let corona {
+            guard corona.bounds.size != bounds.size else { return }
+            corona.removeFromSuperview()
+        }
+        let halo = EclipseCoronaView(
+            bodySize: bounds.size,
+            cornerRadius: bounds.height / 2,
+            tint: .white,
+            // The replica is a LIGHT-mode facsimile of Messages. The real
+            // corona's pearl is built to burn against Luna's black sky and
+            // would be invisible here, so it burns the pill's own colour.
+            light: glowColor,
+            reach: Self.coronaReach)
+        halo.frame = bounds
+        halo.alpha = 0
+        insertSubview(halo, at: 0)
+        corona = halo
+        if isPulsing { applyPulseAnimations() }
+    }
+
+    /// The pill demands its tap: a slow corona-and-scale breath that runs
     /// until the user follows it.
-    func beginGlowPulse() {
+    func beginAttentionPulse() {
         guard pulsesForAttention, !isPulsing, !wasActivated else { return }
         isPulsing = true
+        applyPulseAnimations()
+    }
 
+    /// Re-adds the breath after anything that could have stripped it — a trip
+    /// out of the app, or a spell out of the window.
+    @objc private func resumePulseIfNeeded() {
+        guard isPulsing, window != nil,
+              layer.animation(forKey: Self.pulseAnimationKey) == nil
+        else { return }
+        applyPulseAnimations()
+    }
+
+    private func applyPulseAnimations() {
         if UIAccessibility.isReduceMotionEnabled {
-            layer.shadowOpacity = 0.6
-            layer.shadowRadius = 8
+            corona?.alpha = 0.85
             return
         }
 
-        let opacity = CABasicAnimation(keyPath: "shadowOpacity")
-        opacity.fromValue = 0.25
-        opacity.toValue = 0.9
-        let radius = CABasicAnimation(keyPath: "shadowRadius")
-        radius.fromValue = 5
-        radius.toValue = 12
-        let scale = CABasicAnimation(keyPath: "transform.scale")
-        scale.fromValue = 1.0
-        scale.toValue = 1.05
-        let pulse = CAAnimationGroup()
-        pulse.animations = [opacity, radius, scale]
-        pulse.duration = 0.85
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        layer.shadowOpacity = 0.25
-        layer.add(pulse, forKey: "onboarding.pill.pulse")
+        // Durations are set on every keyframe rather than on a wrapping group:
+        // a `CAAnimationGroup` does NOT scale its children to its own duration,
+        // it clips them, so members left at the default ran a quarter-second
+        // twitch inside a two-second cycle and the breath barely registered.
+        let ease = CAMediaTimingFunction(name: .easeInEaseOut)
+
+        let scale = CAKeyframeAnimation(keyPath: "transform.scale")
+        scale.values = [1.0, 1.065, 1.065, 1.0]
+        scale.keyTimes = [0, 0.42, 0.60, 1.0]
+        scale.timingFunctions = [ease, ease, ease]
+        scale.duration = Self.pulseCycle
+        scale.repeatCount = .infinity
+        layer.add(scale, forKey: Self.pulseAnimationKey)
+
+        // The light leads the movement: totality is reached BEFORE the pill
+        // finishes swelling, holds through the top of the breath, and burns
+        // back down as the pill settles — so the corona is the event and the
+        // scale is the pill reacting to it, not the other way round.
+        guard let corona else { return }
+        let bloom = CAKeyframeAnimation(keyPath: "opacity")
+        bloom.values = [0, 1.0, 1.0, 0, 0]
+        bloom.keyTimes = [0, 0.30, 0.60, 0.94, 1.0]
+        bloom.timingFunctions = [ease, ease, ease, ease]
+        bloom.duration = Self.pulseCycle
+        bloom.repeatCount = .infinity
+        corona.layer.add(bloom, forKey: Self.pulseAnimationKey)
     }
 
-    private func stopGlowPulse() {
+    private func stopAttentionPulse() {
         isPulsing = false
-        layer.removeAnimation(forKey: "onboarding.pill.pulse")
-        layer.shadowOpacity = 0
+        layer.removeAnimation(forKey: Self.pulseAnimationKey)
+        corona?.layer.removeAnimation(forKey: Self.pulseAnimationKey)
+        corona?.alpha = 0
     }
 
     func reset() {
         wasActivated = false
-        stopGlowPulse()
+        stopAttentionPulse()
     }
 
     @objc private func activated() {
         wasActivated = true
-        stopGlowPulse()
+        stopAttentionPulse()
         onActivate?()
     }
 }

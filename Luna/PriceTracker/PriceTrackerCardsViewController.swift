@@ -86,8 +86,8 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
                 guard let self else { return false }
                 return self.items.isEmpty || self.carousel.currentIndex == 0
             },
-            savedURL: { [weak self] url, source, _ in
-                self?.saveLeftTrayURL(url, source: source)
+            savedURL: { [weak self] url, source, sourceView in
+                self?.saveLeftTrayURL(url, source: source, sourceView: sourceView)
             })
 
         NotificationCenter.default.addObserver(
@@ -146,6 +146,10 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
             ?? min(carousel.currentIndex, max(items.count - 1, 0))
 
         carousel.reloadData(centeringAt: centeredIndex)
+        if let pendingURL = pendingLeftTraySaveURLString,
+           let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
+            prepareLeftTraySaveDestination(carousel.cardView(at: index))
+        }
         emptyView.isHidden = !items.isEmpty
         carousel.view.isHidden = items.isEmpty
         archiveTray?.setItems(makeArchiveTrayItems())
@@ -176,24 +180,37 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         ].joined(separator: "|")
     }
 
-    private func saveLeftTrayURL(_ urlString: String, source: CaptureSource) {
-        Task { [weak self] in
+    private func saveLeftTrayURL(
+        _ urlString: String, source: CaptureSource, sourceView: UIView
+    ) {
+        beginLeftTraySaveTransition(for: urlString, from: sourceView)
+        Task { @MainActor [weak self] in
             let result = await ReadingListIngestor.shared.handleSavePress(
                 urlString: urlString, source: source)
             guard let self else { return }
+            let item: ReadingListItem?
             switch result {
-            case .saved(let item), .sentToEreaders(let item),
-                 .sentToFriends(let item), .friendPromptRequested(let item),
+            case .saved(let value), .sentToEreaders(let value),
+                 .sentToFriends(let value), .friendPromptRequested(let value),
                  // In-app saves pass no double-save surface, so no export is
                  // ever requested here — the item is what matters either way.
-                 .exportRequested(let item, _):
-                self.pendingCenteredID = item.id
+                 .exportRequested(let value, _):
+                item = value
             case .ignored:
-                self.pendingCenteredID = self.store.item(forURLString: urlString)?.id
+                item = self.store.item(forURLString: urlString)
             case .unsupportedKind:
-                break
+                item = nil
             }
+            guard let item else {
+                self.cancelLeftTraySaveTransition()
+                return
+            }
+            self.pendingCenteredID = item.id
             self.reload()
+            self.view.layoutIfNeeded()
+            let destinationIndex = self.items.firstIndex { $0.id == item.id }
+            self.finishLeftTraySaveTransition(
+                to: destinationIndex.flatMap(self.carousel.cardView(at:)))
         }
     }
 

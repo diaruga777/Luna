@@ -161,18 +161,29 @@ final class RecentURLMatcher {
 
     private func publish(history: [String], cache: [String: CacheEntry]) {
         let savedURLs = Set(ReadingListStore.shared.items().map(\.urlString))
-        let next = history
+        let candidates = history
             .compactMap { key -> RecentURLPreview? in
                 guard let preview = cache[key]?.match?.preview else { return nil }
                 return Self.isObviouslyNonContent(preview: preview, historyKey: key)
                     ? nil : preview
             }
-            .filter { !savedURLs.contains($0.urlString) }
+        let next = Self.deduplicated(
+            candidates, savedURLStrings: savedURLs)
             .prefix(5)
             .map { $0 }
         guard next != matches else { return }
         matches = next
         NotificationCenter.default.post(name: Self.didChange, object: self)
+    }
+
+    /// Applies the reading-list half of recent-row publication. Keeping this a
+    /// pure operation makes the save/delete symmetry explicit: a committed save
+    /// removes its cached Safari preview, and deleting that save reveals the
+    /// same preview again without re-fetching or reclassifying the URL.
+    static func deduplicated(
+        _ candidates: [RecentURLPreview], savedURLStrings: Set<String>
+    ) -> [RecentURLPreview] {
+        candidates.filter { !savedURLStrings.contains($0.urlString) }
     }
 
     /// The URL-only half of the pipeline's non-content veto, re-applied to a CACHED

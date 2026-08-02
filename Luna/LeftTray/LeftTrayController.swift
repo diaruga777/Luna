@@ -223,7 +223,7 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             self, selector: #selector(contentChanged),
             name: RecentURLMatcher.didChange, object: nil)
         NotificationCenter.default.addObserver(
-            self, selector: #selector(contentChanged),
+            self, selector: #selector(readingListChanged),
             name: .readingListChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(applicationForegrounded),
@@ -278,7 +278,13 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     }
 
     func setPullAvailable(_ available: Bool, animated: Bool) {
-        guard available != pullAvailable else { return }
+        guard available != pullAvailable else {
+            // A carousel reload can replace the first card without a paging
+            // callback. Re-assert the closed geometry so the already-available
+            // 26pt peek cannot remain stranded offscreen until the user pages.
+            if progress < 0.001 { applyTrayPosition() }
+            return
+        }
         pullAvailable = available
         if !available { progress = 0 }
         animateChanges(animated: animated, duration: 0.32) { self.applyProgress() }
@@ -316,6 +322,19 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         DispatchQueue.main.async { [weak self] in
             self?.rebuildRows()
         }
+    }
+
+    /// The matcher owns the dedupe against the shared reading list, so a store
+    /// mutation must republish its cached Safari verdicts rather than merely
+    /// rebuilding rows from the matcher's previous snapshot. `refresh()` first
+    /// publishes synchronously from cache; only genuinely unseen history URLs
+    /// need its asynchronous classification pass.
+    @objc private func readingListChanged() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.readingListChanged() }
+            return
+        }
+        RecentURLMatcher.shared.refresh()
     }
 
     @objc private func setupStatusChanged() {
@@ -580,15 +599,21 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     }
 
     private func applyProgress() {
+        applyTrayPosition()
         guard laidOutSize.width > 0 else { return }
         let width = trayWidth(for: laidOutSize.width)
-        let closedX = pullAvailable ? -width + Self.peek : -width
-        tray.frame.origin.x = closedX + (0 - closedX) * progress
         let shift = width * progress
         shiftContribution.apply(shift)
         openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01
         dismissControl.alpha = progress * 0.18
+    }
+
+    private func applyTrayPosition() {
+        guard laidOutSize.width > 0 else { return }
+        let width = trayWidth(for: laidOutSize.width)
+        let closedX = pullAvailable ? -width + Self.peek : -width
+        tray.frame.origin.x = closedX + (0 - closedX) * progress
     }
 
     private func save(
@@ -599,6 +624,14 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         savedURL(preview.urlString, source, sourceView)
         setOpen(false, animated: true)
     }
+
+    #if DEBUG
+    var trayFrameForTesting: CGRect { tray.frame }
+
+    func offsetTrayForTesting(by deltaX: CGFloat) {
+        tray.frame.origin.x += deltaX
+    }
+    #endif
 
     private func openSettingsForPaste() {
         UserDefaults.standard.set(true, forKey: Self.automaticPasteKey)

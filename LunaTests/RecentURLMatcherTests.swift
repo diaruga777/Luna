@@ -108,4 +108,19 @@ final class RecentURLMatcherTests: XCTestCase {
                 "\(candidate) should still be offered")
         }
     }
+
+    func testSavedRecentIsRemovedAndDeletingSaveRevealsItAgain() {
+        let recent = preview("https://example.com/story")
+        let candidates = [recent, preview("https://example.com/other")]
+
+        XCTAssertEqual(
+            RecentURLMatcher.deduplicated(
+                candidates, savedURLStrings: [recent.urlString]),
+            [candidates[1]],
+            "A newly committed save must disappear from recents immediately")
+        XCTAssertEqual(
+            RecentURLMatcher.deduplicated(candidates, savedURLStrings: []),
+            candidates,
+            "Deleting the save must reveal the cached recent without a relaunch")
+    }
 }

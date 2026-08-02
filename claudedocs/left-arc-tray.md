@@ -86,6 +86,12 @@ it closes the same window inside a single build. Pinned by
 matches media, and central Luna matches every supported kind. At most five
 unsaved matches are shown.
 
+The unsaved filter is republished on every `.readingListChanged`, using the
+already-cached verdicts before any asynchronous classification work. Therefore
+tapping a recent removes it in the same save event, and deleting that save
+reveals the cached recent again immediately; neither direction waits for a
+foreground cycle or app relaunch.
+
 The trail itself is unfiltered — `background.js` reports every http(s) tab,
 whether or not the page earned a Luna pill — so `RecentURLMatcher.evaluate`'s
 real `IngestPipeline.processResolved` call is the ONLY filter between "a page you
@@ -98,8 +104,12 @@ homepages and search results queued up as things to read. Both now come back
 classification of its own, and deliberately shouldn't.
 
 Tray rows are previews only. Selecting one runs the normal full ingest/save
-path, closes the tray, centers the resulting card, and animates a snapshot into
-the card deck. Long-press offers Open and Share without saving.
+path, closes the tray, and centers the resulting card. One source snapshot
+starts translating and expanding as the tray retracts; when the real saved card
+mounts, its snapshot joins at the traveling source's presentation frame and the
+two crossfade while settling into the exact card frame. The destination stays
+hidden until that handoff, avoiding a card pop followed by a translucent ghost
+zoom. Long-press offers Open and Share without saving.
 
 ## Pasteboard state
 

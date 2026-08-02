@@ -268,6 +268,13 @@ the card the user was parked on, the leading pasteboard card, and an in-flight
 archive transition. With several new saves, the first in card order centers,
 which on every deck's newest-first ordering is the most recent one.
 
+A save selected from the left tray adds one extra visual handoff shared by all
+three surface hosts: the tapped recent card itself travels to the carousel's
+resting card frame and expands while its preview content crossfades into a
+snapshot of the mounted destination. The destination card is revealed only when
+that morph finishes. This is separate from new-save detection—the normal store
+reload still decides which card centers.
+
 Two things deliberately don't count as new. `offstageIDs` (archived rows) are
 passed in as seen, so unarchiving one reads as the return of a known card and
 leaves the archive tray's own transition in charge of where it lands. And the
@@ -464,6 +471,9 @@ Differences from the Downloader, via `CardCarouselStyle`:
   article squares show favicon, title, and original save date; tapping opens the
   fully retained reader content; long-pressing offers Unarchive, Share, and
   destructive Delete. Both Delete actions remove the full save and owned files.
+  Deleting card zero preserves the successor immediately to its right as the new
+  center and reasserts the left tray's closed 26pt peek in the same reload; no
+  page-away/page-back cycle is required to expose the newly leftmost edge.
 - The cards root has NO header bar.
 - A new pasteboard URL is represented as a synthetic leading card (so it is
   visible as the left peek) and as a `doc.on.clipboard` mini-card in the scrubber.

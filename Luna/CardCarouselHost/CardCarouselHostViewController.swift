@@ -63,6 +63,170 @@ final class TrayShiftContribution {
     }
 }
 
+/// One continuous piece of artwork between a left-tray recent and its saved
+/// carousel card. The source starts moving as soon as the tray closes. When the
+/// ingest result mounts the real card, a snapshot of that final content joins at
+/// the source's presentation frame and crossfades while both finish expanding.
+/// This avoids the old sequence where the destination appeared first and a
+/// second, unrelated snapshot zoomed translucently over it afterward.
+@MainActor
+private final class LeftTraySaveTransition {
+    let urlString: String
+    private weak var host: CardCarouselHostViewController?
+    private let sourceSnapshot: UIView
+    private var movementAnimator: UIViewPropertyAnimator?
+    private weak var destination: UIView?
+    private var destinationSnapshot: UIView?
+    private var isFinishing = false
+    private var isFinished = false
+    var completion: (() -> Void)?
+
+    init?(host: CardCarouselHostViewController, urlString: String, sourceView: UIView) {
+        guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
+        self.urlString = urlString
+        self.host = host
+        sourceSnapshot = snapshot
+        snapshot.frame = sourceView.convert(sourceView.bounds, to: host.view)
+        snapshot.layer.cornerRadius = Self.cornerRadius(of: sourceView)
+        snapshot.layer.cornerCurve = .continuous
+        snapshot.clipsToBounds = true
+        snapshot.isUserInteractionEnabled = false
+        host.view.addSubview(snapshot)
+
+        // `LeftTrayController.save` invokes the host callback before it changes
+        // the tray's model transform to closed. Defer one turn so this target is
+        // the card's final, unshifted resting frame while the source frame above
+        // remains the exact on-screen cell that was tapped.
+        DispatchQueue.main.async { [weak self] in self?.beginMovement() }
+    }
+
+    /// Captures and hides the newly mounted destination during the same reload
+    /// call stack that created it, before Core Animation can commit a frame.
+    func prepare(destination: UIView?) {
+        guard !isFinished, !isFinishing, let destination,
+              self.destination !== destination,
+              let snapshot = destination.snapshotView(afterScreenUpdates: false)
+        else { return }
+        self.destination?.alpha = 1
+        destinationSnapshot = snapshot
+        self.destination = destination
+        destination.alpha = 0
+    }
+
+    func finish(to destination: UIView?) {
+        if self.destination !== destination { prepare(destination: destination) }
+        guard !isFinished, !isFinishing, let host,
+              let destination = self.destination, let destinationSnapshot
+        else {
+            cancel()
+            return
+        }
+        isFinishing = true
+        host.view.layoutIfNeeded()
+        host.carousel.view.layoutIfNeeded()
+
+        let targetFrame = destination.convert(destination.bounds, to: host.view)
+        let currentFrame = sourceSnapshot.layer.presentation()?.frame ?? sourceSnapshot.frame
+        let currentCornerRadius = sourceSnapshot.layer.presentation()?.cornerRadius
+            ?? sourceSnapshot.layer.cornerRadius
+        let remainingFraction = max(0, 1 - (movementAnimator?.fractionComplete ?? 0))
+        movementAnimator?.stopAnimation(true)
+        movementAnimator = nil
+        sourceSnapshot.layer.removeAllAnimations()
+        sourceSnapshot.frame = currentFrame
+        sourceSnapshot.layer.cornerRadius = currentCornerRadius
+
+        destinationSnapshot.frame = currentFrame
+        destinationSnapshot.alpha = 0
+        destinationSnapshot.layer.cornerRadius = currentCornerRadius
+        destinationSnapshot.layer.cornerCurve = .continuous
+        destinationSnapshot.clipsToBounds = true
+        destinationSnapshot.isUserInteractionEnabled = false
+        destination.alpha = 0
+        host.view.addSubview(destinationSnapshot)
+
+        let finish = { [weak self] in
+            guard let self else { return }
+            self.sourceSnapshot.frame = targetFrame
+            self.sourceSnapshot.alpha = 0
+            self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
+            destinationSnapshot.frame = targetFrame
+            destinationSnapshot.alpha = 1
+            destinationSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
+        }
+        let completed = { [weak self] in self?.complete() }
+
+        guard !UIAccessibility.isReduceMotionEnabled, UIView.areAnimationsEnabled else {
+            finish()
+            completed()
+            return
+        }
+        UIView.animate(
+            withDuration: max(0.18, 0.34 * remainingFraction), delay: 0,
+            usingSpringWithDamping: 0.92, initialSpringVelocity: 0.15,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
+            animations: finish,
+            completion: { _ in completed() })
+    }
+
+    func cancel() {
+        guard !isFinished else { return }
+        isFinished = true
+        movementAnimator?.stopAnimation(true)
+        movementAnimator = nil
+        destination?.alpha = 1
+        destinationSnapshot?.removeFromSuperview()
+        destinationSnapshot = nil
+        let finish = { [sourceSnapshot] in
+            sourceSnapshot.alpha = 0
+        }
+        let completed = { [weak self] in
+            self?.sourceSnapshot.removeFromSuperview()
+            self?.completion?()
+        }
+        if UIView.areAnimationsEnabled {
+            UIView.animate(
+                withDuration: 0.12, animations: finish,
+                completion: { _ in completed() })
+        } else {
+            finish()
+            completed()
+        }
+    }
+
+    private func beginMovement() {
+        guard !isFinished, !isFinishing, let host else { return }
+        host.view.layoutIfNeeded()
+        host.carousel.view.layoutIfNeeded()
+        guard let targetFrame = host.carousel.restingCenteredCardFrame(in: host.view),
+              !UIAccessibility.isReduceMotionEnabled, UIView.areAnimationsEnabled
+        else { return }
+        let animator = UIViewPropertyAnimator(duration: 0.34, dampingRatio: 0.92) {
+            self.sourceSnapshot.frame = targetFrame
+            self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
+        }
+        movementAnimator = animator
+        animator.startAnimation()
+    }
+
+    private func complete() {
+        guard !isFinished else { return }
+        isFinished = true
+        destination?.alpha = 1
+        sourceSnapshot.removeFromSuperview()
+        destinationSnapshot?.removeFromSuperview()
+        destinationSnapshot = nil
+        completion?()
+    }
+
+    private static func cornerRadius(of view: UIView) -> CGFloat {
+        if let cell = view as? UICollectionViewCell {
+            return cell.contentView.layer.cornerRadius
+        }
+        return view.layer.cornerRadius
+    }
+}
+
 /// The shared skeleton behind Reader's and Downloader's root screens: both
 /// present one `CardCarouselViewController` full-screen, flank its scrub strip
 /// with two persistent Liquid Glass circles (Settings + a share/action button),
@@ -76,6 +240,7 @@ class CardCarouselHostViewController: UIViewController {
     let carousel = CardCarouselViewController()
     private(set) var archiveTray: ArchiveTrayController?
     private(set) var leftTray: LeftTrayController?
+    private var leftTraySaveTransition: LeftTraySaveTransition?
 
     /// Adds the already-configured `carousel` (style/dataSource/delegate are the
     /// subclass's business, set before calling this) as a full-screen child,
@@ -123,6 +288,41 @@ class CardCarouselHostViewController: UIViewController {
 
     final func refreshLeftPullAvailability(animated: Bool) {
         leftTray?.refreshPullAvailability(animated: animated)
+    }
+
+    /// Captures the tapped tray cell before the tray starts retracting. Surface
+    /// hosts finish or cancel this after their normal ingest path resolves.
+    final var pendingLeftTraySaveURLString: String? {
+        leftTraySaveTransition?.urlString
+    }
+
+    final func beginLeftTraySaveTransition(
+        for urlString: String, from sourceView: UIView
+    ) {
+        leftTraySaveTransition?.cancel()
+        guard let transition = LeftTraySaveTransition(
+            host: self, urlString: urlString, sourceView: sourceView)
+        else {
+            leftTraySaveTransition = nil
+            return
+        }
+        transition.completion = { [weak self, weak transition] in
+            guard let self, self.leftTraySaveTransition === transition else { return }
+            self.leftTraySaveTransition = nil
+        }
+        leftTraySaveTransition = transition
+    }
+
+    final func prepareLeftTraySaveDestination(_ destination: UIView?) {
+        leftTraySaveTransition?.prepare(destination: destination)
+    }
+
+    final func finishLeftTraySaveTransition(to destination: UIView?) {
+        leftTraySaveTransition?.finish(to: destination)
+    }
+
+    final func cancelLeftTraySaveTransition() {
+        leftTraySaveTransition?.cancel()
     }
 
     /// Retracts the tray from the carousel's intended target rather than its

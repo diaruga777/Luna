@@ -254,9 +254,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         captureSource: CaptureSource,
         sourceView: UIView
     ) {
-        let snapshot = sourceView.snapshotView(afterScreenUpdates: false)
-        let startFrame = sourceView.convert(sourceView.bounds, to: view)
-        Task { [weak self] in
+        beginLeftTraySaveTransition(for: urlString, from: sourceView)
+        Task { @MainActor [weak self] in
             let result = await ReadingListIngestor.shared.handleSavePress(
                 urlString: urlString, source: captureSource)
             guard let self else { return }
@@ -273,21 +272,26 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             case .unsupportedKind:
                 item = nil
             }
-            guard item != nil else { return }
-            self.pendingPasteboardDownloadURLString = urlString
+            guard let item else {
+                self.cancelLeftTraySaveTransition()
+                return
+            }
+            self.pendingPasteboardDownloadURLString = item.urlString
             self.reload()
-            guard let snapshot else { return }
-            snapshot.frame = startFrame
-            self.view.addSubview(snapshot)
-            let target = self.carousel.view.convert(self.carousel.view.bounds, to: self.view)
-            UIView.animate(
-                withDuration: 0.48, delay: 0,
-                usingSpringWithDamping: 0.84, initialSpringVelocity: 0,
-                options: [.allowUserInteraction, .beginFromCurrentState]
-            ) {
-                snapshot.frame = target.insetBy(dx: 20, dy: 36)
-                snapshot.alpha = 0
-            } completion: { _ in snapshot.removeFromSuperview() }
+            self.view.layoutIfNeeded()
+            let sourceURLs = Set([urlString, item.urlString])
+            let destinationIndex: Int?
+            if let index = self.items.firstIndex(where: {
+                sourceURLs.contains($0.sourceURLString)
+            }) {
+                destinationIndex = index + self.cardOffset
+            } else if let index = self.failedSaves.firstIndex(where: { $0.id == item.id }) {
+                destinationIndex = self.items.count + index + self.cardOffset
+            } else {
+                destinationIndex = nil
+            }
+            self.finishLeftTraySaveTransition(
+                to: destinationIndex.flatMap(self.carousel.cardView(at:)))
         }
     }
 
@@ -317,7 +321,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         })
         fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
         defer { reconcilePhotosReferencesIfAuthorized() }
-        guard fingerprint != appliedFingerprint else { return }
+        guard fingerprint != appliedFingerprint
+                || pendingPasteboardDownloadURLString != nil
+        else { return }
         appliedFingerprint = fingerprint
 
         let wasPasteboardCentered = renderedPasteboardState != nil && carousel.currentIndex == 0
@@ -350,6 +356,15 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         let centeredIndex = newSaveIndex.map { $0 + cardOffset } ?? preservedIndex
         if pendingIndex != nil { pendingPasteboardDownloadURLString = nil }
         carousel.reloadData(centeringAt: centeredIndex)
+        if let pendingURL = pendingLeftTraySaveURLString {
+            let destinationIndex = items.firstIndex {
+                $0.sourceURLString == pendingURL
+            }.map { $0 + cardOffset } ?? failedSaves.firstIndex {
+                $0.urlString == pendingURL
+            }.map { items.count + $0 + cardOffset }
+            prepareLeftTraySaveDestination(
+                destinationIndex.flatMap(carousel.cardView(at:)))
+        }
         let hasAnyCard = !items.isEmpty || !failedSaves.isEmpty
         emptyView.isHidden = hasAnyCard || renderedPasteboardState != nil
         carousel.view.isHidden = !hasAnyCard && renderedPasteboardState == nil

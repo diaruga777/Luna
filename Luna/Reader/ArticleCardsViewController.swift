@@ -299,9 +299,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         captureSource: CaptureSource,
         sourceView: UIView
     ) {
-        let snapshot = sourceView.snapshotView(afterScreenUpdates: false)
-        let startFrame = sourceView.convert(sourceView.bounds, to: view)
-        Task { [weak self] in
+        beginLeftTraySaveTransition(for: urlString, from: sourceView)
+        Task { @MainActor [weak self] in
             let result = await ReadingListIngestor.shared.handleSavePress(
                 urlString: urlString, source: captureSource)
             guard let self else { return }
@@ -318,26 +317,18 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             case .unsupportedKind:
                 item = nil
             }
-            guard let item else { return }
+            guard let item else {
+                self.cancelLeftTraySaveTransition()
+                return
+            }
             self.pendingPasteboardSavedID = item.id
             self.reload()
-            self.animateLeftTraySave(snapshot: snapshot, startFrame: startFrame)
+            self.view.layoutIfNeeded()
+            let destinationIndex = self.items.firstIndex { $0.id == item.id }
+                .map { $0 + self.cardOffset }
+            self.finishLeftTraySaveTransition(
+                to: destinationIndex.flatMap(self.carousel.cardView(at:)))
         }
-    }
-
-    private func animateLeftTraySave(snapshot: UIView?, startFrame: CGRect) {
-        guard let snapshot else { return }
-        snapshot.frame = startFrame
-        view.addSubview(snapshot)
-        let target = carousel.view.convert(carousel.view.bounds, to: view)
-        UIView.animate(
-            withDuration: 0.48, delay: 0,
-            usingSpringWithDamping: 0.84, initialSpringVelocity: 0,
-            options: [.allowUserInteraction, .beginFromCurrentState]
-        ) {
-            snapshot.frame = target.insetBy(dx: 20, dy: 36)
-            snapshot.alpha = 0
-        } completion: { _ in snapshot.removeFromSuperview() }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -878,7 +869,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
         })
         fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
-        guard fingerprint != appliedFingerprint else { return }
+        guard fingerprint != appliedFingerprint || pendingPasteboardSavedID != nil else { return }
         appliedFingerprint = fingerprint
 
         // A real reload unmounts every slot, and with it the card that owns the
@@ -918,6 +909,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         pendingTransitionCenteredID = nil
         if pendingIndex != nil { pendingPasteboardSavedID = nil }
         carousel.reloadData(centeringAt: centeredIndex)
+        if let pendingURL = pendingLeftTraySaveURLString,
+           let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
+            prepareLeftTraySaveDestination(carousel.cardView(at: index + newOffset))
+        }
         emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
         carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())

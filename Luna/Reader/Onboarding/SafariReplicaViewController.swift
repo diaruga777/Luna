@@ -195,6 +195,24 @@ final class SafariReplicaViewController:
         }
     }
 
+    /// Rewinds the lesson to its first frame, so a second entry plays the whole
+    /// demonstration instead of landing on its finished last one. A no-op
+    /// before the first `beginDemonstration`, which keeps the very first entry
+    /// from reloading a page it has already laid out — the app-switcher hop
+    /// snapshots this view the instant afterwards.
+    func resetDemonstration() {
+        guard didBeginDemonstration else { return }
+        didBeginDemonstration = false
+        cancelActionButtonSaveEffect()
+        pageTimer?.invalidate()
+        pageTimer = nil
+        lunaPage.restoreBuriedPage()
+        // Central Luna's rotation can have left the browser on another page.
+        if pageIndex != 0 {
+            loadOfflinePage(at: 0)
+        }
+    }
+
     /// Starts only after the incoming card has expanded to the screen. Keeping
     /// the timeline explicit prevents the Action Button cue from playing while
     /// the browser is still changing geometry.

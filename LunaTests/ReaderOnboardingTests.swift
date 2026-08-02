@@ -117,7 +117,7 @@ final class ReaderOnboardingTests: XCTestCase {
         let before = Set(ReadingListStore.shared.items().map(\.id))
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Remove popups and walls for me"
+                $0.accessibilityLabel == "Remove web popups and paywalls"
             })
         UIView.setAnimationsEnabled(false)
         defer {
@@ -255,12 +255,12 @@ final class ReaderOnboardingTests: XCTestCase {
                 $0.accessibilityIdentifier != "onboarding.intro.supportingText"
             })
         XCTAssertTrue(buttons.contains {
-            $0.accessibilityLabel == "Remove popups and walls for me"
+            $0.accessibilityLabel == "Remove web popups and paywalls"
                 && $0.configuration?.image != nil
         })
         XCTAssertTrue(buttons.contains {
             $0.accessibilityLabel
-                == "Save on-screen links with the Action Button"
+                == "Show me one click save"
                 && $0.configuration?.image != nil
         })
         XCTAssertNotNil(intro.view.descendants(of: UIPasteControl.self).first)
@@ -268,7 +268,7 @@ final class ReaderOnboardingTests: XCTestCase {
             $0.text == "Paste a url"
         })
         let button = try XCTUnwrap(buttons.first {
-            $0.accessibilityLabel == "Remove popups and walls for me"
+            $0.accessibilityLabel == "Remove web popups and paywalls"
         })
         let tintAlpha = try XCTUnwrap(
             button.configuration?.baseBackgroundColor?.cgColor.alpha)
@@ -396,8 +396,8 @@ final class ReaderOnboardingTests: XCTestCase {
         intro.loadViewIfNeeded()
 
         for label in [
-            "Remove popups and walls for me",
-            "Save on-screen links with the Action Button",
+            "Remove web popups and paywalls",
+            "Show me one click save",
         ] {
             let button = try XCTUnwrap(
                 intro.view.descendants(of: UIButton.self).first {
@@ -880,7 +880,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Remove popups and walls for me"
+                $0.accessibilityLabel == "Remove web popups and paywalls"
             })
         UIView.setAnimationsEnabled(false)
         defer {
@@ -1432,6 +1432,157 @@ final class ReaderOnboardingTests: XCTestCase {
         }
     }
 
+    /// A skipped lesson can be entered again from the intro, so the page has to
+    /// go back to its first frame: buried under every obstruction, actions
+    /// inert, corona dark — never the finished page it was left on, whose
+    /// buttons the departing tap had already disabled.
+    @MainActor
+    func testRestoringTheBuriedPageRewindsAFinishedWipe() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .reader))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = safari
+        window.makeKeyAndVisible()
+        safari.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let page = try XCTUnwrap(
+            safari.view.descendants(of: OnboardingSafariPageView.self).first)
+        let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
+        })
+        let actions = try XCTUnwrap(
+            page.descendants(of: OnboardingSafariActionsView.self).first)
+        let corona = try XCTUnwrap(
+            page.descendants(of: EclipseCoronaView.self).first)
+
+        let cleaned = expectation(description: "cleanup")
+        page.cleanUpClutter { cleaned.fulfill() }
+        wait(for: [cleaned], timeout: 15)
+        XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
+        XCTAssertTrue(actions.skipButton.isUserInteractionEnabled)
+
+        page.restoreBuriedPage()
+        page.layoutIfNeeded()
+        XCTAssertTrue(
+            clutter.subviews.allSatisfy { !$0.isHidden && $0.alpha == 1 },
+            "Every obstruction is back over the page")
+        XCTAssertTrue(
+            page.subviews.allSatisfy {
+                $0 is UIScrollView || $0 === clutter
+            },
+            "No shatter tile from the finished wipe is left on the page")
+        XCTAssertFalse(actions.activateButton.isUserInteractionEnabled)
+        XCTAssertFalse(actions.skipButton.isUserInteractionEnabled)
+        XCTAssertEqual(corona.alpha, 0, accuracy: 0.001)
+
+        // And the whole sweep plays again, ending on live actions.
+        let replayed = expectation(description: "replayed cleanup")
+        page.cleanUpClutter { replayed.fulfill() }
+        wait(for: [replayed], timeout: 15)
+        XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
+        XCTAssertTrue(actions.activateButton.isUserInteractionEnabled)
+        XCTAssertTrue(actions.skipButton.isUserInteractionEnabled)
+        XCTAssertEqual(corona.alpha, 1, accuracy: 0.001)
+    }
+
+    /// Skip out of the Safari lesson, then walk back into it from the intro.
+    /// It used to land on the finished page with both buttons dead — nothing
+    /// left to run, and no way back.
+    @MainActor
+    func testTheSafariLessonReplaysWholeWhenEnteredAgainAfterASkip() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader),
+            onboardingStore: AppOnboardingStore(app: .reader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: {
+                    UINavigationController(rootViewController: UIViewController())
+                }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        func button(_ label: String) -> UIButton? {
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == label
+            }
+        }
+        func isHittable(_ label: String) -> Bool {
+            guard let action = button(label) else { return false }
+            let point = window.convert(
+                CGPoint(x: action.bounds.midX, y: action.bounds.midY),
+                from: action)
+            let hit = window.hitTest(point, with: nil)
+            return hit === action || hit?.isDescendant(of: action) == true
+        }
+        /// Rides the real staged sequence — buried page, Manage Extensions
+        /// sheet, toggle, wipe — until the page's own actions come alive.
+        func waitForLiveActions() {
+            let deadline = Date(timeIntervalSinceNow: 25)
+            while Date() < deadline {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+                if isHittable("Activate Safari"), isHittable("Skip") { return }
+            }
+        }
+        func waitForIntro() {
+            let deadline = Date(timeIntervalSinceNow: 15)
+            while Date() < deadline {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+                if onboarding.view.descendants(of: UIPasteControl.self)
+                    .first?.isHidden == false
+                {
+                    return
+                }
+            }
+        }
+
+        try XCTUnwrap(button("Remove web popups and paywalls"))
+            .sendActions(for: .touchUpInside)
+        waitForLiveActions()
+        XCTAssertTrue(isHittable("Skip"), "First entry never reached its actions")
+        try XCTUnwrap(button("Skip")).sendActions(for: .touchUpInside)
+        waitForIntro()
+
+        // Back in. The page must be buried again from this entry's very first
+        // frame — the app-switcher hop snapshots it immediately.
+        let introSafari = try XCTUnwrap(button("Remove web popups and paywalls"))
+        XCTAssertTrue(introSafari.isEnabled)
+        introSafari.sendActions(for: .touchUpInside)
+        let page = try XCTUnwrap(onboarding.view
+            .descendants(of: OnboardingSafariPageView.self).first)
+        let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
+            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
+        })
+        XCTAssertTrue(
+            clutter.subviews.allSatisfy { !$0.isHidden },
+            "The second entry starts on the buried page, not the finished one")
+        XCTAssertFalse(isHittable("Skip"), "Buried actions stay inert")
+
+        // …and the whole demonstration runs again, leaving both actions live.
+        waitForLiveActions()
+        XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
+        XCTAssertTrue(isHittable("Activate Safari"))
+        XCTAssertTrue(isHittable("Skip"))
+
+        // The second skip still works, and still lands on the intro.
+        try XCTUnwrap(button("Skip")).sendActions(for: .touchUpInside)
+        waitForIntro()
+        let returned = try XCTUnwrap(button("Remove web popups and paywalls"))
+        XCTAssertTrue(returned.isEnabled)
+        XCTAssertEqual(returned.accessibilityValue, "Skipped")
+    }
+
     @MainActor
     func testPageActionsAreHittableInsideTheFullOnboardingHierarchy() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
@@ -1456,7 +1607,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Remove popups and walls for me"
+                $0.accessibilityLabel == "Remove web popups and paywalls"
             })
         button.sendActions(for: .touchUpInside)
 
@@ -1522,7 +1673,7 @@ final class ReaderOnboardingTests: XCTestCase {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             safariIntroButton = onboarding.view.descendants(of: UIButton.self)
                 .first {
-                    $0.accessibilityLabel == "Remove popups and walls for me"
+                    $0.accessibilityLabel == "Remove web popups and paywalls"
                 }
             if onboarding.view.descendants(of: UIPasteControl.self)
                 .first?.isHidden == false

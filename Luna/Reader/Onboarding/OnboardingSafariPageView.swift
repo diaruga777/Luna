@@ -176,6 +176,10 @@ final class OnboardingSafariPageView: UIView {
     private var sequenceGeneration = 0
     private var waveElements: [WaveElement] = []
     private var preparedShatterPieces: [ShatterPiece] = []
+    /// Every tile the current wipe put on screen. `preparedShatterPieces`
+    /// empties the moment the flights are handed out, so a replay needs its
+    /// own handle on them to clear a wipe that is still in the air.
+    private var shatterTiles: [UIView] = []
     private var revealSchedule: [CascadeEntry] = []
     private var frontLegs: [FrontLeg] = []
 
@@ -490,6 +494,7 @@ final class OnboardingSafariPageView: UIView {
         guard stage == .blocked else { return }
         stage = .primed
         sequenceGeneration += 1
+        shatterTiles = []
         layoutIfNeeded()
 
         for element in waveElements {
@@ -620,6 +625,39 @@ final class OnboardingSafariPageView: UIView {
         actionsView.setActionsEnabled(true)
     }
 
+    /// Puts the page back exactly as it loads — buried under every
+    /// obstruction, content beneath them, actions inert, corona dark — so the
+    /// whole demonstration can play again.
+    ///
+    /// The Safari lesson is deliberately re-enterable: skipping returns to the
+    /// intro with its button still live. Without this, a second entry landed on
+    /// the finished page with nothing left to run and both of its buttons
+    /// disabled by the tap that left (`OnboardingSafariActionsView` disables
+    /// them on the way out), which is a dead end with no way back to the intro.
+    func restoreBuriedPage() {
+        // Drops anything the previous wipe still has scheduled.
+        sequenceGeneration += 1
+        stage = .blocked
+        preparedShatterPieces = []
+        revealSchedule = []
+        frontLegs = []
+        for tile in shatterTiles {
+            tile.layer.removeAllAnimations()
+            tile.removeFromSuperview()
+        }
+        shatterTiles = []
+        for obstruction in clutterContainer.subviews {
+            obstruction.isHidden = false
+            obstruction.alpha = 1
+            obstruction.transform = .identity
+        }
+        // The content stays revealed under the clutter, exactly as it loads;
+        // the next `prepareCleanUp` re-occludes it for the new sweep.
+        actionsView.setActionsEnabled(false)
+        actionsCorona?.alpha = 0
+        setNeedsLayout()
+    }
+
     /// Plays the cascade computed in `prepareCleanUp`: each element's reveal
     /// climbs it, staggered up the page.
     @discardableResult
@@ -673,6 +711,7 @@ final class OnboardingSafariPageView: UIView {
                 piece.layer.contentsScale = snapshot.scale
                 piece.layer.cornerRadius = 1.5
                 addSubview(piece)
+                shatterTiles.append(piece)
 
                 // Each tile detaches the moment the cascading light beneath
                 // its center arrives, plus a deterministic 0–33ms TRAILING

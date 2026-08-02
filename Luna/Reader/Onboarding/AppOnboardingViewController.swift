@@ -524,6 +524,11 @@ final class AppOnboardingViewController: UIViewController {
         journeyStage = .safariDemonstration
         demoPresentation = .fullScreen
 
+        // The lesson is re-enterable — skipping leaves its intro button live —
+        // so every entry starts from the buried page, exactly as the Messages
+        // lesson rewinds its conversation.
+        safari.resetDemonstration()
+
         // Stage the browser at rest, laid out full screen underneath
         // everything, so it can be snapshotted as the incoming card.
         let safariView = safari.view!
@@ -913,10 +918,18 @@ final class AppOnboardingViewController: UIViewController {
     /// Skipping finishes this optional setup lesson. The user returns to the
     /// intro card, where the independent Shortcut lesson and paste action stay
     /// available.
+    ///
+    /// `.safariSetup` counts as well as `.safariDemonstration`: a hop to real
+    /// Safari that brought back no extension evidence puts both of the page's
+    /// actions back (`restoreInPageSafariSetup`), and the skip has to be one of
+    /// them. What the stage guard is really for is the OTHER lesson — plus the
+    /// app-switcher hops, named outright rather than left to the stage.
     private func skipSafariSetupAndContinue() {
         guard externalReturn == .none,
               !isFinishing,
+              appSwitcher == nil,
               journeyStage == .safariDemonstration
+                  || journeyStage == .safariSetup
         else { return }
         journeyStage = .safariSetup
         completeSetupFlow(.safari, outcome: .skipped)

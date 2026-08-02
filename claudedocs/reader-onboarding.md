@@ -131,7 +131,23 @@ The root uses the production `CardCarouselViewController`:
    left while the chosen Safari or Messages replica enters from the right and
    fills the screen. Finishing or skipping that lesson runs the same transition
    back to the intro and checks only its originating button; it never chains
-   into the other lesson and never completes onboarding. The replicas, guide
+   into the other lesson and never completes onboarding.
+   **A skipped lesson is RE-ENTERABLE, so every entry replays it whole.** Skip
+   marks its button skipped rather than completed and leaves it enabled, and
+   the replicas are long-lived — one instance each, mounted once behind the
+   intro. Both therefore rewind on the way in: Messages through
+   `resetConversation`, Safari through `SafariReplicaViewController
+   .resetDemonstration` → `OnboardingSafariPageView.restoreBuriedPage`, which
+   puts every obstruction back over the page, clears any shatter tile still in
+   the air, drops the corona and makes the actions inert again (the content
+   stays revealed underneath, exactly as the page loads; the next
+   `prepareCleanUp` re-occludes it). Without that rewind a second entry landed
+   on the FINISHED page — nothing left to run, and both of its buttons disabled
+   by the tap that had left, so the lesson was a dead end. The reset is a no-op
+   before the first `beginDemonstration`, because the app-switcher hop
+   snapshots the replica the instant after it. Related: the skip is live in
+   `.safariSetup` as well as `.safariDemonstration`, since a hop to real Safari
+   that brings back no extension evidence puts both page actions back. The replicas, guide
    players, and an empty production root warm in separate run-loop turns after
    the first line reveal. **No lesson stores anything**: the mock article,
    video and tracker exist only in the replica views, so onboarding leaves the
@@ -519,7 +535,8 @@ explicit factor. The clock slows Core Animation, timers, and the display-link
 liquid wave together.
 
 `ReaderOnboardingTests` covers independent per-app completion, the three intro
-actions and hit-testing, exact surface
+actions and hit-testing, the skipped Safari lesson replaying whole on re-entry
+(both at the page's own level and through the full hierarchy), exact surface
 copy/page mapping, one feature list shared by every article surface,
 the storage-free lessons and the legacy launch sweep, external-save completion,
 launch geometry, active-wave cancellation, the staged conversation's copy and

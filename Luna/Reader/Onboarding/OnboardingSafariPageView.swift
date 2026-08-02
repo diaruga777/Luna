@@ -64,8 +64,9 @@ protocol OnboardingWaveRevealing: UIView {
 /// the LAST thing on the page rather than a card floating over it, and the
 /// steps and actions are anchored to the bottom above the browser chrome
 /// whatever the screen's height: the Safari button — wearing the launch eclipse
-/// corona — sits where the wave first enters, and the copy stacks upward from
-/// it.
+/// corona, and once the page is clean breathing for its tap exactly as the
+/// Messages pills do — sits where the wave first enters, and the copy stacks
+/// upward from it.
 ///
 /// It is native instead of HTML so those glyph-level effects are possible.
 final class OnboardingSafariPageView: UIView {
@@ -141,6 +142,9 @@ final class OnboardingSafariPageView: UIView {
     /// The eclipse corona rides behind the Safari button itself, swelling in
     /// once the page is clean.
     private var actionsCorona: EclipseCoronaView?
+    /// True from the corona's ignition until the user takes one of the page's
+    /// actions: the button and its corona are breathing for the tap.
+    private var isPulsingActions = false
 
     private let clutterContainer = UIView()
     private let adBanners: [OnboardingAdBannerView] = [
@@ -286,8 +290,15 @@ final class OnboardingSafariPageView: UIView {
         }
         scrollView.addSubview(actions)
 
-        actionsView.onActivate = { [weak self] in self?.onActivateSafari?() }
-        actionsView.onSkip = { [weak self] in self?.onSkipSafariSetup?() }
+        // Either action answers the button's plea, so either one ends it.
+        actionsView.onActivate = { [weak self] in
+            self?.endActionsPulse()
+            self?.onActivateSafari?()
+        }
+        actionsView.onSkip = { [weak self] in
+            self?.endActionsPulse()
+            self?.onSkipSafariSetup?()
+        }
 
         // Every fake obstruction is a decoration, buried over the page from
         // the very first frame; the mock extension-enable pass clears them.
@@ -453,6 +464,9 @@ final class OnboardingSafariPageView: UIView {
             corona.alpha = stage == .revealed ? 1 : 0
             scrollView.insertSubview(corona, belowSubview: actions)
             actionsCorona = corona
+            // A resize builds a new corona; the breath it replaces has to carry
+            // over, or a rotation mid-plea leaves the button pulsing alone.
+            applyActionsPulse()
         }
         actionsCorona?.frame = coronaFrame
     }
@@ -608,7 +622,8 @@ final class OnboardingSafariPageView: UIView {
 
     /// The corona blooms only once the page is whole. Bringing it up with the
     /// wave still climbing put a lamp behind the one element the light had
-    /// already left.
+    /// already left. The breath waits for the bloom to finish — an opacity
+    /// pulse added mid-fade fights the fade for the same layer.
     private func igniteActionsCorona() {
         guard let corona = actionsCorona else { return }
         guard !UIAccessibility.isReduceMotionEnabled else {
@@ -617,13 +632,67 @@ final class OnboardingSafariPageView: UIView {
         }
         UIView.animate(withDuration: 0.5) {
             corona.alpha = 1
+        } completion: { [weak self] _ in
+            self?.beginActionsPulse()
         }
     }
 
+    /// The Safari button asks for its tap exactly as the Messages pills do:
+    /// `OnboardingAttentionPulse`'s breath, at the same rate and the same
+    /// scale. Its glow is the corona it already wears rather than a shadow of
+    /// its own, so the corona scales WITH the button — the two share a centre,
+    /// so the light stays wrapped around the capsule — and brightens up to its
+    /// own full strength on every swell.
+    ///
+    /// Deliberately NOT guarded on already-pulsing: CoreAnimation strips every
+    /// animation off a layer when the app backgrounds, which is exactly what
+    /// the hop out to Safari does, so the return leg has to be able to put the
+    /// breath back rather than believe its own flag.
+    private static let pulseAnimationKey =
+        OnboardingStrings.AnimationKeys.attentionPulse.value()
+    /// The corona carries two of the breath's curves at once, and one layer
+    /// cannot file both under the same key.
+    private static let pulseScaleKey =
+        OnboardingStrings.AnimationKeys.attentionPulseScale.value()
+
+    private func beginActionsPulse() {
+        guard stage == .revealed,
+              !UIAccessibility.isReduceMotionEnabled
+        else { return }
+        isPulsingActions = true
+        applyActionsPulse()
+    }
+
+    private func applyActionsPulse() {
+        guard isPulsingActions else { return }
+        actionsView.activateButton.layer.add(
+            OnboardingAttentionPulse.scale(), forKey: Self.pulseAnimationKey)
+        // The corona shares the button's centre, so it swells WITH it and the
+        // light stays wrapped around the capsule. Unlike a pill's, this one is
+        // already burning: its breath falls to the trough and back to full
+        // rather than lighting from nothing.
+        guard let corona = actionsCorona else { return }
+        corona.layer.add(
+            OnboardingAttentionPulse.scale(), forKey: Self.pulseScaleKey)
+        corona.layer.add(
+            OnboardingAttentionPulse.glow(
+                from: OnboardingAttentionPulse.litCoronaTroughAlpha),
+            forKey: Self.pulseAnimationKey)
+    }
+
+    private func endActionsPulse() {
+        isPulsingActions = false
+        actionsView.activateButton.layer.removeAnimation(
+            forKey: Self.pulseAnimationKey)
+        actionsCorona?.layer.removeAnimation(forKey: Self.pulseAnimationKey)
+        actionsCorona?.layer.removeAnimation(forKey: Self.pulseScaleKey)
+    }
+
     /// Returning from Safari without the extension having run re-offers the
-    /// page's own actions.
+    /// page's own actions — and asks for the tap again.
     func reactivateActions() {
         actionsView.setActionsEnabled(true)
+        beginActionsPulse()
     }
 
     /// Puts the page back exactly as it loads — buried under every
@@ -655,9 +724,18 @@ final class OnboardingSafariPageView: UIView {
         // The content stays revealed under the clutter, exactly as it loads;
         // the next `prepareCleanUp` re-occludes it for the new sweep.
         actionsView.setActionsEnabled(false)
+        // A buried page asks for nothing: the plea belongs to the clean page,
+        // and the next cascade's corona ignition starts it again.
+        endActionsPulse()
         actionsCorona?.alpha = 0
         setNeedsLayout()
     }
+
+    #if DEBUG
+    /// The flag, not the animations: CoreAnimation drops an animation off a
+    /// backgrounded layer, so only this survives a test that spins the run loop.
+    var isPulsingActionsForTesting: Bool { isPulsingActions }
+    #endif
 
     /// Plays the cascade computed in `prepareCleanUp`: each element's reveal
     /// climbs it, staggered up the page.

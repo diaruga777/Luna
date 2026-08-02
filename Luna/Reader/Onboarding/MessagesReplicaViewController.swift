@@ -1320,8 +1320,6 @@ final class OnboardingMessagePillButton: UIControl {
     /// 56pt floor sized for a card; on a 34pt chip that hands it streamers
     /// twice the height of the thing they surround.
     private static let coronaReach: CGFloat = 30
-    /// One full breath. The corona is not in phase with it — see below.
-    private static let pulseCycle: CFTimeInterval = 1.9
     static let pulseAnimationKey =
         OnboardingStrings.AnimationKeys.pillPulse.value()
 
@@ -1370,36 +1368,21 @@ final class OnboardingMessagePillButton: UIControl {
 
     private func applyPulseAnimations() {
         if UIAccessibility.isReduceMotionEnabled {
-            corona?.alpha = 0.85
+            corona?.alpha = OnboardingAttentionPulse.reduceMotionGlowAlpha
             return
         }
 
-        // Durations are set on every keyframe rather than on a wrapping group:
-        // a `CAAnimationGroup` does NOT scale its children to its own duration,
-        // it clips them, so members left at the default ran a quarter-second
-        // twitch inside a two-second cycle and the breath barely registered.
-        let ease = CAMediaTimingFunction(name: .easeInEaseOut)
+        // The breath itself — its rate and both curves — is
+        // `OnboardingAttentionPulse`, shared with the Safari page's own call to
+        // action so the two demonstrations cannot drift apart.
+        layer.add(
+            OnboardingAttentionPulse.scale(), forKey: Self.pulseAnimationKey)
 
-        let scale = CAKeyframeAnimation(keyPath: "transform.scale")
-        scale.values = [1.0, 1.065, 1.065, 1.0]
-        scale.keyTimes = [0, 0.42, 0.60, 1.0]
-        scale.timingFunctions = [ease, ease, ease]
-        scale.duration = Self.pulseCycle
-        scale.repeatCount = .infinity
-        layer.add(scale, forKey: Self.pulseAnimationKey)
-
-        // The light leads the movement: totality is reached BEFORE the pill
-        // finishes swelling, holds through the top of the breath, and burns
-        // back down as the pill settles — so the corona is the event and the
-        // scale is the pill reacting to it, not the other way round.
+        // This corona is dark between breaths, so the light comes up from 0.
         guard let corona else { return }
-        let bloom = CAKeyframeAnimation(keyPath: "opacity")
-        bloom.values = [0, 1.0, 1.0, 0, 0]
-        bloom.keyTimes = [0, 0.30, 0.60, 0.94, 1.0]
-        bloom.timingFunctions = [ease, ease, ease, ease]
-        bloom.duration = Self.pulseCycle
-        bloom.repeatCount = .infinity
-        corona.layer.add(bloom, forKey: Self.pulseAnimationKey)
+        corona.layer.add(
+            OnboardingAttentionPulse.glow(from: 0),
+            forKey: Self.pulseAnimationKey)
     }
 
     private func stopAttentionPulse() {

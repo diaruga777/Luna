@@ -438,6 +438,11 @@ enum OnboardingStrings {
     enum AnimationKeys {
         static let messageBubbleFlight = Definition(shared: "onboarding.bubble.flight")
         static let pillPulse = Definition(shared: "onboarding.pill.pulse")
+        /// The same breath as `pillPulse`, worn by the Safari page's own call
+        /// to action. Its corona takes two curves, so it needs a second key.
+        static let attentionPulse = Definition(shared: "onboarding.attention.pulse")
+        static let attentionPulseScale = Definition(
+            shared: "onboarding.attention.pulse.scale")
         static let ringFill = Definition(shared: "onboarding.ring.fill")
         static let switcherCorner = Definition(shared: "onboarding.switcher.corner")
         static let moonReveal = Definition(shared: "moonReveal")

@@ -1360,6 +1360,89 @@ final class ReaderOnboardingTests: XCTestCase {
             page.bounds.height - SafariBottomBar.chromeHeight)
     }
 
+    /// The Safari button asks for its tap with the SAME breath the Messages
+    /// pills use — one rate and one curve out of `OnboardingAttentionPulse`,
+    /// which is the evidence that neither site rolled its own — and its corona
+    /// breathes with it rather than beside it.
+    @MainActor
+    func testTheSafariButtonAndItsCoronaBreatheForTheTapTogether() throws {
+        try XCTSkipIf(
+            UIAccessibility.isReduceMotionEnabled,
+            "The breath is motion; without it the corona simply sits lit")
+        let page = OnboardingSafariPageView(
+            configuration: .configuration(for: .reader))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: CGSize(
+                width: AppLaunchGeometry.referenceSize.width,
+                height: AppLaunchGeometry.referenceSize.height - 59)))
+        let host = UIViewController()
+        host.view = page
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        page.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let finished = expectation(description: "cleanup shatter")
+        page.cleanUpClutter { finished.fulfill() }
+        wait(for: [finished], timeout: 15)
+
+        let actions = try XCTUnwrap(
+            page.descendants(of: OnboardingSafariActionsView.self).first)
+        let corona = try XCTUnwrap(
+            page.descendants(of: EclipseCoronaView.self).first)
+        let key = OnboardingStrings.AnimationKeys.attentionPulse.value()
+        let scaleKey = OnboardingStrings.AnimationKeys.attentionPulseScale.value()
+
+        // The breath is handed the button once the corona's bloom lands. Only
+        // the state survives the wait: a test host spends most of a run loop
+        // spin unfocused, and CoreAnimation drops animations off those layers.
+        let deadline = Date(timeIntervalSinceNow: 4)
+        while Date() < deadline, !page.isPulsingActionsForTesting {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+        XCTAssertTrue(
+            page.isPulsingActionsForTesting,
+            "The clean page must start asking for the Safari tap")
+        // Lit, not parked at the trough: the breath only ever rides under full.
+        XCTAssertEqual(corona.alpha, 1, accuracy: 0.001)
+
+        var didActivate = false
+        page.onActivateSafari = { didActivate = true }
+        actions.activateButton.sendActions(for: .touchUpInside)
+        XCTAssertTrue(didActivate)
+        XCTAssertFalse(page.isPulsingActionsForTesting)
+        XCTAssertNil(
+            actions.activateButton.layer.animation(forKey: key),
+            "Answering the button must end its plea")
+        XCTAssertNil(corona.layer.animation(forKey: key))
+        XCTAssertEqual(corona.alpha, 1, accuracy: 0.001)
+
+        // Coming back from Safari without the extension re-asks — and this is
+        // the one moment both layers can be read: the animations are still on
+        // them, in the same run loop turn that added them.
+        page.reactivateActions()
+        XCTAssertTrue(page.isPulsingActionsForTesting)
+        let swell = try XCTUnwrap(
+            actions.activateButton.layer.animation(forKey: key)
+                as? CAKeyframeAnimation,
+            "The button wears the pills' own pulse, not one of its own")
+        XCTAssertEqual(swell.duration, OnboardingAttentionPulse.cycle)
+        XCTAssertEqual(
+            swell.values as? [CGFloat],
+            OnboardingAttentionPulse.scale().values as? [CGFloat],
+            "One breath, built in one place")
+        XCTAssertNotNil(
+            corona.layer.animation(forKey: scaleKey),
+            "The corona must swell with the button, not sit still behind it")
+        let light = try XCTUnwrap(
+            corona.layer.animation(forKey: key) as? CAKeyframeAnimation)
+        XCTAssertEqual(
+            light.values?.first as? CGFloat,
+            OnboardingAttentionPulse.litCoronaTroughAlpha,
+            "An already-burning corona breathes below full, never up from dark")
+    }
+
     @MainActor
     func testPageActionsWearTheCoronaOnTheSafariButtonAndBothWork() throws {
         let safari = SafariReplicaViewController(

@@ -472,6 +472,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
     }
 
     private func configureHeader() {
+        thumbnailView.accessibilityIdentifier = LeftTraySaveTransitionAnchor.thumbnail
         thumbnailView.contentMode = .scaleAspectFill
         thumbnailView.clipsToBounds = true
         thumbnailView.layer.cornerRadius = 12
@@ -483,6 +484,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             thumbnailView.heightAnchor.constraint(equalToConstant: 64),
         ])
 
+        titleLabel.accessibilityIdentifier = LeftTraySaveTransitionAnchor.title
         titleLabel.font = .preferredFont(forTextStyle: .title3)
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = LunaColors.primaryText

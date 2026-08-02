@@ -2467,12 +2467,14 @@ private final class ReaderCardTitleHeaderView: UIView {
         backgroundColor = LunaColors.background
 
         iconView.image = UIImage(systemName: "globe")
+        iconView.accessibilityIdentifier = LeftTraySaveTransitionAnchor.thumbnail
         iconView.tintColor = LunaColors.secondaryText
         iconView.contentMode = .scaleAspectFit
         iconView.layer.cornerRadius = 6
         iconView.clipsToBounds = true
 
         titleLabel.text = title
+        titleLabel.accessibilityIdentifier = LeftTraySaveTransitionAnchor.title
         titleLabel.font = baseTitleFont
         titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = Self.titleLineLimit

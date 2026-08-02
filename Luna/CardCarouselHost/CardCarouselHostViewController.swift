@@ -63,17 +63,84 @@ final class TrayShiftContribution {
     }
 }
 
-/// One continuous piece of artwork between a left-tray recent and its saved
-/// carousel card. The source starts moving as soon as the tray closes. When the
-/// ingest result mounts the real card, a snapshot of that final content joins at
-/// the source's presentation frame and crossfades while both finish expanding.
-/// This avoids the old sequence where the destination appeared first and a
-/// second, unrelated snapshot zoomed translucently over it afterward.
+/// The parts of a recent-link row that keep their identity while its empty card
+/// shell grows. `LeftTrayCell` supplies real UIKit copies rather than one flat
+/// snapshot, so the favicon and label can move without being scaled to the
+/// destination card's height.
+@MainActor
+struct LeftTraySaveTransitionArtwork {
+    let kind: RecentURLPreview.Kind
+    let sourceFrame: CGRect
+    let backgroundColor: UIColor
+    let cornerRadius: CGFloat
+    let thumbnail: UIImageView
+    let title: UILabel
+    let subtitle: UILabel?
+}
+
+@MainActor
+protocol LeftTraySaveTransitionArtworkProviding: AnyObject {
+    func makeLeftTraySaveTransitionArtwork(in coordinateView: UIView)
+        -> LeftTraySaveTransitionArtwork?
+}
+
+/// Stable identifiers let the handoff settle onto the destination's exact
+/// header geometry without coupling this shared host to Reader or Price Tracker
+/// private view-controller types.
+enum LeftTraySaveTransitionAnchor {
+    static let thumbnail = "leftTraySaveTransition.destinationThumbnail"
+    static let title = "leftTraySaveTransition.destinationTitle"
+}
+
+struct LeftTraySaveTransitionGeometry {
+    let thumbnail: CGRect
+    let title: CGRect
+
+    /// A useful target while ingest is still running and the real card does not
+    /// exist yet. Once it mounts, tagged destination views replace these with
+    /// their exact frames.
+    static func fallback(
+        in cardFrame: CGRect,
+        kind: RecentURLPreview.Kind,
+        sourceTitleHeight: CGFloat
+    ) -> Self {
+        switch kind {
+        case .product:
+            let image = CGRect(
+                x: cardFrame.minX + 18, y: cardFrame.minY + 18,
+                width: 64, height: 64)
+            return Self(
+                thumbnail: image,
+                title: CGRect(
+                    x: image.maxX + 12, y: image.minY,
+                    width: max(0, cardFrame.maxX - image.maxX - 30), height: 64))
+        case .article, .media:
+            let titleHeight = min(max(sourceTitleHeight, 30), 90)
+            let title = CGRect(
+                x: cardFrame.minX + 62, y: cardFrame.minY + 38,
+                width: max(0, cardFrame.width - 82), height: titleHeight)
+            return Self(
+                thumbnail: CGRect(
+                    x: cardFrame.minX + 20,
+                    y: title.midY - 15,
+                    width: 30, height: 30),
+                title: title)
+        }
+    }
+}
+
+/// One continuous handoff between a left-tray recent and its saved carousel
+/// card. Only the recent's empty shell expands to the full card frame. Its
+/// favicon and title travel independently into the normal header geometry;
+/// after ingest mounts the real card, that artwork is replaced by a crossfade.
+/// Pasteboard artwork has a bespoke physical layout and retains the older flat
+/// snapshot fallback.
 @MainActor
 private final class LeftTraySaveTransition {
     let urlString: String
     private weak var host: CardCarouselHostViewController?
     private let sourceSnapshot: UIView
+    private let artwork: LeftTraySaveTransitionArtwork?
     private var movementAnimator: UIViewPropertyAnimator?
     private weak var destination: UIView?
     private var destinationSnapshot: UIView?
@@ -82,16 +149,34 @@ private final class LeftTraySaveTransition {
     var completion: (() -> Void)?
 
     init?(host: CardCarouselHostViewController, urlString: String, sourceView: UIView) {
-        guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
         self.urlString = urlString
         self.host = host
-        sourceSnapshot = snapshot
-        snapshot.frame = sourceView.convert(sourceView.bounds, to: host.view)
-        snapshot.layer.cornerRadius = Self.cornerRadius(of: sourceView)
-        snapshot.layer.cornerCurve = .continuous
-        snapshot.clipsToBounds = true
-        snapshot.isUserInteractionEnabled = false
-        host.view.addSubview(snapshot)
+        if let provider = sourceView as? LeftTraySaveTransitionArtworkProviding,
+           let artwork = provider.makeLeftTraySaveTransitionArtwork(in: host.view) {
+            self.artwork = artwork
+            let shell = UIView(frame: artwork.sourceFrame)
+            shell.backgroundColor = artwork.backgroundColor
+            shell.layer.cornerRadius = artwork.cornerRadius
+            shell.layer.cornerCurve = .continuous
+            shell.clipsToBounds = true
+            shell.isUserInteractionEnabled = false
+            sourceSnapshot = shell
+            host.view.addSubview(shell)
+            for view in [artwork.thumbnail, artwork.title] + [artwork.subtitle].compactMap({ $0 }) {
+                view.isUserInteractionEnabled = false
+                host.view.addSubview(view)
+            }
+        } else {
+            guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
+            artwork = nil
+            sourceSnapshot = snapshot
+            snapshot.frame = sourceView.convert(sourceView.bounds, to: host.view)
+            snapshot.layer.cornerRadius = Self.cornerRadius(of: sourceView)
+            snapshot.layer.cornerCurve = .continuous
+            snapshot.clipsToBounds = true
+            snapshot.isUserInteractionEnabled = false
+            host.view.addSubview(snapshot)
+        }
 
         // `LeftTrayController.save` invokes the host callback before it changes
         // the tray's model transform to closed. Defer one turn so this target is
@@ -100,73 +185,121 @@ private final class LeftTraySaveTransition {
         DispatchQueue.main.async { [weak self] in self?.beginMovement() }
     }
 
-    /// Captures and hides the newly mounted destination during the same reload
-    /// call stack that created it, before Core Animation can commit a frame.
+    /// Hides the newly mounted destination during the same reload call stack
+    /// that created it, before Core Animation can commit a frame. Its snapshot
+    /// is deliberately deferred until `finish`, after ingest's final layout and
+    /// asynchronous thumbnail/header updates have had their chance to land.
     func prepare(destination: UIView?) {
         guard !isFinished, !isFinishing, let destination,
-              self.destination !== destination,
-              let snapshot = destination.snapshotView(afterScreenUpdates: false)
-        else { return }
+              self.destination !== destination else { return }
         self.destination?.alpha = 1
-        destinationSnapshot = snapshot
+        destinationSnapshot = nil
         self.destination = destination
         destination.alpha = 0
     }
 
     func finish(to destination: UIView?) {
         if self.destination !== destination { prepare(destination: destination) }
-        guard !isFinished, !isFinishing, let host,
-              let destination = self.destination, let destinationSnapshot
-        else {
+        guard !isFinished, !isFinishing, let host, let destination = self.destination else {
             cancel()
             return
         }
         isFinishing = true
         host.view.layoutIfNeeded()
         host.carousel.view.layoutIfNeeded()
+        // Alpha changes inside this synchronous stack never reach the render
+        // server, but exposing the view here lets `snapshotView` capture the
+        // final loaded pixels instead of the hidden destination's empty alpha.
+        destination.alpha = 1
+        guard let destinationSnapshot = destination.snapshotView(afterScreenUpdates: false) else {
+            destination.alpha = 0
+            cancel()
+            return
+        }
+        destination.alpha = 0
+        self.destinationSnapshot = destinationSnapshot
 
         let targetFrame = destination.convert(destination.bounds, to: host.view)
         let currentFrame = sourceSnapshot.layer.presentation()?.frame ?? sourceSnapshot.frame
         let currentCornerRadius = sourceSnapshot.layer.presentation()?.cornerRadius
             ?? sourceSnapshot.layer.cornerRadius
         let remainingFraction = max(0, 1 - (movementAnimator?.fractionComplete ?? 0))
+        let artworkFrames = artwork.map { artwork in
+            (
+                thumbnail: Self.presentationFrame(of: artwork.thumbnail),
+                title: Self.presentationFrame(of: artwork.title),
+                subtitle: artwork.subtitle.map(Self.presentationFrame(of:))
+            )
+        }
         movementAnimator?.stopAnimation(true)
         movementAnimator = nil
         sourceSnapshot.layer.removeAllAnimations()
         sourceSnapshot.frame = currentFrame
         sourceSnapshot.layer.cornerRadius = currentCornerRadius
+        if let artwork, let artworkFrames {
+            artwork.thumbnail.layer.removeAllAnimations()
+            artwork.title.layer.removeAllAnimations()
+            artwork.subtitle?.layer.removeAllAnimations()
+            artwork.thumbnail.frame = artworkFrames.thumbnail
+            artwork.title.frame = artworkFrames.title
+            if let subtitleFrame = artworkFrames.subtitle { artwork.subtitle?.frame = subtitleFrame }
+        }
 
-        destinationSnapshot.frame = currentFrame
+        destinationSnapshot.frame = targetFrame
         destinationSnapshot.alpha = 0
-        destinationSnapshot.layer.cornerRadius = currentCornerRadius
+        destinationSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
         destinationSnapshot.layer.cornerCurve = .continuous
         destinationSnapshot.clipsToBounds = true
         destinationSnapshot.isUserInteractionEnabled = false
-        destination.alpha = 0
         host.view.addSubview(destinationSnapshot)
 
-        let finish = { [weak self] in
+        let targetArtwork = artwork.map {
+            self.targetArtworkGeometry(for: $0, cardFrame: targetFrame, destination: destination)
+        }
+        let settle = { [weak self] in
             guard let self else { return }
             self.sourceSnapshot.frame = targetFrame
-            self.sourceSnapshot.alpha = 0
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
-            destinationSnapshot.frame = targetFrame
-            destinationSnapshot.alpha = 1
-            destinationSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
+            if let artwork = self.artwork, let targetArtwork {
+                artwork.thumbnail.frame = targetArtwork.thumbnail
+                artwork.thumbnail.layer.cornerRadius = min(
+                    targetArtwork.thumbnail.width, targetArtwork.thumbnail.height) * 0.2
+                artwork.title.frame = targetArtwork.title
+                artwork.subtitle?.alpha = 0
+            }
         }
-        let completed = { [weak self] in self?.complete() }
+        let crossfade = { [weak self] in
+            guard let self else { return }
+            let changes = {
+                self.sourceSnapshot.alpha = 0
+                self.artwork?.thumbnail.alpha = 0
+                self.artwork?.title.alpha = 0
+                self.artwork?.subtitle?.alpha = 0
+                destinationSnapshot.alpha = 1
+            }
+            guard UIView.areAnimationsEnabled, !UIAccessibility.isReduceMotionEnabled else {
+                changes()
+                self.complete()
+                return
+            }
+            UIView.animate(
+                withDuration: 0.18, delay: 0,
+                options: [.curveEaseInOut, .allowUserInteraction],
+                animations: changes,
+                completion: { [weak self] _ in self?.complete() })
+        }
 
         guard !UIAccessibility.isReduceMotionEnabled, UIView.areAnimationsEnabled else {
-            finish()
-            completed()
+            settle()
+            crossfade()
             return
         }
         UIView.animate(
-            withDuration: max(0.18, 0.34 * remainingFraction), delay: 0,
+            withDuration: max(0.12, 0.34 * remainingFraction), delay: 0,
             usingSpringWithDamping: 0.92, initialSpringVelocity: 0.15,
             options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
-            animations: finish,
-            completion: { _ in completed() })
+            animations: settle,
+            completion: { _ in crossfade() })
     }
 
     func cancel() {
@@ -179,9 +312,12 @@ private final class LeftTraySaveTransition {
         destinationSnapshot = nil
         let finish = { [sourceSnapshot] in
             sourceSnapshot.alpha = 0
+            self.artwork?.thumbnail.alpha = 0
+            self.artwork?.title.alpha = 0
+            self.artwork?.subtitle?.alpha = 0
         }
         let completed = { [weak self] in
-            self?.sourceSnapshot.removeFromSuperview()
+            self?.removeTransitionViews()
             self?.completion?()
         }
         if UIView.areAnimationsEnabled {
@@ -204,6 +340,16 @@ private final class LeftTraySaveTransition {
         let animator = UIViewPropertyAnimator(duration: 0.34, dampingRatio: 0.92) {
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
+            if let artwork = self.artwork {
+                let target = LeftTraySaveTransitionGeometry.fallback(
+                    in: targetFrame, kind: artwork.kind,
+                    sourceTitleHeight: artwork.title.bounds.height)
+                artwork.thumbnail.frame = target.thumbnail
+                artwork.thumbnail.layer.cornerRadius = min(
+                    target.thumbnail.width, target.thumbnail.height) * 0.2
+                artwork.title.frame = target.title
+                artwork.subtitle?.alpha = 0
+            }
         }
         movementAnimator = animator
         animator.startAnimation()
@@ -213,10 +359,40 @@ private final class LeftTraySaveTransition {
         guard !isFinished else { return }
         isFinished = true
         destination?.alpha = 1
-        sourceSnapshot.removeFromSuperview()
+        removeTransitionViews()
         destinationSnapshot?.removeFromSuperview()
         destinationSnapshot = nil
         completion?()
+    }
+
+    private func removeTransitionViews() {
+        sourceSnapshot.removeFromSuperview()
+        artwork?.thumbnail.removeFromSuperview()
+        artwork?.title.removeFromSuperview()
+        artwork?.subtitle?.removeFromSuperview()
+    }
+
+    private func targetArtworkGeometry(
+        for artwork: LeftTraySaveTransitionArtwork,
+        cardFrame: CGRect,
+        destination: UIView
+    ) -> LeftTraySaveTransitionGeometry {
+        let fallback = LeftTraySaveTransitionGeometry.fallback(
+            in: cardFrame, kind: artwork.kind,
+            sourceTitleHeight: artwork.title.bounds.height)
+        let thumbnail = destination.firstDescendant(
+            accessibilityIdentifier: LeftTraySaveTransitionAnchor.thumbnail)
+            .map { $0.convert($0.bounds, to: host?.view) }
+        let title = destination.firstDescendant(
+            accessibilityIdentifier: LeftTraySaveTransitionAnchor.title)
+            .map { $0.convert($0.bounds, to: host?.view) }
+        return LeftTraySaveTransitionGeometry(
+            thumbnail: thumbnail ?? fallback.thumbnail,
+            title: title ?? fallback.title)
+    }
+
+    private static func presentationFrame(of view: UIView) -> CGRect {
+        view.layer.presentation()?.frame ?? view.frame
     }
 
     private static func cornerRadius(of view: UIView) -> CGFloat {
@@ -224,6 +400,18 @@ private final class LeftTraySaveTransition {
             return cell.contentView.layer.cornerRadius
         }
         return view.layer.cornerRadius
+    }
+}
+
+private extension UIView {
+    func firstDescendant(accessibilityIdentifier identifier: String) -> UIView? {
+        if accessibilityIdentifier == identifier { return self }
+        for child in subviews {
+            if let match = child.firstDescendant(accessibilityIdentifier: identifier) {
+                return match
+            }
+        }
+        return nil
     }
 }
 

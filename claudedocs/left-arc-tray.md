@@ -10,6 +10,10 @@ the taller paste row while the tray retracts.
 Rows are ordered top-to-bottom as email setup (where supported), Shortcut setup,
 Safari setup, pasteboard, then up to five recent Safari matches. This makes the
 pasteboard row the opening focal point, with setup above and recent links below.
+When the tray closes on the deck's leftmost card, the narrow physical clipboard
+slides to the trailing edge of its wider transparent row, so the tray's 26-point
+peek contains clipboard artwork. It returns to its original leading position as
+the tray expands.
 Setup rows pulse until complete and own their actions directly; there is no
 generic tray-level setup-step controller. All four apps also introduce the same
 Safari/Shortcut/Action Button actions during their surface-specific first-run
@@ -104,12 +108,14 @@ homepages and search results queued up as things to read. Both now come back
 classification of its own, and deliberately shouldn't.
 
 Tray rows are previews only. Selecting one runs the normal full ingest/save
-path, closes the tray, and centers the resulting card. One source snapshot
-starts translating and expanding as the tray retracts; when the real saved card
-mounts, its snapshot joins at the traveling source's presentation frame and the
-two crossfade while settling into the exact card frame. The destination stays
-hidden until that handoff, avoiding a card pop followed by a translucent ghost
-zoom. Long-press offers Open and Share without saving.
+path, closes the tray, and centers the resulting card. The recent's empty card
+shell translates and expands to the carousel frame while real UIKit copies of
+its thumbnail and title move independently into the destination's usual
+favicon/title-header geometry; they are never scaled to the full card height.
+Once the saved card mounts, its contents replace that temporary header in a
+short crossfade. The destination stays hidden until that handoff, avoiding a
+card pop followed by a translucent ghost zoom. Long-press offers Open and Share
+without saving.
 
 ## Pasteboard state
 

@@ -608,12 +608,25 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private func applyProgress() {
         applyTrayPosition()
         guard laidOutSize.width > 0 else { return }
+        updatePasteboardRowPosition()
         let width = trayWidth(for: laidOutSize.width)
         let shift = width * progress
         shiftContribution.apply(shift)
         openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01
         dismissControl.alpha = progress * 0.18
+    }
+
+    /// The physical clipboard is intentionally narrower and leading-aligned
+    /// inside its transparent arc row. Carry it to the row's trailing edge as
+    /// the tray closes so the tray's 26-point reveal contains real artwork,
+    /// then return it to its normal open position along with the pull.
+    private func updatePasteboardRowPosition() {
+        guard rows.indices.contains(pasteIndex),
+              let cell = collection.cellForItem(
+                at: IndexPath(item: pasteIndex, section: 0)) as? LeftTrayCell
+        else { return }
+        cell.setPasteCollapsedFraction(1 - progress)
     }
 
     private func applyTrayPosition() {
@@ -634,6 +647,15 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
 
     #if DEBUG
     var trayFrameForTesting: CGRect { tray.frame }
+
+    var pasteboardFrameInTrayForTesting: CGRect? {
+        collection.layoutIfNeeded()
+        guard rows.indices.contains(pasteIndex),
+              let cell = collection.cellForItem(
+                at: IndexPath(item: pasteIndex, section: 0)) as? LeftTrayCell
+        else { return nil }
+        return cell.clipboardFrame(in: tray)
+    }
 
     func offsetTrayForTesting(by deltaX: CGFloat) {
         tray.frame.origin.x += deltaX
@@ -1042,6 +1064,7 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
             withReuseIdentifier: LeftTrayCell.reuseID, for: indexPath) as! LeftTrayCell
         switch rows[indexPath.item] {
         case .setup(let kind):
+            cell.setPasteCollapsedFraction(0)
             cell.configureSetup(
                 kind: kind,
                 emailIssue: kind == .email
@@ -1051,7 +1074,9 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
             cell.configurePaste(
                 state: pasteState, pasteTarget: self,
                 settingsAction: { [weak self] in self?.openSettingsForPaste() })
+            cell.setPasteCollapsedFraction(1 - progress)
         case .recent(let preview):
+            cell.setPasteCollapsedFraction(0)
             cell.configurePreview(preview, showsPasteboardBadge: false)
         }
         return cell
@@ -1113,6 +1138,9 @@ private final class LeftTrayCell: UICollectionViewCell {
     private var titleTrailingConstraint: NSLayoutConstraint!
     private var titleTopConstraint: NSLayoutConstraint!
     private var titleCenterYConstraint: NSLayoutConstraint?
+    private var clipboardLeadingConstraint: NSLayoutConstraint!
+    private var previewKind: RecentURLPreview.Kind?
+    private var pasteCollapsedFraction: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1158,6 +1186,8 @@ private final class LeftTrayCell: UICollectionViewCell {
             equalTo: contentView.trailingAnchor, constant: -12)
         titleTopConstraint = titleLabel.topAnchor.constraint(
             equalTo: contentView.topAnchor, constant: 14)
+        clipboardLeadingConstraint = clipboardVisual.leadingAnchor.constraint(
+            equalTo: contentView.leadingAnchor, constant: 22)
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -1181,7 +1211,7 @@ private final class LeftTrayCell: UICollectionViewCell {
             setupVisual.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             setupVisual.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             setupVisual.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            clipboardVisual.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 22),
+            clipboardLeadingConstraint,
             clipboardVisual.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             clipboardVisual.widthAnchor.constraint(equalToConstant: 168),
             clipboardVisual.heightAnchor.constraint(equalToConstant: 142),
@@ -1201,6 +1231,9 @@ private final class LeftTrayCell: UICollectionViewCell {
         // back as a card and not as an invisible one.
         alpha = 1
         transform = .identity
+        previewKind = nil
+        pasteCollapsedFraction = 0
+        clipboardLeadingConstraint.constant = 22
         pasteControl?.removeFromSuperview()
         pasteControl = nil
         imageView.image = nil
@@ -1236,6 +1269,7 @@ private final class LeftTrayCell: UICollectionViewCell {
     }
 
     func configurePreview(_ preview: RecentURLPreview, showsPasteboardBadge: Bool) {
+        previewKind = preview.kind
         imageView.isHidden = false
         imageView.image = preview.image ?? UIImage(
             systemName: preview.kind == .media ? "play.rectangle.fill"
@@ -1318,6 +1352,15 @@ private final class LeftTrayCell: UICollectionViewCell {
         }
     }
 
+    func setPasteCollapsedFraction(_ fraction: CGFloat) {
+        pasteCollapsedFraction = min(max(fraction, 0), 1)
+        updatePasteHorizontalPosition(layOutImmediately: true)
+    }
+
+    func clipboardFrame(in view: UIView) -> CGRect {
+        clipboardVisual.convert(clipboardVisual.bounds, to: view)
+    }
+
     private func installPasteControl(target: UIPasteConfigurationSupporting) {
         let configuration = UIPasteControl.Configuration()
         configuration.displayMode = .iconOnly
@@ -1382,11 +1425,77 @@ private final class LeftTrayCell: UICollectionViewCell {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        updatePasteHorizontalPosition(layOutImmediately: false)
         if let dashes = contentView.layer.sublayers?.first(where: { $0.name == "dashes" })
             as? CAShapeLayer {
             dashes.frame = contentView.bounds
             dashes.path = UIBezierPath(
                 roundedRect: contentView.bounds, cornerRadius: 16).cgPath
         }
+    }
+
+    private func updatePasteHorizontalPosition(layOutImmediately: Bool) {
+        guard !clipboardVisual.isHidden else {
+            clipboardLeadingConstraint.constant = 22
+            return
+        }
+        // Open geometry: 22pt leading + 168pt clipboard. At rest, carry its
+        // CENTER to the cell's trailing edge (itself 8pt inside the tray). The
+        // tray clips the far half, and its 26pt reveal then shows the polished
+        // center clip instead of an indistinct strip of the dark board's edge.
+        let openCenterX: CGFloat = 22 + 168 / 2
+        let closedOffset = max(0, contentView.bounds.width - openCenterX)
+        clipboardLeadingConstraint.constant = 22 + closedOffset * pasteCollapsedFraction
+        if layOutImmediately { contentView.layoutIfNeeded() }
+    }
+}
+
+@MainActor
+extension LeftTrayCell: LeftTraySaveTransitionArtworkProviding {
+    func makeLeftTraySaveTransitionArtwork(
+        in coordinateView: UIView
+    ) -> LeftTraySaveTransitionArtwork? {
+        guard let previewKind, !imageView.isHidden, !titleLabel.isHidden,
+              let title = titleLabel.text
+        else { return nil }
+        contentView.layoutIfNeeded()
+
+        let thumbnail = UIImageView(image: imageView.image)
+        thumbnail.frame = imageView.convert(imageView.bounds, to: coordinateView)
+        thumbnail.contentMode = imageView.contentMode
+        thumbnail.tintColor = imageView.tintColor
+        thumbnail.clipsToBounds = true
+        thumbnail.layer.cornerRadius = imageView.layer.cornerRadius
+        thumbnail.layer.cornerCurve = .continuous
+
+        let titleCopy = UILabel()
+        titleCopy.text = title
+        titleCopy.frame = titleLabel.convert(titleLabel.bounds, to: coordinateView)
+        titleCopy.font = titleLabel.font
+        titleCopy.textColor = titleLabel.textColor
+        titleCopy.numberOfLines = titleLabel.numberOfLines
+        titleCopy.lineBreakMode = titleLabel.lineBreakMode
+        titleCopy.textAlignment = titleLabel.textAlignment
+
+        let subtitleCopy: UILabel? = subtitleLabel.text.map { text in
+            let label = UILabel()
+            label.text = text
+            label.frame = subtitleLabel.convert(subtitleLabel.bounds, to: coordinateView)
+            label.font = subtitleLabel.font
+            label.textColor = subtitleLabel.textColor
+            label.numberOfLines = subtitleLabel.numberOfLines
+            label.lineBreakMode = subtitleLabel.lineBreakMode
+            label.textAlignment = subtitleLabel.textAlignment
+            return label
+        }
+
+        return LeftTraySaveTransitionArtwork(
+            kind: previewKind,
+            sourceFrame: convert(bounds, to: coordinateView),
+            backgroundColor: contentView.backgroundColor ?? .clear,
+            cornerRadius: contentView.layer.cornerRadius,
+            thumbnail: thumbnail,
+            title: titleCopy,
+            subtitle: subtitleCopy)
     }
 }

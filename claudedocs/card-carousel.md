@@ -297,11 +297,13 @@ archive transition. With several new saves, the first in card order centers,
 which on every deck's newest-first ordering is the most recent one.
 
 A save selected from the left tray adds one extra visual handoff shared by all
-three surface hosts: the tapped recent card itself travels to the carousel's
-resting card frame and expands while its preview content crossfades into a
-snapshot of the mounted destination. The destination card is revealed only when
-that morph finishes. This is separate from new-save detection—the normal store
-reload still decides which card centers.
+three surface hosts: the tapped recent's empty shell travels to the carousel's
+resting card frame and expands, while its thumbnail and title travel separately
+into normal favicon/title-header geometry instead of stretching with the shell.
+After the mounted destination is ready, its real contents crossfade over that
+temporary header. The destination card is revealed only when the handoff
+finishes. This is separate from new-save detection—the normal store reload still
+decides which card centers.
 
 Two things deliberately don't count as new. `offstageIDs` (archived rows) are
 passed in as seen, so unarchiving one reads as the return of a known card and

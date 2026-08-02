@@ -20,10 +20,13 @@ enum OnboardingActionButtonTiming {
     static let pressCueSize = CGSize(width: 7, height: 120)
     /// Centers the cue on the iPhone 17 Pro Action Button's physical position.
     static let actionButtonCenterBelowSafeArea: CGFloat = 129
-    /// The displacement-only wave has the longer wavelength.
-    static let firstWavefrontHalfWidth: CGFloat = 46
-    static let firstMaximumDisplacement: CGFloat = 30
-    static let firstWaveLightingStrength: CGFloat = 0.20
+    /// The displacement-only wave has the longer wavelength. It is also the
+    /// only thing the Messages demonstration renders for the press, so it
+    /// carries the whole "the screen just got hit" beat on its own: a broad
+    /// front with real throw in it, not a hairline ripple.
+    static let firstWavefrontHalfWidth: CGFloat = 74
+    static let firstMaximumDisplacement: CGFloat = 52
+    static let firstWaveLightingStrength: CGFloat = 0.26
     /// The second wave sweeps in from the display edges, blackening every
     /// pixel behind its inward-travelling front until only the highlighted
     /// link is left visible on black.

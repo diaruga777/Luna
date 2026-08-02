@@ -243,6 +243,43 @@ enum CardCarouselPagePanStartPolicy {
     }
 }
 
+enum CardCarouselPagePanSimultaneityPolicy {
+    /// Whether a gesture inside the card may run alongside the page pan.
+    ///
+    /// It normally must: the in-card page swipe only exists on surfaces whose
+    /// cards are live readers, and those have to keep scrolling, tapping links
+    /// and selecting text for every drag that does NOT become a page. The one
+    /// exception is a scroll view asking to start while the page pan is already
+    /// tracking the touch — that scroll would run under a deck the same finger
+    /// is paging.
+    static func allowsSimultaneousRecognition(
+        pagesOnInCardSwipes: Bool,
+        otherIsScrollViewPan: Bool,
+        pagePanIsTrackingTheTouch: Bool
+    ) -> Bool {
+        guard pagesOnInCardSwipes else { return false }
+        return !(otherIsScrollViewPan && pagePanIsTrackingTheTouch)
+    }
+}
+
+enum CardCarouselScrollViews {
+    /// Every scroll view inside `root`'s subtree, outermost first. A mounted
+    /// reader card nests several (the article's own, a web frame's inside it),
+    /// so the search cannot stop at the first hit.
+    static func nested(in root: UIView) -> [UIScrollView] {
+        var found: [UIScrollView] = []
+        var frontier = [root]
+        var next = 0
+        while next < frontier.count {
+            let view = frontier[next]
+            next += 1
+            if let scrollView = view as? UIScrollView { found.append(scrollView) }
+            frontier.append(contentsOf: view.subviews)
+        }
+        return found
+    }
+}
+
 /// Named durations for the carousel's own non-eclipse animations (the eclipse
 /// page transition timings live on `CardEclipseTransition`).
 private enum CarouselAnimationTiming {
@@ -1298,6 +1335,7 @@ public final class CardCarouselViewController: UIViewController {
         switch gesture.state {
         case .began:
             pagePanConsumed = false
+            relinquishScrollingClaimedByPagePan()
         case .changed:
             if case .none = pagingTransition, !pagePanConsumed {
                 beginInteractivePage(translation: translation)
@@ -1322,6 +1360,32 @@ public final class CardCarouselViewController: UIViewController {
             }
         default:
             break
+        }
+    }
+
+    /// A drag the carousel has claimed as a page swipe must not ALSO scroll the
+    /// card it started on.
+    ///
+    /// `pagePan` recognizes simultaneously with the embedded content's own
+    /// gestures — that is what keeps links, taps and scrolling alive on a card
+    /// that is not being paged — so by the time the horizontal gate lets paging
+    /// begin, the reader under the finger has usually begun its own scroll on
+    /// the same touch. Nothing then stops the rest of the swipe from scrolling
+    /// that article while the deck pages it away, which is most visible when
+    /// the swipe starts on a peeking side card: the finger arrives at the newly
+    /// centered reader already scrolled off its first line.
+    ///
+    /// Toggling `isEnabled` is the only way to cancel a recognizer mid-sequence;
+    /// it ends the scroll where it stands (no deceleration) and the scroll view
+    /// takes part again on the next touch down.
+    private func relinquishScrollingClaimedByPagePan() {
+        for scrollView in CardCarouselScrollViews.nested(in: cardArea) {
+            let pan = scrollView.panGestureRecognizer
+            // Only recognizers actually tracking this touch — a card
+            // decelerating from an earlier flick keeps its momentum.
+            guard pan.state == .began || pan.state == .changed else { continue }
+            pan.isEnabled = false
+            pan.isEnabled = true
         }
     }
 
@@ -1450,9 +1514,15 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
         // The in-card page pan and the additive tap must coexist with gestures
-        // inside the embedded content (scroll views, links).
+        // inside the embedded content (scroll views, links) — up to the moment
+        // the pan becomes a page, after which the card keeps none of the touch.
         if gestureRecognizer === pagePan {
-            return style.pagesOnInCardSwipes
+            let isScrollViewPan = (otherGestureRecognizer.view as? UIScrollView)
+                .map { $0.panGestureRecognizer === otherGestureRecognizer } ?? false
+            return CardCarouselPagePanSimultaneityPolicy.allowsSimultaneousRecognition(
+                pagesOnInCardSwipes: style.pagesOnInCardSwipes,
+                otherIsScrollViewPan: isScrollViewPan,
+                pagePanIsTrackingTheTouch: pagePan.state == .began || pagePan.state == .changed)
         }
         return gestureRecognizer is UITapGestureRecognizer
     }

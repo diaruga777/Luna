@@ -22,7 +22,12 @@ public enum IntentSaveTimeout {
     /// and the return trip come after it — so the save may not eat the budget.
     public static let standard: TimeInterval = 12
 
-    /// Under the system's extended runtime (`LongRunningIntent`, media apps only)
+    /// Provide Context's whole normal-runtime fast path. This leaves roughly
+    /// ten seconds of the system's traditional 30-second budget for cooperative
+    /// cancellation, checkpoint encoding, and returning the result to Shortcuts.
+    public static let provideContext: TimeInterval = 20
+
+    /// Under SaveIntent's system extended runtime (`LongRunningIntent`, iOS 27+)
     /// there is no 30 s ceiling to race, so wait past the ingest pipeline's OWN
     /// hard timeout. Derived from it deliberately: the pipeline always resolves
     /// within `processTimeout`, so this makes the race a backstop rather than the
@@ -39,6 +44,8 @@ public enum IntentSaveTimeout {
 /// is reported as done: an intent may not tell Shortcuts "saved" while the app
 /// holds nothing, or holds only a failure (`IntentSaveVerification`).
 public enum IntentIngestHelper {
+
+    public typealias PreparedSavePress = ReadingListIngestor.PreparedSavePress
 
     /// What an Action Button save press produced, for the Provide Context /
     /// Save App Intents.
@@ -101,6 +108,35 @@ public enum IntentIngestHelper {
         return verifiedOutcome(
             from: result, pressedURLString: pressedURLString,
             storedItem: currentStoreItem(for: result, pressedURLString: pressedURLString))
+    }
+
+    /// Freezes the atomic reservation + double-save decision before any network
+    /// work begins. Provide Context serializes this value when it must hand the
+    /// operation to SaveIntent, which prevents the resumed run from reserving a
+    /// second press and changing the already-decided double-save semantics.
+    public static func prepareSavePress(
+        urlString: String,
+        doubleSaveActionSurface surface: String?,
+        attemptDate: Date = Date()
+    ) -> PreparedSavePress? {
+        ReadingListIngestor.shared.prepareSavePress(
+            urlString: urlString, source: .appIntent,
+            doubleSaveActionSurface: surface, attemptDate: attemptDate)
+    }
+
+    /// Performs one prepared state without a second reservation. The resumed
+    /// LongRunning intent waits for a cancelled fast-path task to finish
+    /// unwinding before it restarts the pending ingest.
+    public static func performPreparedSavePress(
+        _ prepared: PreparedSavePress,
+        waitForCancelledFastPath: Bool = false
+    ) async -> ActionButtonSaveOutcome {
+        let result = await ReadingListIngestor.shared.performPreparedSavePress(
+            prepared, waitForInFlight: waitForCancelledFastPath)
+        return verifiedOutcome(
+            from: result, pressedURLString: prepared.urlString,
+            storedItem: currentStoreItem(
+                for: result, pressedURLString: prepared.urlString))
     }
 
     /// Recommits the intent's URL-level timing marker at the end of every

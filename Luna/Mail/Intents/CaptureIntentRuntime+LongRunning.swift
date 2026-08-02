@@ -2,14 +2,11 @@
 //  CaptureIntentRuntime+LongRunning.swift
 //  Luna
 //
-//  The MEDIA-HANDLING apps' capture runtime — compiled only into Luna Downloader
-//  and the central Luna app (excluded from Reader / Price Tracker via the
-//  synchronized group's membership exceptions, exactly like MediaIntentHandoff).
+//  SaveIntent's guarded iOS 27 runtime, compiled into every app target.
+//  MediaIntentHandoff remains a separate, media-target-only composition seam.
 //
-//  Only these two need it. A Reader or Price Tracker capture ends at the save and
-//  fits the ordinary ~30 s background budget; a media capture spends 12 s on the
-//  save race, then a 20 s preflight HEAD, then an awaited transfer — and would be
-//  killed mid-download having reported nothing.
+//  ProvideContext is always a normal AppIntent. It performs a 20 s fast path,
+//  then hands actual downloads or unfinished save work to this intent.
 //
 
 import AppIntents
@@ -47,12 +44,11 @@ enum CaptureIntentExtendedRuntime {
 // every background Action Button run and the transfer proceeds invisibly — the
 // `catch` in `startActivity` logs "live activity request failed" and moves on.
 //
-// iOS 17+, below the iOS 18 deployment target, so no availability gate. Scoped to
-// these two apps because they are the only ones that start a Live Activity from
-// an intent. Verify it survives metadata extraction: `systemProtocols` in
-// `Luna.app/Metadata.appintents/extract.actionsdata` must list
-// `com.apple.link.systemProtocol.SessionStarting` for both intents.
-extension ProvideContextIntent: LiveActivityIntent {}
+// iOS 17+, below the iOS 18 deployment target, so no availability gate. Save is
+// the only capture intent that can start a Live Activity. Verify the
+// conformance survives metadata extraction: `systemProtocols` in
+// `<App>.app/Metadata.appintents/extract.actionsdata` must list
+// `com.apple.link.systemProtocol.SessionStarting` for SaveIntent.
 extension SaveIntent: LiveActivityIntent {}
 
 // MARK: - Extended background runtime
@@ -71,9 +67,6 @@ extension SaveIntent: LiveActivityIntent {}
 // - `@available(iOS 27, *)` — the conformance is compiled in unconditionally
 //   (Swift conformances aren't availability-checked at runtime), but its
 //   extension methods exist only on iOS 27+.
-
-@available(iOS 27.0, *)
-extension ProvideContextIntent: LongRunningIntent, CancellableIntent {}
 
 @available(iOS 27.0, *)
 extension SaveIntent: LongRunningIntent, CancellableIntent {}
@@ -139,28 +132,12 @@ extension LongRunningIntent where Self: CancellableIntent {
 
 #endif
 
-// MARK: - The per-target override
+// MARK: - The concrete override
 
-// These shadow `CaptureIntentRuntime`'s inline default on the concrete type, so
-// `perform()` reads the same in every app while the runtime differs by target
-// membership. Written per intent rather than in one protocol extension because
-// `performBackgroundTask` resolves against the concrete conforming type.
-
-extension ProvideContextIntent {
-    func withCaptureRuntime<T>(
-        reporter: IntentProgressReporter,
-        operation: @escaping () async throws -> T
-    ) async throws -> T {
-        #if compiler(>=6.4)
-        if #available(iOS 27.0, *) {
-            return try await performTracked(reporter: reporter, operation: operation)
-        }
-        #endif
-        return try await operation()
-    }
-
-    var captureSaveTimeout: TimeInterval { CaptureIntentExtendedRuntime.saveTimeout }
-}
+// This shadows `CaptureIntentRuntime`'s inline default on Save's concrete type,
+// so `perform()` reads the same in every app while the runtime differs by
+// compiler/OS availability. Written on the intent rather than in one protocol
+// extension because `performBackgroundTask` resolves against the concrete type.
 
 extension SaveIntent {
     func withCaptureRuntime<T>(

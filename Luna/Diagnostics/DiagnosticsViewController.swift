@@ -21,6 +21,11 @@ final class DiagnosticsViewController: UIViewController {
     /// In-content header in place of the nav bar.
     private let header = NavHeaderBar()
     private let resetOnboardingButton = UIButton(type: .system)
+    /// Debug-only: draws the raw + calibrated gaze estimate over the RSVP
+    /// reader (see `claudedocs/eye-tracking.md`). Off by default; this hidden
+    /// screen is deliberately its only home.
+    private let gazeOverlayLabel = UILabel()
+    private let gazeOverlaySwitch = UISwitch()
     /// Keeps left-edge swipe-back alive while the real nav bar is hidden.
     private let popGestureClaim = InteractivePopGestureClaim()
 
@@ -70,17 +75,42 @@ final class DiagnosticsViewController: UIViewController {
         resetOnboardingButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(resetOnboardingButton)
 
+        gazeOverlayLabel.text = L10n.string("Gaze Debug Overlay")
+        gazeOverlayLabel.font = .preferredFont(forTextStyle: .subheadline)
+        gazeOverlayLabel.textColor = LunaColors.primaryText
+        gazeOverlaySwitch.isOn = ReaderSettings.gazeDebugOverlayEnabled
+        gazeOverlaySwitch.addTarget(
+            self, action: #selector(gazeOverlayToggled), for: .valueChanged)
+        gazeOverlaySwitch.accessibilityIdentifier = "diagnostics.gazeOverlay"
+        let gazeOverlayRow = UIStackView(
+            arrangedSubviews: [gazeOverlayLabel, gazeOverlaySwitch])
+        gazeOverlayRow.axis = .horizontal
+        gazeOverlayRow.alignment = .center
+        gazeOverlayRow.spacing = 12
+        gazeOverlayRow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(gazeOverlayRow)
+
         NSLayoutConstraint.activate([
             textView.topAnchor.constraint(equalTo: headerBottom),
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             textView.bottomAnchor.constraint(
+                equalTo: gazeOverlayRow.topAnchor, constant: -8),
+            gazeOverlayRow.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor, constant: 20),
+            gazeOverlayRow.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+            gazeOverlayRow.bottomAnchor.constraint(
                 equalTo: resetOnboardingButton.topAnchor, constant: -4),
             resetOnboardingButton.centerXAnchor.constraint(
                 equalTo: view.centerXAnchor),
             resetOnboardingButton.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -6),
         ])
+    }
+
+    @objc private func gazeOverlayToggled() {
+        ReaderSettings.gazeDebugOverlayEnabled = gazeOverlaySwitch.isOn
     }
 
     @objc private func headerBack() {

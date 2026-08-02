@@ -18,18 +18,36 @@ provider list, `actions` = all discoverable intents).
 
 ## The shortcut shape
 
-**Get Current App + on-screen URL extraction → Provide Context(app, OnScreenURLs) →
-If result.outcome = Requires Screenshot → Take Screenshot → Save(app, screenshot).**
-No other branches. The old flow's magic return tokens
-(`"open-luna"`, `"4:<url>"`) are gone — foregrounding happens in-intent (below)
-and media download is coordinated by the intent that completes the save.
+**Get Current App + on-screen URL extraction → Provide Context(CurrentApp,
+OnScreenURLs) → branch on result.outcome:**
 
-## `ProvideContextIntent` (`app: String?`, `onScreenURLs: String?`) → `ProvideContextResultEntity`
+- **Done / Unhandled:** stop. `Media` is only meaningful for Done.
+- **Screenshot:** Take Screenshot, then
+  `Save(CurrentApp, screenshot, result.Metadata)`.
+- **Download:** do not take a screenshot; run
+  `Save(CurrentApp, nil, result.Metadata)`.
 
-The return value is a `TransientAppEntity` with an `outcome:
-ProvideContextOutcome` (`AppEnum`) and optional `media: IntentFile`. The outcome
-is `.done`, `.unhandled`, or `.requiresScreenshot`; transient entities are result
-values only and are not queryable.
+Provide Context is intentionally a normal `AppIntent`. Save is the only
+`LongRunningIntent`, so the system's progress UX appears only for real downloads,
+prepared double-save work, or a normal save that approached its time limit.
+
+## `ProvideContextIntent` (`currentApp: String?`, `onScreenURLs: String?`) → `ProvideContextResultEntity`
+
+The transient return value has exactly three properties:
+
+1. `media: IntentFile?` — optional and only returned with `.done` (including a
+   locally available media file or a completed double-save document export).
+2. `outcome: ProvideContextOutcome` — `.done`, `.screenshot`, `.download`, or
+   `.unhandled`.
+3. `metadata: String?` — versioned opaque JSON, present only for `.screenshot`
+   and `.download`.
+
+`CaptureIntentMetadata` currently records schema version, phase (`screenshot`,
+`save`, or `download`), CurrentApp, resolved URL, the atomically decided
+double-save flag, a `ReadingListIngestor.PreparedSavePress`, and (when resolved)
+the direct `MediaAsset` plus expected byte count. Decode failure or an unknown
+schema version is deliberately treated as no metadata; Save then runs from the
+top. The string is a transport checkpoint, not Shortcut-facing API.
 
 **A sibling Luna app in the foreground outranks everything below.** All four apps
 register both intents, so a press made while another app in the family owns the
@@ -76,12 +94,27 @@ is reported or ignored**:
 (`Classifier.classify(url:)`, no fetch) and maps the predicted `ContentKind` to
 its owning app (`.undetermined` → article, matching where the pipeline sends a
 plain page), then runs `SurfaceSupport.evaluate`. A `.save` plan goes through the
-same immediate-URL save function used by the Safari-extension fallback and
-returns `.done` (with synchronous media when applicable). Because the pre-check
+same immediate-URL save function used by the Safari-extension fallback. Because the pre-check
 already said this app handles the kind, a foreign-kind rejection from the REAL
 classification (an undetermined page that turned out to be a product) throws
-instead of being swallowed. A save timeout remains handled because the normal
-ingest task continues and persists pending work for retry.
+instead of being swallowed.
+
+The whole immediate-URL path has one **20-second deadline**. Before asynchronous
+work, `prepareSavePress` atomically reserves the URL and freezes the policy
+decision in a Codable state. The fast path then unwraps, classifies, fetches,
+persists, and (for media) resolves the asset/redirect, performs the HEAD size
+check, and validates storage. It never starts a media transfer. If it finishes:
+
+- non-media → `.done`;
+- already-local media → `.done` with `Media`;
+- downloadable media → `.download` with a prepared media checkpoint.
+
+If the deadline wins, the work task is cancelled, `ReadingListIngestor` refuses
+to persist the cancelled result, and the pending placeholder + frozen decision
+are returned as `.download` Metadata. Save waits for cancellation cleanup and
+resumes that same prepared state; it does not reserve another press. Non-trivial
+double-save actions also route directly to Save after their immediate atomic
+decision so a timed-out send/export can never execute twice.
 
 The shared **Settings → Shortcut & Safari → Handle On-Screen URLs** toggle is on
 by default. Turning it off makes `ProvideContextIntent` ignore the `OnScreenURLs`
@@ -97,39 +130,42 @@ evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 |---|---|---|
 | another Luna app | — (gated in the intent, above the table) | **unhandled** |
 | nil / empty (lock screen) | — | **unhandled** |
-| Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **done** — saves `lastURL` NOW via the action-button path |
-| Safari | URL stale/absent, vision model available | **requiresScreenshot** |
+| Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **done or download** — prepares/saves `lastURL` now |
+| Safari | URL stale/absent, vision model available | **screenshot** |
 | Safari | URL stale/absent, no vision model | **unhandled** |
 | Shortcuts | — | **unhandled** (no meaningful screenshot of Shortcuts' own UI) |
 | Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | this app doesn't handle media | **unhandled** |
 | Platform app | handles media, no vision model | **unhandled** |
-| Platform app | handles media, vision model available | **requiresScreenshot** |
+| Platform app | handles media, vision model available | **screenshot** |
 | Unrecognized | — | **unhandled** |
 
 Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
 `handlesMediaKind` = `LunaApp.current.handlesMedia` (Downloader or the
 central Luna app — a sibling never hands off cross-app anymore);
 `visionModelAvailable` = `ScreenCaptureModelSessionFactory.makeDefault()
-.isAvailable`. The immediate Safari save (1) goes through
-`IntentIngestHelper.handleSavePress` with the Reader-only double-save surface
-armed (see `double-save.md`). Because `.done` bypasses `SaveIntent`,
-`ProvideContextIntent` also sends a downloadable tracked Safari URL through the
-shared permission-aware Downloader handoff before returning. It resolves the content length
-and checks storage.
-A known file up to 100 MiB runs through the Live Activity/background engine and is
-awaited so the completed static image/GIF/video can be attached as `media`; larger or
-unknown files start the same durable transfer and return `media = nil` immediately.
-There is no user setting for this threshold.
+.isAvailable`. Screenshot outcomes carry a seed checkpoint (CurrentApp, no URL
+yet). Immediate URLs use the prepared state described above.
 
-## `SaveIntent` (`app: String`, `screenshot: IntentFile`) → `SaveResultEntity`
+## `SaveIntent` (`currentApp: String`, `screenshot: IntentFile?`, `metadata: String?`) → `SaveResultEntity`
 
 The return value is a `TransientAppEntity` with optional `media: IntentFile`.
-Non-media saves and large/unknown media downloads return `media = nil`.
+Non-media saves and large/unknown media downloads return `media = nil`. Empty or
+invalid Metadata preserves the old behavior: with a screenshot, Save performs
+screen analysis and all save work from the top; without either usable input it
+throws `nothingIdentifiable`.
+
+Before screenshot handling, Save decodes Metadata:
+
+- `save` resumes the exact `PreparedSavePress`, waiting for a cancelled Provide
+  Context task to leave the per-item in-flight set first;
+- `download` skips ingest and starts from the saved URL plus optional media
+  checkpoint, avoiding repeated asset resolution and HEAD work;
+- `screenshot` deliberately falls through to screen analysis.
 
 `media` carries one other thing: when **Double Save Articles** (same article URL
 twice within 7 s) is configured as **View immediately**, a self-contained DOCX
 article document is returned there instead, and the media handoff is skipped for
-that run. Both Action Button intents do this. See double-save.md.
+that run. See double-save.md.
 
 0. **Sibling Luna app gate** — first, and specifically ahead of the double-press
    skip below, which would otherwise re-run the previous save without ever
@@ -218,9 +254,9 @@ intent *believed in* is verified, and every way it can end empty throws:
   the surviving item. `handleSavePress` reports the outcome as
   `.saveFailed(_)`, and `.completed`'s URL is the item's CURRENT one, so media
   handoff uses the resolved URL rather than the wrapper.
-- **Timeouts stay successes.** The save race expiring means the ingest is
-  still running and its item is in the store as `.pending`; it finishes or is
-  retried on the next launch. There is nothing to verify and nothing to report.
+- **Provide Context timeouts become resumable work.** At 20 s the fast-path task
+  is cancelled, its result is not persisted, and `.download` Metadata carries
+  the prepared reservation/decision to Save. Save resumes and verifies normally.
 - **Media** (`media-download.md`): the handoff throws when the transfer engine
   reports that nothing is downloading and nothing will be. Already-downloaded
   and Wi-Fi-deferred are no-file successes.
@@ -229,24 +265,19 @@ intent *believed in* is verified, and every way it can end empty throws:
 
 ## Runtime + progress UI (`CaptureIntentRuntime*.swift`)
 
-**Per-target composition, not a universal adoption.** Which runtime a capture
-intent gets is decided by synchronized-group membership, like every other
-kind-specific seam in the shell:
+The split is by intent, not by content surface:
 
-| file | targets | runtime | save-press wait |
+| intent/file | targets | runtime | save-press wait |
 |---|---|---|---|
-| `CaptureIntentRuntime.swift` | all four | inline — the ordinary ~30 s budget | `IntentSaveTimeout.standard` (12 s) |
-| `CaptureIntentRuntime+LongRunning.swift` | **Luna**, **Luna Downloader** | `LiveActivityIntent` + `LongRunningIntent` + `CancellableIntent` | `.extendedRuntime` (`IngestPipeline.processTimeout + 2` = 30 s) |
+| `ProvideContextIntent` | all four | normal `AppIntent`, ordinary ~30 s system budget | one 20 s whole-fast-path deadline |
+| `SaveIntent` / `CaptureIntentRuntime.swift` fallback | all four | inline when built/run without the iOS 27 APIs | `IntentSaveTimeout.standard` (12 s) for screenshot saves |
+| `SaveIntent` / `CaptureIntentRuntime+LongRunning.swift` | all four | `LiveActivityIntent` + `LongRunningIntent` + `CancellableIntent` | `.extendedRuntime` (`IngestPipeline.processTimeout + 2` = 30 s) |
 
-Reader and Price Tracker stay on the plain budget **by design**: their captures
-end at the save (an article fetch or a price fetch, bounded by the pipeline
-timeout and the 12 s race). Only the media apps can exceed 30 s, because their
-handoff adds a preflight HEAD and an awaited transfer on top of the save. The
-override is a shadowing `withCaptureRuntime` on the concrete intent type, so the
-call in `perform()` is identical in every app and the choice is made at compile
-time. Verify the split in the built metadata — `systemProtocols` must be
-`[ForegroundContinuable, SessionStarting]` for Luna/Downloader and
-`[ForegroundContinuable]` for Reader/Price Tracker, with 3 actions everywhere.
+The synchronized-group exclusions for the long-running runtime were removed from
+Reader and Price Tracker because a slow article/product save can now be handed
+off too. `MediaIntentHandoff.swift` remains excluded from non-media apps. Verify
+built metadata with an Xcode 27 build: Provide Context must not list the
+long-running/session-starting protocols; Save must list them in every app.
 
 Both protocols are orthogonal refinements of `AppIntent` (SDK headers:
 `LiveActivityIntent : SystemIntent`, `LongRunningIntent : ProgressReportingIntent`,
@@ -254,7 +285,8 @@ both empty), so one type adopts both, and extension-declared conformances DO
 survive metadata extraction (that's what the `SessionStarting` check above
 confirms).
 
-**`LiveActivityIntent` (iOS 17+, no gate — below the iOS 18 target).** This
+**`LiveActivityIntent` (iOS 17+, no gate — below the iOS 18 target).** On Save,
+this
 is what PERMITS a Live Activity to start from a background Action Button run at
 all: *"In general, your app needs to be in the foreground to start a Live
 Activity. However, you can use a `LiveActivityIntent` and start the Live Activity
@@ -262,14 +294,13 @@ in its `perform()` method."* Before adopting it, `Activity.request` threw for
 every background capture and `startActivity` swallowed it into the diagnostic log
 (`"live activity request failed"`) — the download ran with no UI, which is what a
 Shortcut exiting over an invisible download looked like. Verify with the extracted
-metadata: `systemProtocols` for both intents must list
+metadata: `systemProtocols` for Save must list
 `com.apple.link.systemProtocol.SessionStarting` next to `…ForegroundContinuable`.
 
-**`LongRunningIntent` (iOS 27, double-gated, media apps only).** Without an
+**`LongRunningIntent` (iOS 27, double-gated, Save only).** Without an
 extension an app intent gets **~30 s** in the background (Apple's figure, stated
-in `LongRunningIntent`); a media capture can spend 12 s on the save race, then a
-20 s preflight HEAD, then an awaited transfer — i.e. be killed mid-download having
-reported nothing. Gates:
+in `LongRunningIntent`). Provide Context opportunistically uses only 20 s of that
+ordinary budget and hands off; Save owns extended execution. Gates:
 
 - `#if compiler(>=6.4)` — the protocol is **absent from iPhoneOS26.2.sdk** (0
   occurrences in its `AppIntents` swiftinterface vs 2 in the iOS 27 SDK), so a
@@ -284,22 +315,19 @@ keep reporting progress and the system tolerates it, and the user can cancel it.
 So progress is mandatory, not decoration: *"If you don't update this property
 regularly, the system can cancel the background runtime extension and end your
 task prematurely."* `IntentProgressReporter` supplies it — three stages
-(`saving` 0–0.50, `downloading` 0.50–0.95, `finishing` 0.95–1.0); real transitions
+(`saving` 0–0.02, `downloading` 0.02–0.99, `finishing` 0.99–1.0); real transitions
 snap the value to the next band's floor, a 1 s heartbeat closes 12 % of the
 remaining distance to the current band's ceiling. Deliberately an estimate: an
 indeterminate `Progress` that never moves is what gets cancelled. Never let a tick
 cross into the next band — a save still running must not read as a download.
 
-**The save-press budget follows the runtime.** `IntentIngestHelper.handleSavePress`
-takes a `timeout`, and the intents pass `captureSaveTimeout` — the seam's other
-per-target member. Under the ordinary budget it stays **12 s**, because the save
-is only the first leg (the media handoff's preflight HEAD and transfer still have
-to fit inside ~30 s). Under the extended runtime there is no ceiling to race, so
-it becomes `IngestPipeline.processTimeout + 2`: the pipeline ALWAYS resolves
-within its own hard timeout, so the race stops being the normal exit and becomes
-a backstop — which is what turns "timed out, reported as handled" into a real
-`saveFailed`/`contentUnavailable` error. `SafariPageSave.save` and
-`PlatformFieldSave.save` take the budget through as `saveTimeout`.
+**The fast-path budget is separate from the Save budget.** Provide Context uses
+`IntentSaveTimeout.provideContext` (20 s) around save plus media preparation.
+Save's screenshot-from-top fallback still threads `captureSaveTimeout` through
+`SafariPageSave` / `PlatformFieldSave`; under extended runtime it is
+`IngestPipeline.processTimeout + 2`, while the stable-SDK fallback remains 12 s.
+Checkpoint resume itself does not re-race the save: the LongRunning operation
+waits for the cancelled task to unwind and finishes the pipeline.
 
 **`CancellableIntent`** (iOS 26.4 — also absent from the 26.2 SDK, so it shares the
 `#if compiler(>=6.4)` gate) unlocks `performBackgroundTask`'s `onCancel:`
@@ -320,9 +348,9 @@ explicit Suspend control), so a download that keeps running never goes invisible
 | awaited download (file returned) | system intent progress UI; Luna's suppressed | Luna's own Live Activity |
 | background/deferred transfer | Luna's own (the system's ends with the intent) | Luna's own |
 
-Suppression is `LiveMediaDownloadManager.systemProvidesProgressUI`, a **task
-local** bound by `MediaIntentHandoff` (media apps only, so it can read
-`CaptureIntentSystemProgress.isAvailable`) around the awaited call only — so a
+Suppression is `LiveMediaDownloadManager.systemProvidesProgressUI`, a
+**task-local** bound by `MediaIntentHandoff` (media apps only, so it can read
+`CaptureIntentExtendedRuntime.isAvailable`) around the awaited call only — so a
 concurrent in-app save keeps its own activity and there's no global flag to leave
 set. It is deliberately NOT bound around the background leg: that transfer
 outlives the intent, and the system's progress UI does not.
@@ -384,9 +412,12 @@ stays share-sheet based).
 > **Manual step (signed file, cannot be generated by this codebase): the
 > bundled shortcut must be re-authored by hand** in the Shortcuts app to the
 > new shape — Get Current App + on-screen URL extraction → Provide
-> Context(app, OnScreenURLs) → If result.outcome is Requires Screenshot → Take
-> Screenshot → Save(app, screenshot) — exported, renamed to
-> `Send To Luna.shortcut`, and dropped into `Luna/Resources/`. This is a
+> Context(CurrentApp, OnScreenURLs), then branch on `result.Outcome`: for
+> Screenshot, Take Screenshot and call Save(CurrentApp, screenshot,
+> result.Metadata); for Download, call Save(CurrentApp, no screenshot,
+> result.Metadata); for Done or Unhandled, stop (using `result.Media` only on
+> Done) — exported, renamed to `Send To Luna.shortcut`, and dropped into
+> `Luna/Resources/`. This is a
 > **clean break**: old installs (the Screen Analysis Prompt / Save from App
 > chain) reference deleted intents and must be reinstalled via Settings →
 > Install Shortcut.

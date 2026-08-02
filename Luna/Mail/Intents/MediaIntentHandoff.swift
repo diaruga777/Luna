@@ -55,16 +55,52 @@ enum MediaIntentHandoff {
     }
 
     static func install() {
-        ActionButtonIntentSupport.mediaHandoff = { urlString, foreground in
-            try await downloadMediaIfNeeded(for: urlString, foreground: foreground)
+        ActionButtonIntentSupport.mediaPreparation = { urlString in
+            try await prepareMediaIfNeeded(for: urlString)
+        }
+        ActionButtonIntentSupport.mediaHandoff = { urlString, checkpoint, foreground in
+            try await downloadMediaIfNeeded(
+                for: urlString, checkpoint: checkpoint, foreground: foreground)
         }
     }
 
-    /// One media handoff shared by ProvideContext's completed Safari fast path
-    /// and SaveIntent's screenshot/search path. `foreground` is invoked only
+    /// Completes every deterministic, non-transfer step in the normal Provide
+    /// Context intent: local-file reuse, asset resolution/redirects, HEAD size,
+    /// and storage validation. The resulting checkpoint is opaque to Shortcuts
+    /// and lets Save begin with byte progress from its first download update.
+    private static func prepareMediaIfNeeded(
+        for urlString: String
+    ) async throws -> ActionButtonIntentSupport.MediaPreparation {
+        guard MediaAutoDownloader.shouldStartDownloaderIntentDownload(
+            forURLString: urlString)
+        else {
+            SharedDiagnosticLog.record(
+                "intent media preflight skipped: handlesMedia=\(MediaAutoDownloader.isRunningInDownloader), supported=\(MediaDownloadablePlatform.supports(urlString))",
+                category: "media-download")
+            return .none
+        }
+        if let existing = SavedMediaStore.shared.existingDownloadedItem(
+            forURLString: urlString),
+           let media = await MediaAutoDownloader.exportFile(from: existing) {
+            return .completed(intentFile(for: media))
+        }
+        guard let sourceURL = URL(string: urlString),
+              let inspection = await MediaDownloadPreflight.inspect(sourceURL: sourceURL)
+        else { return .download(nil) }
+        if let error = MediaDownloadPreflight.storageError(for: inspection) {
+            throw MediaHandoffError.insufficientStorage(error.message)
+        }
+        return .download(IntentMediaCheckpoint(
+            asset: inspection.asset,
+            expectedByteCount: inspection.expectedByteCount))
+    }
+
+    /// SaveIntent's media handoff for both a prepared checkpoint and the
+    /// screenshot/search path. `foreground` is invoked only
     /// when a first read/write Photos authorization prompt needs a visible host.
     private static func downloadMediaIfNeeded(
         for urlString: String,
+        checkpoint: IntentMediaCheckpoint?,
         foreground: () async -> Void
     ) async throws -> IntentFile? {
         guard MediaAutoDownloader.shouldStartDownloaderIntentDownload(
@@ -84,11 +120,21 @@ enum MediaIntentHandoff {
             let media = await MediaAutoDownloader.exportFile(from: existing)
             return media.map { intentFile(for: $0) }
         }
-        if let sourceURL = URL(string: urlString),
-           let inspection = await MediaDownloadPreflight.inspect(sourceURL: sourceURL) {
+        let inspection: MediaDownloadInspection?
+        if let checkpoint {
+            inspection = MediaDownloadInspection(
+                asset: checkpoint.asset,
+                expectedByteCount: checkpoint.expectedByteCount)
+        } else if let sourceURL = URL(string: urlString) {
+            inspection = await MediaDownloadPreflight.inspect(sourceURL: sourceURL)
+        } else {
+            inspection = nil
+        }
+        if let inspection {
             if let error = MediaDownloadPreflight.storageError(for: inspection) {
                 throw MediaHandoffError.insufficientStorage(error.message)
             }
+            ActionButtonIntentSupport.byteProgress?(0, inspection.expectedByteCount)
             guard IntentMediaDownloadPolicy.shouldAwait(
                 expectedByteCount: inspection.expectedByteCount)
             else {

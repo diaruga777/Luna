@@ -45,7 +45,7 @@ final class SafariReplicaViewController:
     }()
 
     private let browserBar = SafariBottomBar()
-    private let lunaPage = OnboardingSafariPageView()
+    private let lunaPage: OnboardingSafariPageView
     private var instructionOverlay: DemoInstructionOverlay?
     private var extensionsSheet: OnboardingManageExtensionsSheetView?
     private var enableDemoGeneration = 0
@@ -64,6 +64,7 @@ final class SafariReplicaViewController:
 
     init(configuration: OnboardingSurfaceConfiguration = .current) {
         self.onboardingConfiguration = configuration
+        lunaPage = OnboardingSafariPageView(configuration: configuration)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -231,7 +232,8 @@ final class SafariReplicaViewController:
     }
 
     private func presentExtensionsSheet(generation: Int) {
-        let sheet = OnboardingManageExtensionsSheetView(frame: view.bounds)
+        let sheet = OnboardingManageExtensionsSheetView(
+            frame: view.bounds, configuration: onboardingConfiguration)
         extensionsSheet = sheet
         view.addSubview(sheet)
         sheet.present { [weak self] in

@@ -42,6 +42,7 @@ final class RSVPEyeTrackingTests: XCTestCase {
         GazeTrackingAvailability.supportOverride = true
         GazeTrackingPermission.statusOverride = .granted
         ReaderSettings.eyeTrackingEnabled = false
+        ReaderSettings.gazeDebugOverlayEnabled = false
         ReaderSettings.rsvpMode = .words
         tracker = StubGazeTracker()
     }
@@ -50,6 +51,7 @@ final class RSVPEyeTrackingTests: XCTestCase {
         GazeTrackingAvailability.supportOverride = nil
         GazeTrackingPermission.statusOverride = nil
         ReaderSettings.eyeTrackingEnabled = false
+        ReaderSettings.gazeDebugOverlayEnabled = false
         window = nil
         super.tearDown()
     }
@@ -218,6 +220,79 @@ final class RSVPEyeTrackingTests: XCTestCase {
 
         feed(.offScreen, timeout: 1, until: { false })
         XCTAssertTrue(reader.isPlaying, "the toggle is off; gaze has no say")
+    }
+
+    // MARK: - Calibration
+
+    /// THE regression test for "it always pauses after a second or two even
+    /// though my eyes are locked on the word": ARKit's raw gaze carries a
+    /// systematic per-user bias, easily beyond the focus radius. Warm-up must
+    /// learn that bias from the first samples of playback and subtract it, so
+    /// a fixated reader is never paused no matter how biased the estimator is.
+    func testASystematicEstimatorBiasNeverPausesAFixatedReader() throws {
+        let reader = makeReader()
+        try toggle(in: reader).sendActions(for: .touchUpInside)
+        try playButton(in: reader).sendActions(for: .touchUpInside)
+        XCTAssertTrue(reader.isPlaying)
+
+        // Every sample lands a fixed ~380pt from the word — raw, that is
+        // "away" (worth ~1.4s of tolerance), and 4 seconds of it would have
+        // paused the reader twice over.
+        let focus = reader.focalGazePoint
+        let biased = CGPoint(x: focus.x + 320, y: focus.y - 200)
+        feed(.point(biased), timeout: 4, until: { !reader.isPlaying })
+        XCTAssertTrue(reader.isPlaying,
+                      "a constant bias is the estimator's error, not the reader's glance")
+    }
+
+    /// Calibration must remove the bias, not the feature: an excursion beyond
+    /// the learned baseline still pauses.
+    func testAGenuineLookAwayStillPausesAfterCalibration() throws {
+        let reader = makeReader()
+        try toggle(in: reader).sendActions(for: .touchUpInside)
+        try playButton(in: reader).sendActions(for: .touchUpInside)
+
+        let focus = reader.focalGazePoint
+        let bias = CGVector(dx: 320, dy: -200)
+        let reading = CGPoint(x: focus.x + bias.dx, y: focus.y + bias.dy)
+        feed(.point(reading), timeout: 2.5, until: { false })
+        XCTAssertTrue(reader.isPlaying, "still fixated — only the bias moved")
+
+        // The same bias, plus a real 500pt excursion.
+        let away = CGPoint(x: reading.x, y: reading.y + 500)
+        XCTAssertTrue(feed(.point(away), timeout: 4, until: { !reader.isPlaying }),
+                      "calibration must not swallow genuine excursions")
+    }
+
+    // MARK: - Debug overlay
+
+    /// The gaze overlay is a diagnostics tool: absent by default, installed
+    /// only while the hidden Diagnostics switch is on, gone again once it is
+    /// turned back off.
+    func testGazeDebugOverlayFollowsTheHiddenDiagnosticsSetting() throws {
+        let reader = makeReader()
+        XCTAssertTrue(
+            reader.view.subviews.compactMap { $0 as? RSVPGazeDebugOverlay }.isEmpty,
+            "no overlay unless the diagnostics switch was flipped")
+
+        ReaderSettings.gazeDebugOverlayEnabled = true
+        reader.beginAppearanceTransition(false, animated: false)
+        reader.endAppearanceTransition()
+        reader.beginAppearanceTransition(true, animated: false)
+        reader.endAppearanceTransition()
+        let overlay = reader.view.subviews.compactMap { $0 as? RSVPGazeDebugOverlay }.first
+        XCTAssertNotNil(overlay)
+        XCTAssertEqual(overlay?.isUserInteractionEnabled, false,
+                       "the overlay must never eat the reader's touches")
+
+        ReaderSettings.gazeDebugOverlayEnabled = false
+        reader.beginAppearanceTransition(false, animated: false)
+        reader.endAppearanceTransition()
+        reader.beginAppearanceTransition(true, animated: false)
+        reader.endAppearanceTransition()
+        XCTAssertTrue(
+            reader.view.subviews.compactMap { $0 as? RSVPGazeDebugOverlay }.isEmpty,
+            "turning the switch off removes the overlay on the next appearance")
     }
 
     // MARK: - Play override

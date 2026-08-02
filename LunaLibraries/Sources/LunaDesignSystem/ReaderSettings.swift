@@ -31,6 +31,7 @@ public enum ReaderSettings {
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
     private static let linkPreviewPositionsKey = "linkRSVPPreviewWordPositions"
     private static let eyeTrackingKey = "rsvpEyeTrackingEnabled"
+    private static let gazeDebugOverlayKey = "rsvpGazeDebugOverlayEnabled"
 
     /// One-time copy of settings previously kept in standard defaults into the
     /// App Group (so the extension sees them). Call once at app launch.
@@ -181,5 +182,14 @@ public enum ReaderSettings {
     public static var eyeTrackingEnabled: Bool {
         get { defaults.bool(forKey: eyeTrackingKey) }
         set { defaults.set(newValue, forKey: eyeTrackingKey) }
+    }
+
+    /// Whether the RSVP reader draws the gaze DEBUG overlay (raw + calibrated
+    /// gaze dots, focus radius, numeric readout). Off by default; toggled only
+    /// from the hidden Diagnostics screen (five taps on Settings), for
+    /// verifying eye-tracking accuracy on a real device.
+    public static var gazeDebugOverlayEnabled: Bool {
+        get { defaults.bool(forKey: gazeDebugOverlayKey) }
+        set { defaults.set(newValue, forKey: gazeDebugOverlayKey) }
     }
 }

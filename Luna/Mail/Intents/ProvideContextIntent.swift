@@ -16,28 +16,23 @@ import UniformTypeIdentifiers
 
 /// First step of the Action Button capture flow. Pass the current app (from
 /// Get Current App); the intent decides what the Shortcut should do next and
-/// returns a transient entity whose outcome is `.unhandled`, `.done`, or
-/// `.requiresScreenshot`. A completed synchronous media download is attached
-/// to the entity for the Shortcut to display or pass onward. Compatible complete
-/// URLs supplied by the Shortcut are saved directly before app-specific fallback
-/// or screenshot analysis is considered, including while Safari is current.
-///
-/// The background runtime and the Live-Activity permission this intent runs under
-/// are per-target composition: see `CaptureIntentRuntime.swift` (universal
-/// default) and `CaptureIntentRuntime+LongRunning.swift` (media apps only).
+/// returns a transient entity whose outcome is `.unhandled`, `.done`,
+/// `.screenshot`, or `.download`. It deliberately remains a normal AppIntent:
+/// fast saves finish here, while media transfers and work approaching the normal
+/// runtime limit hand a resumable opaque checkpoint to the LongRunning SaveIntent.
 struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Provide Context"
     static let description = IntentDescription("""
         First step of the Action Button shortcut. Pass the current app (from Get \
         Current App) and optionally URLs detected on screen. Returns a structured \
-        outcome telling the shortcut whether the page is done, unhandled, or \
-        requires a screenshot.
+        outcome telling the shortcut whether the page is done, unhandled, needs \
+        a screenshot, or must continue in Save.
         """)
     static let openAppWhenRun: Bool = false
 
-    @Parameter(title: "App", description: "The current app, from Get Current App.")
-    var app: String?
+    @Parameter(title: "CurrentApp", description: "The current app, from Get Current App.")
+    var currentApp: String?
 
     @Parameter(
         title: "OnScreenURLs",
@@ -81,38 +76,27 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
-        // Keep the invocation's start time even if URL resolution takes a while;
-        // the store writes it before ingest so overlapping runs still pair up.
         let attemptDate = Date()
         LunaSetupStatusStore.shared.recordShortcutRun(
             isCentral: LunaApp.current == .luna)
-        let reporter = IntentProgressReporter()
-        // Which background runtime this is, and whether the system shows its own
-        // progress, is decided by target membership — see `CaptureIntentRuntime`.
-        let value = try await withCaptureRuntime(reporter: reporter) {
-            try await self.provideContext(reporter: reporter, attemptDate: attemptDate)
-        }
+        let value = try await provideContext(attemptDate: attemptDate)
         return .result(value: value)
     }
 
-    /// The intent body, independent of whether an extended runtime is wrapping
-    /// it. Returns the entity; `perform` packages the result.
-    private func provideContext(
-        reporter: IntentProgressReporter, attemptDate: Date
-    ) async throws -> ProvideContextResultEntity {
+    private func provideContext(attemptDate: Date) async throws -> ProvideContextResultEntity {
         // A sibling Luna app owns the screen: nothing here is ours to save, and
         // that verdict outranks even a supplied on-screen URL (a link showing
         // inside another Luna app is already saved, in the app that owns its
         // kind). Reported as plainly unhandled so the Shortcut just stops.
-        if AppNamePlatform.isSiblingLunaApp(app) {
+        if AppNamePlatform.isSiblingLunaApp(currentApp) {
             SharedDiagnosticLog.record(
                 "provide context: ignored — sibling Luna app frontmost "
-                    + "(app=\(app ?? "nil"))",
+                    + "(app=\(currentApp ?? "nil"))",
                 category: "intents")
             return ProvideContextResultEntity(outcome: .unhandled)
         }
 
-        let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
+        let isSafari = currentApp.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
 
         // A supplied URL this app can handle takes precedence over every
         // app-based decision, including an otherwise unsupported current app —
@@ -130,18 +114,17 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             safariTrackedURLString: trackedURLString,
             isEnabled: AppIntentSettings.handleOnScreenURLs)
         if case let .save(urlString) = plan {
-            return try await saveURL(
-                urlString, reporter: reporter, attemptDate: attemptDate)
+            return try await saveURL(urlString, attemptDate: attemptDate)
         }
 
         if case .divergent = plan { throw ProvideContextError.multipleURLs }
 
         let visionAvailable = ScreenCaptureModelSessionFactory.makeDefault().isAvailable
         let decision = ProvideContextDecision.decide(
-            appName: app,
+            appName: currentApp,
             isSafari: isSafari,
-            isShortcuts: app.map { AppNamePlatform.isShortcuts(forAppName: $0) } ?? false,
-            platform: app.flatMap { AppNamePlatform.platform(forAppName: $0) },
+            isShortcuts: currentApp.map { AppNamePlatform.isShortcuts(forAppName: $0) } ?? false,
+            platform: currentApp.flatMap { AppNamePlatform.platform(forAppName: $0) },
             safariURLFresh: safariURLFresh,
             // A recognized-platform save is media, so only media-handling apps
             // (Downloader, the central Luna app) proceed to a screenshot save.
@@ -152,7 +135,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         // nothing — indistinguishable, from the outside, from a save that
         // silently did nothing. Record which inputs produced it.
         SharedDiagnosticLog.record(
-            "provide context: decision=\(decision) app=\(app ?? "nil") safari=\(isSafari) "
+            "provide context: decision=\(decision) app=\(currentApp ?? "nil") safari=\(isSafari) "
                 + "safariURLFresh=\(safariURLFresh) tracked=\(trackedURLString ?? "nil") "
                 + "plan=\(plan) vision=\(visionAvailable) "
                 + "handlesMedia=\(LunaApp.current.handlesMedia)",
@@ -162,37 +145,63 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         case .unsupported:
             return ProvideContextResultEntity(outcome: .unhandled)
         case .screenshotNeeded:
-            return ProvideContextResultEntity(outcome: .requiresScreenshot)
+            let metadata = CaptureIntentMetadata(
+                phase: .screenshot, currentApp: currentApp).opaqueString
+            return ProvideContextResultEntity(
+                outcome: .screenshot, metadata: metadata)
         case .saveImmediately:
             guard let urlString = SafariURLStore.lastURL, !urlString.isEmpty else {
                 // Shouldn't happen (freshness implies a URL) — but never save
                 // nothing silently.
                 throw ProvideContextError.noTrackedPage
             }
-            return try await saveURL(
-                urlString, reporter: reporter, attemptDate: attemptDate)
+            return try await saveURL(urlString, attemptDate: attemptDate)
         }
     }
 
     /// The one immediate-URL path for both Safari-extension URLs and URLs
     /// extracted from Shortcuts input. Every way it can end without content in
     /// the app throws: a foreign kind, an empty store, a `.failed` item, or a
-    /// media download that never ran (thrown from the handoff). A timeout still
-    /// counts as handled — the ingest task continues and persists its pending
-    /// work in the background, so the item IS in the app.
+    /// media download that never ran (thrown from the handoff). The complete
+    /// preparation path has one 20 s deadline. If it expires, the losing task is
+    /// cancelled and the durable prepared save is returned for SaveIntent to
+    /// resume without another reservation or duplicate work.
     private func saveURL(
-        _ urlString: String, reporter: IntentProgressReporter, attemptDate: Date
+        _ urlString: String, attemptDate: Date
     ) async throws -> ProvideContextResultEntity {
-        var timingURLString = urlString
-        defer {
-            IntentIngestHelper.finishSaveAttempt(
-                urlString: timingURLString, at: Date())
-        }
-        reporter.enter(.saving)
-        let outcome = await IntentIngestHelper.handleSavePress(
+        guard let prepared = IntentIngestHelper.prepareSavePress(
             urlString: urlString,
             doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface,
-            timeout: captureSaveTimeout, attemptDate: attemptDate)
+            attemptDate: attemptDate)
+        else { throw ProvideContextError.saveFailed }
+
+        // A non-trivial double-save action is already decided atomically. Run it
+        // exactly once under SaveIntent rather than beginning a send/export here
+        // and risking duplication if the normal-runtime deadline wins the race.
+        if prepared.isDoubleSave, case .ignore = prepared.action {
+            // The configured action is intentionally inert; verification below
+            // is immediate and completes in the fast path.
+        } else if prepared.isDoubleSave {
+            return continuationResult(
+                phase: .save, urlString: prepared.urlString,
+                prepared: prepared)
+        }
+
+        let deadline = attemptDate.addingTimeInterval(IntentSaveTimeout.provideContext)
+        let outcome: IntentIngestHelper.ActionButtonSaveOutcome
+        do {
+            outcome = try await CaptureIntentFastPath.run(
+                timeout: deadline.timeIntervalSinceNow) {
+                    await IntentIngestHelper.performPreparedSavePress(prepared)
+                }
+        } catch CaptureIntentFastPathError.timedOut {
+            SharedDiagnosticLog.record(
+                "provide context: 20 s fast path expired during save; handing off \(prepared.urlString)",
+                category: "intents")
+            return continuationResult(
+                phase: .save, urlString: prepared.urlString,
+                prepared: prepared)
+        }
 
         let savedURLString: String
         // A double save whose action is "View immediately": the article document IS
@@ -208,8 +217,6 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             exportedFile = await ActionButtonIntentSupport.exportFile(
                 for: item, format: format)
         case let .completed(savedURL):
-            // Nil means only that the save race expired. The ingest task
-            // continues, exactly as it does for a Safari-extension URL.
             savedURLString = savedURL ?? urlString
         case let .unsupportedKind(owner):
             throw ProvideContextError.unsupportedKind(
@@ -217,37 +224,80 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         case let .saveFailed(failure):
             throw ProvideContextError(saveFailure: failure)
         }
-        timingURLString = savedURLString
 
         if let exportedFile {
-            reporter.enter(.finishing)
+            IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
             return ProvideContextResultEntity(outcome: .done, media: exportedFile)
         }
 
-        reporter.enter(.downloading)
-        ActionButtonIntentSupport.byteProgress = { received, expected in
-            reporter.setExpectedBytes(expected)
-            reporter.setReceivedBytes(received)
+        let preparation: ActionButtonIntentSupport.MediaPreparation
+        do {
+            preparation = try await CaptureIntentFastPath.run(
+                timeout: deadline.timeIntervalSinceNow) {
+                    try await ActionButtonIntentSupport.prepareMediaIfNeeded(
+                        for: savedURLString)
+                }
+        } catch CaptureIntentFastPathError.timedOut {
+            SharedDiagnosticLog.record(
+                "provide context: 20 s fast path expired during media preflight; handing off \(savedURLString)",
+                category: "intents")
+            IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
+            return continuationResult(
+                phase: .download, urlString: savedURLString,
+                prepared: prepared)
         }
-        defer { ActionButtonIntentSupport.byteProgress = nil }
-        let media = try await ActionButtonIntentSupport.downloadMediaIfNeeded(
-            for: savedURLString
-        ) {
-            try? await requestToContinueInForeground()
+
+        IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
+        switch preparation {
+        case .none:
+            return ProvideContextResultEntity(outcome: .done)
+        case .completed(let media):
+            return ProvideContextResultEntity(outcome: .done, media: media)
+        case .download(let media):
+            return continuationResult(
+                phase: .download, urlString: savedURLString,
+                prepared: prepared, media: media)
         }
-        reporter.enter(.finishing)
-        return ProvideContextResultEntity(outcome: .done, media: media)
+    }
+
+    private func continuationResult(
+        phase: CaptureIntentMetadata.Phase,
+        urlString: String,
+        prepared: IntentIngestHelper.PreparedSavePress,
+        media: IntentMediaCheckpoint? = nil
+    ) -> ProvideContextResultEntity {
+        let metadata = CaptureIntentMetadata(
+            phase: phase,
+            currentApp: currentApp,
+            resolvedURLString: urlString,
+            isDoubleSave: prepared.isDoubleSave,
+            preparedSave: prepared,
+            media: media).opaqueString
+        return ProvideContextResultEntity(
+            outcome: .download, metadata: metadata)
     }
 }
 
 /// Shared plumbing for the two Action Button intents (Provide Context + Save).
 enum ActionButtonIntentSupport {
 
+    enum MediaPreparation {
+        /// The URL is not downloadable media in this app.
+        case none
+        /// Media already exists locally, so no long-running work is required.
+        case completed(IntentFile)
+        /// SaveIntent must perform the actual transfer. The checkpoint is nil
+        /// when resolution/preflight could not finish and Save should retry it.
+        case download(IntentMediaCheckpoint?)
+    }
+
     /// Media-kind download handoff, installed by `MediaIntentHandoff.install()`
     /// (media apps only — Downloader + the central Luna app). Nil in
     /// article/product-only apps ⇒ the intents return no media, matching the
     /// gate that only media-handling apps hand off.
-    static var mediaHandoff: ((String, () async -> Void) async throws -> IntentFile?)?
+    static var mediaPreparation: ((String) async throws -> MediaPreparation)?
+    static var mediaHandoff:
+        ((String, IntentMediaCheckpoint?, () async -> Void) async throws -> IntentFile?)?
 
     /// Set for the duration of an awaited media handoff so the transfer's real
     /// `(received, expected)` byte counts reach the running intent's progress
@@ -255,15 +305,26 @@ enum ActionButtonIntentSupport {
     /// is installed per-target and must stay kind-agnostic.
     static var byteProgress: ((Int64, Int64?) -> Void)?
 
-    /// One media handoff shared by ProvideContext's completed Safari fast path
-    /// and SaveIntent's screenshot/search path. `foreground` is invoked only
+    /// SaveIntent's media handoff for prepared and from-scratch paths.
+    /// `foreground` is invoked only
     /// when a first read/write Photos authorization prompt needs a visible host.
     static func downloadMediaIfNeeded(
         for urlString: String,
+        checkpoint: IntentMediaCheckpoint? = nil,
         foreground: () async -> Void
     ) async throws -> IntentFile? {
         guard let mediaHandoff else { return nil }
-        return try await mediaHandoff(urlString, foreground)
+        return try await mediaHandoff(urlString, checkpoint, foreground)
+    }
+
+    /// Resolves redirects/assets, validates storage, and obtains the expected
+    /// byte count without starting a transfer. Only media targets install this
+    /// seam; other apps complete with `.none` immediately.
+    static func prepareMediaIfNeeded(
+        for urlString: String
+    ) async throws -> MediaPreparation {
+        guard let mediaPreparation else { return .none }
+        return try await mediaPreparation(urlString)
     }
 
     /// Article-document export for a "View immediately" double save. Installed

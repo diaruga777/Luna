@@ -36,9 +36,10 @@ timestamp as one flushed App-Group value before ingest begins. Two overlapping
 runs therefore cannot both observe an absent URL or wait for the first run to
 tear down before reusing its result.
 
-Both state stores are recommitted with `Date()` at intent completion. The ingest
-task also finalizes its reading-list marker when it completes, covering the case
-where the App Intent's timeout returned first. This makes the seven-second window
+Both state stores are recommitted with `Date()` at intent completion. Provide
+Context freezes the reservation and double-save decision before asynchronous
+work; if its 20-second budget expires, Save resumes that exact prepared press
+instead of reserving again. This makes the seven-second window
 temporarily run from invocation start, then run from the later completion time.
 Completion writes are monotonic and screenshot-identity checked, so an older run
 cannot shorten the window or overwrite a newer page. The policy still has **no
@@ -73,10 +74,12 @@ the save still returns a file WITH the article's pictures — see
 article-export.md's "Images: resolved, then fetched"; without it the 7-second
 window always beat the image downloads.
 
-The returned document becomes the intent's **media** — `SaveResultEntity.media` /
-`ProvideContextResultEntity.media` — replacing the media download for that run
-(an article has none anyway). An export that can't be built returns no file
-rather than throwing: a double save must never fail the save that preceded it.
+The returned document becomes `SaveResultEntity.media` (an already-local file
+may still be `ProvideContextResultEntity.media`). A non-trivial direct-URL
+double-save decision routes to the long-running Save intent before executing, so
+a cancellation/timeout can never duplicate a Kindle send or document export. An
+export that can't be built returns no file rather than throwing: a double save
+must never fail the save that preceded it.
 
 Platform items (videos, posts, tracks) are excluded from both the Kindle and the
 export actions — neither has an EPUB target nor stored article content.

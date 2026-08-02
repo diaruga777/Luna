@@ -19,6 +19,18 @@ enum LeftTraySetupKind: Equatable {
     case email
 }
 
+enum LeftTraySetupVisibility {
+    static func showsShortcut(
+        saveSetupMode: OnboardingSaveSetupMode,
+        setupFlowHandled: Bool,
+        shortcutHasRun: Bool
+    ) -> Bool {
+        saveSetupMode == .actionButtonShortcut
+            && !setupFlowHandled
+            && !shortcutHasRun
+    }
+}
+
 private enum LeftTrayPasteState {
     case notPresent(changeCount: Int)
     case explicit(changeCount: Int)
@@ -43,8 +55,9 @@ private enum LeftTrayRow {
 
     var height: CGFloat {
         switch self {
-        case .paste: return 154
-        case .setup: return 176
+        case .paste: return 148
+        case .setup(.shortcut): return 54
+        case .setup(.email), .setup(.safari): return 88
         case .recent: return 116
         }
     }
@@ -55,7 +68,7 @@ private enum LeftTrayRow {
 private final class LeftArcLayout: UICollectionViewLayout {
     var itemWidth: CGFloat = 200
     var itemHeights: [CGFloat] = []
-    var spacing: CGFloat = 32
+    var spacing: CGFloat = 18
     var topInset: CGFloat = 28
     var bottomInset: CGFloat = 28
     var trailingInset: CGFloat = 8
@@ -118,6 +131,9 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     /// includes the Email settings controller. The shared tray source also
     /// compiles into Downloader/Price Tracker, so it must not name that type.
     static var emailRecoveryLauncher: ((UIViewController) -> Void)?
+    /// Per-target composition supplies the correct production root for the
+    /// onboarding mock's saved-card stage.
+    static var setupJourneyLauncher: ((UIViewController, OnboardingDemoSource) -> Void)?
 
     private weak var host: UIViewController?
     private let shiftContribution: TrayShiftContribution
@@ -139,13 +155,9 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private var isRemovingSetupRows = false
     private var pullAvailable = false
     private var chromeHidden = false
-    private var assumesShortcutInstalled = UserDefaults.standard.bool(
-        forKey: "leftTray.shortcutInstallerOpened.\(LunaApp.current.storageIdentifier)")
     private var activeEmailCard: ExpandedEmailSetupCard?
     private var emailAccountSetup: EmailAccountSetup?
     private var keyboardFrameInScreen: CGRect?
-    private let shortcutGuide = SetupGuideVideo(guide: .actionButton)
-    private let safariGuide = SetupGuideVideo(guide: .safariExtension)
 
     var pasteConfiguration: UIPasteConfiguration?
 
@@ -205,13 +217,6 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             LeftTrayCell.self, forCellWithReuseIdentifier: LeftTrayCell.reuseID)
         tray.addSubview(collection)
 
-        for guide in [shortcutGuide, safariGuide] {
-            guide.playerView.frame = CGRect(x: 1, y: 1, width: 2, height: 2)
-            guide.playerView.alpha = 0.01
-            tray.insertSubview(guide.playerView, belowSubview: collection)
-            guide.prepare()
-        }
-
         pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.delegate = self
         view.addGestureRecognizer(pan)
@@ -231,6 +236,9 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         NotificationCenter.default.addObserver(
             self, selector: #selector(setupStatusChanged),
             name: LunaSetupStatusStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(setupStatusChanged),
+            name: AppOnboardingStore.didChange, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(contentChanged),
             name: EmailAccountStore.accountChanged, object: nil)
@@ -302,8 +310,6 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     func dismiss(animated: Bool) { setOpen(false, animated: animated) }
 
     @objc private func applicationForegrounded() {
-        shortcutGuide.stopPictureInPicture()
-        safariGuide.stopPictureInPicture()
         detectPasteboard()
         RecentURLMatcher.shared.refresh()
         if EmailAccountStore.shared.isReady, let card = activeEmailCard {
@@ -344,8 +350,6 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
             DispatchQueue.main.async { [weak self] in self?.setupStatusChanged() }
             return
         }
-        shortcutGuide.stopPictureInPicture()
-        safariGuide.stopPictureInPicture()
         removeCompletedSetupRows()
     }
 
@@ -442,7 +446,10 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
         if LunaApp.current.sharesByEmail, !EmailAccountStore.shared.isReady {
             next.append(.setup(.email))
         }
-        if !setup.shortcutHasRun(isCentral: isCentral) {
+        if LeftTraySetupVisibility.showsShortcut(
+            saveSetupMode: .current,
+            setupFlowHandled: AppOnboardingStore.shared.hasHandledSaveSetup,
+            shortcutHasRun: setup.shortcutHasRun(isCentral: isCentral)) {
             next.append(.setup(.shortcut))
         }
         if !setup.safariHasRun(isCentral: isCentral) {
@@ -631,6 +638,10 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     func offsetTrayForTesting(by deltaX: CGFloat) {
         tray.frame.origin.x += deltaX
     }
+
+    func setOpenForTesting(_ open: Bool) {
+        setOpen(open, animated: false)
+    }
     #endif
 
     private func openSettingsForPaste() {
@@ -650,29 +661,11 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
                 presentExpandedEmailCard(from: sourceView)
             }
         case .shortcut:
-            if assumesShortcutInstalled {
-                shortcutGuide.startPictureInPicture()
-                SystemSettingsLink.openActionButton()
-            } else {
-                guard let host else { return }
-                BundledShortcut.presentInstaller(from: host, sourceView: sourceView)
-                assumesShortcutInstalled = true
-                UserDefaults.standard.set(
-                    true,
-                    forKey: "leftTray.shortcutInstallerOpened."
-                        + LunaApp.current.storageIdentifier)
-                if let index = rows.firstIndex(where: {
-                    if case .setup(.shortcut) = $0 { return true }
-                    return false
-                }) {
-                    collection.reloadItems(at: [IndexPath(item: index, section: 0)])
-                }
-            }
+            guard let host else { return }
+            Self.setupJourneyLauncher?(host, .messages)
         case .safari:
-            safariGuide.startPictureInPicture()
-            if let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia") {
-                UIApplication.shared.open(url)
-            }
+            guard let host else { return }
+            Self.setupJourneyLauncher?(host, .safari)
         }
     }
 
@@ -1051,15 +1044,9 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
         case .setup(let kind):
             cell.configureSetup(
                 kind: kind,
-                assumesShortcutInstalled: assumesShortcutInstalled,
-                appName: LunaApp.current.displayName,
                 emailIssue: kind == .email
                     ? EmailAccountStore.shared.authenticationIssue : nil,
-                tint: LunaSurfacePalette.baseColor,
-                action: { [weak self, weak cell] in
-                    guard let self, let cell else { return }
-                    self.performSetupAction(kind, from: cell)
-                })
+                tint: LunaSurfacePalette.baseColor)
         case .paste:
             cell.configurePaste(
                 state: pasteState, pasteTarget: self,
@@ -1074,9 +1061,7 @@ extension LeftTrayController: UICollectionViewDataSource, UICollectionViewDelega
         let source = collectionView.cellForItem(at: indexPath) ?? collectionView
         switch rows[indexPath.item] {
         case .setup(let kind):
-            if kind == .email {
-                performSetupAction(kind, from: source)
-            }
+            performSetupAction(kind, from: source)
         case .paste:
             if case let .preview(_, preview) = pasteState {
                 save(preview, source: .paste, sourceView: source)
@@ -1120,12 +1105,9 @@ private final class LeftTrayCell: UICollectionViewCell {
     private let subtitleLabel = UILabel()
     private let pasteBadge = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
     private let spinner = UIActivityIndicatorView(style: .medium)
-    private let setupTitleLabel = UILabel()
-    private let setupSubtitleLabel = UILabel()
-    private let setupButton = UIButton(type: .system)
-    private let setupStack = UIStackView()
     private let settingsButton = UIButton(type: .system)
-    private var setupAction: (() -> Void)?
+    private let setupVisual = LeftTraySetupVisualView()
+    private let clipboardVisual = LeftTrayClipboardView()
     private var pasteControl: UIPasteControl?
     private var titleLeadingConstraint: NSLayoutConstraint!
     private var titleTrailingConstraint: NSLayoutConstraint!
@@ -1155,24 +1137,8 @@ private final class LeftTrayCell: UICollectionViewCell {
         subtitleLabel.numberOfLines = 2
         pasteBadge.tintColor = Self.secondaryCardText
 
-        setupTitleLabel.font = .preferredFont(forTextStyle: .headline)
-        setupTitleLabel.textColor = Self.primaryCardText
-        setupTitleLabel.textAlignment = .center
-        setupTitleLabel.numberOfLines = 3
-        setupSubtitleLabel.font = .preferredFont(forTextStyle: .caption1)
-        setupSubtitleLabel.textColor = Self.secondaryCardText
-        setupSubtitleLabel.textAlignment = .center
-        setupSubtitleLabel.numberOfLines = 2
-        setupButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
-        setupButton.titleLabel?.lineBreakMode = .byClipping
-        setupButton.addTarget(self, action: #selector(setupButtonTapped), for: .touchUpInside)
-        setupStack.axis = .vertical
-        setupStack.alignment = .center
-        setupStack.spacing = 12
-        setupStack.isHidden = true
-        setupStack.addArrangedSubview(setupTitleLabel)
-        setupStack.addArrangedSubview(setupSubtitleLabel)
-        setupStack.addArrangedSubview(setupButton)
+        setupVisual.isHidden = true
+        clipboardVisual.isHidden = true
         settingsButton.titleLabel?.numberOfLines = 2
         settingsButton.titleLabel?.textAlignment = .center
         settingsButton.isHidden = true
@@ -1181,7 +1147,7 @@ private final class LeftTrayCell: UICollectionViewCell {
 
         for view in [
             imageView, symbolView, titleLabel, subtitleLabel, pasteBadge, spinner,
-            setupStack, settingsButton,
+            settingsButton, setupVisual, clipboardVisual,
         ] {
             view.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(view)
@@ -1211,16 +1177,18 @@ private final class LeftTrayCell: UICollectionViewCell {
             pasteBadge.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -9),
             spinner.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            setupStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 18),
-            setupStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -18),
-            setupStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            setupTitleLabel.widthAnchor.constraint(equalTo: setupStack.widthAnchor),
-            setupSubtitleLabel.widthAnchor.constraint(equalTo: setupStack.widthAnchor),
-            setupButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            setupButton.heightAnchor.constraint(equalToConstant: 44),
-            settingsButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
-            settingsButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
-            settingsButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            setupVisual.topAnchor.constraint(equalTo: contentView.topAnchor),
+            setupVisual.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            setupVisual.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            setupVisual.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            clipboardVisual.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 22),
+            clipboardVisual.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            clipboardVisual.widthAnchor.constraint(equalToConstant: 168),
+            clipboardVisual.heightAnchor.constraint(equalToConstant: 142),
+            settingsButton.leadingAnchor.constraint(equalTo: clipboardVisual.trailingAnchor, constant: 8),
+            settingsButton.centerYAnchor.constraint(equalTo: clipboardVisual.centerYAnchor),
+            settingsButton.widthAnchor.constraint(equalToConstant: 34),
+            settingsButton.heightAnchor.constraint(equalToConstant: 34),
         ])
     }
 
@@ -1242,14 +1210,9 @@ private final class LeftTrayCell: UICollectionViewCell {
         subtitleLabel.text = nil
         titleLabel.isHidden = false
         subtitleLabel.isHidden = false
-        setupTitleLabel.text = nil
-        setupTitleLabel.textColor = Self.primaryCardText
-        setupSubtitleLabel.text = nil
-        setupSubtitleLabel.isHidden = false
-        setupButton.configuration = nil
-        setupButton.isHidden = false
-        setupStack.isHidden = true
-        setupAction = nil
+        setupVisual.isHidden = true
+        clipboardVisual.isHidden = true
+        clipboardVisual.isAccessibilityElement = false
         settingsButton.isHidden = true
         settingsButton.removeTarget(nil, action: nil, for: .allEvents)
         pasteBadge.isHidden = true
@@ -1288,135 +1251,70 @@ private final class LeftTrayCell: UICollectionViewCell {
 
     func configureSetup(
         kind: LeftTraySetupKind,
-        assumesShortcutInstalled: Bool,
-        appName: String,
         emailIssue: EmailAuthenticationIssue?,
-        tint: UIColor,
-        action: @escaping () -> Void
+        tint: UIColor
     ) {
         symbolView.isHidden = true
         titleLabel.isHidden = true
         subtitleLabel.isHidden = true
-        setupStack.isHidden = false
-        switch kind {
-        case .safari:
-            setupTitleLabel.text = LunaApp.current.handlesArticles
-                ? L10n.string("Apply Luna in Safari")
-                : L10n.string("Save From Safari")
-            setupSubtitleLabel.isHidden = true
-            configureSetupButton(title: L10n.string("Open Safari"), tint: tint)
-        case .shortcut:
-            setupTitleLabel.text = assumesShortcutInstalled
-                ? L10n.string("One more step! Set your action button to \(appName)")
-                : L10n.string("Save to Luna with your Action Button")
-            setupSubtitleLabel.isHidden = true
-            configureSetupButton(
-                title: assumesShortcutInstalled
-                    ? L10n.string("Open Settings")
-                    : L10n.string("Install shortcut"),
-                tint: tint)
-        case .email:
-            if let emailIssue {
-                setupTitleLabel.text = L10n.string("Email login needs attention")
-                setupTitleLabel.textColor = .systemOrange
-                setupSubtitleLabel.text = emailIssue == .authorizationExpired
-                    ? L10n.string("Authorization expired or was revoked")
-                    : L10n.string("The saved app password was rejected")
-                configureSetupButton(
-                    title: L10n.string("Reconnect in Settings"), tint: .systemOrange)
-            } else {
-                setupTitleLabel.text = L10n.string("Connect Email")
-                setupSubtitleLabel.text = L10n.string(
-                    "Send articles and import links · Tap to continue")
-                setupButton.isHidden = true
-            }
-        }
-        setupAction = action
-        let effectiveTint: UIColor = emailIssue == nil ? tint : .systemOrange
-        contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = effectiveTint.withAlphaComponent(0.55).cgColor
-        contentView.layer.shadowColor = effectiveTint.cgColor
-        contentView.layer.shadowOffset = .zero
-        contentView.layer.shadowRadius = 9
-        contentView.layer.shadowOpacity = 0.18
-        let pulse = CABasicAnimation(keyPath: "shadowOpacity")
-        pulse.fromValue = 0.10
-        pulse.toValue = 0.30
-        pulse.duration = 1.8
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        contentView.layer.add(pulse, forKey: "setupPulse")
-        accessibilityLabel = setupTitleLabel.text
-        accessibilityHint = emailIssue == nil
-            ? setupSubtitleLabel.text
-            : L10n.string("Opens Email settings to reconnect")
-        if kind == .email {
-            isAccessibilityElement = true
-            accessibilityTraits = .button
-        }
+        setupVisual.isHidden = false
+        setupVisual.configure(
+            kind: kind,
+            emailNeedsAttention: emailIssue != nil,
+            tint: tint)
+        contentView.backgroundColor = .clear
+        contentView.layer.borderWidth = 0
+        contentView.layer.shadowOpacity = 0
+        setupVisual.isAccessibilityElement = false
+        isAccessibilityElement = true
+        accessibilityLabel = setupVisual.accessibilityLabel
+        accessibilityHint = setupVisual.accessibilityHint
+        accessibilityTraits = .button
     }
-
-    private func configureSetupButton(title: String, tint: UIColor) {
-        setupButton.isHidden = false
-        var configuration: UIButton.Configuration
-        if #available(iOS 26.0, *) {
-            configuration = .glass()
-        } else {
-            configuration = .tinted()
-            configuration.cornerStyle = .capsule
-        }
-        configuration.title = title
-        configuration.baseForegroundColor = .white
-        setupButton.configuration = configuration
-        setupButton.tintColor = tint
-    }
-
-    @objc private func setupButtonTapped() { setupAction?() }
 
     func configurePaste(
         state: LeftTrayPasteState,
         pasteTarget: UIPasteConfigurationSupporting,
         settingsAction: @escaping () -> Void
     ) {
+        imageView.isHidden = true
+        symbolView.isHidden = true
+        titleLabel.isHidden = true
+        subtitleLabel.isHidden = true
+        clipboardVisual.isHidden = false
+        contentView.backgroundColor = .clear
+        contentView.layer.borderWidth = 0
+        contentView.layer.shadowOpacity = 0
         switch state {
         case .notPresent:
-            titleLabel.text = L10n.string("No URL to paste")
-            titleLabel.textAlignment = .center
-            titleTopConstraint.isActive = false
-            titleCenterYConstraint = titleLabel.centerYAnchor.constraint(
-                equalTo: contentView.centerYAnchor)
-            titleCenterYConstraint?.isActive = true
-            contentView.layer.sublayers?.first(where: { $0.name == "dashes" })?.removeFromSuperlayer()
-            let dashes = CAShapeLayer()
-            dashes.name = "dashes"
-            dashes.strokeColor = Self.secondaryCardText.cgColor
-            dashes.fillColor = UIColor.clear.cgColor
-            dashes.lineDashPattern = [5, 5]
-            dashes.path = UIBezierPath(
-                roundedRect: contentView.bounds, cornerRadius: 16).cgPath
-            dashes.frame = contentView.bounds
-            contentView.layer.addSublayer(dashes)
+            clipboardVisual.configure(.empty)
+            isAccessibilityElement = true
+            accessibilityLabel = clipboardVisual.accessibilityLabel
         case .explicit:
-            titleLabel.text = L10n.string("Paste URL")
-            titleLabel.textAlignment = .center
+            clipboardVisual.configure(.pasteAvailable)
+            clipboardVisual.isAccessibilityElement = false
+            isAccessibilityElement = false
             installPasteControl(target: pasteTarget)
             configureSettingsButton(action: settingsAction)
         case .automatic:
-            symbolView.isHidden = false
-            symbolView.image = UIImage(systemName: "doc.on.clipboard")
-            titleLabel.text = L10n.string("Paste URL automatically")
-            subtitleLabel.text = L10n.string("Opens when this tray is opened")
+            clipboardVisual.configure(.pasteAvailable)
+            isAccessibilityElement = true
+            accessibilityLabel = L10n.string("Clipboard URL will be checked when the tray opens")
         case .evaluating:
-            titleLabel.text = L10n.string("Checking URL")
-            titleLabel.textAlignment = .center
-            spinner.startAnimating()
+            clipboardVisual.configure(.loading)
+            isAccessibilityElement = true
+            accessibilityLabel = clipboardVisual.accessibilityLabel
         case .preview(_, let preview):
-            configurePreview(preview, showsPasteboardBadge: true)
+            clipboardVisual.configure(.preview(preview))
+            clipboardVisual.isAccessibilityElement = false
+            isAccessibilityElement = true
+            accessibilityLabel = clipboardVisual.accessibilityLabel
+            accessibilityHint = L10n.string("Saves as a full card")
+            accessibilityTraits = .button
         case .failure:
-            symbolView.isHidden = false
-            symbolView.image = UIImage(systemName: "doc.on.clipboard")
-            titleLabel.text = L10n.string("Invalid URL")
-            replaceTitleLeading(anchor: symbolView.trailingAnchor, constant: 6)
+            clipboardVisual.configure(.invalid)
+            isAccessibilityElement = true
+            accessibilityLabel = clipboardVisual.accessibilityLabel
         }
     }
 
@@ -1424,39 +1322,36 @@ private final class LeftTrayCell: UICollectionViewCell {
         let configuration = UIPasteControl.Configuration()
         configuration.displayMode = .iconOnly
         configuration.cornerStyle = .capsule
-        configuration.baseBackgroundColor = GlassStyle.lunaBrandAccent
+        configuration.baseBackgroundColor = .clear
         configuration.baseForegroundColor = .clear
         let control = UIPasteControl(configuration: configuration)
         control.target = target
+        // `baseBackgroundColor = .clear` still receives the platform's glass
+        // plate on iOS 26+. Keep the real, privacy-authorized control hittable
+        // (> 0.01 alpha) while letting the designed paper remain the only UI.
+        control.alpha = 0.011
         control.accessibilityLabel = L10n.string("Paste URL")
         control.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(control)
-        contentView.insertSubview(control, aboveSubview: titleLabel)
+        contentView.insertSubview(control, aboveSubview: clipboardVisual)
         NSLayoutConstraint.activate([
-            control.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            control.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
-            control.widthAnchor.constraint(equalToConstant: 150),
-            control.heightAnchor.constraint(equalToConstant: 44),
+            control.leadingAnchor.constraint(equalTo: clipboardVisual.leadingAnchor, constant: 8),
+            control.trailingAnchor.constraint(equalTo: clipboardVisual.trailingAnchor, constant: -8),
+            control.topAnchor.constraint(equalTo: clipboardVisual.topAnchor, constant: 16),
+            control.bottomAnchor.constraint(equalTo: clipboardVisual.bottomAnchor, constant: -8),
         ])
-        replaceTitleTop(anchor: control.topAnchor, constant: 10)
-        replaceTitleLeading(anchor: control.leadingAnchor, constant: 12)
-        replaceTitleTrailing(anchor: control.trailingAnchor, constant: -12)
-        titleLabel.isUserInteractionEnabled = false
         pasteControl = control
     }
 
     private func configureSettingsButton(action: @escaping () -> Void) {
         settingsButton.isHidden = false
-        let linkText = L10n.string("Paste setting")
-        var text = AttributedString(L10n.string("Or change \(linkText) to “Allow”"))
-        if let range = text.range(of: linkText) {
-            text[range].foregroundColor = LunaSurfacePalette.baseColor
-            text[range].underlineStyle = .single
-        }
-        var config = UIButton.Configuration.plain()
-        config.attributedTitle = text
-        config.baseForegroundColor = Self.secondaryCardText
+        var config = UIButton.Configuration.tinted()
+        config.image = UIImage(systemName: "gearshape.fill")
+        config.cornerStyle = .capsule
+        config.baseForegroundColor = LunaSurfacePalette.baseColor
+        config.baseBackgroundColor = LunaSurfacePalette.baseColor.withAlphaComponent(0.20)
         settingsButton.configuration = config
+        settingsButton.accessibilityLabel = L10n.string("Paste setting")
         let identifier = UIAction.Identifier("leftTrayPasteSettings")
         settingsButton.removeAction(identifiedBy: identifier, for: .touchUpInside)
         settingsButton.addAction(

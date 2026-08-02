@@ -76,6 +76,10 @@ enum KindWiring {
         UINavigationController(rootViewController: SavedMediaCardsViewController())
     }
 
+    static func makeSetupReplayRootViewController() -> UIViewController {
+        makeCompletedRootViewController()
+    }
+
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         root as? UINavigationController
     }

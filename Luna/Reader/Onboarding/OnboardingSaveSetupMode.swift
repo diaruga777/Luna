@@ -16,7 +16,7 @@ enum OnboardingSaveSetupMode: Equatable {
             return .actionButtonShortcut
         }
         #endif
-        OnboardingDeviceCapabilities.current.saveSetupMode
+        return OnboardingDeviceCapabilities.current.saveSetupMode
     }
 }
 

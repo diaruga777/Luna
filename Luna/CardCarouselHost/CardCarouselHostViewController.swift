@@ -349,6 +349,14 @@ class CardCarouselHostViewController: UIViewController {
         // it belongs here instead — on the base class every app's root inherits,
         // rather than on one deck.
         NotificationManager.clearShareNotifications()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-openLeftTray") {
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshLeftPullAvailability(animated: false)
+                self?.leftTray?.setOpenForTesting(true)
+            }
+        }
+        #endif
     }
 
     override func viewDidLayoutSubviews() {

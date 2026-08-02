@@ -101,6 +101,8 @@ final class AppOnboardingViewController: UIViewController {
     private let configuration: OnboardingSurfaceConfiguration
     private let onboardingStore: AppOnboardingStore
     private let completion: AppOnboardingCompletion
+    private let setupReplaySource: OnboardingDemoSource?
+    private let setupReplayOriginSnapshot: UIImage?
     private let carousel = CardCarouselViewController()
     private let intro: OnboardingIntroCardContentViewController
     private let safariGuide = SetupGuideVideo(guide: .safariExtension)
@@ -123,6 +125,8 @@ final class AppOnboardingViewController: UIViewController {
     private var demoLoopGeneration = 0
     private var isDemoGeometryTransitioning = false
     private var appSwitcher: OnboardingAppSwitcherView?
+    private var setupReplayOriginView: UIImageView?
+    private var didStartSetupReplay = false
     private var isFinishing = false
     private var foregroundObserver: NSObjectProtocol?
     private var setupObserver: NSObjectProtocol?
@@ -147,16 +151,42 @@ final class AppOnboardingViewController: UIViewController {
     init(
         configuration: OnboardingSurfaceConfiguration = .current,
         onboardingStore: AppOnboardingStore = .shared,
+        setupReplaySource: OnboardingDemoSource? = nil,
+        setupReplayOriginSnapshot: UIImage? = nil,
         completion: AppOnboardingCompletion
     ) {
         self.configuration = configuration
         self.onboardingStore = onboardingStore
+        self.setupReplaySource = setupReplaySource
+        self.setupReplayOriginSnapshot = setupReplayOriginSnapshot
         self.completion = completion
         self.intro = OnboardingIntroCardContentViewController(
             introCopy: configuration.introCopy,
             supportingText: configuration.supportingText,
             saveSetupMode: configuration.saveSetupMode)
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// Re-enters one of onboarding's production mock lessons from the setup
+    /// tray. The presenting app is frozen into the first/last switcher card so
+    /// the existing journey can run without replacing the completed app root.
+    @MainActor
+    static func presentSetupReplay(
+        _ source: OnboardingDemoSource,
+        from presenter: UIViewController,
+        makeCompletedRootViewController: @escaping () -> UIViewController
+    ) {
+        guard let window = presenter.view.window else { return }
+        let snapshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let replay = AppOnboardingViewController(
+            setupReplaySource: source,
+            setupReplayOriginSnapshot: snapshot,
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: makeCompletedRootViewController))
+        replay.modalPresentationStyle = .fullScreen
+        presenter.present(replay, animated: false)
     }
 
     @available(*, unavailable)
@@ -187,6 +217,12 @@ final class AppOnboardingViewController: UIViewController {
         // off the launch frame.
         configureCarousel()
         configureLifecycleObservers()
+        installSetupReplayOriginIfNeeded()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        beginSetupReplayIfNeeded()
     }
 
     deinit {
@@ -251,6 +287,33 @@ final class AppOnboardingViewController: UIViewController {
         shortcutSetupState = saveSetupHasRun ? .completed : .pending
         intro.setState(safari: safariSetupState, shortcut: shortcutSetupState)
         carousel.reloadData(centeringAt: 0)
+    }
+
+    private func installSetupReplayOriginIfNeeded() {
+        guard setupReplaySource != nil,
+              let setupReplayOriginSnapshot
+        else { return }
+        let imageView = UIImageView(image: setupReplayOriginSnapshot)
+        imageView.frame = view.bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        imageView.contentMode = .scaleToFill
+        imageView.isAccessibilityElement = false
+        view.addSubview(imageView)
+        setupReplayOriginView = imageView
+    }
+
+    private func beginSetupReplayIfNeeded() {
+        guard let setupReplaySource, !didStartSetupReplay else { return }
+        didStartSetupReplay = true
+        if let setupReplayOriginView {
+            view.bringSubviewToFront(setupReplayOriginView)
+        }
+        switch setupReplaySource {
+        case .safari:
+            showSafariCard()
+        case .messages:
+            showMessagesCard()
+        }
     }
 
     private func applyTopInset() {
@@ -517,6 +580,8 @@ final class AppOnboardingViewController: UIViewController {
         switcher.playForward { [weak self] in
             guard let self else { return }
             self.view.bringSubviewToFront(messagesView)
+            self.setupReplayOriginView?.removeFromSuperview()
+            self.setupReplayOriginView = nil
             self.carousel.view.isHidden = true
             switcher.removeFromSuperview()
             self.appSwitcher = nil
@@ -575,6 +640,8 @@ final class AppOnboardingViewController: UIViewController {
         switcher.playForward { [weak self] in
             guard let self else { return }
             self.view.bringSubviewToFront(safariView)
+            self.setupReplayOriginView?.removeFromSuperview()
+            self.setupReplayOriginView = nil
             self.carousel.view.isHidden = true
             switcher.removeFromSuperview()
             self.appSwitcher = nil
@@ -1171,7 +1238,8 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func contentStoreDidChange() {
-        guard !didExpandSafari,
+        guard setupReplaySource == nil,
+              !didExpandSafari,
               appSwitcher == nil,
               !isHandlingPaste,
               !isFinishing,
@@ -1256,6 +1324,13 @@ final class AppOnboardingViewController: UIViewController {
         outcome: OnboardingSetupOutcome
     ) {
         guard didExpandSafari, !isFinishing else { return }
+        if source == .messages {
+            onboardingStore.markSaveSetupHandled()
+        }
+        if setupReplaySource != nil {
+            finishSetupReplayViaAppSwitcher()
+            return
+        }
         let state: OnboardingSetupButtonState =
             outcome == .completed ? .completed : .skipped
         switch source {
@@ -1269,6 +1344,32 @@ final class AppOnboardingViewController: UIViewController {
             finishOnboardingViaAppSwitcher()
         } else {
             returnToIntroViaAppSwitcher()
+        }
+    }
+
+    private func finishSetupReplayViaAppSwitcher() {
+        guard appSwitcher == nil,
+              let source = sourceController(for: activeDemoSource),
+              let setupReplayOriginSnapshot
+        else { return }
+        isFinishing = true
+        pauseDemoPresentationPlayback()
+        safariGuide.stopPictureInPicture()
+        actionGuide.stopPictureInPicture()
+        safariReplica?.dismissInstructions(animated: false) {}
+
+        let outgoing = switcherSnapshot(of: source.view, afterScreenUpdates: false)
+        let switcher = OnboardingAppSwitcherView(
+            frame: view.bounds,
+            from: outgoing,
+            to: setupReplayOriginSnapshot)
+        appSwitcher = switcher
+        view.addSubview(switcher)
+        switcher.playForward { [weak self] in
+            guard let self else { return }
+            switcher.removeFromSuperview()
+            self.appSwitcher = nil
+            self.dismiss(animated: false)
         }
     }
 

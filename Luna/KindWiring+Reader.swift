@@ -139,6 +139,10 @@ enum KindWiring {
         return MiniPlayerHostViewController(content: nav)
     }
 
+    static func makeSetupReplayRootViewController() -> UIViewController {
+        makeCompletedRootViewController()
+    }
+
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         if let host = root as? MiniPlayerHostViewController {
             return host.contentNavigationController

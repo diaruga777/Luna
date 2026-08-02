@@ -1212,7 +1212,7 @@ class OnboardingMessageBubble: UIView {
     }
 }
 
-private final class OnboardingMessageTextBubble: OnboardingMessageBubble {
+final class OnboardingMessageTextBubble: OnboardingMessageBubble {
     init(
         direction: OnboardingMessageDirection,
         showsTail: Bool,

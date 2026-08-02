@@ -68,6 +68,10 @@ enum KindWiring {
         UINavigationController(rootViewController: PriceTrackerCardsViewController())
     }
 
+    static func makeSetupReplayRootViewController() -> UIViewController {
+        makeCompletedRootViewController()
+    }
+
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         root as? UINavigationController
     }

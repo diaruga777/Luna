@@ -489,6 +489,15 @@ The root uses the production `CardCarouselViewController`:
    the Shortcut button. In the fallback branch, a real Luna extension invocation
    reports through the separate share-action marker and takes that same lesson
    completion path. Neither setup lesson completes onboarding.
+   Completing OR skipping the save-setup lesson also records the per-app
+   `AppOnboardingStore.hasHandledSaveSetup` marker. If onboarding instead ended
+   early through a real paste/share save, an unhandled one-click lesson can be
+   offered later in the production left tray—but only on iOS 27+ Action Button
+   hardware. That tray bubble launches this same Messages journey, while the
+   Safari compass launches this same Safari journey. Both use
+   `OnboardingAppSwitcherView` over a frozen snapshot of the completed app and
+   switch back to that root when the replayed lesson completes or is skipped;
+   replay never marks onboarding complete or swaps the app's root controller.
 9. The paste row is the completion action. `UIPasteControl` supplies the value
    without a paste-permission alert, and whatever it hands over — URL or not —
    is shown in the field the instant it arrives, before anything has been

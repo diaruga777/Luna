@@ -119,6 +119,34 @@ Consequences for the deck:
   of waiting for the card swap. Paging toward the rightmost card reveals the tab
   only after that card centers; cancelling a page restores it after settling.
 
+- **Left setup / clipboard arc**: the mirror tray beyond the first card also has
+  no panel or chunky setup-card chrome. Its setup rows are small objects, aligned
+  a little in from the cell's left edge on a tighter 18pt arc: Email is only a
+  white envelope with a breathing red notification dot; Safari is the full-colour
+  compass with a filled, app-tint puzzle piece that breathes in the same tint;
+  and one-click save is the exact incoming `OnboardingMessageTextBubble` used by
+  the Messages onboarding replica, including its grey fill, 18pt continuous
+  corners, tail, typography, intrinsic size, and the text **Show me one click
+  save**. The save bubble exists only when `OnboardingSaveSetupMode.current` is
+  the iOS 27+/Action Button branch, the shortcut has not run, and that setup
+  lesson has never been completed or skipped. Completing or skipping records a
+  per-app `AppOnboardingStore.hasHandledSaveSetup` marker, so finishing onboarding
+  by some other real save does not incorrectly suppress an unvisited lesson.
+  Tapping the save bubble or Safari object presents the SAME Messages/Safari
+  onboarding controller over the completed root, using a frozen live-app frame
+  as the first and last `OnboardingAppSwitcherView` card. The lesson therefore
+  app-switches in and back out without replacing or re-completing the production
+  root. The envelope still expands directly into the existing email sign-in flow.
+
+  Paste is a physical clipboard rather than another dark rectangle: a metal clip
+  sits over a dark board; no detected URL shows only a dotted, empty attachment
+  outline; a detected/authorized URL attaches white paper carrying its thumbnail,
+  title, and clipped host strip. Checking and invalid states stay on that paper.
+  The real privacy-authorized `UIPasteControl` remains over the paper as an
+  effectively transparent (>0.01 alpha) hit target, so the custom object never
+  bypasses or visually covers Apple's paste permission path. The tiny adjacent
+  gear retains the automatic-paste settings route.
+
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
   leaves center, keeping position. Downloader's unsaved pasteboard preview is the

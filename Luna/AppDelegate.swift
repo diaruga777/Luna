@@ -54,6 +54,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // per app target; kind-specific launch work (audio wiring, pending-
         // completion promotion, transport injection) lives in its `install()`.
         KindWiring.install()
+        LeftTrayController.setupJourneyLauncher = { presenter, source in
+            AppOnboardingViewController.presentSetupReplay(
+                source,
+                from: presenter,
+                makeCompletedRootViewController:
+                    KindWiring.makeSetupReplayRootViewController)
+        }
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
         ReaderSettings.migrateFromStandardIfNeeded()

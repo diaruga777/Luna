@@ -64,13 +64,22 @@ with final geometry before it crosses onto the screen. The card's bounds are the
 authoritative width for both copies: the nested scroll view can retain a provisional
 screen-wide width for one parent layout pass, but that stale width must never reach
 the visible title or change its line breaks after first paint.
-**A title too long for the three-line cap is never truncated away.** The part past the
-cap is split off at its wrap point (`ReaderTitleOverflow.split`, LunaReaderUI — CoreText
-line ranges, so the break is never mid-word) and shown directly below the title in
-smaller 17pt type, led by an ellipsis, as the headline's continuation rather than a
-second one. Both copies split at the same card-derived width, so they stay
-pixel-identical and the handoff above still changes nothing onscreen; the header simply
-grows, and the reader's top content inset with it. VoiceOver still reads the whole
+**A title too long for the three-line cap is never truncated away — and is shrunk
+before it is split.** `ReaderTitleOverflow.fit` (LunaReaderUI) sweeps nine type sizes
+from the nominal 30pt down to 80% of it (`defaultMinimumScale`) and stops at the
+LARGEST one whose whole headline wraps inside the cap, so a title that overruns by a
+word simply comes down a notch instead of breaking across two type sizes, and a title
+is never shrunk further than it has to be. Only a headline that overruns even at the
+80% floor spills: the part past the cap is split off at its wrap point
+(`ReaderTitleOverflow.split` — CoreText line ranges, so the break is never mid-word)
+**at that smallest size**, so the head carries as much of the headline as the cap can
+hold, and the remainder is shown directly below the title in smaller 17pt type, led by
+an ellipsis, as the headline's continuation rather than a second one. Both copies fit
+at the same card-derived width, so they stay pixel-identical and the handoff above
+still changes nothing onscreen; the header simply grows, and the reader's top content
+inset with it. Because the label's own font is the shrunken one, the sweep always
+starts from a separately held nominal font (`baseTitleFont`) — running it against the
+label would compound the shrink on every re-layout. VoiceOver still reads the whole
 headline as one label.
 RSVP has no scroll surface, so its pinned title stays visible through immersion and
 its layout never changes. `ReaderHostFactory(includesArticleTitle: false)` still

@@ -2442,8 +2442,9 @@ private final class ReaderCardContentViewController: CardContentViewController,
 /// shown as a carousel card. It uses the same 30-point reader title typography,
 /// now paired with the page's favicon (a globe remains visible while it loads).
 private final class ReaderCardTitleHeaderView: UIView {
-    /// The title's line cap. Everything past it moves into `overflowLabel`
-    /// rather than dying in a truncating tail.
+    /// The title's line cap. A title past it is first set in slightly smaller
+    /// type; only what still does not fit moves into `overflowLabel`, rather
+    /// than dying in a truncating tail.
     private static let titleLineLimit = 3
     /// A tail long enough to need more than this is not a headline; the cap
     /// keeps a junk extraction from swallowing the card.
@@ -2458,9 +2459,12 @@ private final class ReaderCardTitleHeaderView: UIView {
     private let subtitleLabel = UILabel()
     private var topInset: CGFloat = 0
     private var fullTitle: String
-    /// The text width the current split was computed at — the split is CoreText
+    /// The text width the current fit was computed at — the fit is CoreText
     /// work, and layout runs far more often than the width changes.
     private var splitWidth: CGFloat = 0
+    /// The nominal title type. `titleLabel`'s own font is this shrunk to fit, so
+    /// the sweep must always start from the unshrunken size.
+    private let baseTitleFont = ReaderCardTitleHeaderView.readerTitleFont
 
     init(title: String, subtitle: String?) {
         fullTitle = title
@@ -2474,7 +2478,7 @@ private final class ReaderCardTitleHeaderView: UIView {
         iconView.clipsToBounds = true
 
         titleLabel.text = title
-        titleLabel.font = Self.readerTitleFont
+        titleLabel.font = baseTitleFont
         titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = Self.titleLineLimit
         // The head ends on a wrap point, so it needs no tail of its own; this
@@ -2521,18 +2525,20 @@ private final class ReaderCardTitleHeaderView: UIView {
         superview?.setNeedsLayout()
     }
 
-    /// Moves whatever does not fit the title's line cap into the overflow label.
-    /// Both copies of the header are sized from the same card width, so they
-    /// split identically and stay pixel-identical.
+    /// Shrinks the title's type as far as the cap needs (and no further), then
+    /// moves whatever still does not fit into the overflow label. Both copies of
+    /// the header are sized from the same card width, so they fit identically
+    /// and stay pixel-identical.
     private func applyTitleSplit(textWidth: CGFloat) {
         guard textWidth > 0, abs(textWidth - splitWidth) > 0.5 else { return }
         splitWidth = textWidth
-        let split = ReaderTitleOverflow.split(
-            fullTitle, font: titleLabel.font, width: textWidth,
+        let fit = ReaderTitleOverflow.fit(
+            fullTitle, font: baseTitleFont, width: textWidth,
             maxLines: Self.titleLineLimit)
-        titleLabel.text = split.head
-        overflowLabel.text = split.overflow.map(ReaderTitleOverflow.displayString(forOverflow:))
-        overflowLabel.isHidden = split.overflow == nil
+        titleLabel.font = fit.font
+        titleLabel.text = fit.head
+        overflowLabel.text = fit.overflow.map(ReaderTitleOverflow.displayString(forOverflow:))
+        overflowLabel.isHidden = fit.overflow == nil
     }
 
     /// The height of the title stack — title, the overflow tail, then the

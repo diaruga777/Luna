@@ -58,6 +58,12 @@ enum OnboardingIntroTiming {
 /// can position from the bottom of its surface.
 enum OnboardingIntroActionMetrics {
     static let buttonHeight: CGFloat = 56
+    /// The paste row is a field, not a third setup button, and reads as one:
+    /// well short of the two above it so the block resolves downward.
+    static let pasteRowHeight: CGFloat = 38
+    /// How far the paste row reaches past the content inset the setup buttons
+    /// keep. Everything it buys goes to the field.
+    static let pasteRowOutset: CGFloat = 8
     static let spacing: CGFloat = 10
     /// The “or” sits closer to what it separates than the setup buttons sit to
     /// each other — it belongs to the seam, not to either side.
@@ -65,7 +71,7 @@ enum OnboardingIntroActionMetrics {
     static let orHeight: CGFloat = 17
 
     static var stackHeight: CGFloat {
-        buttonHeight * 3 + spacing + orSpacing * 2 + orHeight
+        buttonHeight * 2 + pasteRowHeight + spacing + orSpacing * 2 + orHeight
     }
 }
 
@@ -82,6 +88,10 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     private let shortcutButton = UIButton(type: .system)
     private let orLabel = UILabel()
     private let pasteRow = OnboardingPasteRow()
+    /// The paste row reaches wider than the stack, and a stack view clips its
+    /// own hit-testing to its bounds — so the row is a sibling laid out over
+    /// this reserved slot rather than an arranged subview of the stack.
+    private let pasteSlot = UIView()
     private let buttonStack = UIStackView()
     private var didStart = false
     private var safariState = OnboardingSetupButtonState.pending
@@ -143,13 +153,16 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         buttonStack.spacing = OnboardingIntroActionMetrics.spacing
         buttonStack.alignment = .fill
         buttonStack.distribution = .fill
-        for action in [safariButton, shortcutButton, orLabel, pasteRow] {
+        for action in [safariButton, shortcutButton, orLabel, pasteSlot] {
             action.alpha = 0
             action.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
             action.isUserInteractionEnabled = false
             if let button = action as? UIButton { button.isEnabled = false }
             buttonStack.addArrangedSubview(action)
         }
+        pasteRow.alpha = 0
+        pasteRow.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        pasteRow.isUserInteractionEnabled = false
         // The seam belongs to the “or”, not to the actions on either side.
         buttonStack.setCustomSpacing(
             OnboardingIntroActionMetrics.orSpacing, after: shortcutButton)
@@ -162,10 +175,11 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                 equalToConstant: OnboardingIntroActionMetrics.buttonHeight),
             orLabel.heightAnchor.constraint(
                 equalToConstant: OnboardingIntroActionMetrics.orHeight),
-            pasteRow.heightAnchor.constraint(
-                equalToConstant: OnboardingIntroActionMetrics.buttonHeight),
+            pasteSlot.heightAnchor.constraint(
+                equalToConstant: OnboardingIntroActionMetrics.pasteRowHeight),
         ])
         view.addSubview(buttonStack)
+        view.addSubview(pasteRow)
 
         pasteConfiguration = UIPasteConfiguration(
             acceptableTypeIdentifiers: [
@@ -188,6 +202,15 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             y: view.bounds.height - stackHeight - 24,
             width: stackWidth,
             height: stackHeight)
+        // The paste row occupies the slot the stack reserved at its bottom,
+        // widened past the content inset on both sides.
+        let outset = OnboardingIntroActionMetrics.pasteRowOutset
+        let rowHeight = OnboardingIntroActionMetrics.pasteRowHeight
+        pasteRow.bounds = CGRect(
+            x: 0, y: 0, width: stackWidth + outset * 2, height: rowHeight)
+        pasteRow.center = CGPoint(
+            x: view.bounds.midX,
+            y: buttonStack.frame.maxY - rowHeight / 2)
     }
 
     func start() {
@@ -223,7 +246,9 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
                         delay: 0.16,
                         options: [.curveEaseOut, .beginFromCurrentState]
                     ) {
-                        for action in self.buttonStack.arrangedSubviews {
+                        for action in self.buttonStack.arrangedSubviews
+                            + [self.pasteRow]
+                        {
                             action.alpha = 1
                             action.transform = .identity
                         }
@@ -395,8 +420,8 @@ final class OnboardingPasteRow: UIView {
     }
 
     static var placeholder: String { OnboardingStrings.Intro.paste.value() }
-    private static let controlWidth: CGFloat = 68
-    private static let gap: CGFloat = 10
+    private static let controlWidth: CGFloat = 50
+    private static let gap: CGFloat = 7
 
     private let control: UIPasteControl
     private let field = OnboardingPasteField()
@@ -516,7 +541,7 @@ final class OnboardingPasteRow: UIView {
 /// A field that reserves its own insets, including the fixed slot the status
 /// symbol occupies ahead of the text.
 private final class OnboardingPasteField: UITextField {
-    private let horizontalInset: CGFloat = 14
+    private let horizontalInset: CGFloat = 12
 
     private var showsStatus: Bool {
         leftView != nil && leftViewMode == .always

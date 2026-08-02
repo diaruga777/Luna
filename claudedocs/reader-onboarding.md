@@ -97,7 +97,12 @@ asymmetric “eyePhone”.
 `AppOnboardingStore` persists one standard-defaults completion key per app;
 Reader retains its shipped `reader.onboarding.completed.v1` key. These markers
 are not in the App Group: setup evidence and saves are shared, while every app
-owns its onboarding completion independently.
+normally owns its onboarding completion independently. One inheritance rule
+short-circuits a brand-new faceted app: if central Luna's own App Intent AND
+Safari extension have both run, `centralAppCoversAllOnboarding` treats that
+facet as completed from its first launch because central Luna already handles
+both integrations for every link kind. Central Luna never inherits a facet's
+completion.
 
 The root uses the production `CardCarouselViewController`:
 
@@ -324,6 +329,23 @@ The root uses the production `CardCarouselViewController`:
    (`Row`), not by a running count. The two setup pills breathe an ECLIPSE
    CORONA until tapped — the shortcut pill runs the `BundledShortcut`
    installer, the Settings pill opens the Action Button settings.
+
+   When one exact sibling has BOTH per-app setup facts — its shortcut installer
+   was pressed and either Action Button App Intent later ran — a later app replaces the
+   mock-save transcript with a returning-user setup transcript. Johnny asks
+   whether the user already has that sibling's named Action Button setup; the
+   user confirms; and a faceted app offers a pulsing central-Luna app-icon/name
+   pill inside “Nice. FYI if you buy the …, it can do all Luna app links”. That
+   pill opens `LunaCoreAppStoreURL`. After “And if I don’t?”, Johnny explains
+   that one Luna app can own the Action Button and offers the current app's
+   shortcut-install pill. Pressing it reveals the skip-out; returning from the
+   installer then inserts the unchanged Settings message.
+
+   Central Luna's version drops “And if I don’t?”, changes the offer to
+   switching the Action Button to this app, and renders the shortcut pill as a
+   standalone message with no surrounding prose. The App Store URL is injected
+   from `LUNA_CORE_APP_STORE_URL`; it deliberately defaults to an App Store
+   search until central Luna has a numeric App Store product ID.
 
    5b. Every other device keeps the same sender-change pacing but stages only
    the example link, the user's “Not another login wall...”, and Johnny's
@@ -591,6 +613,9 @@ direct card expansion and first shrink but begins at a deterministic overlay sta
 its full demonstration (staged bubbles, ripple, Dynamic Island, app-switcher
 hop, pill messages) for visual inspection. Reinstall the app between runs —
 relaunching alone can land on the Safari lesson instead.
+Add `-forceActionButtonSetup -onboardingPreviousShortcutApp reader|downloader|pricetracker`
+to inspect the shortened sibling flow without editing App-Group defaults (the
+named value must differ from the running app).
 `-readerOnboardingStage` remains an alias. Add `-slowOnboardingAnimations` for
 a 6× inspection timeline, or `-onboardingAnimationScale <1...12>` for an
 explicit factor. The clock slows Core Animation, timers, and the display-link

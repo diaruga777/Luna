@@ -5,6 +5,7 @@
 
 import UIKit
 import LunaModels
+import LunaStorage
 
 /// The signed Action Button shortcut shipped in the app bundle. Single source of
 /// truth for its name (used both to load the resource and in the user-facing
@@ -25,6 +26,10 @@ enum BundledShortcut {
         sourceView: UIView? = nil,
         completion: ((Bool) -> Void)? = nil
     ) {
+        // The Shortcuts import sheet cannot report whether the user completed
+        // Add Shortcut. The tap is the strongest honest signal available, so
+        // retain it separately from the later per-app App Intent run evidence.
+        LunaSetupStatusStore.shared.recordShortcutInstallPressed(for: .current)
         guard let bundled = Bundle.main.url(
             forResource: resourceName, withExtension: "shortcut")
         else {
@@ -44,5 +49,18 @@ enum BundledShortcut {
             temporaryCopy,
             options: [:],
             completionHandler: completion)
+    }
+}
+
+/// The central Luna product page used by faceted apps' returning-user setup
+/// conversation. Keep the URL build-configured: the placeholder namespace can
+/// be renamed, and App Store numeric IDs cannot be derived from a bundle ID.
+enum LunaCoreAppStoreLink {
+    static var url: URL? {
+        guard let value = Bundle.main.object(
+            forInfoDictionaryKey: "LunaCoreAppStoreURL") as? String,
+              !value.isEmpty
+        else { return nil }
+        return URL(string: value)
     }
 }

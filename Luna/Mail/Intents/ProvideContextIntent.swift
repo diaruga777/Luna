@@ -77,8 +77,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
         let attemptDate = Date()
-        LunaSetupStatusStore.shared.recordShortcutRun(
-            isCentral: LunaApp.current == .luna)
+        LunaSetupStatusStore.shared.recordShortcutRun(for: .current)
         let value = try await provideContext(attemptDate: attemptDate)
         return .result(value: value)
     }

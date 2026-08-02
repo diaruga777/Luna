@@ -282,8 +282,8 @@ final class AppOnboardingViewController: UIViewController {
         intro.onFirstLineRevealed = { [weak self] in
             self?.firstIntroLineDidReveal()
         }
-        safariSetupState = LunaSetupStatusStore.shared.safariHasRun(
-            isCentral: configuration.isCentralApp) ? .completed : .pending
+        safariSetupState = LunaSetupStatusStore.shared.safariRunApplies(
+            to: configuration.app) ? .completed : .pending
         shortcutSetupState = saveSetupHasRun ? .completed : .pending
         intro.setState(safari: safariSetupState, shortcut: shortcutSetupState)
         carousel.reloadData(centeringAt: 0)
@@ -494,10 +494,13 @@ final class AppOnboardingViewController: UIViewController {
         let messages = MessagesReplicaViewController(
             urlString: safari.sharedURLString,
             saveSetupMode: configuration.saveSetupMode,
-            appName: configuration.app.displayName)
+            app: configuration.app,
+            appName: configuration.app.displayName,
+            previouslyConfiguredApp: previouslyConfiguredShortcutApp)
         // The Messages demonstration finishes in place: its mock shortcut run
         // ends on the setup messages whose pills carry the setup hops.
         messages.onInstallShortcut = { [weak self] in self?.installShortcut() }
+        messages.onOpenLunaAppStore = { [weak self] in self?.openLunaAppStore() }
         messages.onSetActionButton = { [weak self] in
             self?.openActionButtonSettings()
         }
@@ -1055,6 +1058,11 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    private func openLunaAppStore() {
+        guard let url = LunaCoreAppStoreLink.url else { return }
+        UIApplication.shared.open(url)
+    }
+
     private func openActionButtonSettings() {
         guard externalReturn == .none else { return }
         pauseDemoPresentationPlayback()
@@ -1070,7 +1078,7 @@ final class AppOnboardingViewController: UIViewController {
         let setup = LunaSetupStatusStore.shared
         switch configuration.saveSetupMode {
         case .actionButtonShortcut:
-            return setup.shortcutHasRun(isCentral: configuration.isCentralApp)
+            return setup.shortcutRunApplies(to: configuration.app)
         case .shareSheet:
             return setup.shareActionHasRun(isCentral: configuration.isCentralApp)
         }
@@ -1138,8 +1146,8 @@ final class AppOnboardingViewController: UIViewController {
             contentStoreDidChange()
         case .safari:
             safariGuide.stopPictureInPicture()
-            guard LunaSetupStatusStore.shared.safariHasRun(
-                isCentral: configuration.isCentralApp)
+            guard LunaSetupStatusStore.shared.safariRunApplies(
+                to: configuration.app)
             else {
                 safariReplica?.restoreInPageSafariSetup()
                 return
@@ -1512,6 +1520,24 @@ final class AppOnboardingViewController: UIViewController {
                 safeAreaInsets: view.safeAreaInsets)
         }
         return view.convert(frame, from: window)
+    }
+
+    private var previouslyConfiguredShortcutApp: LunaApp? {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "-onboardingPreviousShortcutApp"),
+           arguments.indices.contains(flag + 1)
+        {
+            let identifier = arguments[flag + 1].lowercased()
+            if let requested = LunaApp.allCases.first(where: {
+                $0.storageIdentifier == identifier && $0 != configuration.app
+            }) {
+                return requested
+            }
+        }
+        #endif
+        return LunaSetupStatusStore.shared.previouslyConfiguredShortcutApp(
+            excluding: configuration.app)
     }
 
     #if DEBUG

@@ -20,6 +20,11 @@ APP_GROUP_ID = group.$(PRODUCT_BUNDLE_PREFIX)
 // Human-visible app name prefix, e.g. "Luna Reader".
 DISPLAY_NAME_PREFIX = Luna
 
+// Replace this App Store search fallback with Luna's numeric product URL once
+// the central app has an App Store Connect record (apps.apple.com/app/id…).
+// `$()` preserves `//` inside an xcconfig value instead of starting a comment.
+LUNA_CORE_APP_STORE_URL = https:/$()/apps.apple.com/search?term=$(DISPLAY_NAME_PREFIX)
+
 // Lets read-aloud playback (claudedocs/audio-playback.md) keep going once the
 // user leaves the app. Project-level base config, so it reaches all four app
 // targets (and is harmlessly inert on the extension targets and the two apps

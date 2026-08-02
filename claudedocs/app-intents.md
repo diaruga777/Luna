@@ -397,9 +397,14 @@ The iOS 27+ Action Button is set up from the left tray. Its first state imports
 the bundled `Send To Luna.shortcut`; once opened, that row assumes installation
 and becomes “One more step! Set your action button to {App Name}.” Open Settings
 starts the per-surface PiP guide and opens Settings at its root. The row remains
-until a real App Intent invocation records the shared completion marker, at
+until either Action Button App Intent records completion, at
 which point the running app receives the cross-process status notification,
-stops PiP, and animates the row away.
+stops PiP, and animates the row away. Current builds attribute both the import
+press (`setup.shortcut.installPressed.<surface>`) and intent run
+(`setup.shortcut.hasRun.<surface>`) to the exact Luna app. The import flag means
+only “the installer button was pressed”; iOS does not reveal whether Add
+Shortcut completed. The tray uses aggregate run evidence, so one successfully
+running Luna Action Button shortcut removes that setup row from every Luna app.
 
 ## Bundled shortcut + user setup
 

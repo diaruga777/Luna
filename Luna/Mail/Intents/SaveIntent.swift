@@ -154,8 +154,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         // run to the atomic store reservation, so a second invocation does not
         // have to wait for the first invocation to tear down.
         let attemptDate = Date()
-        LunaSetupStatusStore.shared.recordShortcutRun(
-            isCentral: LunaApp.current == .luna)
+        LunaSetupStatusStore.shared.recordShortcutRun(for: .current)
         let reporter = IntentProgressReporter()
         // Compiler/OS availability decides whether Save gets the iOS 27
         // extended runtime and its system progress UI.

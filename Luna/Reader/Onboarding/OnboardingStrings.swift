@@ -276,9 +276,27 @@ enum OnboardingStrings {
         static let settingsSetup = Definition(shared: "Just set your action button to it in")
         static let skipSetup = Definition(shared: "Or")
 
+        static let previousSetupAnswer = Definition(
+            shared: "Yeah, I set it up at some point")
+        static let facetedCoreOfferPrefix = Definition(
+            shared: "Nice. FYI if you buy the")
+        static let facetedCoreOfferSuffix = Definition(
+            shared: ", it can do all Luna app links")
+        static let centralCoreOffer = Definition(
+            shared: "Nice. FYI if you switch it to this app instead, it can handle all your Luna apps in one.")
+        static let keepCurrentAppQuestion = Definition(shared: "And if I don’t?")
+        static let chooseCurrentApp = Definition(
+            shared: "NP. You can pick one Luna app for your action button. For this one:")
+
+        static func previousSetupQuestion(appName: String) -> String {
+            "You’ve already got the \(appName) Action Button setup, huh?"
+        }
+
         static let shortcutPillTitle = Definition(shared: "Install Luna Shortcut")
         static let shortcutPillAccessibilityLabel = Definition(
             shared: "Install the Luna shortcut")
+        static let coreAppPillAccessibilityLabel = Definition(
+            shared: "Open Luna in the App Store")
         static let settingsPillTitle = Definition(shared: "Settings")
         static let settingsPillAccessibilityLabel = Definition(shared: "Open Settings")
         static let skipPillTitle = Definition(shared: "skip setup")

@@ -1,3 +1,4 @@
+import LunaModels
 import LunaStorage
 import XCTest
 
@@ -30,13 +31,23 @@ final class LeftTrayStorageTests: XCTestCase {
         XCTAssertEqual(history.last, "https://example.com/19")
     }
 
-    func testFacetedAndCentralSetupMarkersAreIndependent() {
+    func testShortcutInstallAndIntentMarkersArePerApp() {
         let status = LunaSetupStatusStore(defaults: defaults)
 
-        status.recordShortcutRun(isCentral: false)
+        status.recordShortcutInstallPressed(for: .reader)
+        XCTAssertNil(status.previouslyConfiguredShortcutApp(excluding: .downloader))
+        status.recordShortcutRun(for: .reader)
 
-        XCTAssertTrue(status.shortcutHasRun(isCentral: false))
-        XCTAssertFalse(status.shortcutHasRun(isCentral: true))
+        XCTAssertTrue(status.shortcutInstallWasPressed(for: .reader))
+        XCTAssertFalse(status.shortcutInstallWasPressed(for: .downloader))
+        XCTAssertTrue(status.shortcutHasRun(for: .reader))
+        XCTAssertFalse(status.shortcutHasRun(for: .downloader))
+        XCTAssertFalse(status.shortcutHasRun(for: .luna))
+        XCTAssertEqual(
+            status.previouslyConfiguredShortcutApp(excluding: .downloader),
+            .reader)
+        XCTAssertNil(status.previouslyConfiguredShortcutApp(excluding: .reader))
+        XCTAssertTrue(status.anyShortcutHasRun)
     }
 
     func testShortcutRunPostsSetupStatusChange() {
@@ -44,9 +55,21 @@ final class LeftTrayStorageTests: XCTestCase {
         let expectation = expectation(
             forNotification: LunaSetupStatusStore.didChange, object: nil)
 
-        status.recordShortcutRun(isCentral: false)
+        status.recordShortcutRun(for: .downloader)
 
         wait(for: [expectation], timeout: 1)
+    }
+
+    func testCentralRunEvidenceAppliesToFutureFacetedApps() {
+        let status = LunaSetupStatusStore(defaults: defaults)
+
+        status.recordShortcutRun(for: .luna)
+        defaults.set(true, forKey: LunaSetupStatusStore.centralSafariKey)
+
+        XCTAssertTrue(status.shortcutRunApplies(to: .reader))
+        XCTAssertTrue(status.safariRunApplies(to: .priceTracker))
+        XCTAssertTrue(status.centralAppCoversAllOnboarding(for: .downloader))
+        XCTAssertFalse(status.centralAppCoversAllOnboarding(for: .luna))
     }
 
     func testShareActionMarkersAreIndependentAndPostAChange() {

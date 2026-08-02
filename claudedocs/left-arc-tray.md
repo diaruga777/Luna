@@ -38,10 +38,9 @@ so transformed cards retain visible separation rather than overlapping.
   `LeftTrayController.emailRecoveryLauncher` by the Luna/Reader `KindWiring`
   variants, so the shared tray source still compiles in Downloader and Price
   Tracker without naming their unlinked Email settings controller.
-- Shortcut starts with “Save to Luna with your Action Button” and an Install
-  shortcut button. Opening the bundled shortcut persists the assumed-installed
-  intermediate state; the row becomes the per-app Action Button instruction
-  with an Open Settings button.
+- Shortcut opens the one-click-save Messages walkthrough. It disappears when
+  ANY Luna app has recorded a real App Intent run, or when this app's own
+  onboarding has already handled/skipped the walkthrough.
 - Safari says “Apply Luna in Safari” for Luna/Reader and “Save From Safari” for
   Downloader/Price Tracker, with one Open Safari button.
 
@@ -54,14 +53,20 @@ guide:
 
 - Safari is complete after the containing Safari extension's native handler has
   run.
-- Shortcut is complete after any Luna App Intent has run.
+- Shortcut intent evidence and installer-press evidence are stored per app.
+  The tray considers Shortcut complete after either Action Button intent has
+  run in any app; the
+  press alone is not completion because iOS cannot report whether import was
+  finished.
 - Email is complete whenever the shared email account is configured and ready.
   A persisted `EmailAccountStore.authenticationIssue` makes it incomplete until
   the user reconnects or signs out.
 
-Reader, Downloader, and Price Tracker share Safari/Shortcut completion through
-the App Group. The central Luna bundle uses independent completion keys for its
-own extension and intents. Email is shown only by article-capable surfaces.
+Reader, Downloader, and Price Tracker retain the historical shared Safari key.
+Shortcut intent runs now use exact per-app keys (the old faceted aggregate is a
+read-only migration fallback). Central Luna's Safari/intent evidence also marks
+the corresponding buttons done in subsequently installed faceted apps. Email
+is shown only by article-capable surfaces.
 
 ## Safari trail and matching
 

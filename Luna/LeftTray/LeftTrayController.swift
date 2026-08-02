@@ -442,17 +442,16 @@ final class LeftTrayController: NSObject, UIPasteConfigurationSupporting {
     private func makeRows() -> [LeftTrayRow] {
         var next: [LeftTrayRow] = []
         let setup = LunaSetupStatusStore.shared
-        let isCentral = LunaApp.current == .luna
         if LunaApp.current.sharesByEmail, !EmailAccountStore.shared.isReady {
             next.append(.setup(.email))
         }
         if LeftTraySetupVisibility.showsShortcut(
             saveSetupMode: .current,
             setupFlowHandled: AppOnboardingStore.shared.hasHandledSaveSetup,
-            shortcutHasRun: setup.shortcutHasRun(isCentral: isCentral)) {
+            shortcutHasRun: setup.anyShortcutHasRun) {
             next.append(.setup(.shortcut))
         }
-        if !setup.safariHasRun(isCentral: isCentral) {
+        if !setup.safariRunApplies(to: .current) {
             next.append(.setup(.safari))
         }
         next.append(.paste)

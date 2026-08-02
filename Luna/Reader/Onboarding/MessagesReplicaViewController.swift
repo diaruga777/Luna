@@ -53,6 +53,7 @@ enum OnboardingMessagesReplicaTiming {
 @MainActor
 final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     var onInstallShortcut: (() -> Void)?
+    var onOpenLunaAppStore: (() -> Void)?
     var onSetActionButton: (() -> Void)?
     /// Fired once the shortcut-install message is on screen: the
     /// demonstration is over and the pill (or the skip-out) owns what's next.
@@ -70,6 +71,8 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         case answer
         case pitch
         case link
+        case coreOffer
+        case objection
         case shortcut
         case settings
         case tryIt
@@ -78,7 +81,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         case skip
 
         /// The rows that arrive on their own, before the Action Button press.
-        static let staged: [Row] = [.greeting, .question, .answer, .pitch, .link]
+        static let firstSetupStaged: [Row] = [
+            .greeting, .question, .answer, .pitch, .link,
+        ]
         static let shareSheetStaged: [Row] = [.link, .answer, .pitch]
     }
 
@@ -88,11 +93,14 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private let shortcutPill = OnboardingMessagePillButton(style: .shortcuts)
     private let settingsPill = OnboardingMessagePillButton(style: .settings)
     private let skipPill = OnboardingMessagePillButton(style: .skip)
+    private let coreAppPill = OnboardingMessagePillButton(style: .app(.luna))
     private let sharePill: OnboardingMessagePillButton
     private let saveSetupMode: OnboardingSaveSetupMode
+    private let app: LunaApp
     private let appName: String
+    private let previouslyConfiguredApp: LunaApp?
     private let actionExtensionIcon: UIImage?
-    private var shortcutBubble: OnboardingMessagePillBubble?
+    private var shortcutBubble: OnboardingMessageBubble?
     private var currentURLString: String
     private var messageRows: [Row: OnboardingMessageRow] = [:]
     private var revealedRows: Set<Row> = []
@@ -106,6 +114,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private var shareSheet: OnboardingMockShareSheetView?
     private var hidesStatusBarForIsland = false
     private(set) var isShowingSetupMessages = false
+    var usesPreviousSetupConversation: Bool {
+        saveSetupMode == .actionButtonShortcut && previouslyConfiguredApp != nil
+    }
     /// How far the real bubble sinks while its flying copy carries the
     /// departure — a faint ghost rather than a hard gap in the thread.
     private static let bubbleFlightFadeAlpha: CGFloat = 0.15
@@ -124,12 +135,16 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     init(
         urlString: String,
         saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut,
+        app: LunaApp = .current,
         appName: String = LunaApp.current.displayName,
+        previouslyConfiguredApp: LunaApp? = nil,
         actionExtensionIcon: UIImage? = OnboardingActionExtensionIcon.image()
     ) {
         currentURLString = urlString
         self.saveSetupMode = saveSetupMode
+        self.app = app
         self.appName = appName
+        self.previouslyConfiguredApp = previouslyConfiguredApp
         self.actionExtensionIcon = actionExtensionIcon
         self.sharePill = OnboardingMessagePillButton(
             style: .share(urlString))
@@ -148,8 +163,15 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         configureConversation(above: composer)
         configureHeader()
         urlBubble.setURL(currentURLString)
-        shortcutPill.onActivate = { [weak self] in self?.onInstallShortcut?() }
+        shortcutPill.onActivate = { [weak self] in
+            guard let self else { return }
+            if self.usesPreviousSetupConversation {
+                self.reveal(.skip)
+            }
+            self.onInstallShortcut?()
+        }
         settingsPill.onActivate = { [weak self] in self?.onSetActionButton?() }
+        coreAppPill.onActivate = { [weak self] in self?.onOpenLunaAppStore?() }
         sharePill.onActivate = { [weak self] in self?.onOpenShareSheet?() }
         skipPill.onActivate = { [weak self] in
             guard let self else { return }
@@ -176,6 +198,14 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private var rowOrder: [Row] {
         switch saveSetupMode {
         case .actionButtonShortcut:
+            if usesPreviousSetupConversation {
+                var rows: [Row] = [.greeting, .question, .answer, .coreOffer]
+                if app != .luna { rows.append(.objection) }
+                // Skip belongs immediately after the installer pill and is
+                // revealed by that tap; Settings arrives after the app return.
+                rows.append(contentsOf: [.shortcut, .skip, .settings])
+                return rows
+            }
             return [.greeting, .question, .answer, .pitch, .link,
                     .shortcut, .settings, .skip]
         case .shareSheet:
@@ -237,6 +267,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             shortcutBubble?.setShowsTail(true)
         }
         shortcutPill.reset()
+        coreAppPill.reset()
         settingsPill.reset()
         skipPill.reset()
         sharePill.reset()
@@ -250,9 +281,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     func scheduleStagedConversation() {
         let generation = presentationGeneration
         var delay = OnboardingMessagesReplicaTiming.firstMessageDelay
-        let stagedRows = saveSetupMode == .actionButtonShortcut
-            ? Row.staged
-            : Row.shareSheetStaged
+        let stagedRows = self.stagedRows
         let delays = saveSetupMode == .actionButtonShortcut
             ? OnboardingMessagesReplicaTiming.stagedMessageDelays
             : OnboardingMessagesReplicaTiming.shareSheetMessageDelays
@@ -266,9 +295,35 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                 guard let self,
                       generation == self.presentationGeneration
                 else { return }
-                self.reveal(row)
+                self.reveal(row) {
+                    self.didRevealStagedRow(row)
+                }
             }
         }
+    }
+
+    private var stagedRows: [Row] {
+        guard saveSetupMode == .actionButtonShortcut else {
+            return Row.shareSheetStaged
+        }
+        guard usesPreviousSetupConversation else {
+            return Row.firstSetupStaged
+        }
+        var rows: [Row] = [.greeting, .question, .answer, .coreOffer]
+        if app != .luna { rows.append(.objection) }
+        rows.append(.shortcut)
+        return rows
+    }
+
+    private func didRevealStagedRow(_ row: Row) {
+        guard usesPreviousSetupConversation else { return }
+        if row == .coreOffer, app != .luna {
+            coreAppPill.beginAttentionPulse()
+        }
+        guard row == .shortcut else { return }
+        shortcutPill.beginAttentionPulse()
+        isShowingSetupMessages = true
+        onShortcutSetupMessagesShown?()
     }
 
     // MARK: - Message arrival
@@ -278,12 +333,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     func revealStagedConversationImmediately() {
         presentationGeneration += 1
         view.layoutIfNeeded()
-        let rows = saveSetupMode == .actionButtonShortcut
-            ? Row.staged
-            : Row.shareSheetStaged
+        let rows = stagedRows
         for row in rows {
             revealedRows.insert(row)
             rowView(row).alpha = 1
+            didRevealStagedRow(row)
         }
         conversationStack.transform = CGAffineTransform(
             translationX: 0, y: stackOffset())
@@ -296,6 +350,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         isShowingSetupMessages = true
         switch saveSetupMode {
         case .actionButtonShortcut:
+            if usesPreviousSetupConversation {
+                if !revealedRows.contains(.shortcut) { reveal(.shortcut) }
+                revealSettingsSetupMessage()
+                return
+            }
             reveal(.shortcut)
             reveal(.skip)
             revealSettingsSetupMessage()
@@ -317,18 +376,17 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         let arriving = rowView(row)
         view.layoutIfNeeded()
 
-        // The Settings message is the only one that arrives INTO the thread
-        // rather than under it — the skip-out is already sitting below where
-        // it belongs. Opening its collapsed space shoves everything above it
-        // up and leaves the skip where it is, so the rows above start
-        // displaced by exactly that much and are animated back: a movement
-        // rather than a jump.
+        // Settings waits collapsed until the app returns. Opening its space
+        // moves the already-visible rows without a jump; in the original flow
+        // it lands above Skip, while the returning-user flow appends it below.
         var displaced: [OnboardingMessageRow] = []
         if arriving.isHidden {
             let heightBefore = conversationStack.bounds.height
             arriving.isHidden = false
-            conversationStack.setCustomSpacing(
-                OnboardingMessageRow.groupedSpacing, after: rowView(.shortcut))
+            if !usesPreviousSetupConversation {
+                conversationStack.setCustomSpacing(
+                    OnboardingMessageRow.groupedSpacing, after: rowView(.shortcut))
+            }
             view.layoutIfNeeded()
             let shove = conversationStack.bounds.height - heightBefore
             displaced = rowOrder
@@ -409,6 +467,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     override func replaySaveDemonstration() {
         switch saveSetupMode {
         case .actionButtonShortcut:
+            guard !usesPreviousSetupConversation else { return }
             super.replaySaveDemonstration()
         case .shareSheet:
             beginShareSheetDemonstration()
@@ -851,44 +910,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private func configureConversation(above composer: UIView) {
         switch saveSetupMode {
         case .actionButtonShortcut:
-            let shortcutBubble = OnboardingMessagePillBubble(
-                direction: .incoming,
-                showsTail: true,
-                text: OnboardingStrings.Messages.shortcutSetup.value(),
-                pill: shortcutPill,
-                accessibilityIdentifier:
-                    OnboardingStrings.Accessibility.messagesShortcutSetup.value())
-            self.shortcutBubble = shortcutBubble
-            messageRows = [
-                .greeting: textRow(
-                    .incoming, tail: false,
-                    text: OnboardingStrings.Messages.greeting.value(),
-                    identifier: OnboardingStrings.Accessibility.messagesGreeting.value()),
-                .question: textRow(
-                    .incoming, tail: true,
-                    text: OnboardingStrings.Messages.question.value(),
-                    identifier: OnboardingStrings.Accessibility.messagesQuestion.value()),
-                .answer: textRow(
-                    .outgoing, tail: true,
-                    text: OnboardingStrings.Messages.answer.value(),
-                    identifier: OnboardingStrings.Accessibility.messagesAnswer.value()),
-                .pitch: textRow(
-                    .incoming, tail: false,
-                    text: OnboardingStrings.Messages.pitch.value(),
-                    identifier: OnboardingStrings.Accessibility.messagesPitch.value()),
-                .link: OnboardingMessageRow(direction: .incoming, bubble: urlBubble),
-                .shortcut: OnboardingMessageRow(direction: .incoming, bubble: shortcutBubble),
-                .settings: OnboardingMessageRow(
-                    direction: .incoming,
-                    bubble: OnboardingMessagePillBubble(
-                        direction: .incoming,
-                        showsTail: true,
-                        text: OnboardingStrings.Messages.settingsSetup.value(),
-                        pill: settingsPill,
-                        accessibilityIdentifier:
-                            OnboardingStrings.Accessibility.messagesSettingsSetup.value())),
-                .skip: skipMessageRow(),
-            ]
+            if let previouslyConfiguredApp {
+                configurePreviousSetupConversation(previouslyConfiguredApp)
+            } else {
+                configureFirstSetupConversation()
+            }
         case .shareSheet:
             messageRows = [
                 .link: OnboardingMessageRow(direction: .incoming, bubble: urlBubble),
@@ -938,8 +964,16 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         case .actionButtonShortcut:
             conversationStack.setCustomSpacing(
                 OnboardingMessageRow.groupedSpacing, after: rowView(.greeting))
-            conversationStack.setCustomSpacing(
-                OnboardingMessageRow.groupedSpacing, after: rowView(.pitch))
+            if usesPreviousSetupConversation {
+                if app == .luna {
+                    conversationStack.setCustomSpacing(
+                        OnboardingMessageRow.groupedSpacing,
+                        after: rowView(.coreOffer))
+                }
+            } else {
+                conversationStack.setCustomSpacing(
+                    OnboardingMessageRow.groupedSpacing, after: rowView(.pitch))
+            }
         case .shareSheet:
             conversationStack.setCustomSpacing(
                 OnboardingMessageRow.groupedSpacing, after: rowView(.tryIt))
@@ -969,6 +1003,112 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             conversationStack.bottomAnchor.constraint(
                 equalTo: composer.topAnchor, constant: -12),
         ])
+    }
+
+    private func configureFirstSetupConversation() {
+        let shortcutBubble = OnboardingMessagePillBubble(
+            direction: .incoming,
+            showsTail: true,
+            text: OnboardingStrings.Messages.shortcutSetup.value(),
+            pill: shortcutPill,
+            accessibilityIdentifier:
+                OnboardingStrings.Accessibility.messagesShortcutSetup.value())
+        self.shortcutBubble = shortcutBubble
+        messageRows = commonOpeningRows(
+            question: OnboardingStrings.Messages.question.value(),
+            answer: OnboardingStrings.Messages.answer.value())
+        messageRows[.pitch] = textRow(
+            .incoming, tail: false,
+            text: OnboardingStrings.Messages.pitch.value(),
+            identifier: OnboardingStrings.Accessibility.messagesPitch.value())
+        messageRows[.link] = OnboardingMessageRow(
+            direction: .incoming, bubble: urlBubble)
+        messageRows[.shortcut] = OnboardingMessageRow(
+            direction: .incoming, bubble: shortcutBubble)
+        addSettingsAndSkipRows()
+    }
+
+    private func configurePreviousSetupConversation(_ previousApp: LunaApp) {
+        messageRows = commonOpeningRows(
+            question: OnboardingStrings.Messages.previousSetupQuestion(
+                appName: previousApp.displayName),
+            answer: OnboardingStrings.Messages.previousSetupAnswer.value())
+
+        if app == .luna {
+            messageRows[.coreOffer] = textRow(
+                .incoming,
+                tail: false,
+                text: OnboardingStrings.Messages.centralCoreOffer.value(),
+                identifier: "onboarding.messages.centralCoreOffer")
+            let shortcutBubble = OnboardingMessageStandalonePillBubble(
+                pill: shortcutPill,
+                showsTail: true,
+                accessibilityIdentifier:
+                    OnboardingStrings.Accessibility.messagesShortcutSetup.value())
+            self.shortcutBubble = shortcutBubble
+            messageRows[.shortcut] = OnboardingMessageRow(
+                direction: .incoming, bubble: shortcutBubble)
+        } else {
+            messageRows[.coreOffer] = OnboardingMessageRow(
+                direction: .incoming,
+                bubble: OnboardingMessagePillBubble(
+                    direction: .incoming,
+                    showsTail: true,
+                    text: OnboardingStrings.Messages.facetedCoreOfferPrefix.value(),
+                    trailingText:
+                        OnboardingStrings.Messages.facetedCoreOfferSuffix.value(),
+                    pill: coreAppPill,
+                    accessibilityIdentifier: "onboarding.messages.coreOffer"))
+            messageRows[.objection] = textRow(
+                .outgoing,
+                tail: true,
+                text: OnboardingStrings.Messages.keepCurrentAppQuestion.value(),
+                identifier: "onboarding.messages.keepCurrentAppQuestion")
+            let shortcutBubble = OnboardingMessagePillBubble(
+                direction: .incoming,
+                showsTail: true,
+                text: OnboardingStrings.Messages.chooseCurrentApp.value(),
+                pill: shortcutPill,
+                accessibilityIdentifier:
+                    OnboardingStrings.Accessibility.messagesShortcutSetup.value())
+            self.shortcutBubble = shortcutBubble
+            messageRows[.shortcut] = OnboardingMessageRow(
+                direction: .incoming, bubble: shortcutBubble)
+        }
+        addSettingsAndSkipRows()
+    }
+
+    private func commonOpeningRows(
+        question: String,
+        answer: String
+    ) -> [Row: OnboardingMessageRow] {
+        [
+            .greeting: textRow(
+                .incoming, tail: false,
+                text: OnboardingStrings.Messages.greeting.value(),
+                identifier: OnboardingStrings.Accessibility.messagesGreeting.value()),
+            .question: textRow(
+                .incoming, tail: true,
+                text: question,
+                identifier: OnboardingStrings.Accessibility.messagesQuestion.value()),
+            .answer: textRow(
+                .outgoing, tail: true,
+                text: answer,
+                identifier: OnboardingStrings.Accessibility.messagesAnswer.value()),
+        ]
+    }
+
+    private func addSettingsAndSkipRows() {
+        messageRows[.settings] = OnboardingMessageRow(
+            direction: .incoming,
+            bubble: OnboardingMessagePillBubble(
+                direction: .incoming,
+                showsTail: true,
+                text: OnboardingStrings.Messages.settingsSetup.value(),
+                pill: settingsPill,
+                accessibilityIdentifier:
+                    OnboardingStrings.Accessibility.messagesSettingsSetup.value()))
+        messageRows[.skip] = skipMessageRow()
     }
 
     private func textRow(
@@ -1316,6 +1456,7 @@ private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
         showsTail: Bool,
         appearance: Appearance = .filled,
         text: String,
+        trailingText: String = "",
         pill: OnboardingMessagePillButton,
         accessibilityIdentifier: String
     ) {
@@ -1360,11 +1501,19 @@ private final class OnboardingMessagePillBubble: OnboardingMessageBubble {
             width: pillSize.width,
             height: pillSize.height)
         content.append(NSAttributedString(attachment: placeholder))
+        if !trailingText.isEmpty {
+            content.append(NSAttributedString(
+                string: trailingText,
+                attributes: [.font: font, .foregroundColor: contentColor]))
+        }
         textView.attributedText = content
         addSubview(textView)
 
         addSubview(pill)
-        accessibilityLabel = text
+        accessibilityLabel = [text, pill.accessibilityLabel, trailingText]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
 
         NSLayoutConstraint.activate([
             textView.topAnchor.constraint(equalTo: topAnchor, constant: 8),
@@ -1419,13 +1568,13 @@ private final class OnboardingMessageStandalonePillBubble: OnboardingMessageBubb
     }
 }
 
-/// The tappable in-bubble chip: the Shortcuts-purple "Luna" shortcut install,
-/// the grey system-Settings link, and the skip-out. The first two breathe an
-/// eclipse corona until tapped; the skip-out never asks for the tap, so it
-/// does not.
+/// The tappable in-bubble chip: app, shortcut, Settings, share, or skip. Every
+/// setup destination breathes an eclipse corona until tapped; the skip-out
+/// never asks for the tap, so it does not.
 final class OnboardingMessagePillButton: UIControl {
     enum Style {
         case shortcuts
+        case app(LunaApp)
         case settings
         case share(String)
         case skip
@@ -1456,7 +1605,7 @@ final class OnboardingMessagePillButton: UIControl {
         let iconTint: UIColor?
         switch style {
         case .skip: pulsesForAttention = false
-        case .shortcuts, .settings, .share: pulsesForAttention = true
+        case .shortcuts, .app, .settings, .share: pulsesForAttention = true
         }
         switch style {
         case .shortcuts:
@@ -1472,6 +1621,17 @@ final class OnboardingMessagePillButton: UIControl {
                 OnboardingStrings.Accessibility.messagesShortcutPill.value()
             accessibilityLabel =
                 OnboardingStrings.Messages.shortcutPillAccessibilityLabel.value()
+        case .app(let app):
+            icon = LunaAppIconImage.image(for: app)
+            title = app.displayName
+            fill = UIColor(red: 0.91, green: 0.92, blue: 1.0, alpha: 1)
+            titleColor = UIColor(red: 0.20, green: 0.23, blue: 0.56, alpha: 1)
+            iconTint = nil
+            glowColor = UIColor(red: 0.46, green: 0.50, blue: 0.92, alpha: 1)
+            super.init(frame: .zero)
+            accessibilityIdentifier = "onboarding.messages.coreAppPill"
+            accessibilityLabel =
+                OnboardingStrings.Messages.coreAppPillAccessibilityLabel.value()
         case .settings:
             icon = UIImage(
                 systemName: "gearshape.fill",

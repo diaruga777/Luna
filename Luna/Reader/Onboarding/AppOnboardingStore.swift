@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaStorage
 import Foundation
 
 /// Per-install completion and exact temporary-save ownership for each Luna app.
@@ -18,14 +19,24 @@ final class AppOnboardingStore {
     let app: LunaApp
 
     private let defaults: UserDefaults
+    private let setupStatusStore: LunaSetupStatusStore
 
-    init(app: LunaApp = .current, defaults: UserDefaults = .standard) {
+    init(
+        app: LunaApp = .current,
+        defaults: UserDefaults = .standard,
+        setupStatusStore: LunaSetupStatusStore? = nil
+    ) {
         self.app = app
         self.defaults = defaults
+        self.setupStatusStore = setupStatusStore
+            ?? (defaults === UserDefaults.standard
+                ? .shared
+                : LunaSetupStatusStore(defaults: defaults))
     }
 
     var isCompleted: Bool {
         defaults.bool(forKey: completionKey)
+            || setupStatusStore.centralAppCoversAllOnboarding(for: app)
     }
 
     func markCompleted() {

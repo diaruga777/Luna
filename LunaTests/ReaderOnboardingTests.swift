@@ -17,8 +17,11 @@ final class ReaderOnboardingTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let reader = AppOnboardingStore(app: .reader, defaults: defaults)
-        let downloader = AppOnboardingStore(app: .downloader, defaults: defaults)
+        let setup = LunaSetupStatusStore(defaults: defaults)
+        let reader = AppOnboardingStore(
+            app: .reader, defaults: defaults, setupStatusStore: setup)
+        let downloader = AppOnboardingStore(
+            app: .downloader, defaults: defaults, setupStatusStore: setup)
         XCTAssertFalse(reader.isCompleted)
         XCTAssertFalse(downloader.isCompleted)
         reader.markCompleted()
@@ -31,6 +34,25 @@ final class ReaderOnboardingTests: XCTestCase {
         reader.resetCompletion()
         XCTAssertFalse(reader.isCompleted)
         XCTAssertFalse(reader.hasHandledSaveSetup)
+    }
+
+    func testCentralSetupEvidenceSkipsOnlyANewFacetedAppsOnboarding() {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let setup = LunaSetupStatusStore(defaults: defaults)
+        let facet = AppOnboardingStore(
+            app: .reader, defaults: defaults, setupStatusStore: setup)
+        let central = AppOnboardingStore(
+            app: .luna, defaults: defaults, setupStatusStore: setup)
+        setup.recordShortcutRun(for: .luna)
+        XCTAssertFalse(facet.isCompleted)
+
+        defaults.set(true, forKey: LunaSetupStatusStore.centralSafariKey)
+        XCTAssertTrue(facet.isCompleted)
+        XCTAssertFalse(central.isCompleted)
     }
 
     func testShortcutTrayVisibilityRequiresEveryCapabilityAndPendingState() {
@@ -930,6 +952,110 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)
         XCTAssertTrue(messages.isURLHighlighted)
+    }
+
+    @MainActor
+    func testPreviouslyConfiguredSiblingGetsTheFacetedShortcutConversation() throws {
+        let messages = MessagesReplicaViewController(
+            urlString: OnboardingDemoPage.instaTok.sharedURLString,
+            app: .downloader,
+            appName: LunaApp.downloader.displayName,
+            previouslyConfiguredApp: .reader,
+            actionExtensionIcon: nil)
+        let window = UIWindow(
+            frame: CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = messages
+        window.makeKeyAndVisible()
+        messages.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
+        let sentences = messages.view.descendants(of: UITextView.self)
+            .compactMap(\.text)
+        XCTAssertTrue(messages.usesPreviousSetupConversation)
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.greeting.value()))
+        XCTAssertTrue(labels.contains(
+            OnboardingStrings.Messages.previousSetupQuestion(
+                appName: LunaApp.reader.displayName)))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.previousSetupAnswer.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.keepCurrentAppQuestion.value()))
+        XCTAssertTrue(sentences.contains {
+            $0.hasPrefix(OnboardingStrings.Messages.facetedCoreOfferPrefix.value())
+        })
+        XCTAssertTrue(sentences.contains {
+            $0.hasPrefix(OnboardingStrings.Messages.chooseCurrentApp.value())
+        })
+        XCTAssertFalse(labels.contains(OnboardingStrings.Messages.question.value()))
+
+        let corePill = try XCTUnwrap(
+            messages.view.descendants(of: OnboardingMessagePillButton.self).first {
+                $0.accessibilityIdentifier == "onboarding.messages.coreAppPill"
+            })
+        XCTAssertTrue(labels.contains(LunaApp.luna.displayName))
+        var openedStore = false
+        messages.onOpenLunaAppStore = { openedStore = true }
+        corePill.sendActions(for: .touchUpInside)
+        XCTAssertTrue(openedStore)
+
+        messages.revealStagedConversationImmediately()
+        XCTAssertTrue(messages.isShowingSetupMessages)
+        let skipBubble = try XCTUnwrap(messages.view.viewWithAccessibilityIdentifier(
+            OnboardingStrings.Accessibility.messagesSkipSetup.value()))
+        let skipRow = try XCTUnwrap(skipBubble.superview)
+        XCTAssertEqual(skipRow.alpha, 0)
+
+        let shortcutPill = try XCTUnwrap(
+            messages.view.descendants(of: OnboardingMessagePillButton.self).first {
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.messagesShortcutPill.value()
+            })
+        var installed = false
+        messages.onInstallShortcut = { installed = true }
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(true) }
+        shortcutPill.sendActions(for: .touchUpInside)
+        XCTAssertTrue(installed)
+        XCTAssertEqual(skipRow.alpha, 1, "Skip arrives only once install is pressed")
+
+        let settingsBubble = try XCTUnwrap(messages.view.viewWithAccessibilityIdentifier(
+            OnboardingStrings.Accessibility.messagesSettingsSetup.value()))
+        let settingsRow = try XCTUnwrap(settingsBubble.superview)
+        XCTAssertTrue(settingsRow.isHidden)
+        messages.revealSettingsSetupMessage()
+        XCTAssertFalse(settingsRow.isHidden)
+        XCTAssertEqual(settingsRow.alpha, 1)
+        messages.view.layoutIfNeeded()
+        XCTAssertGreaterThan(
+            settingsRow.frame.minY,
+            skipRow.frame.minY,
+            "The returning-user Settings message arrives after the revealed Skip row")
+    }
+
+    @MainActor
+    func testCentralAppPreviousSetupConversationDropsTheObjectionAndShortcutProse() {
+        let messages = MessagesReplicaViewController(
+            urlString: OnboardingDemoPage.lunaPage.sharedURLString,
+            app: .luna,
+            appName: LunaApp.luna.displayName,
+            previouslyConfiguredApp: .priceTracker,
+            actionExtensionIcon: nil)
+        messages.loadViewIfNeeded()
+
+        let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
+        let sentences = messages.view.descendants(of: UITextView.self)
+            .compactMap(\.text)
+        XCTAssertTrue(labels.contains(
+            OnboardingStrings.Messages.previousSetupQuestion(
+                appName: LunaApp.priceTracker.displayName)))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.centralCoreOffer.value()))
+        XCTAssertFalse(labels.contains(OnboardingStrings.Messages.keepCurrentAppQuestion.value()))
+        XCTAssertFalse(sentences.contains {
+            $0.hasPrefix(OnboardingStrings.Messages.chooseCurrentApp.value())
+        })
+        XCTAssertFalse(messages.view.descendants(of: OnboardingMessagePillButton.self).contains {
+            $0.accessibilityIdentifier == "onboarding.messages.coreAppPill"
+        })
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.shortcutPillTitle.value()))
     }
 
     @MainActor
@@ -1927,22 +2053,26 @@ final class ReaderOnboardingTests: XCTestCase {
         let status = LunaSetupStatusStore(defaults: defaults)
         defaults.set(true, forKey: LunaSetupStatusStore.sharedSafariKey)
         defaults.set(true, forKey: LunaSetupStatusStore.centralSafariKey)
-        status.recordShortcutRun(isCentral: false)
-        status.recordShortcutRun(isCentral: true)
+        status.recordShortcutInstallPressed(for: .reader)
+        status.recordShortcutInstallPressed(for: .luna)
+        status.recordShortcutRun(for: .reader)
+        status.recordShortcutRun(for: .luna)
         status.recordShareActionRun(isCentral: false)
         status.recordShareActionRun(isCentral: true)
         XCTAssertTrue(status.safariHasRun(isCentral: false))
         XCTAssertTrue(status.safariHasRun(isCentral: true))
-        XCTAssertTrue(status.shortcutHasRun(isCentral: false))
-        XCTAssertTrue(status.shortcutHasRun(isCentral: true))
+        XCTAssertTrue(status.shortcutHasRun(for: .reader))
+        XCTAssertTrue(status.shortcutHasRun(for: .luna))
         XCTAssertTrue(status.shareActionHasRun(isCentral: false))
         XCTAssertTrue(status.shareActionHasRun(isCentral: true))
 
         status.resetAllRunEvidence()
         XCTAssertFalse(status.safariHasRun(isCentral: false))
         XCTAssertFalse(status.safariHasRun(isCentral: true))
-        XCTAssertFalse(status.shortcutHasRun(isCentral: false))
-        XCTAssertFalse(status.shortcutHasRun(isCentral: true))
+        XCTAssertFalse(status.shortcutInstallWasPressed(for: .reader))
+        XCTAssertFalse(status.shortcutInstallWasPressed(for: .luna))
+        XCTAssertFalse(status.shortcutHasRun(for: .reader))
+        XCTAssertFalse(status.shortcutHasRun(for: .luna))
         XCTAssertFalse(status.shareActionHasRun(isCentral: false))
         XCTAssertFalse(status.shareActionHasRun(isCentral: true))
     }

@@ -524,7 +524,10 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             OnboardingMessagesReplicaTiming.stagedMessageDelays.count, 4)
         for delay in OnboardingMessagesReplicaTiming.stagedMessageDelays {
-            XCTAssertGreaterThanOrEqual(delay, 0.3)
+            XCTAssertGreaterThanOrEqual(
+                delay, 0.6,
+                "Even the tightest hand-off is somebody typing, not a "
+                    + "transcript unrolling")
         }
         XCTAssertFalse(messages.isURLHighlighted)
         messages.setURLHighlighted(true)

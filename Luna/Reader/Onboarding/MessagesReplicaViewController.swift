@@ -7,15 +7,21 @@ import LunaDesignSystem
 import UIKit
 
 enum OnboardingMessagesReplicaTiming {
-    static let firstMessageDelay: TimeInterval = 0.18
+    static let firstMessageDelay: TimeInterval = 0.34
     /// The gap before each staged arrival AFTER the first — one entry per
     /// hand-off, because two friends texting do not keep a metronome. The
     /// greeting's follow-up lands almost on top of it, the reply takes the
     /// beat it costs to actually type, and the link follows its own
     /// "check it:" immediately.
-    static let stagedMessageDelays: [TimeInterval] = [0.45, 1.05, 0.8, 0.4]
+    ///
+    /// The ratios between them are what make the thread read as two people;
+    /// the absolute scale is what makes it read as *typing*. These are paced
+    /// off someone typing quickly rather than off an animation timeline — an
+    /// earlier, brisker set landed four sentences in under three seconds,
+    /// which is a transcript being replayed, not a conversation happening.
+    static let stagedMessageDelays: [TimeInterval] = [0.85, 2.0, 1.5, 0.75]
     static let messageDuration: TimeInterval = 0.42
-    static let saveDelayAfterLastMessage: TimeInterval = 0.75
+    static let saveDelayAfterLastMessage: TimeInterval = 1.1
 
     static var actionButtonReplayDelay: TimeInterval {
         firstMessageDelay

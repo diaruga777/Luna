@@ -18,6 +18,8 @@ public final class LunaSetupStatusStore {
     public static let centralSafariKey = "setup.safari.hasRun.luna"
     public static let sharedShortcutKey = "setup.shortcut.hasRun.shared"
     public static let centralShortcutKey = "setup.shortcut.hasRun.luna"
+    public static let sharedShareActionKey = "setup.shareAction.hasRun.shared"
+    public static let centralShareActionKey = "setup.shareAction.hasRun.luna"
 
     private static var darwinNotificationName: String {
         "\(AppConfig.appGroupID).setupStatusChanged"
@@ -40,8 +42,17 @@ public final class LunaSetupStatusStore {
         defaults.bool(forKey: isCentral ? Self.centralShortcutKey : Self.sharedShortcutKey)
     }
 
+    public func shareActionHasRun(isCentral: Bool) -> Bool {
+        defaults.bool(forKey: isCentral ? Self.centralShareActionKey : Self.sharedShareActionKey)
+    }
+
     public func recordShortcutRun(isCentral: Bool) {
         defaults.set(true, forKey: isCentral ? Self.centralShortcutKey : Self.sharedShortcutKey)
+        Self.postChange()
+    }
+
+    public func recordShareActionRun(isCentral: Bool) {
+        defaults.set(true, forKey: isCentral ? Self.centralShareActionKey : Self.sharedShareActionKey)
         Self.postChange()
     }
 
@@ -54,6 +65,8 @@ public final class LunaSetupStatusStore {
             Self.centralSafariKey,
             Self.sharedShortcutKey,
             Self.centralShortcutKey,
+            Self.sharedShareActionKey,
+            Self.centralShareActionKey,
         ] {
             defaults.removeObject(forKey: key)
         }

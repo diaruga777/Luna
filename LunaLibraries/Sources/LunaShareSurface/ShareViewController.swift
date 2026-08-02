@@ -311,6 +311,7 @@ open class ShareViewController: UIViewController {
             if let raw, raw.isFileURL {
                 self.saveDocumentDirectly(sourceURL: raw)
             } else if let raw, let url = URLUnwrapper.ingestURL(from: raw.absoluteString) {
+                if self.presentShareSetupPracticeIfNeeded(url) { return }
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url)
@@ -381,6 +382,7 @@ open class ShareViewController: UIViewController {
                 ?? ShareTextURL.extract(from: text)
                 ?? ShareTextURL.firstLink(in: text),
                let url = URLUnwrapper.ingestURL(from: extracted.absoluteString) {
+                if self.presentShareSetupPracticeIfNeeded(url) { return }
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record(
                     "saved url (text) \(url.absoluteString)", category: "share")
@@ -408,6 +410,24 @@ open class ShareViewController: UIViewController {
         }
         saveDocumentDirectly(sourceURL: temporaryURL)
         try? FileManager.default.removeItem(at: temporaryURL)
+    }
+
+    /// The onboarding example is a rehearsal, not content. Both the share and
+    /// action extension show the same bundled preview, record cross-process
+    /// setup evidence, and leave the user's real reading list untouched.
+    private func presentShareSetupPracticeIfNeeded(_ url: URL) -> Bool {
+        guard ShareSetupPractice.matches(url) else { return false }
+        let app = LunaApp.current
+        LunaSetupStatusStore.shared.recordShareActionRun(isCentral: app == .luna)
+        SharedDiagnosticLog.record(
+            "completed share-sheet onboarding practice", category: "share")
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let preview = ShareSetupPracticePreviewViewController(app: app)
+            preview.onDone = { [weak self] in self?.completeSilently() }
+            self.presentModally(preview)
+        }
+        return true
     }
 
     /// The stored document's file name — and so its title, which

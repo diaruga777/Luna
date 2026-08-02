@@ -48,4 +48,16 @@ final class LeftTrayStorageTests: XCTestCase {
 
         wait(for: [expectation], timeout: 1)
     }
+
+    func testShareActionMarkersAreIndependentAndPostAChange() {
+        let status = LunaSetupStatusStore(defaults: defaults)
+        let changed = expectation(
+            forNotification: LunaSetupStatusStore.didChange, object: nil)
+
+        status.recordShareActionRun(isCentral: false)
+
+        wait(for: [changed], timeout: 1)
+        XCTAssertTrue(status.shareActionHasRun(isCentral: false))
+        XCTAssertFalse(status.shareActionHasRun(isCentral: true))
+    }
 }

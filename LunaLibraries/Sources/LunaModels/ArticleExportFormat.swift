@@ -14,28 +14,33 @@ import Foundation
 /// extension so the two can never disagree about either.
 ///
 /// `allCases` is the SERIALIZER list, not the menu: `shareMenuFormats` is what
-/// "Export as…" offers. They differ because `.document` exists only as the
-/// double-save return format (see claudedocs/double-save.md) and was
-/// deliberately kept out of the share menu.
+/// "Export as…" offers. They differ because `.markdown` is a serializer only —
+/// the menu offers `.document`, the same Word document the double-save App
+/// Intent returns (see claudedocs/double-save.md), in its place.
 public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     /// EPUB 3 — reflowable, images embedded. What Send to Kindle also uses.
     case epub
     /// Paginated PDF — fixed layout, images embedded.
     case pdf
     /// CommonMark text — inline links preserved, images referenced by URL.
+    /// A serializer only: it is not in `shareMenuFormats`.
     case markdown
     /// Prose only — no markup, no URLs in the body.
     case plainText
     /// Word document (`.docx`) — one regular, editable file with image bytes
     /// bundled and links live. Unlike directory-backed RTFD, it can be copied by
-    /// the Files share extension as well as previewed by Quick Look.
+    /// the Files share extension as well as previewed by Quick Look. Also what
+    /// the double save's "View immediately" App Intent returns.
     case document
 
     /// What the article "Export as…" menu offers, in menu order: EPUB first
     /// (the ereader-universal default and the only format Luna offered before),
-    /// then PDF, then the two text formats. `.document` is intentionally absent.
+    /// then PDF, then the Word document, then plain text. `.markdown` is
+    /// intentionally absent — a rich document that keeps images and live links
+    /// is the useful thing to hand another app, and Markdown's own audience is
+    /// served by the `.docx` every editor imports.
     public static let shareMenuFormats: [ArticleExportFormat] =
-        [.epub, .pdf, .markdown, .plainText]
+        [.epub, .pdf, .document, .plainText]
 
     /// The extension the file is written with; also what the share sheet's
     /// `NSItemProvider` infers the content type from.
@@ -55,7 +60,7 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
         case .epub: return L10n.string("EPUB")
         case .pdf: return L10n.string("PDF")
         case .markdown: return L10n.string("Markdown")
-        case .plainText: return L10n.string("Plain Text")
+        case .plainText: return L10n.string("Text")
         case .document: return L10n.string("Word Document")
         }
     }

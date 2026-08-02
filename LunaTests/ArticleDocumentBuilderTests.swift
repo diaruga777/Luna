@@ -469,13 +469,14 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         XCTAssertEqual(Set(extensions).count, extensions.count)
     }
 
-    /// The share menu is a SUBSET of the serializers: `.document` is built only
-    /// for a double save (claudedocs/double-save.md) and must never appear in
-    /// "Export as…".
-    func testShareMenuOmitsTheDoubleSaveOnlyFormat() {
+    /// The share menu is a SUBSET of the serializers: it offers the same Word
+    /// document the double save's App Intent returns
+    /// (claudedocs/double-save.md), and `.markdown` stays a serializer that no
+    /// menu item reaches.
+    func testShareMenuOffersTheDocumentAndOmitsMarkdown() {
         XCTAssertEqual(
-            ArticleExportFormat.shareMenuFormats, [.epub, .pdf, .markdown, .plainText])
-        XCTAssertFalse(ArticleExportFormat.shareMenuFormats.contains(.document))
+            ArticleExportFormat.shareMenuFormats, [.epub, .pdf, .document, .plainText])
+        XCTAssertFalse(ArticleExportFormat.shareMenuFormats.contains(.markdown))
     }
 
     func testFileNameSanitizesAndAppliesExtension() {

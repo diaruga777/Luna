@@ -2,13 +2,18 @@
 
 A universal, credential-free way to get a saved article out of Luna: build the
 article in the format the user picks and hand the file to the system share sheet.
-Four formats — **EPUB, PDF, Markdown, plain text** — offered on any saved article
+Four formats — **EPUB, PDF, Word Document, Text** — offered on any saved article
 whose content is unlocked (extracted and stored). Available in the two apps that
 link `LunaSend`: **Luna** (central) and **Luna Reader**.
 
-A fifth serializer, **Word document (`.docx`)**, exists but is NOT in this menu:
-it is the double save's "View immediately" action only
-(double-save.md).
+The Word document (`.docx`) in that menu is the same file the double save's
+"View immediately" action returns from its App Intent (double-save.md) — one
+serializer, two entry points.
+
+A fifth serializer, **Markdown**, exists but is NOT in this menu. It was the
+menu's third slot until the `.docx` took it: a rich document that keeps images
+and live links is the more useful thing to hand another app, and every editor
+that would have wanted the `.md` imports a `.docx`.
 
 ## Key files
 
@@ -19,7 +24,8 @@ it is the double save's "View immediately" action only
   groups: `LunaSend` builds the bytes and is an article-kind module, while
   `LunaSocialUI` draws the options and is universal. `allCases` is the
   SERIALIZER list; **`shareMenuFormats` is the menu**, and its order IS menu
-  order. They differ by `.document`.
+  order. They differ by `.markdown`, which is a serializer with no menu item.
+  `.plainText`'s menu wording is **"Text"** (it was "Plain Text").
 
 `LunaLibraries/Sources/LunaSend/ArticleExportService.swift`:
 - `write(_:for:) throws -> URL` — serializes the format and writes it to a temp
@@ -41,11 +47,12 @@ Serializers, one per format, all taking `ArticleContent`:
 - `LunaEpub/EpubBuilder` — EPUB 3, images embedded from the Articles directory.
   Also what Send to Kindle emails (see send-to-kindle.md).
 - `LunaSend/ArticlePDFBuilder` — US-Letter PDF, images inline.
-- `LunaSend/ArticleMarkdownBuilder` — CommonMark.
-- `LunaSend/ArticlePlainTextBuilder` — UTF-8 prose.
+- `LunaSend/ArticleMarkdownBuilder` — CommonMark. No menu item reaches it.
+- `LunaSend/ArticlePlainTextBuilder` — UTF-8 prose. The menu calls it "Text".
 - `LunaSend/ArticleDOCXBuilder` — hand-written OOXML ZIP with copied image bytes,
-  sized DrawingML pictures, and live hyperlink relationships. Double-save only;
-  see double-save.md for why the return format must be a regular file.
+  sized DrawingML pictures, and live hyperlink relationships. Both the menu's
+  "Word Document" and the double save's return file; see double-save.md for why
+  the returned format must be a regular file.
 
 ## What each format keeps
 
@@ -53,9 +60,9 @@ Serializers, one per format, all taking `ArticleContent`:
 | --- | --- | --- | --- |
 | EPUB | embedded (downloaded bytes, **animation kept**) | yes (`<a href>`) | reflowable |
 | PDF | embedded (downloaded bytes, GIF → first frame) | styled, **not clickable** | fixed, paginated |
-| Markdown | referenced by remote URL | yes (`[label](url)`) | flat text |
-| Plain text | `[Image: alt]` placeholder | no | flat text |
-| Word document (DOCX) | bundled ZIP entries (JPEG/PNG; everything else → PNG still) | yes (OOXML relationship) | reflowable |
+| Word Document (DOCX) | bundled ZIP entries (JPEG/PNG; everything else → PNG still) | yes (OOXML relationship) | reflowable |
+| Text (plain text) | `[Image: alt]` placeholder | no | flat text |
+| Markdown *(serializer only)* | referenced by remote URL | yes (`[label](url)`) | flat text |
 
 Deliberate choices behind that table:
 
@@ -188,6 +195,6 @@ of what's wanted here.
   counts can't tell a picture from a blank line), hash-resolved images, GIF and
   every stored format surviving, off-main build; DOCX ZIP/package parts, XML
   escaping, hyperlink relationships, copied readable image bytes, declared and
-  capped geometry, and the share menu omitting it.
+  capped geometry, and the share menu offering it while omitting Markdown.
 - `LunaTests/ReaderShareSheetTests.swift` — the export submenu's contents, order,
   and per-format callback, in both the menu and the row list.

@@ -32,8 +32,9 @@ final class ReaderShareSheetTests: XCTestCase {
 
     /// The export row is a submenu of every SHARE-MENU format, in
     /// `ArticleExportFormat.shareMenuFormats` order, and each child reports its
-    /// own format. `.document` is deliberately not among them — it exists only
-    /// as a double-save return format (claudedocs/double-save.md).
+    /// own format. `.markdown` is deliberately not among them — the menu offers
+    /// the Word document the double save also returns
+    /// (claudedocs/double-save.md) in its place.
     func testExportRowOffersEveryFormatInOrder() {
         var picked: [ArticleExportFormat] = []
         let rows = ReaderShareSheet.rows(
@@ -42,9 +43,9 @@ final class ReaderShareSheetTests: XCTestCase {
             onExport: { picked.append($0) })
         let children = rows.last?.children ?? []
         XCTAssertEqual(children.count, ArticleExportFormat.shareMenuFormats.count)
-        XCTAssertEqual(children.map(\.title), ["EPUB", "PDF", "Markdown", "Plain Text"])
+        XCTAssertEqual(children.map(\.title), ["EPUB", "PDF", "Word Document", "Text"])
         for child in children { child.action() }
-        XCTAssertEqual(picked, [.epub, .pdf, .markdown, .plainText])
+        XCTAssertEqual(picked, [.epub, .pdf, .document, .plainText])
     }
 
     func testEachRowInvokesItsOwnAction() {
@@ -88,6 +89,6 @@ final class ReaderShareSheetTests: XCTestCase {
         XCTAssertTrue(formatActions.allSatisfy { $0.image != nil })
         for action in formatActions { action.performWithSender(nil, target: nil) }
         XCTAssertEqual(
-            fired.suffix(4), ["export:epub", "export:pdf", "export:markdown", "export:plainText"])
+            fired.suffix(4), ["export:epub", "export:pdf", "export:document", "export:plainText"])
     }
 }

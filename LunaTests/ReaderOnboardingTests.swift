@@ -82,7 +82,8 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingSafariExtensionCopy.title,
             OnboardingSafariExtensionCopy.explainer,
             OnboardingSafariExtensionCopy.stepsHeading,
-        ] + OnboardingSafariExtensionCopy.steps(appName: "Luna").map(\.text)
+        ] + OnboardingSafariExtensionCopy.steps(
+            appName: LunaApp.luna.displayName).map(\.text)
         for line in everyLine {
             XCTAssertFalse(
                 line.lowercased().contains("paywall"),
@@ -117,7 +118,7 @@ final class ReaderOnboardingTests: XCTestCase {
         let before = Set(ReadingListStore.shared.items().map(\.id))
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Remove web popups and paywalls"
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
             })
         UIView.setAnimationsEnabled(false)
         defer {
@@ -169,56 +170,54 @@ final class ReaderOnboardingTests: XCTestCase {
 
     func testEverySurfaceHasItsExactCopyAndDemoPage() {
         let reader = OnboardingSurfaceConfiguration.configuration(for: .reader)
-        XCTAssertEqual(
-            reader.introCopy, .growingLine(stem: "Read", tail: " more."))
+        XCTAssertEqual(reader.introCopy, OnboardingStrings.introCopy(for: .reader))
         XCTAssertEqual(
             reader.supportingText,
-            "Save onscreen links with one click.\nUnlock or read offline later.")
-        XCTAssertEqual(reader.saveBenefit, "Read offline later")
+            OnboardingStrings.Intro.supportingText.value(for: .reader))
+        XCTAssertEqual(
+            reader.saveBenefit,
+            OnboardingStrings.Intro.saveBenefit.value(for: .reader))
         XCTAssertEqual(reader.demoPages, [.lunaPage])
         XCTAssertEqual(
             reader.demoPages.first?.sharedURLString,
-            "https://luna.app/about")
+            OnboardingStrings.Demo.lunaURL.value())
 
         let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
         XCTAssertEqual(
             downloader.introCopy,
-            .twoLines(
-                first: "App signup required? So annoying.",
-                second: "Watch and share instantly instead."))
+            OnboardingStrings.introCopy(for: .downloader))
         XCTAssertEqual(
             downloader.supportingText,
-            "Download any video link in one click,\nno signup required.")
-        XCTAssertEqual(downloader.saveBenefit, "Watch or share")
+            OnboardingStrings.Intro.supportingText.value(for: .downloader))
+        XCTAssertEqual(
+            downloader.saveBenefit,
+            OnboardingStrings.Intro.saveBenefit.value(for: .downloader))
         XCTAssertEqual(downloader.demoPages, [.instaTok])
         XCTAssertEqual(
             downloader.demoPages.first?.sharedURLString,
-            "https://instatok.local/@moonwatch/lunar-eclipse")
+            OnboardingStrings.Demo.instaTokURL.value())
 
         let price = OnboardingSurfaceConfiguration.configuration(for: .priceTracker)
-        XCTAssertEqual(
-            price.introCopy,
-            .twoLines(
-                first: "Overpaid? Missed a sale?",
-                second: "Never miss out again."))
+        XCTAssertEqual(price.introCopy, OnboardingStrings.introCopy(for: .priceTracker))
         XCTAssertEqual(
             price.supportingText,
-            "Track sales for any link\nin one click.")
-        XCTAssertEqual(price.saveBenefit, "Never miss a sale")
+            OnboardingStrings.Intro.supportingText.value(for: .priceTracker))
+        XCTAssertEqual(
+            price.saveBenefit,
+            OnboardingStrings.Intro.saveBenefit.value(for: .priceTracker))
         XCTAssertEqual(price.demoPages, [.amayzon])
         XCTAssertEqual(
             price.demoPages.first?.sharedURLString,
-            "https://amayzon.local/eyephone-air")
+            OnboardingStrings.Demo.amayzonURL.value())
 
         let luna = OnboardingSurfaceConfiguration.configuration(for: .luna)
-        XCTAssertEqual(
-            luna.introCopy,
-            .twoLines(
-                first: "All your Luna saves.", second: "In a single app."))
+        XCTAssertEqual(luna.introCopy, OnboardingStrings.introCopy(for: .luna))
         XCTAssertEqual(
             luna.supportingText,
-            "Save any link on your screen\nwith one click.")
-        XCTAssertEqual(luna.saveBenefit, "Read, watch, track, anything")
+            OnboardingStrings.Intro.supportingText.value(for: .luna))
+        XCTAssertEqual(
+            luna.saveBenefit,
+            OnboardingStrings.Intro.saveBenefit.value(for: .luna))
         XCTAssertEqual(luna.demoPages, [.lunaPage, .instaTok, .amayzon])
     }
 
@@ -228,8 +227,7 @@ final class ReaderOnboardingTests: XCTestCase {
             introCopy: .twoLines(
                 first: "You want to read more.",
                 second: "Let’s make that happen."),
-            supportingText:
-                "Save onscreen links with one click.\nUnlock or read offline later.")
+            supportingText: OnboardingStrings.Intro.supportingText.value(for: .reader))
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
         intro.view.layoutIfNeeded()
@@ -248,27 +246,29 @@ final class ReaderOnboardingTests: XCTestCase {
         let buttons = intro.view.descendants(of: UIButton.self)
         XCTAssertEqual(intro.view.backgroundColor, .black)
         XCTAssertFalse(intro.view.subviews.contains {
-            $0.accessibilityIdentifier == "onboarding.intro.iconCluster"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.introIconCluster.value()
         })
         XCTAssertTrue(
             intro.view.subviews.compactMap { $0 as? UILabel }.allSatisfy {
-                $0.accessibilityIdentifier != "onboarding.intro.supportingText"
+                $0.accessibilityIdentifier
+                    != OnboardingStrings.Accessibility.introSupportingText.value()
             })
         XCTAssertTrue(buttons.contains {
-            $0.accessibilityLabel == "Remove web popups and paywalls"
+            $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
                 && $0.configuration?.image != nil
         })
         XCTAssertTrue(buttons.contains {
             $0.accessibilityLabel
-                == "Show me one click save"
+                == OnboardingStrings.Intro.shortcutAction.value()
                 && $0.configuration?.image != nil
         })
         XCTAssertNotNil(intro.view.descendants(of: UIPasteControl.self).first)
         XCTAssertTrue(intro.view.descendants(of: UILabel.self).contains {
-            $0.text == "Paste a url"
+            $0.text == OnboardingStrings.Intro.paste.value()
         })
         let button = try XCTUnwrap(buttons.first {
-            $0.accessibilityLabel == "Remove web popups and paywalls"
+            $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
         })
         let tintAlpha = try XCTUnwrap(
             button.configuration?.baseBackgroundColor?.cgColor.alpha)
@@ -297,7 +297,7 @@ final class ReaderOnboardingTests: XCTestCase {
     @MainActor
     func testGrowingIntroCentresTheFinishedSentenceAndNeverMovesItsStem() throws {
         let intro = OnboardingIntroCardContentViewController(
-            introCopy: .growingLine(stem: "Read", tail: " more."),
+            introCopy: OnboardingStrings.introCopy(for: .reader),
             supportingText: "")
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
@@ -330,12 +330,15 @@ final class ReaderOnboardingTests: XCTestCase {
             NSAttributedString(string: string, attributes: attributes).size().width
         }
         let origin = stem.frame.minX
+        let stemText = OnboardingStrings.Intro.headlineStem.value(for: .reader)
+        let periodText = OnboardingStrings.Intro.growingLinePeriod.value()
+        let tailText = OnboardingStrings.Intro.headlineTail.value(for: .reader)
         XCTAssertEqual(
-            origin + width("Read more.") / 2, growing.bounds.midX, accuracy: 1,
+            origin + width(stemText + tailText) / 2, growing.bounds.midX, accuracy: 1,
             "The finished sentence is what is centred")
         XCTAssertLessThan(
-            origin + width("Read.") / 2, growing.bounds.midX - 20,
-            "“Read.” therefore lands left of centre, which is the point")
+            origin + width(stemText + periodText) / 2, growing.bounds.midX - 20,
+            "The first beat therefore lands left of centre, which is the point")
 
         for fragment in [stem, period, tail] {
             XCTAssertFalse(fragment.isFullyRevealed)
@@ -349,7 +352,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(stem.isFullyRevealed)
         XCTAssertTrue(period.isFullyRevealed)
         XCTAssertFalse(tail.isFullyRevealed)
-        XCTAssertEqual(growing.accessibilityLabel, "Read.")
+        XCTAssertEqual(growing.accessibilityLabel, stemText + periodText)
 
         let stemFrame = stem.frame
         let secondBeat = expectation(description: "the tail replaces the period")
@@ -361,7 +364,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(
             stem.isFullyRevealed, "The second beat does not touch the stem")
         XCTAssertEqual(stem.frame, stemFrame)
-        XCTAssertEqual(growing.accessibilityLabel, "Read more.")
+        XCTAssertEqual(growing.accessibilityLabel, stemText + tailText)
         XCTAssertTrue(growing.isAccessibilityElement)
         XCTAssertFalse(stem.isAccessibilityElement)
     }
@@ -370,7 +373,9 @@ final class ReaderOnboardingTests: XCTestCase {
     func testGrowingIntroStartsThePeriodsExitWithTheTailsArrival() {
         let font = UIFont.systemFont(ofSize: 25, weight: .semibold)
         let growing = MoonRevealGrowingLineView(
-            stem: "Read", tail: " more.", font: font)
+            stem: OnboardingStrings.Intro.headlineStem.value(for: .reader),
+            tail: OnboardingStrings.Intro.headlineTail.value(for: .reader),
+            font: font)
 
         // A period's ink sits about an x-height below “more”'s, and one front
         // descending through the shared frame would reach it that much later —
@@ -396,15 +401,17 @@ final class ReaderOnboardingTests: XCTestCase {
         intro.loadViewIfNeeded()
 
         for label in [
-            "Remove web popups and paywalls",
-            "Show me one click save",
+            OnboardingStrings.Intro.safariAction.value(),
+            OnboardingStrings.Intro.shortcutAction.value(),
         ] {
             let button = try XCTUnwrap(
                 intro.view.descendants(of: UIButton.self).first {
                     $0.accessibilityLabel == label
                 })
             XCTAssertFalse(button.isEnabled)
-            XCTAssertEqual(button.accessibilityValue, "Completed")
+            XCTAssertEqual(
+                button.accessibilityValue,
+                OnboardingStrings.Intro.completed.value())
             XCTAssertEqual(
                 button.configuration?.image,
                 UIImage(systemName: "checkmark.circle.fill"))
@@ -508,11 +515,13 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let sender = try XCTUnwrap(
             messages.view.descendants(of: UILabel.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.senderName"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.messagesSenderName.value()
             })
         let latestURL = try XCTUnwrap(
             messages.view.descendants(of: UILabel.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.latestURL"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.messagesLatestURL.value()
             })
         let labels = messages.view.descendants(of: UILabel.self).compactMap {
             $0.text
@@ -521,28 +530,29 @@ final class ReaderOnboardingTests: XCTestCase {
             $0.accessibilityIdentifier
         }
 
-        XCTAssertEqual(sender.text, "Johnny Appleseed")
+        XCTAssertEqual(sender.text, OnboardingStrings.Messages.senderName.value())
         XCTAssertEqual(latestURL.text, urlString)
         // The friend opens the thread, asks, hears the Action Button is dead,
         // and offers what theirs does — then the link.
-        XCTAssertTrue(labels.contains("Yoooooo"))
-        XCTAssertTrue(labels.contains(
-            "You using your action button for anything?"))
-        XCTAssertTrue(labels.contains("Nah. Its kinda dead tbh."))
-        XCTAssertTrue(labels.contains(
-            "I use it to instant save any link on screen. Check it:"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.greeting"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.question"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.answer"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.pitch"))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.greeting.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.question.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.answer.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.pitch.value()))
+        XCTAssertTrue(
+            bubbles.contains(OnboardingStrings.Accessibility.messagesGreeting.value()))
+        XCTAssertTrue(
+            bubbles.contains(OnboardingStrings.Accessibility.messagesQuestion.value()))
+        XCTAssertTrue(
+            bubbles.contains(OnboardingStrings.Accessibility.messagesAnswer.value()))
+        XCTAssertTrue(
+            bubbles.contains(OnboardingStrings.Accessibility.messagesPitch.value()))
         XCTAssertGreaterThan(
             messages.actionButtonReplayDelay,
             OnboardingDemoLoopTiming.sourceHoldDuration)
-        // One gap per hand-off between the staged arrivals — five messages,
-        // four gaps. Their exact lengths are a tuning knob; only floor them,
+        // One gap per staged arrival. Their exact lengths are a tuning knob; only floor them,
         // so every bubble still lands as its own beat.
         XCTAssertEqual(
-            OnboardingMessagesReplicaTiming.stagedMessageDelays.count, 4)
+            OnboardingMessagesReplicaTiming.stagedMessageDelays.count, 5)
         for delay in OnboardingMessagesReplicaTiming.stagedMessageDelays {
             XCTAssertGreaterThanOrEqual(
                 delay, 0.6,
@@ -567,36 +577,43 @@ final class ReaderOnboardingTests: XCTestCase {
         let bubbles = messages.view.descendants(of: UIView.self).compactMap {
             $0.accessibilityIdentifier
         }
-        XCTAssertTrue(bubbles.contains("onboarding.messages.shortcutSetup"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.settingsSetup"))
-        XCTAssertTrue(bubbles.contains("onboarding.messages.skipSetup"))
+        XCTAssertTrue(
+            bubbles.contains(OnboardingStrings.Accessibility.messagesShortcutSetup.value()))
+        XCTAssertTrue(
+            bubbles.contains(OnboardingStrings.Accessibility.messagesSettingsSetup.value()))
+        XCTAssertTrue(
+            bubbles.contains(OnboardingStrings.Accessibility.messagesSkipSetup.value()))
         // Each pill flows INLINE with its sentence: the words live in a text
         // view whose attachment reserves the pill's spot in the line flow.
         let sentences = messages.view.descendants(of: UITextView.self)
             .compactMap(\.text)
         XCTAssertTrue(sentences.contains {
-            $0.hasPrefix("Just install this shortcut")
+            $0.hasPrefix(OnboardingStrings.Messages.shortcutSetup.value())
         })
         XCTAssertTrue(sentences.contains {
-            $0.hasPrefix("Then set your action button to it in")
+            $0.hasPrefix(OnboardingStrings.Messages.settingsSetup.value())
         })
-        XCTAssertTrue(sentences.contains { $0.hasPrefix("Or") })
+        XCTAssertTrue(
+            sentences.contains { $0.hasPrefix(OnboardingStrings.Messages.skipSetup.value()) })
         let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
-        XCTAssertTrue(labels.contains("Luna"))
-        XCTAssertTrue(labels.contains("Settings"))
-        XCTAssertTrue(labels.contains("skip setup"))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.shortcutPillTitle.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.settingsPillTitle.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.skipPillTitle.value()))
 
         let shortcutPill = try XCTUnwrap(
             messages.view.descendants(of: OnboardingMessagePillButton.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.shortcutPill"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.messagesShortcutPill.value()
             })
         let settingsPill = try XCTUnwrap(
             messages.view.descendants(of: OnboardingMessagePillButton.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.settingsPill"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.messagesSettingsPill.value()
             })
         let skipPill = try XCTUnwrap(
             messages.view.descendants(of: OnboardingMessagePillButton.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.skipPill"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.messagesSkipPill.value()
             })
 
         // The demonstration hasn't reached the setup messages yet.
@@ -671,9 +688,11 @@ final class ReaderOnboardingTests: XCTestCase {
                     $0.accessibilityIdentifier == identifier
                 })
         }
-        let shortcut = try bubble("onboarding.messages.shortcutSetup")
-        let settings = try bubble("onboarding.messages.settingsSetup")
-        let skip = try bubble("onboarding.messages.skipSetup")
+        let shortcut = try bubble(
+            OnboardingStrings.Accessibility.messagesShortcutSetup.value())
+        let settings = try bubble(
+            OnboardingStrings.Accessibility.messagesSettingsSetup.value())
+        let skip = try bubble(OnboardingStrings.Accessibility.messagesSkipSetup.value())
 
         // Collapsed until it arrives, so the skip-out sits directly under the
         // shortcut message rather than over an empty gap.
@@ -790,7 +809,11 @@ final class ReaderOnboardingTests: XCTestCase {
         let mountedOverlay = try XCTUnwrap(overlay)
         let obscuredSiblings = window.subviews.filter { $0 !== mountedOverlay }
         XCTAssertTrue(Set(mountedLabels).isSuperset(
-            of: Set(["Set up Safari", "Install Shortcut", "Set action button"])))
+            of: Set([
+                OnboardingStrings.Instruction.setUpSafari.value(),
+                OnboardingStrings.Instruction.installShortcut.value(),
+                OnboardingStrings.Instruction.setActionButton.value(),
+            ])))
         XCTAssertTrue(mountedOverlay.accessibilityViewIsModal)
         XCTAssertTrue(obscuredSiblings.allSatisfy(\.accessibilityElementsHidden))
 
@@ -880,7 +903,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Remove web popups and paywalls"
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
             })
         UIView.setAnimationsEnabled(false)
         defer {
@@ -1072,7 +1095,7 @@ final class ReaderOnboardingTests: XCTestCase {
         let stepRows = try (0..<steps.count).map { index in
             try XCTUnwrap(page.descendants(of: UIView.self).first {
                 $0.accessibilityIdentifier
-                    == "onboarding.safari.page.step.\(index)"
+                    == OnboardingStrings.Accessibility.safariStep(index)
             })
         }
         for (index, step) in steps.enumerated() {
@@ -1082,8 +1105,10 @@ final class ReaderOnboardingTests: XCTestCase {
         // target gives its copy of the appex its own CFBundleDisplayName), so
         // the step names the RUNNING app — not the central app, and not a
         // generic "the extension".
-        XCTAssertEqual(steps[2].text, "Switch on \(appName)")
-        XCTAssertEqual(appName, "Luna Reader")
+        XCTAssertEqual(
+            steps[2].text,
+            OnboardingStrings.Safari.steps(appName: appName)[2].text)
+        XCTAssertEqual(appName, LunaApp.reader.displayName)
         XCTAssertTrue(steps[1].text.contains(
             OnboardingSafariExtensionCopy.manageExtensionsTitle))
         let visuals = try stepRows.map { row in
@@ -1115,10 +1140,12 @@ final class ReaderOnboardingTests: XCTestCase {
             actionsFrame.maxY,
             page.bounds.height - SafariBottomBar.chromeHeight)
         let explainer = try XCTUnwrap(revealLines.first {
-            $0.accessibilityIdentifier == "onboarding.safari.page.explainer"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariExplainer.value()
         })
         let headline = try XCTUnwrap(revealLines.first {
-            $0.accessibilityIdentifier == "onboarding.safari.page.headline"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariHeadline.value()
         })
         XCTAssertGreaterThan(stepRows[0].frame.minY, explainer.frame.maxY)
         XCTAssertGreaterThan(actionsFrame.minY, stepRows[2].frame.maxY)
@@ -1140,21 +1167,20 @@ final class ReaderOnboardingTests: XCTestCase {
         // Every fake obstruction is mounted, fully visible from the first
         // frame, and inert.
         let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariClutter.value()
         })
         XCTAssertFalse(clutter.isUserInteractionEnabled)
         XCTAssertTrue(clutter.subviews.allSatisfy { $0.alpha == 1 })
         XCTAssertEqual(
             clutter.subviews.filter { $0 is OnboardingAdBannerView }.count, 4)
-        XCTAssertTrue(labels.contains("Subscribe to our newsletter"))
-        XCTAssertTrue(labels.contains("We promise to spam you"))
-        XCTAssertTrue(labels.contains("you@example.com"))
-        XCTAssertTrue(labels.contains("Subscribe"))
-        XCTAssertTrue(labels.contains("Subscribe to keep reading"))
-        XCTAssertTrue(labels.contains("Already a subscriber? Sign in"))
-        XCTAssertTrue(labels.contains {
-            $0.contains("free article limit")
-        })
+        XCTAssertTrue(labels.contains(OnboardingStrings.Safari.newsletterTitle.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Safari.newsletterSubtitle.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Safari.newsletterEmail.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Safari.newsletterSubmit.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Safari.subscriptionTitle.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Safari.subscriptionBody.value()))
+        XCTAssertTrue(labels.contains(OnboardingStrings.Safari.subscriptionSignIn.value()))
 
         // The buried page registers before the Manage Extensions sheet — the
         // pass's first and only step — slides up, and the sheet is readable
@@ -1177,7 +1203,8 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let explainer = try XCTUnwrap(
             page.descendants(of: MoonRevealLineView.self).first {
-                $0.accessibilityIdentifier == "onboarding.safari.page.explainer"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.safariExplainer.value()
             })
         let naturalHeight = (OnboardingSafariExtensionCopy.explainer as NSString)
             .boundingRect(
@@ -1200,7 +1227,8 @@ final class ReaderOnboardingTests: XCTestCase {
             "Shorten the explainer copy: it no longer fits above the steps")
         let header = try XCTUnwrap(
             page.descendants(of: MoonRevealLineView.self).first {
-                $0.accessibilityIdentifier == "onboarding.safari.page.headline"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.safariHeadline.value()
             })
         XCTAssertGreaterThan(explainer.frame.minY, header.frame.maxY)
     }
@@ -1246,7 +1274,8 @@ final class ReaderOnboardingTests: XCTestCase {
         let page = try XCTUnwrap(safari.view.descendants(
             of: OnboardingSafariPageView.self).first)
         let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariClutter.value()
         })
         let wipeDeadline = Date(timeIntervalSinceNow: 8)
         while Date() < wipeDeadline,
@@ -1262,7 +1291,9 @@ final class ReaderOnboardingTests: XCTestCase {
         // And the sweep still finishes on the page's own live actions.
         let actionsDeadline = Date(timeIntervalSinceNow: 8)
         let skip = try XCTUnwrap(page.descendants(
-            of: UIButton.self).first { $0.accessibilityLabel == "Skip" })
+            of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Safari.skip.value()
+            })
         while Date() < actionsDeadline, !skip.isUserInteractionEnabled {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         }
@@ -1296,14 +1327,16 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let explainer = try XCTUnwrap(
             page.descendants(of: MoonRevealLineView.self).first {
-                $0.accessibilityIdentifier == "onboarding.safari.page.explainer"
+                $0.accessibilityIdentifier
+                    == OnboardingStrings.Accessibility.safariExplainer.value()
             })
         XCTAssertEqual(
             explainer.accessibilityLabel,
             OnboardingSafariExtensionCopy.explainer)
         XCTAssertTrue(explainer.isFullyRevealed)
         let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariClutter.value()
         })
         XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
 
@@ -1416,7 +1449,10 @@ final class ReaderOnboardingTests: XCTestCase {
         page.cleanUpClutter { cleaned.fulfill() }
         wait(for: [cleaned], timeout: 15)
 
-        for label in ["Activate Safari", "Skip"] {
+        for label in [
+            OnboardingStrings.Safari.activate.value(),
+            OnboardingStrings.Safari.skip.value(),
+        ] {
             let button = try XCTUnwrap(
                 page.descendants(of: UIButton.self).first {
                     $0.accessibilityLabel == label
@@ -1451,7 +1487,8 @@ final class ReaderOnboardingTests: XCTestCase {
         let page = try XCTUnwrap(
             safari.view.descendants(of: OnboardingSafariPageView.self).first)
         let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariClutter.value()
         })
         let actions = try XCTUnwrap(
             page.descendants(of: OnboardingSafariActionsView.self).first)
@@ -1532,7 +1569,8 @@ final class ReaderOnboardingTests: XCTestCase {
             let deadline = Date(timeIntervalSinceNow: 25)
             while Date() < deadline {
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-                if isHittable("Activate Safari"), isHittable("Skip") { return }
+                if isHittable(OnboardingStrings.Safari.activate.value()),
+                   isHittable(OnboardingStrings.Safari.skip.value()) { return }
             }
         }
         func waitForIntro() {
@@ -1547,40 +1585,49 @@ final class ReaderOnboardingTests: XCTestCase {
             }
         }
 
-        try XCTUnwrap(button("Remove web popups and paywalls"))
+        try XCTUnwrap(button(OnboardingStrings.Intro.safariAction.value()))
             .sendActions(for: .touchUpInside)
         waitForLiveActions()
-        XCTAssertTrue(isHittable("Skip"), "First entry never reached its actions")
-        try XCTUnwrap(button("Skip")).sendActions(for: .touchUpInside)
+        XCTAssertTrue(
+            isHittable(OnboardingStrings.Safari.skip.value()),
+            "First entry never reached its actions")
+        try XCTUnwrap(button(OnboardingStrings.Safari.skip.value()))
+            .sendActions(for: .touchUpInside)
         waitForIntro()
 
         // Back in. The page must be buried again from this entry's very first
         // frame — the app-switcher hop snapshots it immediately.
-        let introSafari = try XCTUnwrap(button("Remove web popups and paywalls"))
+        let introSafari = try XCTUnwrap(
+            button(OnboardingStrings.Intro.safariAction.value()))
         XCTAssertTrue(introSafari.isEnabled)
         introSafari.sendActions(for: .touchUpInside)
         let page = try XCTUnwrap(onboarding.view
             .descendants(of: OnboardingSafariPageView.self).first)
         let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
-            $0.accessibilityIdentifier == "onboarding.safari.page.clutter"
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariClutter.value()
         })
         XCTAssertTrue(
             clutter.subviews.allSatisfy { !$0.isHidden },
             "The second entry starts on the buried page, not the finished one")
-        XCTAssertFalse(isHittable("Skip"), "Buried actions stay inert")
+        XCTAssertFalse(
+            isHittable(OnboardingStrings.Safari.skip.value()),
+            "Buried actions stay inert")
 
         // …and the whole demonstration runs again, leaving both actions live.
         waitForLiveActions()
         XCTAssertTrue(clutter.subviews.allSatisfy(\.isHidden))
-        XCTAssertTrue(isHittable("Activate Safari"))
-        XCTAssertTrue(isHittable("Skip"))
+        XCTAssertTrue(isHittable(OnboardingStrings.Safari.activate.value()))
+        XCTAssertTrue(isHittable(OnboardingStrings.Safari.skip.value()))
 
         // The second skip still works, and still lands on the intro.
-        try XCTUnwrap(button("Skip")).sendActions(for: .touchUpInside)
+        try XCTUnwrap(button(OnboardingStrings.Safari.skip.value()))
+            .sendActions(for: .touchUpInside)
         waitForIntro()
-        let returned = try XCTUnwrap(button("Remove web popups and paywalls"))
+        let returned = try XCTUnwrap(
+            button(OnboardingStrings.Intro.safariAction.value()))
         XCTAssertTrue(returned.isEnabled)
-        XCTAssertEqual(returned.accessibilityValue, "Skipped")
+        XCTAssertNil(returned.accessibilityValue)
     }
 
     @MainActor
@@ -1607,7 +1654,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Remove web popups and paywalls"
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
             })
         button.sendActions(for: .touchUpInside)
 
@@ -1633,10 +1680,14 @@ final class ReaderOnboardingTests: XCTestCase {
         let deadline = Date(timeIntervalSinceNow: 20)
         while Date() < deadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            if isHittable("Activate Safari"), isHittable("Skip") { break }
+            if isHittable(OnboardingStrings.Safari.activate.value()),
+               isHittable(OnboardingStrings.Safari.skip.value()) { break }
         }
 
-        for label in ["Activate Safari", "Skip"] {
+        for label in [
+            OnboardingStrings.Safari.activate.value(),
+            OnboardingStrings.Safari.skip.value(),
+        ] {
             let probe = try XCTUnwrap(hitView(for: label))
             let lunaPage = onboarding.view
                 .descendants(of: OnboardingSafariPageView.self).first
@@ -1664,7 +1715,7 @@ final class ReaderOnboardingTests: XCTestCase {
         // than completed, since the shortcut lesson isn't done yet.
         let skip = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == "Skip"
+                $0.accessibilityLabel == OnboardingStrings.Safari.skip.value()
             })
         skip.sendActions(for: .touchUpInside)
         let introDeadline = Date(timeIntervalSinceNow: 15)
@@ -1673,7 +1724,8 @@ final class ReaderOnboardingTests: XCTestCase {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             safariIntroButton = onboarding.view.descendants(of: UIButton.self)
                 .first {
-                    $0.accessibilityLabel == "Remove web popups and paywalls"
+                    $0.accessibilityLabel
+                        == OnboardingStrings.Intro.safariAction.value()
                 }
             if onboarding.view.descendants(of: UIPasteControl.self)
                 .first?.isHidden == false
@@ -1682,23 +1734,35 @@ final class ReaderOnboardingTests: XCTestCase {
             }
         }
         XCTAssertTrue(try XCTUnwrap(safariIntroButton).isEnabled)
-        XCTAssertEqual(safariIntroButton?.accessibilityValue, "Skipped")
+        XCTAssertNil(safariIntroButton?.accessibilityValue)
     }
 
     func testFakeDemoPagesAndNASAClipAreFullyBundled() throws {
         let instaTokURL = try XCTUnwrap(
             Bundle.main.url(forResource: "InstaTok", withExtension: "html"))
-        let instaTok = try String(contentsOf: instaTokURL, encoding: .utf8)
-        XCTAssertTrue(instaTok.contains("InstaTok"))
-        XCTAssertTrue(instaTok.contains("Sign up to keep watching"))
+        XCTAssertNotNil(instaTokURL)
+        let instaTok = try XCTUnwrap(
+            OnboardingStrings.Demo.renderedHTML(for: .instaTok))
+        XCTAssertTrue(
+            instaTok.contains(OnboardingStrings.Demo.instaTokBrand.value()))
+        XCTAssertTrue(
+            instaTok.contains(OnboardingStrings.Demo.instaTokSignupTitle.value()))
         XCTAssertTrue(instaTok.contains("LunaEclipse.mp4"))
         XCTAssertFalse(instaTok.contains("src=\"http"))
 
         let amayzonURL = try XCTUnwrap(
             Bundle.main.url(forResource: "Amayzon", withExtension: "html"))
-        let amayzon = try String(contentsOf: amayzonURL, encoding: .utf8)
-        XCTAssertTrue(amayzon.contains("amay<em>zon</em>"))
-        XCTAssertTrue(amayzon.contains("eyePhone Air"))
+        XCTAssertNotNil(amayzonURL)
+        let amayzon = try XCTUnwrap(
+            OnboardingStrings.Demo.renderedHTML(for: .amayzon))
+        XCTAssertTrue(
+            amayzon.contains(
+                OnboardingStrings.Demo.amayzonBrandPrefix.value()
+                    + "<em>"
+                    + OnboardingStrings.Demo.amayzonBrandSuffix.value()
+                    + "</em>"))
+        XCTAssertTrue(
+            amayzon.contains(OnboardingStrings.Demo.amayzonProductTitle.value()))
         XCTAssertFalse(amayzon.contains("Apple"))
         XCTAssertFalse(amayzon.contains("src=\"http"))
 

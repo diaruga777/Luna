@@ -13,16 +13,16 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
     var resourceName: String? {
         switch self {
         case .lunaPage: return nil
-        case .instaTok: return "InstaTok"
-        case .amayzon: return "Amayzon"
+        case .instaTok: return OnboardingStrings.Demo.instaTokResourceName.value()
+        case .amayzon: return OnboardingStrings.Demo.amayzonResourceName.value()
         }
     }
 
     var displayedHost: String {
         switch self {
-        case .lunaPage: return "luna.app"
-        case .instaTok: return "instatok.local"
-        case .amayzon: return "amayzon.local"
+        case .lunaPage: return OnboardingStrings.Demo.lunaHost.value()
+        case .instaTok: return OnboardingStrings.Demo.instaTokHost.value()
+        case .amayzon: return OnboardingStrings.Demo.amayzonHost.value()
         }
     }
 
@@ -30,23 +30,11 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
     /// latest incoming Messages bubble during the onboarding loop.
     var sharedURLString: String {
         switch self {
-        case .lunaPage: return "https://luna.app/about"
-        case .instaTok: return "https://instatok.local/@moonwatch/lunar-eclipse"
-        case .amayzon: return "https://amayzon.local/eyephone-air"
+        case .lunaPage: return OnboardingStrings.Demo.lunaURL.value()
+        case .instaTok: return OnboardingStrings.Demo.instaTokURL.value()
+        case .amayzon: return OnboardingStrings.Demo.amayzonURL.value()
         }
     }
-}
-
-/// How an app's headline is staged. Both shapes take exactly two beats of the
-/// same lunar sweep, so the journey's timing is identical either way.
-enum OnboardingIntroCopy: Equatable {
-    /// Two sentences, each swept in whole, the second under the first.
-    case twoLines(first: String, second: String)
-    /// One sentence that grows. The first beat brings in `stem` with a period
-    /// of its own; the second adds `tail` while that period sweeps back out.
-    /// `stem` is laid out where it sits in the FINISHED sentence, so the beat
-    /// between them moves nothing.
-    case growingLine(stem: String, tail: String)
 }
 
 /// The animation and setup journey are shared. Only copy, demo content, final
@@ -71,48 +59,38 @@ struct OnboardingSurfaceConfiguration {
         case .reader:
             return Self(
                 app: app,
-                introCopy: .growingLine(stem: "Read", tail: " more."),
-                supportingText:
-                    "Save onscreen links with one click.\nUnlock or read offline later.",
-                saveBenefit: "Read offline later",
+                introCopy: OnboardingStrings.introCopy(for: app),
+                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
+                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: [.lunaPage],
-                seedTitle: "Save anything in Safari",
+                seedTitle: OnboardingStrings.Demo.readerSeedTitle.value(),
                 seedSymbol: "safari.fill")
         case .downloader:
             return Self(
                 app: app,
-                introCopy: .twoLines(
-                    first: "App signup required? So annoying.",
-                    second: "Watch and share instantly instead."),
-                supportingText:
-                    "Download any video link in one click,\nno signup required.",
-                saveBenefit: "Watch or share",
+                introCopy: OnboardingStrings.introCopy(for: app),
+                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
+                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: [.instaTok],
-                seedTitle: "InstaTok",
+                seedTitle: OnboardingStrings.Demo.instaTokSeedTitle.value(),
                 seedSymbol: "play.rectangle.fill")
         case .priceTracker:
             return Self(
                 app: app,
-                introCopy: .twoLines(
-                    first: "Overpaid? Missed a sale?",
-                    second: "Never miss out again."),
-                supportingText:
-                    "Track sales for any link\nin one click.",
-                saveBenefit: "Never miss a sale",
+                introCopy: OnboardingStrings.introCopy(for: app),
+                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
+                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: [.amayzon],
-                seedTitle: "eyePhone",
+                seedTitle: OnboardingStrings.Demo.amayzonSeedTitle.value(),
                 seedSymbol: "tag.fill")
         case .luna:
             return Self(
                 app: app,
-                introCopy: .twoLines(
-                    first: "All your Luna saves.",
-                    second: "In a single app."),
-                supportingText:
-                    "Save any link on your screen\nwith one click.",
-                saveBenefit: "Read, watch, track, anything",
+                introCopy: OnboardingStrings.introCopy(for: app),
+                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
+                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: OnboardingDemoPage.allCases,
-                seedTitle: "Anything",
+                seedTitle: OnboardingStrings.Demo.lunaSeedTitle.value(),
                 seedSymbol: "moon.stars.fill")
         }
     }

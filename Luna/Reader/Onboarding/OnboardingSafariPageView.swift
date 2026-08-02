@@ -145,25 +145,25 @@ final class OnboardingSafariPageView: UIView {
     private let clutterContainer = UIView()
     private let adBanners: [OnboardingAdBannerView] = [
         OnboardingAdBannerView(
-            text: "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥",
+            text: OnboardingStrings.Safari.adSale.value(),
             colors: [
                 UIColor(red: 1, green: 0.08, blue: 0.38, alpha: 1),
                 UIColor(red: 1, green: 0.55, blue: 0.02, alpha: 1),
             ]),
         OnboardingAdBannerView(
-            text: "You won't BELIEVE this one weird trick",
+            text: OnboardingStrings.Safari.adTrick.value(),
             colors: [
                 UIColor(red: 0.58, green: 0.12, blue: 0.95, alpha: 1),
                 UIColor(red: 0.95, green: 0.1, blue: 0.72, alpha: 1),
             ]),
         OnboardingAdBannerView(
-            text: "WIN A FREE CRUISE 🚢 TAP NOW",
+            text: OnboardingStrings.Safari.adCruise.value(),
             colors: [
                 UIColor(red: 0.02, green: 0.6, blue: 0.66, alpha: 1),
                 UIColor(red: 0.05, green: 0.3, blue: 0.9, alpha: 1),
             ]),
         OnboardingAdBannerView(
-            text: "HOT DEALS NEAR YOU ▸▸▸",
+            text: OnboardingStrings.Safari.adDeals.value(),
             colors: [
                 UIColor(red: 0.1, green: 0.62, blue: 0.24, alpha: 1),
                 UIColor(red: 0.72, green: 0.8, blue: 0.05, alpha: 1),
@@ -255,18 +255,18 @@ final class OnboardingSafariPageView: UIView {
 
         super.init(frame: .zero)
         backgroundColor = background
-        accessibilityIdentifier = "onboarding.safari.lunaPage"
+        accessibilityIdentifier = OnboardingStrings.Accessibility.safariPage.value()
 
-        appIcon.accessibilityIdentifier = "onboarding.safari.page.appIcon"
-        headline.accessibilityIdentifier = "onboarding.safari.page.headline"
-        byline.accessibilityIdentifier = "onboarding.safari.page.byline"
-        explainer.accessibilityIdentifier = "onboarding.safari.page.explainer"
+        appIcon.accessibilityIdentifier = OnboardingStrings.Accessibility.safariAppIcon.value()
+        headline.accessibilityIdentifier = OnboardingStrings.Accessibility.safariHeadline.value()
+        byline.accessibilityIdentifier = OnboardingStrings.Accessibility.safariByline.value()
+        explainer.accessibilityIdentifier = OnboardingStrings.Accessibility.safariExplainer.value()
         stepsHeading.accessibilityIdentifier =
-            "onboarding.safari.page.stepsHeading"
+            OnboardingStrings.Accessibility.safariStepsHeading.value()
         for (index, row) in stepRows.enumerated() {
-            row.accessibilityIdentifier = "onboarding.safari.page.step.\(index)"
+            row.accessibilityIdentifier = OnboardingStrings.Accessibility.safariStep(index)
         }
-        actions.accessibilityIdentifier = "onboarding.safari.page.actions"
+        actions.accessibilityIdentifier = OnboardingStrings.Accessibility.safariActions.value()
         for line in [headline, byline, explainer, stepsHeading] {
             line.bloomGain = OnboardingSafariPageTiming.textBloomGain
         }
@@ -295,10 +295,11 @@ final class OnboardingSafariPageView: UIView {
         // element's occluder can paint over a white popup during the wave.
         clutterContainer.isUserInteractionEnabled = false
         clutterContainer.accessibilityIdentifier =
-            "onboarding.safari.page.clutter"
+            OnboardingStrings.Accessibility.safariClutter.value()
         addSubview(clutterContainer)
         for (index, ad) in adBanners.enumerated() {
-            ad.accessibilityIdentifier = "onboarding.safari.page.ad.\(index)"
+            ad.accessibilityIdentifier =
+            "\(OnboardingStrings.Accessibility.safariAdPrefix.value())\(index)"
             clutterContainer.addSubview(ad)
         }
         clutterContainer.addSubview(newsletterPopup)
@@ -995,14 +996,18 @@ final class MoonRevealContentView: UIView {
         animation.toValue = transform
         animation.duration = resolvedDuration
         animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        moonLayer.add(animation, forKey: "moonReveal")
+        moonLayer.add(
+            animation,
+            forKey: OnboardingStrings.AnimationKeys.moonReveal.value())
 
         let maskAnimation = CABasicAnimation(keyPath: "path")
         maskAnimation.fromValue = revealPath(excluding: initialCircleFrame)
         maskAnimation.toValue = revealPath(excluding: finalCircle)
         maskAnimation.duration = resolvedDuration
         maskAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
-        revealMaskLayer.add(maskAnimation, forKey: "moonReveal")
+        revealMaskLayer.add(
+            maskAnimation,
+            forKey: OnboardingStrings.AnimationKeys.moonReveal.value())
 
         // The content's own light: same front, same time-constant cooling as
         // the glyph bloom beside it, slaved to the same rendered edge. The
@@ -1221,7 +1226,8 @@ final class OnboardingNewsletterPopupView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        accessibilityIdentifier = "onboarding.safari.page.newsletterPopup"
+        accessibilityIdentifier =
+            OnboardingStrings.Accessibility.safariNewsletterPopup.value()
         backgroundColor = OnboardingSafariPagePalette.paper
         layer.cornerRadius = 18
         layer.cornerCurve = .continuous
@@ -1230,7 +1236,7 @@ final class OnboardingNewsletterPopupView: UIView {
         layer.shadowRadius = 26
         layer.shadowOffset = CGSize(width: 0, height: 14)
 
-        title.text = "Subscribe to our newsletter"
+        title.text = OnboardingStrings.Safari.newsletterTitle.value()
         title.font = .systemFont(ofSize: 22, weight: .bold)
         title.textColor = OnboardingSafariPagePalette.ink
         title.textAlignment = .center
@@ -1238,15 +1244,15 @@ final class OnboardingNewsletterPopupView: UIView {
         title.adjustsFontSizeToFitWidth = true
         title.minimumScaleFactor = 0.8
         title.accessibilityIdentifier =
-            "onboarding.safari.page.newsletterTitle"
+            OnboardingStrings.Accessibility.safariNewsletterTitle.value()
         addSubview(title)
 
-        subtitle.text = "We promise to spam you"
+        subtitle.text = OnboardingStrings.Safari.newsletterSubtitle.value()
         subtitle.font = .systemFont(ofSize: 15, weight: .regular)
         subtitle.textColor = OnboardingSafariPagePalette.inkSecondary
         subtitle.textAlignment = .center
         subtitle.accessibilityIdentifier =
-            "onboarding.safari.page.newsletterSubtitle"
+            OnboardingStrings.Accessibility.safariNewsletterSubtitle.value()
         addSubview(subtitle)
 
         emailField.backgroundColor = UIColor(white: 0.94, alpha: 1)
@@ -1255,15 +1261,15 @@ final class OnboardingNewsletterPopupView: UIView {
         emailField.layer.borderWidth = 1
         emailField.layer.borderColor = UIColor(white: 0.84, alpha: 1).cgColor
         emailField.accessibilityIdentifier =
-            "onboarding.safari.page.newsletterEmail"
+            OnboardingStrings.Accessibility.safariNewsletterEmail.value()
         addSubview(emailField)
 
-        emailPlaceholder.text = "you@example.com"
+        emailPlaceholder.text = OnboardingStrings.Safari.newsletterEmail.value()
         emailPlaceholder.font = .systemFont(ofSize: 16, weight: .regular)
         emailPlaceholder.textColor = UIColor(white: 0.62, alpha: 1)
         emailField.addSubview(emailPlaceholder)
 
-        submitButton.text = "Subscribe"
+        submitButton.text = OnboardingStrings.Safari.newsletterSubmit.value()
         submitButton.font = .systemFont(ofSize: 17, weight: .semibold)
         submitButton.textColor = .white
         submitButton.textAlignment = .center
@@ -1273,7 +1279,7 @@ final class OnboardingNewsletterPopupView: UIView {
         submitButton.layer.cornerCurve = .continuous
         submitButton.clipsToBounds = true
         submitButton.accessibilityIdentifier =
-            "onboarding.safari.page.newsletterSubmit"
+            OnboardingStrings.Accessibility.safariNewsletterSubmit.value()
         addSubview(submitButton)
     }
 
@@ -1306,7 +1312,8 @@ final class OnboardingSubscriptionSheetView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        accessibilityIdentifier = "onboarding.safari.page.subscriptionSheet"
+        accessibilityIdentifier =
+            OnboardingStrings.Accessibility.safariSubscriptionSheet.value()
         backgroundColor = OnboardingSafariPagePalette.paper
         layer.cornerRadius = 28
         layer.cornerCurve = .continuous
@@ -1320,7 +1327,7 @@ final class OnboardingSubscriptionSheetView: UIView {
         grabber.layer.cornerRadius = 2.5
         addSubview(grabber)
 
-        title.text = "Subscribe to keep reading"
+        title.text = OnboardingStrings.Safari.subscriptionTitle.value()
         title.font = .systemFont(ofSize: 24, weight: .bold)
         title.textColor = OnboardingSafariPagePalette.ink
         title.textAlignment = .center
@@ -1328,20 +1335,19 @@ final class OnboardingSubscriptionSheetView: UIView {
         title.adjustsFontSizeToFitWidth = true
         title.minimumScaleFactor = 0.8
         title.accessibilityIdentifier =
-            "onboarding.safari.page.subscriptionTitle"
+            OnboardingStrings.Accessibility.safariSubscriptionTitle.value()
         addSubview(title)
 
-        bodyText.text = "You've reached your free article limit for this "
-            + "month. Get unlimited access to independent journalism."
+        bodyText.text = OnboardingStrings.Safari.subscriptionBody.value()
         bodyText.font = .systemFont(ofSize: 15, weight: .regular)
         bodyText.textColor = OnboardingSafariPagePalette.inkSecondary
         bodyText.textAlignment = .center
         bodyText.numberOfLines = 3
         bodyText.accessibilityIdentifier =
-            "onboarding.safari.page.subscriptionBody"
+            OnboardingStrings.Accessibility.safariSubscriptionBody.value()
         addSubview(bodyText)
 
-        subscribeButton.text = "Subscribe for $4.99/month"
+        subscribeButton.text = OnboardingStrings.Safari.subscriptionSubmit.value()
         subscribeButton.font = .systemFont(ofSize: 17, weight: .semibold)
         subscribeButton.textColor = .white
         subscribeButton.textAlignment = .center
@@ -1350,15 +1356,15 @@ final class OnboardingSubscriptionSheetView: UIView {
         subscribeButton.layer.cornerCurve = .continuous
         subscribeButton.clipsToBounds = true
         subscribeButton.accessibilityIdentifier =
-            "onboarding.safari.page.subscriptionSubmit"
+            OnboardingStrings.Accessibility.safariSubscriptionSubmit.value()
         addSubview(subscribeButton)
 
-        signIn.text = "Already a subscriber? Sign in"
+        signIn.text = OnboardingStrings.Safari.subscriptionSignIn.value()
         signIn.font = .systemFont(ofSize: 14, weight: .medium)
         signIn.textColor = UIColor(red: 0.07, green: 0.36, blue: 0.86, alpha: 1)
         signIn.textAlignment = .center
         signIn.accessibilityIdentifier =
-            "onboarding.safari.page.subscriptionSignIn"
+            OnboardingStrings.Accessibility.safariSubscriptionSignIn.value()
         addSubview(signIn)
     }
 

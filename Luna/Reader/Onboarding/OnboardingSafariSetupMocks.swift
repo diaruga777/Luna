@@ -41,7 +41,8 @@ final class OnboardingManageExtensionsSheetView: UIView {
     ) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        accessibilityIdentifier = "onboarding.safari.manageExtensionsSheet"
+        accessibilityIdentifier =
+            OnboardingStrings.Accessibility.safariManageExtensionsSheet.value()
 
         scrim.backgroundColor = UIColor.black.withAlphaComponent(0.32)
         scrim.alpha = 0
@@ -82,7 +83,7 @@ final class OnboardingManageExtensionsSheetView: UIView {
         appRow.addSubview(appName)
 
         toggle.accessibilityIdentifier =
-            "onboarding.safari.manageExtensionsToggle"
+            OnboardingStrings.Accessibility.safariManageExtensionsToggle.value()
         appRow.addSubview(toggle)
     }
 

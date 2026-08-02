@@ -57,7 +57,8 @@ final class OnboardingDynamicIslandRunView: UIView {
     init(appIcon: UIImage?) {
         super.init(frame: .zero)
         isUserInteractionEnabled = false
-        accessibilityIdentifier = "onboarding.messages.dynamicIsland"
+        accessibilityIdentifier =
+            OnboardingStrings.Accessibility.messagesDynamicIsland.value()
         backgroundColor = .black
         layer.cornerCurve = .continuous
 
@@ -273,7 +274,9 @@ final class OnboardingIslandProgressRingView: UIView {
         fill.duration = duration
         fill.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         progress.strokeEnd = 1
-        progress.add(fill, forKey: "onboarding.ring.fill")
+        progress.add(
+            fill,
+            forKey: OnboardingStrings.AnimationKeys.ringFill.value())
     }
 }
 
@@ -282,7 +285,8 @@ final class OnboardingMockTapIndicatorView: UIView {
     override init(frame: CGRect) {
         super.init(frame: CGRect(x: 0, y: 0, width: 54, height: 54))
         isUserInteractionEnabled = false
-        accessibilityIdentifier = "onboarding.messages.mockTap"
+        accessibilityIdentifier =
+            OnboardingStrings.Accessibility.messagesMockTap.value()
         backgroundColor = UIColor.white.withAlphaComponent(0.38)
         layer.cornerRadius = 27
         layer.borderWidth = 1
@@ -374,7 +378,8 @@ final class OnboardingActionExtensionSheetView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        accessibilityIdentifier = "onboarding.messages.extensionSheet"
+        accessibilityIdentifier =
+            OnboardingStrings.Accessibility.messagesExtensionSheet.value()
 
         scrim.backgroundColor = UIColor.black.withAlphaComponent(0.42)
         scrim.alpha = 0
@@ -392,7 +397,7 @@ final class OnboardingActionExtensionSheetView: UIView {
         card.addSubview(grabber)
 
         // A nav-bar Done: plain tinted text on the leading edge, not a chip.
-        doneChip.text = L10n.string("Done")
+        doneChip.text = OnboardingStrings.Instruction.done.value()
         doneChip.font = .systemFont(ofSize: 17, weight: .semibold)
         doneChip.textColor = GlassStyle.readingAccent
         doneChip.textAlignment = .left
@@ -580,7 +585,7 @@ final class OnboardingAppSwitcherView: UIView {
     init(frame: CGRect, from: UIImage, to: UIImage) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        accessibilityIdentifier = "onboarding.appSwitcher"
+        accessibilityIdentifier = OnboardingStrings.Accessibility.messagesAppSwitcher.value()
         backgroundColor = .black
 
         for (card, image) in [(fromCard, from), (toCard, to)] {
@@ -681,6 +686,8 @@ final class OnboardingAppSwitcherView: UIView {
         corner.fillMode = .both
         corner.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         card.layer.cornerRadius = radius
-        card.layer.add(corner, forKey: "onboarding.switcher.corner")
+        card.layer.add(
+            corner,
+            forKey: OnboardingStrings.AnimationKeys.switcherCorner.value())
     }
 }

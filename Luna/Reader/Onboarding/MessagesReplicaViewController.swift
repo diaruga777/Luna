@@ -19,7 +19,7 @@ enum OnboardingMessagesReplicaTiming {
     /// off someone typing quickly rather than off an animation timeline — an
     /// earlier, brisker set landed four sentences in under three seconds,
     /// which is a transcript being replayed, not a conversation happening.
-    static let stagedMessageDelays: [TimeInterval] = [0.85, 2.0, 1.5, 0.75]
+    static let stagedMessageDelays: [TimeInterval] = [0.85, 2.0, 1.5, 0.75, 0.75]
     static let messageDuration: TimeInterval = 0.42
     static let saveDelayAfterLastMessage: TimeInterval = 1.1
 
@@ -108,7 +108,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         super.viewDidLoad()
         overrideUserInterfaceStyle = .light
         view.backgroundColor = .white
-        view.accessibilityIdentifier = "onboarding.messages.replica"
+        view.accessibilityIdentifier = OnboardingStrings.Accessibility.messagesReplica.value()
         let composer = configureComposer()
         configureConversation(above: composer)
         configureHeader()
@@ -461,7 +461,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         flight.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         flight.fillMode = .forwards
         flight.isRemovedOnCompletion = false
-        flying.layer.add(flight, forKey: "onboarding.bubble.flight")
+        flying.layer.add(
+            flight,
+            forKey: OnboardingStrings.AnimationKeys.messageBubbleFlight.value())
         flying.layer.opacity = 0
 
         afterDelay(duration, generation: generation) {
@@ -613,11 +615,12 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         header.addSubview(avatar)
 
         senderNameLabel.translatesAutoresizingMaskIntoConstraints = false
-        senderNameLabel.text = "Johnny Appleseed"
+        senderNameLabel.text = OnboardingStrings.Messages.senderName.value()
         senderNameLabel.font = .systemFont(ofSize: 13, weight: .medium)
         senderNameLabel.textColor = UIColor(white: 0.12, alpha: 1)
         senderNameLabel.textAlignment = .center
-        senderNameLabel.accessibilityIdentifier = "onboarding.messages.senderName"
+        senderNameLabel.accessibilityIdentifier =
+            OnboardingStrings.Accessibility.messagesSenderName.value()
         header.addSubview(senderNameLabel)
 
         let disclosure = UIImageView(image: UIImage(
@@ -658,9 +661,10 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         let shortcutBubble = OnboardingMessagePillBubble(
             direction: .incoming,
             showsTail: true,
-            text: "Just install this shortcut",
+            text: OnboardingStrings.Messages.shortcutSetup.value(),
             pill: shortcutPill,
-            accessibilityIdentifier: "onboarding.messages.shortcutSetup")
+            accessibilityIdentifier:
+                OnboardingStrings.Accessibility.messagesShortcutSetup.value())
         self.shortcutBubble = shortcutBubble
 
         // Thread order (see `Row`): the friend opens, asks, hears the Action
@@ -671,30 +675,33 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                 bubble: OnboardingMessageTextBubble(
                     direction: .incoming,
                     showsTail: false,
-                    text: "Yoooooo",
-                    accessibilityIdentifier: "onboarding.messages.greeting")),
+                    text: OnboardingStrings.Messages.greeting.value(),
+                    accessibilityIdentifier:
+                        OnboardingStrings.Accessibility.messagesGreeting.value())),
             OnboardingMessageRow(
                 direction: .incoming,
                 bubble: OnboardingMessageTextBubble(
                     direction: .incoming,
                     showsTail: true,
-                    text: "You using your action button for anything?",
-                    accessibilityIdentifier: "onboarding.messages.question")),
+                    text: OnboardingStrings.Messages.question.value(),
+                    accessibilityIdentifier:
+                        OnboardingStrings.Accessibility.messagesQuestion.value())),
             OnboardingMessageRow(
                 direction: .outgoing,
                 bubble: OnboardingMessageTextBubble(
                     direction: .outgoing,
                     showsTail: true,
-                    text: "Nah. Its kinda dead tbh.",
-                    accessibilityIdentifier: "onboarding.messages.answer")),
+                    text: OnboardingStrings.Messages.answer.value(),
+                    accessibilityIdentifier:
+                        OnboardingStrings.Accessibility.messagesAnswer.value())),
             OnboardingMessageRow(
                 direction: .incoming,
                 bubble: OnboardingMessageTextBubble(
                     direction: .incoming,
                     showsTail: false,
-                    text: "I use it to instant save any link on screen. "
-                        + "Check it:",
-                    accessibilityIdentifier: "onboarding.messages.pitch")),
+                    text: OnboardingStrings.Messages.pitch.value(),
+                    accessibilityIdentifier:
+                        OnboardingStrings.Accessibility.messagesPitch.value())),
             OnboardingMessageRow(direction: .incoming, bubble: urlBubble),
             OnboardingMessageRow(direction: .incoming, bubble: shortcutBubble),
             OnboardingMessageRow(
@@ -702,18 +709,20 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                 bubble: OnboardingMessagePillBubble(
                     direction: .incoming,
                     showsTail: true,
-                    text: "Then set your action button to it in",
+                    text: OnboardingStrings.Messages.settingsSetup.value(),
                     pill: settingsPill,
-                    accessibilityIdentifier: "onboarding.messages.settingsSetup")),
+                    accessibilityIdentifier:
+                        OnboardingStrings.Accessibility.messagesSettingsSetup.value())),
             OnboardingMessageRow(
                 direction: .outgoing,
                 bubble: OnboardingMessagePillBubble(
                     direction: .outgoing,
                     showsTail: false,
                     appearance: .ghost,
-                    text: "Or",
+                    text: OnboardingStrings.Messages.skipSetup.value(),
                     pill: skipPill,
-                    accessibilityIdentifier: "onboarding.messages.skipSetup")),
+                    accessibilityIdentifier:
+                        OnboardingStrings.Accessibility.messagesSkipSetup.value())),
         ]
         for row in messageRows {
             row.alpha = 0
@@ -732,7 +741,8 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             OnboardingMessageRow.groupedSpacing, after: rowView(.greeting))
         conversationStack.setCustomSpacing(
             OnboardingMessageRow.groupedSpacing, after: rowView(.pitch))
-        conversationStack.accessibilityIdentifier = "onboarding.messages.conversation"
+        conversationStack.accessibilityIdentifier =
+            OnboardingStrings.Accessibility.messagesConversation.value()
         // Unrevealed rows wait below the resting thread; keep them (and each
         // arrival's rise) underneath the opaque composer.
         view.insertSubview(conversationStack, belowSubview: composer)
@@ -1005,7 +1015,8 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
 
     init(showsTail: Bool) {
         super.init(direction: .incoming, showsTail: showsTail)
-        accessibilityIdentifier = "onboarding.messages.latestIncoming"
+        accessibilityIdentifier =
+            OnboardingStrings.Accessibility.messagesLatestIncoming.value()
 
         highlight.translatesAutoresizingMaskIntoConstraints = false
         addSubview(highlight)
@@ -1014,7 +1025,8 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        label.accessibilityIdentifier = "onboarding.messages.latestURL"
+        label.accessibilityIdentifier =
+            OnboardingStrings.Accessibility.messagesLatestURL.value()
         addSubview(label)
 
         NSLayoutConstraint.activate([
@@ -1186,34 +1198,38 @@ final class OnboardingMessagePillButton: UIControl {
         switch style {
         case .shortcuts:
             icon = OnboardingSystemIcons.shortcutsAppIcon
-            title = "Luna"
+            title = OnboardingStrings.Messages.shortcutPillTitle.value()
             // White lifted faintly toward the Shortcuts app's violet.
             fill = UIColor(red: 0.93, green: 0.91, blue: 1.0, alpha: 1)
             titleColor = UIColor(red: 0.32, green: 0.18, blue: 0.78, alpha: 1)
             iconTint = nil
             glowColor = Self.shortcutsPurple
             super.init(frame: .zero)
-            accessibilityIdentifier = "onboarding.messages.shortcutPill"
-            accessibilityLabel = "Install the Luna shortcut"
+            accessibilityIdentifier =
+                OnboardingStrings.Accessibility.messagesShortcutPill.value()
+            accessibilityLabel =
+                OnboardingStrings.Messages.shortcutPillAccessibilityLabel.value()
         case .settings:
             icon = UIImage(
                 systemName: "gearshape.fill",
                 withConfiguration: UIImage.SymbolConfiguration(
                     pointSize: 14, weight: .medium))
-            title = "Settings"
+            title = OnboardingStrings.Messages.settingsPillTitle.value()
             fill = UIColor(red: 0.93, green: 0.93, blue: 0.94, alpha: 1)
             titleColor = UIColor(white: 0.15, alpha: 1)
             iconTint = UIColor(white: 0.42, alpha: 1)
             glowColor = UIColor(white: 0.55, alpha: 1)
             super.init(frame: .zero)
-            accessibilityIdentifier = "onboarding.messages.settingsPill"
-            accessibilityLabel = "Open Settings"
+            accessibilityIdentifier =
+                OnboardingStrings.Accessibility.messagesSettingsPill.value()
+            accessibilityLabel =
+                OnboardingStrings.Messages.settingsPillAccessibilityLabel.value()
         case .skip:
             icon = UIImage(
                 systemName: "chevron.forward",
                 withConfiguration: UIImage.SymbolConfiguration(
                     pointSize: 13, weight: .semibold))
-            title = "skip setup"
+            title = OnboardingStrings.Messages.skipPillTitle.value()
             // A wash of its own ghost bubble's blue, so the way out is legible
             // without competing with the two pills that want the tap.
             fill = OnboardingMessageBubble.outgoingBlue
@@ -1224,8 +1240,10 @@ final class OnboardingMessagePillButton: UIControl {
                 .withAlphaComponent(0.7)
             glowColor = .clear
             super.init(frame: .zero)
-            accessibilityIdentifier = "onboarding.messages.skipPill"
-            accessibilityLabel = "Skip setup"
+            accessibilityIdentifier =
+                OnboardingStrings.Accessibility.messagesSkipPill.value()
+            accessibilityLabel =
+                OnboardingStrings.Messages.skipPillAccessibilityLabel.value()
         }
         accessibilityTraits = .button
         backgroundColor = fill
@@ -1304,7 +1322,8 @@ final class OnboardingMessagePillButton: UIControl {
     private static let coronaReach: CGFloat = 30
     /// One full breath. The corona is not in phase with it — see below.
     private static let pulseCycle: CFTimeInterval = 1.9
-    static let pulseAnimationKey = "onboarding.pill.pulse"
+    static let pulseAnimationKey =
+        OnboardingStrings.AnimationKeys.pillPulse.value()
 
     /// The corona lives INSIDE the pill, behind its icon and label. It can:
     /// `EclipseCorona` clips the silhouette's interior out of its raster, so
@@ -1401,4 +1420,3 @@ final class OnboardingMessagePillButton: UIControl {
         onActivate?()
     }
 }
-

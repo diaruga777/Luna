@@ -1036,7 +1036,7 @@ final class AppOnboardingViewController: UIViewController {
     private func pasteArticleURL(_ value: String) {
         guard !isHandlingPaste, !isFinishing else { return }
         guard let url = URLUnwrapper.ingestURL(from: value) else {
-            intro.setPasteError("article URLs only")
+            intro.setPasteError(OnboardingStrings.Intro.articleURLsOnly.value())
             return
         }
         isHandlingPaste = true
@@ -1059,7 +1059,8 @@ final class AppOnboardingViewController: UIViewController {
                             withID: saved.id),
                           current.state == .ready
                     else {
-                        self.intro.setPasteError("unable to load page")
+                        self.intro.setPasteError(
+                            OnboardingStrings.Intro.unableToLoadPage.value())
                         return
                     }
                     self.completeOnboardingWithRealSave(animated: true)
@@ -1067,12 +1068,14 @@ final class AppOnboardingViewController: UIViewController {
             case .failed, .needsArchive:
                 await MainActor.run {
                     self.isHandlingPaste = false
-                    self.intro.setPasteError("unable to load page")
+                    self.intro.setPasteError(
+                        OnboardingStrings.Intro.unableToLoadPage.value())
                 }
             case .product, .social, .video, .document, .unsupported:
                 await MainActor.run {
                     self.isHandlingPaste = false
-                    self.intro.setPasteError("article URLs only")
+                    self.intro.setPasteError(
+                        OnboardingStrings.Intro.articleURLsOnly.value())
                 }
             }
         }
@@ -1101,7 +1104,7 @@ final class AppOnboardingViewController: UIViewController {
               let root = savedRootViewController
         else {
             isFinishing = false
-            intro.setPasteError("unable to load page")
+            intro.setPasteError(OnboardingStrings.Intro.unableToLoadPage.value())
             return
         }
 
@@ -1365,7 +1368,9 @@ extension AppOnboardingViewController: CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String? {
-        index == 0 ? "Luna" : "Saved"
+        index == 0
+            ? LunaApp.luna.displayName
+            : OnboardingStrings.Card.saved.value()
     }
 
     func carousel(
@@ -1399,7 +1404,7 @@ private final class OnboardingSavedCardPreviewViewController:
         imageView.contentMode = .scaleToFill
         imageView.isAccessibilityElement = false
         view.addSubview(imageView)
-        view.accessibilityLabel = "Saved article"
+        view.accessibilityLabel = OnboardingStrings.Card.savedArticle.value()
         view.isAccessibilityElement = true
     }
 }

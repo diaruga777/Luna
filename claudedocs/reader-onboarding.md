@@ -2,8 +2,8 @@
 
 The central Luna app and all three faceted apps use one launch/onboarding
 engine. Each composition root injects an immutable
-`AppOnboardingCompletion`; surface copy and offline demo pages come from
-`OnboardingSurfaceConfiguration`.
+`AppOnboardingCompletion`; surface copy and offline demo pages are defined in
+`OnboardingStrings` and selected by `OnboardingSurfaceConfiguration`.
 
 ## Every app launch
 

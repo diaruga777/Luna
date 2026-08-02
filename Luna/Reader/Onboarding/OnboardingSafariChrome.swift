@@ -58,7 +58,7 @@ final class SafariBottomBar: UIView {
         backForward.contentView.addSubview(nav)
 
         let page = icon(Self.pageMenuSymbol, alpha: 0.86)
-        hostLabel.text = "luna.app"
+        hostLabel.text = OnboardingStrings.Demo.lunaHost.value()
         hostLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         hostLabel.textColor = UIColor(white: 0.10, alpha: 1)
         hostLabel.textAlignment = .center
@@ -124,7 +124,7 @@ final class SafariBottomBar: UIView {
     required init?(coder: NSCoder) { nil }
 
     func setURL(_ urlString: String, displayedHost host: String) {
-        accessibilityIdentifier = "onboarding.safari.urlBar"
+        accessibilityIdentifier = OnboardingStrings.Accessibility.safariURLBar.value()
         accessibilityValue = urlString
         UIView.transition(
             with: hostLabel,

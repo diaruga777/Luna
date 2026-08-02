@@ -204,20 +204,21 @@ final class OnboardingSafariActionsView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        accessibilityIdentifier = "onboarding.safari.page.actions"
+        accessibilityIdentifier = OnboardingStrings.Accessibility.safariActions.value()
 
         activateButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: "Activate Safari",
+            title: OnboardingStrings.Safari.activate.value(),
             symbol: "safari.fill",
             prominent: true)
-        activateButton.accessibilityLabel = "Activate Safari"
-        activateButton.accessibilityIdentifier = "onboarding.safari.page.activate"
+        activateButton.accessibilityLabel = OnboardingStrings.Safari.activate.value()
+        activateButton.accessibilityIdentifier =
+            OnboardingStrings.Accessibility.safariActivate.value()
         activateButton.addTarget(
             self, action: #selector(activateTapped), for: .touchUpInside)
         addSubview(activateButton)
 
         var skipConfiguration = UIButton.Configuration.plain()
-        skipConfiguration.title = "Skip"
+        skipConfiguration.title = OnboardingStrings.Safari.skip.value()
         skipConfiguration.baseForegroundColor =
             UIColor.white.withAlphaComponent(0.7)
         skipConfiguration.contentInsets = NSDirectionalEdgeInsets(
@@ -229,8 +230,9 @@ final class OnboardingSafariActionsView: UIView {
                 return outgoing
             }
         skipButton.configuration = skipConfiguration
-        skipButton.accessibilityLabel = "Skip"
-        skipButton.accessibilityIdentifier = "onboarding.safari.page.skip"
+        skipButton.accessibilityLabel = OnboardingStrings.Safari.skip.value()
+        skipButton.accessibilityIdentifier =
+            OnboardingStrings.Accessibility.safariSkip.value()
         skipButton.addTarget(
             self, action: #selector(skipTapped), for: .touchUpInside)
         addSubview(skipButton)

@@ -84,19 +84,19 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
         configure(
             safariButton,
-            title: "Remove popups and walls for me",
+            title: OnboardingStrings.Intro.safariAction.value(),
             symbol: "safari.fill",
             action: #selector(safariTapped))
         configure(
             shortcutButton,
-            title: "Save on-screen links with the Action Button",
+            title: OnboardingStrings.Intro.shortcutAction.value(),
             symbol: "bolt.fill",
             action: #selector(shortcutTapped))
         shortcutButton.configuration?.titleLineBreakMode = .byWordWrapping
         var shortcutAttributes = AttributeContainer()
         shortcutAttributes.font = .systemFont(ofSize: 13, weight: .semibold)
         shortcutButton.configuration?.attributedTitle = AttributedString(
-            "Save on-screen links with the Action Button",
+            OnboardingStrings.Intro.shortcutAction.value(),
             attributes: shortcutAttributes)
         shortcutButton.titleLabel?.numberOfLines = 2
         if let shortcutIcon = UIImage(
@@ -245,7 +245,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         guard let provider = itemProviders.first(where: {
             $0.canLoadObject(ofClass: NSString.self)
         }) else {
-            setPasteError("article URLs only")
+            setPasteError(OnboardingStrings.Intro.articleURLsOnly.value())
             return
         }
         _ = provider.loadObject(ofClass: NSString.self) { [weak self] value, _ in
@@ -281,16 +281,8 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
             button.configuration?.baseForegroundColor = UIColor.white.withAlphaComponent(0.42)
             button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.08)
-            button.accessibilityValue = "Completed"
-        case .skipped:
-            // Still enabled: skipping is a choice to come back to, not a
-            // finished lesson, so it never earns the disabled checkmark.
-            button.configuration?.image = UIImage(systemName: "forward.fill")
-            button.configuration?.baseForegroundColor = LunaColors.primaryText
-            button.configuration?.baseBackgroundColor =
-                LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
-            button.accessibilityValue = "Skipped"
-        case .pending:
+            button.accessibilityValue = OnboardingStrings.Intro.completed.value()
+        case .pending, .skipped:
             button.configuration?.image = UIImage(systemName: symbol)
             if button === shortcutButton,
                let path = Bundle.main.path(forResource: "ShortcutsAppIcon", ofType: "png")
@@ -348,9 +340,9 @@ private final class OnboardingPasteControl: UIView {
         control = UIPasteControl(configuration: configuration)
         super.init(frame: frame)
 
-        accessibilityIdentifier = "onboarding.intro.paste"
+        accessibilityIdentifier = OnboardingStrings.Accessibility.introPaste.value()
         control.target = nil
-        control.accessibilityLabel = "Paste a url"
+        control.accessibilityLabel = OnboardingStrings.Intro.paste.value()
         // UIPasteControl remains the full-size hit target and native paste
         // dispatcher; its private artwork sits beneath our stateful surface.
         control.layer.opacity = 0
@@ -369,7 +361,7 @@ private final class OnboardingPasteControl: UIView {
         icon.layer.zPosition = 11
         addSubview(icon)
 
-        label.text = "Paste a url"
+        label.text = OnboardingStrings.Intro.paste.value()
         label.textColor = LunaColors.primaryText
         label.font = .systemFont(ofSize: 15, weight: .semibold)
         label.textAlignment = .center
@@ -419,13 +411,13 @@ private final class OnboardingPasteControl: UIView {
     func setState(_ state: State) {
         switch state {
         case .idle:
-            label.text = "Paste a url"
+            label.text = OnboardingStrings.Intro.paste.value()
             icon.image = UIImage(systemName: "doc.on.clipboard")
             surface.backgroundColor =
                 LunaSurfacePalette.baseColor.withAlphaComponent(0.34)
             control.isEnabled = true
         case .loading:
-            label.text = "Loading page…"
+            label.text = OnboardingStrings.Intro.loading.value()
             icon.image = UIImage(systemName: "arrow.triangle.2.circlepath")
             surface.backgroundColor =
                 LunaSurfacePalette.baseColor.withAlphaComponent(0.22)
@@ -688,7 +680,9 @@ final class MoonRevealLineView: UIView {
         moonAnimation.duration = resolvedDuration
         moonAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         moonAnimation.isRemovedOnCompletion = true
-        moonLayer.add(moonAnimation, forKey: "moonReveal")
+        moonLayer.add(
+            moonAnimation,
+            forKey: OnboardingStrings.AnimationKeys.moonReveal.value())
 
         // The bloom's cooling distance rides the front's speed: however fast
         // the edge travels, every glyph spends the same TIME brightened and
@@ -717,7 +711,9 @@ final class MoonRevealLineView: UIView {
         revealAnimation.duration = resolvedDuration
         revealAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         revealAnimation.isRemovedOnCompletion = true
-        revealMaskLayer.add(revealAnimation, forKey: "opaqueGlyphReveal")
+        revealMaskLayer.add(
+            revealAnimation,
+            forKey: OnboardingStrings.AnimationKeys.opaqueGlyphReveal.value())
 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
@@ -874,7 +870,8 @@ final class MoonRevealGrowingLineView: UIView {
         font: UIFont = .systemFont(ofSize: 25, weight: .semibold)
     ) {
         let finished = stem + tail
-        let firstBeat = stem + "."
+        let period = OnboardingStrings.Intro.growingLinePeriod.value()
+        let firstBeat = stem + period
         let stemLength = (stem as NSString).length
         let finishedLength = (finished as NSString).length
         firstBeatText = firstBeat
@@ -895,7 +892,7 @@ final class MoonRevealGrowingLineView: UIView {
             visible: NSRange(location: 0, length: finishedLength)
         ).size().width
         periodFrontLead = Self.inkTopDrop(
-            of: ".", below: tail, font: font)
+            of: period, below: tail, font: font)
 
         super.init(frame: .zero)
         isUserInteractionEnabled = false

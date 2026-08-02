@@ -7,10 +7,18 @@ import LunaDesignSystem
 import UIKit
 import WebKit
 
-enum OnboardingExternalDestination: String {
-    case safari = "Safari"
-    case shortcuts = "Shortcuts"
-    case settings = "Settings"
+enum OnboardingExternalDestination {
+    case safari
+    case shortcuts
+    case settings
+
+    var displayName: String {
+        switch self {
+        case .safari: return OnboardingStrings.Instruction.setUpSafari.value()
+        case .shortcuts: return OnboardingStrings.Instruction.installShortcut.value()
+        case .settings: return OnboardingStrings.Instruction.setActionButton.value()
+        }
+    }
 }
 
 /// A deliberately noninteractive Safari facsimile used by each app's
@@ -148,12 +156,13 @@ final class SafariReplicaViewController:
         webView.isHidden = false
         guard let resourceName = page.resourceName,
               let url = Bundle.main.url(
-                forResource: resourceName, withExtension: "html")
+                forResource: resourceName, withExtension: "html"),
+              let html = OnboardingStrings.Demo.renderedHTML(for: page)
         else {
             webView.loadHTMLString(Self.fallbackHTML, baseURL: nil)
             return
         }
-        webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        webView.loadHTMLString(html, baseURL: url.deletingLastPathComponent())
     }
 
     private func startPageRotationIfNeeded() {
@@ -325,10 +334,11 @@ final class SafariReplicaViewController:
 
     func showSafariPrompt() {
         setInstruction(
-            title: "Press the Action Button to save\n\(onboardingConfiguration.saveBenefit)",
+            title: OnboardingStrings.Instruction.safariPrompt(
+                saveBenefit: onboardingConfiguration.saveBenefit),
             actions: [
                 .init(
-                    title: "Set up Safari",
+                    title: OnboardingStrings.Instruction.setUpSafari.value(),
                     image: UIImage(systemName: "safari.fill"),
                     prominent: true,
                     action: { [weak self] in self?.onSetUpSafari?() }),
@@ -345,12 +355,12 @@ final class SafariReplicaViewController:
             title: nil,
             actions: [
                 .init(
-                    title: "Install Shortcut",
+                    title: OnboardingStrings.Instruction.installShortcut.value(),
                     image: OnboardingSystemIcons.shortcutsAppIcon,
                     prominent: true,
                     action: { [weak self] in self?.onInstallShortcut?() }),
                 .init(
-                    title: "Set action button",
+                    title: OnboardingStrings.Instruction.setActionButton.value(),
                     image: OnboardingSystemIcons.actionButton,
                     prominent: false,
                     action: { [weak self] in self?.onSetActionButton?() }),
@@ -359,10 +369,10 @@ final class SafariReplicaViewController:
 
     func showWaitingForActionButton() {
         setInstruction(
-            title: "Press the action button to finish",
+            title: OnboardingStrings.Instruction.actionButtonPrompt.value(),
             actions: [
                 .init(
-                    title: "Set up later",
+                    title: OnboardingStrings.Instruction.setUpLater.value(),
                     image: UIImage(systemName: "clock"),
                     prominent: false,
                     action: { [weak self] in self?.onSetUpLater?() }),
@@ -371,20 +381,21 @@ final class SafariReplicaViewController:
 
     func showExternalOpenFailure(destination: OnboardingExternalDestination) {
         setInstruction(
-            title: "Couldn’t open \(destination.rawValue). Try again.",
+            title: OnboardingStrings.Instruction.externalOpenFailure(
+                destination: destination.displayName),
             actions: [
                 .init(
-                    title: "Set up Safari",
+                    title: OnboardingStrings.Instruction.setUpSafari.value(),
                     image: UIImage(systemName: "safari.fill"),
                     prominent: destination == .safari,
                     action: { [weak self] in self?.onSetUpSafari?() }),
                 .init(
-                    title: "Install Shortcut",
+                    title: OnboardingStrings.Instruction.installShortcut.value(),
                     image: OnboardingSystemIcons.shortcutsAppIcon,
                     prominent: destination == .shortcuts,
                     action: { [weak self] in self?.onInstallShortcut?() }),
                 .init(
-                    title: "Set action button",
+                    title: OnboardingStrings.Instruction.setActionButton.value(),
                     image: OnboardingSystemIcons.actionButton,
                     prominent: destination == .settings,
                     action: { [weak self] in self?.onSetActionButton?() }),
@@ -393,10 +404,10 @@ final class SafariReplicaViewController:
 
     func showSaveFailure(retry: @escaping () -> Void) {
         setInstruction(
-            title: "Couldn’t create the offline example",
+            title: OnboardingStrings.Instruction.saveFailure.value(),
             actions: [
                 .init(
-                    title: "Try again",
+                    title: OnboardingStrings.Instruction.tryAgain.value(),
                     image: UIImage(systemName: "arrow.clockwise"),
                     prominent: true,
                     action: retry),

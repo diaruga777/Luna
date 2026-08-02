@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>eyePhone — amayzon</title>
+  <title>{{AMAYZON_HTML_TITLE}}</title>
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: #f6f7f8; color: #101820; }
@@ -119,23 +119,23 @@
 </head>
 <body>
   <header>
-    <div class="brand">amay<em>zon</em></div>
-    <div class="search">Search amayzon</div>
+    <div class="brand">{{AMAYZON_BRAND_PREFIX}}<em>{{AMAYZON_BRAND_SUFFIX}}</em></div>
+    <div class="search">{{AMAYZON_SEARCH}}</div>
   </header>
-  <nav>☰ &nbsp; Today’s Deals &nbsp;&nbsp; Best Sellers &nbsp;&nbsp; Devices &nbsp;&nbsp; Help</nav>
+  <nav>{{AMAYZON_NAVIGATION}}</nav>
   <main>
-    <div class="crumb">Electronics › Pocket communicators › Unlocked</div>
+    <div class="crumb">{{AMAYZON_BREADCRUMB}}</div>
     <div class="product-art">
       <div class="phone"><div class="island"></div><div class="camera"></div></div>
     </div>
-    <div class="rating">★★★★☆ <span style="color:#26708e;letter-spacing:0">4,128 ratings</span></div>
-    <h1>eyePhone Air — 256 GB, Moonmist, unlocked pocket communicator</h1>
-    <div class="store">Visit the Pearless Devices Store</div>
-    <span class="deal">Limited time deal</span>
-    <div class="price"><sup>$</sup>799<sup>00</sup></div>
-    <div class="was">List price: $999.00</div>
-    <div class="stock">In stock</div>
-    <div class="buy">Add to basket</div>
+    <div class="rating">{{AMAYZON_RATING_STARS}} <span style="color:#26708e;letter-spacing:0">{{AMAYZON_RATING_COUNT}}</span></div>
+    <h1>{{AMAYZON_PRODUCT_TITLE}}</h1>
+    <div class="store">{{AMAYZON_STORE}}</div>
+    <span class="deal">{{AMAYZON_DEAL}}</span>
+    <div class="price"><sup>{{AMAYZON_CURRENCY}}</sup>{{AMAYZON_PRICE_MAJOR}}<sup>{{AMAYZON_PRICE_MINOR}}</sup></div>
+    <div class="was">{{AMAYZON_LIST_PRICE}}</div>
+    <div class="stock">{{AMAYZON_STOCK}}</div>
+    <div class="buy">{{AMAYZON_ADD_TO_BASKET}}</div>
   </main>
 </body>
 </html>

@@ -10,6 +10,7 @@ import LunaSocialUI
 import LunaMailAccount
 import LunaDesignSystem
 import LunaStorage
+import LunaWeekly
 import BackgroundTasks
 import UIKit
 import UserNotifications
@@ -95,6 +96,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             presenter.present(card, animated: true)
         }
 
+        // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
+        // the ingest pipeline, so the shell hands it the one metadata read the
+        // row needs. `.luna` deliberately — a faceted app must be able to render
+        // whichever kind it fetched, and it only ever fetches its own.
+        WeeklySaveRefresher.metadataFetcher = { urlString in
+            guard let preview = await RecentURLMatcher.evaluate(
+                urlString: urlString, surface: .luna)
+            else { return nil }
+            let host = URL(string: preview.urlString)?.host
+                ?? preview.subtitle ?? preview.urlString
+            return (title: preview.title, host: host, imageData: preview.imageData)
+        }
+
         // Diagnostics export header shows the connected email account (which lives
         // above LunaStorage), injected here.
         DiagnosticLog.exportIdentityProvider = {
@@ -157,6 +171,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 self?.handleMailFetch(task as? BGProcessingTask)
             }
         }
+        // Registered unconditionally: an identifier must be claimed before
+        // launch returns, and this device can become a key-holder later in the
+        // same session. Both the scheduler and the handler no-op without a key.
+        WeeklyProposalBackgroundCheck.register()
         // Price refresh only on the Price Tracker surface (see schedulesPriceRefresh).
         if schedulesPriceRefresh {
             BGTaskScheduler.shared.register(
@@ -203,6 +221,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 self?.refreshOverduePriceTrackersOnLaunch()
             }
         }
+        // Off the launch frame too: the weekly pull is network work whose only
+        // consumer is a card the user hasn't reached yet.
+        DispatchQueue.global(qos: .utility).async {
+            WeeklyProposalBackgroundCheck.schedule(reason: "launch")
+            Task { @MainActor in
+                await WeeklySaveRefresher.shared.refreshWeeklySaves()
+                await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
+            }
+        }
         return true
     }
 
@@ -212,6 +239,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         KindWiring.appDidEnterBackground()
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
+        WeeklyProposalBackgroundCheck.schedule(reason: "entered background")
     }
 
     func application(

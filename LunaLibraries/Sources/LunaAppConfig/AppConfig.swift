@@ -22,6 +22,15 @@ public enum AppConfig {
     public static let appGroupID: String =
         string(forInfoKey: appGroupInfoKey) ?? defaultAppGroupID
 
+    /// Shared iCloud/CloudKit container identifier, e.g. `iCloud.com.hsanabria.luna`.
+    ///
+    /// Plumbed exactly like the App Group — `iCloud.$(PRODUCT_BUNDLE_PREFIX)`
+    /// in the shared Info.plist, read here at runtime — so a namespace rename
+    /// still costs one xcconfig line. Only the four APPS carry the matching
+    /// entitlement; nothing in an extension reads this.
+    public static let cloudKitContainerID: String =
+        string(forInfoKey: cloudKitContainerInfoKey) ?? defaultCloudKitContainerID
+
     /// `true` when the identifier was resolved from the build-injected Info.plist
     /// (vs. the compiled-in fallback). Hosts should `assert(AppConfig.resolvedFromInfoPlist)`
     /// at launch in DEBUG to catch a broken xcconfig → Info.plist chain immediately.
@@ -47,10 +56,12 @@ public enum AppConfig {
     // MARK: - Internals
 
     static let appGroupInfoKey = "LunaAppGroupID"
+    static let cloudKitContainerInfoKey = "LunaCloudKitContainerID"
 
     /// Fallback must match the value derived in `Config/Luna.xcconfig` for the
     /// default `LUNA_NAMESPACE = luna`. Kept in sync by `LunaAppConfigTests`.
     static let defaultAppGroupID = "group.com.hsanabria.luna"
+    static let defaultCloudKitContainerID = "iCloud.com.hsanabria.luna"
 
     private static func string(forInfoKey key: String) -> String? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {

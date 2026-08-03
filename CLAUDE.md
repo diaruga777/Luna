@@ -95,7 +95,8 @@ stable Xcode 26.2.
 > two-beat sweep belongs to the LAUNCH only — paged back to, it stands finished),
 > the card's corona, and the Safari and Shortcut/share lessons; after both are
 > completed or skipped, the next launch replaces those controls with matching
-> Safari-history URLs. Paste and the fixed Save of the Week remain in both states.
+> Safari-history URLs. Paste remains in both states; the Save of the Week row
+> appears whenever a live signed entry exists (`claudedocs/save-of-the-week.md`).
 > With saves present the first save, not the util card, is the launch selection.
 > **A save from any surface answers the first run**: onboarding stamps its start
 > at launch and latches completion once a newer save exists, so `-resetOnboarding`

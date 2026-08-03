@@ -17,7 +17,11 @@ and finished by `SettingsViewController`.
   bar puts them.
 - Diagnostics has no visible row. Five taps in blank space on the top-level
   Settings table pushes `DiagnosticsViewController`; taps on rows and controls
-  do not count.
+  do not count. That screen also holds the Save of the Week signing key entry
+  (`save-of-the-week.md`).
+- Save of the Week appears as a top-level category ONLY on a device holding the
+  curator's signing key. It is the proposal inbox: promote or delete, both of
+  which retire the proposal record.
 - Shortcut & Safari contains Safari suggestion visibility, on-screen URL
   handling, Double Save Articles, and shortcut actions. Media download size is
   automatic, so there is no Download in Background setting. Double Save Articles appears

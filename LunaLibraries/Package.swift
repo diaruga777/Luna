@@ -29,6 +29,7 @@ let package = Package(
         .library(name: "LunaPlatforms", targets: ["LunaPlatforms"]),
         .library(name: "LunaMediaDownload", targets: ["LunaMediaDownload"]),
         .library(name: "LunaSocial", targets: ["LunaSocial"]),
+        .library(name: "LunaWeekly", targets: ["LunaWeekly"]),
         .library(name: "LunaReaderEngine", targets: ["LunaReaderEngine"]),
         .library(name: "LunaAudioPlayback", targets: ["LunaAudioPlayback"]),
         .library(name: "LunaArchiveReader", targets: ["LunaArchiveReader"]),
@@ -105,6 +106,14 @@ let package = Package(
             dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage", "LunaDesignSystem", "LunaShareSurface"],
             resources: [.process("Resources")]),
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
+        // Save of the Week (claudedocs/save-of-the-week.md): the signed,
+        // CloudKit-public-database-backed weekly pick, its local mirror, and the
+        // proposal channel. Linked by the four APPS only — no extension writes
+        // or reads it. CloudKit/CryptoKit/UserNotifications are system
+        // frameworks, so there is nothing to declare here for them; the concrete
+        // CloudKit client hides behind `WeeklyCloudDatabase` so tests never
+        // touch a container.
+        .target(name: "LunaWeekly", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage"]),
         .target(name: "LunaReaderEngine", dependencies: ["LunaModels"]),
         // Offline speech rendering (AVSpeechSynthesizer.write -> PCM) + a long-lived
         // AVAudioEngine playback graph, plus (Phase 2) the app-wide playback center,

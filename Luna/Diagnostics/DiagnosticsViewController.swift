@@ -5,6 +5,8 @@
 
 import LunaStorage
 import LunaDesignSystem
+import LunaSocial
+import LunaWeekly
 import UIKit
 import LunaModels
 
@@ -21,6 +23,10 @@ final class DiagnosticsViewController: UIViewController {
     /// In-content header in place of the nav bar.
     private let header = NavHeaderBar()
     private let resetOnboardingButton = UIButton(type: .system)
+    /// Where the curator pastes the Save of the Week signing key. Hidden behind
+    /// the same five taps as the log itself: it is not a user-facing feature.
+    private let weeklyKeyButton = UIButton(type: .system)
+    private let bottomButtons = UIStackView()
     /// Keeps left-edge swipe-back alive while the real nav bar is hidden.
     private let popGestureClaim = InteractivePopGestureClaim()
 
@@ -67,20 +73,116 @@ final class DiagnosticsViewController: UIViewController {
         resetOnboardingButton.accessibilityIdentifier = "diagnostics.resetOnboarding"
         resetOnboardingButton.addTarget(
             self, action: #selector(confirmResetOnboarding), for: .touchUpInside)
-        resetOnboardingButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(resetOnboardingButton)
+        weeklyKeyButton.accessibilityIdentifier = "diagnostics.weeklyKey"
+        weeklyKeyButton.addTarget(
+            self, action: #selector(weeklyKeyTapped), for: .touchUpInside)
+        updateWeeklyKeyButton()
+
+        bottomButtons.axis = .horizontal
+        bottomButtons.alignment = .center
+        bottomButtons.distribution = .equalCentering
+        bottomButtons.spacing = 16
+        bottomButtons.translatesAutoresizingMaskIntoConstraints = false
+        bottomButtons.addArrangedSubview(weeklyKeyButton)
+        bottomButtons.addArrangedSubview(resetOnboardingButton)
+        view.addSubview(bottomButtons)
 
         NSLayoutConstraint.activate([
             textView.topAnchor.constraint(equalTo: headerBottom),
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             textView.bottomAnchor.constraint(
-                equalTo: resetOnboardingButton.topAnchor, constant: -4),
-            resetOnboardingButton.centerXAnchor.constraint(
-                equalTo: view.centerXAnchor),
-            resetOnboardingButton.bottomAnchor.constraint(
+                equalTo: bottomButtons.topAnchor, constant: -4),
+            bottomButtons.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
+            bottomButtons.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor, constant: -16),
+            bottomButtons.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            bottomButtons.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -6),
         ])
+    }
+
+    // MARK: - Save of the Week key
+
+    private func updateWeeklyKeyButton() {
+        var configuration = UIButton.Configuration.plain()
+        let hasKey = WeeklyPromotionKeyStore.isKeyHolder
+        configuration.title = hasKey
+            ? L10n.string("Weekly Key ✓")
+            : L10n.string("Enter Weekly Key")
+        configuration.baseForegroundColor = hasKey
+            ? .systemGreen : LunaColors.secondaryText
+        weeklyKeyButton.configuration = configuration
+        weeklyKeyButton.accessibilityLabel = configuration.title
+    }
+
+    @objc private func weeklyKeyTapped() {
+        guard WeeklyPromotionKeyStore.isKeyHolder else {
+            presentKeyEntry()
+            return
+        }
+        let sheet = UIAlertController(
+            title: L10n.string("Save of the Week Key"),
+            message: L10n.string("This device can promote Saves of the Week."),
+            preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(
+            title: L10n.string("Replace"), style: .default
+        ) { [weak self] _ in self?.presentKeyEntry() })
+        sheet.addAction(UIAlertAction(
+            title: L10n.string("Remove"), style: .destructive
+        ) { [weak self] _ in
+            WeeklyPromotionKeyStore.removeKey()
+            DiagnosticLog.shared.record("weekly key removed", category: "weekly")
+            self?.updateWeeklyKeyButton()
+        })
+        sheet.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        sheet.popoverPresentationController?.sourceView = weeklyKeyButton
+        present(sheet, animated: true)
+    }
+
+    private func presentKeyEntry() {
+        let prompt = UIAlertController(
+            title: L10n.string("Enter Weekly Key"),
+            message: L10n.string(
+                "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored."),
+            preferredStyle: .alert)
+        prompt.addTextField { field in
+            field.isSecureTextEntry = true
+            field.autocorrectionType = .no
+            field.autocapitalizationType = .none
+            field.accessibilityIdentifier = "diagnostics.weeklyKeyField"
+        }
+        prompt.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        prompt.addAction(UIAlertAction(
+            title: L10n.string("Save"), style: .default
+        ) { [weak self, weak prompt] _ in
+            self?.storeWeeklyKey(prompt?.textFields?.first?.text ?? "")
+        })
+        present(prompt, animated: true)
+    }
+
+    /// Internal so a test can drive the paste without a live alert.
+    @discardableResult
+    func storeWeeklyKey(_ pasted: String) -> Bool {
+        guard WeeklyPromotionKeyStore.store(base64: pasted) else {
+            DiagnosticLog.shared.record("weekly key rejected", category: "weekly")
+            presentAlert(
+                title: L10n.string("Wrong Key"),
+                message: L10n.string(
+                    "That key doesn't match this build. Nothing was stored."))
+            return false
+        }
+        DiagnosticLog.shared.record("weekly key accepted", category: "weekly")
+        updateWeeklyKeyButton()
+        // The curator now receives proposal notifications, so this is the
+        // honest moment to ask.
+        NotificationManager.requestAuthorization()
+        WeeklyProposalBackgroundCheck.schedule(reason: "key pasted")
+        presentAlert(
+            title: L10n.string("Key Accepted"),
+            message: L10n.string("This device can now promote Saves of the Week."))
+        return true
     }
 
     @objc private func headerBack() {

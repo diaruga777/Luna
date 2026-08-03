@@ -42,6 +42,9 @@
     "%lld min" : {
 
     },
+    "%lld new Save of the Week proposals" : {
+
+    },
     "%lld wpm" : {
 
     },
@@ -298,6 +301,9 @@
     "Checking URL" : {
 
     },
+    "Checking…" : {
+
+    },
     "Choose at least one recipient." : {
 
     },
@@ -361,10 +367,19 @@
     "Copy link" : {
 
     },
+    "Couldn't Delete" : {
+
+    },
     "Couldn't Export Article" : {
 
     },
     "Couldn't Load" : {
+
+    },
+    "Couldn't Promote" : {
+
+    },
+    "Couldn't Propose" : {
 
     },
     "Couldn't build the email." : {
@@ -467,6 +482,12 @@
     "Dark" : {
 
     },
+    "Deal of the month" : {
+
+    },
+    "Deal of the week" : {
+
+    },
     "Decreases reading speed by 25 words per minute" : {
 
     },
@@ -537,6 +558,12 @@
     "Download media" : {
 
     },
+    "Download of the month" : {
+
+    },
+    "Download of the week" : {
+
+    },
     "Download started" : {
 
     },
@@ -579,6 +606,9 @@
     "Enhanced voices installed" : {
 
     },
+    "Enter Weekly Key" : {
+
+    },
     "Enter an app-specific password for this account." : {
 
     },
@@ -589,6 +619,9 @@
 
     },
     "Enter your mail server settings and password. If your provider requires an app password, create one first." : {
+
+    },
+    "Every Luna will show it on its next check." : {
 
     },
     "Export Failed" : {
@@ -704,6 +737,9 @@
 
     },
     "Keep Luna mail out of your inbox" : {
+
+    },
+    "Key Accepted" : {
 
     },
     "Kindle" : {
@@ -836,6 +872,9 @@
     "Never" : {
 
     },
+    "New Save of the Week proposal" : {
+
+    },
     "New York" : {
 
     },
@@ -882,6 +921,9 @@
 
     },
     "No price history yet" : {
+
+    },
+    "No proposals right now." : {
 
     },
     "No thanks" : {
@@ -963,6 +1005,12 @@
     "Open Settings" : {
 
     },
+    "Open Settings to review it." : {
+
+    },
+    "Open Settings to review them." : {
+
+    },
     "Open Shortcuts" : {
 
     },
@@ -1018,6 +1066,9 @@
 
     },
     "Outlook sign-in failed. Please try again." : {
+
+    },
+    "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored." : {
 
     },
     "Pausing when you look away" : {
@@ -1125,6 +1176,33 @@
     "Progress" : {
 
     },
+    "Promote" : {
+
+    },
+    "Promote to Deal of the Week" : {
+
+    },
+    "Promote to Download of the Week" : {
+
+    },
+    "Promote to Read of the Week" : {
+
+    },
+    "Promote to Save of the Week" : {
+
+    },
+    "Promoted" : {
+
+    },
+    "Proposal Sent" : {
+
+    },
+    "Propose Save of the Week" : {
+
+    },
+    "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again." : {
+
+    },
     "Pull to retry, or open it in the browser below." : {
 
     },
@@ -1144,6 +1222,12 @@
 
     },
     "Read instead" : {
+
+    },
+    "Read of the month" : {
+
+    },
+    "Read of the week" : {
 
     },
     "Read-Aloud Voice" : {
@@ -1200,6 +1284,9 @@
     "Remove Contact" : {
 
     },
+    "Replace" : {
+
+    },
     "Rescue as %@" : {
 
     },
@@ -1243,6 +1330,18 @@
 
     },
     "Save articles, media, and products to see them here." : {
+
+    },
+    "Save of the Week" : {
+
+    },
+    "Save of the Week Key" : {
+
+    },
+    "Save of the month" : {
+
+    },
+    "Save of the week" : {
 
     },
     "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"%@\" in Settings → Action Button.\n\n%@" : {
@@ -1433,6 +1532,9 @@
     "Sign Out" : {
 
     },
+    "Sign in to iCloud" : {
+
+    },
     "Sign-in failed" : {
 
     },
@@ -1508,6 +1610,12 @@
     "Text Size" : {
 
     },
+    "Thanks — it's in the queue." : {
+
+    },
+    "That key doesn't match this build. Nothing was stored." : {
+
+    },
     "The link isn't a readable web page" : {
 
     },
@@ -1569,6 +1677,15 @@
 
     },
     "This article needs an archive unlock. Open it in Luna Reader to finish loading it." : {
+
+    },
+    "This device can now promote Saves of the Week." : {
+
+    },
+    "This device can promote Saves of the Week." : {
+
+    },
+    "This device doesn't have the Save of the Week key." : {
 
     },
     "This erases the saved log." : {
@@ -1698,6 +1815,9 @@
     "Web" : {
 
     },
+    "Weekly Key ✓" : {
+
+    },
     "When an article finishes, mark it read and continue with the next unread article — after a chime and a short “Now Reading” announcement." : {
 
     },
@@ -1720,6 +1840,9 @@
 
     },
     "Words" : {
+
+    },
+    "Wrong Key" : {
 
     },
     "X" : {

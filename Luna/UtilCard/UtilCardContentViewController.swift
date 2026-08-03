@@ -7,6 +7,7 @@ import LunaDesignSystem
 import LunaModels
 import LunaStorage
 import LunaURLClassification
+import LunaWeekly
 import UIKit
 import UniformTypeIdentifiers
 
@@ -45,7 +46,6 @@ final class UtilCardContentViewController: CardContentViewController {
     ) -> Void
 
     static var setupJourneyLauncher: ((UIViewController, OnboardingDemoSource) -> Void)?
-    static let saveOfTheWeekURLString = "https://www.lewissociety.org/innerring/"
 
     private let showsOnboarding: Bool
     /// Whether the headline's two-beat sweep belongs to THIS appearance. It is
@@ -61,14 +61,13 @@ final class UtilCardContentViewController: CardContentViewController {
     private let savedURLStrings: () -> Set<String>
 
     private let headline: OnboardingIntroHeadlineView?
-    private let saveOfTheWeek = UtilURLRow(style: .saveOfTheWeek)
+    private let weeklyHost: WeeklySaveRowHost
     private let safariButton = UIButton(type: .system)
     private let saveSetupButton = UIButton(type: .system)
     private let orLabel = UILabel()
     private let pasteRow = OnboardingPasteRow()
     private var recentRows: [UtilURLRow] = []
     private var didSettleHeadline = false
-    private var weeklyPreview: RecentURLPreview
     private var observers: [NSObjectProtocol] = []
 
     init(
@@ -76,6 +75,9 @@ final class UtilCardContentViewController: CardContentViewController {
         animatesIntro: Bool = false,
         configuration: OnboardingSurfaceConfiguration = .current,
         onboardingStore: AppOnboardingStore = .shared,
+        weeklyStore: WeeklySaveStore = .shared,
+        app: LunaApp = .current,
+        now: @escaping () -> Date = Date.init,
         hasSaves: @escaping () -> Bool = { !ReadingListStore.shared.items().isEmpty },
         savedURLStrings: @escaping () -> Set<String> = {
             Set(ReadingListStore.shared.items().map(\.urlString))
@@ -89,15 +91,10 @@ final class UtilCardContentViewController: CardContentViewController {
         self.hasSaves = hasSaves
         self.savedURLStrings = savedURLStrings
         self.saveHandler = saveHandler
+        weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app, now: now)
         headline = showsOnboarding
             ? OnboardingIntroHeadlineView(copy: configuration.introCopy)
             : nil
-        weeklyPreview = RecentURLPreview(
-            urlString: Self.saveOfTheWeekURLString,
-            title: "The Inner Ring",
-            subtitle: "www.lewissociety.org",
-            kind: .article,
-            imageData: nil)
         super.init()
         pasteConfiguration = UIPasteConfiguration(
             acceptableTypeIdentifiers: [
@@ -128,10 +125,17 @@ final class UtilCardContentViewController: CardContentViewController {
                 didSettleHeadline = true
             }
         }
-        view.addSubview(saveOfTheWeek)
+        view.addSubview(weeklyHost)
         view.addSubview(pasteRow)
 
-        configureWeeklyRow()
+        weeklyHost.onSave = { [weak self] urlString, sourceView in
+            self?.save(urlString, source: .manual, sourceView: sourceView)
+        }
+        weeklyHost.onPresenceChange = { [weak self] in self?.view.setNeedsLayout() }
+        weeklyHost.isSaved = { [weak self] urlString in
+            self?.savedURLStrings().contains(urlString) ?? false
+        }
+        weeklyHost.isHidden = weeklyHost.isEmpty
 
         if showsOnboarding {
             configureSetupButtons()
@@ -170,9 +174,49 @@ final class UtilCardContentViewController: CardContentViewController {
         ) { _ in
             Task { @MainActor in RecentURLMatcher.shared.refresh() }
         })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: WeeklySaveStore.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.weeklySaveDidChange()
+        })
 
         RecentURLMatcher.shared.refresh()
-        loadSaveOfTheWeekPreview()
+    }
+
+    /// The store gained, replaced, or lost a value. Presence changes reflow the
+    /// card; a same-slot replacement is the host's own business.
+    private func weeklySaveDidChange() {
+        let wasHidden = weeklyHost.isHidden
+        weeklyHost.reload(animated: !UIAccessibility.isReduceMotionEnabled)
+        let shouldHide = weeklyHost.isEmpty
+        guard wasHidden != shouldHide else { return }
+        if UIAccessibility.isReduceMotionEnabled {
+            weeklyHost.isHidden = shouldHide
+            weeklyHost.alpha = 1
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            return
+        }
+        if shouldHide {
+            UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
+                self.weeklyHost.alpha = 0
+            } completion: { _ in
+                self.weeklyHost.isHidden = true
+                self.weeklyHost.alpha = 1
+                self.view.setNeedsLayout()
+                UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
+                    self.view.layoutIfNeeded()
+                }
+            }
+            return
+        }
+        weeklyHost.isHidden = false
+        weeklyHost.alpha = 0
+        view.setNeedsLayout()
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
+            self.view.layoutIfNeeded()
+            self.weeklyHost.alpha = 1
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -185,6 +229,10 @@ final class UtilCardContentViewController: CardContentViewController {
             y: view.bounds.height - pasteHeight - UtilCardLayout.bottomPadding,
             width: width,
             height: pasteHeight)
+
+        // No live entry means no slot: the setup buttons (or the recent rows)
+        // move up into the space the row would have taken.
+        let weeklyVisible = !weeklyHost.isEmpty
 
         if let headline {
             // The setup actions keep the seat they had on the standalone intro:
@@ -220,7 +268,7 @@ final class UtilCardContentViewController: CardContentViewController {
                 width: width,
                 height: headline.height)
             let weeklyHeight = UtilCardLayout.weeklyRowHeight
-            saveOfTheWeek.frame = CGRect(
+            weeklyHost.frame = CGRect(
                 x: inset,
                 y: min(
                     headline.frame.maxY + UtilCardLayout.headlineToWeekly,
@@ -232,9 +280,9 @@ final class UtilCardContentViewController: CardContentViewController {
             return
         }
 
-        saveOfTheWeek.frame = CGRect(
+        weeklyHost.frame = CGRect(
             x: inset, y: 24, width: width, height: UtilCardLayout.weeklyRowHeight)
-        var nextY = saveOfTheWeek.frame.maxY + 10
+        var nextY = weeklyVisible ? weeklyHost.frame.maxY + 10 : 24
         let availableBottom = pasteRow.frame.minY - 12
         for row in recentRows {
             let fits = nextY + UtilCardLayout.recentRowHeight <= availableBottom
@@ -250,6 +298,7 @@ final class UtilCardContentViewController: CardContentViewController {
 
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
+        weeklyHost.cardDidBecomeCentered()
         guard let headline, !didSettleHeadline else { return }
         didSettleHeadline = true
         view.layoutIfNeeded()
@@ -271,6 +320,11 @@ final class UtilCardContentViewController: CardContentViewController {
                 }
             }
         }
+    }
+
+    override func cardDidLeaveCenter() {
+        super.cardDidLeaveCenter()
+        weeklyHost.cardDidLeaveCenter()
     }
 
     override func paste(itemProviders: [NSItemProvider]) {
@@ -314,35 +368,10 @@ final class UtilCardContentViewController: CardContentViewController {
 
     // MARK: - Save of the week
 
-    private func configureWeeklyRow() {
-        saveOfTheWeek.configure(weeklyPreview)
-        saveOfTheWeek.onTap = { [weak self, weak saveOfTheWeek] in
-            guard let self, let source = saveOfTheWeek else { return }
-            self.save(self.weeklyPreview.urlString, source: .manual, sourceView: source)
-        }
-        updateWeeklySavedState()
-    }
-
-    private func loadSaveOfTheWeekPreview() {
-        Task { @MainActor [weak self] in
-            guard let self,
-                  let preview = await RecentURLMatcher.evaluate(
-                    urlString: Self.saveOfTheWeekURLString,
-                    surface: .luna)
-            else { return }
-            weeklyPreview = preview
-            configureWeeklyRow()
-        }
-    }
-
-    /// The weekly recommendation may already be in the deck — the canonical URL
-    /// the row would save, or the bundled one it started from. Then it is shown
-    /// as answered rather than offered.
+    /// The weekly recommendation may already be in the deck. Then its row is
+    /// shown as answered rather than offered.
     private func updateWeeklySavedState() {
-        let saved = savedURLStrings()
-        saveOfTheWeek.setSaved(
-            saved.contains(weeklyPreview.urlString)
-                || saved.contains(Self.saveOfTheWeekURLString))
+        weeklyHost.updateSavedStates()
     }
 
     // MARK: - Setup actions
@@ -486,6 +515,10 @@ final class UtilCardContentViewController: CardContentViewController {
 final class UtilURLRow: UIControl {
     enum Style: Equatable { case saveOfTheWeek, recent }
 
+    /// Shared by the row, its glass rim, and the slot that clips a replacement
+    /// slide, so all three round by the same amount.
+    static let cornerRadius: CGFloat = 16
+
     private let style: Style
     private let thumbnail = UIImageView()
     private let savedOverlay = UIView()
@@ -505,7 +538,7 @@ final class UtilURLRow: UIControl {
             : "utilCard.recent"
         isAccessibilityElement = true
         backgroundColor = UIColor(white: 0.025, alpha: 1)
-        layer.cornerRadius = UtilURLRowGlassBorder.cornerRadius
+        layer.cornerRadius = Self.cornerRadius
         layer.cornerCurve = .continuous
         clipsToBounds = true
 
@@ -549,7 +582,9 @@ final class UtilURLRow: UIControl {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    func configure(_ preview: RecentURLPreview) {
+    /// - Parameter weeklyLabel: The "… of the week/month" phrase, which is per
+    ///   app and per age tier (`WeeklySaveLabels`). Ignored by history rows.
+    func configure(_ preview: RecentURLPreview, weeklyLabel: String? = nil) {
         previewKind = preview.kind
         thumbnail.image = preview.image ?? UIImage(
             systemName: preview.kind == .media ? "play.rectangle.fill"
@@ -557,11 +592,23 @@ final class UtilURLRow: UIControl {
         titleLabel.text = preview.title
         let host = URL(string: preview.urlString)?.host ?? preview.subtitle ?? preview.urlString
         subtitleLabel.text = style == .saveOfTheWeek
-            ? host + "  •  " + L10n.string("Save of the week")
+            ? host + "  •  " + (weeklyLabel ?? WeeklySaveLabels.subtitle(monthTier: false))
             : host
         accessibilityLabel = [titleLabel.text, subtitleLabel.text]
             .compactMap { $0 }
             .joined(separator: ", ")
+    }
+
+    /// How far the row's CONTENT trails its shell during a cycle slide. The
+    /// shell travels a full row width; the thumbnail and labels lag behind it
+    /// by this much, which is what gives the swap depth instead of reading as
+    /// one flat rectangle sliding.
+    func setContentParallax(_ translationX: CGFloat) {
+        let transform = CGAffineTransform(translationX: translationX, y: 0)
+        thumbnail.transform = transform
+        savedOverlay.transform = transform
+        titleLabel.transform = transform
+        subtitleLabel.transform = transform
     }
 
     /// This URL is already in the deck: the row dims and its artwork carries a
@@ -575,6 +622,19 @@ final class UtilURLRow: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Frames are meaningless under a transform, so the parallax offset is
+        // lifted off, the real geometry applied, and the offset put back.
+        let parallax = thumbnail.transform
+        thumbnail.transform = .identity
+        savedOverlay.transform = .identity
+        titleLabel.transform = .identity
+        subtitleLabel.transform = .identity
+        defer {
+            thumbnail.transform = parallax
+            savedOverlay.transform = parallax
+            titleLabel.transform = parallax
+            subtitleLabel.transform = parallax
+        }
         let imageSide = min(52, max(42, bounds.height - 22))
         thumbnail.frame = CGRect(
             x: 11,

@@ -36,20 +36,27 @@ The bottom paste row is always present. It is the real `UIPasteControl`-backed
 control authorizes it. A valid URL runs the surface host's normal ingest path;
 invalid input resolves in the row.
 
-The Save of the Week row is also permanent. For now its canonical URL is:
-
-`https://www.lewissociety.org/innerring/`
-
-It starts with a bundled title/host fallback, then uses
-`RecentURLMatcher.evaluate` to fetch the title and thumbnail/favicon. The row is
-black with the SAME Liquid Glass rim the deck's own cards wear —
+The Save of the Week row is CONDITIONAL: it exists whenever
+`WeeklySaveStore` holds a live signed entry for one of this app's kinds, and the
+card reclaims its slot when it doesn't. Its content is the signed, CloudKit-
+published weekly pick — see `claudedocs/save-of-the-week.md` for the record
+schema, the signing, the 9-day/30-day age rules and the deployment steps. The
+row is black with the SAME Liquid Glass rim the deck's own cards wear —
 `GlassStyle.barEffect()` under `GlassStyle.glassBorderColor`, no app-palette tint
 (`UtilURLRowGlassBorder`, shared with the recent rows and with the save
-transition's shell) — and formats its subtitle as `host • Save of the week`.
+transition's shell) — and its subtitle is `host • <noun> of the week`, where the
+noun is the app's own (Save / Read / Download / Deal) and switches to "of the
+month" at nine days.
 
-If the weekly URL (canonical or bundled) is already in the store, the row is
-shown dimmed with a translucent checkmark over its thumbnail — the favicon still
-reads through it — and reconciles on `.readingListChanged`.
+A new value REPLACING the one on screen runs a row-sized eclipse; a value
+appearing or vanishing is a fade plus a reflow. In the central Luna app, which
+is the only one with more than one kind, the row cycles between them every two
+seconds on an interruptible spring slide — swipe to take it over, and it stays
+manual until the card leaves centre or the app returns from the background.
+
+If the weekly URL is already in the store, the row is shown dimmed with a
+translucent checkmark over its thumbnail — the favicon still reads through it —
+and reconciles on `.readingListChanged`.
 
 Selecting the weekly row or a recent row calls the same full ingest path as any
 other in-app save. `UtilCardSaveTransition` owns the shared handoff: the source
@@ -66,7 +73,7 @@ for a media transfer — until the real content crossfades in.
 host is constructed. The card shows, top to bottom:
 
 1. the surface-specific two-beat intro headline;
-2. Save of the Week;
+2. Save of the Week, when there is one;
 3. Safari setup;
 4. Shortcut/Action Button setup on capable surfaces, or share setup on the
    fallback surfaces;
@@ -112,7 +119,7 @@ the host observes completion and constructs the completed variant.
 ## Completed state and recent URLs
 
 Once setup is complete, the headline and setup buttons are absent. Save of the
-Week moves to the top of the card. Beneath it the card adds as many matching,
+Week, when there is one, moves to the top of the card. Beneath it the card adds as many matching,
 unsaved recent Safari URLs as fit above the paste row; the card never scrolls.
 
 Recent rows use the same black layout as Save of the Week but a neutral Liquid
@@ -158,10 +165,12 @@ handled markers, and setup run evidence.
 
 ## Validation
 
-`UtilCardTests` pins both launch variants, the permanent paste/weekly controls,
-the exact weekly URL, the weekly row's save callback, the bottom-up order of the
+`UtilCardTests` pins both launch variants, the permanent paste control, the
+weekly row's conditional presence (and the reflow when it is absent), its
+per-app and per-age subtitle, its save callback, the bottom-up order of the
 setup block, the “or” rule in all four combinations, the launch-only headline
 sweep, the answered weekly row, and the save-completes-onboarding latch (older
-saves and a later delete both leave it alone). `CarouselScrubberUtilityChipTests`
+saves and a later delete both leave it alone). `WeeklyRowHostTests` covers the
+row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the
 permanent index-zero offset.

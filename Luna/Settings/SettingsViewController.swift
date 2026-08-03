@@ -10,6 +10,7 @@ import LunaDesignSystem
 import LunaStorage
 import LunaModels
 import LunaMailAccount
+import LunaWeekly
 import UIKit
 
 /// Shared helpers for the settings subpages.
@@ -65,6 +66,11 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
             SettingsCategory(title: L10n.string("Shortcut & Safari"), symbol: "safari") { ShortcutSettingsScreen() },
             SettingsCategory(title: L10n.string("Appearance"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
         ]
+        // The curator's proposal inbox. Settings is rebuilt on every visit, so
+        // pasting the key in diagnostics and coming back is enough to reveal it.
+        + (WeeklyPromotionKeyStore.isKeyHolder
+            ? [SettingsCategory(title: L10n.string("Save of the Week"), symbol: "crown") { WeeklyProposalsScreen() }]
+            : [])
 
     init(emailIsConfigured: @escaping () -> Bool = {
         EmailAccountStore.shared.isReady

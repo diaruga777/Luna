@@ -10,6 +10,7 @@ import LunaSocialUI
 import LunaMailAccount
 import LunaDesignSystem
 import LunaStorage
+import LunaWeekly
 import BackgroundTasks
 import UIKit
 import UserNotifications
@@ -87,6 +88,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             card.modalPresentationStyle = .fullScreen
             card.onDone = { [weak card] in card?.dismiss(animated: true) }
             presenter.present(card, animated: true)
+        }
+
+        // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
+        // the ingest pipeline, so the shell hands it the one metadata read the
+        // row needs. `.luna` deliberately — a faceted app must be able to render
+        // whichever kind it fetched, and it only ever fetches its own.
+        WeeklySaveRefresher.metadataFetcher = { urlString in
+            guard let preview = await RecentURLMatcher.evaluate(
+                urlString: urlString, surface: .luna)
+            else { return nil }
+            let host = URL(string: preview.urlString)?.host
+                ?? preview.subtitle ?? preview.urlString
+            return (title: preview.title, host: host, imageData: preview.imageData)
         }
 
         // Diagnostics export header shows the connected email account (which lives
@@ -195,6 +209,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 self?.schedulePriceRefresh(reason: "launch")
                 self?.refreshOverduePriceTrackersOnLaunch()
+            }
+        }
+        // Off the launch frame too: the weekly pull is network work whose only
+        // consumer is a card the user hasn't reached yet.
+        DispatchQueue.global(qos: .utility).async {
+            Task { @MainActor in
+                await WeeklySaveRefresher.shared.refreshWeeklySaves()
+                await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
             }
         }
         return true

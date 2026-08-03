@@ -16,6 +16,7 @@ import LunaDesignSystem
 import LunaStorage
 import LunaURLClassification
 import LunaTransitions
+import LunaWeekly
 import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -195,6 +196,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // download resume (media apps), pending-send retry + link-preload
         // resume (article apps).
         KindWiring.sceneDidForeground()
+        // The weekly pick may have changed while we were away (debounced to at
+        // most one pull a minute inside the refresher).
+        Task { @MainActor in
+            await WeeklySaveRefresher.shared.refreshWeeklySaves()
+            await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
+        }
         // A notification tapped while the app was backgrounded.
         applyPendingNotificationRoute()
     }

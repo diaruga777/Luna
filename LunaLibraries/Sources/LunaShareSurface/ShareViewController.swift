@@ -839,7 +839,8 @@ extension ShareViewController: ExtensionHost {
                 navigationController.setViewControllers([viewController], animated: false)
                 return
             }
-            let navigationController = UINavigationController(rootViewController: viewController)
+            let navigationController = ExtensionNavigationController(
+                rootViewController: viewController)
             navigationController.view.translatesAutoresizingMaskIntoConstraints = false
             addChild(navigationController)
             view.addSubview(navigationController.view)
@@ -853,7 +854,7 @@ extension ShareViewController: ExtensionHost {
             actionNavigationController = navigationController
             return
         }
-        let nav = UINavigationController(rootViewController: viewController)
+        let nav = ExtensionNavigationController(rootViewController: viewController)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)
     }

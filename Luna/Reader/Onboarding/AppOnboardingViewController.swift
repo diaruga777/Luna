@@ -1332,10 +1332,17 @@ final class AppOnboardingViewController: UIViewController {
         outcome: OnboardingSetupOutcome
     ) {
         guard didExpandSafari, !isFinishing else { return }
-        if source == .messages {
+        switch source {
+        case .safari:
+            onboardingStore.markSafariSetupHandled()
+        case .messages:
             onboardingStore.markSaveSetupHandled()
         }
         if setupReplaySource != nil {
+            if onboardingStore.hasFinishedSafariSetup,
+               onboardingStore.hasFinishedSaveSetup {
+                onboardingStore.markCompleted()
+            }
             finishSetupReplayViaAppSwitcher()
             return
         }

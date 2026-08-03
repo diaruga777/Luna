@@ -13,15 +13,11 @@ import LunaURLClassification
 import UIKit
 
 /// Luna Price Tracker's root deck. It deliberately uses the same carousel,
-/// miniature carousel, and mirrored arc trays as Reader and Downloader; only
+/// miniature carousel, and archive arc as Reader and Downloader; only
 /// the card's content model differs.
 final class PriceTrackerCardsViewController: CardCarouselHostViewController {
 
     private let store = ReadingListStore.shared
-    private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
-        symbol: "tag",
-        title: L10n.string("No Tracked Products"),
-        subtitle: L10n.string("Paste or share a product page to start tracking its price."))
     private let settingsButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
 
@@ -50,16 +46,6 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         carousel.delegate = self
         mountCarousel()
 
-        emptyView.translatesAutoresizingMaskIntoConstraints = false
-        emptyView.isHidden = true
-        view.addSubview(emptyView)
-        NSLayoutConstraint.activate([
-            emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            emptyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            emptyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            emptyView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
             accessibilityLabel: L10n.string("Settings"))
@@ -71,25 +57,13 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         mountArchiveTray(
             shifting: { [weak self] in
                 guard let self else { return [] }
-                return [self.carousel.view, self.emptyView]
+                return [self.carousel.view]
             },
             canPull: { [weak self] in
                 guard let self else { return false }
-                return self.items.isEmpty || self.carousel.currentIndex == self.items.count - 1
+                return self.items.isEmpty
+                    || self.carousel.currentIndex == self.items.count + self.cardOffset - 1
             })
-        mountLeftTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view, self.emptyView]
-            },
-            canPull: { [weak self] in
-                guard let self else { return false }
-                return self.items.isEmpty || self.carousel.currentIndex == 0
-            },
-            savedURL: { [weak self] url, source, sourceView in
-                self?.saveLeftTrayURL(url, source: source, sourceView: sourceView)
-            })
-
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
         NotificationCenter.default.addObserver(
@@ -131,8 +105,9 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         hasAppliedSnapshot = true
         appliedFingerprint = fingerprint
 
-        let oldCenteredID = items.indices.contains(carousel.currentIndex)
-            ? items[carousel.currentIndex].id : nil
+        let oldCenteredID = itemIndex(
+            forCarouselIndex: carousel.currentIndex,
+            itemCount: items.count).map { items[$0].id }
         items = active
         archivedItems = archived
         let centeredID = pendingCenteredID ?? oldCenteredID
@@ -142,19 +117,20 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         let newSaveIndex = newSaveItemIndex(
             cardIDs: items.map(\.id), offstageIDs: Set(archivedItems.map(\.id)))
         let centeredIndex = newSaveIndex
-            ?? centeredID.flatMap { id in items.firstIndex { $0.id == id } }
-            ?? min(carousel.currentIndex, max(items.count - 1, 0))
+            .map { $0 + cardOffset }
+            ?? centeredID.flatMap { id in
+                items.firstIndex { $0.id == id }.map { $0 + cardOffset }
+            }
+            ?? (items.isEmpty ? utilCardIndex : cardOffset)
 
         carousel.reloadData(centeringAt: centeredIndex)
-        if let pendingURL = pendingLeftTraySaveURLString,
+        if let pendingURL = pendingUtilCardSaveURLString,
            let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
-            prepareLeftTraySaveDestination(carousel.cardView(at: index))
+            prepareUtilCardSaveDestination(carousel.cardView(at: index + cardOffset))
         }
-        emptyView.isHidden = !items.isEmpty
-        carousel.view.isHidden = items.isEmpty
+        carousel.view.isHidden = false
         archiveTray?.setItems(makeArchiveTrayItems())
         refreshArchivePullAvailability(animated: false)
-        refreshLeftPullAvailability(animated: false)
         updateShareButton()
     }
 
@@ -180,10 +156,13 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         ].joined(separator: "|")
     }
 
-    private func saveLeftTrayURL(
-        _ urlString: String, source: CaptureSource, sourceView: UIView
+    private func saveUtilCardURL(
+        _ urlString: String,
+        source: CaptureSource,
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void
     ) {
-        beginLeftTraySaveTransition(for: urlString, from: sourceView)
+        beginUtilCardSaveTransition(for: urlString, from: sourceView)
         Task { @MainActor [weak self] in
             let result = await ReadingListIngestor.shared.handleSavePress(
                 urlString: urlString, source: source)
@@ -202,15 +181,18 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
                 item = nil
             }
             guard let item else {
-                self.cancelLeftTraySaveTransition()
+                self.cancelUtilCardSaveTransition()
+                completion(false)
                 return
             }
             self.pendingCenteredID = item.id
             self.reload()
             self.view.layoutIfNeeded()
             let destinationIndex = self.items.firstIndex { $0.id == item.id }
-            self.finishLeftTraySaveTransition(
+                .map { $0 + self.cardOffset }
+            self.finishUtilCardSaveTransition(
                 to: destinationIndex.flatMap(self.carousel.cardView(at:)))
+            completion(destinationIndex != nil)
         }
     }
 
@@ -251,9 +233,12 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
     // MARK: - Sharing and images
 
     @objc private func shareCurrent() {
-        guard items.indices.contains(carousel.currentIndex) else { return }
+        guard let index = itemIndex(
+            forCarouselIndex: carousel.currentIndex,
+            itemCount: items.count)
+        else { return }
         share(
-            items[carousel.currentIndex],
+            items[index],
             sourceView: carousel.cardView(at: carousel.currentIndex) ?? shareButton)
     }
 
@@ -269,7 +254,9 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
     }
 
     private func updateShareButton() {
-        shareButton.isEnabled = items.indices.contains(carousel.currentIndex)
+        shareButton.isEnabled = itemIndex(
+            forCarouselIndex: carousel.currentIndex,
+            itemCount: items.count) != nil
     }
 
     private func loadProductImage(
@@ -303,15 +290,27 @@ extension PriceTrackerCardsViewController: AppLaunchTransitionTarget {
 
 extension PriceTrackerCardsViewController: CardCarouselDataSource {
     func numberOfCards(in carousel: CardCarouselViewController) -> Int {
-        items.count
+        items.count + cardOffset
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
-        guard items.indices.contains(index) else { return CardContentViewController() }
-        return PriceTrackerCardContentViewController(itemID: items[index].id)
+        if isUtilCard(index) {
+            return makeUtilCardContentController { [weak self] url, source, sourceView, completion in
+                self?.saveUtilCardURL(
+                    url,
+                    source: source,
+                    sourceView: sourceView,
+                    completion: completion)
+            }
+        }
+        guard let itemIndex = itemIndex(
+            forCarouselIndex: index,
+            itemCount: items.count)
+        else { return CardContentViewController() }
+        return PriceTrackerCardContentViewController(itemID: items[itemIndex].id)
     }
 
     func carousel(
@@ -326,15 +325,27 @@ extension PriceTrackerCardsViewController: CardCarouselDataSource {
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
-        guard items.indices.contains(index) else { completion(nil); return }
-        loadProductImage(for: items[index], completion: completion)
+        if isUtilCard(index) {
+            loadUtilCardThumbnail(completion: completion)
+            return
+        }
+        guard let itemIndex = itemIndex(
+            forCarouselIndex: index,
+            itemCount: items.count)
+        else { completion(nil); return }
+        loadProductImage(for: items[itemIndex], completion: completion)
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String? {
-        items.indices.contains(index) ? items[index].priceTracker?.productName : nil
+        if isUtilCard(index) { return LunaApp.current.displayName }
+        guard let itemIndex = itemIndex(
+            forCarouselIndex: index,
+            itemCount: items.count)
+        else { return nil }
+        return items[itemIndex].priceTracker?.productName
     }
 
     func carousel(
@@ -342,6 +353,10 @@ extension PriceTrackerCardsViewController: CardCarouselDataSource {
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
+        if isUtilCard(index) {
+            completion(nil)
+            return
+        }
         completion(.symbol("tag.fill"))
     }
 
@@ -357,7 +372,7 @@ extension PriceTrackerCardsViewController: CardCarouselDataSource {
         loadMiniCarouselAccessoryForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
-        completion(PriceTrackerTagIcon.image(size: 22))
+        completion(isUtilCard(index) ? nil : PriceTrackerTagIcon.image(size: 22))
     }
 }
 
@@ -368,27 +383,33 @@ extension PriceTrackerCardsViewController: CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         navigationTargetDidChangeTo index: Int
     ) {
-        if index != 0 { leftTray?.setPullAvailable(false, animated: true) }
         updateArchivePullAvailability(
-            forTargetIndex: index, cardCount: items.count, animated: true)
+            forTargetIndex: index,
+            cardCount: items.count + cardOffset,
+            animated: true)
     }
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        refreshLeftPullAvailability(animated: true)
         refreshArchivePullAvailability(animated: true)
         updateShareButton()
-        guard items.indices.contains(index), var tracker = items[index].priceTracker,
+        guard let itemIndex = itemIndex(
+                forCarouselIndex: index,
+                itemCount: items.count),
+              var tracker = items[itemIndex].priceTracker,
               tracker.hasUnviewedAlert else { return }
         tracker.markAlertViewed()
-        store.updatePriceTracker(tracker, for: items[index].id)
+        store.updatePriceTracker(tracker, for: items[itemIndex].id)
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         menuForCardAt index: Int
     ) -> UIMenu? {
-        guard items.indices.contains(index) else { return nil }
-        let item = items[index]
+        guard let itemIndex = itemIndex(
+            forCarouselIndex: index,
+            itemCount: items.count)
+        else { return nil }
+        let item = items[itemIndex]
         return UIMenu(children: [
             UIAction(
                 title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
@@ -472,7 +493,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
     }
 
     private func configureHeader() {
-        thumbnailView.accessibilityIdentifier = LeftTraySaveTransitionAnchor.thumbnail
+        thumbnailView.accessibilityIdentifier = UtilCardSaveTransitionAnchor.thumbnail
         thumbnailView.contentMode = .scaleAspectFill
         thumbnailView.clipsToBounds = true
         thumbnailView.layer.cornerRadius = 12
@@ -484,7 +505,7 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             thumbnailView.heightAnchor.constraint(equalToConstant: 64),
         ])
 
-        titleLabel.accessibilityIdentifier = LeftTraySaveTransitionAnchor.title
+        titleLabel.accessibilityIdentifier = UtilCardSaveTransitionAnchor.title
         titleLabel.font = .preferredFont(forTextStyle: .title3)
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = LunaColors.primaryText

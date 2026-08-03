@@ -117,7 +117,7 @@ final class NewSaveCenteringTests: XCTestCase {
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
 
         XCTAssertEqual(
-            deck.carousel.currentIndex, 0,
+            deck.carousel.currentIndex, 1,
             "a save made outside the app takes the center from the card the user was on")
         _ = window
     }
@@ -144,7 +144,7 @@ final class NewSaveCenteringTests: XCTestCase {
         NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
 
         XCTAssertEqual(
-            deck.carousel.currentIndex, 0,
+            deck.carousel.currentIndex, 1,
             "foregrounding must center the item saved while the app was suspended")
         _ = window
     }
@@ -193,7 +193,7 @@ final class NewSaveCenteringTests: XCTestCase {
             items: [tracked] + seeded, contents: [:])
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
 
-        XCTAssertEqual(deck.carousel.currentIndex, 0)
+        XCTAssertEqual(deck.carousel.currentIndex, 1)
         _ = window
     }
 

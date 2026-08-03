@@ -27,21 +27,21 @@ final class PriceTrackingScreenTests: XCTestCase {
 
     // MARK: - Price Tracker card root
 
-    func testPriceTrackerRootUsesSharedCarouselAndArcTrays() {
+    func testPriceTrackerRootUsesSharedCarouselUtilCardAndArchiveTray() {
         UITestSupport.seedSharedStore(.priceTracking)
         let deck = PriceTrackerCardsViewController()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
-        XCTAssertEqual(deck.carousel.dataSource?.numberOfCards(in: deck.carousel), 3)
+        XCTAssertEqual(deck.carousel.dataSource?.numberOfCards(in: deck.carousel), 4)
         if case .miniCards = deck.carousel.style.scrubberStyle {
             // expected
         } else {
             XCTFail("Price Tracker should use the same mini-card scrubber as Reader")
         }
-        XCTAssertNotNil(deck.leftTray)
+        XCTAssertTrue(deck.carousel.contentController(at: 0) is UtilCardContentViewController)
         XCTAssertNotNil(deck.archiveTray)
-        XCTAssertNotNil(deck.carousel.contentController(at: 0))
+        XCTAssertNotNil(deck.carousel.contentController(at: 1))
         _ = window
     }
 
@@ -53,7 +53,7 @@ final class PriceTrackingScreenTests: XCTestCase {
 
         // Pending Keyboard is newest: it has no history points but still owns
         // the graph and its editable absolute threshold.
-        guard let content = deck.carousel.contentController(at: 0),
+        guard let content = deck.carousel.contentController(at: 1),
               let graph = findSubview(of: PriceGraphView.self, in: content.view),
               let threshold = findButton(accessibilityLabel: "Alert threshold", in: graph)
         else {

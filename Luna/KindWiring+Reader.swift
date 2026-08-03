@@ -114,9 +114,6 @@ enum KindWiring {
         SendToFriendSheet.accountSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
-        LeftTrayController.emailRecoveryLauncher = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
     }
 
     // MARK: - Root UI shape
@@ -125,11 +122,7 @@ enum KindWiring {
     /// host (read-aloud is a Reader feature; the bar floats above the bottom
     /// safe area, survives every push/pop, and hides while idle).
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = AppOnboardingStore.shared.isCompleted
-            ? ArticleCardsViewController()
-            : AppOnboardingViewController(
-                completion: AppOnboardingCompletion(
-                    makeCompletedRootViewController: makeCompletedRootViewController))
+        let content: UIViewController = ArticleCardsViewController()
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
     }

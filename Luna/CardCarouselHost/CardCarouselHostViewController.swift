@@ -31,9 +31,7 @@ enum PasteboardCommitPolicy {
     }
 }
 
-/// Owns one edge tray's horizontal contribution to views shared by both trays.
-/// Each tray adjusts only the delta from its previous value, so applying a
-/// closed tray's zero contribution cannot erase the opposite tray's open shift.
+/// Owns the archive tray's horizontal contribution to the card deck.
 final class TrayShiftContribution {
     private let shiftedViews: () -> [UIView]
     private var appliedShiftByView: [ObjectIdentifier: CGFloat] = [:]
@@ -63,12 +61,12 @@ final class TrayShiftContribution {
     }
 }
 
-/// The parts of a recent-link row that keep their identity while its empty card
-/// shell grows. `LeftTrayCell` supplies real UIKit copies rather than one flat
+/// The parts of a util URL row that keep their identity while its empty card
+/// shell grows. The source supplies real UIKit copies rather than one flat
 /// snapshot, so the favicon and label can move without being scaled to the
 /// destination card's height.
 @MainActor
-struct LeftTraySaveTransitionArtwork {
+struct UtilCardSaveTransitionArtwork {
     let kind: RecentURLPreview.Kind
     let sourceFrame: CGRect
     let backgroundColor: UIColor
@@ -79,20 +77,20 @@ struct LeftTraySaveTransitionArtwork {
 }
 
 @MainActor
-protocol LeftTraySaveTransitionArtworkProviding: AnyObject {
-    func makeLeftTraySaveTransitionArtwork(in coordinateView: UIView)
-        -> LeftTraySaveTransitionArtwork?
+protocol UtilCardSaveTransitionArtworkProviding: AnyObject {
+    func makeUtilCardSaveTransitionArtwork(in coordinateView: UIView)
+        -> UtilCardSaveTransitionArtwork?
 }
 
 /// Stable identifiers let the handoff settle onto the destination's exact
 /// header geometry without coupling this shared host to Reader or Price Tracker
 /// private view-controller types.
-enum LeftTraySaveTransitionAnchor {
-    static let thumbnail = "leftTraySaveTransition.destinationThumbnail"
-    static let title = "leftTraySaveTransition.destinationTitle"
+enum UtilCardSaveTransitionAnchor {
+    static let thumbnail = "utilCardSaveTransition.destinationThumbnail"
+    static let title = "utilCardSaveTransition.destinationTitle"
 }
 
-struct LeftTraySaveTransitionGeometry {
+struct UtilCardSaveTransitionGeometry {
     let thumbnail: CGRect
     let title: CGRect
 
@@ -129,18 +127,18 @@ struct LeftTraySaveTransitionGeometry {
     }
 }
 
-/// One continuous handoff between a left-tray recent and its saved carousel
+/// One continuous handoff between a util-card URL row and its saved carousel
 /// card. Only the recent's empty shell expands to the full card frame. Its
 /// favicon and title travel independently into the normal header geometry;
 /// after ingest mounts the real card, that artwork is replaced by a crossfade.
 /// Pasteboard artwork has a bespoke physical layout and retains the older flat
 /// snapshot fallback.
 @MainActor
-private final class LeftTraySaveTransition {
+private final class UtilCardSaveTransition {
     let urlString: String
     private weak var host: CardCarouselHostViewController?
     private let sourceSnapshot: UIView
-    private let artwork: LeftTraySaveTransitionArtwork?
+    private let artwork: UtilCardSaveTransitionArtwork?
     private var movementAnimator: UIViewPropertyAnimator?
     private weak var destination: UIView?
     private var destinationSnapshot: UIView?
@@ -151,8 +149,8 @@ private final class LeftTraySaveTransition {
     init?(host: CardCarouselHostViewController, urlString: String, sourceView: UIView) {
         self.urlString = urlString
         self.host = host
-        if let provider = sourceView as? LeftTraySaveTransitionArtworkProviding,
-           let artwork = provider.makeLeftTraySaveTransitionArtwork(in: host.view) {
+        if let provider = sourceView as? UtilCardSaveTransitionArtworkProviding,
+           let artwork = provider.makeUtilCardSaveTransitionArtwork(in: host.view) {
             self.artwork = artwork
             let shell = UIView(frame: artwork.sourceFrame)
             shell.backgroundColor = artwork.backgroundColor
@@ -178,10 +176,8 @@ private final class LeftTraySaveTransition {
             host.view.addSubview(snapshot)
         }
 
-        // `LeftTrayController.save` invokes the host callback before it changes
-        // the tray's model transform to closed. Defer one turn so this target is
-        // the card's final, unshifted resting frame while the source frame above
-        // remains the exact on-screen cell that was tapped.
+        // Defer one turn so the target uses the card's final resting frame while
+        // the source frame above remains the exact on-screen row that was tapped.
         DispatchQueue.main.async { [weak self] in self?.beginMovement() }
     }
 
@@ -341,7 +337,7 @@ private final class LeftTraySaveTransition {
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
             if let artwork = self.artwork {
-                let target = LeftTraySaveTransitionGeometry.fallback(
+                let target = UtilCardSaveTransitionGeometry.fallback(
                     in: targetFrame, kind: artwork.kind,
                     sourceTitleHeight: artwork.title.bounds.height)
                 artwork.thumbnail.frame = target.thumbnail
@@ -373,20 +369,20 @@ private final class LeftTraySaveTransition {
     }
 
     private func targetArtworkGeometry(
-        for artwork: LeftTraySaveTransitionArtwork,
+        for artwork: UtilCardSaveTransitionArtwork,
         cardFrame: CGRect,
         destination: UIView
-    ) -> LeftTraySaveTransitionGeometry {
-        let fallback = LeftTraySaveTransitionGeometry.fallback(
+    ) -> UtilCardSaveTransitionGeometry {
+        let fallback = UtilCardSaveTransitionGeometry.fallback(
             in: cardFrame, kind: artwork.kind,
             sourceTitleHeight: artwork.title.bounds.height)
         let thumbnail = destination.firstDescendant(
-            accessibilityIdentifier: LeftTraySaveTransitionAnchor.thumbnail)
+            accessibilityIdentifier: UtilCardSaveTransitionAnchor.thumbnail)
             .map { $0.convert($0.bounds, to: host?.view) }
         let title = destination.firstDescendant(
-            accessibilityIdentifier: LeftTraySaveTransitionAnchor.title)
+            accessibilityIdentifier: UtilCardSaveTransitionAnchor.title)
             .map { $0.convert($0.bounds, to: host?.view) }
-        return LeftTraySaveTransitionGeometry(
+        return UtilCardSaveTransitionGeometry(
             thumbnail: thumbnail ?? fallback.thumbnail,
             title: title ?? fallback.title)
     }
@@ -415,20 +411,33 @@ private extension UIView {
     }
 }
 
-/// The shared skeleton behind Reader's and Downloader's root screens: both
-/// present one `CardCarouselViewController` full-screen, flank its scrub strip
-/// with two persistent Liquid Glass circles (Settings + a share/action button),
-/// and attach mirrored edge trays (setup/paste/recent on the left, archive on
-/// the right). This base owns the carousel instance and the chrome/index-math
-/// pieces that are byte-identical between the two hosts; each subclass keeps
-/// its own item model, data source/delegate conformance, and store reload
-/// orchestration.
+/// The shared skeleton behind the root card decks. Every deck begins with the
+/// permanent util card, then its saved items, and may expose the archive tray
+/// beyond its final save. This base owns the carousel instance and the shared
+/// chrome/index math; subclasses keep their item models and store plumbing.
 class CardCarouselHostViewController: UIViewController {
 
     let carousel = CardCarouselViewController()
     private(set) var archiveTray: ArchiveTrayController?
-    private(set) var leftTray: LeftTrayController?
-    private var leftTraySaveTransition: LeftTraySaveTransition?
+    private var utilCardSaveTransition: UtilCardSaveTransition?
+    private let utilCardShowsOnboardingAtLaunch =
+        !AppOnboardingStore.shared.isCompleted
+
+    final var utilCardIndex: Int { 0 }
+
+    final func isUtilCard(_ index: Int) -> Bool { index == utilCardIndex }
+
+    final func makeUtilCardContentController(
+        saveHandler: @escaping UtilCardContentViewController.SaveHandler
+    ) -> CardContentViewController {
+        UtilCardContentViewController(
+            showsOnboarding: utilCardShowsOnboardingAtLaunch,
+            saveHandler: saveHandler)
+    }
+
+    final func loadUtilCardThumbnail(completion: @escaping (UIImage?) -> Void) {
+        completion(OnboardingActionExtensionIcon.image() ?? OnboardingAppIcon.image())
+    }
 
     /// Adds the already-configured `carousel` (style/dataSource/delegate are the
     /// subclass's business, set before calling this) as a full-screen child,
@@ -458,59 +467,43 @@ class CardCarouselHostViewController: UIViewController {
             openStateChanged: openStateChanged)
     }
 
-    final func mountLeftTray(
-        shifting views: @escaping () -> [UIView],
-        canPull: @escaping () -> Bool,
-        savedURL: @escaping (String, CaptureSource, UIView) -> Void,
-        openStateChanged: @escaping (Bool) -> Void = { _ in }
-    ) {
-        leftTray = LeftTrayController(
-            host: self, shiftedViews: views, canPull: canPull,
-            savedURL: savedURL,
-            openStateChanged: openStateChanged)
-    }
-
     final func refreshArchivePullAvailability(animated: Bool) {
         archiveTray?.refreshPullAvailability(animated: animated)
     }
 
-    final func refreshLeftPullAvailability(animated: Bool) {
-        leftTray?.refreshPullAvailability(animated: animated)
-    }
-
-    /// Captures the tapped tray cell before the tray starts retracting. Surface
+    /// Captures the tapped util-card row before ingest starts. Surface
     /// hosts finish or cancel this after their normal ingest path resolves.
-    final var pendingLeftTraySaveURLString: String? {
-        leftTraySaveTransition?.urlString
+    final var pendingUtilCardSaveURLString: String? {
+        utilCardSaveTransition?.urlString
     }
 
-    final func beginLeftTraySaveTransition(
+    final func beginUtilCardSaveTransition(
         for urlString: String, from sourceView: UIView
     ) {
-        leftTraySaveTransition?.cancel()
-        guard let transition = LeftTraySaveTransition(
+        utilCardSaveTransition?.cancel()
+        guard let transition = UtilCardSaveTransition(
             host: self, urlString: urlString, sourceView: sourceView)
         else {
-            leftTraySaveTransition = nil
+            utilCardSaveTransition = nil
             return
         }
         transition.completion = { [weak self, weak transition] in
-            guard let self, self.leftTraySaveTransition === transition else { return }
-            self.leftTraySaveTransition = nil
+            guard let self, self.utilCardSaveTransition === transition else { return }
+            self.utilCardSaveTransition = nil
         }
-        leftTraySaveTransition = transition
+        utilCardSaveTransition = transition
     }
 
-    final func prepareLeftTraySaveDestination(_ destination: UIView?) {
-        leftTraySaveTransition?.prepare(destination: destination)
+    final func prepareUtilCardSaveDestination(_ destination: UIView?) {
+        utilCardSaveTransition?.prepare(destination: destination)
     }
 
-    final func finishLeftTraySaveTransition(to destination: UIView?) {
-        leftTraySaveTransition?.finish(to: destination)
+    final func finishUtilCardSaveTransition(to destination: UIView?) {
+        utilCardSaveTransition?.finish(to: destination)
     }
 
-    final func cancelLeftTraySaveTransition() {
-        leftTraySaveTransition?.cancel()
+    final func cancelUtilCardSaveTransition() {
+        utilCardSaveTransition?.cancel()
     }
 
     /// Retracts the tray from the carousel's intended target rather than its
@@ -537,14 +530,6 @@ class CardCarouselHostViewController: UIViewController {
         // it belongs here instead — on the base class every app's root inherits,
         // rather than on one deck.
         NotificationManager.clearShareNotifications()
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-openLeftTray") {
-            DispatchQueue.main.async { [weak self] in
-                self?.refreshLeftPullAvailability(animated: false)
-                self?.leftTray?.setOpenForTesting(true)
-            }
-        }
-        #endif
     }
 
     override func viewDidLayoutSubviews() {
@@ -554,7 +539,6 @@ class CardCarouselHostViewController: UIViewController {
         carousel.view.layoutIfNeeded()
         alignBottomControlsToCardColumn()
         archiveTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
-        leftTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
     }
 
     /// Cards rest fully below the safe area; `inset` adds any extra chrome-row
@@ -635,14 +619,11 @@ class CardCarouselHostViewController: UIViewController {
         trailingConstraint.constant = trailing
     }
 
-    // MARK: - Pasteboard-offset index math
+    // MARK: - Util-card index math
 
-    /// Whether a synthetic pasteboard card is currently prepended to the
-    /// carousel, shifting every real item's carousel index by one. Subclasses
-    /// override to reflect their own pasteboard state.
-    var hasLeadingPasteboardCard: Bool { false }
-
-    final var cardOffset: Int { hasLeadingPasteboardCard ? 1 : 0 }
+    /// The util card permanently occupies index zero, shifting every saved
+    /// item one position to the right.
+    final var cardOffset: Int { 1 }
 
     final func itemIndex(forCarouselIndex index: Int, itemCount: Int) -> Int? {
         let itemIndex = index - cardOffset
@@ -667,7 +648,7 @@ class CardCarouselHostViewController: UIViewController {
     /// against the previous snapshot: whatever is new arrived since, however it
     /// got here, and the deck moves to it.
     ///
-    /// `cardIDs` is the deck's card order minus any leading pasteboard card, so
+    /// `cardIDs` is the saved-item portion of the deck, so
     /// the result is an ITEM index — add `cardOffset` before centering.
     /// `offstageIDs` are ids the deck knows but doesn't show (archived rows):
     /// counting them as seen keeps unarchiving one from reading as a new save.
@@ -681,43 +662,6 @@ class CardCarouselHostViewController: UIViewController {
         }
         guard hasSeenASnapshot else { return nil }
         return cardIDs.firstIndex { !seenItemIDs.contains($0) }
-    }
-
-    // MARK: - Empty state
-
-    /// The image + title + subtitle stack both hosts use for "nothing saved
-    /// yet" — identical layout, subclass-supplied glyph and copy.
-    static func makeEmptyStateView(symbol: String, title: String, subtitle: String) -> UIView {
-        let container = UIView()
-        let image = UIImageView(image: UIImage(systemName: symbol))
-        image.tintColor = LunaColors.tertiaryText
-        image.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 44, weight: .regular)
-        let titleLabel = UILabel()
-        titleLabel.text = title
-        titleLabel.font = .preferredFont(forTextStyle: .title3)
-        titleLabel.textColor = LunaColors.primaryText
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = subtitle
-        subtitleLabel.font = .preferredFont(forTextStyle: .subheadline)
-        subtitleLabel.textColor = LunaColors.secondaryText
-        subtitleLabel.textAlignment = .center
-        subtitleLabel.numberOfLines = 0
-        let stack = UIStackView(arrangedSubviews: [image, titleLabel, subtitleLabel])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -32),
-            // One long line of explanatory copy across an iPad reads as a banner,
-            // not a sentence.
-            stack.widthAnchor.constraint(lessThanOrEqualToConstant: LunaLayout.readableWidth),
-        ])
-        return container
     }
 
     // MARK: - Settings

@@ -10,7 +10,7 @@ import UIKit
 
 /// A muted setup guide that moves into Picture in Picture while the user is in
 /// Safari or Settings. The clips are the former onboarding guides, now owned by
-/// the left tray rather than a first-launch flow.
+/// the util card or Settings rather than a standalone first-launch root.
 @MainActor
 final class SetupGuideVideo: NSObject {
     enum Guide {

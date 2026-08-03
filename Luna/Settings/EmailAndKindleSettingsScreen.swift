@@ -342,7 +342,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     /// The sign-in form's first row, matching the rounded field card in the
-    /// left-tray email setup.
+    /// former tray email setup.
     private func addressEntryCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none

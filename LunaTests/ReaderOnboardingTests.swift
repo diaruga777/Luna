@@ -27,13 +27,19 @@ final class ReaderOnboardingTests: XCTestCase {
         reader.markCompleted()
         XCTAssertTrue(reader.isCompleted)
         XCTAssertFalse(downloader.isCompleted)
+        reader.resetCompletion()
 
         reader.markSaveSetupHandled()
         XCTAssertTrue(reader.hasHandledSaveSetup)
         XCTAssertFalse(downloader.hasHandledSaveSetup)
+        XCTAssertFalse(reader.isCompleted)
+        reader.markSafariSetupHandled()
+        XCTAssertTrue(reader.hasHandledSafariSetup)
+        XCTAssertTrue(reader.isCompleted)
         reader.resetCompletion()
         XCTAssertFalse(reader.isCompleted)
         XCTAssertFalse(reader.hasHandledSaveSetup)
+        XCTAssertFalse(reader.hasHandledSafariSetup)
     }
 
     func testCentralSetupEvidenceSkipsOnlyANewFacetedAppsOnboarding() {
@@ -53,87 +59,6 @@ final class ReaderOnboardingTests: XCTestCase {
         defaults.set(true, forKey: LunaSetupStatusStore.centralSafariKey)
         XCTAssertTrue(facet.isCompleted)
         XCTAssertFalse(central.isCompleted)
-    }
-
-    func testShortcutTrayVisibilityRequiresEveryCapabilityAndPendingState() {
-        XCTAssertTrue(LeftTraySetupVisibility.showsShortcut(
-            saveSetupMode: .actionButtonShortcut,
-            setupFlowHandled: false,
-            shortcutHasRun: false))
-        XCTAssertFalse(LeftTraySetupVisibility.showsShortcut(
-            saveSetupMode: .shareSheet,
-            setupFlowHandled: false,
-            shortcutHasRun: false))
-        XCTAssertFalse(LeftTraySetupVisibility.showsShortcut(
-            saveSetupMode: .actionButtonShortcut,
-            setupFlowHandled: true,
-            shortcutHasRun: false))
-        XCTAssertFalse(LeftTraySetupVisibility.showsShortcut(
-            saveSetupMode: .actionButtonShortcut,
-            setupFlowHandled: false,
-            shortcutHasRun: true))
-    }
-
-    @MainActor
-    func testCompactTraySetupObjectsUseTheRequestedVisualLanguage() throws {
-        let tint = UIColor.systemPurple
-        let visual = LeftTraySetupVisualView(frame: CGRect(x: 0, y: 0, width: 299, height: 54))
-
-        visual.configure(kind: .shortcut, emailNeedsAttention: false, tint: tint)
-        visual.layoutIfNeeded()
-        let bubble = try XCTUnwrap(visual.messageBubble)
-        XCTAssertTrue(type(of: bubble) == OnboardingMessageTextBubble.self)
-        XCTAssertEqual(bubble.backgroundColor, OnboardingMessageBubble.incomingGray)
-        XCTAssertEqual(bubble.layer.cornerRadius, 18)
-        XCTAssertEqual(
-            bubble.descendants(of: UILabel.self).first?.text,
-            "Show me one click save")
-
-        visual.configure(kind: .email, emailNeedsAttention: false, tint: tint)
-        visual.layoutIfNeeded()
-        XCTAssertNotNil(visual.viewWithAccessibilityIdentifier(
-            "leftTray.setup.emailEnvelope"))
-        let emailAttention = try XCTUnwrap(visual.viewWithAccessibilityIdentifier(
-            "leftTray.setup.emailAttention"))
-        XCTAssertNotNil(emailAttention.layer.animation(forKey: "leftTrayAttentionPulse"))
-        XCTAssertTrue(visual.descendants(of: UILabel.self).isEmpty)
-
-        visual.configure(kind: .safari, emailNeedsAttention: false, tint: tint)
-        visual.layoutIfNeeded()
-        XCTAssertNotNil(visual.viewWithAccessibilityIdentifier(
-            "leftTray.setup.safariCompass"))
-        let extensionPiece = try XCTUnwrap(visual.viewWithAccessibilityIdentifier(
-            "leftTray.setup.safariExtension") as? UIImageView)
-        XCTAssertEqual(extensionPiece.tintColor, tint)
-        XCTAssertNotNil(extensionPiece.layer.animation(forKey: "leftTrayAttentionPulse"))
-        XCTAssertTrue(visual.descendants(of: UILabel.self).isEmpty)
-    }
-
-    @MainActor
-    func testClipboardMovesFromDottedEmptyAttachmentToPaperPreview() throws {
-        let clipboard = LeftTrayClipboardView(
-            frame: CGRect(x: 0, y: 0, width: 168, height: 142))
-        clipboard.configure(.empty)
-        clipboard.layoutIfNeeded()
-        let empty = try XCTUnwrap(clipboard.viewWithAccessibilityIdentifier(
-            "leftTray.clipboard.emptyAttachment"))
-        let paper = try XCTUnwrap(clipboard.viewWithAccessibilityIdentifier(
-            "leftTray.clipboard.paper"))
-        XCTAssertFalse(empty.isHidden)
-        XCTAssertTrue(paper.isHidden)
-
-        clipboard.configure(.preview(RecentURLPreview(
-            urlString: "https://example.com/story",
-            title: "A beautifully clipped URL",
-            subtitle: "example.com",
-            kind: .article,
-            imageData: nil)))
-        XCTAssertTrue(empty.isHidden)
-        XCTAssertFalse(paper.isHidden)
-        XCTAssertTrue(
-            clipboard.descendants(of: UILabel.self).contains {
-                $0.text == "A beautifully clipped URL"
-            })
     }
 
     @MainActor

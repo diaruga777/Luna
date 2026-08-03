@@ -7,7 +7,7 @@ import LunaAppConfig
 import XCTest
 @testable import Luna
 
-/// The Safari-trail suggestions in the left tray hold a per-surface cache of
+/// The Safari-trail suggestions in the util card hold a per-surface cache of
 /// verdicts that `IngestPipeline` produced. Those verdicts are DERIVED, so when
 /// the pipeline changes they are simply wrong — and `refresh` only evaluates URLs
 /// missing from the cache, so nothing re-derives them on its own.

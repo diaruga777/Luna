@@ -112,10 +112,10 @@ final class ArchiveArcLayout: UICollectionViewLayout {
 /// A chrome-less drawer of archive cells arranged along a right-edge arc.
 /// There is no tray background or pull tab — the cells are the entire
 /// surface. Closed, the arc sits offscreen; while the host rests on its
-/// rightmost card (or empty state) and the archive has items, the apex cells
+/// rightmost card and the archive has items, the apex cells
 /// peek in from the right edge. A leftward pull opens the arc over the right
-/// two thirds of the screen while the current card/empty state translates
-/// left by the same two thirds, ceding that space to the arc.
+/// two thirds of the screen while the current card translates left by the same
+/// two thirds, ceding that space to the arc.
 final class ArchiveTrayController: NSObject {
     private weak var host: UIViewController?
     private let shiftContribution: TrayShiftContribution
@@ -332,7 +332,7 @@ final class ArchiveTrayController: NSObject {
             : laidOutSize.width
         let openX = laidOutSize.width - width
         tray.frame.origin.x = closedX + (openX - closedX) * progress
-        // The card (or empty state) clears the arc's full region.
+        // The card clears the arc's full region.
         let shift = -width * progress
         shiftContribution.apply(shift)
         openStateChanged(progress > 0.001)
@@ -371,8 +371,7 @@ extension ArchiveTrayController: UIGestureRecognizerDelegate {
         let velocity = pan.velocity(in: host?.view)
         guard abs(velocity.x) > abs(velocity.y) else { return false }
         // An empty archive has nothing to reveal — never start a new pull for
-        // one (there's no empty state to show). An already-open arc can still
-        // finish its interaction defensively.
+        // one. An already-open arc can still finish its interaction defensively.
         return progress > 0 || (velocity.x < 0 && !items.isEmpty && canPull())
     }
 

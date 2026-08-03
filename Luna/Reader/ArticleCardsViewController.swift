@@ -121,9 +121,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     private let store = ReadingListStore.shared
-    private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
-        symbol: "books.vertical", title: L10n.string("No Saved Articles"),
-        subtitle: L10n.string("Articles you save appear here as cards."))
     private let settingsButton = UIButton(type: .system)
     // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
     private let readerChromeRow = UIView()
@@ -208,13 +205,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // card rims) fades while reading.
         mountCarousel()
 
-        emptyView.translatesAutoresizingMaskIntoConstraints = false
-        // Stay hidden until the first `reload()` confirms the list is genuinely
-        // empty — otherwise the "No Saved Articles" state paints for the frames
-        // before the store has been read, flashing on every cold launch.
-        emptyView.isHidden = true
-        view.addSubview(emptyView)
-
         // Above the carousel (so it clears the card's clip) but below the
         // screen chrome added by the mount* calls (so the header/footer pills
         // stay on top). Host-positioned every layout — no Auto Layout.
@@ -233,7 +223,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         mountArchiveTray(
             shifting: { [weak self] in
                 guard let self else { return [] }
-                return [self.carousel.view, self.emptyView]
+                return [self.carousel.view]
             },
             canPull: { [weak self] in
                 guard let self, self.inlineColumn == nil else { return false }
@@ -244,31 +234,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 self?.readerAudioButton.isHidden = open
                 self?.carousel.setMuteButtonOccluded(open)
             })
-        mountLeftTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view, self.emptyView]
-            },
-            canPull: { [weak self] in
-                guard let self, self.inlineColumn == nil else { return false }
-                return self.items.isEmpty || self.carousel.currentIndex == 0
-            },
-            savedURL: { [weak self] url, captureSource, sourceView in
-                self?.saveLeftTrayURL(
-                    url, captureSource: captureSource, sourceView: sourceView)
-            },
-            openStateChanged: { [weak self] open in
-                self?.readerAudioButton.isHidden = open
-                self?.carousel.setMuteButtonOccluded(open)
-            })
-
-        NSLayoutConstraint.activate([
-            emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            emptyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            emptyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            emptyView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
         NotificationCenter.default.addObserver(
@@ -294,12 +259,13 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         reload()
     }
 
-    private func saveLeftTrayURL(
+    private func saveUtilCardURL(
         _ urlString: String,
         captureSource: CaptureSource,
-        sourceView: UIView
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void
     ) {
-        beginLeftTraySaveTransition(for: urlString, from: sourceView)
+        beginUtilCardSaveTransition(for: urlString, from: sourceView)
         Task { @MainActor [weak self] in
             let result = await ReadingListIngestor.shared.handleSavePress(
                 urlString: urlString, source: captureSource)
@@ -318,7 +284,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 item = nil
             }
             guard let item else {
-                self.cancelLeftTraySaveTransition()
+                self.cancelUtilCardSaveTransition()
+                completion(false)
                 return
             }
             self.pendingPasteboardSavedID = item.id
@@ -326,8 +293,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             self.view.layoutIfNeeded()
             let destinationIndex = self.items.firstIndex { $0.id == item.id }
                 .map { $0 + self.cardOffset }
-            self.finishLeftTraySaveTransition(
+            self.finishUtilCardSaveTransition(
                 to: destinationIndex.flatMap(self.carousel.cardView(at:)))
+            completion(destinationIndex != nil)
         }
     }
 
@@ -795,8 +763,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    override var hasLeadingPasteboardCard: Bool { renderedPasteboardState != nil }
-
     private func articleIndex(forCarouselIndex index: Int) -> Int? {
         itemIndex(forCarouselIndex: index, itemCount: items.count)
     }
@@ -909,17 +875,15 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         pendingTransitionCenteredID = nil
         if pendingIndex != nil { pendingPasteboardSavedID = nil }
         carousel.reloadData(centeringAt: centeredIndex)
-        if let pendingURL = pendingLeftTraySaveURLString,
+        if let pendingURL = pendingUtilCardSaveURLString,
            let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
-            prepareLeftTraySaveDestination(carousel.cardView(at: index + newOffset))
+            prepareUtilCardSaveDestination(carousel.cardView(at: index + newOffset))
         }
-        emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
-        carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
+        carousel.view.isHidden = false
         archiveTray?.setItems(makeArchiveTrayItems())
         if !isAnimatingFromArchiveTray {
             refreshArchivePullAvailability(animated: false)
         }
-        refreshLeftPullAvailability(animated: false)
         updateReaderChrome()
     }
 
@@ -1022,9 +986,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             return
         }
 
-        let incoming: UIView? = successor == nil
-            ? emptyView
-            : carousel.cardView(at: carousel.currentIndex)
+        let incoming = carousel.cardView(at: carousel.currentIndex)
         incoming?.alpha = 0
         carousel.view.isUserInteractionEnabled = false
 
@@ -1276,6 +1238,15 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
+        if isUtilCard(index) {
+            return makeUtilCardContentController { [weak self] url, source, sourceView, completion in
+                self?.saveUtilCardURL(
+                    url,
+                    captureSource: source,
+                    sourceView: sourceView,
+                    completion: completion)
+            }
+        }
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:
@@ -1362,6 +1333,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
+        if isUtilCard(index) {
+            loadUtilCardThumbnail(completion: completion)
+            return
+        }
         guard let provider = cardProvider, let item = item(atCarouselIndex: index) else {
             completion(nil)
             return
@@ -1375,6 +1350,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         prefersThumbnailChipForCardAt index: Int
     ) -> Bool {
+        if isUtilCard(index) { return true }
         guard let provider = cardProvider, let item = item(atCarouselIndex: index)
         else { return false }
         return provider.prefersThumbnailChip(for: item)
@@ -1391,7 +1367,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         return self.carousel(carousel, contentControllerForCardAt: index)
     }
 
-    /// The saved item behind a carousel index, past the synthetic paste card.
+    /// The saved item behind a carousel index, past the permanent util card.
     private func item(atCarouselIndex index: Int) -> ReadingListItem? {
         guard let itemIndex = articleIndex(forCarouselIndex: index),
               items.indices.contains(itemIndex)
@@ -1407,6 +1383,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         loadSourceBadgeForCardAt index: Int,
         completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
+        if isUtilCard(index) {
+            completion(nil)
+            return
+        }
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder, .loading:
@@ -1444,6 +1424,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView? {
+        if isUtilCard(index) { return nil }
         guard let itemIndex = articleIndex(forCarouselIndex: index),
               items.indices.contains(itemIndex)
         else { return nil }
@@ -1454,6 +1435,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String? {
+        if isUtilCard(index) { return LunaApp.current.displayName }
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder: return L10n.string("Paste Link")
@@ -1483,7 +1465,6 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         navigationTargetDidChangeTo index: Int
     ) {
-        if index != 0 { leftTray?.setPullAvailable(false, animated: true) }
         updateArchivePullAvailability(
             forTargetIndex: index,
             cardCount: items.count + cardOffset,
@@ -1506,14 +1487,18 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
             .setCardChromeVisible(true, animated: false)
         archiveTray?.setChromeHidden(false, animated: false)
-        leftTray?.setChromeHidden(false, animated: false)
         updateBottomModeSwitcher(immersed: false, animated: false)
         layoutCardScrollIndicator(animated: false)
     }
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        refreshLeftPullAvailability(animated: true)
         refreshArchivePullAvailability(animated: true)
+        if isUtilCard(index) {
+            readerForChrome = nil
+            updateReaderChrome()
+            layoutCardScrollIndicator(animated: false)
+            return
+        }
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:
@@ -1621,7 +1606,6 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // The archive peek is card chrome too: it fades away with the
         // side-card peeks and returns with them.
         archiveTray?.setChromeHidden(immersed, animated: true)
-        leftTray?.setChromeHidden(immersed, animated: true)
         updateBottomModeSwitcher(immersed: immersed, animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,
@@ -1768,7 +1752,6 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
             self.view.layoutIfNeeded()
         }
         refreshArchivePullAvailability(animated: true)
-        refreshLeftPullAvailability(animated: true)
         column.animateColumnAppearance()
     }
 
@@ -1801,7 +1784,6 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
             column.removeFromParent()
             guard let self else { return }
             self.refreshArchivePullAvailability(animated: true)
-            self.refreshLeftPullAvailability(animated: true)
             self.updateReaderChrome()
             self.layoutCardScrollIndicator(animated: false)
         }
@@ -2467,14 +2449,14 @@ private final class ReaderCardTitleHeaderView: UIView {
         backgroundColor = LunaColors.background
 
         iconView.image = UIImage(systemName: "globe")
-        iconView.accessibilityIdentifier = LeftTraySaveTransitionAnchor.thumbnail
+        iconView.accessibilityIdentifier = UtilCardSaveTransitionAnchor.thumbnail
         iconView.tintColor = LunaColors.secondaryText
         iconView.contentMode = .scaleAspectFit
         iconView.layer.cornerRadius = 6
         iconView.clipsToBounds = true
 
         titleLabel.text = title
-        titleLabel.accessibilityIdentifier = LeftTraySaveTransitionAnchor.title
+        titleLabel.accessibilityIdentifier = UtilCardSaveTransitionAnchor.title
         titleLabel.font = baseTitleFont
         titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = Self.titleLineLimit
@@ -2571,6 +2553,7 @@ private final class ReaderCardTitleHeaderView: UIView {
             titleLabel.frame = CGRect(
                 x: titleX, y: topInset + 10,
                 width: textWidth, height: max(contentHeight - 20, 0))
+            iconView.frame.origin.y = titleLabel.frame.midY - iconSide / 2
             overflowLabel.frame = .zero
             subtitleLabel.frame = .zero
             return
@@ -2596,6 +2579,10 @@ private final class ReaderCardTitleHeaderView: UIView {
                 x: titleX, y: bottom + 4, width: textWidth,
                 height: max(0, bounds.maxY - bottom - 14))
         }
+        // The favicon identifies the headline, not the headline + secondary
+        // metadata stack. Keep it beside the title even when a source/sender
+        // line makes the overall header taller.
+        iconView.frame.origin.y = titleLabel.frame.midY - iconSide / 2
     }
 
     private static var readerTitleFont: UIFont {

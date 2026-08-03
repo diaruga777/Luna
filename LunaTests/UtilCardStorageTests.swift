@@ -2,13 +2,13 @@ import LunaModels
 import LunaStorage
 import XCTest
 
-final class LeftTrayStorageTests: XCTestCase {
+final class UtilCardStorageTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
 
     override func setUp() {
         super.setUp()
-        suiteName = "LeftTrayStorageTests.\(UUID().uuidString)"
+        suiteName = "UtilCardStorageTests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 

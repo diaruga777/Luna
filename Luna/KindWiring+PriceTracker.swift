@@ -53,14 +53,10 @@ enum KindWiring {
 
     // MARK: - Root UI shape
 
-    /// The Price Tracker uses the same root card deck + arc trays as Reader and
-    /// Downloader, without the article app's audio mini-player host.
+    /// The Price Tracker uses the same root card deck + archive tray as Reader
+    /// and Downloader, without the article app's audio mini-player host.
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = AppOnboardingStore.shared.isCompleted
-            ? PriceTrackerCardsViewController()
-            : AppOnboardingViewController(
-                completion: AppOnboardingCompletion(
-                    makeCompletedRootViewController: makeCompletedRootViewController))
+        let content: UIViewController = PriceTrackerCardsViewController()
         return UINavigationController(rootViewController: content)
     }
 

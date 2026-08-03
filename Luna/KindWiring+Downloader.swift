@@ -63,12 +63,7 @@ enum KindWiring {
     /// The saved-media card deck in a bare nav controller — no audio
     /// mini-player host (read-aloud is an article-app feature).
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = AppOnboardingStore.shared.isCompleted
-            ? SavedMediaCardsViewController()
-            : AppOnboardingViewController(
-                completion: AppOnboardingCompletion(
-                    contentWatch: onboardingContentWatch,
-                    makeCompletedRootViewController: makeCompletedRootViewController))
+        let content: UIViewController = SavedMediaCardsViewController()
         return UINavigationController(rootViewController: content)
     }
 

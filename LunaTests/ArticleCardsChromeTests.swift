@@ -425,17 +425,17 @@ final class ArticleCardsChromeTests: XCTestCase {
         defer { window.isHidden = true }
         controller.view.layoutIfNeeded()
 
-        let currentContent = try XCTUnwrap(controller.carousel.contentController(at: 0))
+        let currentContent = try XCTUnwrap(controller.carousel.contentController(at: 1))
         let currentScroll = try XCTUnwrap(firstSubview(of: UITextView.self, in: currentContent.view))
         let stableInset = currentScroll.contentInset.top
         XCTAssertGreaterThan(stableInset, 0)
 
         let scrubber = try XCTUnwrap(
             firstSubview(of: CarouselScrubberView.self, in: controller.carousel.view))
-        scrubber.delegate?.scrubber(scrubber, didTap: 2)
+        scrubber.delegate?.scrubber(scrubber, didTap: 3)
 
-        XCTAssertEqual(controller.carousel.currentIndex, 0)
-        let stagedContent = try XCTUnwrap(controller.carousel.contentController(at: 2))
+        XCTAssertEqual(controller.carousel.currentIndex, 1)
+        let stagedContent = try XCTUnwrap(controller.carousel.contentController(at: 3))
         stagedContent.view.layoutIfNeeded()
         let stagedScroll = try XCTUnwrap(firstSubview(of: UITextView.self, in: stagedContent.view))
         XCTAssertEqual(stagedScroll.contentInset.top, stableInset, accuracy: 0.5)

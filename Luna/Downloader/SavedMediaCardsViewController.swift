@@ -72,9 +72,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
-    private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
-        symbol: "photo.on.rectangle.angled", title: L10n.string("No Saved Media"),
-        subtitle: L10n.string("Saved Downloader links appear here after Luna downloads the media."))
     private let settingsButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
     /// The player behind the currently-presented full-screen video, held weakly
@@ -136,21 +133,11 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         carousel.delegate = self
         mountCarousel()
 
-        emptyView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(emptyView)
-
-        NSLayoutConstraint.activate([
-            emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            emptyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            emptyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            emptyView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
         mountBottomControls()
         mountArchiveTray(
             shifting: { [weak self] in
                 guard let self else { return [] }
-                return [self.carousel.view, self.emptyView]
+                return [self.carousel.view]
             },
             canPull: { [weak self] in
                 guard let self else { return false }
@@ -160,24 +147,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             openStateChanged: { [weak self] open in
                 self?.carousel.setMuteButtonOccluded(open)
             })
-        mountLeftTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view, self.emptyView]
-            },
-            canPull: { [weak self] in
-                guard let self else { return false }
-                let count = self.items.count + self.failedSaves.count + self.cardOffset
-                return count == 0 || self.carousel.currentIndex == 0
-            },
-            savedURL: { [weak self] url, captureSource, sourceView in
-                self?.saveLeftTrayURL(
-                    url, captureSource: captureSource, sourceView: sourceView)
-            },
-            openStateChanged: { [weak self] open in
-                self?.carousel.setMuteButtonOccluded(open)
-            })
-
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT
         // process, so the in-process .savedMediaChanged post below never reaches
         // it) back to a .savedMediaChanged post here via a Darwin notification.
@@ -249,12 +218,13 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         reload()
     }
 
-    private func saveLeftTrayURL(
+    private func saveUtilCardURL(
         _ urlString: String,
         captureSource: CaptureSource,
-        sourceView: UIView
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void
     ) {
-        beginLeftTraySaveTransition(for: urlString, from: sourceView)
+        beginUtilCardSaveTransition(for: urlString, from: sourceView)
         Task { @MainActor [weak self] in
             let result = await ReadingListIngestor.shared.handleSavePress(
                 urlString: urlString, source: captureSource)
@@ -273,7 +243,8 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 item = nil
             }
             guard let item else {
-                self.cancelLeftTraySaveTransition()
+                self.cancelUtilCardSaveTransition()
+                completion(false)
                 return
             }
             self.pendingPasteboardDownloadURLString = item.urlString
@@ -290,8 +261,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             } else {
                 destinationIndex = nil
             }
-            self.finishLeftTraySaveTransition(
+            self.finishUtilCardSaveTransition(
                 to: destinationIndex.flatMap(self.carousel.cardView(at:)))
+            completion(destinationIndex != nil)
         }
     }
 
@@ -356,22 +328,19 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         let centeredIndex = newSaveIndex.map { $0 + cardOffset } ?? preservedIndex
         if pendingIndex != nil { pendingPasteboardDownloadURLString = nil }
         carousel.reloadData(centeringAt: centeredIndex)
-        if let pendingURL = pendingLeftTraySaveURLString {
+        if let pendingURL = pendingUtilCardSaveURLString {
             let destinationIndex = items.firstIndex {
                 $0.sourceURLString == pendingURL
             }.map { $0 + cardOffset } ?? failedSaves.firstIndex {
                 $0.urlString == pendingURL
             }.map { items.count + $0 + cardOffset }
-            prepareLeftTraySaveDestination(
+            prepareUtilCardSaveDestination(
                 destinationIndex.flatMap(carousel.cardView(at:)))
         }
-        let hasAnyCard = !items.isEmpty || !failedSaves.isEmpty
-        emptyView.isHidden = hasAnyCard || renderedPasteboardState != nil
-        carousel.view.isHidden = !hasAnyCard && renderedPasteboardState == nil
+        carousel.view.isHidden = false
         archiveTray?.setItems(makeArchiveTrayItems())
         archiveTray?.setDownloadProgress(archiveDownloadProgress)
         refreshArchivePullAvailability(animated: false)
-        refreshLeftPullAvailability(animated: false)
         updateShareButton()
     }
 
@@ -470,8 +439,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             ReadingListStore.shared.markReadState(.opened, for: saved.id)
         }
     }
-
-    override var hasLeadingPasteboardCard: Bool { renderedPasteboardState != nil }
 
     private func mediaIndex(forCarouselIndex index: Int) -> Int? {
         itemIndex(forCarouselIndex: index, itemCount: items.count)
@@ -949,6 +916,15 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
+        if isUtilCard(index) {
+            return makeUtilCardContentController { [weak self] url, source, sourceView, completion in
+                self?.saveUtilCardURL(
+                    url,
+                    captureSource: source,
+                    sourceView: sourceView,
+                    completion: completion)
+            }
+        }
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder:
@@ -993,6 +969,10 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
+        if isUtilCard(index) {
+            loadUtilCardThumbnail(completion: completion)
+            return
+        }
         if let state = renderedPasteboardState, index == 0 {
             switch state {
             case .placeholder, .downloading:
@@ -1035,7 +1015,10 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
     func carousel(
         _ carousel: CardCarouselViewController, titleForCardAt index: Int
     ) -> String? {
-        failedSave(atCarouselIndex: index).map { FailedSaveCardFactory.displayTitle(for: $0) }
+        if isUtilCard(index) { return LunaApp.current.displayName }
+        return failedSave(atCarouselIndex: index).map {
+            FailedSaveCardFactory.displayTitle(for: $0)
+        }
     }
 
     func carousel(
@@ -1061,7 +1044,6 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         navigationTargetDidChangeTo index: Int
     ) {
-        if index != 0 { leftTray?.setPullAvailable(false, animated: true) }
         updateArchivePullAvailability(
             forTargetIndex: index,
             cardCount: items.count + failedSaves.count + cardOffset,
@@ -1069,7 +1051,6 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        refreshLeftPullAvailability(animated: true)
         refreshArchivePullAvailability(animated: true)
         updateShareButton()
         if renderedPasteboardState != nil, index == 0 {

@@ -3,7 +3,7 @@
 //  LunaTests
 //
 //  CardCarouselHostViewController is the shared skeleton behind Reader's and
-//  Downloader's root screens (Wave 3C). Its pasteboard-offset index math
+//  Downloader's root screens (Wave 3C). Its permanent-util-card index math
 //  (`itemIndex(forCarouselIndex:itemCount:)`) is the one piece of that base
 //  class cheaply testable in isolation — no view loading, no carousel, no
 //  store. `SavedMediaCardsViewController`'s own storage-state/kind dispatch
@@ -21,7 +21,7 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
 
     func testRecentArticleArtworkSettlesAsHeaderInsteadOfCardSizedThumbnail() {
         let card = CGRect(x: 20, y: 80, width: 350, height: 620)
-        let geometry = LeftTraySaveTransitionGeometry.fallback(
+        let geometry = UtilCardSaveTransitionGeometry.fallback(
             in: card, kind: .article, sourceTitleHeight: 42)
 
         XCTAssertEqual(geometry.thumbnail.size, CGSize(width: 30, height: 30))
@@ -32,7 +32,7 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
 
     func testRecentProductArtworkSettlesIntoProductCardHeader() {
         let card = CGRect(x: 20, y: 80, width: 350, height: 620)
-        let geometry = LeftTraySaveTransitionGeometry.fallback(
+        let geometry = UtilCardSaveTransitionGeometry.fallback(
             in: card, kind: .product, sourceTitleHeight: 42)
 
         XCTAssertEqual(geometry.thumbnail.size, CGSize(width: 64, height: 64))
@@ -54,12 +54,7 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
             representedChangeCount: 10))
     }
 
-    /// Flips `hasLeadingPasteboardCard` on demand, mirroring how a real
-    /// subclass reflects its own pasteboard state.
-    private final class TestHost: CardCarouselHostViewController {
-        var pasteboardCardShowing = false
-        override var hasLeadingPasteboardCard: Bool { pasteboardCardShowing }
-    }
+    private final class TestHost: CardCarouselHostViewController {}
 
     @MainActor
     func testPagingTowardLastCardWaitsUntilCenterToRevealArchiveTab() {
@@ -83,83 +78,20 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
             "The did-center refresh reveals the tab at animation completion")
     }
 
-    @MainActor
-    func testClosedLeftTrayDoesNotResetOpenArchiveShiftDuringLayout() throws {
+    // MARK: - The permanent util card shifts every saved item by one
+
+    func testUtilCardShiftsEverySavedItemIndexByOne() {
         let host = TestHost()
-        host.loadViewIfNeeded()
-        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let cardDeck = UIView()
-        let emptyState = UIView()
-        let shiftedViews = { [cardDeck, emptyState] }
-        host.mountArchiveTray(shifting: shiftedViews, canPull: { true })
-        host.mountLeftTray(
-            shifting: shiftedViews,
-            canPull: { true },
-            savedURL: { _, _, _ in })
-        host.viewDidLayoutSubviews()
-
-        let archiveTray = try XCTUnwrap(host.archiveTray)
-        archiveTray.setOpenForTesting(true)
-        XCTAssertEqual(cardDeck.transform.tx, -260, accuracy: 0.5)
-        XCTAssertEqual(emptyState.transform.tx, -260, accuracy: 0.5)
-
-        // Both trays lay out on every host pass. The closed left tray must
-        // preserve the archive tray's contribution instead of writing identity.
-        host.viewDidLayoutSubviews()
-
-        XCTAssertEqual(cardDeck.transform.tx, -260, accuracy: 0.5)
-        XCTAssertEqual(emptyState.transform.tx, -260, accuracy: 0.5)
-    }
-
-    // MARK: - No leading pasteboard card: carousel index == item index
-
-    func testNoPasteboardCardMapsCarouselIndexDirectlyToItemIndex() {
-        let host = TestHost()
-        XCTAssertEqual(host.cardOffset, 0)
-        XCTAssertEqual(host.itemIndex(forCarouselIndex: 0, itemCount: 3), 0)
-        XCTAssertEqual(host.itemIndex(forCarouselIndex: 2, itemCount: 3), 2)
-    }
-
-    func testNoPasteboardCardOutOfRangeIndexIsNil() {
-        let host = TestHost()
-        XCTAssertNil(host.itemIndex(forCarouselIndex: 3, itemCount: 3))
-        XCTAssertNil(host.itemIndex(forCarouselIndex: -1, itemCount: 3))
-    }
-
-    // MARK: - A leading pasteboard card shifts every real item's index by one
-
-    func testPasteboardCardShiftsIndexByOne() {
-        let host = TestHost()
-        host.pasteboardCardShowing = true
         XCTAssertEqual(host.cardOffset, 1)
-        XCTAssertEqual(host.itemIndex(forCarouselIndex: 1, itemCount: 3), 0,
-                       "carousel index 1 is the FIRST real item once the pasteboard card is showing")
+        XCTAssertNil(host.itemIndex(forCarouselIndex: 0, itemCount: 3))
+        XCTAssertEqual(host.itemIndex(forCarouselIndex: 1, itemCount: 3), 0)
         XCTAssertEqual(host.itemIndex(forCarouselIndex: 3, itemCount: 3), 2)
     }
 
-    func testPasteboardCardOwnPositionIsNotAnItemIndex() {
+    func testUtilCardIndexMathRejectsOutOfRangeIndexes() {
         let host = TestHost()
-        host.pasteboardCardShowing = true
-        XCTAssertNil(host.itemIndex(forCarouselIndex: 0, itemCount: 3),
-                    "carousel index 0 IS the pasteboard card itself, not item 0")
-    }
-
-    func testPasteboardCardOutOfRangeIndexIsNil() {
-        let host = TestHost()
-        host.pasteboardCardShowing = true
         XCTAssertNil(host.itemIndex(forCarouselIndex: 4, itemCount: 3))
-    }
-
-    // MARK: - Toggling the pasteboard card changes the offset live
-
-    func testOffsetTracksThePasteboardCardFlagAsItChanges() {
-        let host = TestHost()
-        XCTAssertEqual(host.itemIndex(forCarouselIndex: 0, itemCount: 2), 0)
-        host.pasteboardCardShowing = true
-        XCTAssertEqual(host.itemIndex(forCarouselIndex: 0, itemCount: 2), nil)
-        XCTAssertEqual(host.itemIndex(forCarouselIndex: 1, itemCount: 2), 0)
-        host.pasteboardCardShowing = false
-        XCTAssertEqual(host.itemIndex(forCarouselIndex: 0, itemCount: 2), 0)
+        XCTAssertNil(host.itemIndex(forCarouselIndex: -1, itemCount: 3))
     }
 
     // MARK: - Empty item list
@@ -167,13 +99,12 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
     func testEmptyItemListHasNoValidIndex() {
         let host = TestHost()
         XCTAssertNil(host.itemIndex(forCarouselIndex: 0, itemCount: 0))
-        host.pasteboardCardShowing = true
         XCTAssertNil(host.itemIndex(forCarouselIndex: 1, itemCount: 0))
     }
 
     // MARK: - Pasteboard privacy and temporary-media policy
 
-    /// The paste card reads nothing until the system paste button says so: no
+    /// This legacy placeholder reads nothing until the system paste button says so: no
     /// control, no read path. (The prompt-timing heuristic that used to choose
     /// failure copy is gone with the prompt it detected.)
     func testPlaceholderCardWithoutAPasteHandlerStaysAPlainTappableCard() {

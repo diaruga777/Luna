@@ -72,9 +72,6 @@ enum KindWiring {
         SendToFriendSheet.accountSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
-        LeftTrayController.emailRecoveryLauncher = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
         // The central Luna app is the only surface whose card deck contains
         // non-article cards; give them their tap routing.
         NonArticleCardOpening.install()
@@ -191,12 +188,7 @@ enum KindWiring {
     /// host (read-aloud is an article-app feature; the bar floats above the
     /// bottom safe area, survives every push/pop, and hides while idle).
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = AppOnboardingStore.shared.isCompleted
-            ? ArticleCardsViewController()
-            : AppOnboardingViewController(
-                completion: AppOnboardingCompletion(
-                    contentWatch: onboardingContentWatch,
-                    makeCompletedRootViewController: makeCompletedRootViewController))
+        let content: UIViewController = ArticleCardsViewController()
         let nav = UINavigationController(rootViewController: content)
         return MiniPlayerHostViewController(content: nav)
     }

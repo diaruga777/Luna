@@ -37,6 +37,7 @@ final class AppOnboardingStore {
     var isCompleted: Bool {
         defaults.bool(forKey: completionKey)
             || setupStatusStore.centralAppCoversAllOnboarding(for: app)
+            || (hasFinishedSafariSetup && hasFinishedSaveSetup)
     }
 
     func markCompleted() {
@@ -57,11 +58,39 @@ final class AppOnboardingStore {
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
+    /// Whether the Safari lesson has been completed or explicitly skipped.
+    /// Real extension evidence also counts, but this per-app marker preserves
+    /// the user's choice when they skip the walkthrough.
+    var hasHandledSafariSetup: Bool {
+        defaults.bool(forKey: safariSetupHandledKey)
+    }
+
+    func markSafariSetupHandled() {
+        defaults.set(true, forKey: safariSetupHandledKey)
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
+    }
+
+    var hasFinishedSafariSetup: Bool {
+        hasHandledSafariSetup || setupStatusStore.safariRunApplies(to: app)
+    }
+
+    var hasFinishedSaveSetup: Bool {
+        if hasHandledSaveSetup { return true }
+        let configuration = OnboardingSurfaceConfiguration.configuration(for: app)
+        switch configuration.saveSetupMode {
+        case .actionButtonShortcut:
+            return setupStatusStore.shortcutRunApplies(to: app)
+        case .shareSheet:
+            return setupStatusStore.shareActionHasRun(isCentral: app == .luna)
+        }
+    }
+
     /// The diagnostics onboarding reset: the full first-run journey plays
     /// again on this app's next launch.
     func resetCompletion() {
         defaults.removeObject(forKey: completionKey)
         defaults.removeObject(forKey: saveSetupHandledKey)
+        defaults.removeObject(forKey: safariSetupHandledKey)
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
@@ -100,6 +129,10 @@ final class AppOnboardingStore {
         "\(app.storageIdentifier).onboarding.saveSetupHandled.v1"
     }
 
+    private var safariSetupHandledKey: String {
+        "\(app.storageIdentifier).onboarding.safariSetupHandled.v1"
+    }
+
     #if DEBUG
     func resetIfRequested() {
         let arguments = ProcessInfo.processInfo.arguments
@@ -108,6 +141,8 @@ final class AppOnboardingStore {
         else { return }
         defaults.removeObject(forKey: completionKey)
         defaults.removeObject(forKey: saveSetupHandledKey)
+        defaults.removeObject(forKey: safariSetupHandledKey)
+        setupStatusStore.resetAllRunEvidence()
     }
     #endif
 }

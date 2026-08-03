@@ -54,7 +54,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // per app target; kind-specific launch work (audio wiring, pending-
         // completion promotion, transport injection) lives in its `install()`.
         KindWiring.install()
-        LeftTrayController.setupJourneyLauncher = { presenter, source in
+        UtilCardContentViewController.setupJourneyLauncher = { presenter, source in
             AppOnboardingViewController.presentSetupReplay(
                 source,
                 from: presenter,
@@ -125,7 +125,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Local notifications: show as banners while open (delegate below) and
         // ensure authorization. Share arrivals and price drops are the only
         // notifications Luna posts, so asking at launch is the earliest honest
-        // moment — there is no setup flow left to defer it to.
+        // moment. Setup now lives inside the carousel's util card, but notification
+        // authorization remains an app-level launch concern.
         UNUserNotificationCenter.current().delegate = self
         #if DEBUG
         // Demo/recording seam: `-onboardingStage` jumps straight into the

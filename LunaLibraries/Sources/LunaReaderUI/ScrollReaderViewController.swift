@@ -40,11 +40,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             CGPoint(x: rect.midX, y: rect.midY), to: view)
     }
 
-    /// Fired when the end-of-article share footer scrolls into / out of view, so the
-    /// host can fade its floating share button (the footer already offers sharing).
-    public var onShareFooterVisibilityChanged: ((Bool) -> Void)?
-    private var shareFooterVisible = false
-
     /// A word index carried in from another reader mode. When set (and this is
     /// the plain scrolling mode), the view scrolls so that word sits 25% from
     /// the top on first appearance instead of restoring the saved offset.
@@ -99,7 +94,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// True once the FULL article has been rendered + swapped in (Phase 2 done, or
     /// never needed because the prefix already covered the whole article). Until
     /// then `rendered`/`wordMap` describe only the prefix, so position-dependent
-    /// features (RSVP/audio resume, the share footer) wait for it.
+    /// features (RSVP/audio resume, finished-reading tracking) wait for it.
     private var didLoadFullContent = false
     /// Set once Phase 2 has been kicked off so it runs exactly once.
     private var didBeginFullContentLoad = false
@@ -157,11 +152,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// `textViewDidChangeSelection` re-enters it, so the snap is bracketed by this.
     private var isExpandingSelection = false
 
-    /// Sharing affordances; nil → no end-of-article share footer (share sheet).
+    /// Sharing affordances handed on to any nested reader this one opens; nil in
+    /// the share sheet.
     private var shareProvider: ReaderShareProviding?
-    /// End-of-article share affordance, pinned below the text content (nil when
-    /// there's no share provider).
-    private lazy var shareView: ArticleShareView? = makeShareView()
     private var contentSizeObservation: NSKeyValueObservation?
     /// Stable whitespace appended after the final text line. The completion pill
     /// lives inside this lane instead of being positioned from `contentSize`,
@@ -266,7 +259,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         didLoadFullContent = false
         didBeginFullContentLoad = false
         didStartPlayback = false
-        shareFooterVisible = false
         // An unconsumed jump must never survive into the next article.
         pendingAnchorBlockIndex = nil
         openContentOffsetY = nil
@@ -296,11 +288,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
         self.explicitResumeWordIndex = resumeWordIndex
-        // The lazy shareView latches its first resolution (nil when built for a
-        // provider-less shell) and bakes in the old item's friend suggestion —
-        // rebuild it for the new item/provider.
-        shareView?.removeFromSuperview()
-        shareView = makeShareView()
 
         let needsFullUpFront = fullRenderUpFront || audioEnabled
             || Self.openPositionLikelyBeyondPrefix(
@@ -331,7 +318,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
         installAnimatedImageViews()
         if didLoadFullContent {
-            attachShareFooterIfNeeded()
             fetchMissingImagesIfNeeded()
             installPositionDependentFeatures()
         }
@@ -436,25 +422,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         contentSizeObservation?.invalidate()
     }
 
-    private func makeShareView() -> ArticleShareView? {
-        guard let shareProvider, item.isShareable else { return nil }
-        return ArticleShareView(
-            shareMenu: shareProvider.providesShareMenu
-                ? { [weak self] in
-                    guard let self, let shareView = self.shareView else { return nil }
-                    return shareProvider.shareMenu(
-                        urlString: self.item.urlString, title: self.content.title,
-                        from: self, sourceView: shareView)
-                }
-                : nil,
-            onShare: { [weak self] in
-                guard let self, let shareView = self.shareView else { return }
-                shareProvider.presentShareSheet(
-                    urlString: self.item.urlString, title: self.content.title,
-                    from: self, sourceView: shareView)
-            })
-    }
-
     /// The bottom of TextKit's laid-out article, independent of the scroll view's
     /// content inset and any footer subviews. Unlike `contentSize.height`, this
     /// remains stable while the bottom footer geometry is being updated.
@@ -468,28 +435,17 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     /// Positions the completion acknowledgement in a fixed-height lane below the
-    /// text, then the optional share view, and reserves room for both.
-    private func layoutShareView() {
+    /// text and reserves room for it.
+    private func layoutCompletionArea() {
         let width = textView.bounds.width
         guard width > 0 else { return }
-        let articleBottom = articleContentBottom
         finishedBadge.frame = CGRect(
-            x: 0, y: articleBottom,
+            x: 0, y: articleContentBottom,
             width: width, height: Self.completionAreaHeight)
-        var shareHeight: CGFloat = 0
-        if let shareView, shareView.superview != nil {
-            shareHeight = shareView.systemLayoutSizeFitting(
-                CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
-                withHorizontalFittingPriority: .required,
-                verticalFittingPriority: .fittingSizeLevel).height
-            shareView.frame = CGRect(
-                x: 0, y: articleBottom + Self.completionAreaHeight,
-                width: width, height: shareHeight)
-        }
         let footerSpace = footer.isHidden ? 0 : footer.bounds.height
-        // Add the bottom safe area so the last lines + share footer clear the
-        // home indicator instead of sitting under it.
-        let bottomInset = Self.completionAreaHeight + shareHeight + footerSpace
+        // Add the bottom safe area so the last lines clear the home indicator
+        // instead of sitting under it.
+        let bottomInset = Self.completionAreaHeight + footerSpace
             + view.safeAreaInsets.bottom + 16
         // Avoid feeding identical inset writes back through UITextView's
         // content-size observation while the user is resting at the bottom.
@@ -544,7 +500,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private func installFinishedBadge() {
         textView.addSubview(finishedBadge)
         contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
-            self?.layoutShareView()
+            self?.layoutCompletionArea()
         }
     }
 
@@ -576,12 +532,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Installs the features that depend on the full article already being
     /// rendered, and reveals the text once its resting scroll position is set.
     private func revealInitialContent() {
-        // The end-of-article share footer is attached only once the FULL article is
-        // rendered (its position is keyed off the complete content size). For a short
-        // article the prefix is already complete, so attach it now; otherwise
-        // `prepareFullContent()` attaches it after the swap.
-        if didLoadFullContent { attachShareFooterIfNeeded() }
-
         // Images cached on disk are baked into the prefix already; only genuinely
         // uncached ones (action/share surface) fall through here. Once the full
         // content lands this re-runs against it (see `prepareFullContent`).
@@ -632,7 +582,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.textContainerInset = UIEdgeInsets(
                 top: 20, left: horizontal, bottom: 40, right: horizontal)
         }
-        layoutShareView()
+        layoutCompletionArea()
         layoutAnimatedImageViews()
 
         // Restore the scroll position as soon as we have real bounds — BEFORE
@@ -729,13 +679,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             scrollToBlock(blockIndex)
         }
         // Now that the full word map exists, wire up the position-dependent features
-        // and finish the inline-image fetch + share footer against the real content.
+        // and finish the inline-image fetch against the real content.
         installPositionDependentFeatures()
-        attachShareFooterIfNeeded()
-        layoutShareView()
+        layoutCompletionArea()
         fetchMissingImagesIfNeeded()
         checkFinishedReading()
-        updateShareFooterVisibility()
     }
 
     /// Installs the read-aloud resume highlight, which needs the FULL word map (a
@@ -746,15 +694,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
            let range = wordMap.attributedRange(forWord: spokenIndex) {
             applyHighlight(range)
         }
-    }
-
-    /// Adds the end-of-article share footer (and the content-size observer that keeps
-    /// it pinned below the text). Deferred until the full content is rendered so it
-    /// sits at the true bottom. Idempotent.
-    private func attachShareFooterIfNeeded() {
-        guard let shareView, shareView.superview == nil else { return }
-        textView.addSubview(shareView)
-        layoutShareView()
     }
 
     // MARK: - Inline images
@@ -788,9 +727,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
             self.textView.layoutIfNeeded()
             self.installAnimatedImageViews()
-            self.layoutShareView()
+            self.layoutCompletionArea()
             self.checkFinishedReading()
-            self.updateShareFooterVisibility()
             SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
         }
     }
@@ -1220,7 +1158,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             speech = controller
         }
         footer.isHidden = false
-        layoutShareView()
+        layoutCompletionArea()
         ReaderPlaybackArbiter.claim(self)
         speech?.play(fromWordIndex: resumeWordIndex)
         // First-ever read-aloud: nudge the user toward higher-quality voices.
@@ -1280,7 +1218,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         checkFinishedReading()
-        updateShareFooterVisibility()
         updateAnimatedImagePlayback()
         if scrollView.isTracking || scrollView.isDragging {
             // User-driven scroll: stop auto-follow; drop the resume highlight
@@ -1337,19 +1274,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let y = textView.contentOffset.y
         let tolerance: CGFloat = 8
         return y <= minOffset + tolerance || y >= maxOffset - tolerance
-    }
-
-    /// Notifies the host when the end-of-article share footer is at least partly
-    /// scrolled into view (it sits just below the text, in the bottom inset region).
-    private func updateShareFooterVisibility() {
-        // The footer is only attached/positioned once the full content is in (otherwise
-        // its frame is still .zero and would read as "revealed" against the prefix).
-        guard didLoadFullContent, let shareView, shareView.superview != nil else { return }
-        let viewportBottom = textView.contentOffset.y + textView.bounds.height
-        let revealed = viewportBottom >= shareView.frame.minY + shareView.bounds.height * 0.3
-        guard revealed != shareFooterVisible else { return }
-        shareFooterVisible = revealed
-        onShareFooterVisibilityChanged?(revealed)
     }
 
     private func checkFinishedReading() {

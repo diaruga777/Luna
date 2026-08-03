@@ -153,8 +153,8 @@ public final class ShareReaderViewController: UIViewController {
         onModeChange: ((Mode) -> Void)?, onDone: @escaping () -> Void
     ) -> ReaderViewController {
         // A lightweight share provider (friend-share via the App Group queue +
-        // link share — no CloudKit in the extension) so the end-of-article share
-        // affordance works. The reader marks the (real, shared) item opened/read
+        // link share — no CloudKit in the extension) so the reader's own share
+        // button works. The reader marks the (real, shared) item opened/read
         // via ReadingListStore.
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,

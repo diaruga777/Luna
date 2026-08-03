@@ -247,14 +247,6 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         }
     }
 
-    /// Fades the floating share button out when the end-of-article share footer
-    /// scrolls into view (it already offers sharing), and back in otherwise.
-    private func setFloatingShareHidden(_ hidden: Bool) {
-        UIView.animate(withDuration: 0.2) {
-            self.floatingShareButton.alpha = hidden ? 0 : 1
-        }
-    }
-
     // MARK: - Mode & audio switching
 
     @objc private func modeChanged() {
@@ -397,8 +389,6 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         currentChild = child
 
         floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode, audioOn: audioOn)
-        // A freshly shown mode starts with the share button visible.
-        floatingShareButton.alpha = 1
         // Keep the share button above the freshly added child content.
         view.bringSubviewToFront(floatingShareButton)
     }
@@ -409,9 +399,6 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             shareProvider: shareProvider,
             resumeWordIndex: resumeWordIndex)
         scroll.completionDelegate = self
-        scroll.onShareFooterVisibilityChanged = { [weak self] visible in
-            self?.setFloatingShareHidden(visible)
-        }
         return scroll
     }
 

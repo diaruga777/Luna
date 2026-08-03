@@ -61,6 +61,11 @@ enum AppLaunchGeometry {
 /// root hierarchy.
 enum AppLaunchTransition {
     static let didFinish = Notification.Name("AppLaunchTransition.didFinish")
+    /// True once the launch crossfade has retired. It is what separates "this
+    /// appearance IS the launch" from "the user navigated here": the util card's
+    /// intro headline sweeps only in the former, and simply stands revealed when
+    /// paged back to.
+    private(set) static var hasFinished = false
     static let minimumVisibleDuration: TimeInterval = 0.10
     static let fadeDuration: TimeInterval = 0.20
     /// For a target whose live hierarchy is pixel-identical to the splash
@@ -112,6 +117,7 @@ enum AppLaunchTransition {
                 overlay.alpha = 0
             } completion: { _ in
                 overlay.removeFromSuperview()
+                hasFinished = true
                 target?.appLaunchTransitionDidFinish()
                 if target?.keepsOnboardingSlowMotionAfterLaunch != true {
                     OnboardingAnimationClock.restoreNormalSpeed(in: window)

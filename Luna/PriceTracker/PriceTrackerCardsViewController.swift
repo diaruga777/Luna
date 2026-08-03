@@ -298,7 +298,9 @@ extension PriceTrackerCardsViewController: CardCarouselDataSource {
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
         if isUtilCard(index) {
-            return makeUtilCardContentController { [weak self] url, source, sourceView, completion in
+            return makeUtilCardContentController(
+                hasSaves: { [weak self] in self?.items.isEmpty == false }
+            ) { [weak self] url, source, sourceView, completion in
                 self?.saveUtilCardURL(
                     url,
                     source: source,
@@ -364,7 +366,16 @@ extension PriceTrackerCardsViewController: CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         prefersThumbnailChipForCardAt index: Int
     ) -> Bool {
-        true
+        !isUtilCard(index)
+    }
+
+    /// The util card holds no save, so its chip is neither a still nor a
+    /// favicon-and-skeleton mini card: it is the app's own mark over a button.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersUtilityChipForCardAt index: Int
+    ) -> Bool {
+        isUtilCard(index)
     }
 
     func carousel(
@@ -391,6 +402,7 @@ extension PriceTrackerCardsViewController: CardCarouselDelegate {
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         refreshArchivePullAvailability(animated: true)
+        updateUtilCardCorona(forCenteredIndex: index)
         updateShareButton()
         guard let itemIndex = itemIndex(
                 forCarouselIndex: index,

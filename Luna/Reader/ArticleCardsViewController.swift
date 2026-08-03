@@ -1240,7 +1240,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
         if isUtilCard(index) {
-            return makeUtilCardContentController { [weak self] url, source, sourceView, completion in
+            return makeUtilCardContentController(
+                hasSaves: { [weak self] in self?.items.isEmpty == false }
+            ) { [weak self] url, source, sourceView, completion in
                 self?.saveUtilCardURL(
                     url,
                     captureSource: source,
@@ -1351,10 +1353,19 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         _ carousel: CardCarouselViewController,
         prefersThumbnailChipForCardAt index: Int
     ) -> Bool {
-        if isUtilCard(index) { return true }
+        if isUtilCard(index) { return false }
         guard let provider = cardProvider, let item = item(atCarouselIndex: index)
         else { return false }
         return provider.prefersThumbnailChip(for: item)
+    }
+
+    /// The util card holds no save, so its chip is neither a still nor a
+    /// favicon-and-skeleton mini card: it is the app's own mark over a button.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersUtilityChipForCardAt index: Int
+    ) -> Bool {
+        isUtilCard(index)
     }
 
     func carousel(
@@ -1494,6 +1505,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         refreshArchivePullAvailability(animated: true)
+        updateUtilCardCorona(forCenteredIndex: index)
         if isUtilCard(index) {
             readerForChrome = nil
             updateReaderChrome()

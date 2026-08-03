@@ -84,14 +84,12 @@ final class UtilCardTests: XCTestCase {
 
     // MARK: - The weekly row is conditional
 
-    func testAnEmptyWeeklyStoreShowsNoRowAndGivesItsSpaceBack() throws {
+    func testAnEmptyWeeklyStoreShowsNoRowAndASeededOneShowsIt() {
         let withoutRow = makeCard(showsOnboarding: true)
         withoutRow.loadViewIfNeeded()
         withoutRow.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         withoutRow.view.layoutIfNeeded()
         XCTAssertNil(withoutRow.view.descendant(identifier: "utilCard.saveOfTheWeek"))
-        let collapsedSafariY = try XCTUnwrap(
-            withoutRow.view.descendants(of: UIButton.self).first).frame.minY
 
         seedWeekly(.article, url: "https://example.com/a", title: "A Read")
         let withRow = makeCard(showsOnboarding: true)
@@ -99,11 +97,131 @@ final class UtilCardTests: XCTestCase {
         withRow.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         withRow.view.layoutIfNeeded()
         XCTAssertNotNil(withRow.view.descendant(identifier: "utilCard.saveOfTheWeek"))
-        let expandedSafariY = try XCTUnwrap(
-            withRow.view.descendants(of: UIButton.self).first).frame.minY
-        XCTAssertGreaterThan(
-            expandedSafariY, collapsedSafariY,
-            "The setup buttons must move up when there is no weekly row")
+    }
+
+    // MARK: - The “or” seam
+
+    func testOrSeparatorShowsWhileSetupIsOpenAndTheDeckHoldsNothing() throws {
+        let card = makeCard(showsOnboarding: true, hasSaves: false)
+        card.loadViewIfNeeded()
+
+        let separator = try XCTUnwrap(orSeparator(in: card))
+        XCTAssertFalse(separator.isHidden)
+    }
+
+    func testOrSeparatorStandsDownOnceTheDeckHoldsASave() throws {
+        let card = makeCard(showsOnboarding: true, hasSaves: true)
+        card.loadViewIfNeeded()
+
+        let separator = try XCTUnwrap(orSeparator(in: card))
+        XCTAssertTrue(separator.isHidden)
+    }
+
+    func testOrSeparatorLeavesWhenBothSetupLegsAreHandled() throws {
+        let store = makeStore()
+        let card = makeCard(showsOnboarding: true, hasSaves: false, store: store)
+        card.loadViewIfNeeded()
+        let separator = try XCTUnwrap(orSeparator(in: card))
+        XCTAssertFalse(separator.isHidden)
+
+        store.markSafariSetupHandled()
+        store.markSaveSetupHandled()
+
+        XCTAssertTrue(separator.isHidden)
+    }
+
+    func testCompletedVariantHasNoOrSeparator() {
+        let card = makeCard(showsOnboarding: false, hasSaves: false)
+        card.loadViewIfNeeded()
+
+        XCTAssertNil(orSeparator(in: card))
+    }
+
+    // MARK: - The headline belongs to the launch
+
+    func testIntroHeadlineIsAlreadyFinishedWhenItIsNotTheLaunchsOwn() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: false)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+
+        let headline = try XCTUnwrap(
+            card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
+        let fragments = try XCTUnwrap(headline.growingLine?.fragments)
+        XCTAssertTrue(fragments.stem.isFullyRevealed)
+        XCTAssertTrue(fragments.tail.isFullyRevealed)
+        XCTAssertTrue(fragments.period.isFullyConcealed)
+    }
+
+    func testIntroHeadlineWaitsBehindItsFrontOnTheLaunchItBelongsTo() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: true)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+
+        let headline = try XCTUnwrap(
+            card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
+        let fragments = try XCTUnwrap(headline.growingLine?.fragments)
+        XCTAssertFalse(fragments.stem.isFullyRevealed)
+        XCTAssertFalse(fragments.tail.isFullyRevealed)
+    }
+
+    // MARK: - Layout
+
+    func testSetupActionsStackUpFromThePasteFieldAndTheHeadlineSitsBelowTheCardTop() throws {
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let card = makeCard(showsOnboarding: true, hasSaves: false)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+
+        let paste = try XCTUnwrap(card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introPaste.value()))
+        let separator = try XCTUnwrap(orSeparator(in: card))
+        let buttons = card.view.descendants(of: UIButton.self)
+            .filter { $0.superview === card.view }
+            .sorted { $0.frame.minY < $1.frame.minY }
+        XCTAssertEqual(buttons.count, 2)
+        let headline = try XCTUnwrap(
+            card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
+        let weekly = try XCTUnwrap(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+
+        // Bottom-up: paste field, the seam, both setup actions.
+        XCTAssertLessThan(separator.frame.maxY, paste.frame.minY)
+        XCTAssertLessThan(buttons[1].frame.maxY, separator.frame.minY)
+        XCTAssertLessThan(buttons[0].frame.maxY, buttons[1].frame.minY)
+        // The headline is neither on the card's shoulder nor as low as the third
+        // the standalone onboarding root used.
+        XCTAssertGreaterThan(headline.frame.minY, card.view.bounds.height * 0.2)
+        XCTAssertLessThan(headline.frame.minY, card.view.bounds.height / 3)
+        XCTAssertGreaterThan(weekly.frame.minY, headline.frame.maxY)
+        XCTAssertLessThan(weekly.frame.maxY, buttons[0].frame.minY)
+    }
+
+    // MARK: - An already-saved weekly recommendation
+
+    func testWeeklyRowReadsAsAnsweredWhenItsURLIsAlreadySaved() throws {
+        seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
+        let card = makeCard(
+            showsOnboarding: true,
+            savedURLStrings: ["https://example.com/weekly"])
+        card.loadViewIfNeeded()
+
+        let weekly = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UtilURLRow)
+        XCTAssertTrue(weekly.isShownAsSaved)
+        XCTAssertLessThan(weekly.alpha, 1)
+    }
+
+    func testWeeklyRowIsOfferedPlainlyWhenNothingHasSavedItYet() throws {
+        seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
+        let card = makeCard(showsOnboarding: true, savedURLStrings: [])
+        card.loadViewIfNeeded()
+
+        let weekly = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UtilURLRow)
+        XCTAssertFalse(weekly.isShownAsSaved)
+        XCTAssertEqual(weekly.alpha, 1)
     }
 
     func testTheRowAppearsWithASeededStoreInTheCompletedVariantToo() {
@@ -185,7 +303,7 @@ final class UtilCardTests: XCTestCase {
         XCTAssertNotNil(central.view.descendant(identifier: "utilCard.saveOfTheWeek"))
     }
 
-    // MARK: - Helpers
+    // MARK: - Weekly helpers
 
     private func seedWeekly(
         _ kind: WeeklySaveKind, url: String, title: String, daysOld: Int = 1
@@ -213,23 +331,118 @@ final class UtilCardTests: XCTestCase {
             .first { $0.contains("•") }
     }
 
+    // MARK: - A save answers the first run
+
+    func testASaveMadeSinceOnboardingBeganCompletesIt() {
+        var newestSave: Date?
+        let store = makeStore(newestSaveDate: { newestSave })
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+        XCTAssertFalse(store.isCompleted)
+
+        newestSave = Date(timeIntervalSince1970: 1_100)
+        XCTAssertTrue(store.markCompletedIfSavedSinceOnboardingStart())
+        XCTAssertTrue(store.isCompleted)
+    }
+
+    func testSavesOlderThanTheJourneyDoNotAnswerIt() {
+        let store = makeStore(newestSaveDate: { Date(timeIntervalSince1970: 900) })
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+
+        XCTAssertFalse(store.markCompletedIfSavedSinceOnboardingStart())
+        XCTAssertFalse(store.isCompleted)
+    }
+
+    /// A reset while the deck is full: the first-run card comes back on the next
+    /// launch — the saves already there belong to the previous journey — and
+    /// stays until a NEW save arrives.
+    func testResettingWithSavesPresentShowsTheFirstRunCardUntilTheNextSave() {
+        var newestSave: Date? = Date(timeIntervalSince1970: 1_500)
+        let store = makeStore(newestSaveDate: { newestSave })
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+        store.markCompletedIfSavedSinceOnboardingStart()
+        XCTAssertTrue(store.isCompleted)
+
+        store.resetCompletion(now: Date(timeIntervalSince1970: 2_000))
+        XCTAssertFalse(store.isCompleted)
+        XCTAssertFalse(store.markCompletedIfSavedSinceOnboardingStart())
+
+        newestSave = Date(timeIntervalSince1970: 2_100)
+        XCTAssertTrue(store.markCompletedIfSavedSinceOnboardingStart())
+        XCTAssertTrue(store.isCompleted)
+    }
+
+    /// The verdict is latched, not derived: deleting the save that answered the
+    /// first run does not bring it back.
+    func testDeletingTheAnsweringSaveDoesNotReopenOnboarding() {
+        var newestSave: Date? = Date(timeIntervalSince1970: 1_100)
+        let store = makeStore(newestSaveDate: { newestSave })
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+        store.markCompletedIfSavedSinceOnboardingStart()
+
+        newestSave = nil
+        XCTAssertTrue(store.isCompleted)
+    }
+
+    func testOnboardingStartIsStampedOnlyOnce() {
+        let store = makeStore(newestSaveDate: { nil })
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 5_000))
+
+        XCTAssertEqual(store.onboardingStartDate, Date(timeIntervalSince1970: 1_000))
+    }
+
+    func testAnAlreadyCompletedAppNeverStartsAJourney() {
+        let store = makeStore(newestSaveDate: { nil })
+        store.markCompleted()
+
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 9_000))
+
+        XCTAssertNil(store.onboardingStartDate)
+    }
+
+    private func makeStore(
+        newestSaveDate: @escaping () -> Date?
+    ) -> AppOnboardingStore {
+        AppOnboardingStore(
+            app: .reader,
+            defaults: defaults,
+            setupStatusStore: LunaSetupStatusStore(defaults: defaults),
+            newestSaveDate: newestSaveDate)
+    }
+
+    private func makeStore() -> AppOnboardingStore {
+        AppOnboardingStore(
+            app: .reader,
+            defaults: defaults,
+            setupStatusStore: LunaSetupStatusStore(defaults: defaults))
+    }
+
+    private func orSeparator(in card: UtilCardContentViewController) -> UIView? {
+        card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introOr.value())
+    }
+
     private func makeCard(
         showsOnboarding: Bool,
+        animatesIntro: Bool = false,
+        hasSaves: Bool = false,
+        savedURLStrings: Set<String> = [],
         store: AppOnboardingStore? = nil,
         app: LunaApp = .reader,
         saveHandler: UtilCardContentViewController.SaveHandler? = nil
     ) -> UtilCardContentViewController {
-        let resolvedStore = store ?? AppOnboardingStore(
-            app: app,
-            defaults: defaults,
-            setupStatusStore: LunaSetupStatusStore(defaults: defaults))
-        return UtilCardContentViewController(
+        UtilCardContentViewController(
             showsOnboarding: showsOnboarding,
-            configuration: .configuration(for: app, saveSetupMode: .actionButtonShortcut),
-            onboardingStore: resolvedStore,
+            animatesIntro: animatesIntro,
+            configuration: .configuration(
+                for: app,
+                saveSetupMode: .actionButtonShortcut),
+            onboardingStore: store ?? makeStore(),
             weeklyStore: weekly,
             app: app,
             now: { self.clock },
+            hasSaves: { hasSaves },
+            savedURLStrings: { savedURLStrings },
             saveHandler: saveHandler ?? { _, _, _, completion in completion(true) })
     }
 }

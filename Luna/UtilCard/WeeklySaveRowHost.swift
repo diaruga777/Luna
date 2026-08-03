@@ -19,6 +19,11 @@ final class WeeklySaveRowHost: UIView {
     var onSave: ((_ urlString: String, _ sourceView: UIView) -> Void)?
     /// The card asks for a relayout whenever the slot appears or disappears.
     var onPresenceChange: (() -> Void)?
+    /// Whether the deck already holds this URL — installed by the util card so
+    /// an answered pick shows dimmed under a checkmark rather than offered.
+    var isSaved: ((_ urlString: String) -> Bool)? {
+        didSet { updateSavedStates() }
+    }
 
     private let store: WeeklySaveStore
     private let app: LunaApp
@@ -208,6 +213,15 @@ final class WeeklySaveRowHost: UIView {
         row.onTap = { [weak self, weak row] in
             guard let self, let row else { return }
             self.onSave?(display.save.urlString, row)
+        }
+        row.setSaved(isSaved?(display.save.urlString) ?? false)
+    }
+
+    /// Reconciled by the util card on `.readingListChanged`: saving or deleting
+    /// the pick flips its row between offered and answered.
+    func updateSavedStates() {
+        for (offset, row) in rows.enumerated() where displays.indices.contains(offset) {
+            row.setSaved(isSaved?(displays[offset].save.urlString) ?? false)
         }
     }
 

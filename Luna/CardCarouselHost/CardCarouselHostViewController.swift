@@ -49,6 +49,11 @@ struct UtilCardSaveTransitionArtwork {
     let kind: RecentURLPreview.Kind
     let sourceFrame: CGRect
     let backgroundColor: UIColor
+    /// The source's rim colour when it is not the neutral glass one — the Save
+    /// of the Week row's palette tint. The shell wears it so the grow starts
+    /// from exactly the row that was tapped instead of flicking to neutral on
+    /// its first frame.
+    let rimTint: UIColor?
     let cornerRadius: CGFloat
     let thumbnail: UIImageView
     let title: UILabel
@@ -148,6 +153,7 @@ private final class UtilCardSaveTransition {
             // carries the app's loading indicator until real content lands —
             // never a black rectangle with nothing happening in it.
             let rim = UtilURLRowGlassBorder()
+            rim.rimTint = artwork.rimTint
             rim.cornerRadius = artwork.cornerRadius
             rim.frame = shell.bounds
             rim.autoresizingMask = [.flexibleWidth, .flexibleHeight]

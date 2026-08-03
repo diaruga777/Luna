@@ -21,10 +21,23 @@ enum UtilCardLayout {
     /// exactly a third of the surface; the util card lifts it a little to leave
     /// the weekly row its own room below — a little, not up onto the card's
     /// shoulder.
+    ///
+    /// The completed card has no headline, and the weekly row takes this seat
+    /// instead of the card's shoulder: the two states then share one horizon,
+    /// and the pick of the week keeps the position the intro sentence had
+    /// rather than reading as the first item of a list.
     static let headlineTopRatio: CGFloat = 0.28
     static let headlineToWeekly: CGFloat = 24
     static let weeklyRowHeight: CGFloat = 82
     static let recentRowHeight: CGFloat = 74
+    /// Where a block of recents starts when there is no weekly row to hang off.
+    static let recentsTop: CGFloat = 24
+    /// The seam between Luna's own pick and raw Safari history. It is
+    /// deliberately WIDER than `recentRowGap`, so the weekly row reads as its
+    /// own thing above the list rather than as the list's first entry.
+    static let weeklyToRecentsGap: CGFloat = 26
+    static let recentRowGap: CGFloat = 9
+    static let recentsToPasteGap: CGFloat = 12
     static let setupButtonHeight: CGFloat = 54
     static let setupButtonGap: CGFloat = 10
     /// The gap the setup block keeps above the paste field when no “or” stands
@@ -59,6 +72,9 @@ final class UtilCardContentViewController: CardContentViewController {
     /// that is the only thing in the app.
     private let hasSaves: () -> Bool
     private let savedURLStrings: () -> Set<String>
+    /// The Safari-history rows the completed card offers. Injected so the block's
+    /// geometry is assertable without a real history trail behind it.
+    private let recentMatches: @MainActor () -> [RecentURLPreview]
 
     private let headline: OnboardingIntroHeadlineView?
     private let weeklyHost: WeeklySaveRowHost
@@ -86,6 +102,9 @@ final class UtilCardContentViewController: CardContentViewController {
         savedURLStrings: @escaping () -> Set<String> = {
             Set(ReadingListStore.shared.items().map(\.urlString))
         },
+        recentMatches: @escaping @MainActor () -> [RecentURLPreview] = {
+            RecentURLMatcher.shared.matches
+        },
         saveHandler: @escaping SaveHandler
     ) {
         self.showsOnboarding = showsOnboarding
@@ -94,6 +113,7 @@ final class UtilCardContentViewController: CardContentViewController {
         self.onboardingStore = onboardingStore
         self.hasSaves = hasSaves
         self.savedURLStrings = savedURLStrings
+        self.recentMatches = recentMatches
         self.saveHandler = saveHandler
         weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app, now: now)
         headline = showsOnboarding
@@ -327,10 +347,21 @@ final class UtilCardContentViewController: CardContentViewController {
             return
         }
 
+        // With the headline gone the weekly row inherits its seat — a fraction
+        // of the card, not the top edge — and the recents hang below it across a
+        // seam wider than the one between two recents. Without a live pick there
+        // is no seat to keep: the history block reclaims the whole card.
         weeklyHost.frame = CGRect(
-            x: inset, y: 24, width: width, height: UtilCardLayout.weeklyRowHeight)
-        var nextY = weeklyVisible ? weeklyHost.frame.maxY + 10 : 24
-        let availableBottom = pasteRow.frame.minY - 12
+            x: inset,
+            y: weeklyVisible
+                ? (view.bounds.height * UtilCardLayout.headlineTopRatio).rounded()
+                : UtilCardLayout.recentsTop,
+            width: width,
+            height: UtilCardLayout.weeklyRowHeight)
+        var nextY = weeklyVisible
+            ? weeklyHost.frame.maxY + UtilCardLayout.weeklyToRecentsGap
+            : UtilCardLayout.recentsTop
+        let availableBottom = pasteRow.frame.minY - UtilCardLayout.recentsToPasteGap
         for row in recentRows {
             let fits = nextY + UtilCardLayout.recentRowHeight <= availableBottom
             row.isHidden = !fits
@@ -338,7 +369,7 @@ final class UtilCardContentViewController: CardContentViewController {
                 row.frame = CGRect(
                     x: inset, y: nextY,
                     width: width, height: UtilCardLayout.recentRowHeight)
-                nextY = row.frame.maxY + 9
+                nextY = row.frame.maxY + UtilCardLayout.recentRowGap
             }
         }
     }
@@ -544,7 +575,7 @@ final class UtilCardContentViewController: CardContentViewController {
 
     private func rebuildRecentRows() {
         for row in recentRows { row.removeFromSuperview() }
-        recentRows = RecentURLMatcher.shared.matches.map { preview in
+        recentRows = recentMatches().map { preview in
             let row = UtilURLRow(style: .recent)
             row.configure(preview)
             row.onTap = { [weak self, weak row] in
@@ -561,6 +592,12 @@ final class UtilCardContentViewController: CardContentViewController {
 /// A black URL row with a narrow Liquid Glass rim — the same rim the deck's own
 /// cards wear, so a row reads as a card in waiting rather than as a tinted
 /// banner.
+///
+/// The two styles are deliberately NOT interchangeable dressings of one row.
+/// A recent is raw Safari history and stays neutral; the Save of the Week is
+/// Luna's own pick and carries the app's colour — a wash over the same black, a
+/// palette-tinted rim, and its "… of the week" line in the accent — so the two
+/// never read as one list of equals.
 final class UtilURLRow: UIControl {
     enum Style: Equatable { case saveOfTheWeek, recent }
 
@@ -568,7 +605,17 @@ final class UtilURLRow: UIControl {
     /// slide, so all three round by the same amount.
     static let cornerRadius: CGFloat = 16
 
+    /// The wash the weekly row wears over the shared black. Low enough that the
+    /// row is still a black card in waiting, high enough to separate it from the
+    /// history rows beneath at a glance.
+    static let weeklyWashAlpha: CGFloat = 0.13
+    /// The weekly rim's tint. The neutral rim is white at 0.14, so the palette
+    /// goes on at a comparable weight rather than as a saturated outline.
+    static let weeklyRimAlpha: CGFloat = 0.42
+
     private let style: Style
+    /// Present on the weekly row only, beneath every other subview.
+    private let wash = UIView()
     private let thumbnail = UIImageView()
     private let savedOverlay = UIView()
     private let savedCheckmark = UIImageView()
@@ -599,8 +646,11 @@ final class UtilURLRow: UIControl {
         titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = 2
-        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        subtitleLabel.textColor = LunaColors.secondaryText
+        subtitleLabel.font = .systemFont(
+            ofSize: 12, weight: style == .saveOfTheWeek ? .semibold : .regular)
+        subtitleLabel.textColor = style == .saveOfTheWeek
+            ? LunaSurfacePalette.progressAccent
+            : LunaColors.secondaryText
         subtitleLabel.lineBreakMode = .byTruncatingMiddle
 
         // Already saved: the artwork stays legible under a thin scrim and the
@@ -615,6 +665,14 @@ final class UtilURLRow: UIControl {
         savedCheckmark.contentMode = .scaleAspectFit
         savedOverlay.addSubview(savedCheckmark)
 
+        if style == .saveOfTheWeek {
+            wash.backgroundColor = LunaSurfacePalette.baseColor
+                .withAlphaComponent(Self.weeklyWashAlpha)
+            wash.isUserInteractionEnabled = false
+            addSubview(wash)
+            border.rimTint = LunaSurfacePalette.baseColor
+                .withAlphaComponent(Self.weeklyRimAlpha)
+        }
         addSubview(thumbnail)
         addSubview(savedOverlay)
         addSubview(titleLabel)
@@ -660,6 +718,26 @@ final class UtilURLRow: UIControl {
         subtitleLabel.transform = transform
     }
 
+    /// The row's fill as ONE flat colour, with the weekly wash already
+    /// composited into the black base. The save transition's shell is a single
+    /// view, so it takes this rather than the base plus a wash it cannot layer.
+    private var compositedFill: UIColor {
+        let base = backgroundColor ?? .black
+        guard style == .saveOfTheWeek else { return base }
+        var baseRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
+        var washRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
+        guard base.getRed(&baseRGBA.r, green: &baseRGBA.g, blue: &baseRGBA.b, alpha: &baseRGBA.a),
+              LunaSurfacePalette.baseColor.getRed(
+                &washRGBA.r, green: &washRGBA.g, blue: &washRGBA.b, alpha: &washRGBA.a)
+        else { return base }
+        let wash = Self.weeklyWashAlpha
+        return UIColor(
+            red: washRGBA.r * wash + baseRGBA.r * (1 - wash),
+            green: washRGBA.g * wash + baseRGBA.g * (1 - wash),
+            blue: washRGBA.b * wash + baseRGBA.b * (1 - wash),
+            alpha: 1)
+    }
+
     /// This URL is already in the deck: the row dims and its artwork carries a
     /// checkmark, through which the favicon or thumbnail still reads.
     func setSaved(_ saved: Bool) {
@@ -684,6 +762,7 @@ final class UtilURLRow: UIControl {
             titleLabel.transform = parallax
             subtitleLabel.transform = parallax
         }
+        wash.frame = bounds
         let imageSide = min(52, max(42, bounds.height - 22))
         thumbnail.frame = CGRect(
             x: 11,
@@ -747,7 +826,8 @@ extension UtilURLRow: UtilCardSaveTransitionArtworkProviding {
         return UtilCardSaveTransitionArtwork(
             kind: previewKind,
             sourceFrame: convert(bounds, to: coordinateView),
-            backgroundColor: backgroundColor ?? .black,
+            backgroundColor: compositedFill,
+            rimTint: border.rimTint,
             cornerRadius: layer.cornerRadius,
             thumbnail: thumbnailCopy,
             title: titleCopy,
@@ -773,6 +853,16 @@ final class UtilURLRowGlassBorder: UIVisualEffectView {
     var cornerRadius: CGFloat = UtilURLRowGlassBorder.cornerRadius {
         didSet {
             guard cornerRadius != oldValue else { return }
+            applyGeometry()
+        }
+    }
+
+    /// Replaces the neutral glass rim. The Save of the Week row is the one
+    /// caller: everything else — the history rows, the save transition's growing
+    /// shell — is a card in waiting and stays untinted.
+    var rimTint: UIColor? {
+        didSet {
+            guard rimTint != oldValue else { return }
             applyGeometry()
         }
     }
@@ -815,7 +905,7 @@ final class UtilURLRowGlassBorder: UIVisualEffectView {
         highlight.path = UIBezierPath(
             roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
             cornerRadius: max(0, corner - 0.5)).cgPath
-        highlight.strokeColor = GlassStyle.glassBorderColor
+        highlight.strokeColor = (rimTint ?? GlassStyle.glassBorderColor)
             .resolvedColor(with: traitCollection).cgColor
     }
 }

@@ -45,13 +45,22 @@ The Save of the Week row is CONDITIONAL: it exists whenever
 `WeeklySaveStore` holds a live signed entry for one of this app's kinds, and the
 card reclaims its slot when it doesn't. Its content is the signed, CloudKit-
 published weekly pick — see `claudedocs/save-of-the-week.md` for the record
-schema, the signing, the 9-day/30-day age rules and the deployment steps. The
-row is black with the SAME Liquid Glass rim the deck's own cards wear —
-`GlassStyle.barEffect()` under `GlassStyle.glassBorderColor`, no app-palette tint
-(`UtilURLRowGlassBorder`, shared with the recent rows and with the save
-transition's shell) — and its subtitle is `host • <noun> of the week`, where the
-noun is the app's own (Save / Read / Download / Deal) and switches to "of the
-month" at nine days.
+schema, the signing, the 9-day/30-day age rules and the deployment steps. Its
+subtitle is `host • <noun> of the week`, where the noun is the app's own (Save /
+Read / Download / Deal) and switches to "of the month" at nine days.
+
+**The weekly row is dressed apart from the recent rows.** Both are the same black
+`UtilURLRow` under the same Liquid Glass recipe (`GlassStyle.barEffect()` in
+`UtilURLRowGlassBorder`), but the pick of the week is Luna's own recommendation
+and carries the app's colour, three ways at once: a palette wash over the black
+(`UtilURLRow.weeklyWashAlpha`), the rim's stroke replaced by the palette
+(`UtilURLRowGlassBorder.rimTint` at `weeklyRimAlpha` — comparable in weight to
+the neutral white-at-0.14 rim, not a saturated outline), and its subtitle in
+`LunaSurfacePalette.progressAccent` at semibold. A recent is raw Safari history
+and stays neutral in all three. The save transition's growing shell takes the
+weekly row's flattened fill and its rim tint (`UtilCardSaveTransitionArtwork`
+carries both), so a weekly save opens from exactly the row that was tapped
+instead of flicking to neutral on its first frame.
 
 A new value REPLACING the one on screen runs a row-sized eclipse; a value
 appearing or vanishing is a fade plus a reflow — and an appearing row fades in
@@ -139,12 +148,20 @@ the host observes completion and constructs the completed variant.
 
 ## Completed state and recent URLs
 
-Once setup is complete, the headline and setup buttons are absent. Save of the
-Week, when there is one, moves to the top of the card. Beneath it the card adds as many matching,
-unsaved recent Safari URLs as fit above the paste row; the card never scrolls.
+Once setup is complete, the headline and setup buttons are absent. **Save of the
+Week inherits the headline's seat**, not the card's top edge: the same
+`UtilCardLayout.headlineTopRatio` fraction of the card, so the two states share
+one horizon and the pick reads as the card's subject rather than as the first
+entry of a list. Beneath it the card adds as many matching, unsaved recent Safari
+URLs as fit above the paste row; the card never scrolls. The seam between the
+weekly row and the recents (`weeklyToRecentsGap`) is deliberately WIDER than the
+gap between two recents (`recentRowGap`) — that difference is what groups the
+history rows together and leaves the weekly row on its own. With no live pick
+there is no seat to keep and the history block starts at `recentsTop` instead,
+taking the whole card (one row more fits).
 
-Recent rows use the same black layout as Save of the Week but a neutral Liquid
-Glass rim and only the URL host as the subtitle. They come from
+Recent rows use the same black layout as Save of the Week but the neutral Liquid
+Glass rim, no palette wash, and only the URL host as the subtitle. They come from
 `RecentURLMatcher.shared.matches`, so source, classification, cache, newest-first
 ordering, and unsaved filtering are exactly the former recent-URL behavior:
 
@@ -200,9 +217,15 @@ per-app and per-age subtitle, its save callback, the bottom-up order of the
 setup block, the “or” rule in all four combinations, the launch-only headline
 sweep, the headline-speaks-first hold (elements at alpha 0 on the animating
 launch, visible immediately on any other appearance, and a mid-sweep weekly
-arrival claiming its slot at alpha 0), the answered weekly row, and the
+arrival claiming its slot at alpha 0), the answered weekly row, the completed
+card's horizon (the weekly row on the headline's ratio, a wider seam above the
+recents than between them, and the recents reclaiming the top without a pick),
+the weekly row's dressing apart from a history row (rim tint, fill, subtitle
+colour, all read back through the save-transition artwork), and the
 save-completes-onboarding latch (older saves and a later delete both leave it
-alone). `WeeklyRowHostTests` covers the
+alone). Its recents come through the card's injected `recentMatches`, so the
+block's geometry is assertable without a real Safari trail.
+`WeeklyRowHostTests` covers the
 row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the
 permanent index-zero offset.

@@ -363,6 +363,90 @@ final class UtilCardTests: XCTestCase {
         XCTAssertNotNil(central.view.descendant(identifier: "utilCard.saveOfTheWeek"))
     }
 
+    // MARK: - The completed card's horizon
+
+    /// Post-onboarding the pick of the week keeps the seat the intro headline
+    /// had — it is not the first entry of the history list, and the seam below it
+    /// is wider than the one between two history rows.
+    func testCompletedCardSeatsTheWeeklyRowWhereTheHeadlineStoodAboveTheRecents() throws {
+        seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
+        let card = makeCard(
+            showsOnboarding: false,
+            recents: [recent("a"), recent("b")])
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let weeklyRow = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        let weekly = weeklyRow.convert(weeklyRow.bounds, to: card.view)
+        let recents = visibleRecentRows(in: card)
+        XCTAssertEqual(recents.count, 2)
+
+        XCTAssertEqual(
+            weekly.minY,
+            (card.view.bounds.height * UtilCardLayout.headlineTopRatio).rounded())
+        XCTAssertGreaterThan(recents[0].frame.minY, weekly.maxY)
+        let seam = recents[0].frame.minY - weekly.maxY
+        let betweenRecents = recents[1].frame.minY - recents[0].frame.maxY
+        XCTAssertGreaterThan(seam, betweenRecents)
+    }
+
+    /// No live pick, no seat to keep: history takes the whole card.
+    func testCompletedCardWithoutAWeeklyPickLetsTheRecentsReclaimTheTop() throws {
+        let card = makeCard(showsOnboarding: false, recents: [recent("a")])
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        XCTAssertNil(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        let recents = visibleRecentRows(in: card)
+        XCTAssertEqual(recents.first?.frame.minY, UtilCardLayout.recentsTop)
+    }
+
+    /// Luna's own pick wears the app's colour; raw history stays neutral.
+    func testTheWeeklyRowIsDressedApartFromAHistoryRow() throws {
+        seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
+        let card = makeCard(showsOnboarding: false, recents: [recent("a")])
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let weeklyRow = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UtilURLRow)
+        let recentRow = try XCTUnwrap(visibleRecentRows(in: card).first)
+        // The save transition's artwork is the row's own dressing, flattened.
+        let weekly = try XCTUnwrap(
+            weeklyRow.makeUtilCardSaveTransitionArtwork(in: card.view))
+        let history = try XCTUnwrap(
+            recentRow.makeUtilCardSaveTransitionArtwork(in: card.view))
+
+        XCTAssertNotNil(weekly.rimTint)
+        XCTAssertNil(history.rimTint)
+        XCTAssertNotEqual(weekly.backgroundColor, history.backgroundColor)
+        let traits = card.view.traitCollection
+        XCTAssertNotEqual(
+            weekly.subtitle?.textColor?.resolvedColor(with: traits),
+            history.subtitle?.textColor?.resolvedColor(with: traits))
+    }
+
+    private func visibleRecentRows(
+        in card: UtilCardContentViewController
+    ) -> [UtilURLRow] {
+        card.view.descendants(of: UtilURLRow.self)
+            .filter { $0.accessibilityIdentifier == "utilCard.recent" && !$0.isHidden }
+            .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    private func recent(_ path: String) -> RecentURLPreview {
+        RecentURLPreview(
+            urlString: "https://recent.example/\(path)",
+            title: "Recent \(path)",
+            subtitle: "recent.example",
+            kind: .article,
+            imageData: nil)
+    }
+
     // MARK: - Weekly helpers
 
     private func seedWeekly(
@@ -524,6 +608,7 @@ final class UtilCardTests: XCTestCase {
         savedURLStrings: Set<String> = [],
         store: AppOnboardingStore? = nil,
         app: LunaApp = .reader,
+        recents: [RecentURLPreview] = [],
         saveHandler: UtilCardContentViewController.SaveHandler? = nil
     ) -> UtilCardContentViewController {
         UtilCardContentViewController(
@@ -538,6 +623,7 @@ final class UtilCardTests: XCTestCase {
             now: { self.clock },
             hasSaves: { hasSaves },
             savedURLStrings: { savedURLStrings },
+            recentMatches: { recents },
             saveHandler: saveHandler ?? { _, _, _, completion in completion(true) })
     }
 }

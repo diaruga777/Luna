@@ -105,7 +105,14 @@ doesn't hold the other rows back — and clears a kind the cloud no longer has.
 
 The row is CONDITIONAL. With no live entry for any of this app's kinds the slot
 collapses and both layout branches reclaim it (the setup buttons move up in the
-first-run state; the recent rows start higher in the completed state).
+first-run state; in the completed state the recent rows take the card's top,
+which is a seat the weekly row otherwise does not occupy — see
+`claudedocs/util-card.md`).
+
+It is also the one util row that is NOT dressed like Safari history: Luna's own
+pick carries the app's colour — a palette wash over the shared black, a
+palette-tinted rim instead of the neutral glass one, and its "… of the week"
+line in the accent — so it never reads as the first entry of the recents list.
 
 - **Appearing / disappearing**: a 0.24s fade plus a reflow. An appearing row
   fades in IN PLACE — the host is laid out before the animation, so the row

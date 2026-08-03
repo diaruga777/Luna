@@ -74,6 +74,16 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         prefersThumbnailChipForCardAt index: Int
     ) -> Bool
+    /// Whether this card's chip is a UTILITY chip: the icon supplied by
+    /// `loadThumbnailForCardAt` centered over a single button pill, in place of
+    /// both a save's still and a save's badge-and-skeleton mini card. True only
+    /// for the deck's permanent util card, which holds no save to describe.
+    /// Answered before `prefersThumbnailChipForCardAt`, and honoured by both
+    /// scrubber styles.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersUtilityChipForCardAt index: Int
+    ) -> Bool
     /// Optional small accessory pinned to the card's top-leading corner.
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -114,6 +124,11 @@ public extension CardCarouselDataSource {
     func carousel(
         _ carousel: CardCarouselViewController,
         prefersThumbnailChipForCardAt index: Int
+    ) -> Bool { false }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersUtilityChipForCardAt index: Int
     ) -> Bool { false }
 
     func carousel(
@@ -1238,6 +1253,10 @@ public final class CardCarouselViewController: UIViewController {
         stripLoadGeneration += 1
         let generation = stripLoadGeneration
         for index in 0..<count {
+            if dataSource.carousel(self, prefersUtilityChipForCardAt: index) {
+                loadUtilityChip(at: index, generation: generation)
+                continue
+            }
             switch style.scrubberStyle {
             case .thumbnails:
                 dataSource.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
@@ -1269,6 +1288,16 @@ public final class CardCarouselViewController: UIViewController {
                     return
                 }
                 self.scrubber.setThumbnail(image, at: index)
+            }
+        }
+    }
+
+    /// The util card's chip: its icon over a button pill, in either style.
+    private func loadUtilityChip(at index: Int, generation: Int) {
+        dataSource?.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
+            DispatchQueue.main.async {
+                guard let self, self.stripLoadGeneration == generation else { return }
+                self.scrubber.setUtilityChip(icon: image, at: index)
             }
         }
     }

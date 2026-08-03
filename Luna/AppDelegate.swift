@@ -54,6 +54,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // per app target; kind-specific launch work (audio wiring, pending-
         // completion promotion, transport injection) lives in its `install()`.
         KindWiring.install()
+        // Onboarding's own launch bookkeeping, before any root reads its state:
+        // stamp the start of a first run (or of the run a reset just began), then
+        // latch completion if a save has arrived since — a save from ANY surface
+        // answers the first-run card, and the latch survives deleting it.
+        AppOnboardingStore.shared.beginOnboardingIfNeeded()
+        AppOnboardingStore.shared.markCompletedIfSavedSinceOnboardingStart()
         UtilCardContentViewController.setupJourneyLauncher = { presenter, source in
             AppOnboardingViewController.presentSetupReplay(
                 source,

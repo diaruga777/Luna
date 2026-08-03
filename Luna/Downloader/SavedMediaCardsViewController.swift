@@ -917,7 +917,9 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
         if isUtilCard(index) {
-            return makeUtilCardContentController { [weak self] url, source, sourceView, completion in
+            return makeUtilCardContentController(
+                hasSaves: { [weak self] in self?.items.isEmpty == false }
+            ) { [weak self] url, source, sourceView, completion in
                 self?.saveUtilCardURL(
                     url,
                     captureSource: source,
@@ -962,6 +964,15 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         previewContentControllerForCardAt index: Int
     ) -> CardContentViewController? {
         self.carousel(carousel, contentControllerForCardAt: index)
+    }
+
+    /// The util card holds no save, so its chip is the app's own mark over a
+    /// button pill rather than a media still.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersUtilityChipForCardAt index: Int
+    ) -> Bool {
+        isUtilCard(index)
     }
 
     func carousel(
@@ -1052,6 +1063,7 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         refreshArchivePullAvailability(animated: true)
+        updateUtilCardCorona(forCenteredIndex: index)
         updateShareButton()
         if renderedPasteboardState != nil, index == 0 {
             // Nothing reads the pasteboard on arrival — the card's paste control

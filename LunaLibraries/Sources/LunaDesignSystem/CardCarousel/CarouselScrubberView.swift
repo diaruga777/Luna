@@ -226,6 +226,16 @@ public final class CarouselScrubberView: UIView {
         itemViews[index].setBadge(badge)
     }
 
+    /// The permanent util card's chip. It is not a save, so it gets neither a
+    /// favicon badge nor skeleton body text: the running app's own
+    /// action-extension icon sits high on the chip with one pill beneath it
+    /// standing in for the card's button — a shrunken copy of a card that holds
+    /// a mark and a control rather than an article.
+    public func setUtilityChip(icon: UIImage?, at index: Int) {
+        guard itemViews.indices.contains(index) else { return }
+        itemViews[index].setUtilityIcon(icon)
+    }
+
     /// Artwork layered over a `.miniCards` chip without replacing its thumbnail.
     public func setAccessoryImage(_ image: UIImage?, at index: Int) {
         guard itemViews.indices.contains(index) else { return }
@@ -405,6 +415,20 @@ private final class GradientMaskView: UIView {
 /// selected chip lifts with a soft shadow; its siblings recede — instead of a
 /// drawn border.
 private final class ScrubberItemView: UIView {
+    /// The util chip's mark and its button pill, as fractions of the chip so the
+    /// two styles' different chip sizes both read the same.
+    private enum UtilityChipMetrics {
+        /// The mark matches a mini card's source badge exactly — the util card
+        /// carries an identity, not a picture.
+        static let markSide: CGFloat = 16
+        /// Vertically centered, then lifted by this factor: the mark reads as
+        /// the card's masthead while leaving the pill room below it.
+        static let markCenterLift: CGFloat = 1.3
+        static let pillWidth: CGFloat = 24
+        static let pillHeight: CGFloat = 8
+        static let pillGap: CGFloat = 5
+    }
+
     let imageView = UIImageView()
     private let badgeView = CarouselSourceBadgeView()
     private let accessoryImageView = UIImageView()
@@ -412,6 +436,10 @@ private final class ScrubberItemView: UIView {
     /// The mini card's own furniture (badge + skeleton bars), hidden while the
     /// chip shows a full-bleed still instead. Empty in `.thumbnails`.
     private var miniCardFurniture: [UIView] = []
+    /// The util chip's own furniture, built on demand and laid out from bounds
+    /// (the chip is sized by Auto Layout after init).
+    private var utilityMark: UIImageView?
+    private var utilityPill: UIView?
 
     init(style: CarouselScrubberView.Style, size: CGSize) {
         self.style = style
@@ -499,9 +527,69 @@ private final class ScrubberItemView: UIView {
         badgeView.setBadge(badge)
     }
 
+    /// Turns this chip into the util card's: a card surface carrying the app's
+    /// action-extension mark and one button pill, and nothing else. Both a
+    /// thumbnail well and a mini card's furniture stand down for it.
+    func setUtilityIcon(_ icon: UIImage?) {
+        backgroundColor = LunaColors.background
+        imageView.image = nil
+        imageView.isHidden = true
+        for view in miniCardFurniture { view.isHidden = true }
+
+        let mark = utilityMark ?? {
+            let view = UIImageView()
+            view.contentMode = .scaleAspectFit
+            view.clipsToBounds = true
+            view.layer.cornerRadius = 4
+            view.layer.cornerCurve = .continuous
+            view.isUserInteractionEnabled = false
+            addSubview(view)
+            utilityMark = view
+            return view
+        }()
+        mark.image = icon
+        if utilityPill == nil {
+            let pill = UIView()
+            pill.backgroundColor = LunaColors.fill
+            pill.layer.cornerRadius = UtilityChipMetrics.pillHeight / 2
+            pill.isUserInteractionEnabled = false
+            addSubview(pill)
+            utilityPill = pill
+        }
+        setNeedsLayout()
+    }
+
+    /// A chip handed ordinary save artwork stops being the util card's.
+    private func discardUtilityFurniture() {
+        guard utilityMark != nil || utilityPill != nil else { return }
+        utilityMark?.removeFromSuperview()
+        utilityPill?.removeFromSuperview()
+        utilityMark = nil
+        utilityPill = nil
+        backgroundColor = style == .miniCards ? LunaColors.background : nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let mark = utilityMark, let pill = utilityPill else { return }
+        let side = UtilityChipMetrics.markSide
+        let centerY = bounds.height / 2 / UtilityChipMetrics.markCenterLift
+        mark.frame = CGRect(
+            x: ((bounds.width - side) / 2).rounded(),
+            y: (centerY - side / 2).rounded(),
+            width: side,
+            height: side)
+        pill.frame = CGRect(
+            x: ((bounds.width - UtilityChipMetrics.pillWidth) / 2).rounded(),
+            y: (mark.frame.maxY + UtilityChipMetrics.pillGap).rounded(),
+            width: UtilityChipMetrics.pillWidth,
+            height: UtilityChipMetrics.pillHeight)
+    }
+
     /// The chip's picture. In `.miniCards` an image swaps the mini card's
     /// furniture out for a full-bleed still; nil brings the furniture back.
     func setImage(_ image: UIImage?) {
+        discardUtilityFurniture()
         imageView.image = image
         guard style == .miniCards else { return }
         imageView.isHidden = image == nil

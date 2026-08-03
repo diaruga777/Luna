@@ -139,6 +139,11 @@ private final class UtilCardSaveTransition {
     private weak var host: CardCarouselHostViewController?
     private let sourceSnapshot: UIView
     private let artwork: UtilCardSaveTransitionArtwork?
+    /// The shell's own card rim, kept in step with its animating corner radius.
+    private var shellRim: UtilURLRowGlassBorder?
+    /// Luna's own waiting: the horizon spinner for a page being read, the
+    /// eclipse bar for a transfer. Retired by the crossfade into real content.
+    private var loadingIndicator: UIView?
     private var movementAnimator: UIViewPropertyAnimator?
     private weak var destination: UIView?
     private var destinationSnapshot: UIView?
@@ -159,11 +164,22 @@ private final class UtilCardSaveTransition {
             shell.clipsToBounds = true
             shell.isUserInteractionEnabled = false
             sourceSnapshot = shell
+            // The growing shell IS the destination card from the first frame:
+            // it wears the deck's own rim (following its radius as it opens) and
+            // carries the app's loading indicator until real content lands —
+            // never a black rectangle with nothing happening in it.
+            let rim = UtilURLRowGlassBorder()
+            rim.cornerRadius = artwork.cornerRadius
+            rim.frame = shell.bounds
+            rim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            shell.addSubview(rim)
+            shellRim = rim
             host.view.addSubview(shell)
             for view in [artwork.thumbnail, artwork.title] + [artwork.subtitle].compactMap({ $0 }) {
                 view.isUserInteractionEnabled = false
                 host.view.addSubview(view)
             }
+            installLoadingIndicator(for: artwork.kind, in: shell)
         } else {
             guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
             artwork = nil
@@ -232,6 +248,7 @@ private final class UtilCardSaveTransition {
         sourceSnapshot.layer.removeAllAnimations()
         sourceSnapshot.frame = currentFrame
         sourceSnapshot.layer.cornerRadius = currentCornerRadius
+        shellRim?.cornerRadius = currentCornerRadius
         if let artwork, let artworkFrames {
             artwork.thumbnail.layer.removeAllAnimations()
             artwork.title.layer.removeAllAnimations()
@@ -256,6 +273,7 @@ private final class UtilCardSaveTransition {
             guard let self else { return }
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
+            self.shellRim?.cornerRadius = CardSurfaceView.cornerRadius
             if let artwork = self.artwork, let targetArtwork {
                 artwork.thumbnail.frame = targetArtwork.thumbnail
                 artwork.thumbnail.layer.cornerRadius = min(
@@ -336,6 +354,7 @@ private final class UtilCardSaveTransition {
         let animator = UIViewPropertyAnimator(duration: 0.34, dampingRatio: 0.92) {
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
+            self.shellRim?.cornerRadius = CardSurfaceView.cornerRadius
             if let artwork = self.artwork {
                 let target = UtilCardSaveTransitionGeometry.fallback(
                     in: targetFrame, kind: artwork.kind,
@@ -351,6 +370,55 @@ private final class UtilCardSaveTransition {
         animator.startAnimation()
     }
 
+    /// The app's own waiting, inside the growing shell: a horizon spinner for a
+    /// page still being read, the eclipse progress bar for a media transfer
+    /// (which mounts at zero and hands off to the real card's own bar). Faded in
+    /// after a beat so a save that resolves at once never flashes it.
+    private func installLoadingIndicator(
+        for kind: RecentURLPreview.Kind, in shell: UIView
+    ) {
+        let indicator: UIView
+        switch kind {
+        case .media:
+            let bar = EclipseProgressBar()
+            bar.setProgress(0, animated: false)
+            let width = max(80, shell.bounds.width * 0.6)
+            bar.frame = CGRect(
+                x: (shell.bounds.width - width) / 2,
+                y: shell.bounds.midY - bar.intrinsicContentSize.height / 2,
+                width: width,
+                height: bar.intrinsicContentSize.height)
+            indicator = bar
+        case .article, .product:
+            let spinner = HorizonSpinnerView(side: 30)
+            spinner.frame = CGRect(
+                x: shell.bounds.midX - 15, y: shell.bounds.midY - 15,
+                width: 30, height: 30)
+            spinner.startAnimating()
+            indicator = spinner
+        }
+        indicator.autoresizingMask = [
+            .flexibleTopMargin, .flexibleBottomMargin,
+            .flexibleLeftMargin, .flexibleRightMargin,
+        ]
+        indicator.alpha = 0
+        shell.addSubview(indicator)
+        loadingIndicator = indicator
+        guard UIView.areAnimationsEnabled else {
+            indicator.alpha = 1
+            return
+        }
+        UIView.animate(withDuration: 0.2, delay: 0.15, options: [.curveEaseOut]) {
+            indicator.alpha = 1
+        }
+    }
+
+    private func retireLoadingIndicator() {
+        (loadingIndicator as? HorizonSpinnerView)?.stopAnimating()
+        loadingIndicator?.removeFromSuperview()
+        loadingIndicator = nil
+    }
+
     private func complete() {
         guard !isFinished else { return }
         isFinished = true
@@ -362,6 +430,7 @@ private final class UtilCardSaveTransition {
     }
 
     private func removeTransitionViews() {
+        retireLoadingIndicator()
         sourceSnapshot.removeFromSuperview()
         artwork?.thumbnail.removeFromSuperview()
         artwork?.title.removeFromSuperview()
@@ -422,16 +491,29 @@ class CardCarouselHostViewController: UIViewController {
     private var utilCardSaveTransition: UtilCardSaveTransition?
     private let utilCardShowsOnboardingAtLaunch =
         !AppOnboardingStore.shared.isCompleted
+    /// The eclipse corona the launch splash draws around the card. It belongs to
+    /// the util card while onboarding is unanswered — the same condition as the
+    /// intro headline — so an incomplete first run keeps the light the splash
+    /// handed it instead of losing it to the crossfade.
+    private var utilCardCorona: EclipseCoronaView?
+    private var isUtilCardCentered = true
 
     final var utilCardIndex: Int { 0 }
 
     final func isUtilCard(_ index: Int) -> Bool { index == utilCardIndex }
 
+    /// - Parameter hasSaves: whether the deck holds any save of its own. It
+    ///   decides the “or” separator, and — because an empty store launches
+    ///   centered on the util card — whether this appearance is the one the
+    ///   intro headline's sweep belongs to.
     final func makeUtilCardContentController(
+        hasSaves: @escaping () -> Bool,
         saveHandler: @escaping UtilCardContentViewController.SaveHandler
     ) -> CardContentViewController {
         UtilCardContentViewController(
             showsOnboarding: utilCardShowsOnboardingAtLaunch,
+            animatesIntro: !hasSaves() && !AppLaunchTransition.hasFinished,
+            hasSaves: hasSaves,
             saveHandler: saveHandler)
     }
 
@@ -453,6 +535,47 @@ class CardCarouselHostViewController: UIViewController {
             carousel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
+
+    // MARK: - The util card's corona
+
+    /// Keeps the corona in step with the deck. Hosts call this from
+    /// `didCenterCardAt`; the light belongs to the util card, so it fades out as
+    /// the deck moves to a save and back in when the card returns.
+    ///
+    /// It is drawn behind the carousel (over the starfield), at the resting
+    /// centered card frame — the same geometry the launch splash used, which is
+    /// what makes an incomplete first run's launch crossfade reveal no change.
+    final func updateUtilCardCorona(forCenteredIndex index: Int, animated: Bool = true) {
+        guard utilCardShowsOnboardingAtLaunch else { return }
+        layoutUtilCardCorona()
+        let centered = isUtilCard(index)
+        guard centered != isUtilCardCentered, let corona = utilCardCorona else { return }
+        isUtilCardCentered = centered
+        let apply = { corona.alpha = centered ? 1 : 0 }
+        guard animated, UIView.areAnimationsEnabled else {
+            apply()
+            return
+        }
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState]) {
+            apply()
+        }
+    }
+
+    private func layoutUtilCardCorona() {
+        guard utilCardShowsOnboardingAtLaunch,
+              let cardFrame = carousel.restingCenteredCardFrame(in: view)
+        else { return }
+        if utilCardCorona?.bounds.size != cardFrame.size {
+            utilCardCorona?.removeFromSuperview()
+            let corona = AppLaunchTransition.makePeakCoronaView(cardFrame: cardFrame)
+            isUtilCardCentered = isUtilCard(carousel.currentIndex)
+            corona.alpha = isUtilCardCentered ? 1 : 0
+            view.insertSubview(corona, belowSubview: carousel.view)
+            utilCardCorona = corona
+        } else {
+            utilCardCorona?.frame = cardFrame
+        }
     }
 
     final func mountArchiveTray(
@@ -538,6 +661,7 @@ class CardCarouselHostViewController: UIViewController {
         // after this one, so settle it before reading the card column back.
         carousel.view.layoutIfNeeded()
         alignBottomControlsToCardColumn()
+        layoutUtilCardCorona()
         archiveTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
     }
 

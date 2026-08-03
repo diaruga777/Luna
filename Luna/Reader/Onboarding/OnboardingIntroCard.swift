@@ -845,6 +845,36 @@ final class MoonRevealLineView: UIView {
         addSubview(pixelBloomView)
     }
 
+    /// Presents the line's finished state with no sweep at all: the front never
+    /// runs, and what it would have left behind is simply already there. Used by
+    /// a headline the user pages BACK to, where the reveal belonged to a launch
+    /// that has already happened.
+    func showFullyRevealed() {
+        guard !isFullyRevealed || finalLabel.isHidden else { return }
+        didStartSweep = false
+        isFullyRevealed = true
+        isFullyConcealed = false
+        isAccessibilityElement = true
+        finalLabel.isHidden = false
+        finalLabel.layer.mask = nil
+        moonLayer.removeFromSuperlayer()
+        pixelBloomView.stop()
+        pixelBloomView.removeFromSuperview()
+    }
+
+    /// The mirror: whatever a conceal would have taken away is already gone.
+    func showFullyConcealed() {
+        didStartSweep = false
+        isFullyRevealed = false
+        isFullyConcealed = true
+        isAccessibilityElement = false
+        finalLabel.isHidden = true
+        finalLabel.layer.mask = nil
+        moonLayer.removeFromSuperlayer()
+        pixelBloomView.stop()
+        pixelBloomView.removeFromSuperview()
+    }
+
     /// Returns an already-visible line to its occluded state so `reveal` can
     /// play again — the cleanup pass re-reveals content that loaded plainly.
     func prepareToRevealAgain() {
@@ -1213,6 +1243,19 @@ final class MoonRevealGrowingLineView: UIView {
             completion: completion)
     }
 
+    /// The sentence as both beats leave it — stem and tail standing, the stem's
+    /// own period gone — with no front ever running.
+    func showFinishedState() {
+        stemLine.showFullyRevealed()
+        tailLine.showFullyRevealed()
+        periodLine.showFullyConcealed()
+        for line in [periodLine, stemLine, tailLine] {
+            line.isAccessibilityElement = false
+        }
+        isAccessibilityElement = true
+        accessibilityLabel = finishedText
+    }
+
     private func sweep(
         _ operations: [(@escaping () -> Void) -> Void],
         spokenText: String,
@@ -1375,6 +1418,19 @@ final class OnboardingIntroHeadlineView: UIView {
             second.reveal(duration: duration, completion: completion)
         case .growing(let line):
             line.revealSecondBeat(duration: duration, completion: completion)
+        }
+    }
+
+    /// The headline as both beats leave it, with neither beat playing. A card
+    /// paged back to shows the sentence it already said rather than saying it
+    /// again — the reveal belongs to the launch.
+    func showFinishedState() {
+        switch shape {
+        case .pair(let first, let second):
+            first.showFullyRevealed()
+            second.showFullyRevealed()
+        case .growing(let line):
+            line.showFinishedState()
         }
     }
 }

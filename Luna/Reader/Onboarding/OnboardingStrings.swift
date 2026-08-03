@@ -72,7 +72,6 @@ enum OnboardingStrings {
     enum Intro {
         static let safariAction = Definition(shared: "Stop popups and paywalls")
         static let shortcutAction = Definition(shared: "Show me one click save")
-        static let shareAction = Definition(shared: "Show me 2-tap save")
         /// The paste row's placeholder, and the paste control's own label.
         static let paste = Definition(shared: "Paste a link")
         /// The seam between the two setup lessons and the paste row.
@@ -301,14 +300,6 @@ enum OnboardingStrings {
         static let settingsPillAccessibilityLabel = Definition(shared: "Open Settings")
         static let skipPillTitle = Definition(shared: "skip setup")
         static let skipPillAccessibilityLabel = Definition(shared: "Skip setup")
-
-        static let shareAnswer = Definition(shared: "Not another login wall...")
-        static let sharePitch = Definition(shared: "Nah, its easy. Check it")
-        static let shareTryIt = Definition(shared: "Try it:")
-        static let shareAside = Definition(
-            shared: "(You can also just share in the link normally tbf)")
-        static let sharePillAccessibilityLabel = Definition(
-            shared: "Share the example link")
     }
 
     enum Instruction {

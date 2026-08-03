@@ -50,14 +50,37 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let setup = LunaSetupStatusStore(defaults: defaults)
         let facet = AppOnboardingStore(
-            app: .reader, defaults: defaults, setupStatusStore: setup)
-        let central = AppOnboardingStore(
-            app: .luna, defaults: defaults, setupStatusStore: setup)
+            app: .reader,
+            defaults: defaults,
+            setupStatusStore: setup,
+            saveSetupMode: .actionButtonShortcut)
         setup.recordShortcutRun(for: .luna)
         XCTAssertFalse(facet.isCompleted)
 
         defaults.set(true, forKey: LunaSetupStatusStore.centralSafariKey)
         XCTAssertTrue(facet.isCompleted)
+    }
+
+    /// Inheritance is one-way: a fully configured facet leaves central Luna's
+    /// own first run untouched.
+    func testAFacetsSetupEvidenceNeverCompletesCentralLuna() {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let setup = LunaSetupStatusStore(defaults: defaults)
+        let central = AppOnboardingStore(
+            app: .luna,
+            defaults: defaults,
+            setupStatusStore: setup,
+            saveSetupMode: .actionButtonShortcut)
+        setup.recordShortcutInstallPressed(for: .reader)
+        setup.recordShortcutRun(for: .reader)
+        defaults.set(true, forKey: LunaSetupStatusStore.sharedSafariKey)
+
+        XCTAssertFalse(central.hasFinishedSafariSetup)
+        XCTAssertFalse(central.hasFinishedSaveSetup)
         XCTAssertFalse(central.isCompleted)
     }
 
@@ -256,7 +279,9 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(luna.demoPages, [.lunaPage, .instaTok, .amayzon])
     }
 
-    func testTwoTapFallbackRequiresEitherMissingOnboardingRequirement() {
+    /// There is no fallback lesson: a device that cannot run the Action Button
+    /// shortcut has no save setup at all, and its util card omits the button.
+    func testTheSaveLessonExistsOnlyWhereTheActionButtonShortcutCanRun() {
         func mode(
             os: Int,
             model: String,
@@ -268,15 +293,36 @@ final class ReaderOnboardingTests: XCTestCase {
                 isSimulator: simulator).saveSetupMode
         }
 
-        XCTAssertEqual(mode(os: 26, model: "iPhone17,1"), .shareSheet)
-        XCTAssertEqual(mode(os: 27, model: "iPhone15,4"), .shareSheet)
-        XCTAssertEqual(mode(os: 27, model: "iPad16,3"), .shareSheet)
+        XCTAssertEqual(mode(os: 26, model: "iPhone17,1"), .unavailable)
+        XCTAssertEqual(mode(os: 27, model: "iPhone15,4"), .unavailable)
+        XCTAssertEqual(mode(os: 27, model: "iPad16,3"), .unavailable)
         XCTAssertEqual(
             mode(os: 27, model: "iPhone17,1", simulator: true),
-            .shareSheet)
+            .unavailable)
         XCTAssertEqual(mode(os: 27, model: "iPhone16,1"), .actionButtonShortcut)
         XCTAssertEqual(mode(os: 27, model: "iPhone16,2"), .actionButtonShortcut)
         XCTAssertEqual(mode(os: 27, model: "iPhone17,1"), .actionButtonShortcut)
+    }
+
+    /// A device with no save lesson owes nothing on that leg, so Safari alone
+    /// finishes its first run.
+    func testWithNoSaveLessonTheSafariLegAloneCompletesOnboarding() {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppOnboardingStore(
+            app: .reader,
+            defaults: defaults,
+            setupStatusStore: LunaSetupStatusStore(defaults: defaults),
+            saveSetupMode: .unavailable)
+        XCTAssertTrue(store.hasFinishedSaveSetup)
+        XCTAssertFalse(store.isCompleted)
+
+        store.markSafariSetupHandled()
+
+        XCTAssertTrue(store.isCompleted)
     }
 
     func testSharePracticeRecognizesEveryMockLinkWithoutSavingVariants() throws {
@@ -286,123 +332,6 @@ final class ReaderOnboardingTests: XCTestCase {
         }
         XCTAssertFalse(ShareSetupPractice.matches(
             try XCTUnwrap(URL(string: "https://example.com/about"))))
-    }
-
-    @MainActor
-    func testFallbackIntroUsesTwoTapCopyAndTheLunaIcon() throws {
-        let intro = OnboardingIntroCardContentViewController(
-            introCopy: .growingLine(stem: "Read", tail: " more."),
-            supportingText: "",
-            saveSetupMode: .shareSheet)
-        intro.loadViewIfNeeded()
-
-        let button = try XCTUnwrap(
-            intro.view.descendants(of: UIButton.self).first {
-                $0.accessibilityLabel == OnboardingStrings.Intro.shareAction.value()
-            })
-        XCTAssertNotNil(button.configuration?.image)
-        XCTAssertFalse(intro.view.descendants(of: UIButton.self).contains {
-            $0.accessibilityLabel == OnboardingStrings.Intro.shortcutAction.value()
-        })
-    }
-
-    @MainActor
-    func testFallbackConversationEndsWithPracticeLinkThenTheRequestedAside() throws {
-        let messages = MessagesReplicaViewController(
-            urlString: OnboardingDemoPage.lunaPage.sharedURLString,
-            saveSetupMode: .shareSheet,
-            appName: LunaApp.reader.displayName,
-            actionExtensionIcon: nil)
-        messages.loadViewIfNeeded()
-        messages.updateURL(ShareSetupPractice.amayzonURLString)
-        messages.view.frame = CGRect(
-            origin: .zero,
-            size: AppLaunchGeometry.referenceSize)
-        messages.revealStagedConversationImmediately()
-        messages.revealSetupMessagesImmediately()
-        messages.view.layoutIfNeeded()
-
-        let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
-        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.shareAnswer.value()))
-        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.sharePitch.value()))
-        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.shareTryIt.value()))
-        XCTAssertTrue(labels.contains(OnboardingStrings.Messages.shareAside.value()))
-        XCTAssertEqual(
-            labels.filter { $0 == ShareSetupPractice.amayzonURLString }.count,
-            2,
-            "The incoming link and practice pill must stay on the same current URL")
-
-        let sharePill = try XCTUnwrap(
-            messages.view.descendants(of: OnboardingMessagePillButton.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.sharePill"
-            })
-        sharePill.beginAttentionPulse()
-        let shareCorona = try XCTUnwrap(
-            sharePill.descendants(of: EclipseCoronaView.self).first,
-            "The share link uses the same eclipse corona as the setup pills")
-        XCTAssertNotNil(
-            shareCorona.layer.animation(
-                forKey: OnboardingMessagePillButton.pulseAnimationKey))
-
-        let practice = try XCTUnwrap(
-            messages.view.descendants(of: UIView.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.sharePractice"
-            })
-        let aside = try XCTUnwrap(
-            messages.view.descendants(of: UIView.self).first {
-                $0.accessibilityIdentifier == "onboarding.messages.shareAside"
-            })
-        XCTAssertLessThan(
-            messages.view.convert(practice.bounds, from: practice).midY,
-            messages.view.convert(aside.bounds, from: aside).midY)
-
-        let skip = try XCTUnwrap(
-            messages.view.descendants(of: UIView.self).first {
-                $0.accessibilityIdentifier
-                    == OnboardingStrings.Accessibility.messagesSkipSetup.value()
-            })
-        XCTAssertEqual(skip.superview?.alpha, 0)
-        messages.revealShareSheetSkipMessage()
-        XCTAssertEqual(skip.superview?.alpha, 1)
-    }
-
-    @MainActor
-    func testMockShareSheetStartsWithoutLunaAndOffersTheExactEditRows() throws {
-        let sheet = OnboardingMockShareSheetView(
-            frame: CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize),
-            appName: LunaApp.luna.displayName,
-            urlString: ShareSetupPractice.lunaURLString,
-            appIcon: OnboardingActionExtensionIcon.image())
-        sheet.layoutIfNeeded()
-
-        let visibleFavorites = try XCTUnwrap(sheet.viewWithTag(40))
-        XCTAssertEqual(
-            visibleFavorites.subviews.compactMap {
-                ($0.viewWithTag(3) as? UILabel)?.text
-            },
-            ["Copy"])
-
-        let editFavorites = try XCTUnwrap(sheet.viewWithTag(201))
-        XCTAssertEqual(
-            editFavorites.descendants(of: UILabel.self).compactMap(\.text),
-            ["Copy"])
-        let editOthers = try XCTUnwrap(sheet.viewWithTag(203))
-        XCTAssertEqual(
-            editOthers.descendants(of: UILabel.self).compactMap(\.text),
-            [LunaApp.luna.displayName, "Save to Files", "Add to Reading List"])
-
-        let allLabels = sheet.descendants(of: UILabel.self).compactMap(\.text)
-        XCTAssertEqual(allLabels.filter { $0 == "Johnny\nAppleseed" }.count, 1)
-        XCTAssertEqual(allLabels.filter { $0 == "Laptop" }.count, 1)
-        for title in ["AirDrop", "Messages", "Reminders", "More"] {
-            XCTAssertTrue(allLabels.contains(title))
-        }
-        XCTAssertNotNil(
-            UIImage(systemName: "dot.radiowaves.up.forward"),
-            "The fallback must not regress to an empty AirDrop tile on iOS 26")
-        XCTAssertNotNil(
-            OnboardingActionExtensionIcon.image(),
-            "The mock must load the host's handmade action-extension icon")
     }
 
     @MainActor

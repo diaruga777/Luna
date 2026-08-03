@@ -102,9 +102,9 @@ class OnboardingSaveSourceViewController: UIViewController {
     /// Sources with staged follow-up work cancel it here.
     func saveEffectWasCancelled() {}
 
-    /// The source's complete save demonstration. Action-Button sources use
-    /// the shared hardware ripple; the share-sheet fallback overrides this to
-    /// play its long-press/context-menu/share-sheet walkthrough instead.
+    /// The source's complete save demonstration: the shared hardware ripple.
+    /// A source with nothing to demonstrate (the returning-user conversation,
+    /// which opens straight on its installer pill) overrides this to do nothing.
     func replaySaveDemonstration() {
         replayActionButtonSaveEffect()
     }

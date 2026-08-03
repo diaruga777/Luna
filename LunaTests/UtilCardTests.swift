@@ -201,6 +201,31 @@ final class UtilCardTests: XCTestCase {
         XCTAssertLessThan(weeklyFrame.maxY, buttons[0].frame.minY)
     }
 
+    /// There is no share-sheet lesson to fall back to, so a device that cannot
+    /// run the Action Button shortcut is offered nothing in that slot — and
+    /// Safari takes the bottom one rather than leaving a hole.
+    func testWithNoSaveLessonSafariIsTheOnlyActionAndItTakesTheBottomSlot() throws {
+        let both = makeCard(showsOnboarding: true, hasSaves: false)
+        both.loadViewIfNeeded()
+        both.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        both.view.layoutIfNeeded()
+        let bottomSlot = try XCTUnwrap(
+            actionButtons(in: both).map(\.frame.minY).max())
+
+        let card = makeCard(
+            showsOnboarding: true, hasSaves: false, saveSetupMode: .unavailable)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+
+        let buttons = actionButtons(in: card)
+        XCTAssertEqual(buttons.count, 1)
+        XCTAssertEqual(
+            buttons[0].accessibilityLabel,
+            OnboardingStrings.Intro.safariAction.value())
+        XCTAssertEqual(buttons[0].frame.minY, bottomSlot)
+    }
+
     // MARK: - An already-saved weekly recommendation
 
     func testWeeklyRowReadsAsAnsweredWhenItsURLIsAlreadySaved() throws {
@@ -413,11 +438,22 @@ final class UtilCardTests: XCTestCase {
             newestSaveDate: newestSaveDate)
     }
 
-    private func makeStore() -> AppOnboardingStore {
+    private func makeStore(
+        saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut
+    ) -> AppOnboardingStore {
         AppOnboardingStore(
             app: .reader,
             defaults: defaults,
-            setupStatusStore: LunaSetupStatusStore(defaults: defaults))
+            setupStatusStore: LunaSetupStatusStore(defaults: defaults),
+            saveSetupMode: saveSetupMode)
+    }
+
+    /// The setup block's own buttons, top to bottom — the card's direct button
+    /// children, so the paste control and the rows' controls stay out of it.
+    private func actionButtons(in card: UtilCardContentViewController) -> [UIButton] {
+        card.view.descendants(of: UIButton.self)
+            .filter { $0.superview === card.view }
+            .sorted { $0.frame.minY < $1.frame.minY }
     }
 
     private func orSeparator(in card: UtilCardContentViewController) -> UIView? {
@@ -432,6 +468,7 @@ final class UtilCardTests: XCTestCase {
         savedURLStrings: Set<String> = [],
         store: AppOnboardingStore? = nil,
         app: LunaApp = .reader,
+        saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut,
         saveHandler: UtilCardContentViewController.SaveHandler? = nil
     ) -> UtilCardContentViewController {
         UtilCardContentViewController(
@@ -439,8 +476,8 @@ final class UtilCardTests: XCTestCase {
             animatesIntro: animatesIntro,
             configuration: .configuration(
                 for: app,
-                saveSetupMode: .actionButtonShortcut),
-            onboardingStore: store ?? makeStore(),
+                saveSetupMode: saveSetupMode),
+            onboardingStore: store ?? makeStore(saveSetupMode: saveSetupMode),
             weeklyStore: weekly,
             app: app,
             now: { self.clock },

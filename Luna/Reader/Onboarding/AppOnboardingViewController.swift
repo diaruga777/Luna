@@ -90,7 +90,6 @@ final class AppOnboardingViewController: UIViewController {
         case safari
         case shortcut
         case actionButton
-        case shareSheetPractice
     }
 
     private enum DemoPresentation {
@@ -162,8 +161,7 @@ final class AppOnboardingViewController: UIViewController {
         self.completion = completion
         self.intro = OnboardingIntroCardContentViewController(
             introCopy: configuration.introCopy,
-            supportingText: configuration.supportingText,
-            saveSetupMode: configuration.saveSetupMode)
+            supportingText: configuration.supportingText)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -493,7 +491,6 @@ final class AppOnboardingViewController: UIViewController {
 
         let messages = MessagesReplicaViewController(
             urlString: safari.sharedURLString,
-            saveSetupMode: configuration.saveSetupMode,
             app: configuration.app,
             appName: configuration.app.displayName,
             previouslyConfiguredApp: previouslyConfiguredShortcutApp)
@@ -509,9 +506,6 @@ final class AppOnboardingViewController: UIViewController {
         }
         messages.onSkipSetup = { [weak self] in
             self?.completeSetupFlow(.messages, outcome: .skipped)
-        }
-        messages.onOpenShareSheet = { [weak self] in
-            self?.openPracticeShareSheet()
         }
         messagesReplica = messages
         addChild(messages)
@@ -1074,48 +1068,15 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    /// The save lesson is the Action Button shortcut, and its evidence is an
+    /// intent run. A device without one is never offered the lesson at all.
     private var saveSetupHasRun: Bool {
-        let setup = LunaSetupStatusStore.shared
         switch configuration.saveSetupMode {
         case .actionButtonShortcut:
-            return setup.shortcutRunApplies(to: configuration.app)
-        case .shareSheet:
-            return setup.shareActionHasRun(isCentral: configuration.isCentralApp)
-        }
-    }
-
-    private func openPracticeShareSheet() {
-        guard externalReturn == .none,
-              let messages = messagesReplica,
-              let url = URL(string: messages.sharedURLString)
-        else { return }
-        pauseDemoPresentationPlayback()
-        externalReturn = .shareSheetPractice
-        let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        if let popover = activity.popoverPresentationController {
-            popover.sourceView = messages.view
-            popover.sourceRect = CGRect(
-                x: messages.view.bounds.midX,
-                y: messages.view.bounds.maxY - 110,
-                width: 1,
-                height: 1)
-        }
-        activity.completionWithItemsHandler = { [weak self] _, _, _, _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.externalReturn = .none
-                self.resolvePracticeShareSheetReturn()
-            }
-        }
-        present(activity, animated: true)
-    }
-
-    private func resolvePracticeShareSheetReturn() {
-        guard configuration.saveSetupMode == .shareSheet else { return }
-        if saveSetupHasRun {
-            completeSetupFlow(.messages, outcome: .completed)
-        } else {
-            messagesReplica?.revealShareSheetSkipMessage()
+            return LunaSetupStatusStore.shared.shortcutRunApplies(
+                to: configuration.app)
+        case .unavailable:
+            return false
         }
     }
 
@@ -1133,8 +1094,6 @@ final class AppOnboardingViewController: UIViewController {
             safariReplica?.showExternalOpenFailure(destination: .shortcuts)
         case .actionButton:
             safariReplica?.showExternalOpenFailure(destination: .settings)
-        case .shareSheetPractice:
-            break
         }
     }
 
@@ -1170,11 +1129,6 @@ final class AppOnboardingViewController: UIViewController {
             actionGuide.stopPictureInPicture()
             safariReplica?.showWaitingForActionButton()
             setupStatusChanged()
-        case .shareSheetPractice:
-            // The activity controller owns its own return/completion timing.
-            // Keep this state live until its completion handler can tell a
-            // successful extension invocation from another activity/cancel.
-            externalReturn = .shareSheetPractice
         }
     }
 

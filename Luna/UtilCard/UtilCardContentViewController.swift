@@ -66,6 +66,11 @@ final class UtilCardContentViewController: CardContentViewController {
     private let saveSetupButton = UIButton(type: .system)
     private let orLabel = UILabel()
     private let pasteRow = OnboardingPasteRow()
+    /// The setup lessons this card is currently offering, top to bottom. It is
+    /// a LIST rather than a fixed pair: a device with no Action Button has no
+    /// save lesson, and the block stacks up from the paste row, so whatever is
+    /// present simply fills the bottom slots.
+    private var setupOffers: [UtilCardSetupButton] = []
     private var recentRows: [UtilURLRow] = []
     private var didSettleHeadline = false
     private var observers: [NSObjectProtocol] = []
@@ -140,10 +145,8 @@ final class UtilCardContentViewController: CardContentViewController {
         if showsOnboarding {
             configureSetupButtons()
             configureOrLabel()
-            view.addSubview(safariButton)
-            view.addSubview(saveSetupButton)
             view.addSubview(orLabel)
-            updateSetupButtonStates()
+            rebuildSetupBlock()
         } else {
             rebuildRecentRows()
         }
@@ -158,7 +161,7 @@ final class UtilCardContentViewController: CardContentViewController {
             forName: AppOnboardingStore.didChange, object: nil, queue: .main
         ) { [weak self] _ in
             guard self?.showsOnboarding == true else { return }
-            self?.updateSetupButtonStates()
+            self?.rebuildSetupBlock()
             self?.updateOrVisibility()
         })
         observers.append(NotificationCenter.default.addObserver(
@@ -234,34 +237,38 @@ final class UtilCardContentViewController: CardContentViewController {
         // move up into the space the row would have taken.
         let weeklyVisible = !weeklyHost.isEmpty
 
-        if let headline {
-            // The setup actions keep the seat they had on the standalone intro:
-            // stacked upward from the paste field, with the “or” — when the card
-            // is the whole app — in the seam between them.
-            var actionsBottom = pasteRow.frame.minY - UtilCardLayout.setupToPasteGap
-            if !orLabel.isHidden {
-                let orHeight = OnboardingIntroActionMetrics.orHeight
-                let gap = OnboardingIntroActionMetrics.orSpacing
-                orLabel.frame = CGRect(
-                    x: inset,
-                    y: pasteRow.frame.minY - gap - orHeight,
-                    width: width,
-                    height: orHeight)
-                actionsBottom = orLabel.frame.minY - gap
-            }
-            let buttonHeight = UtilCardLayout.setupButtonHeight
-            saveSetupButton.frame = CGRect(
+        // The setup actions keep the seat they had on the standalone intro:
+        // stacked upward from the paste field, with the “or” — when the card is
+        // the whole app — in the seam between them.
+        var actionsBottom = pasteRow.frame.minY - UtilCardLayout.setupToPasteGap
+        if showsOnboarding, !orLabel.isHidden {
+            let orHeight = OnboardingIntroActionMetrics.orHeight
+            let gap = OnboardingIntroActionMetrics.orSpacing
+            orLabel.frame = CGRect(
                 x: inset,
-                y: actionsBottom - buttonHeight,
+                y: pasteRow.frame.minY - gap - orHeight,
+                width: width,
+                height: orHeight)
+            actionsBottom = orLabel.frame.minY - gap
+        }
+        // Bottom-up in reverse offer order, so the block's TOP is the highest
+        // priority and losing one moves the rest down into its slot.
+        let buttonHeight = UtilCardLayout.setupButtonHeight
+        var nextBottom = actionsBottom
+        for offer in setupOffers.reversed() {
+            let button = button(for: offer)
+            button.frame = CGRect(
+                x: inset,
+                y: nextBottom - buttonHeight,
                 width: width,
                 height: buttonHeight)
-            safariButton.frame = CGRect(
-                x: inset,
-                y: saveSetupButton.frame.minY
-                    - UtilCardLayout.setupButtonGap - buttonHeight,
-                width: width,
-                height: buttonHeight)
+            nextBottom = button.frame.minY - UtilCardLayout.setupButtonGap
+        }
+        let setupBlockTop: CGFloat? = setupOffers.isEmpty
+            ? nil
+            : nextBottom + UtilCardLayout.setupButtonGap
 
+        if let headline {
             headline.frame = CGRect(
                 x: inset,
                 y: (view.bounds.height * UtilCardLayout.headlineTopRatio).rounded(),
@@ -274,7 +281,7 @@ final class UtilCardContentViewController: CardContentViewController {
                     headline.frame.maxY + UtilCardLayout.headlineToWeekly,
                     max(
                         headline.frame.maxY,
-                        safariButton.frame.minY - 18 - weeklyHeight)),
+                        (setupBlockTop ?? actionsBottom) - 18 - weeklyHeight)),
                 width: width,
                 height: weeklyHeight)
             return
@@ -283,7 +290,8 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.frame = CGRect(
             x: inset, y: 24, width: width, height: UtilCardLayout.weeklyRowHeight)
         var nextY = weeklyVisible ? weeklyHost.frame.maxY + 10 : 24
-        let availableBottom = pasteRow.frame.minY - 12
+        // Recent rows fill whatever the setup block leaves them.
+        let availableBottom = (setupBlockTop ?? pasteRow.frame.minY) - 12
         for row in recentRows {
             let fits = nextY + UtilCardLayout.recentRowHeight <= availableBottom
             row.isHidden = !fits
@@ -382,12 +390,9 @@ final class UtilCardContentViewController: CardContentViewController {
             title: OnboardingStrings.Intro.safariAction.value(),
             symbol: "safari.fill",
             action: #selector(safariTapped))
-        let title = configuration.saveSetupMode == .actionButtonShortcut
-            ? OnboardingStrings.Intro.shortcutAction.value()
-            : OnboardingStrings.Intro.shareAction.value()
         configure(
             saveSetupButton,
-            title: title,
+            title: OnboardingStrings.Intro.shortcutAction.value(),
             symbol: "square.and.arrow.up",
             image: saveSetupIcon(),
             action: #selector(saveSetupTapped))
@@ -418,20 +423,14 @@ final class UtilCardContentViewController: CardContentViewController {
         view.setNeedsLayout()
     }
 
-    /// The save lesson's own artwork: the real Shortcuts app icon for the Action
-    /// Button journey, this app's icon for the share-sheet one — the same
-    /// artwork the standalone intro card used. A generic bolt reads as some
-    /// other feature entirely. nil falls back to the button's symbol.
+    /// The save lesson's own artwork: the real Shortcuts app icon, the same the
+    /// standalone intro card used. A generic bolt reads as some other feature
+    /// entirely. nil falls back to the button's symbol.
     private func saveSetupIcon() -> UIImage? {
-        let artwork: UIImage?
-        switch configuration.saveSetupMode {
-        case .actionButtonShortcut:
-            artwork = Bundle.main.path(forResource: "ShortcutsAppIcon", ofType: "png")
-                .flatMap(UIImage.init(contentsOfFile:))
-        case .shareSheet:
-            artwork = OnboardingAppIcon.image()
-        }
-        guard let artwork else { return nil }
+        guard let artwork = Bundle.main
+            .path(forResource: "ShortcutsAppIcon", ofType: "png")
+            .flatMap(UIImage.init(contentsOfFile:))
+        else { return nil }
         let size = CGSize(width: 22, height: 22)
         return UIGraphicsImageRenderer(size: size).image { _ in
             artwork.draw(in: CGRect(origin: .zero, size: size))
@@ -459,20 +458,57 @@ final class UtilCardContentViewController: CardContentViewController {
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
-    private func updateSetupButtonStates() {
-        applyFinished(onboardingStore.hasFinishedSafariSetup, to: safariButton)
-        applyFinished(onboardingStore.hasFinishedSaveSetup, to: saveSetupButton)
+    /// Which lessons the card offers right now, and their finished artwork.
+    /// Buttons come and go rather than hiding in place: a card that offers
+    /// nothing has no buttons in it at all.
+    private func rebuildSetupBlock() {
+        let offers = UtilCardSetupOffer.buttons(
+            safari: true,
+            save: configuration.saveSetupMode == .actionButtonShortcut)
+        for offer in UtilCardSetupButton.allCases {
+            let button = button(for: offer)
+            guard offers.contains(offer) else {
+                button.removeFromSuperview()
+                continue
+            }
+            if button.superview == nil { view.addSubview(button) }
+            applyFinished(isFinished(offer), to: button, offer: offer)
+        }
+        guard offers != setupOffers else { return }
+        setupOffers = offers
+        view.setNeedsLayout()
     }
 
-    private func applyFinished(_ finished: Bool, to button: UIButton) {
+    private func button(for offer: UtilCardSetupButton) -> UIButton {
+        switch offer {
+        case .safari: return safariButton
+        case .save: return saveSetupButton
+        }
+    }
+
+    private func isFinished(_ offer: UtilCardSetupButton) -> Bool {
+        switch offer {
+        case .safari: return onboardingStore.hasFinishedSafariSetup
+        case .save: return onboardingStore.hasFinishedSaveSetup
+        }
+    }
+
+    private func applyFinished(
+        _ finished: Bool,
+        to button: UIButton,
+        offer: UtilCardSetupButton
+    ) {
         button.isEnabled = !finished
         if finished {
             button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
-        } else if button === safariButton {
-            button.configuration?.image = UIImage(systemName: "safari.fill")
         } else {
-            button.configuration?.image = saveSetupIcon()
-                ?? UIImage(systemName: "square.and.arrow.up")
+            switch offer {
+            case .safari:
+                button.configuration?.image = UIImage(systemName: "safari.fill")
+            case .save:
+                button.configuration?.image = saveSetupIcon()
+                    ?? UIImage(systemName: "square.and.arrow.up")
+            }
         }
         button.configuration?.baseForegroundColor = finished
             ? UIColor.white.withAlphaComponent(0.42)

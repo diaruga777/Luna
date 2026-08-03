@@ -6,9 +6,13 @@
 import Darwin
 import Foundation
 
+/// Luna has exactly ONE save lesson: the Action Button shortcut. A device that
+/// cannot run it has nothing to be taught — there is no share-sheet
+/// demonstration to fall back to — so its surfaces omit the save-setup button
+/// entirely rather than offering a lesson that ends nowhere.
 enum OnboardingSaveSetupMode: Equatable {
     case actionButtonShortcut
-    case shareSheet
+    case unavailable
 
     static var current: Self {
         #if DEBUG
@@ -36,7 +40,7 @@ struct OnboardingDeviceCapabilities: Equatable {
 
         // iPhone16,1 and iPhone16,2 are iPhone 15 Pro / Pro Max. Every
         // subsequent iPhone hardware family has an Action Button. Unknown
-        // non-iPhone hardware remains on the share-sheet fallback.
+        // non-iPhone hardware has none.
         return family > 16
             || (family == 16 && ["iPhone16,1", "iPhone16,2"].contains(modelIdentifier))
     }
@@ -44,7 +48,7 @@ struct OnboardingDeviceCapabilities: Equatable {
     var saveSetupMode: OnboardingSaveSetupMode {
         operatingSystemMajorVersion >= 27 && hasActionButton
             ? .actionButtonShortcut
-            : .shareSheet
+            : .unavailable
     }
 
     static var current: Self {

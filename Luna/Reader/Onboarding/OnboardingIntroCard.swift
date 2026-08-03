@@ -90,7 +90,6 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     var onFirstLineRevealed: (() -> Void)?
 
     private let headline: OnboardingIntroHeadlineView
-    private let saveSetupMode: OnboardingSaveSetupMode
     private let safariButton = UIButton(type: .system)
     private let shortcutButton = UIButton(type: .system)
     private let orLabel = UILabel()
@@ -106,11 +105,9 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     init(
         introCopy: OnboardingIntroCopy,
-        supportingText _: String,
-        saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut
+        supportingText _: String
     ) {
         headline = OnboardingIntroHeadlineView(copy: introCopy)
-        self.saveSetupMode = saveSetupMode
         super.init()
     }
 
@@ -127,9 +124,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             title: OnboardingStrings.Intro.safariAction.value(),
             symbol: "safari.fill",
             action: #selector(safariTapped))
-        let saveActionTitle = saveSetupMode == .actionButtonShortcut
-            ? OnboardingStrings.Intro.shortcutAction.value()
-            : OnboardingStrings.Intro.shareAction.value()
+        let saveActionTitle = OnboardingStrings.Intro.shortcutAction.value()
         configure(
             shortcutButton,
             title: saveActionTitle,
@@ -408,15 +403,8 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     }
 
     private func saveActionIcon() -> UIImage? {
-        switch saveSetupMode {
-        case .actionButtonShortcut:
-            guard let path = Bundle.main.path(
-                forResource: "ShortcutsAppIcon", ofType: "png")
-            else { return nil }
-            return UIImage(contentsOfFile: path)
-        case .shareSheet:
-            return OnboardingAppIcon.image()
-        }
+        Bundle.main.path(forResource: "ShortcutsAppIcon", ofType: "png")
+            .flatMap(UIImage.init(contentsOfFile:))
     }
 }
 

@@ -20,6 +20,9 @@ final class AppOnboardingStore {
 
     private let defaults: UserDefaults
     private let setupStatusStore: LunaSetupStatusStore
+    /// Whether this device has a save lesson at all. Injected because it is
+    /// hardware-derived: every simulator answers `.unavailable`.
+    private let saveSetupMode: OnboardingSaveSetupMode
     /// When the newest save in the shared store was made. Injected so the
     /// save-completes-onboarding latch is assertable without writing the real
     /// App Group store.
@@ -29,12 +32,14 @@ final class AppOnboardingStore {
         app: LunaApp = .current,
         defaults: UserDefaults = .standard,
         setupStatusStore: LunaSetupStatusStore? = nil,
+        saveSetupMode: OnboardingSaveSetupMode = .current,
         newestSaveDate: @escaping () -> Date? = {
             ReadingListStore.shared.items().map(\.dateAdded).max()
         }
     ) {
         self.app = app
         self.defaults = defaults
+        self.saveSetupMode = saveSetupMode
         self.setupStatusStore = setupStatusStore
             ?? (defaults === UserDefaults.standard
                 ? .shared
@@ -113,14 +118,15 @@ final class AppOnboardingStore {
         hasHandledSafariSetup || setupStatusStore.safariRunApplies(to: app)
     }
 
+    /// A device with no Action Button has no save lesson at all, so its save leg
+    /// is finished by definition — nothing is offered, and nothing is owed.
     var hasFinishedSaveSetup: Bool {
         if hasHandledSaveSetup { return true }
-        let configuration = OnboardingSurfaceConfiguration.configuration(for: app)
-        switch configuration.saveSetupMode {
+        switch saveSetupMode {
         case .actionButtonShortcut:
             return setupStatusStore.shortcutRunApplies(to: app)
-        case .shareSheet:
-            return setupStatusStore.shareActionHasRun(isCentral: app == .luna)
+        case .unavailable:
+            return true
         }
     }
 

@@ -100,6 +100,9 @@
     "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list." : {
 
     },
+    "Checking…" : {
+
+    },
     "Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away." : {
 
     },
@@ -133,6 +136,9 @@
     "Context Result" : {
 
     },
+    "Couldn't Delete" : {
+
+    },
     "Couldn't fetch this article" : {
 
     },
@@ -142,10 +148,13 @@
     "Couldn't identify anything to save on this screen." : {
 
     },
-    "Couldn't keep the pasted media." : {
+    "Couldn't prepare this media for sharing." : {
 
     },
-    "Couldn't prepare this media for sharing." : {
+    "Couldn't Promote" : {
+
+    },
+    "Couldn't Propose" : {
 
     },
     "Couldn't reach the mail servers. Check your connection and try again." : {
@@ -199,9 +208,6 @@
     "Downloading" : {
 
     },
-    "Downloading temporary preview…" : {
-
-    },
     "Downloads" : {
 
     },
@@ -226,7 +232,13 @@
     "Enter an app-specific password for this account." : {
 
     },
+    "Enter Weekly Key" : {
+
+    },
     "Enter your Kindle address first." : {
+
+    },
+    "Every Luna will show it on its next check." : {
 
     },
     "Export Failed" : {
@@ -274,13 +286,13 @@
     "Install Shortcut" : {
 
     },
-    "Invalid paste" : {
-
-    },
     "Invalid URL" : {
 
     },
     "Keep Luna mail out of your inbox" : {
+
+    },
+    "Key Accepted" : {
 
     },
     "Kindle" : {
@@ -303,9 +315,6 @@
       }
     },
     "Listening" : {
-
-    },
-    "Loading Paste" : {
 
     },
     "Locked — tap to unlock" : {
@@ -375,6 +384,9 @@
 
     },
     "No diagnostics recorded yet." : {
+
+    },
+    "No proposals right now." : {
 
     },
     "No Safari page tracked yet. Is the Luna extension enabled?" : {
@@ -449,13 +461,7 @@
     "Outlook sign-in failed. Please try again." : {
 
     },
-    "Paste Link" : {
-
-    },
-    "Paste the copied link to preview it here." : {
-
-    },
-    "Pasted Media" : {
+    "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored." : {
 
     },
     "Pause" : {
@@ -482,9 +488,6 @@
     "Preload the content of links in a saved article (and links on those pages, up to this depth) in the background, so tapping a link opens instantly. 0 turns preloading off. Preloading uses any network by default; turn on Wi-Fi Only to restrict it to Wi-Fi." : {
 
     },
-    "Preparing a temporary reader card…" : {
-
-    },
     "Previous paragraph" : {
 
     },
@@ -492,6 +495,18 @@
 
     },
     "Price unavailable" : {
+
+    },
+    "Promote" : {
+
+    },
+    "Promoted" : {
+
+    },
+    "Proposal Sent" : {
+
+    },
+    "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again." : {
 
     },
     "Provide Context" : {
@@ -527,7 +542,13 @@
     "Refresh Last Visited Website" : {
 
     },
+    "Remove" : {
+
+    },
     "Remove %@" : {
+
+    },
+    "Replace" : {
 
     },
     "Reset" : {
@@ -551,7 +572,10 @@
     "Save Failed" : {
 
     },
-    "Save of the week" : {
+    "Save of the Week" : {
+
+    },
+    "Save of the Week Key" : {
 
     },
     "Save Result" : {
@@ -660,6 +684,9 @@
     "Sign in again with this account" : {
 
     },
+    "Sign in to iCloud" : {
+
+    },
     "Sign Out" : {
 
     },
@@ -708,7 +735,13 @@
     "Text Size" : {
 
     },
+    "Thanks — it's in the queue." : {
+
+    },
     "That article isn't ready to read yet." : {
+
+    },
+    "That key doesn't match this build. Nothing was stored." : {
 
     },
     "The article to read. Leave blank for your latest unread article." : {
@@ -718,9 +751,6 @@
 
     },
     "The media was added to your photo library." : {
-
-    },
-    "The media was saved in Luna. Allow photo library access in Settings to also save it to Photos." : {
 
     },
     "The output from Get On-Screen URLs. Compatible complete values may be saved directly." : {
@@ -733,6 +763,12 @@
 
     },
     "Theme" : {
+
+    },
+    "This device can now promote Saves of the Week." : {
+
+    },
+    "This device can promote Saves of the Week." : {
 
     },
     "This erases the saved log." : {
@@ -778,6 +814,9 @@
     "Up Next · %@" : {
 
     },
+    "Weekly Key ✓" : {
+
+    },
     "When an article finishes, mark it read and continue with the next unread article — after a chime and a short “Now Reading” announcement." : {
 
     },
@@ -791,6 +830,9 @@
 
     },
     "Words" : {
+
+    },
+    "Wrong Key" : {
 
     },
     "XL" : {

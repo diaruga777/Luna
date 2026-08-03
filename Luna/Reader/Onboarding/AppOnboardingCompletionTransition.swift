@@ -9,6 +9,17 @@ import UIKit
 enum AppOnboardingCompletionTransition {
     static let handoffDuration: TimeInterval = 0.24
 
+    /// Hands the window over to `root`, covering the reparenting with a frozen
+    /// frame of what was already there.
+    ///
+    /// **What the caller owes this.** The cover is a snapshot of the window as it
+    /// stands, so whatever is on screen when `run` is called is what the fade
+    /// starts from — and `install` detaches `root` from the outgoing tree before
+    /// the window's own root changes, which leaves that tree owning the screen
+    /// for the frame in between. Anything the caller does not want to see again
+    /// (an onboarding lesson's full-screen mock, above all) has to be off screen
+    /// BEFORE this runs; `AppOnboardingViewController.hideDemonstrationSources`
+    /// is where that happens.
     static func run(in window: UIWindow, to root: UIViewController) {
         let bounds = window.bounds
         guard window.windowScene?.activationState == .foregroundActive else {

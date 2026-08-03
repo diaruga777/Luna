@@ -82,6 +82,12 @@ uses the existing offline/native demonstrations:
   to that app's own mock page (Downloader `[.lunaPage, .instaTok]`, Price Tracker
   `[.lunaPage, .amayzon]`, Reader `[.lunaPage]`, central all three). It shows the
   extension effect, then guides the user to Safari extension setup.
+- The hop into REAL Safari opens `https://www.apple.com`
+  (`AppOnboardingViewController.openSafariSetup`). The one requirement is a page
+  Safari's own Reader is never offered on: Reader availability rearranges the
+  address field — the very menu the lesson just taught — so an article-shaped
+  practice page (Wikipedia was one) works against it. A plain homepage is not
+  Reader-eligible and carries nothing to attribute for merely being opened.
 - Save setup uses the Messages replica and selects the Action Button shortcut
   journey or share/action-extension journey from
   `OnboardingSurfaceConfiguration.saveSetupMode`. Its save is REAL — see below.
@@ -96,6 +102,12 @@ The page's furniture is pinned at both ends: the header at
 `chromeReserve` (the mock browser bar's reserve plus 12), the steps and their
 heading stacked above it. Iconography, all three step rows and both buttons appear
 at every size, unchanged.
+
+The bottom reserve is the bar's, so it goes when the bar does
+(`setReservesBrowserChrome`, dropping to `clearedChromeReserve`) — see the wave
+below. The PROSE fit is deliberately measured against the FULL `chromeReserve`
+either way: reclaiming the strip must not make another chunk of copy appear
+mid-lesson, so the reclaimed room becomes air above the steps instead.
 
 The PROSE is the only variable. `OnboardingStrings.Safari.explainerChunks` is a
 `ChunkedDefinition` — an ordered list per app, not one string — and the page prints
@@ -119,6 +131,33 @@ Per-app selection and the fit at {375×667, 393×852, 430×932, 744×1133, 1024�
 are asserted by `testSafariPageGrowsItsProseByWholeChunksAcrossEveryScreen`,
 `testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse` and
 `testSafariExplainerCopyIsPerAppAndChunked`.
+
+### The wave takes the clutter away, not the page
+
+The mock extension flip (`OnboardingManageExtensionsSheetView`'s toggle) starts one
+climbing front. Three things ride it:
+
+1. **The clutter crumbles.** Every obstruction becomes ~11pt still tiles that
+   detach exactly as the front reaches them and fly off (`prepareCleanUp` /
+   `animatePreparedShatterPieces`).
+2. **The content blooms where it stands.** It is NOT re-occluded and re-revealed:
+   the page was legible under the clutter, so blanking it out to hand it back read
+   as a glitch. Each element runs a light-only pass (`prepareToBloomAgain` /
+   `bloom`) — the intro's own `GlyphPixelBloomView` emitter with no occluder
+   behind it, so `MoonRevealContentView` has none at all and `MoonRevealLineView`
+   keeps its occluded `reveal` only for the intro. The bloom trails the tile front
+   by `contentBloomLag` (0.26s, about a beat and a half of a tile's flight): light
+   arriving under grains still in the air is simply crumbled over.
+3. **The browser bar leaves.** `SafariReplicaViewController.setBrowserBarVisible`
+   slides the mock address field out with the Manage Extensions sheet — the lesson
+   has nothing left to point at in it, and a URL field standing under a finished
+   sweep reads as a control the user could tap. The page's bottom reserve is
+   released in the same beat, BEFORE the wave's geometry is measured, so the
+   content settles first and the front never crosses moving ink. The bar (and the
+   reserve) come back with `resetDemonstration` and with any full-screen
+   re-presentation (`prepareForPresentation`), because the Action-Button save
+   demonstration lights that field; `highlightedLinkRegion` is nil while it is
+   away, so a stray replay cannot isolate an empty strip.
 
 ### The save lesson performs a real save
 

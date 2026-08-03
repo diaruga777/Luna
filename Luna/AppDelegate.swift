@@ -165,6 +165,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 self?.handleMailFetch(task as? BGProcessingTask)
             }
         }
+        // Registered unconditionally: an identifier must be claimed before
+        // launch returns, and this device can become a key-holder later in the
+        // same session. Both the scheduler and the handler no-op without a key.
+        WeeklyProposalBackgroundCheck.register()
         // Price refresh only on the Price Tracker surface (see schedulesPriceRefresh).
         if schedulesPriceRefresh {
             BGTaskScheduler.shared.register(
@@ -214,6 +218,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Off the launch frame too: the weekly pull is network work whose only
         // consumer is a card the user hasn't reached yet.
         DispatchQueue.global(qos: .utility).async {
+            WeeklyProposalBackgroundCheck.schedule(reason: "launch")
             Task { @MainActor in
                 await WeeklySaveRefresher.shared.refreshWeeklySaves()
                 await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
@@ -228,6 +233,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         KindWiring.appDidEnterBackground()
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
+        WeeklyProposalBackgroundCheck.schedule(reason: "entered background")
     }
 
     func application(

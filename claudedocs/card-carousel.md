@@ -122,8 +122,9 @@ Consequences for the deck:
   action-extension icon. An empty deck centers it; otherwise index one, the first
   save, remains the launch selection. The util card owns first-run headline and
   setup actions until completion, then uses that space for matching Safari
-  history. Save of the Week and the real `UIPasteControl` row remain in both
-  states. See `util-card.md`.
+  history. The real `UIPasteControl` row remains in both states; the Save of the
+  Week row appears in either whenever there is a live signed entry
+  (`save-of-the-week.md`). See `util-card.md`.
 
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it

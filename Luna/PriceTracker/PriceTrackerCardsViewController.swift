@@ -410,6 +410,7 @@ extension PriceTrackerCardsViewController: CardCarouselDelegate {
             itemCount: items.count)
         else { return nil }
         let item = items[itemIndex]
+        let weekly = WeeklyPromotionMenu.action(for: item, presenter: self)
         return UIMenu(children: [
             UIAction(
                 title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
@@ -417,6 +418,7 @@ extension PriceTrackerCardsViewController: CardCarouselDelegate {
                 guard let self else { return }
                 self.share(item, sourceView: carousel.cardView(at: index) ?? self.view)
             },
+        ] + [weekly].compactMap { $0 } + [
             UIAction(
                 title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
             ) { [weak self] _ in

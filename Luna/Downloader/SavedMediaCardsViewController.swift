@@ -1129,6 +1129,9 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
                 title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.share(item, sourceIndex: index) })
         }
+        actions.append(WeeklyPromotionMenu.action(
+            kind: .media, urlString: item.sourceURLString, title: item.title,
+            presenter: self))
         actions.append(UIAction(
             title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
         ) { [weak self] _ in self?.store.setArchived(true, for: item.id) })

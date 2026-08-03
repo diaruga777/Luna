@@ -495,7 +495,10 @@ final class ArticleCardsChromeTests: XCTestCase {
             controller.cardContextMenuForTesting(at: controller.carousel.currentIndex))
         let actions = menu.children.compactMap { $0 as? UIAction }
 
-        XCTAssertEqual(actions.map(\.title), ["Archive", "Delete"])
+        // A device without the curator's key gets the propose verb, above the
+        // deck's own tail.
+        XCTAssertEqual(
+            actions.map(\.title), ["Propose Save of the Week", "Archive", "Delete"])
         let delete = try XCTUnwrap(actions.last)
         XCTAssertTrue(delete.attributes.contains(.destructive))
 

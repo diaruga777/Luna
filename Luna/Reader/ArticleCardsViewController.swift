@@ -1141,7 +1141,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         let kindActions = cardProvider?.menuActions(
             for: item, presenter: self,
             sourceView: carousel.cardView(at: carouselIndex) ?? view) ?? []
-        return UIMenu(children: kindActions + [
+        let weekly = WeeklyPromotionMenu.action(for: item, presenter: self)
+        return UIMenu(children: kindActions + [weekly].compactMap { $0 } + [
             UIAction(title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")) {
                 [weak self] _ in
                 self?.archive(item, fromCarouselIndex: carouselIndex)

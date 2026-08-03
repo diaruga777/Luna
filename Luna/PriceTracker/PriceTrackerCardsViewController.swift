@@ -74,7 +74,7 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
             tracker.productName,
             tracker.imageFileName ?? "",
             // "none" is a real state: a tracker with no alert threshold at all.
-            tracker.alertThresholdFraction.map(String.init) ?? "none",
+            tracker.alertThresholdFraction.map { String($0) } ?? "none",
             String(tracker.isArchived),
             stores,
         ].joined(separator: "|")

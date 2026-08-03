@@ -205,8 +205,8 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
     ENFORCES while paired (`isPaired`, set by the deck): Luna deliberately keeps
     read-aloud going when you navigate away, so an unconditional rule would
     silence a backgrounded article the moment you opened another card.
-  - While paired, the deck refuses to immerse, page or scrub, and both trays
-    refuse to open — a paired layout IS the surfaced state. A rotation that leaves
+  - While paired, the deck refuses to immerse, page or scrub, and the archive
+    tray refuses to open — a paired layout IS the surfaced state. A rotation that leaves
     the screen too narrow for two columns closes the column rather than stranding
     it half off screen. Covered by `InlineReaderColumnTests` and
     `ReaderPlaybackArbiterTests`.

@@ -91,25 +91,19 @@ size; the corona crops beyond the display instead of making the card smaller.
 No content or app chrome is present. `AppLaunchTransition` asks the destination
 carousel for its exact frame, guarantees the eclipse one 0.10-second visible
 beat, and fades the splash away as one layer over 0.20 seconds. On an
-incomplete first run the live hierarchy beneath is pixel-identical to the
-splash, so the fade collapses to one visible frame plus a 0.05-second fade
-(`prefersInstantLaunchReveal`). This avoids a
-warm launch committing only the final transparent frame while remaining far
-shorter than the former staged egress. There is no resize or multi-stage
-egress. This happens on every launch, not only onboarding, and each
-`KindWiring` composition root installs the shared transition. An incomplete
-first run constructs a separate static UIKit instance of the same peak corona
-behind the intro card before this fade, keeping it stationary after the splash
-layer is discarded. It does not retain the splash raster or overlay hierarchy.
-Completed roots preserve the ordinary fade-away behavior.
+incomplete first run the live hierarchy is already the production carousel with
+its util card centered. There is no resize, multi-stage egress, retained corona,
+or onboarding-root swap. This happens on every launch, and each `KindWiring`
+composition root installs the shared transition.
 
 See `reader-onboarding.md` for the source-of-truth renderer, launch-art
 regeneration command, first-run sequence, and visual validation flags.
 
-## Onboarding Safari/Messages/card journey
+## Util-card headline and setup journeys
 
-The initial onboarding card retains the launch corona until either independent
-Safari or Shortcut lesson is pressed. Each card-to-replica takeover uses the
+The incomplete util card runs the surface headline's two moon-reveal beats when
+it becomes centered. Pressing Safari or Shortcut/share presents the existing
+setup journey over the production deck. Each card-to-replica takeover uses the
 mock app-switcher transition rather than an eclipse; completing the lesson
 app-switches back, replaces that action's icon with a checkmark, and leaves the
 other lesson plus the paste action available. The
@@ -131,12 +125,10 @@ the isolated link rests on black for half a second, then the whole frame
 simply crossfades into the target app's complete production root at its exact
 centered card state, including its normal card chrome and carousel. The live
 hierarchy is committed beneath the final composited frame.
-Safari saves before its dedicated Safari-setup overlay appears. Messages saves
-before its shortcut/Action Button setup messages appear. Each saved state stays
-clear for a reading beat before its setup UI, and no source animation loops
-behind setup. A successful intro paste captures the real saved card, adds it to
-the right of onboarding long enough to run the normal card eclipse, then swaps
-the matching frame for the completed production root as egress finishes.
+The setup demonstrations never write their mock content to storage. Each saved
+mock state stays clear for a reading beat before its setup UI, and no source
+animation loops behind setup. Returning checks/disables the corresponding util
+action; the compact completed variant is constructed on the next app launch.
 
 ## Loading spinner (`HorizonSpinnerView`)
 

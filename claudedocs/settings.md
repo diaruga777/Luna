@@ -34,7 +34,7 @@ and finished by `SettingsViewController`.
   Enhanced Voices. There is no child Voice page.
 - Email groups the connected sharing account, mail import/senders, and subject
   filters. Its address field uses the same rounded envelope-card treatment as
-  the left-tray setup.
+  the util-card setup.
 - Kindle is a separate top-level page. Until email is configured, its row is
   dimmed; tapping it shows "Set up email first" with Not Now and OK. OK opens
   Email and focuses the address field. The Kindle page contains forwarding

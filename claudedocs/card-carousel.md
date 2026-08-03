@@ -71,7 +71,7 @@ Consequences for the deck:
   resolved independently so a deck stepped aside for a second column doesn't
   leave the trailing circle floating in the gap). Phone-shaped containers are
   left literally unchanged.
-- The two edge drawers were fractions of the screen — two thirds of a 13" iPad is
+- The archive drawer was a fraction of the screen — two thirds of a 13" iPad is
   911pt of archive arc for its 128pt cells. The fraction is kept and then capped
   (`LunaLayout.drawerWidth`), and the deck cedes exactly the width the drawer
   takes rather than two thirds regardless.
@@ -91,12 +91,10 @@ Consequences for the deck:
   the cells are the entire surface. Closed, the arc is fully offscreen away from the
   rightmost card; when the rightmost card centers AND the archive has items, the
   cells spring-peek in from the right edge (26pt). An empty archive never peeks but
-  can still be pulled open (the empty carousel state also allows the pull). The
+  can still be pulled open (a util-only deck also allows the pull). The
   drawer is absent from the carousel count and scrubber. A leftward pull opens it
-  over the right 2/3 of the screen while the card/empty UX translates left by the
-  same 2/3, ceding that space. Each edge tray owns an additive translation
-  contribution, so the closed left tray's recurring layout pass cannot reset an
-  open archive tray's card/empty-state shift. The gesture is interactive in both
+  over the right 2/3 of the screen while the card deck translates left by the
+  same 2/3, ceding that space. The gesture is interactive in both
   directions; tapping the exposed outside area spring-dismisses it. `ArchiveTrayController`
   owns this shared presentation; `ArchiveArcLayout` (a custom
   `UICollectionViewLayout`) arranges an "archive" header cell plus narrowed item
@@ -119,33 +117,13 @@ Consequences for the deck:
   of waiting for the card swap. Paging toward the rightmost card reveals the tab
   only after that card centers; cancelling a page restores it after settling.
 
-- **Left setup / clipboard arc**: the mirror tray beyond the first card also has
-  no panel or chunky setup-card chrome. Its setup rows are small objects, aligned
-  a little in from the cell's left edge on a tighter 18pt arc: Email is only a
-  white envelope with a breathing red notification dot; Safari is the full-colour
-  compass with a filled, app-tint puzzle piece that breathes in the same tint;
-  and one-click save is the exact incoming `OnboardingMessageTextBubble` used by
-  the Messages onboarding replica, including its grey fill, 18pt continuous
-  corners, tail, typography, intrinsic size, and the text **Show me one click
-  save**. The save bubble exists only when `OnboardingSaveSetupMode.current` is
-  the iOS 27+/Action Button branch, the shortcut has not run, and that setup
-  lesson has never been completed or skipped. Completing or skipping records a
-  per-app `AppOnboardingStore.hasHandledSaveSetup` marker, so finishing onboarding
-  by some other real save does not incorrectly suppress an unvisited lesson.
-  Tapping the save bubble or Safari object presents the SAME Messages/Safari
-  onboarding controller over the completed root, using a frozen live-app frame
-  as the first and last `OnboardingAppSwitcherView` card. The lesson therefore
-  app-switches in and back out without replacing or re-completing the production
-  root. The envelope still expands directly into the existing email sign-in flow.
-
-  Paste is a physical clipboard rather than another dark rectangle: a metal clip
-  sits over a dark board; no detected URL shows only a dotted, empty attachment
-  outline; a detected/authorized URL attaches white paper carrying its thumbnail,
-  title, and clipped host strip. Checking and invalid states stay on that paper.
-  The real privacy-authorized `UIPasteControl` remains over the paper as an
-  effectively transparent (>0.01 alpha) hit target, so the custom object never
-  bypasses or visually covers Apple's paste permission path. The tiny adjacent
-  gear retains the automatic-paste settings route.
+- **Permanent util card**: index zero is a normal carousel card, not a tray. It
+  is always counted and always represented in the scrubber by the current app's
+  action-extension icon. An empty deck centers it; otherwise index one, the first
+  save, remains the launch selection. The util card owns first-run headline and
+  setup actions until completion, then uses that space for matching Safari
+  history. Save of the Week and the real `UIPasteControl` row remain in both
+  states. See `util-card.md`.
 
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
@@ -284,7 +262,7 @@ structurally guarantees no card view outlives its slot.
 
 Every deck — Reader's, the central app's all-kinds deck, Downloader's, Price
 Tracker's — moves to a save it has never shown, whatever added it and whenever
-it arrived: the paste card or left tray here, the share/action/Safari extension,
+it arrived: the util card, the share/action/Safari extension,
 an App Intent, the mailbox importer, or a sibling app writing the shared store
 while this one was suspended or dead.
 
@@ -292,12 +270,12 @@ The decks don't ask each entry point to announce itself. Every reload hands its
 card ids to `CardCarouselHostViewController.newSaveItemIndex(cardIDs:offstageIDs:)`,
 which compares them against the previous snapshot: any id that wasn't there
 arrived since, however it got here, and its index wins the centering — ahead of
-the card the user was parked on, the leading pasteboard card, and an in-flight
+the card the user was parked on, the permanent util card, and an in-flight
 archive transition. With several new saves, the first in card order centers,
 which on every deck's newest-first ordering is the most recent one.
 
-A save selected from the left tray adds one extra visual handoff shared by all
-three surface hosts: the tapped recent's empty shell travels to the carousel's
+A save selected from the util card adds one extra visual handoff shared by all
+surface hosts: the tapped URL row's empty shell travels to the carousel's
 resting card frame and expands, while its thumbnail and title travel separately
 into normal favicon/title-header geometry instead of stretching with the shell.
 After the mounted destination is ready, its real contents crossfade over that
@@ -501,24 +479,13 @@ Differences from the Downloader, via `CardCarouselStyle`:
   article squares show favicon, title, and original save date; tapping opens the
   fully retained reader content; long-pressing offers Unarchive, Share, and
   destructive Delete. Both Delete actions remove the full save and owned files.
-  Deleting card zero preserves the successor immediately to its right as the new
-  center and reasserts the left tray's closed 26pt peek in the same reload; no
-  page-away/page-back cycle is required to expose the newly leftmost edge.
+  Deleting the first saved card preserves the successor immediately to its right
+  as the new center; the util card remains at index zero.
 - The cards root has NO header bar.
-- A new pasteboard URL is represented as a synthetic leading card (so it is
-  visible as the left peek) and as a `doc.on.clipboard` mini-card in the scrubber.
-  `UIPasteboard.detectPatterns(.probableWebURL)` is the only launch/foreground
-  probe, so opening Luna does not read the value or raise a paste-permission
-  prompt. Paging onto the placeholder (or tapping it when there are no normal
-  cards) performs the actual read. A readable Reader-owned URL is fetched into a
-  full, unsaved live reader card and receives normal title/favicon scrubber chrome;
-  it persists only when reading activity dismisses the carousel chrome. The old
-  top-left paste button is gone. Unsupported/invalid results become an “Invalid
-  paste” card. A read taking at least 250 ms is treated only as a hint that a
-  permission sheet was shown, enabling the inline tappable Settings guidance;
-  fast failures simply say “Invalid URL.” The hint is never cached as permission
-  state. The candidate disappears when the pasteboard changes, and a consumed
-  change-count stays suppressed until the next change.
+- Paste lives permanently at the bottom of the util card. Its native
+  `UIPasteControl` owns clipboard authorization, and a valid URL follows the same
+  ingest, card handoff, and new-save centering path as weekly/recent util rows.
+  The deck no longer creates a synthetic pasteboard card.
 - Settings and Share flank the mini-card scrubber in Liquid Glass circles instead of
   consuming header space. Friends is reached from Settings. The card begins
   directly below the safe area, so the reader's own header pills own the top row.

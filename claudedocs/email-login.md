@@ -32,7 +32,7 @@ issue.
 ## Steps
 
 1. **The inline address row** (`EmailAndKindleSettingsScreen`) — the same rounded
-   envelope field card used by the left-tray setup, with a left-aligned address
+   envelope field card retained from the former tray setup, with a left-aligned address
    field carrying the AutoFill invariants below and a provider chip that fades in
    once the domain is recognized; beneath it a
    **Connect** row, tinted and selectable only while the typed address could

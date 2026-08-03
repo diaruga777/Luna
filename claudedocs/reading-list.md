@@ -14,9 +14,10 @@ Luna is a weblink reader: links saved from Safari (extension + intent) or pasted
 
 Every app's home screen is a card deck: `ArticleCardsViewController` (central Luna
 and Reader), `SavedMediaCardsViewController` (Downloader),
-`PriceTrackerCardsViewController` (Price Tracker), all with the shared left/right
-arc trays. An empty Reader explains how to save reading material; an empty Price
-Tracker prompts the user to track a product.
+`PriceTrackerCardsViewController` (Price Tracker). Every deck permanently begins
+with the util card and has a right-edge archive tray. When there are no saves the
+util card is centered; otherwise the leftmost save is centered and the util card
+is one swipe to the left. See `util-card.md`.
 
 Which items an app shows is `LunaApp.includes` (in `LunaReadingListUI`, alongside
 the `ReadingListSectioning` predicates it needs); what an app ACCEPTS is

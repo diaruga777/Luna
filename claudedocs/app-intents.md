@@ -393,18 +393,20 @@ the two mechanisms on the same intent type. Used for: the double-save
 
 ## Action Button setup
 
-The iOS 27+ Action Button is set up from the left tray. Its first state imports
-the bundled `Send To Luna.shortcut`; once opened, that row assumes installation
-and becomes “One more step! Set your action button to {App Name}.” Open Settings
-starts the per-surface PiP guide and opens Settings at its root. The row remains
+The iOS 27+ Action Button is set up from the permanent util card and can be
+replayed from Settings. Its first state imports the bundled
+`Send To Luna.shortcut`; once opened, the setup action assumes installation and
+becomes “One more step! Set your action button to {App Name}.” Open Settings
+starts the per-surface PiP guide and opens Settings at its root. The action remains
 until either Action Button App Intent records completion, at
 which point the running app receives the cross-process status notification,
-stops PiP, and animates the row away. Current builds attribute both the import
+stops PiP, and checks/disables the action for the rest of the session. The compact
+completed util-card layout appears on the next launch. Current builds attribute both the import
 press (`setup.shortcut.installPressed.<surface>`) and intent run
 (`setup.shortcut.hasRun.<surface>`) to the exact Luna app. The import flag means
 only “the installer button was pressed”; iOS does not reveal whether Add
-Shortcut completed. The tray uses aggregate run evidence, so one successfully
-running Luna Action Button shortcut removes that setup row from every Luna app.
+Shortcut completed. Shared run evidence can satisfy the save-setup leg for
+sibling Luna surfaces.
 
 ## Bundled shortcut + user setup
 

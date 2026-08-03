@@ -56,8 +56,9 @@ Each item records where it came from: `ReadingListItem.captureSource`
 - **`.shareSheet`** — the share extension's `SharedReadingListAppender` writes
   `"captureSource":"shareSheet"` as a raw string (the extension doesn't link
   `LunaModels`).
-- **`.paste`** — pasteboard-URL saves (the decks' synthetic leading paste card + the left tray,
-  `ArticleCardsViewController`, `SavedMediaCardsViewController`).
+- **`.paste`** — pasteboard-URL saves from the permanent util card
+  (`ArticleCardsViewController`, `SavedMediaCardsViewController`, and
+  `PriceTrackerCardsViewController`).
 - **`.manual`** — the default: typed URL, reader save button, deep links.
 - **`.friendShare`** — declared in `CaptureSource` and handled by
   `SourceSendSettings`/`SurfaceSupport`/`ReadingListIngestor`, but **no

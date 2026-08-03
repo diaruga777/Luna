@@ -89,7 +89,7 @@ phrases (swipe to delete).
 If that account's credential expires or is revoked, the Sharing Account section
 keeps the address visible and adds the authentication error plus **Reconnect
 Email**. The top-level Email settings row also says “Sign-in required,” and the
-left tray revives its Email card as a recovery shortcut.
+Settings → Email & Sending exposes the recovery state and reconnect action.
 
 ## Background delivery
 

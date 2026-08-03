@@ -28,8 +28,10 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
         // (2) Connecting a sending account — both credential paths.
         "Luna/Mail/CredentialViewController.swift": 1,
         "Luna/Mail/EmailAccountSetup.swift": 1,
-        // (3) Committing a price alert threshold — both editors.
-        "Luna/PriceTracker/PriceTrackerCardsViewController.swift": 1,
+        // (3) Committing a price alert threshold — both editors. The card's
+        // graph has two commit paths for the one moment: dragging the line, and
+        // the "Set price alert" request a threshold-less tracker offers instead.
+        "Luna/PriceTracker/PriceTrackerCardsViewController.swift": 2,
         "LunaLibraries/Sources/LunaPriceUI/PriceTrackingViewController.swift": 1,
     ]
 
@@ -76,9 +78,13 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
             contentsOf: Self.repoRoot.appendingPathComponent(Self.definitionFile),
             encoding: .utf8)
         XCTAssertTrue(
-            source.contains("Bundle.main.bundleURL.pathExtension != \"appex\""),
+            source.contains("guard !isAppExtension else"),
             "requestAuthorization() lost its app-extension guard — a threshold set in "
                 + "the share sheet would spend the prompt on a dismissing surface.")
+        XCTAssertTrue(
+            source.contains("Bundle.main.bundleURL.pathExtension == \"appex\""),
+            "isAppExtension no longer checks the bundle's .appex suffix — the guard "
+                + "above would be deciding from something else.")
     }
 
     // MARK: - Scan

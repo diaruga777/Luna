@@ -374,10 +374,11 @@ final class UtilCardTests: XCTestCase {
 
     // MARK: - The completed card's horizon
 
-    /// Post-onboarding the pick of the week keeps the seat the intro headline
-    /// had — it is not the first entry of the history list, and the seam below it
-    /// is wider than the one between two history rows.
-    func testCompletedCardSeatsTheWeeklyRowWhereTheHeadlineStoodAboveTheRecents() throws {
+    /// Post-onboarding the pick of the week rides at its own seat, half the
+    /// height of the one the intro headline had — it is not the first entry of
+    /// the history list, and the seam below it is far wider than the one
+    /// between two history rows.
+    func testCompletedCardSeatsTheWeeklyRowAtHalfTheHeadlinesSeatAboveTheRecents() throws {
         seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
         let card = makeCard(
             showsOnboarding: false,
@@ -394,7 +395,9 @@ final class UtilCardTests: XCTestCase {
 
         XCTAssertEqual(
             weekly.minY,
-            (card.view.bounds.height * UtilCardLayout.headlineTopRatio).rounded())
+            (card.view.bounds.height * UtilCardLayout.weeklyTopRatio).rounded())
+        XCTAssertEqual(
+            UtilCardLayout.weeklyTopRatio, UtilCardLayout.headlineTopRatio / 2)
         XCTAssertGreaterThan(recents[0].frame.minY, weekly.maxY)
         let seam = recents[0].frame.minY - weekly.maxY
         let betweenRecents = recents[1].frame.minY - recents[0].frame.maxY

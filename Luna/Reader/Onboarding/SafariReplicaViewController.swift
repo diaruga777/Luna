@@ -318,11 +318,11 @@ final class SafariReplicaViewController:
                           generation == self.enableDemoGeneration
                     else { return }
                     // The switch flipping on IS the wipe's cue: the heavy
-                    // preparation (tile swap, re-occlusion, light rasters)
-                    // commits first, then the sheet starts sliding away and
-                    // the sweep sets out with it — `cleanUpClutter` still
-                    // holds its animations back one run-loop turn, so the
-                    // short reveals at the top of the page keep their shine.
+                    // preparation (tile swap, light rasters) commits first,
+                    // then the sheet starts sliding away and the sweep sets
+                    // out with it — `cleanUpClutter` still holds its
+                    // animations back one run-loop turn, so the short blooms
+                    // at the top of the page keep their shine.
                     // The browser bar leaves on the same cue, before the
                     // page's geometry is measured for the wave.
                     self.setBrowserBarVisible(false, animated: true)

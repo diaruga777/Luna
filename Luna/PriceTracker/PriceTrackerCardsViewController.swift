@@ -75,17 +75,6 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         reload()
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: false)
-        applyCarouselTopInset(4)
-    }
-
-    override func viewSafeAreaInsetsDidChange() {
-        super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset(4)
-    }
-
     // MARK: - Store
 
     @objc private func priceTrackerSaved(_ notification: Notification) {
@@ -274,15 +263,6 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
                 ?? fallback
             completion(image)
         }
-    }
-}
-
-// The launch splash crossfades from this deck's real resting card geometry.
-extension PriceTrackerCardsViewController: AppLaunchTransitionTarget {
-    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
-        view.layoutIfNeeded()
-        guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
-        return view.convert(frame, to: window)
     }
 }
 

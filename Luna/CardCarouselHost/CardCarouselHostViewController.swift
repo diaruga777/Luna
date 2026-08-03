@@ -438,10 +438,39 @@ private final class UtilCardSaveTransition {
     }
 
     private static func cornerRadius(of view: UIView) -> CGFloat {
+        CardTransitionSnapshot.cornerRadius(of: view)
+    }
+}
+
+/// Snapshots taken FROM a deck surface, for the moves the deck animates by hand:
+/// a util-card row growing into its card, a card dissolving as it is archived, an
+/// archive cell dissolving into the card it is restored to.
+///
+/// The corner radius is the subtle part and it lives here once: a carousel card
+/// and an archive-tray cell are both `UICollectionViewCell`s whose radius is on
+/// the CONTENT view, so reading `layer.cornerRadius` off the cell itself gives
+/// zero and the snapshot travels as a hard-edged rectangle.
+@MainActor
+enum CardTransitionSnapshot {
+
+    static func cornerRadius(of view: UIView) -> CGFloat {
         if let cell = view as? UICollectionViewCell {
             return cell.contentView.layer.cornerRadius
         }
         return view.layer.cornerRadius
+    }
+
+    /// A snapshot of `sourceView`, already added to `host` at the source's own
+    /// on-screen frame and wearing its corner radius — ready to be animated and
+    /// then removed by the caller.
+    static func make(of sourceView: UIView, in host: UIView) -> UIView? {
+        guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
+        snapshot.frame = sourceView.convert(sourceView.bounds, to: host)
+        snapshot.layer.cornerRadius = cornerRadius(of: sourceView)
+        snapshot.layer.cornerCurve = .continuous
+        snapshot.clipsToBounds = true
+        host.addSubview(snapshot)
+        return snapshot
     }
 }
 
@@ -619,6 +648,28 @@ class CardCarouselHostViewController: UIViewController {
         archiveTray?.setPullAvailable(false, animated: animated)
     }
 
+    /// Extra chrome-row clearance this deck floats above the carousel, on top of
+    /// the safe area (Reader's top control row; the other decks have none and
+    /// keep the shared 4pt breathing room).
+    class var carouselTopClearance: CGFloat { 4 }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: false)
+        applyCarouselTopInset(Self.carouselTopClearance)
+        deckCarouselInsetsDidChange()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        applyCarouselTopInset(Self.carouselTopClearance)
+        deckCarouselInsetsDidChange()
+    }
+
+    /// The deck's chance to follow a changed card area. Reader's cards embed live
+    /// readers whose own top inset is measured off it.
+    func deckCarouselInsetsDidChange() {}
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         // Reaching the app's main screen (on launch or by navigating back) clears
@@ -769,5 +820,18 @@ class CardCarouselHostViewController: UIViewController {
 
     @objc func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
+    }
+}
+
+// Every app's launch splash crossfades from its deck's real resting card
+// geometry. The carousel owns that geometry, so the launch transition asks it
+// here rather than duplicating safe-area/scrubber math in SceneDelegate — and
+// once, on the base every deck already is, rather than in three identical
+// per-deck extensions.
+extension CardCarouselHostViewController: AppLaunchTransitionTarget {
+    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
+        view.layoutIfNeeded()
+        guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
+        return view.convert(frame, to: window)
     }
 }

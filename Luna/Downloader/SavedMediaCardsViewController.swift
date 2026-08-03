@@ -137,17 +137,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         reload()
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: false)
-        applyCarouselTopInset(4)
-    }
-
-    override func viewSafeAreaInsetsDidChange() {
-        super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset(4)
-    }
-
     /// Matches Reader's outer chrome: the scrubber runs edge-to-edge beneath
     /// two persistent Liquid Glass circles.
     private func mountBottomControls() {
@@ -616,15 +605,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 }
             }
         }
-    }
-}
-
-// The launch splash crossfades from this deck's real resting card geometry.
-extension SavedMediaCardsViewController: AppLaunchTransitionTarget {
-    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
-        view.layoutIfNeeded()
-        guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
-        return view.convert(frame, to: window)
     }
 }
 

@@ -271,16 +271,19 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
     }
 
+    /// The card AREA rests below the header row; the phone-shaped card then grows
+    /// back up into that clearance for its exact aspect (`cardFit`), so the row's
+    /// buttons float over the card's faded top edge rather than over the screen
+    /// background.
+    override class var carouselTopClearance: CGFloat { carouselTopInset }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: false)
-        // The card AREA rests below the header row; the phone-shaped card then
-        // grows back up into that clearance for its exact aspect (`cardFit`
-        // above), so the row's buttons float over the card's faded top edge
-        // rather than over the screen background.
-        applyCarouselTopInset(Self.carouselTopInset)
-        updateExternalReaderInsets()
         reconcileFooterContentFade()
+    }
+
+    override func deckCarouselInsetsDidChange() {
+        updateExternalReaderInsets()
     }
 
     /// The footer veil belongs to an immersed, bottom-extended reader and to
@@ -295,12 +298,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private func reconcileFooterContentFade() {
         guard !carousel.isImmersed, footerContentFade.alpha != 0 else { return }
         footerContentFade.alpha = 0
-    }
-
-    override func viewSafeAreaInsetsDidChange() {
-        super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset(Self.carouselTopInset)
-        updateExternalReaderInsets()
     }
 
     /// The height of the screen-level chrome row: it spans safeTop+4 …
@@ -961,17 +958,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     private func makeTransitionSnapshot(of sourceView: UIView) -> UIView? {
-        guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
-        snapshot.frame = sourceView.convert(sourceView.bounds, to: view)
-        if let cell = sourceView as? UICollectionViewCell {
-            snapshot.layer.cornerRadius = cell.contentView.layer.cornerRadius
-        } else {
-            snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
-        }
-        snapshot.layer.cornerCurve = .continuous
-        snapshot.clipsToBounds = true
-        view.addSubview(snapshot)
-        return snapshot
+        CardTransitionSnapshot.make(of: sourceView, in: view)
     }
 
     private func cardContextMenu(
@@ -2429,14 +2416,3 @@ private final class ReaderFooterContentFadeView: UIView {
 /// `openExternally(_:)` itself is defined above; this just marks the deck as a
 /// root `SceneDelegate` can hand items to without a kind-specific downcast.
 extension ArticleCardsViewController: ExternalItemOpening {}
-
-// Every Reader launch crossfades from the real resting card geometry. The
-// carousel owns that geometry, so the launch transition asks it instead of
-// duplicating safe-area/scrubber math in SceneDelegate.
-extension ArticleCardsViewController: AppLaunchTransitionTarget {
-    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
-        view.layoutIfNeeded()
-        guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
-        return view.convert(frame, to: window)
-    }
-}

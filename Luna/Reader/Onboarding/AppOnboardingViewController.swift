@@ -1037,6 +1037,10 @@ final class AppOnboardingViewController: UIViewController {
         pauseDemoPresentationPlayback()
         journeyStage = .safariSetup
         externalReturn = .safari
+        // Stamped before the hop, not after a successful open: the extension's
+        // in-page confirmation pairs this with its own first run, and both halves
+        // have to be on disk before Safari is anywhere near the foreground.
+        LunaSetupStatusStore.shared.recordSafariSetupTap(for: configuration.app)
         safariGuide.startPictureInPicture()
         // Any real page works for practicing the extension; Wikipedia loads
         // reliably and looks nothing like an ad.

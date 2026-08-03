@@ -26,5 +26,13 @@
     "trackInLuna": {
         "message": "Track in Luna",
         "description": "Button that adds a product to Luna Price Tracker."
+    },
+    "setupCompleteTitle": {
+        "message": "Nice!\nYou're all set up",
+        "description": "Confirmation shown in the page the first time the extension runs after setup was started in the app. The line break is deliberate."
+    },
+    "returnToApp": {
+        "message": "Return to $APP$",
+        "description": "Button that reopens the containing app after setup. $APP$ is substituted by content.js with that app's own name, e.g. 'Luna Reader'."
     }
 }

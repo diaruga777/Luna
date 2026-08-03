@@ -32,7 +32,9 @@
         openingLuna: "Opening Luna…",
         readInLuna: "📖  Read in Luna",
         downloadInLuna: "Download in Luna",
-        trackInLuna: "Track in Luna"
+        trackInLuna: "Track in Luna",
+        setupCompleteTitle: "Nice!\nYou're all set up",
+        returnToApp: "Return to $APP$"
     };
 
     function localizedMessage(key) {
@@ -70,43 +72,17 @@
     // e.g. from an XCTest — see `window.__lunaLooksLikeArticle` below.
     if (typeof browser !== "undefined") {
         browser.runtime.sendMessage({ type: "buttonContext" }).then(function (resp) {
-            var mode = (resp && resp.mode) || "all";
-            if (mode === "never") { return; }
-            var platform = recognizedPlatformPage();
-            // Reddit is media-gated and SPA-aware; its own handler owns injection,
-            // the retry-on-hydration schedule, and the soft-nav watcher.
-            if (platform === "reddit") { handleReddit(resp); return; }
-            if (platform) {
-                if (!shouldShowDownloadPillForPlatform(platform)) { return; }
-                var downloadTarget = downloadTargetFor(resp);
-                if (downloadTarget) { injectLunaButton(downloadTarget); }
+            // The one-shot "you're all set up" confirmation takes the whole page,
+            // and is deliberately independent of pill eligibility: the app sends
+            // the user to an ordinary web page to prove the extension runs, and
+            // that page is frequently one this app would never offer a pill on
+            // (Wikipedia in Downloader) — while `mode: "never"` silences pills,
+            // not the proof that setup worked. Pills resume when it dismisses.
+            if (resp && resp.celebrateSetup) {
+                presentSetupCelebration(resp, function () { offerLunaButton(resp); });
                 return;
             }
-            // Reddit feed / listing / comment-history pages are NOT posts: suppress
-            // the product/article heuristics entirely (a feed must never get any
-            // pill) while keeping the SPA watcher live so a soft-nav INTO a post
-            // still gains the pill.
-            if (isRedditHost()) { handleReddit(resp); return; }
-            // Product pages win over the fallback article heuristics (a retail page's
-            // long description can read as an article body). Deterministic known-news
-            // hosts remain articles, matching Swift's Classifier/IngestPipeline:
-            // publisher store cards and subscription components must not turn the
-            // primary article into a Price Tracker hand-off.
-            if (looksLikeProductPage()) {
-                var trackTarget = trackTargetFor(resp);
-                if (trackTarget) { injectLunaButton(trackTarget); }
-                return;
-            }
-            if (!isArticlePage()) {
-                // Some article bodies hydrate late (SPA/client-rendered pages) --
-                // give the DOM a chance to settle, then re-check once. (A known
-                // article host classifies immediately, so it never reaches here.)
-                setTimeout(function () { tryInjectArticleButton(mode, resp); }, 2500);
-                return;
-            }
-            if (mode === "onlyLocked" && !pageIsLocked()) { return; }
-            var target = readTarget(resp);
-            if (target) { injectLunaButton(target); }
+            offerLunaButton(resp);
         }).catch(function () {});
 
         // Reveal the article body in Safari (the Referer rewrite that unlocks the
@@ -128,8 +104,49 @@
         }).catch(function () {});
     }
 
-    // One-shot re-check of just the article branch (mirrors the tail of the
-    // `buttonContext` handler above) for the 2500ms SPA retry.
+    /// Decides which pill (if any) this page earns, from the native context.
+    function offerLunaButton(resp) {
+        var mode = (resp && resp.mode) || "all";
+        if (mode === "never") { return; }
+        var platform = recognizedPlatformPage();
+        // Reddit is media-gated and SPA-aware; its own handler owns injection,
+        // the retry-on-hydration schedule, and the soft-nav watcher.
+        if (platform === "reddit") { handleReddit(resp); return; }
+        if (platform) {
+            if (!shouldShowDownloadPillForPlatform(platform)) { return; }
+            var downloadTarget = downloadTargetFor(resp);
+            if (downloadTarget) { injectLunaButton(downloadTarget); }
+            return;
+        }
+        // Reddit feed / listing / comment-history pages are NOT posts: suppress
+        // the product/article heuristics entirely (a feed must never get any
+        // pill) while keeping the SPA watcher live so a soft-nav INTO a post
+        // still gains the pill.
+        if (isRedditHost()) { handleReddit(resp); return; }
+        // Product pages win over the fallback article heuristics (a retail page's
+        // long description can read as an article body). Deterministic known-news
+        // hosts remain articles, matching Swift's Classifier/IngestPipeline:
+        // publisher store cards and subscription components must not turn the
+        // primary article into a Price Tracker hand-off.
+        if (looksLikeProductPage()) {
+            var trackTarget = trackTargetFor(resp);
+            if (trackTarget) { injectLunaButton(trackTarget); }
+            return;
+        }
+        if (!isArticlePage()) {
+            // Some article bodies hydrate late (SPA/client-rendered pages) --
+            // give the DOM a chance to settle, then re-check once. (A known
+            // article host classifies immediately, so it never reaches here.)
+            setTimeout(function () { tryInjectArticleButton(mode, resp); }, 2500);
+            return;
+        }
+        if (mode === "onlyLocked" && !pageIsLocked()) { return; }
+        var target = readTarget(resp);
+        if (target) { injectLunaButton(target); }
+    }
+
+    // One-shot re-check of just the article branch (mirrors the tail of
+    // `offerLunaButton` above) for the 2500ms SPA retry.
     function tryInjectArticleButton(mode, resp) {
         if (!isArticlePage()) { return; }
         if (mode === "onlyLocked" && !pageIsLocked()) { return; }
@@ -1028,6 +1045,114 @@
         }
         return "";
     }
+
+    // ── The one-shot setup confirmation ─────────────────────────────────────────
+    // The app's onboarding stamps the moment it sent the user to Safari; the native
+    // handler stamps this extension's own first run and answers `celebrateSetup`
+    // when both are within 24h and it has never confirmed before (the decision
+    // lives in Swift — see SharedSafariURL.shouldCelebrateSetup). Here we only
+    // render it, tell the native side it was seen, and hand the page back after
+    // five seconds so a pill can still appear if this page earns one.
+    var SETUP_CELEBRATION_ID = "luna-setup-celebration";
+    var SETUP_CELEBRATION_DURATION = 5000;
+
+    function presentSetupCelebration(context, onDismiss) {
+        if (document.getElementById(SETUP_CELEBRATION_ID)) { return; }
+        var scheme = (context && context.scheme) || "";
+        var appName = (context && context.appName) || "Luna";
+
+        var overlay = document.createElement("div");
+        overlay.id = SETUP_CELEBRATION_ID;
+        applyStyle(overlay, {
+            position: "fixed", top: "0", left: "0", right: "0", bottom: "0",
+            zIndex: "2147483647",
+            // Semi-transparent so the page the extension just proved it can reach
+            // stays visible behind the confirmation, tinted with Luna's indigo.
+            background: "rgba(26, 24, 66, 0.85)",
+            webkitBackdropFilter: "blur(6px)", backdropFilter: "blur(6px)",
+            boxSizing: "border-box", display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", margin: "0",
+            padding: "24px", overscrollBehavior: "contain"
+        });
+
+        // A third of the window, with the headline centred inside it — the button
+        // sits directly below, and the pair is centred in the window as a whole.
+        var headline = document.createElement("div");
+        headline.appendChild(document.createTextNode(localizedMessage("setupCompleteTitle")));
+        applyStyle(headline, {
+            // A third of the WINDOW, not of the overlay's padded content box.
+            flex: "0 0 33.3333vh", height: "33.3333vh", boxSizing: "border-box",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: "100%", maxWidth: "20em", textAlign: "center",
+            // `pre-line` renders the deliberate line break in the localized string.
+            whiteSpace: "pre-line", color: "#ffffff",
+            font: "700 clamp(28px, 8vw, 44px)/1.24 -apple-system, system-ui, sans-serif",
+            margin: "0", padding: "0"
+        });
+        // `dvh` follows Safari's collapsing toolbars where `vh` doesn't; assigning
+        // an unsupported unit is a no-op, which leaves the `vh` values in place.
+        headline.style.flexBasis = "33.3333dvh";
+        headline.style.height = "33.3333dvh";
+        overlay.appendChild(headline);
+
+        var dismissed = false;
+        var timer = null;
+        var dismiss = function (runOnDismiss) {
+            if (dismissed) { return; }
+            dismissed = true;
+            if (timer !== null) { clearTimeout(timer); timer = null; }
+            if (overlay.parentNode) { overlay.parentNode.removeChild(overlay); }
+            if (runOnDismiss && typeof onDismiss === "function") { onDismiss(); }
+        };
+
+        // No scheme means no app to return to (the handler always supplies one; a
+        // failed native round trip does not) — the confirmation still stands, it
+        // just carries no dead button.
+        if (scheme) {
+            var button = document.createElement("div");
+            button.setAttribute("role", "button");
+            button.appendChild(document.createTextNode(
+                localizedMessage("returnToApp").replace("$APP$", appName)));
+            applyStyle(button, {
+                boxSizing: "border-box", display: "inline-flex",
+                alignItems: "center", justifyContent: "center", textAlign: "center",
+                background: "#ffffff", color: QUEUE_INDIGO,
+                font: "600 17px/1 -apple-system, system-ui, sans-serif",
+                border: "none", borderRadius: "999px",
+                padding: "16px 28px", minHeight: "44px", maxWidth: "100%",
+                margin: "0", boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+                cursor: "pointer", webkitTapHighlightColor: "transparent",
+                touchAction: "manipulation", webkitAppearance: "none",
+                appearance: "none"
+            });
+            button.addEventListener("click", function () {
+                button.textContent = localizedMessage("openingLuna");
+                button.style.opacity = "0.7";
+                button.style.pointerEvents = "none";
+                // Bare scheme, no payload: this reopens the app on whatever it was
+                // showing, it does not hand it this page. Leaving the overlay up —
+                // we're navigating away, and no pill belongs on a page being left.
+                dismissed = true;
+                if (timer !== null) { clearTimeout(timer); timer = null; }
+                window.location.href = scheme + "://";
+            });
+            overlay.appendChild(button);
+        }
+
+        (document.body || document.documentElement).appendChild(overlay);
+        // One-shot, recorded on RENDER: a context request that never reached this
+        // point must leave the confirmation eligible for the next page.
+        if (typeof browser !== "undefined") {
+            browser.runtime.sendMessage({ type: "setupCelebrationShown" }).catch(function () {});
+        }
+        timer = setTimeout(function () { dismiss(true); }, SETUP_CELEBRATION_DURATION);
+    }
+
+    // For the WKWebView harnesses, which have no extension host — see
+    // SafariSetupCelebrationTests.
+    window.__lunaPresentSetupCelebration = presentSetupCelebration;
+    window.__lunaSetupCelebrationID = SETUP_CELEBRATION_ID;
+    window.__lunaSetupCelebrationDuration = SETUP_CELEBRATION_DURATION;
 
     function injectLunaButton(target) {
         if (document.getElementById("queue-read-button")) { return; }

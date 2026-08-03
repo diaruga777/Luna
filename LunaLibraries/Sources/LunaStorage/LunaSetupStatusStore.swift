@@ -26,6 +26,39 @@ public final class LunaSetupStatusStore {
     public static let sharedShareActionKey = "setup.shareAction.hasRun.shared"
     public static let centralShareActionKey = "setup.shareAction.hasRun.luna"
 
+    /// How recent both halves of the Safari hand-off must be for the extension to
+    /// congratulate the user in the page instead of offering its usual pill.
+    public static let safariCelebrationWindow: TimeInterval = 24 * 60 * 60
+
+    /// The four keys behind the in-page "You're all set up" confirmation. Two are
+    /// written by the app (the setup tap), two by the extension's native handler
+    /// (its own first run, and that it has shown the confirmation) — the extension
+    /// links no framework, so `LunaSafari/SharedSafariURL.swift` carries a copy of
+    /// every one of these formats and of the window above. They are an App-Group
+    /// contract: `SafariSetupCelebrationTests` fails on drift between the two.
+    ///
+    /// All four are keyed per app rather than shared, unlike the completion
+    /// markers above: an extension may only ever hand off to its OWN containing
+    /// app, so central Luna's tap must not make the Reader's extension offer to
+    /// return the user to an app they never left.
+    public static func safariSetupTapKey(for app: LunaApp) -> String {
+        "setup.safari.setupTapAt.\(app.storageIdentifier)"
+    }
+
+    /// The tapping app's own display name, stamped with the tap so the extension
+    /// can name it ("Return to Luna Reader") without deriving it from a bundle id.
+    public static func safariSetupTapAppNameKey(for app: LunaApp) -> String {
+        "setup.safari.setupTapAppName.\(app.storageIdentifier)"
+    }
+
+    public static func safariFirstRunKey(for app: LunaApp) -> String {
+        "setup.safari.firstRunAt.\(app.storageIdentifier)"
+    }
+
+    public static func safariCelebrationShownKey(for app: LunaApp) -> String {
+        "setup.safari.celebrationShown.\(app.storageIdentifier)"
+    }
+
     private static var darwinNotificationName: String {
         "\(AppConfig.appGroupID).setupStatusChanged"
     }
@@ -121,6 +154,59 @@ public final class LunaSetupStatusStore {
         Self.postChange()
     }
 
+    // MARK: - The in-page setup confirmation
+
+    /// Records that the user just left for real Safari from this app's Safari
+    /// lesson. Deliberately does NOT `postChange()`: nothing about completion has
+    /// changed yet, and the observers are UI that is mid-transition to Safari.
+    public func recordSafariSetupTap(for app: LunaApp, at date: Date = Date()) {
+        defaults.set(date.timeIntervalSince1970, forKey: Self.safariSetupTapKey(for: app))
+        defaults.set(app.displayName, forKey: Self.safariSetupTapAppNameKey(for: app))
+    }
+
+    public func safariSetupTapDate(for app: LunaApp) -> Date? {
+        Self.date(defaults.object(forKey: Self.safariSetupTapKey(for: app)))
+    }
+
+    /// Stamped by the extension's native handler the first time it ever runs for
+    /// this app. Read-only here: the app never writes it, so it can't manufacture
+    /// evidence that the extension works.
+    public func safariExtensionFirstRunDate(for app: LunaApp) -> Date? {
+        Self.date(defaults.object(forKey: Self.safariFirstRunKey(for: app)))
+    }
+
+    public func safariCelebrationWasShown(for app: LunaApp) -> Bool {
+        defaults.bool(forKey: Self.safariCelebrationShownKey(for: app))
+    }
+
+    /// Whether the extension should take the page over with the confirmation
+    /// rather than offer its usual pill: the user tapped this app's setup button
+    /// recently, this app's extension first ran recently, and the confirmation has
+    /// not been shown before. A stamp in the future doesn't qualify — a backwards
+    /// clock suppresses the confirmation rather than replaying it forever.
+    ///
+    /// `SharedSafariURL.shouldCelebrateSetup` is the extension's copy of this.
+    public func shouldCelebrateSafariSetup(for app: LunaApp, now: Date = Date()) -> Bool {
+        guard !safariCelebrationWasShown(for: app),
+              let tap = safariSetupTapDate(for: app),
+              let firstRun = safariExtensionFirstRunDate(for: app)
+        else { return false }
+        return Self.isWithinCelebrationWindow(tap, now: now)
+            && Self.isWithinCelebrationWindow(firstRun, now: now)
+    }
+
+    private static func isWithinCelebrationWindow(_ date: Date, now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(date)
+        return elapsed >= 0 && elapsed < safariCelebrationWindow
+    }
+
+    /// `UserDefaults` holds these as epoch seconds; absent reads as nil rather
+    /// than 1970 so an unstamped key can't look like an ancient event.
+    private static func date(_ stored: Any?) -> Date? {
+        guard let seconds = stored as? Double else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
     /// Erases every "has ever worked" marker — the Safari extension's and the
     /// App Intents' — across the shared and central facets. The diagnostics
     /// onboarding reset uses this so a re-run must gather fresh evidence.
@@ -135,6 +221,13 @@ public final class LunaSetupStatusStore {
             [
                 Self.shortcutInstallPressedKey(for: app),
                 Self.shortcutIntentRunKey(for: app),
+                // Including the extension's own two keys: a reset that left
+                // `firstRunAt` stamped could never show the in-page confirmation
+                // again, because an extension only ever first-runs once.
+                Self.safariSetupTapKey(for: app),
+                Self.safariSetupTapAppNameKey(for: app),
+                Self.safariFirstRunKey(for: app),
+                Self.safariCelebrationShownKey(for: app),
             ]
         }) {
             defaults.removeObject(forKey: key)

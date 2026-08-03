@@ -88,7 +88,9 @@ browser.runtime.onMessage.addListener(function (message) {
                     scheme: (resp && resp.scheme) || "",
                     supportsArticles: !!(resp && resp.supportsArticles),
                     supportsMedia: !!(resp && resp.supportsMedia),
-                    supportsProducts: !!(resp && resp.supportsProducts)
+                    supportsProducts: !!(resp && resp.supportsProducts),
+                    celebrateSetup: !!(resp && resp.celebrateSetup),
+                    appName: (resp && resp.appName) || ""
                 };
             })
             .catch(function () {
@@ -97,9 +99,16 @@ browser.runtime.onMessage.addListener(function (message) {
                     scheme: "",
                     supportsArticles: false,
                     supportsMedia: false,
-                    supportsProducts: false
+                    supportsProducts: false,
+                    celebrateSetup: false,
+                    appName: ""
                 };
             });
+    }
+    if (message.type === "setupCelebrationShown") {
+        return browser.runtime.sendNativeMessage("application.id", { type: "setupCelebrationShown" })
+            .then(function () { return { ok: true }; })
+            .catch(function () { return { ok: false }; });
     }
     if (message.type === "bypassEnabled") {
         return browser.runtime.sendNativeMessage("application.id", { type: "bypassEnabled" })

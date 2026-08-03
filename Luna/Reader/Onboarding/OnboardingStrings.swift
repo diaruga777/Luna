@@ -379,7 +379,7 @@ enum OnboardingStrings {
         static let sharePitch = Definition(shared: "Nah, its easy. Check it")
         static let shareTryIt = Definition(shared: "Try it:")
         static let shareAside = Definition(
-            shared: "(You can also just share in the link normally tbf)")
+            shared: "(You can just share the link normally too tbf)")
         static let sharePillAccessibilityLabel = Definition(
             shared: "Share the example link")
     }
@@ -515,6 +515,29 @@ enum OnboardingStrings {
         }
     }
 
+    /// Words that belong to iOS rather than to Luna. The mock link menu and the
+    /// mock share sheet replicate system surfaces, so they spell every label
+    /// exactly as the OS does — and they are gathered here for the same reason
+    /// all the other copy is: so a change is one edit, not a hunt through views.
+    enum SystemUI {
+        static let openLink = Definition(shared: "Open Link")
+        static let copy = Definition(shared: "Copy")
+        static let share = Definition(shared: "Share…")
+        static let editActions = Definition(shared: "Edit Actions")
+        static let favorites = Definition(shared: "Favorites")
+        static let otherActions = Definition(shared: "Other Actions")
+        static let saveToFiles = Definition(shared: "Save to Files")
+        static let addToReadingList = Definition(shared: "Add to Reading List")
+        static let airDrop = Definition(shared: "AirDrop")
+        static let messages = Definition(shared: "Messages")
+        static let reminders = Definition(shared: "Reminders")
+        static let more = Definition(shared: "More")
+        /// The two share targets the sheet always has: this user's own Mac and
+        /// somebody in Contacts.
+        static let laptop = Definition(shared: "Laptop")
+        static let contact = Definition(shared: "Johnny\nAppleseed")
+    }
+
     enum AnimationKeys {
         static let messageBubbleFlight = Definition(shared: "onboarding.bubble.flight")
         static let pillPulse = Definition(shared: "onboarding.pill.pulse")
@@ -524,6 +547,12 @@ enum OnboardingStrings {
         static let attentionPulseScale = Definition(
             shared: "onboarding.attention.pulse.scale")
         static let ringFill = Definition(shared: "onboarding.ring.fill")
+        /// The visible front of the Action Button press wave.
+        static let actionButtonPressWave = Definition(
+            shared: "onboarding.press.wave")
+        /// The lift a context menu's preview and menu cast while they are up.
+        static let contextMenuShadow = Definition(
+            shared: "onboarding.contextMenu.shadow")
         static let switcherCorner = Definition(shared: "onboarding.switcher.corner")
         static let moonReveal = Definition(shared: "moonReveal")
         static let opaqueGlyphReveal = Definition(shared: "opaqueGlyphReveal")

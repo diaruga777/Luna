@@ -926,6 +926,25 @@ final class AppOnboardingViewController: UIViewController {
         sourceView.alpha = 0
     }
 
+    /// Takes both mock lessons off screen for good — the last thing any ending
+    /// does before the screen changes hands.
+    ///
+    /// A demonstration is mounted full screen at the SIZE of the screen, so
+    /// while it is attached it is the topmost thing in the window under the
+    /// app-switcher hop. Every ending used to leave it there: the hop came down,
+    /// or the window's root was swapped, or the replay was dismissed, with the
+    /// mock still live underneath — and whichever of those needed a frame of its
+    /// own showed the lesson flashing back over the card deck it had just handed
+    /// off to. Nothing may outlive the hop that covered it.
+    private func hideDemonstrationSources() {
+        for kind in OnboardingDemoSource.allCases {
+            guard let sourceView = sourceController(for: kind)?.view else { continue }
+            sourceView.layer.removeAllAnimations()
+            sourceView.isHidden = true
+            sourceView.alpha = 0
+        }
+    }
+
     private func sourceController(
         for source: OnboardingDemoSource
     ) -> OnboardingSaveSourceViewController? {
@@ -1311,6 +1330,9 @@ final class AppOnboardingViewController: UIViewController {
         isFinishing = true
         endSaveDemonstration()
         pauseDemoPresentationPlayback()
+        // The same rule the app-switcher endings follow: no mock lesson may be
+        // attached when the window changes hands.
+        hideDemonstrationSources()
         replaceSavedRootWithCurrentContent()
         guard let window = view.window,
               let root = savedRootViewController
@@ -1433,9 +1455,13 @@ final class AppOnboardingViewController: UIViewController {
         view.addSubview(switcher)
         switcher.playForward { [weak self] in
             guard let self else { return }
+            // The mock goes first and the dismissal second, both under the
+            // hop's own last frame. Taking the hop down first uncovered the
+            // full-screen lesson for however long the dismissal took.
+            self.hideDemonstrationSources()
+            self.dismiss(animated: false)
             switcher.removeFromSuperview()
             self.appSwitcher = nil
-            self.dismiss(animated: false)
         }
     }
 
@@ -1464,9 +1490,7 @@ final class AppOnboardingViewController: UIViewController {
         view.addSubview(switcher)
         switcher.playForward { [weak self] in
             guard let self else { return }
-            for kind in OnboardingDemoSource.allCases {
-                self.sourceController(for: kind)?.view.isHidden = true
-            }
+            self.hideDemonstrationSources()
             self.carousel.view.isHidden = false
             self.carousel.view.alpha = 1
             self.savedRootViewController?.view.alpha = 0
@@ -1521,6 +1545,15 @@ final class AppOnboardingViewController: UIViewController {
         switcher.playForward { [weak self, weak window, weak root] in
             guard let self, let window, let root else { return }
             self.onboardingStore.markCompleted()
+            // The handoff snapshots the window and reparents the root out of
+            // this controller, and for that one frame the outgoing tree still
+            // owns the screen. So the lesson comes down and the live root comes
+            // up FIRST, under the hop's frozen last frame — which is a raster of
+            // that same root, so nothing moves — and only then does the window
+            // change hands and the hop come down.
+            self.hideDemonstrationSources()
+            root.view.alpha = 1
+            root.view.layoutIfNeeded()
             AppOnboardingCompletionTransition.run(in: window, to: root)
             switcher.removeFromSuperview()
             self.appSwitcher = nil

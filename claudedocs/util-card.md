@@ -67,6 +67,49 @@ card rim (whose radius follows the shell's own, 16 → 22) and carries Luna's ow
 waiting — `HorizonSpinnerView` for an article or product, `EclipseProgressBar`
 for a media transfer — until the real content crossfades in.
 
+## The setup block
+
+The setup buttons belong to BOTH states, not just the first run: the two system
+lessons are first-run business, but the email nudge only becomes due once there
+are saves — by which time this is the completed card.
+
+`UtilCardSetupOffer` decides what is on screen. The candidates, in priority
+order — which is also the order they read top to bottom — are:
+
+| Button | Offered while |
+|---|---|
+| Safari (`safari.fill`) | not retired (see below) |
+| Save / Action Button shortcut (bundled `ShortcutsAppIcon`) | this device can run the lesson AND it is not retired |
+| Email (`envelope.fill`, “Read your newsletters in Luna”) | `LunaApp.sharesByEmail`, no account connected, and the ask is earned |
+
+**At most TWO.** A third leaves the card no room for the weekly row and the
+recent URLs, and email — a nudge, not a requirement — is the one that loses.
+So it effectively appears only once one of the other two has stopped asking.
+
+**There is no share-sheet save lesson.** Luna's only save lesson is the Action
+Button shortcut; a device that cannot run it (`OnboardingSaveSetupMode
+.unavailable`) is offered nothing in that slot, and its save leg counts as
+finished because nothing is owed. The block stacks UP from the paste row, so an
+absent lesson is not a gap: Safari simply takes the bottom slot.
+
+**Email is earned by three saves, or by two days with the first one** —
+whichever comes first (`UtilCardSetupOffer.emailIsEarned`, counting saves from
+any surface). It arrives live: `.readingListChanged`, a foreground, and
+`EmailAccountStore.accountChanged` all reflow the block, so the third save brings
+the button in and connecting an account takes it away. Tapping it runs
+`UtilCardContentViewController.emailSetupLauncher` — installed by the `KindWiring`
+variants of the two email apps, because `EmailAndKindleSettingsScreen` is not
+compiled into the other two — which pushes Settings → Email with the address
+field focused (`claudedocs/email-login.md`).
+
+**A finished button is retired the next time the app leaves the foreground.**
+Completing a lesson checks and disables its button for the rest of that session;
+`AppOnboardingStore.retireCompletedSetupButtons()`, called from AppDelegate on
+`applicationDidEnterBackground` and again at launch, then takes it off the card
+for good — which is what frees a slot for email. SKIPPING is not finishing: a
+skipped lesson keeps its button (the offer stays open) and keeps outranking
+email. The outcome is persisted per leg, so the distinction survives relaunches.
+
 ## First-run state
 
 `AppOnboardingStore.isCompleted == false` selects this state when the carousel
@@ -74,15 +117,13 @@ host is constructed. The card shows, top to bottom:
 
 1. the surface-specific two-beat intro headline;
 2. Save of the Week, when there is one;
-3. Safari setup;
-4. Shortcut/Action Button setup on capable surfaces, or share setup on the
-   fallback surfaces;
-5. the “or” separator, when it applies (see below);
-6. the permanent paste row at the bottom.
+3. the setup block (above);
+4. the “or” separator, when it applies (see below);
+5. the permanent paste row at the bottom.
 
 The headline's top is `UtilCardLayout.headlineTopRatio` (0.28) of the card — a
 little above the exact third the standalone onboarding root used, not up on the
-card's shoulder — and the weekly row hangs below it. Both setup actions are
+card's shoulder — and the weekly row hangs below it. The setup actions are
 anchored UPWARD from the paste row (as they were on the standalone intro), not
 off the headline, and the “or” sits in the seam between the last action and the
 paste field.
@@ -92,12 +133,11 @@ finished/skipped, and the deck holds no save of its own (the host passes
 `hasSaves`). It leaves as soon as either becomes untrue — including live, on
 `AppOnboardingStore.didChange` and `.readingListChanged`.
 
-The setup actions launch the existing native Safari and Messages/setup lessons
+The two lesson buttons launch the existing native Safari and Messages lessons
 with `AppOnboardingViewController.presentSetupReplay`. Completing or skipping a
 lesson marks that setup leg handled and checks/disables its button for the
 remainder of the process. Their icons are the real artwork, not generic symbols:
-`safari.fill` for Safari, and for the save lesson the bundled `ShortcutsAppIcon`
-(Action Button surfaces) or this app's own icon (share-sheet surfaces).
+`safari.fill` for Safari and the bundled `ShortcutsAppIcon` for the save lesson.
 
 **The headline's sweep belongs to the LAUNCH.** It plays only when this
 appearance is the launch's own — the deck is empty (so the util card is the
@@ -118,9 +158,11 @@ the host observes completion and constructs the completed variant.
 
 ## Completed state and recent URLs
 
-Once setup is complete, the headline and setup buttons are absent. Save of the
-Week, when there is one, moves to the top of the card. Beneath it the card adds as many matching,
-unsaved recent Safari URLs as fit above the paste row; the card never scrolls.
+Once setup is complete the headline is absent, and so are the two lesson buttons
+as soon as they are retired. Save of the Week, when there is one, moves to the top
+of the card. Beneath it the card adds as many matching, unsaved recent Safari URLs
+as fit above whatever the setup block leaves (the paste row, when it is empty);
+the card never scrolls.
 
 Recent rows use the same black layout as Save of the Week but a neutral Liquid
 Glass rim and only the URL host as the subtitle. They come from
@@ -145,7 +187,8 @@ Completion remains per app, with setup evidence shared where appropriate.
 - central Luna's Safari and save integrations already cover a newly installed
   faceted app;
 - both this app's Safari and save-setup legs have either real run evidence or a
-  handled/skipped marker.
+  handled/skipped marker — and on a device with no Action Button the save leg is
+  finished by definition, so Safari alone completes the first run there.
 
 **A save answers the first run.** `AppOnboardingStore.beginOnboardingIfNeeded()`
 stamps the journey's start at launch (AppDelegate, before any root reads the
@@ -158,10 +201,11 @@ and keeps it until a NEW save arrives, however full the deck already is. The
 latch runs at launch, so a save made mid-session settles the card for the next
 one — the card deliberately keeps its layout for the launch that saw the save.
 
-The Safari and save handled markers are separate. This permits the buttons to
-show their checked state during the launch in which setup finishes while keeping
-the layout stable until relaunch. Debug `-resetOnboarding` clears completion,
-handled markers, and setup run evidence.
+The Safari and save handled markers are separate, and each records HOW it was
+handled (completed or skipped) plus whether its button has been retired. This
+permits the buttons to show their checked state during the launch in which setup
+finishes while keeping the layout stable until relaunch. Debug `-resetOnboarding`
+clears completion, all six per-leg markers, and setup run evidence.
 
 ## Validation
 
@@ -170,7 +214,12 @@ weekly row's conditional presence (and the reflow when it is absent), its
 per-app and per-age subtitle, its save callback, the bottom-up order of the
 setup block, the “or” rule in all four combinations, the launch-only headline
 sweep, the answered weekly row, and the save-completes-onboarding latch (older
-saves and a later delete both leave it alone). `WeeklyRowHostTests` covers the
+saves and a later delete both leave it alone). It also pins the setup block's
+offers: Safari taking the bottom slot when there is no save lesson, the email
+nudge's two earning conditions, its absence while both lessons are still offered
+and in the apps that connect no account, the slot a retired lesson gives up, a
+skipped lesson keeping its button, and the third save bringing email in live.
+`WeeklyRowHostTests` covers the
 row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the
 permanent index-zero offset.

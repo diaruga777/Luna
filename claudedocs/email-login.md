@@ -9,8 +9,10 @@ There is **one** entry point and no modal sheet: the Sharing Account section of
 **Settings → Email** (`EmailAndKindleSettingsScreen`) IS the sign-in
 form until an account exists. Anything that needs an account and doesn't have one
 redirects there rather than asking first —
-`SendToFriendSheet.accountSetupLauncher`, installed by the `KindWiring` variants
-of those two apps, calls
+`SendToFriendSheet.accountSetupLauncher` and
+`UtilCardContentViewController.emailSetupLauncher` (the util card's
+"Read your newsletters in Luna" button, `claudedocs/util-card.md`), both
+installed by the `KindWiring` variants of those two apps, call
 `EmailAndKindleSettingsScreen.pushForAccountSetup(from:)`, which pushes the screen
 with the address field already focused (`focusesAddressField`, honored in
 `viewDidAppear`). An app extension, which can't navigate the app's settings,

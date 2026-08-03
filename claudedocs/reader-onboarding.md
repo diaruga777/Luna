@@ -5,8 +5,8 @@ Every app launches its production card deck immediately. The permanent util card
 at index zero owns first-run copy and the entry points into setup; its full state
 and layout contract are documented in `util-card.md`.
 
-This document covers the launch transition, completion model, and the native
-Safari/Shortcut/share lessons that the util card reuses.
+This document covers the launch transition, completion model, and the two native
+lessons — Safari and the Action Button shortcut — that the util card reuses.
 
 ## Launch root
 
@@ -16,8 +16,9 @@ cards controller. It never conditionally returns `AppOnboardingViewController`.
 The util card state is captured when `CardCarouselHostViewController` is
 constructed:
 
-- incomplete: animated headline, weekly save, two setup actions, paste;
-- complete: weekly save, matching recent URLs, paste.
+- incomplete: animated headline, weekly save, the setup block, paste;
+- complete: weekly save, matching recent URLs, whatever the setup block still
+  offers, paste.
 
 The state intentionally does not switch in-place after the second setup leg.
 Buttons may become checked/disabled, but the compact completed layout appears on
@@ -53,8 +54,9 @@ animation while mounted only as a side peek.
 
 ## Completion model
 
-`AppOnboardingStore` persists an explicit completion marker and two per-app
-handled markers: Safari and save setup. Setup evidence itself lives in
+`AppOnboardingStore` persists an explicit completion marker and, per leg (Safari
+and save setup), whether it was handled, whether that handling was a SKIP, and
+whether its util-card button has been retired. Setup evidence itself lives in
 `LunaSetupStatusStore` and can be written by extensions/App Intents.
 
 `isCompleted` is true when:
@@ -62,7 +64,9 @@ handled markers: Safari and save setup. Setup evidence itself lives in
 1. the app has an explicit completion marker; or
 2. central Luna's Safari plus save evidence covers a newly installed facet; or
 3. both this app's Safari and save legs are finished, where finished means real
-   run evidence or completed/skipped handling.
+   run evidence or completed/skipped handling — and where a device that cannot
+   run the Action Button shortcut has no save lesson, so that leg is finished
+   with nothing owed.
 
 Reader keeps its shipped `reader.onboarding.completed.v1` key. The other apps use
 `<surface>.onboarding.completed.v1`. Central inheritance remains one-way: a new
@@ -71,26 +75,32 @@ inherit a facet's completion.
 
 ## Entering setup
 
-The util card's two buttons call
+The util card's two LESSON buttons call
 `AppOnboardingViewController.presentSetupReplay`. AppDelegate injects that
-launcher so the shared card does not own target composition.
+launcher so the shared card does not own target composition. (Its third button
+is the email nudge, which goes to Settings → Email instead — see
+`util-card.md`.)
 
 The setup controller is now a transient lesson presenter, not the app root. It
 uses the existing offline/native demonstrations:
 
 - Safari opens the surface-specific `luna.app`/InstaTok/amayzon teaching page,
   shows the extension effect, then guides the user to Safari extension setup.
-- Save setup uses the Messages replica and selects the Action Button shortcut
-  journey or share/action-extension journey from
-  `OnboardingSurfaceConfiguration.saveSetupMode`.
+- Save setup uses the Messages replica and its ONE journey, the Action Button
+  shortcut (shortened when a sibling app is already configured). There is no
+  share-sheet fallback: where `OnboardingSurfaceConfiguration.saveSetupMode` is
+  `.unavailable` the util card offers no save button, so this lesson is never
+  entered.
 - external-open recovery overlays remain available if Safari, Shortcuts, or
   Settings rejects a route.
 - Reduce Motion replaces waves and switcher choreography with short fades.
 
 Completing or choosing the lesson's skip/later path both call
-`completeSetupFlow`. Safari records `markSafariSetupHandled`; Messages/save setup
-records `markSaveSetupHandled`. If both are now finished, the explicit completion
-marker is also written. The lesson dismisses back to the same production root and
+`completeSetupFlow`, which passes the OUTCOME through: Safari records
+`markSafariSetupHandled(outcome:)`, Messages/save setup
+`markSaveSetupHandled(outcome:)`. The distinction is what decides whether the
+util card retires that button later. If both legs are now finished, the explicit
+completion marker is also written. The lesson dismisses back to the same production root and
 does not replace the carousel.
 
 The setup demonstrations remain storage-free: their mock article, video, and
@@ -103,7 +113,7 @@ Paste is no longer an onboarding completion action. It is a permanent utility
 action in both card variants. `OnboardingPasteRow` still provides the visible
 field and a real `UIPasteControl`; valid URLs run normal ingest and use the util
 row-to-card transition, while failure stays in the row. Saving content does not
-silently claim that Safari and Shortcut/share setup were completed.
+silently claim that Safari and Shortcut setup were completed.
 
 ## Setup replay from Settings
 

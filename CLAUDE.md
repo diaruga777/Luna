@@ -93,9 +93,18 @@ stable Xcode 26.2.
 > into its card carousel, whose permanent index-zero util card doubles as first-run
 > onboarding. While onboarding is unanswered it shows the surface headline (whose
 > two-beat sweep belongs to the LAUNCH only — paged back to, it stands finished),
-> the card's corona, and the Safari and Shortcut/share lessons; after both are
+> the card's corona, and the setup block; after both lessons are
 > completed or skipped, the next launch replaces those controls with matching
-> Safari-history URLs. Paste remains in both states; the Save of the Week row
+> Safari-history URLs. **The setup block is at most TWO buttons**, offered in
+> priority order — Safari, the Action Button shortcut, then the email nudge — and
+> stacked UP from the paste row, so an absent one is not a gap. There is NO
+> share-sheet save lesson: a device that cannot run the shortcut is offered no
+> save button at all and owes nothing on that leg. A COMPLETED button is retired
+> the next time the app backgrounds (and at the next launch), which is what frees
+> a slot for email; a SKIPPED one keeps its button and outranks email. Email
+> waits for three saves or two days with the first, needs
+> `LunaApp.sharesByEmail`, and disappears once an account is connected.
+> Paste remains in both states; the Save of the Week row
 > appears whenever a live signed entry exists (`claudedocs/save-of-the-week.md`).
 > With saves present the first save, not the util card, is the launch selection.
 > **A save from any surface answers the first run**: onboarding stamps its start

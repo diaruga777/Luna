@@ -1,0 +1,120 @@
+//
+//  HostedShareSession.swift
+//  LunaShareSurface
+//
+
+import Foundation
+
+/// What the SHARE/ACTION surface receives when it is driven in-app instead of
+/// from an `NSExtensionContext`.
+///
+/// `.url` runs the ordinary flow — append, ingest, present — over a link the
+/// host supplies. `.offlineFailure` skips the fetch nobody could complete and
+/// drives the REAL failure presentation for `SaveFailureReason.offline`: with no
+/// connection there is nothing to demonstrate except what a failed save actually
+/// looks like, and showing the genuine error is more honest than a mock of a
+/// success.
+public enum HostedShareInput {
+    case url(URL)
+    case offlineFailure(URL)
+}
+
+/// The rendezvous between an in-app host of `ShareViewController` and the kind
+/// modules the surface presents through.
+///
+/// The onboarding save lesson embeds the real extension surface in a mock sheet.
+/// Two things about a REHEARSAL differ from an extension launch, and neither is
+/// something `ShareSurfaceDriver` or a kind presenter should have to know about
+/// the caller to get right:
+///
+/// - a download that finished while the sheet was still sliding up has nothing
+///   to show, so the media screen would jump straight to a finished file and the
+///   lesson would never demonstrate that a fetch happened at all;
+/// - the demonstration LOOPS, so an artifact whose owner deletes it on teardown
+///   (a downloaded preview file) has to survive between passes or every replay
+///   costs another download.
+///
+/// So the host publishes one session on `current` for the duration of the
+/// lesson, and the kind modules consult it. Nil in a real extension, where every
+/// one of these behaviours is exactly the unchanged default.
+@MainActor
+public final class HostedShareSession {
+
+    /// The live session, or nil in a real extension process.
+    public static var current: HostedShareSession?
+
+    public init() {}
+
+    // MARK: - Reveal
+
+    /// When the sheet carrying the surface finished revealing it. Nothing the
+    /// user is meant to SEE may resolve before this.
+    public private(set) var revealDate: Date?
+
+    public func markRevealed() {
+        guard revealDate == nil else { return }
+        revealDate = Date()
+    }
+
+    /// The least time a download indication stays up after the reveal. A
+    /// preloaded file is already on disk by the time the sheet opens; without a
+    /// floor the progress bar would appear and vanish inside one frame.
+    public var minimumDownloadIndication: TimeInterval = 0.3
+
+    /// The earliest a download indication may give way to its result, or nil
+    /// while the sheet is still opening (nothing may resolve yet).
+    public var earliestDownloadResolution: Date? {
+        revealDate?.addingTimeInterval(minimumDownloadIndication)
+    }
+
+    // MARK: - Media
+
+    /// True while the media kind still has something to put on screen — a
+    /// download in flight, or a ready video whose playback has not run yet. The
+    /// host keeps the sheet open until it clears, so the lesson never dismisses
+    /// mid-fetch.
+    public var awaitsMediaPlayback = false
+
+    /// The local file a downloaded VIDEO landed in. The host plays it, muted and
+    /// looping, over the sheet: the point of the media lesson is that the thing
+    /// you saved is now yours, and a still poster does not say that.
+    public var onMediaFileReady: ((URL) -> Void)?
+
+    // MARK: - Terminal state
+
+    /// Fired the moment the surface has something FINAL on screen: a reader, a
+    /// saved-media screen, a price editor, an error, or a completed request. The
+    /// host waits for this instead of counting out a fixed hold, so the sheet is
+    /// up for exactly as long as the real work took.
+    public var onReachedTerminal: (() -> Void)?
+
+    /// The reading-list row the hosted flow created, reported so the host can
+    /// mark it as its temporary save and take it back out afterwards.
+    public var onDidAppendRow: ((UUID) -> Void)?
+
+    // MARK: - Retained artifacts
+
+    /// Things whose lifetime must outlast the flow that produced them — a
+    /// downloaded preview file the next demo pass shows again without
+    /// refetching. Read-only: pair every retention with how to let it go.
+    public private(set) var retainedArtifacts: [Any] = []
+
+    private var releases: [() -> Void] = []
+
+    /// Holds `artifact` for the session's lifetime. `release` runs at
+    /// `releaseArtifacts()` — teardown, or a cancelled lesson — and is where the
+    /// on-disk file actually goes.
+    public func retain(_ artifact: Any, release: @escaping () -> Void) {
+        retainedArtifacts.append(artifact)
+        releases.append(release)
+    }
+
+    /// Lets every retained artifact go, once. Kind-neutral, so the host can end
+    /// the lesson without naming a media type it does not link.
+    public func releaseArtifacts() {
+        let pending = releases
+        releases = []
+        retainedArtifacts = []
+        for release in pending { release() }
+    }
+}

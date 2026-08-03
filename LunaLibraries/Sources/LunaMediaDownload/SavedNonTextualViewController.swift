@@ -5,6 +5,7 @@
 
 import LunaModels
 import LunaDesignSystem
+import LunaShareSurface
 import LunaStorage
 import AVKit
 import CoreMedia
@@ -313,11 +314,101 @@ public final class SavedNonTextualViewController: UIViewController {
             // (e.g. a share-link token whose resolved permalink was saved earlier) —
             // show it as-is instead of re-fetching from the network.
             didPersistToLibrary = true
-            applyMediaState(.alreadyDownloaded(existing))
+            applyResolvedMediaState(.alreadyDownloaded(existing))
+        } else if let preloaded = MediaPreloadCache.shared.take(
+            urlString: articleURLString) {
+            // Somebody already asked for this file (the onboarding save lesson
+            // starts the fetch the moment the user taps into it, while its sheet
+            // is still opening). Join that transfer rather than starting a
+            // second one — and take its progress with it, so the bar picks up
+            // where the download is instead of at zero.
+            MediaPreloadCache.shared.observeProgress(
+                urlString: articleURLString
+            ) { [weak self] fraction in
+                self?.downloadProgress.setProgress(Float(fraction), animated: true)
+            }
+            startMediaDownload(joining: preloaded)
         } else if AutoDownloadSettings.autoDownloadMediaInPreview {
             startMediaDownload()
         } else {
             applyMediaState(.pending)
+        }
+    }
+
+    // MARK: - Hosted (in-app rehearsal) pacing
+
+    /// Applies a RESULT, but never before the screen carrying it has finished
+    /// appearing.
+    ///
+    /// In a real extension this is `applyMediaState` and nothing else. Under a
+    /// `HostedShareSession` — the onboarding save lesson, whose sheet slides up
+    /// over a conversation — the file is often already on disk (preloaded) before
+    /// the sheet has opened, so the download indication would appear and vanish
+    /// inside a frame or two and the lesson would demonstrate nothing. The result
+    /// waits for the reveal plus `minimumDownloadIndication`; the downloading UI
+    /// holds the screen meanwhile, which is the truth for a preload that has not
+    /// actually finished either.
+    private func applyResolvedMediaState(_ state: MediaState) {
+        guard let session = HostedShareSession.current else {
+            applyMediaState(state)
+            return
+        }
+        if case .downloading = mediaState {} else { applyMediaState(.downloading) }
+        guard let earliest = session.earliestDownloadResolution else {
+            // Still opening. Nothing may resolve yet; look again shortly.
+            scheduleHostedResolution(state, after: 0)
+            return
+        }
+        let wait = earliest.timeIntervalSinceNow
+        guard wait <= 0 else {
+            scheduleHostedResolution(state, after: wait)
+            return
+        }
+        applyMediaState(state)
+    }
+
+    private func scheduleHostedResolution(
+        _ state: MediaState, after delay: TimeInterval
+    ) {
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(delay, 0.05)
+        ) { [weak self] in
+            self?.applyResolvedMediaState(state)
+        }
+    }
+
+    /// Tells a hosted host what the media kind still owes it, and hands over the
+    /// downloaded file so real playback can run over the sheet.
+    ///
+    /// A ready VIDEO is the one case the host waits on beyond the state itself:
+    /// the point of the media lesson is that the thing you saved is now yours,
+    /// which a still poster does not say. It also takes ownership of the preview
+    /// file — the demonstration loops, and this screen's `deinit` would otherwise
+    /// delete it between passes and charge the next one another download.
+    private func reportMediaState(_ state: MediaState) {
+        guard let session = HostedShareSession.current else { return }
+        switch state {
+        case .downloading:
+            session.awaitsMediaPlayback = true
+        case .pending, .failed:
+            session.awaitsMediaPlayback = false
+        case let .ready(media):
+            let fileURL = media.fileURL
+            session.retain(media) {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            unsavedPreviewFileURL = nil
+            guard media.kind == .video else {
+                session.awaitsMediaPlayback = false
+                return
+            }
+            session.onMediaFileReady?(fileURL)
+        case let .alreadyDownloaded(item):
+            guard item.kind == .video, let fileURL = item.fileURL else {
+                session.awaitsMediaPlayback = false
+                return
+            }
+            session.onMediaFileReady?(fileURL)
         }
     }
 
@@ -392,19 +483,31 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadStatus.textColor = .systemRed
             downloadStatus.isHidden = false
         }
+        reportMediaState(state)
     }
 
     /// Streams the first media item to a local file (memory-safe), updating the
     /// progress bar, then transitions to `.ready`. On failure shows `.failed`.
-    private func startMediaDownload() {
+    ///
+    /// `joining` adopts a transfer somebody already started
+    /// (`MediaPreloadCache`) instead of opening a second one; awaiting a finished
+    /// task simply returns.
+    private func startMediaDownload(
+        joining preloaded: Task<DownloadedMedia, Error>? = nil
+    ) {
         guard let url = URL(string: articleURLString) else { return }
         applyMediaState(.downloading)
         Task { [weak self] in
             guard let self else { return }
             do {
-                let media = try await downloadService.downloadFirstMediaToFile(from: url) { progress in
-                    Task { @MainActor [weak self] in
-                        self?.downloadProgress.setProgress(Float(progress), animated: true)
+                let media: DownloadedMedia
+                if let preloaded {
+                    media = try await preloaded.value
+                } else {
+                    media = try await downloadService.downloadFirstMediaToFile(from: url) { progress in
+                        Task { @MainActor [weak self] in
+                            self?.downloadProgress.setProgress(Float(progress), animated: true)
+                        }
                     }
                 }
                 await MainActor.run {
@@ -412,7 +515,7 @@ public final class SavedNonTextualViewController: UIViewController {
                         try? FileManager.default.removeItem(at: media.fileURL)
                         return
                     }
-                    self.applyMediaState(.ready(media))
+                    self.applyResolvedMediaState(.ready(media))
                 }
             } catch {
                 let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't download the media.")

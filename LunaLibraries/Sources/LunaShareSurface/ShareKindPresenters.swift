@@ -77,6 +77,26 @@ public protocol ShareMediaPresenting {
     /// The background auto-download handoff for `urlString`: hands the media
     /// download to the system background-transfer service and Live Activity.
     func startAutoDownload(urlString: String) async
+
+    /// Starts fetching `urlString`'s media NOW, before any screen asks for it,
+    /// so a surface opened moments later finds the file already on disk. Used by
+    /// the onboarding save lesson, which knows its link the instant the user taps
+    /// into it but does not mount the surface until its sheet is sliding up.
+    func preloadDownload(forURLString urlString: String)
+
+    /// Removes everything the media kind persisted for `urlString`. The
+    /// onboarding lesson's rehearsal has to leave the library exactly as it found
+    /// it, and it cannot name `SavedMediaStore` itself — the shared app shell
+    /// compiles into apps that link no media module at all.
+    func deleteSavedContents(forURLString urlString: String)
+}
+
+/// Both of these are asks from ONE caller (the onboarding save lesson) that most
+/// media presenters have no work for, so they default to nothing rather than
+/// forcing every conformance to say so.
+extension ShareMediaPresenting {
+    public func preloadDownload(forURLString urlString: String) {}
+    public func deleteSavedContents(forURLString urlString: String) {}
 }
 
 /// Product-kind presentation for the extension surfaces: persist the tracker

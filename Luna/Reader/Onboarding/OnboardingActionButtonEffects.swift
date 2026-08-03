@@ -27,6 +27,9 @@ enum OnboardingActionButtonTiming {
     static let firstWavefrontHalfWidth: CGFloat = 74
     static let firstMaximumDisplacement: CGFloat = 52
     static let firstWaveLightingStrength: CGFloat = 0.26
+    /// The visible body drawn ON that front (`ActionButtonPressWaveView`): the
+    /// warp bends the screen, this is what makes the bend legible.
+    static let pressWaveFrontWidth: CGFloat = 22
     /// The second wave sweeps in from the display edges, blackening every
     /// pixel behind its inward-travelling front until only the highlighted
     /// link is left visible on black.
@@ -66,6 +69,7 @@ class OnboardingSaveSourceViewController: UIViewController {
 
     private var actionCue: ActionButtonPressCue?
     private var waveAnimator: LiquidScreenWaveAnimator?
+    private var pressWave: ActionButtonPressWaveView?
 
     /// The currently visible URL. Sources may override this when their mock
     /// content changes while the onboarding loop is running.
@@ -161,14 +165,28 @@ class OnboardingSaveSourceViewController: UIViewController {
                     self?.onActionButtonWaveFinished?()
                 })
         case .rippleOnly:
+            // A ripple-only press has no blackout and no crossfade behind it,
+            // so the warp is the ONLY thing reporting the press — and a warp of
+            // a white iMessage screen is nearly nothing to look at. The front
+            // gets a body, drawn in the window (as the cue is) so it rides
+            // above the warp's own raster instead of inside it.
+            // A warp that failed to render finishes early, so a front can still
+            // be in flight from the previous press; it belongs to that one.
+            pressWave?.cancel()
+            let wave = ActionButtonPressWaveView(frame: window.bounds)
+            pressWave = wave
+            window.insertSubview(wave, belowSubview: cue)
             animator.playRipple(
                 origin: origin,
-                completion: { [weak self, weak cue] in
+                completion: { [weak self, weak cue, weak wave] in
                     cue?.removeFromSuperview()
+                    wave?.cancel()
                     self?.actionCue = nil
                     self?.waveAnimator = nil
+                    self?.pressWave = nil
                     self?.rippleSaveEffectDidFinish()
                 })
+            wave.play(from: origin)
         }
         cue.play { [weak self, weak cue] in
             cue?.removeFromSuperview()
@@ -186,6 +204,8 @@ class OnboardingSaveSourceViewController: UIViewController {
         actionCue?.layer.removeAllAnimations()
         actionCue?.removeFromSuperview()
         actionCue = nil
+        pressWave?.cancel()
+        pressWave = nil
         waveAnimator?.cancel()
         waveAnimator = nil
         setURLHighlighted(false)
@@ -285,6 +305,129 @@ final class ActionButtonPressCue: UIView {
         } completion: { _ in
             completion()
         }
+    }
+}
+
+/// The wave the press throws across the display — the front of the Core Image
+/// ripple, made legible.
+///
+/// The warp behind this bends the screen's own pixels, and on a dark screen
+/// that is plenty. On the Messages mock it is not: iMessage is white, and the
+/// warp's lighting term brightens TOWARD white (`1 - color`), so on a white
+/// page it has nothing left to add and the press reported itself with a faint
+/// smudge on a couple of bubbles. So the front gets a body — a bright core
+/// between two dark rims, the way the edge of a lens reads over paper — and it
+/// rides the warp's own delay and duration, so the two are one wave rather than
+/// two events.
+final class ActionButtonPressWaveView: UIView {
+    private let front = CAShapeLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        // The arc runs past three display edges for most of its flight;
+        // clipping it to the window would square those corners off.
+        clipsToBounds = false
+
+        front.fillColor = nil
+        front.strokeColor = UIColor.white.withAlphaComponent(0.34).cgColor
+        front.lineWidth = OnboardingActionButtonTiming.pressWaveFrontWidth
+        // The rims are the core's own shadow, cast in every direction with no
+        // offset. On a white page they ARE the wave; on black they sit unseen
+        // behind the core that is doing the work there.
+        front.shadowColor = UIColor.black.cgColor
+        front.shadowOpacity = 0.5
+        front.shadowRadius = 16
+        front.shadowOffset = .zero
+        front.opacity = 0
+        layer.addSublayer(front)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    /// Sets out from the Action Button, crosses the display, and takes itself
+    /// off screen. `origin` is in this view's own coordinate space.
+    func play(from origin: CGPoint) {
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            removeFromSuperview()
+            return
+        }
+        // The screen holds still for a beat while the press bump forms — the
+        // same beat the warp waits out before its front sets off.
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(
+                OnboardingActionButtonTiming.firstWaveDelay)
+        ) { [weak self] in
+            guard let self, self.superview != nil else { return }
+            self.crossDisplay(from: origin)
+        }
+    }
+
+    /// Stops the front mid-flight and takes it off screen.
+    func cancel() {
+        front.removeAllAnimations()
+        removeFromSuperview()
+    }
+
+    private func crossDisplay(from origin: CGPoint) {
+        front.frame = bounds
+        let grown = Self.frontPath(around: origin, radius: travelDistance(from: origin))
+        front.path = grown
+
+        let duration = OnboardingActionButtonTiming.firstWaveDuration
+        let grow = CABasicAnimation(keyPath: "path")
+        grow.fromValue = Self.frontPath(around: origin, radius: 2)
+        grow.toValue = grown
+        grow.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+        // Fast attack, long burn-down: brightest as it leaves the button, spent
+        // by the time it reaches the far corner.
+        let burn = CAKeyframeAnimation(keyPath: "opacity")
+        burn.values = [0, 1, 0.78, 0]
+        burn.keyTimes = [0, 0.10, 0.58, 1]
+        burn.timingFunctions = Array(
+            repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
+
+        // A group does NOT scale its children to its own duration, it CLIPS
+        // them, so each member carries the length itself.
+        for animation in [grow, burn] { animation.duration = duration }
+        let wave = CAAnimationGroup()
+        wave.animations = [grow, burn]
+        wave.duration = duration
+        front.add(
+            wave,
+            forKey: OnboardingStrings.AnimationKeys.actionButtonPressWave.value())
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(duration)
+        ) { [weak self] in
+            self?.removeFromSuperview()
+        }
+    }
+
+    /// Far enough that the front has left every corner of the display behind.
+    private func travelDistance(from origin: CGPoint) -> CGFloat {
+        let corners = [
+            CGPoint(x: bounds.minX, y: bounds.minY),
+            CGPoint(x: bounds.maxX, y: bounds.minY),
+            CGPoint(x: bounds.minX, y: bounds.maxY),
+            CGPoint(x: bounds.maxX, y: bounds.maxY),
+        ]
+        let farthest = corners
+            .map { hypot($0.x - origin.x, $0.y - origin.y) }
+            .max() ?? bounds.width
+        return farthest + OnboardingActionButtonTiming.pressWaveFrontWidth
+    }
+
+    private static func frontPath(around origin: CGPoint, radius: CGFloat) -> CGPath {
+        UIBezierPath(
+            arcCenter: origin,
+            radius: max(radius, 1),
+            startAngle: 0,
+            endAngle: .pi * 2,
+            clockwise: true).cgPath
     }
 }
 

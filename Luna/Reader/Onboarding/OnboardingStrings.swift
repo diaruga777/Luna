@@ -524,6 +524,9 @@ enum OnboardingStrings {
         static let attentionPulseScale = Definition(
             shared: "onboarding.attention.pulse.scale")
         static let ringFill = Definition(shared: "onboarding.ring.fill")
+        /// The visible front of the Action Button press wave.
+        static let actionButtonPressWave = Definition(
+            shared: "onboarding.press.wave")
         static let switcherCorner = Definition(shared: "onboarding.switcher.corner")
         static let moonReveal = Definition(shared: "moonReveal")
         static let opaqueGlyphReveal = Definition(shared: "opaqueGlyphReveal")

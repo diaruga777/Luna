@@ -22,7 +22,11 @@ enum OnboardingMessagesReplicaTiming {
     /// which is a transcript being replayed, not a conversation happening.
     static let stagedMessageDelays: [TimeInterval] = [0.85, 2.0, 1.5, 0.75, 0.75]
     static let messageDuration: TimeInterval = 0.42
-    static let saveDelayAfterLastMessage: TimeInterval = 1.1
+    /// The beat between the last staged message and the save gesture. Short:
+    /// the press is the ANSWER to the link that just landed, and a full second
+    /// of nothing in between read as the demonstration having stalled rather
+    /// than as somebody reaching for a button.
+    static let saveDelayAfterLastMessage: TimeInterval = 0.55
 
     static var actionButtonReplayDelay: TimeInterval {
         firstMessageDelay

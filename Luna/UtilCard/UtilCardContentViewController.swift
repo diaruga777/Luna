@@ -22,20 +22,25 @@ enum UtilCardLayout {
     /// the weekly row its own room below — a little, not up onto the card's
     /// shoulder.
     ///
-    /// The completed card has no headline, and the weekly row takes this seat
-    /// instead of the card's shoulder: the two states then share one horizon,
-    /// and the pick of the week keeps the position the intro sentence had
-    /// rather than reading as the first item of a list.
+    /// The completed card has no headline; the weekly row sits at
+    /// `weeklyTopRatio`, half this, riding higher than the intro sentence did.
     static let headlineTopRatio: CGFloat = 0.28
     static let headlineToWeekly: CGFloat = 24
-    static let weeklyRowHeight: CGFloat = 82
+    /// The weekly row is deliberately taller than a history row: it carries the
+    /// corner flag across its top and the pick's own two lines below it.
+    static let weeklyRowHeight: CGFloat = 96
     static let recentRowHeight: CGFloat = 74
+    /// The completed card's seat for the weekly row — HALF the headline's
+    /// ratio, so the pick rides higher than the intro sentence ever did and the
+    /// flag is the first thing the card says.
+    static let weeklyTopRatio: CGFloat = 0.14
     /// Where a block of recents starts when there is no weekly row to hang off.
     static let recentsTop: CGFloat = 24
-    /// The seam between Luna's own pick and raw Safari history. It is
-    /// deliberately WIDER than `recentRowGap`, so the weekly row reads as its
-    /// own thing above the list rather than as the list's first entry.
-    static let weeklyToRecentsGap: CGFloat = 26
+    /// The seam between Luna's own pick and raw Safari history. It is by far
+    /// the widest gap on the card — several times `recentRowGap` — so the
+    /// weekly row stands alone above the list rather than as the list's first
+    /// entry.
+    static let weeklyToRecentsGap: CGFloat = 65
     static let recentRowGap: CGFloat = 9
     static let recentsToPasteGap: CGFloat = 12
     static let setupButtonHeight: CGFloat = 54
@@ -347,14 +352,15 @@ final class UtilCardContentViewController: CardContentViewController {
             return
         }
 
-        // With the headline gone the weekly row inherits its seat — a fraction
-        // of the card, not the top edge — and the recents hang below it across a
-        // seam wider than the one between two recents. Without a live pick there
-        // is no seat to keep: the history block reclaims the whole card.
+        // With the headline gone the weekly row takes its own seat — a fraction
+        // of the card half the headline's, not the top edge — and the recents
+        // hang below it across a seam far wider than the one between two
+        // recents. Without a live pick there is no seat to keep: the history
+        // block reclaims the whole card.
         weeklyHost.frame = CGRect(
             x: inset,
             y: weeklyVisible
-                ? (view.bounds.height * UtilCardLayout.headlineTopRatio).rounded()
+                ? (view.bounds.height * UtilCardLayout.weeklyTopRatio).rounded()
                 : UtilCardLayout.recentsTop,
             width: width,
             height: UtilCardLayout.weeklyRowHeight)
@@ -621,6 +627,9 @@ final class UtilURLRow: UIControl {
     private let savedCheckmark = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
+    /// The weekly noun, on the Save of the Week row only: a tinted corner flag
+    /// instead of a phrase competing with the host for the subtitle's width.
+    private let weeklyRibbon: WeeklyRibbonView?
     private let border = UtilURLRowGlassBorder()
     private var previewKind: RecentURLPreview.Kind?
     private(set) var isShownAsSaved = false
@@ -628,6 +637,7 @@ final class UtilURLRow: UIControl {
 
     init(style: Style) {
         self.style = style
+        weeklyRibbon = style == .saveOfTheWeek ? WeeklyRibbonView() : nil
         super.init(frame: .zero)
         accessibilityIdentifier = style == .saveOfTheWeek
             ? "utilCard.saveOfTheWeek"
@@ -677,6 +687,8 @@ final class UtilURLRow: UIControl {
         addSubview(savedOverlay)
         addSubview(titleLabel)
         addSubview(subtitleLabel)
+        // Above the artwork: the flag is pinned ON the thumbnail's corner.
+        if let weeklyRibbon { addSubview(weeklyRibbon) }
         addSubview(border)
         thumbnail.isAccessibilityElement = false
         titleLabel.isAccessibilityElement = false
@@ -690,7 +702,9 @@ final class UtilURLRow: UIControl {
     required init?(coder: NSCoder) { nil }
 
     /// - Parameter weeklyLabel: The "… of the week/month" phrase, which is per
-    ///   app and per age tier (`WeeklySaveLabels`). Ignored by history rows.
+    ///   app and per age tier (`WeeklySaveLabels`). It goes in the corner flag,
+    ///   which is why the subtitle is the host and nothing else — the phrase used
+    ///   to sit beside it and truncate it. Ignored by history rows.
     func configure(_ preview: RecentURLPreview, weeklyLabel: String? = nil) {
         previewKind = preview.kind
         thumbnail.image = preview.image ?? UIImage(
@@ -698,10 +712,12 @@ final class UtilURLRow: UIControl {
                 : preview.kind == .product ? "bag.fill" : "safari.fill")
         titleLabel.text = preview.title
         let host = URL(string: preview.urlString)?.host ?? preview.subtitle ?? preview.urlString
-        subtitleLabel.text = style == .saveOfTheWeek
-            ? host + "  •  " + (weeklyLabel ?? WeeklySaveLabels.subtitle(monthTier: false))
-            : host
-        accessibilityLabel = [titleLabel.text, subtitleLabel.text]
+        subtitleLabel.text = host
+        weeklyRibbon?.text = weeklyLabel ?? WeeklySaveLabels.subtitle(monthTier: false)
+        setNeedsLayout()
+        // The flag carries the noun now, so VoiceOver reads it first — the row
+        // still announces everything it shows.
+        accessibilityLabel = [weeklyRibbon?.text, titleLabel.text, subtitleLabel.text]
             .compactMap { $0 }
             .joined(separator: ", ")
     }
@@ -716,6 +732,8 @@ final class UtilURLRow: UIControl {
         savedOverlay.transform = transform
         titleLabel.transform = transform
         subtitleLabel.transform = transform
+        // The flag names the PICK, not the slot, so it travels with the content.
+        weeklyRibbon?.transform = transform
     }
 
     /// The row's fill as ONE flat colour, with the weekly wash already
@@ -756,11 +774,13 @@ final class UtilURLRow: UIControl {
         savedOverlay.transform = .identity
         titleLabel.transform = .identity
         subtitleLabel.transform = .identity
+        weeklyRibbon?.transform = .identity
         defer {
             thumbnail.transform = parallax
             savedOverlay.transform = parallax
             titleLabel.transform = parallax
             subtitleLabel.transform = parallax
+            weeklyRibbon?.transform = parallax
         }
         wash.frame = bounds
         let imageSide = min(52, max(42, bounds.height - 22))
@@ -778,16 +798,30 @@ final class UtilURLRow: UIControl {
             height: checkSide)
         let labelX = thumbnail.frame.maxX + 11
         let labelWidth = max(0, bounds.width - labelX - 12)
+        // The flag spans the row's top-left corner, so the title starts BELOW
+        // it; a history row has no flag and keeps its old 13pt top exactly.
+        let titleTop: CGFloat = weeklyRibbon == nil ? 13 : WeeklyRibbonView.height + 6
         titleLabel.frame = CGRect(
             x: labelX,
-            y: 13,
+            y: titleTop,
             width: labelWidth,
-            height: max(22, bounds.height - 40))
+            height: weeklyRibbon == nil
+                ? max(22, bounds.height - 40)
+                : max(22, bounds.height - titleTop - 28))
         subtitleLabel.frame = CGRect(
             x: labelX,
             y: bounds.height - 27,
             width: labelWidth,
             height: 16)
+        if let weeklyRibbon {
+            weeklyRibbon.frame = CGRect(
+                x: 0,
+                y: 0,
+                // Never more than the row's leading half: a long localisation
+                // must not sail across the title.
+                width: min(weeklyRibbon.fittingWidth, (bounds.width * 0.55).rounded()),
+                height: WeeklyRibbonView.height)
+        }
         border.frame = bounds
     }
 

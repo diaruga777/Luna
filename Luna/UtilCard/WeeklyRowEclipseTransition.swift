@@ -6,13 +6,14 @@
 import LunaDesignSystem
 import UIKit
 
-/// A new Save of the Week eclipsing the old one, in the row's own 82pt slot.
+/// A new Save of the Week eclipsing the old one, in the row's own slot
+/// (`UtilCardLayout.weeklyRowHeight`).
 ///
 /// The choreography is the card carousel's (`CardEclipseAnimator`): the
 /// incoming body crosses, the outgoing one whitens late, and the corona blooms
 /// exactly at totality. What is deliberately NOT borrowed is the dressing — no
 /// dimmer, no peek veils, no diamond-ring flare. At row scale the corona IS the
-/// effect; the rest would be noise around an 82pt strip.
+/// effect; the rest would be noise around a strip that short.
 @MainActor
 final class WeeklyRowEclipseTransition {
     /// Matches `CardEclipseTransition.duration`, split 66/34 like the card's.

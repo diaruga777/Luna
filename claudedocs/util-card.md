@@ -45,9 +45,7 @@ The Save of the Week row is CONDITIONAL: it exists whenever
 `WeeklySaveStore` holds a live signed entry for one of this app's kinds, and the
 card reclaims its slot when it doesn't. Its content is the signed, CloudKit-
 published weekly pick — see `claudedocs/save-of-the-week.md` for the record
-schema, the signing, the 9-day/30-day age rules and the deployment steps. Its
-subtitle is `host • <noun> of the week`, where the noun is the app's own (Save /
-Read / Download / Deal) and switches to "of the month" at nine days.
+schema, the signing, the 9-day/30-day age rules and the deployment steps.
 
 **The weekly row is dressed apart from the recent rows.** Both are the same black
 `UtilURLRow` under the same Liquid Glass recipe (`GlassStyle.barEffect()` in
@@ -55,12 +53,23 @@ Read / Download / Deal) and switches to "of the month" at nine days.
 and carries the app's colour, three ways at once: a palette wash over the black
 (`UtilURLRow.weeklyWashAlpha`), the rim's stroke replaced by the palette
 (`UtilURLRowGlassBorder.rimTint` at `weeklyRimAlpha` — comparable in weight to
-the neutral white-at-0.14 rim, not a saturated outline), and its subtitle in
-`LunaSurfacePalette.progressAccent` at semibold. A recent is raw Safari history
-and stays neutral in all three. The save transition's growing shell takes the
-weekly row's flattened fill and its rim tint (`UtilCardSaveTransitionArtwork`
-carries both), so a weekly save opens from exactly the row that was tapped
-instead of flicking to neutral on its first frame.
+the neutral white-at-0.14 rim, not a saturated outline), and the corner flag. A
+recent is raw Safari history and stays neutral in all three. The save
+transition's growing shell takes the weekly row's flattened fill and its rim
+tint (`UtilCardSaveTransitionArtwork` carries both), so a weekly save opens from
+exactly the row that was tapped instead of flicking to neutral on its first
+frame.
+
+**The weekly noun is a CORNER FLAG, not a phrase in the subtitle.**
+`WeeklyRibbonView` is a small pennant flush to the row's top-left corner,
+overlapping the thumbnail, filled with `LunaSurfacePalette.baseColor` — so each
+app flies its own colour — and carrying the app's own noun (Save / Read /
+Download / Deal), which switches to "of the month" at nine days. The subtitle
+underneath is the URL host and NOTHING else: the noun used to share that line
+behind a bullet and truncate the host. The row is 96pt for it
+(`UtilCardLayout.weeklyRowHeight`, against a history row's 74). See
+`claudedocs/save-of-the-week.md` for the flag's shape, its contrast rule and its
+trait registration.
 
 A new value REPLACING the one on screen runs a row-sized eclipse; a value
 appearing or vanishing is a fade plus a reflow — and an appearing row fades in
@@ -149,19 +158,19 @@ the host observes completion and constructs the completed variant.
 ## Completed state and recent URLs
 
 Once setup is complete, the headline and setup buttons are absent. **Save of the
-Week inherits the headline's seat**, not the card's top edge: the same
-`UtilCardLayout.headlineTopRatio` fraction of the card, so the two states share
-one horizon and the pick reads as the card's subject rather than as the first
-entry of a list. Beneath it the card adds as many matching, unsaved recent Safari
-URLs as fit above the paste row; the card never scrolls. The seam between the
-weekly row and the recents (`weeklyToRecentsGap`) is deliberately WIDER than the
-gap between two recents (`recentRowGap`) — that difference is what groups the
-history rows together and leaves the weekly row on its own. With no live pick
-there is no seat to keep and the history block starts at `recentsTop` instead,
-taking the whole card (one row more fits).
+Week sits at its own seat above the headline's**: `UtilCardLayout.weeklyTopRatio`
+(0.14 of the card, half `headlineTopRatio`), so the flag is the first thing the
+card says. Beneath it the card adds as many matching, unsaved recent Safari URLs
+as fit above the paste row; the card never scrolls. The seam between the weekly
+row and the recents (`weeklyToRecentsGap`, 65) is by far the widest gap on the
+card, deliberately: that distance is what groups the history rows together and
+leaves the weekly row on its own. With no live pick there is no seat to keep and
+the history block starts at `recentsTop` instead, taking the whole card (one row
+more fits).
 
 Recent rows use the same black layout as Save of the Week but the neutral Liquid
-Glass rim, no palette wash, and only the URL host as the subtitle. They come from
+Glass rim, no palette wash, no corner flag (and so 74pt tall, with the title back
+at its 13pt top), and only the URL host as the subtitle. They come from
 `RecentURLMatcher.shared.matches`, so source, classification, cache, newest-first
 ordering, and unsaved filtering are exactly the former recent-URL behavior:
 
@@ -212,8 +221,9 @@ handled markers, and setup run evidence.
 ## Validation
 
 `UtilCardTests` pins both launch variants, the permanent paste control, the
-weekly row's conditional presence (and the reflow when it is absent), its
-per-app and per-age subtitle, its save callback, the bottom-up order of the
+weekly row's conditional presence (and the reflow when it is absent), the corner
+flag's per-app and per-age text, the host-only subtitle beneath it, its save
+callback, the bottom-up order of the
 setup block, the “or” rule in all four combinations, the launch-only headline
 sweep, the headline-speaks-first hold (elements at alpha 0 on the animating
 launch, visible immediately on any other appearance, and a mid-sweep weekly

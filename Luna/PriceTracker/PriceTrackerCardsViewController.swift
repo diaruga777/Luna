@@ -362,14 +362,9 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             guard let self, var tracker = self.tracker else { return }
             tracker.setAlertThresholdPrice(price)
             self.store.updatePriceTracker(tracker, for: self.itemID)
-<<<<<<< HEAD
             // Setting the line is the request for a price-drop alert, and the only
             // moment this app has anything to notify about — launch doesn't ask (see
-            // `AppDelegate`). No-op after the first commit answers the prompt.
-            NotificationManager.requestAuthorization()
-=======
-            // The opt-in moment: an alert the user just set is the first thing this
-            // app has to notify them about. Idempotent (see NotificationManager).
+            // `AppDelegate`). Idempotent (see NotificationManager).
             NotificationManager.requestAuthorization()
         }
         // A tracker saved before the user was ever asked about notifications has no
@@ -382,7 +377,6 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             self.store.updatePriceTracker(tracker, for: self.itemID)
             NotificationManager.requestAuthorization()
             self.reloadContent()
->>>>>>> worktree-agent-a1a881b4510b4bace
         }
         scrollView.panGestureRecognizer.require(
             toFail: graphView.thresholdDragGestureRecognizer)

@@ -6,7 +6,7 @@ proposable by anyone. It replaces the util card's former hardcoded weekly link.
 
 Module: `LunaLibraries/Sources/LunaWeekly` (linked by the four APPS only — no
 extension reads or writes it). UI: `Luna/UtilCard/WeeklySaveRowHost.swift`,
-`WeeklyRowEclipseTransition.swift`, `WeeklyCyclePacer.swift`,
+`WeeklyRibbonView.swift`, `WeeklyRowEclipseTransition.swift`, `WeeklyCyclePacer.swift`,
 `WeeklyPromotionMenu.swift`, `Luna/Settings/WeeklyProposalsScreen.swift`.
 
 ## The value
@@ -111,8 +111,32 @@ which is a seat the weekly row otherwise does not occupy — see
 
 It is also the one util row that is NOT dressed like Safari history: Luna's own
 pick carries the app's colour — a palette wash over the shared black, a
-palette-tinted rim instead of the neutral glass one, and its "… of the week"
-line in the accent — so it never reads as the first entry of the recents list.
+palette-tinted rim instead of the neutral glass one, and the corner flag below —
+so it never reads as the first entry of the recents list.
+
+**The weekly noun is a corner flag, not a phrase in the subtitle.**
+`WeeklyRibbonView` is a small tinted pennant pinned flush to the row's TOP-LEFT
+corner, overlapping the top of the thumbnail, carrying the app's own noun from
+`WeeklySaveLabels.subtitle` ("Read of the week", "Deal of the month", …). It is
+filled with `LunaSurfacePalette.baseColor` — the running app's tint, so each of
+the four flies its own colour — and lettered white or near-black depending on
+that colour's luminance, because the four straddle the legibility line (indigo
+and amber take white; the Reader's periwinkle and the Price Tracker's green take
+black). Three things follow:
+
+- the flag only draws its swallowtail; the row's own `clipsToBounds` plus its
+  16pt continuous corner round the flag's outer corner for it;
+- the shape layer holds a RESOLVED `CGColor`, so it re-applies on
+  `LunaSkyTrait` changes (a style change never arrives under the pinned-dark
+  trait — see CLAUDE.md);
+- it travels with `setContentParallax` during a cycle slide: the flag names the
+  PICK, not the slot.
+
+The subtitle is therefore the URL host ALONE — the noun used to sit beside it
+behind a bullet and truncate it. The row is `UtilCardLayout.weeklyRowHeight`
+(96pt, against a history row's 74) to seat the flag above the pick's own two
+lines, and the title starts below the flag rather than at a history row's 13pt.
+VoiceOver reads flag, title, host.
 
 - **Appearing / disappearing**: a 0.24s fade plus a reflow. An appearing row
   fades in IN PLACE — the host is laid out before the animation, so the row
@@ -123,7 +147,7 @@ line in the accent — so it never reads as the first entry of the recents list.
   choreography at row scale. The incoming row crosses from 30% out and goes
   solid in the first quarter; the outgoing one flares white at the 80% break;
   the corona blooms at totality and fades on the egress. No dimmer, no peek
-  veils, no diamond-ring flare: at 82pt the corona IS the effect. The corona's
+  veils, no diamond-ring flare: at row scale the corona IS the effect. The corona's
   `reach` is overridden to 30 because `EclipseCorona`'s own default has a 56pt
   floor sized for a CARD. Consequently the slot's clipping lives in a child
   view and `WeeklySaveRowHost` itself does not clip — the overhang is the

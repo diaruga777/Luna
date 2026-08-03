@@ -142,25 +142,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // reattachment (media apps), pending ereader-send retry (article apps).
         KindWiring.appDidLaunch()
 
-        // Local notifications: show as banners while open (delegate below) and
-        // ensure authorization. Share arrivals and price drops are the only
-        // notifications Luna posts, so asking at launch is the earliest honest
-        // moment. Setup now lives inside the carousel's util card, but notification
-        // authorization remains an app-level launch concern.
+        // Local notifications: show as banners while open. Launch does NOT ask for
+        // authorization — a fresh install has nothing to notify anyone about, so the
+        // prompt would arrive before its reason exists. Every posting feature asks
+        // at the moment the user opts into it instead, and there are exactly three:
+        // pasting the Save of the Week key (`DiagnosticsViewController`), connecting
+        // a sending account (`CredentialViewController`), and committing a price
+        // alert threshold (the two price editors). `requestAuthorization` is a no-op
+        // once the choice has been made, so each of those may ask unconditionally.
         UNUserNotificationCenter.current().delegate = self
-        #if DEBUG
-        // Demo/recording seam: `-onboardingStage` jumps straight into the
-        // Safari demonstration, which puts the system permission alert over
-        // the animation being inspected instead of over the intro where a
-        // person would have answered it.
-        if !ProcessInfo.processInfo.arguments
-            .contains("-skipNotificationAuthPrompt")
-        {
-            NotificationManager.requestAuthorization()
-        }
-        #else
-        NotificationManager.requestAuthorization()
-        #endif
 
         // Mail fetch only where there's a mailbox to read: Downloader and Price
         // Tracker share by plain URL and connect no account (see `sharesByEmail`).

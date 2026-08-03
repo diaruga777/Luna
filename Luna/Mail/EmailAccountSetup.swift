@@ -224,6 +224,10 @@ final class EmailAccountSetup {
                 expiry: Date().addingTimeInterval(wire.expires_in))
             let account = EmailAccount(providerID: .outlook, address: address, displayName: nil, server: nil)
             accountStore.save(account, credential: .oauth(tokens))
+            // Same moment as the app-password path in `CredentialViewController`: an
+            // account exists, so incoming shares are now something to announce.
+            // Launch never asks — see `AppDelegate`.
+            NotificationManager.requestAuthorization()
             // Best-effort: install the inbox filter.
             if let transport = MailTransportFactory.make(store: accountStore) {
                 _ = try? await transport.createLunaFilter()

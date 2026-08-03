@@ -27,7 +27,21 @@ public enum NotificationManager {
     private static let receivedIdentifierPrefix = "shareReceived-"
 
     /// Requests alert/sound authorization (no-op if already decided).
+    ///
+    /// Called only from the moments a user opts into something Luna will notify
+    /// about — the Save of the Week key, connecting a sending account, committing a
+    /// price alert threshold. Launch does not ask (see `AppDelegate`).
+    ///
+    /// Skipped in an extension process: the price editor is reachable from the share
+    /// and action sheets, and this prompt is a ONE-TIME decision — spending it on a
+    /// sheet that is about to dismiss (with no app around it to explain why it
+    /// appeared) risks a silent no. The next in-app commit asks properly.
     public static func requestAuthorization() {
+        guard Bundle.main.bundleURL.pathExtension != "appex" else {
+            DiagnosticLog.shared.record(
+                "notification authorization skipped in extension", category: "push")
+            return
+        }
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound]) { granted, error in
             if let error {

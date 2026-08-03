@@ -8,6 +8,7 @@ import LunaHTMLClassification
 import LunaModels
 import LunaPriceUI
 import LunaReadingList
+import LunaSocial
 import LunaStorage
 import LunaURLClassification
 import UIKit
@@ -356,6 +357,10 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             guard let self, var tracker = self.tracker else { return }
             tracker.setAlertThresholdPrice(price)
             self.store.updatePriceTracker(tracker, for: self.itemID)
+            // Setting the line is the request for a price-drop alert, and the only
+            // moment this app has anything to notify about — launch doesn't ask (see
+            // `AppDelegate`). No-op after the first commit answers the prompt.
+            NotificationManager.requestAuthorization()
         }
         scrollView.panGestureRecognizer.require(
             toFail: graphView.thresholdDragGestureRecognizer)

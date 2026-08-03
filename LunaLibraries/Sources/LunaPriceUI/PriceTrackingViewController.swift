@@ -9,6 +9,7 @@ import LunaIngest
 import LunaURLClassification
 import LunaModels
 import LunaDesignSystem
+import LunaSocial
 import UIKit
 
 /// Shows and edits one price tracker: a table of its seller URLs (each row shows
@@ -401,6 +402,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             guard let self, var tracker = self.tracker else { return }
             tracker.alertThresholdFraction = fraction
             self.store.updatePriceTracker(tracker, for: self.itemID)
+            // Setting the line is the request for a price-drop alert — one of the
+            // three moments Luna asks to notify (launch doesn't). No-op after the
+            // first answer, and a no-op in the extension hosts of this editor.
+            NotificationManager.requestAuthorization()
         }
         thresholdSlider.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(thresholdSlider)

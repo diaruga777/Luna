@@ -206,9 +206,10 @@ final class CredentialViewController: UIViewController {
         passwordField.isUserInteractionEnabled = false
         passwordField.resignFirstResponder()
         let cover = EmailLoginLoadingCover(host: navigationController?.view ?? view)
-        // Idempotent (authorization is requested at launch too) — but if that
-        // prompt is somehow still unanswered, the network round trip below is
-        // dead waiting time the system dialog can share.
+        // One of the three moments Luna asks to notify (launch does not): with an
+        // account connected, an incoming share becomes something to announce. Asked
+        // before the round trip rather than after, so the system dialog shares the
+        // dead waiting time — and idempotent, so a re-sign-in doesn't re-ask.
         NotificationManager.requestAuthorization()
 
         Task { @MainActor in

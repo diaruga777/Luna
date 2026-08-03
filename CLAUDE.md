@@ -101,8 +101,13 @@ stable Xcode 26.2.
 > **A save from any surface answers the first run**: onboarding stamps its start
 > at launch and latches completion once a newer save exists, so `-resetOnboarding`
 > / Settings' reset shows the first-run card again until the next save arrives. See `claudedocs/util-card.md` and
-> `claudedocs/reader-onboarding.md`. Notification authorization is requested at
-> launch. Email is a
+> `claudedocs/reader-onboarding.md`. **Notification authorization is NOT requested at
+> launch** — a fresh install has nothing to notify about yet. The three features that
+> post ask at the moment the user opts in, and nowhere else: pasting the Save of the
+> Week key (Diagnostics), connecting a sending account (both the app-password and
+> Outlook-OAuth paths), and committing a price alert threshold (either price editor).
+> `NotificationManager.requestAuthorization` is idempotent and self-skips in an
+> `.appex`, so those call sites need no state of their own. Email is a
 > per-app capability, `LunaApp.sharesByEmail` (true for `Luna` and
 > `LunaReader` only): those two connect an account, send saves to contacts
 > (`claudedocs/social-sharing.md`) and import shares/newsletters from a mailbox

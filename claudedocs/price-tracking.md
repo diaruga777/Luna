@@ -289,6 +289,18 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
 
+**Notification permission is asked when the threshold is committed, not at launch.**
+Setting the alert line IS the request to be told about a drop, and it's the only thing
+this app posts, so both commit paths — `PriceGraphView.onThresholdCommitted` in the
+card (`PriceTrackerCardsViewController`) and `AlertThresholdSlider.onCommitted` in
+`PriceTrackingViewController`'s footer — call
+`NotificationManager.requestAuthorization()` right after persisting. It's idempotent,
+so only the first commit prompts and no "have we asked yet" flag is needed; it also
+self-skips in an `.appex`, so a threshold set inside the share/action sheet doesn't
+spend the one-time prompt on a surface that's about to dismiss — the next in-app
+commit asks. The other two ask-moments are the Save of the Week key and connecting a
+sending account; nothing else in Luna requests authorization.
+
 ## Deck integration (`ReadingListSectioning` / the card roots)
 
 The sectioned rows below remain for central Luna and test/extension navigation.

@@ -151,13 +151,15 @@ left disabled with no cover and no way to retry.
 
 ### Notification permission
 
-`NotificationManager.requestAuthorization()` (`LunaSocial`) is requested at
-launch by `AppDelegate` — with no setup flow left, that is the earliest honest
-moment, and share arrivals and price drops are all Luna posts. The credential
-screen still calls it once its cover is up and verification is underway: normally
-a no-op, but if the launch prompt somehow went unanswered, that network round
-trip is dead waiting time the system dialog can share. Fire-and-forget either
-way — no success or failure handling is gated on its outcome.
+`NotificationManager.requestAuthorization()` (`LunaSocial`) is **not** requested at
+launch. Connecting an account is one of exactly three moments Luna asks (the others
+are pasting the Save of the Week key and committing a price alert threshold), because
+until an account exists there is no incoming share to announce. The app-password path
+asks in `signIn()` — once the cover is up and verification is underway, so the network
+round trip and the system dialog share the same dead time — and the Outlook OAuth path
+asks in `exchangeOutlookCode` right after the account is saved. Fire-and-forget both
+ways: no success or failure handling is gated on the outcome, and the call is a no-op
+once the choice has been made, so a re-sign-in never re-asks.
 
 ### Success beat: checkmark resolve
 

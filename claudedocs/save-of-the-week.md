@@ -153,8 +153,10 @@ local notification per batch.
 
 Settings → five taps on blank space → Diagnostics → **Enter Weekly Key**. The
 pasted base64 is validated against the bundled public key; a wrong key is never
-stored. A right one also requests notification authorization (this device now
-receives proposals) and schedules the background check. With a key stored the
+stored. A right one also requests notification authorization — this device now
+receives proposals, and this is one of only three moments Luna asks (launch does
+not; the others are connecting a sending account and committing a price alert
+threshold) — and schedules the background check. With a key stored the
 button reads "Weekly Key ✓" and offers Replace / Remove.
 
 ## Deployment (manual — not automatable)

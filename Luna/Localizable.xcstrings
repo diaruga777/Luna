@@ -4,12 +4,6 @@
     "%@" : {
 
     },
-    "%@ · App-specific password" : {
-
-    },
-    "%@ · Secure provider sign-in" : {
-
-    },
     "%@ Button" : {
 
     },
@@ -70,9 +64,6 @@
     "Apple Intelligence" : {
 
     },
-    "Apply Luna in Safari" : {
-
-    },
     "archive" : {
 
     },
@@ -85,13 +76,7 @@
     "Articles are emailed from your connected Luna email account. That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings)." : {
 
     },
-    "Articles you save appear here as cards." : {
-
-    },
     "Audio" : {
-
-    },
-    "Authorization expired or was revoked" : {
 
     },
     "Autoplay next article" : {
@@ -115,9 +100,6 @@
     "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list." : {
 
     },
-    "Checking URL" : {
-
-    },
     "Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away." : {
 
     },
@@ -136,9 +118,6 @@
     "Clears onboarding completion and the Safari extension and Shortcut run evidence. Full onboarding will show again on the next launch." : {
 
     },
-    "Close email setup" : {
-
-    },
     "Connect" : {
 
     },
@@ -146,12 +125,6 @@
 
     },
     "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next." : {
-
-    },
-    "Connect Email" : {
-
-    },
-    "Connect your email" : {
 
     },
     "Contacts" : {
@@ -194,9 +167,6 @@
 
     },
     "CurrentApp" : {
-
-    },
-    "Custom provider · IMAP setup" : {
 
     },
     "Delete" : {
@@ -256,9 +226,6 @@
     "Enter an app-specific password for this account." : {
 
     },
-    "Enter the address Luna should use to send and import links." : {
-
-    },
     "Enter your Kindle address first." : {
 
     },
@@ -302,9 +269,6 @@
 
     },
     "Install Enhanced Voices" : {
-
-    },
-    "Install shortcut" : {
 
     },
     "Install Shortcut" : {
@@ -404,9 +368,6 @@
     "New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight." : {
 
     },
-    "Next" : {
-
-    },
     "Next article" : {
 
     },
@@ -420,18 +381,6 @@
 
     },
     "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page." : {
-
-    },
-    "No Saved Articles" : {
-
-    },
-    "No Saved Media" : {
-
-    },
-    "No Tracked Products" : {
-
-    },
-    "No URL to paste" : {
 
     },
     "Not Configured" : {
@@ -467,13 +416,7 @@
     "Onboarding Reset" : {
 
     },
-    "One more step! Set your action button to %@" : {
-
-    },
     "OnScreenURLs" : {
-
-    },
-    "Open" : {
 
     },
     "Open Filter Settings" : {
@@ -482,16 +425,10 @@
     "Open in Photos" : {
 
     },
-    "Open Safari" : {
-
-    },
     "Open Settings" : {
 
     },
     "Open Shortcuts" : {
-
-    },
-    "Opens Email settings to reconnect" : {
 
     },
     "Opens item" : {
@@ -500,13 +437,7 @@
     "Opens this tracked site" : {
 
     },
-    "Opens when this tray is opened" : {
-
-    },
     "Optional opaque state returned by Provide Context." : {
-
-    },
-    "Or change %@ to “Allow”" : {
 
     },
     "Outcome" : {
@@ -521,19 +452,7 @@
     "Paste Link" : {
 
     },
-    "Paste or share a product page to start tracking its price." : {
-
-    },
-    "Paste setting" : {
-
-    },
     "Paste the copied link to preview it here." : {
-
-    },
-    "Paste URL" : {
-
-    },
-    "Paste URL automatically" : {
 
     },
     "Pasted Media" : {
@@ -605,9 +524,6 @@
     "Reconnect Email" : {
 
     },
-    "Reconnect in Settings" : {
-
-    },
     "Refresh Last Visited Website" : {
 
     },
@@ -632,7 +548,7 @@
     "Save Failed" : {
 
     },
-    "Save From Safari" : {
+    "Save of the week" : {
 
     },
     "Save Result" : {
@@ -648,9 +564,6 @@
         }
       }
     },
-    "Save to Luna with your Action Button" : {
-
-    },
     "Save to Photos" : {
 
     },
@@ -658,9 +571,6 @@
 
     },
     "Saved" : {
-
-    },
-    "Saved Downloader links appear here after Luna downloads the media." : {
 
     },
     "Saved to Luna" : {
@@ -688,9 +598,6 @@
 
     },
     "Second article save" : {
-
-    },
-    "Send articles and import links · Tap to continue" : {
 
     },
     "Send Test to Kindle" : {
@@ -739,6 +646,9 @@
 
     },
     "Shortcut & Safari" : {
+
+    },
+    "Show me one click save" : {
 
     },
     "Sign In" : {
@@ -819,9 +729,6 @@
     "The provider rejected the saved app password." : {
 
     },
-    "The saved app password was rejected" : {
-
-    },
     "Theme" : {
 
     },
@@ -848,6 +755,9 @@
       }
     },
     "Trying harder with Apple Intelligence…" : {
+
+    },
+    "Unable to save URL" : {
 
     },
     "Unarchive" : {

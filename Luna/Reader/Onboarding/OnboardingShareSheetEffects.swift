@@ -56,61 +56,156 @@ enum OnboardingActionExtensionIcon {
     }
 }
 
-/// The preview card and Copy/Share menu iMessage displays after a link is held.
-final class OnboardingMockLinkContextMenuView: UIView {
-    private let scrim = UIView()
-    private let preview = UIView()
-    private let menu = UIStackView()
-    private let shareButton = UIButton(type: .system)
-    private let urlString: String
+/// System glass for the mock system UI in this file.
+///
+/// Deliberately NOT `GlassStyle`: those materials are tinted with Luna's own
+/// palette, and everything here is a replica of somebody else's chrome, which
+/// has to look like the OS rather than like the app.
+enum OnboardingSystemGlass {
+    /// A context MENU: liquid glass from iOS 26, the chrome material before it.
+    static func menuEffect() -> UIVisualEffect {
+        if #available(iOS 26.0, *) { return UIGlassEffect() }
+        return UIBlurEffect(style: .systemChromeMaterial)
+    }
 
-    init(frame: CGRect, urlString: String) {
-        self.urlString = urlString
+    /// A presented SHEET is a thick material rather than a lens — what is behind
+    /// it is meant to be unreadable, not refracted.
+    static func sheetEffect() -> UIVisualEffect {
+        UIBlurEffect(style: .systemThickMaterial)
+    }
+
+    /// Small circular chrome (a sheet's close button).
+    static func controlEffect() -> UIVisualEffect {
+        if #available(iOS 26.0, *) { return UIGlassEffect() }
+        return UIBlurEffect(style: .systemThinMaterial)
+    }
+
+    /// What a context menu blurs its whole screen with behind the lifted
+    /// preview.
+    static func backdropEffect() -> UIVisualEffect {
+        UIBlurEffect(style: .systemUltraThinMaterial)
+    }
+
+    /// Rounds a glass view the way the OS version of it allows.
+    static func round(_ glass: UIVisualEffectView, radius: CGFloat) {
+        if #available(iOS 26.0, *) {
+            glass.cornerConfiguration = .corners(radius: .fixed(radius))
+        } else {
+            glass.layer.cornerRadius = radius
+            glass.layer.cornerCurve = .continuous
+            glass.clipsToBounds = true
+        }
+    }
+}
+
+/// The system context menu iMessage raises when a link bubble is held.
+///
+/// A REPLICA of `UIContextMenuInteraction`'s presentation rather than a popup of
+/// our own, because the popup it replaced read as neither: it floated a made-up
+/// white preview card in the middle of the screen with a menu bolted under it,
+/// unattached to the bubble that was supposedly held. What the system does, and
+/// what this does:
+///
+/// - the screen behind BLURS, ramping the material in rather than cutting to a
+///   flat scrim;
+/// - the source itself LIFTS in place — the `UITargetedPreview` beat. A raster
+///   copy is lifted and the real bubble hides underneath, exactly as the system
+///   hides a source view while its preview is up (the tail curls outside the
+///   bubble's bounds, so the copy is rendered from the layer rather than
+///   snapshot-viewed);
+/// - the menu springs out of the EDGE of that lifted bubble, anchored to the
+///   side it appears on, at system menu metrics.
+///
+/// A real `UIContextMenuInteraction` cannot stand in: it only presents from a
+/// live touch, and every gesture in this lesson is scripted.
+///
+/// Trait note: this lives inside the Messages replica, which pins itself to
+/// `.light` because iMessage is white — so these materials resolve to the LIGHT
+/// system menu, which is what the surface being imitated looks like. The
+/// app-wide `.dark` pin is not in force inside a replica of somebody else's app.
+final class OnboardingMockLinkContextMenuView: UIView {
+    /// System menu metrics.
+    private static let menuWidth: CGFloat = 250
+    private static let rowHeight: CGFloat = 44
+    private static let menuCornerRadius: CGFloat = 13
+    /// The gap the system leaves between a lifted preview and its menu.
+    private static let previewGap: CGFloat = 8
+    private static let liftedScale: CGFloat = 1.05
+    private static let edgeMargin: CGFloat = 16
+
+    private let backdrop = UIVisualEffectView(effect: nil)
+    private let dim = UIView()
+    private let lifted = UIImageView()
+    private let menu = UIView()
+    private let menuGlass = UIVisualEffectView(
+        effect: OnboardingSystemGlass.menuEffect())
+    private let rows = UIStackView()
+    private let shareRow: OnboardingMenuRowView
+    private weak var source: UIView?
+    private var liftedRect = CGRect.zero
+    private var placesMenuBelowSource = false
+
+    init(frame: CGRect, source: UIView) {
+        shareRow = OnboardingMenuRowView(
+            title: OnboardingStrings.SystemUI.share.value(),
+            symbol: "square.and.arrow.up")
+        self.source = source
         super.init(frame: frame)
         isUserInteractionEnabled = false
 
-        scrim.frame = bounds
-        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.36)
-        addSubview(scrim)
+        backdrop.frame = bounds
+        backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(backdrop)
+        dim.frame = bounds
+        dim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        dim.backgroundColor = UIColor.black.withAlphaComponent(0.12)
+        dim.alpha = 0
+        addSubview(dim)
 
-        preview.backgroundColor = .white
-        preview.layer.cornerRadius = 18
-        preview.layer.cornerCurve = .continuous
-        preview.layer.shadowColor = UIColor.black.cgColor
-        preview.layer.shadowOpacity = 0.2
-        preview.layer.shadowRadius = 18
-        addSubview(preview)
+        lifted.image = Self.liftedImage(of: source)
+        lifted.contentMode = .scaleAspectFit
+        lifted.layer.shadowColor = UIColor.black.cgColor
+        lifted.layer.shadowRadius = 22
+        lifted.layer.shadowOffset = CGSize(width: 0, height: 12)
+        lifted.layer.shadowOpacity = 0
+        addSubview(lifted)
 
-        let icon = UIImageView(image: UIImage(
-            systemName: "link",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)))
-        icon.tintColor = .systemBlue
-        icon.contentMode = .center
-        preview.addSubview(icon)
-        let label = UILabel()
-        label.text = urlString
-        label.textColor = UIColor(white: 0.1, alpha: 1)
-        label.font = .systemFont(ofSize: 16, weight: .medium)
-        label.lineBreakMode = .byTruncatingTail
-        preview.addSubview(label)
-        icon.frame = CGRect(x: 14, y: 13, width: 36, height: 36)
-        label.frame = CGRect(x: 58, y: 12, width: 258, height: 38)
-
-        menu.axis = .vertical
-        menu.spacing = 1
-        menu.layer.cornerRadius = 16
-        menu.layer.cornerCurve = .continuous
-        menu.clipsToBounds = true
+        // The rows sit as SIBLINGS above the glass rather than inside its
+        // content view: a glass content view does not rasterize through
+        // `layer.render(in:)`, and every ending in this flow snapshots the
+        // screen it is leaving.
         addSubview(menu)
-        menu.addArrangedSubview(menuButton(title: "Copy", symbol: "doc.on.doc"))
-        shareButton.configuration = menuConfiguration(title: "Share…", symbol: "square.and.arrow.up")
-        shareButton.backgroundColor = UIColor(white: 0.97, alpha: 1)
-        menu.addArrangedSubview(shareButton)
+        OnboardingSystemGlass.round(menuGlass, radius: Self.menuCornerRadius)
+        menu.addSubview(menuGlass)
+        rows.axis = .vertical
+        rows.alignment = .fill
+        // A pressed row's fill has to stop at the menu's own rounded shape; the
+        // glass beneath it is rounded by the OS, not by a mask the rows share.
+        rows.layer.cornerRadius = Self.menuCornerRadius
+        rows.layer.cornerCurve = .continuous
+        rows.clipsToBounds = true
+        menu.addSubview(rows)
+        menu.layer.shadowColor = UIColor.black.cgColor
+        menu.layer.shadowRadius = 24
+        menu.layer.shadowOffset = CGSize(width: 0, height: 8)
+        menu.layer.shadowOpacity = 0
+
+        // What Messages really offers on a bare link, in its own order.
+        rows.addArrangedSubview(OnboardingMenuRowView(
+            title: OnboardingStrings.SystemUI.openLink.value(),
+            symbol: "safari"))
+        rows.addArrangedSubview(OnboardingMenuRowView(
+            title: OnboardingStrings.SystemUI.copy.value(),
+            symbol: "doc.on.doc"))
+        rows.addArrangedSubview(shareRow)
+        for row in rows.arrangedSubviews {
+            row.heightAnchor.constraint(
+                equalToConstant: Self.rowHeight).isActive = true
+        }
+        (rows.arrangedSubviews.last as? OnboardingMenuRowView)?
+            .showsSeparator = false
 
         alpha = 0
-        preview.transform = CGAffineTransform(scaleX: 0.82, y: 0.82)
-        menu.transform = CGAffineTransform(scaleX: 0.82, y: 0.82)
     }
 
     @available(*, unavailable)
@@ -118,84 +213,296 @@ final class OnboardingMockLinkContextMenuView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let width = min(bounds.width - 44, 332)
-        preview.frame = CGRect(
-            x: (bounds.width - width) / 2,
-            y: max(bounds.midY - 118, 124),
-            width: width,
-            height: 62)
-        menu.frame = CGRect(
-            x: preview.frame.minX,
-            y: preview.frame.maxY + 10,
-            width: width,
-            height: 102)
+        guard let source, let image = lifted.image else { return }
+        // Transform-safe geometry throughout: both the lifted bubble and the
+        // menu are mid-animation for most of this view's life, and setting
+        // `frame` on a transformed view corrupts it.
+        let padded = Self.paddedBounds(of: source)
+        liftedRect = convert(padded, from: source)
+
+        let menuHeight = CGFloat(rows.arrangedSubviews.count) * Self.rowHeight
+        let topLimit = safeAreaInsets.top + Self.edgeMargin
+        let bottomLimit = bounds.height - safeAreaInsets.bottom - Self.edgeMargin
+        placesMenuBelowSource =
+            liftedRect.maxY + Self.previewGap + menuHeight <= bottomLimit
+        // If the menu fits on neither side, the system lifts the preview clear
+        // of it rather than clipping the menu.
+        var lift: CGFloat = 0
+        if !placesMenuBelowSource {
+            let wantedTop = liftedRect.minY - Self.previewGap - menuHeight
+            lift = max(topLimit - wantedTop, 0)
+        }
+        liftedRect.origin.y -= lift
+
+        lifted.bounds = CGRect(origin: .zero, size: image.size)
+        lifted.center = CGPoint(x: liftedRect.midX, y: liftedRect.midY)
+
+        let menuLeft = min(
+            max(liftedRect.minX, Self.edgeMargin),
+            bounds.width - Self.edgeMargin - Self.menuWidth)
+        let menuTop = placesMenuBelowSource
+            ? liftedRect.maxY + Self.previewGap
+            : liftedRect.minY - Self.previewGap - menuHeight
+        menu.bounds = CGRect(
+            origin: .zero,
+            size: CGSize(width: Self.menuWidth, height: menuHeight))
+        // The menu grows out of the edge nearest the bubble, so that edge is
+        // where its anchor sits.
+        menu.layer.anchorPoint = CGPoint(
+            x: 0.5, y: placesMenuBelowSource ? 0 : 1)
+        menu.layer.position = CGPoint(
+            x: menuLeft + Self.menuWidth / 2,
+            y: placesMenuBelowSource ? menuTop : menuTop + menuHeight)
+        // A clear view casts no shadow off its children, so the lift under the
+        // menu is drawn from its shape rather than from its (empty) contents.
+        menu.layer.shadowPath = UIBezierPath(
+            roundedRect: menu.bounds,
+            cornerRadius: Self.menuCornerRadius).cgPath
+        menuGlass.frame = menu.bounds
+        rows.frame = menu.bounds
     }
 
+    /// Blur in, bubble up, menu out.
     func present(completion: @escaping () -> Void) {
+        layoutIfNeeded()
+        source?.alpha = 0
+        alpha = 1
+
+        if UIAccessibility.isReduceMotionEnabled {
+            backdrop.effect = OnboardingSystemGlass.backdropEffect()
+            dim.alpha = 1
+            lifted.layer.shadowOpacity = 0.18
+            menu.layer.shadowOpacity = 0.18
+            menu.alpha = 0
+            UIView.animate(withDuration: 0.2, animations: {
+                self.menu.alpha = 1
+            }) { _ in
+                completion()
+            }
+            return
+        }
+
+        menu.alpha = 0
+        menu.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
+        lifted.transform = .identity
+        // The material ramps in; it never cuts.
+        UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
+            self.backdrop.effect = OnboardingSystemGlass.backdropEffect()
+            self.dim.alpha = 1
+        }
+        animateShadow(of: lifted.layer, to: 0.18, duration: 0.34)
+        animateShadow(of: menu.layer, to: 0.18, duration: 0.34)
         UIView.animate(
             withDuration: 0.34,
             delay: 0,
-            usingSpringWithDamping: 0.78,
-            initialSpringVelocity: 0.2,
-            options: [.curveEaseOut]
+            usingSpringWithDamping: 0.8,
+            initialSpringVelocity: 0.1,
+            options: [.curveEaseOut, .beginFromCurrentState]
         ) {
-            self.alpha = 1
-            self.preview.transform = .identity
+            self.lifted.transform = CGAffineTransform(
+                scaleX: Self.liftedScale, y: Self.liftedScale)
             self.menu.transform = .identity
         } completion: { _ in completion() }
+        UIView.animate(withDuration: 0.14) { self.menu.alpha = 1 }
     }
 
+    /// The scripted tap on Share…: the row lights the way a pressed menu row
+    /// does, then the whole presentation collapses back into the bubble.
     func tapShare(completion: @escaping () -> Void) {
         let tap = OnboardingMockTapIndicatorView()
         tap.play(
             at: convert(
-                CGPoint(x: shareButton.bounds.midX, y: shareButton.bounds.midY),
-                from: shareButton),
+                CGPoint(x: shareRow.bounds.midX, y: shareRow.bounds.midY),
+                from: shareRow),
             in: self,
-            pressing: shareButton
+            // Nothing to squeeze: a menu row lights up under a finger, and the
+            // row does that itself.
+            pressing: nil
         ) { [weak self] in
-            guard let self else { return }
-            UIView.animate(withDuration: 0.22, animations: {
+            self?.dismiss(completion: completion)
+        }
+        shareRow.flashHighlight()
+    }
+
+    /// Takes the presentation down without reporting a tap — the loop's own
+    /// teardown — and gives the bubble back.
+    func cancel() {
+        layer.removeAllAnimations()
+        menu.layer.removeAllAnimations()
+        lifted.layer.removeAllAnimations()
+        source?.alpha = 1
+        removeFromSuperview()
+    }
+
+    private func dismiss(completion: @escaping () -> Void) {
+        let finish = { [weak self] in
+            self?.source?.alpha = 1
+            self?.removeFromSuperview()
+            completion()
+        }
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            UIView.animate(withDuration: 0.2, animations: {
                 self.alpha = 0
             }) { _ in
-                self.removeFromSuperview()
-                completion()
+                finish()
             }
+            return
+        }
+        animateShadow(of: lifted.layer, to: 0, duration: 0.26)
+        animateShadow(of: menu.layer, to: 0, duration: 0.26)
+        UIView.animate(
+            withDuration: 0.26,
+            delay: 0,
+            options: [.curveEaseIn, .beginFromCurrentState]
+        ) {
+            self.backdrop.effect = nil
+            self.dim.alpha = 0
+            self.lifted.transform = .identity
+            self.menu.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
+            self.menu.alpha = 0
+        } completion: { _ in finish() }
+    }
+
+    /// `shadowOpacity` is a layer property, so it needs its own animation to
+    /// travel with a UIView one.
+    private func animateShadow(
+        of layer: CALayer,
+        to opacity: Float,
+        duration: CFTimeInterval
+    ) {
+        let fade = CABasicAnimation(keyPath: "shadowOpacity")
+        fade.fromValue = layer.shadowOpacity
+        fade.toValue = opacity
+        fade.duration = duration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.shadowOpacity = opacity
+        layer.add(
+            fade,
+            forKey: OnboardingStrings.AnimationKeys.contextMenuShadow.value())
+    }
+
+    /// The bubble's tail curls outside its own bounds, so the lifted copy is
+    /// rendered from the layer over a padded rect rather than taken as a
+    /// snapshot view (which would crop it, and could not be shadowed).
+    private static func liftedImage(of source: UIView) -> UIImage? {
+        let padded = paddedBounds(of: source)
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        return UIGraphicsImageRenderer(bounds: padded, format: format).image {
+            context in
+            context.cgContext.translateBy(x: -padded.minX, y: -padded.minY)
+            source.layer.render(in: context.cgContext)
         }
     }
 
-    private func menuButton(title: String, symbol: String) -> UIButton {
-        let button = UIButton(type: .system)
-        button.configuration = menuConfiguration(title: title, symbol: symbol)
-        button.backgroundColor = UIColor(white: 0.97, alpha: 1)
-        return button
+    private static func paddedBounds(of source: UIView) -> CGRect {
+        source.bounds.insetBy(dx: -8, dy: -2)
+    }
+}
+
+/// One row of a system menu: title leading, symbol trailing, hairline below.
+final class OnboardingMenuRowView: UIView {
+    private let highlight = UIView()
+    private let separator = UIView()
+
+    var showsSeparator: Bool = true {
+        didSet { separator.isHidden = !showsSeparator }
     }
 
-    private func menuConfiguration(title: String, symbol: String) -> UIButton.Configuration {
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = title
-        configuration.image = UIImage(systemName: symbol)
-        configuration.imagePlacement = .trailing
-        configuration.imagePadding = 8
-        configuration.baseForegroundColor = UIColor(white: 0.08, alpha: 1)
-        configuration.contentInsets = NSDirectionalEdgeInsets(
-            top: 10, leading: 16, bottom: 10, trailing: 16)
-        return configuration
+    init(title: String, symbol: String) {
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+
+        highlight.backgroundColor = .systemFill
+        highlight.alpha = 0
+        highlight.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(highlight)
+
+        let label = UILabel()
+        label.text = title
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = .label
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+
+        let icon = UIImageView(image: UIImage(
+            systemName: symbol,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17)))
+        icon.tintColor = .label
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(icon)
+
+        separator.backgroundColor = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(separator)
+
+        NSLayoutConstraint.activate([
+            highlight.topAnchor.constraint(equalTo: topAnchor),
+            highlight.leadingAnchor.constraint(equalTo: leadingAnchor),
+            highlight.trailingAnchor.constraint(equalTo: trailingAnchor),
+            highlight.bottomAnchor.constraint(equalTo: bottomAnchor),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 22),
+            label.trailingAnchor.constraint(
+                lessThanOrEqualTo: icon.leadingAnchor, constant: -8),
+            separator.leadingAnchor.constraint(equalTo: leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: trailingAnchor),
+            separator.bottomAnchor.constraint(equalTo: bottomAnchor),
+            separator.heightAnchor.constraint(
+                equalToConstant: 1 / max(traitCollection.displayScale, 2)),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    /// The press state of a menu row: in under the finger, out with the menu.
+    func flashHighlight() {
+        UIView.animate(
+            withDuration: 0.10,
+            delay: OnboardingAnimationClock.delay(0.16),
+            options: [.curveEaseOut]
+        ) {
+            self.highlight.alpha = 1
+        }
     }
 }
 
 /// A deliberately finite facsimile of iOS's share sheet. It renders only the
 /// rows the lesson needs, then drives the exact edit/promotion path with the
 /// same visible tap indicator used by the shortcut demonstration.
+///
+/// Everything it is made of is the OS's own: the card is a thick system material
+/// under a system sheet radius, the grouped lists are system fills with system
+/// hairlines between their rows, the labels are `.label`/`.secondaryLabel`, and
+/// the close button is glass. It used to be hand-mixed greys and hardcoded
+/// whites, which is how a replica ends up looking like a drawing of a share
+/// sheet instead of one.
 final class OnboardingMockShareSheetView: UIView {
     private enum Screen { case share, edit }
+
+    /// A presented sheet's corner radius, and the metrics of the chrome around
+    /// its top edge.
+    private static let cardCornerRadius: CGFloat = 38
+    private static let closeButtonSide: CGFloat = 30
+    /// A share target's tile: the system draws app icons and avatars at 60pt,
+    /// with the continuous-corner radius Springboard uses.
+    private static let tileSide: CGFloat = 60
 
     private let appName: String
     private let urlString: String
     private let appIcon: UIImage?
     private let scrim = UIView()
     private let card = UIView()
+    private let cardGlass = UIVisualEffectView(
+        effect: OnboardingSystemGlass.sheetEffect())
     private let grabber = UIView()
+    private let closeButton = UIVisualEffectView(
+        effect: OnboardingSystemGlass.controlEffect())
     private let scrollView = UIScrollView()
     private let shareContent = UIView()
     private let editContent = UIView()
@@ -215,19 +522,41 @@ final class OnboardingMockShareSheetView: UIView {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         accessibilityIdentifier = "onboarding.messages.mockShareSheet"
+        // A system sheet, so its materials and semantic colours have to resolve
+        // DARK — which is what the app pins everywhere (the sky it paints is a
+        // trait, not a style). This particular view, though, lives inside the
+        // Messages replica, which pins ITSELF to `.light` because iMessage is
+        // white; without this the share sheet would come up in light glass with
+        // black-on-black labels.
+        overrideUserInterfaceStyle = .dark
 
         scrim.backgroundColor = UIColor.black.withAlphaComponent(0.34)
         scrim.alpha = 0
         addSubview(scrim)
-        card.backgroundColor = UIColor(red: 0.11, green: 0.115, blue: 0.12, alpha: 0.98)
-        card.layer.cornerRadius = 30
+        card.layer.cornerRadius = Self.cardCornerRadius
         card.layer.cornerCurve = .continuous
         card.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         card.clipsToBounds = true
         addSubview(card)
-        grabber.backgroundColor = UIColor.white.withAlphaComponent(0.32)
+        // The sheet's material, behind everything the sheet draws.
+        cardGlass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        card.addSubview(cardGlass)
+        grabber.backgroundColor = .tertiaryLabel
         grabber.layer.cornerRadius = 2.5
         card.addSubview(grabber)
+        OnboardingSystemGlass.round(
+            closeButton, radius: Self.closeButtonSide / 2)
+        let closeGlyph = UIImageView(image: UIImage(
+            systemName: "xmark",
+            withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: 13, weight: .bold)))
+        closeGlyph.tintColor = .secondaryLabel
+        closeGlyph.contentMode = .center
+        closeGlyph.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        closeButton.contentView.addSubview(closeGlyph)
+        closeGlyph.frame = CGRect(
+            origin: .zero,
+            size: CGSize(width: Self.closeButtonSide, height: Self.closeButtonSide))
         scrollView.showsVerticalScrollIndicator = false
         scrollView.contentInsetAdjustmentBehavior = .never
         card.addSubview(scrollView)
@@ -247,7 +576,8 @@ final class OnboardingMockShareSheetView: UIView {
         let top: CGFloat = max(safeAreaInsets.top + 20, 58)
         card.bounds = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - top)
         card.center = CGPoint(x: bounds.midX, y: top + card.bounds.height / 2)
-        grabber.frame = CGRect(x: (card.bounds.width - 38) / 2, y: 7, width: 38, height: 5)
+        cardGlass.frame = card.bounds
+        grabber.frame = CGRect(x: (card.bounds.width - 36) / 2, y: 6, width: 36, height: 5)
         scrollView.frame = CGRect(x: 0, y: 18, width: card.bounds.width, height: card.bounds.height - 18)
         // Keep Edit Actions just below the first viewport even on tall phones,
         // so the lesson visibly scrolls through the two action rows to reach it.
@@ -266,14 +596,18 @@ final class OnboardingMockShareSheetView: UIView {
         walkthroughGeneration += 1
         let generation = walkthroughGeneration
         card.transform = CGAffineTransform(translationX: 0, y: card.bounds.height)
+        // The dim arrives ahead of the card, as it does on a real sheet: the
+        // screen is already backing off by the time the sheet catches up to it.
+        UIView.animate(withDuration: 0.30, delay: 0, options: [.curveEaseOut]) {
+            self.scrim.alpha = 1
+        }
         UIView.animate(
             withDuration: 0.52,
             delay: 0,
-            usingSpringWithDamping: 0.90,
+            usingSpringWithDamping: 0.86,
             initialSpringVelocity: 0,
             options: [.curveEaseOut]
         ) {
-            self.scrim.alpha = 1
             self.card.transform = .identity
         } completion: { [weak self] _ in
             guard let self else { return }
@@ -439,10 +773,15 @@ final class OnboardingMockShareSheetView: UIView {
     }
 
     private func dismiss(completion: @escaping () -> Void) {
-        UIView.animate(withDuration: 0.34, animations: {
+        UIView.animate(
+            withDuration: 0.34,
+            delay: 0,
+            options: [.curveEaseIn, .beginFromCurrentState]
+        ) {
             self.scrim.alpha = 0
-            self.card.transform = CGAffineTransform(translationX: 0, y: self.card.bounds.height)
-        }) { _ in
+            self.card.transform = CGAffineTransform(
+                translationX: 0, y: self.card.bounds.height)
+        } completion: { _ in
             self.removeFromSuperview()
             completion()
         }
@@ -486,22 +825,31 @@ final class OnboardingMockShareSheetView: UIView {
         let title = UILabel()
         title.tag = 2
         title.text = urlString
-        title.textColor = .white
+        title.textColor = .label
         title.font = .systemFont(ofSize: 17, weight: .semibold)
         title.lineBreakMode = .byTruncatingTail
         preview.addSubview(title)
         let host = UILabel()
         host.tag = 3
         host.text = URL(string: urlString)?.host
-        host.textColor = UIColor.white.withAlphaComponent(0.55)
+        host.textColor = .secondaryLabel
         host.font = .systemFont(ofSize: 14)
         preview.addSubview(host)
+        // The close button rides with the item preview, as it does on the real
+        // sheet — both scroll away together.
+        preview.addSubview(closeButton)
 
         let people = UIView()
         people.tag = 20
         shareContent.addSubview(people)
-        people.addSubview(targetTile(title: "Laptop", symbol: "laptopcomputer", tint: .systemBlue))
-        people.addSubview(targetTile(title: "Johnny\nAppleseed", symbol: "person.crop.circle.fill", tint: .systemGray))
+        people.addSubview(targetTile(
+            title: OnboardingStrings.SystemUI.laptop.value(),
+            symbol: "laptopcomputer",
+            tint: .systemBlue))
+        people.addSubview(targetTile(
+            title: OnboardingStrings.SystemUI.contact.value(),
+            symbol: "person.crop.circle.fill",
+            tint: .systemGray))
 
         let apps = UIView()
         apps.tag = 30
@@ -510,10 +858,13 @@ final class OnboardingMockShareSheetView: UIView {
             // There is no public AirDrop app artwork. This is the supported
             // system radio-wave glyph on the iOS 26 fallback; `airdrop` is not
             // an available SF Symbol there and renders an empty tile.
-            ("AirDrop", "dot.radiowaves.up.forward", .systemBlue),
-            ("Messages", "message.fill", .systemGreen),
-            ("Reminders", "list.bullet.circle.fill", .systemIndigo),
-            ("More", "ellipsis", .systemGray),
+            (OnboardingStrings.SystemUI.airDrop.value(),
+             "dot.radiowaves.up.forward", .systemBlue),
+            (OnboardingStrings.SystemUI.messages.value(),
+             "message.fill", .systemGreen),
+            (OnboardingStrings.SystemUI.reminders.value(),
+             "list.bullet.circle.fill", .systemIndigo),
+            (OnboardingStrings.SystemUI.more.value(), "ellipsis", .systemGray),
         ]
         for item in appItems { apps.addSubview(iconTile(title: item.0, symbol: item.1, tint: item.2)) }
 
@@ -522,16 +873,23 @@ final class OnboardingMockShareSheetView: UIView {
         shareContent.addSubview(favorites)
         let actions = UIView()
         actions.tag = 50
-        actions.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+        // A grouped list on a sheet is a system fill over the sheet's material,
+        // not a hand-mixed white wash.
+        actions.backgroundColor = .secondarySystemFill
         actions.layer.cornerRadius = 18
         actions.layer.cornerCurve = .continuous
+        actions.clipsToBounds = true
         shareContent.addSubview(actions)
-        actions.addSubview(actionRow(title: "Save to Files", symbol: "folder"))
-        actions.addSubview(actionRow(title: "Add to Reading List", symbol: "eyeglasses"))
+        actions.addSubview(actionRow(
+            title: OnboardingStrings.SystemUI.saveToFiles.value(),
+            symbol: "folder"))
+        actions.addSubview(actionRow(
+            title: OnboardingStrings.SystemUI.addToReadingList.value(),
+            symbol: "eyeglasses"))
 
         var editConfiguration = UIButton.Configuration.gray()
-        editConfiguration.title = "Edit Actions"
-        editConfiguration.baseForegroundColor = .white
+        editConfiguration.title = OnboardingStrings.SystemUI.editActions.value()
+        editConfiguration.baseForegroundColor = .label
         editConfiguration.cornerStyle = .capsule
         editButton.configuration = editConfiguration
         shareContent.addSubview(editButton)
@@ -549,17 +907,27 @@ final class OnboardingMockShareSheetView: UIView {
         let width = shareContent.bounds.width - inset * 2
         preview.frame = CGRect(x: inset, y: 8, width: width, height: 76)
         preview.viewWithTag(1)?.frame = CGRect(x: 4, y: 13, width: 48, height: 48)
-        preview.viewWithTag(2)?.frame = CGRect(x: 64, y: 12, width: width - 68, height: 28)
-        preview.viewWithTag(3)?.frame = CGRect(x: 64, y: 40, width: width - 68, height: 22)
+        // The title stops short of the close button rather than sliding under it.
+        let titleWidth = width - 68 - Self.closeButtonSide - 12
+        preview.viewWithTag(2)?.frame = CGRect(x: 64, y: 12, width: titleWidth, height: 28)
+        preview.viewWithTag(3)?.frame = CGRect(x: 64, y: 40, width: titleWidth, height: 22)
+        closeButton.frame = CGRect(
+            x: width - Self.closeButtonSide,
+            y: (76 - Self.closeButtonSide) / 2,
+            width: Self.closeButtonSide,
+            height: Self.closeButtonSide)
         people.frame = CGRect(x: inset, y: 98, width: width, height: 126)
-        layoutTiles(in: people, side: 76, count: 2)
+        layoutTiles(in: people, side: Self.tileSide, count: 2, circular: true)
         apps.frame = CGRect(x: inset, y: 236, width: width, height: 126)
-        layoutTiles(in: apps, side: 68, count: 4)
+        layoutTiles(in: apps, side: Self.tileSide, count: 4)
         favorites.frame = CGRect(x: inset, y: 374, width: width, height: 118)
-        layoutTiles(in: favorites, side: 68, count: favorites.subviews.count)
+        layoutTiles(
+            in: favorites, side: Self.tileSide, count: favorites.subviews.count)
         actions.frame = CGRect(x: inset, y: 510, width: width, height: 116)
         for (index, row) in actions.subviews.enumerated() {
             row.frame = CGRect(x: 0, y: CGFloat(index) * 58, width: width, height: 58)
+            (row as? OnboardingSheetListRow)?.showsSeparator =
+                index < actions.subviews.count - 1
         }
         editButton.frame = CGRect(
             x: (shareContent.bounds.width - 156) / 2,
@@ -571,7 +939,10 @@ final class OnboardingMockShareSheetView: UIView {
     private func rebuildActionFavorites() {
         guard let favorites = shareContent.viewWithTag(40) else { return }
         favorites.subviews.forEach { $0.removeFromSuperview() }
-        favorites.addSubview(iconTile(title: "Copy", symbol: "doc.on.doc", tint: .systemGray))
+        favorites.addSubview(iconTile(
+            title: OnboardingStrings.SystemUI.copy.value(),
+            symbol: "doc.on.doc",
+            tint: .systemGray))
         lunaActionView = nil
         if lunaIsFavorite {
             let luna = iconTile(title: appName, image: appIcon, tint: .systemGray)
@@ -586,8 +957,8 @@ final class OnboardingMockShareSheetView: UIView {
     private func buildEditContent() {
         let title = UILabel()
         title.tag = 101
-        title.text = "Edit Actions"
-        title.textColor = .white
+        title.text = OnboardingStrings.SystemUI.editActions.value()
+        title.textColor = .label
         title.textAlignment = .center
         title.font = .systemFont(ofSize: 25, weight: .bold)
         editContent.addSubview(title)
@@ -602,26 +973,23 @@ final class OnboardingMockShareSheetView: UIView {
     private func buildEditRows() {
         lunaEditRow = nil
         editContent.subviews.filter { $0.tag >= 200 }.forEach { $0.removeFromSuperview() }
-        let favoritesLabel = sectionLabel("Favorites")
+        let favoritesLabel = sectionLabel(
+            OnboardingStrings.SystemUI.favorites.value())
         favoritesLabel.tag = 200
         editContent.addSubview(favoritesLabel)
-        let favoritesCard = UIView()
-        favoritesCard.tag = 201
-        favoritesCard.backgroundColor = UIColor.white.withAlphaComponent(0.10)
-        favoritesCard.layer.cornerRadius = 18
+        let favoritesCard = groupedListCard(tag: 201)
         editContent.addSubview(favoritesCard)
-        favoritesCard.addSubview(editRow(title: "Copy", favorite: true))
+        favoritesCard.addSubview(editRow(
+            title: OnboardingStrings.SystemUI.copy.value(), favorite: true))
         if lunaIsFavorite {
             favoritesCard.addSubview(editRow(title: appName, favorite: true, image: appIcon))
         }
 
-        let otherLabel = sectionLabel("Other Actions")
+        let otherLabel = sectionLabel(
+            OnboardingStrings.SystemUI.otherActions.value())
         otherLabel.tag = 202
         editContent.addSubview(otherLabel)
-        let otherCard = UIView()
-        otherCard.tag = 203
-        otherCard.backgroundColor = UIColor.white.withAlphaComponent(0.10)
-        otherCard.layer.cornerRadius = 18
+        let otherCard = groupedListCard(tag: 203)
         editContent.addSubview(otherCard)
         if !lunaIsFavorite {
             let luna = editRow(title: appName, favorite: false, image: appIcon)
@@ -632,8 +1000,26 @@ final class OnboardingMockShareSheetView: UIView {
             luna.addSubview(lunaPlusButton)
             otherCard.addSubview(luna)
         }
-        otherCard.addSubview(editRow(title: "Save to Files", favorite: false, symbol: "folder"))
-        otherCard.addSubview(editRow(title: "Add to Reading List", favorite: false, symbol: "eyeglasses"))
+        otherCard.addSubview(editRow(
+            title: OnboardingStrings.SystemUI.saveToFiles.value(),
+            favorite: false,
+            symbol: "folder"))
+        otherCard.addSubview(editRow(
+            title: OnboardingStrings.SystemUI.addToReadingList.value(),
+            favorite: false,
+            symbol: "eyeglasses"))
+    }
+
+    /// One grouped list on the Edit Actions screen. Its rows are its only
+    /// subviews — `layoutEditRows` and the promotion flight both count on that.
+    private func groupedListCard(tag: Int) -> UIView {
+        let card = UIView()
+        card.tag = tag
+        card.backgroundColor = .secondarySystemFill
+        card.layer.cornerRadius = 18
+        card.layer.cornerCurve = .continuous
+        card.clipsToBounds = true
+        return card
     }
 
     private func layoutEditContent() {
@@ -661,6 +1047,8 @@ final class OnboardingMockShareSheetView: UIView {
     private func layoutEditRows(in card: UIView) {
         for (index, row) in card.subviews.enumerated() {
             row.frame = CGRect(x: 0, y: CGFloat(index) * 60, width: card.bounds.width, height: 60)
+            (row as? OnboardingSheetListRow)?.showsSeparator =
+                index < card.subviews.count - 1
             if row.subviews.contains(lunaPlusButton) {
                 lunaPlusButton.frame = CGRect(x: 14, y: 15, width: 30, height: 30)
             }
@@ -691,14 +1079,14 @@ final class OnboardingMockShareSheetView: UIView {
         let container = UIView()
         let tile = UIView()
         tile.tag = 1
-        tile.backgroundColor = circular ? UIColor.white.withAlphaComponent(0.92) : tint
-        tile.layer.cornerRadius = circular ? 34 : 15
+        tile.backgroundColor = circular ? .quaternarySystemFill : tint
         tile.layer.cornerCurve = .continuous
+        tile.clipsToBounds = true
         container.addSubview(tile)
         let icon = UIImageView(image: image)
         icon.tag = 2
         icon.contentMode = .scaleAspectFit
-        icon.tintColor = circular ? tint : .white
+        icon.tintColor = circular ? .secondaryLabel : .white
         icon.layer.cornerRadius = 13
         icon.layer.cornerCurve = .continuous
         icon.clipsToBounds = true
@@ -706,7 +1094,7 @@ final class OnboardingMockShareSheetView: UIView {
         let label = UILabel()
         label.tag = 3
         label.text = title
-        label.textColor = .white
+        label.textColor = .label
         label.font = .systemFont(ofSize: 13)
         label.textAlignment = .center
         label.numberOfLines = 2
@@ -714,7 +1102,12 @@ final class OnboardingMockShareSheetView: UIView {
         return container
     }
 
-    private func layoutTiles(in host: UIView, side: CGFloat, count: Int) {
+    private func layoutTiles(
+        in host: UIView,
+        side: CGFloat,
+        count: Int,
+        circular: Bool = false
+    ) {
         guard count > 0 else { return }
         let slot = host.bounds.width / CGFloat(max(count, 4))
         for (index, item) in host.subviews.enumerated() {
@@ -722,6 +1115,11 @@ final class OnboardingMockShareSheetView: UIView {
             let tileSide = min(side, slot - 8)
             item.viewWithTag(1)?.frame = CGRect(
                 x: (slot - tileSide) / 2, y: 0, width: tileSide, height: tileSide)
+            // An avatar is round; an app icon takes Springboard's own ratio of
+            // radius to side.
+            item.viewWithTag(1)?.layer.cornerRadius = circular
+                ? tileSide / 2
+                : (tileSide * 0.2255).rounded()
             item.viewWithTag(2)?.frame = CGRect(
                 x: tileSide * 0.18, y: tileSide * 0.18,
                 width: tileSide * 0.64, height: tileSide * 0.64)
@@ -730,15 +1128,16 @@ final class OnboardingMockShareSheetView: UIView {
         }
     }
 
-    private func actionRow(title: String, symbol: String) -> UIView {
-        let row = UIView()
+    private func actionRow(title: String, symbol: String) -> OnboardingSheetListRow {
+        let row = OnboardingSheetListRow(separatorInset: 62)
         let icon = UIImageView(image: UIImage(systemName: symbol))
-        icon.tintColor = .white
+        icon.tintColor = .label
+        icon.contentMode = .scaleAspectFit
         icon.frame = CGRect(x: 18, y: 15, width: 28, height: 28)
         row.addSubview(icon)
         let label = UILabel()
         label.text = title
-        label.textColor = .white
+        label.textColor = .label
         label.font = .systemFont(ofSize: 18)
         label.frame = CGRect(x: 62, y: 0, width: 270, height: 58)
         row.addSubview(label)
@@ -748,7 +1147,7 @@ final class OnboardingMockShareSheetView: UIView {
     private func sectionLabel(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
-        label.textColor = UIColor.white.withAlphaComponent(0.55)
+        label.textColor = .secondaryLabel
         label.font = .systemFont(ofSize: 22, weight: .bold)
         return label
     }
@@ -758,8 +1157,8 @@ final class OnboardingMockShareSheetView: UIView {
         favorite: Bool,
         symbol: String? = nil,
         image: UIImage? = nil
-    ) -> UIView {
-        let row = UIView()
+    ) -> OnboardingSheetListRow {
+        let row = OnboardingSheetListRow(separatorInset: 58)
         row.tag = 300
         let leading = UIImageView(image: UIImage(
             systemName: favorite ? "minus.circle.fill" : "plus.circle.fill"))
@@ -771,17 +1170,50 @@ final class OnboardingMockShareSheetView: UIView {
         row.addSubview(leading)
         let label = UILabel()
         label.text = title
-        label.textColor = .white
+        label.textColor = .label
         label.font = .systemFont(ofSize: 18)
         label.frame = CGRect(x: 58, y: 0, width: 260, height: 60)
         row.addSubview(label)
         if favorite {
             let reorder = UIImageView(image: UIImage(systemName: "line.3.horizontal"))
-            reorder.tintColor = UIColor.white.withAlphaComponent(0.35)
+            reorder.tintColor = .tertiaryLabel
             reorder.frame = CGRect(x: 326, y: 19, width: 28, height: 22)
             reorder.autoresizingMask = [.flexibleLeftMargin]
             row.addSubview(reorder)
         }
         return row
+    }
+}
+
+/// A row of a grouped list inside the mock share sheet, carrying the hairline
+/// iOS draws between rows — inset to the label, and never under the last one.
+private final class OnboardingSheetListRow: UIView {
+    private let separator = UIView()
+    private let separatorInset: CGFloat
+
+    var showsSeparator = true {
+        didSet { separator.isHidden = !showsSeparator }
+    }
+
+    init(separatorInset: CGFloat) {
+        self.separatorInset = separatorInset
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        separator.backgroundColor = .separator
+        addSubview(separator)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let hairline = 1 / max(traitCollection.displayScale, 2)
+        separator.frame = CGRect(
+            x: separatorInset,
+            y: bounds.height - hairline,
+            width: max(bounds.width - separatorInset, 0),
+            height: hairline)
+        bringSubviewToFront(separator)
     }
 }

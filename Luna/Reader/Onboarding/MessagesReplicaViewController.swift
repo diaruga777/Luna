@@ -514,9 +514,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     }
 
     private func presentMockContextMenu(generation: Int) {
+        // The menu belongs to the BUBBLE: it lifts that bubble and hangs off its
+        // edge, the way the system's own long-press presentation does.
         let menu = OnboardingMockLinkContextMenuView(
             frame: view.bounds,
-            urlString: currentURLString)
+            source: urlBubble)
         contextMenu = menu
         view.addSubview(menu)
         menu.present { [weak self] in
@@ -837,7 +839,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         // wrote goes back out of the store now rather than at the next pass.
         saveDemoController?.abortPresentation()
         isPresentingSaveSurface = false
-        contextMenu?.removeFromSuperview()
+        // `cancel`, not `removeFromSuperview`: the menu is holding the bubble it
+        // lifted, and has to give it back.
+        contextMenu?.cancel()
         contextMenu = nil
         shareSheet?.cancelWalkthrough()
         shareSheet = nil

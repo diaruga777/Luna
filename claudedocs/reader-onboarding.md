@@ -194,6 +194,53 @@ and deleted after each pass (see above). The legacy temporary-demo cleanup
 (`BundledLunaArticle.cleanupLegacyTemporarySave`) remains for users updating from an
 older build.
 
+### The scripted gestures wear the system's own chrome
+
+Everything the save lesson mimes is somebody else's UI, so it is built out of the
+OS's materials rather than hand-mixed colours (`OnboardingSystemGlass`,
+deliberately not `GlassStyle` — those materials are tinted with Luna's palette).
+
+**The Action Button press.** `saveDelayAfterLastMessage` is the beat between the
+link landing and the press: short, because the press is the answer to that link.
+The press itself is the press cue plus `LiquidScreenWaveAnimator.playRipple`, and
+because a ripple-only press renders no blackout and no crossfade, the warp is the
+only thing reporting it — which on the white iMessage mock is nearly nothing, since
+the warp's lighting term brightens toward white. So the front is also DRAWN:
+`ActionButtonPressWaveView` strokes the same expanding circle (a bright core
+between two dark rims, so it reads on white and on black), on the warp's own
+`firstWaveDelay`/`firstWaveDuration`, in the window beside the cue.
+
+**The long press.** `OnboardingMockLinkContextMenuView` is a replica of
+`UIContextMenuInteraction`'s presentation, not a popup of its own: the screen
+blurs (the material ramps in), the BUBBLE lifts in place from a layer-rendered copy
+while the real bubble hides underneath, and the menu springs out of the edge of
+that lifted bubble at system metrics (250pt wide, 44pt rows, 13pt radius, hairline
+separators). A real interaction cannot stand in — it only presents from a live
+touch. Its own trait is inherited: the Messages replica pins itself to `.light`
+because iMessage is white, so the menu resolves as the LIGHT system menu.
+
+**The share sheet.** `OnboardingMockShareSheetView` pins `.dark` for the opposite
+reason — a system sheet resolves dark everywhere else in the app, and it must not
+inherit the replica's light trait. Its card is a thick system material at the sheet
+radius with a glass close button, its grouped lists are system fills with system
+hairlines between rows, and its labels are `.label`/`.secondaryLabel`. Its walkthrough
+(scroll → Edit Actions → promote this app → Done → tap the new action) is unchanged.
+
+Both mocks put content as SIBLINGS above their glass rather than inside a glass
+content view: a glass content view does not rasterize through `layer.render(in:)`,
+and every ending in this flow snapshots the screen it is leaving.
+
+### No lesson survives the hop that covered it
+
+Every ending — either lesson, the finishing handoff, and the settings replay —
+takes the mock sources off screen (`hideDemonstrationSources`) UNDER the
+app-switcher hop's own frozen last frame, before the window changes hands or the
+replay is dismissed. `AppOnboardingCompletionTransition.run` snapshots the window
+and reparents the root out of the onboarding controller, which leaves the outgoing
+tree owning the screen for a frame; the finishing hop therefore also brings the live
+root up first (a raster of that same root is what the hop is already showing, so
+nothing moves) and removes the hop afterwards.
+
 ## Paste as first-run success path
 
 Paste is no longer an onboarding completion action. It is a permanent utility

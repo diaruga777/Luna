@@ -5,6 +5,10 @@ as a **price tracker** instead of an article: it watches the product's price
 across one or more store URLs and alerts the user (local notification + a red
 top-of-list badge) when the price drops past a threshold.
 
+**A tracker may have NO threshold**, and a brand-new one does whenever the
+notification prompt has never been answered — see
+[Alert threshold and notification permission](#alert-threshold-and-notification-permission).
+
 ## Key files
 
 **The price is MANDATORY.** A tracker is only ever created from a real numeric
@@ -150,21 +154,31 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   - `PriceTrackerStore { urlString, lastPrice: Decimal?, currency, lastRefreshed: Date? }`.
   - `PriceTracker` — `productName`, `stores` (private(set), **always ≥1**), `brand?`,
     `productID?`, `imageFileName?`, `initialPrice` (best at creation = alert
-    baseline), `initialCurrency`, `alertThresholdFraction` (default 0.10),
+    baseline), `initialCurrency`, **`alertThresholdFraction: Double?`** —
+    `private(set)`, **nil = no alert set at all** (default `0.10` =
+    `PriceTracker.defaultAlertThresholdFraction` when one is seeded) —
     `isArchived`, `alertAcknowledgedAt: Date?` (nil = the current alert, if any, is
     still UNVIEWED). **`init(price:)` takes a required `Decimal`** — a tracker cannot
     exist without a real numeric price (the `PriceFetcher` resolves it before the
     tracker is created). Computed: `currentBestPrice` (min across fetched store
-    prices, else `initialPrice`), `displayCurrency`, `discountFraction`, `isAlerting`
-    (`!isArchived && discount ≥ threshold`), **`hasUnviewedAlert`**
+    prices, else `initialPrice`), `displayCurrency`, `discountFraction`,
+    **`hasAlertThreshold`**, `isAlerting`
+    (`threshold != nil && !isArchived && discount ≥ threshold` — **a tracker with no
+    threshold never alerts, however far the price falls**), `alertThresholdPrice:
+    Decimal?` (nil ⇒ the graph draws no alert line), **`hasUnviewedAlert`**
     (`isAlerting && alertAcknowledgedAt == nil` — the condition that floats the row to
-    the very top of the whole list), `thresholdAbsoluteDrop`. Mutators: `upsertStore`,
+    the very top of the whole list). Mutators: `upsertStore`,
     `removeStore` (no-ops on the last store → ≥1 invariant), `setPrice` (a strictly
     lower price for a store clears `alertAcknowledgedAt` so a fresh drop re-floats),
+    **`setAlertThresholdFraction` / `setAlertThresholdPrice`** (the ONLY ways in — both
+    clamp to 0.01…0.95, and both leave the unset state), **`clearAlertThreshold`**,
     **`markAlertViewed(at:)`** (sets `alertAcknowledgedAt`; no-ops when not alerting —
     called when the user opens an alerting tracker). **Migration-safe** `Codable` (all
     fields defaulted; `alertAcknowledgedAt` absent in old payloads → nil → unviewed;
-    empty `stores` repaired; threshold clamped 0.01…0.95). Merging a cheaper store
+    empty `stores` repaired; a present threshold clamped 0.01…0.95). **An ABSENT
+    `alertThresholdFraction` key IS the unset state** — the encoder omits a nil
+    optional, so "no alert" round-trips through `readingList.json` with no sentinel
+    number, and a pre-threshold payload reads as unset too. Merging a cheaper store
     does NOT lower `initialPrice` (the baseline is fixed at creation).
   - `PriceTrackerShare` — portable friend-share form (URLs + best price at share
     time + threshold + brand/productID); `makeTracker()` rebuilds on receipt.
@@ -237,7 +251,8 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   Settings, and Share chrome used by the sibling apps. Active cards contain:
   - a 64pt product thumbnail and a 1–3 line product name;
   - the always-present `PriceGraphView`, including its directly editable green
-    absolute alert threshold and tap-only point tooltip;
+    absolute alert threshold — or, for a tracker with no alert set, the **"Set price
+    alert"** pill in its place — and tap-only point tooltip;
   - tracked-site rows plus the green + button.
   Mini chips show the product thumbnail with the Price Tracker app icon's green
   tag silhouette (no magnifying glass) at bottom-trailing. Archiving is
@@ -282,12 +297,79 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   control: a liquid-glass pill (`GlassStyle.barEffect()`) with the title **"Alert
   threshold"**, a slider (0.01…0.90), and a readout line
   (`PriceFormatting.thresholdDescription` — percent + absolute "alert below $…").
-  Presentation-only: `configure(fraction:initialPrice:currency:)` seeds it; reports
+  Presentation-only: `configure(fraction:initialPrice:currency:)` seeds it — the
+  fraction is **optional**, and nil paints the unset state (parked slider, dimmed
+  track/thumb, call-to-action readout, a **"Set price alert"** button) — and it reports
   via `onChanged` (live) / `onCommitted` (on release → host persists). Used by
   `PriceTrackingViewController`'s footer to drive `alertThresholdFraction`.
 - `Luna/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
+- `LunaLibraries/Sources/LunaStorage/NotificationAuthorizationState.swift` — the
+  shared latch (**"has the notification prompt ever been shown"**) plus
+  `PriceAlertThresholdPolicy`, the ONE decision about a new tracker's threshold. See
+  the next section.
+
+## Alert threshold and notification permission
+
+A price alert is a promise to send a notification, so Luna does not make one before
+it may notify. **Notification authorization is requested only at explicit opt-in
+moments** (see the root `CLAUDE.md`); committing a price-alert threshold in EITHER
+price editor is one of them, and that is what this flow is built around.
+
+**A new tracker's threshold is a decision, not a constant.**
+`PriceAlertThresholdPolicy.initialThresholdFraction` (LunaStorage) answers it:
+
+| System authorization status when the product is tracked | New tracker starts with |
+| --- | --- |
+| `.notDetermined` (never asked) | **no threshold** — `alertThresholdFraction == nil` |
+| anything else (granted **or** denied) | `PriceTracker.defaultAlertThresholdFraction` (10%) |
+
+Denied counts as answered: the question has been put to the user, so trackers behave
+exactly as they always did (an undelivered notification is then the OS's business,
+not a promise Luna withheld). The policy is asked at every creation site —
+`ProductTrackerIngestor` (main app), `ExtensionProductPresenter` (share/action
+extensions), `ShareReaderViewController`'s silent product save — and
+`ProductInfo.makeTracker(fallbackURL:alertThresholdFraction:)` **requires** the value
+rather than defaulting it, so a new surface cannot quietly promise an alert.
+
+**Reading the status.** The truth is `UNUserNotificationCenter`'s
+`authorizationStatus`, which is asynchronous and unavailable to ask (only to read)
+inside an `.appex`. `NotificationAuthorizationState` (App-Group `UserDefaults`) is the
+synchronous latch over it:
+
+- `NotificationManager.requestAuthorization()` marks it the moment it asks (the prompt
+  is up whatever the user answers) and, as before, is **idempotent** and **self-skips
+  in an `.appex`** — so the extension-hosted price editor calls it harmlessly.
+- `NotificationManager.refreshAuthorizationRequestedState()` (async, returns the
+  answer) reads the real status and latches it; the ingestor awaits it before deciding,
+  and both price surfaces kick the fire-and-forget form
+  (`refreshAuthorizationRequestedStateInBackground()`) on load — which is also how an
+  install that granted permission *before this latch existed* heals.
+- The latch only ever goes ON: revoking permission in Settings does not un-answer the
+  question. `reset()` exists for tests.
+
+**The unset state in the UI.** Both editors show it, and both treat committing a
+threshold as the opt-in that raises the prompt:
+
+- **`PriceTrackingViewController`'s footer slider** (`AlertThresholdSlider`) parks at
+  the default 10% with a dimmed track and thumb, replaces the percent/absolute readout
+  with "No price alert yet. Set one to be notified when the price drops.", and adds a
+  **"Set price alert"** button. Dragging the parked slider un-dims it and shows the
+  real readout from the first movement; release (or the button) commits →
+  `setAlertThresholdFraction` + persist + `NotificationManager.requestAuthorization()`.
+- **The product card's `PriceGraphView`** has no line to drag, so with
+  `allowsThresholdEditing` and a nil threshold it draws no alert line and shows a
+  **"Set price alert"** pill where the line's price label would sit, reporting the tap
+  through `onThresholdRequested`. `PriceTrackerCardContentViewController` seeds
+  `defaultAlertThresholdFraction`, persists, asks for authorization, and reloads — the
+  line, handle and label then arrive, editable as always.
+- The set state is unchanged in both (the buttons are hidden), which is why the
+  existing editor snapshots still hold.
+
+Once a threshold exists, everything downstream is the old behavior: `isAlerting`,
+the floated `.priceAlert` row, and `PriceRefreshCoordinator`'s `postPriceDrop` on a
+`newlyAlerting` outcome.
 
 **Notification permission is asked when the threshold is committed, not at launch.**
 Setting the alert line IS the request to be told about a drop, and it's the only thing
@@ -426,12 +508,19 @@ notifies. See `social-sharing.md`.
   render fallback recovers a JS-loaded price** (the static markup has none, the
   injected render returns the hydrated HTML); no price by any method → nil (article
   fallback). Uses `MockArticleFetcher` + an injected `renderHTML` closure (headless).
-- `PriceTrackerTests` (20) — best price, discount/alert, threshold, ≥1-store
+- `PriceTrackerTests` — best price, discount/alert, threshold, ≥1-store
   invariant, baseline immutability, Codable migration + clamp, stalest-first, plus the
   **alert-viewed transition**: a fresh drop is `hasUnviewedAlert`; `markAlertViewed`
   clears it while still alerting; a deeper drop re-opens it; `markAlertViewed` no-ops
-  when not alerting; ack survives Codable round-trip; old payloads (no key) decode as
-  unviewed.
+  when not alerting; ack survives Codable round-trip; old payloads (no
+  `alertAcknowledgedAt` key) decode as unviewed. Plus the **unset threshold**: a
+  tracker without one never alerts (a 90% drop included) and has no
+  `alertThresholdPrice`; setting one leaves the state and clamps; `clearAlertThreshold`
+  returns to it; and unset encodes as an **absent key** (no sentinel) that round-trips.
+- `PriceAlertThresholdPolicyTests` (7) — the seeding decision (`.notDetermined` → no
+  threshold; asked → the 10% default) and the App-Group latch (starts clear, sticky,
+  never un-latches on a revoked permission, resettable), over an injected
+  `NotificationAuthorizationState.testDefaultsOverride` suite.
 - `ProductMatcherTests` (8) — productID, fuzzy name+brand, brand block, unbranded,
   no-match, highest-score, + **order-independent tie-breaks** (equal name score and
   multiple id matches both resolve to the lowest id regardless of input order).
@@ -447,7 +536,10 @@ notifies. See `social-sharing.md`.
   "Read instead"**; creation-mode **"Read instead"** discards the whole tracker +
   pops; merge-mode **"Read instead"** reverts ONLY the just-added seller (rest
   intact) + pops; **extension host shows Done, in-app shows Back**; opening an
-  alerting tracker **marks the alert viewed**.
+  alerting tracker **marks the alert viewed**; and the **no-alert-set** state in both
+  editors — the card graph's "Set price alert" pill (with the line handle hidden) and
+  the footer slider's button each commit the default threshold to the store, while a
+  tracker that HAS a threshold shows neither.
 - `ProductSearchURLTests` (7) — Google Shopping URL encoding (`+` spaces, escaped
   `&`/`#`, empty → nil) + URL-bar navigation target (scheme → load, bare domain →
   https, free text → Google search, empty → nil).

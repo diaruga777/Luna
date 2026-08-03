@@ -49,7 +49,7 @@ the user to an app they never left.
 | `setup.safari.setupTapAt.<app>` | app | `AppOnboardingViewController.openSafariSetup`, before the hop |
 | `setup.safari.setupTapAppName.<app>` | app | same moment, with `LunaApp.displayName` |
 | `setup.safari.firstRunAt.<app>` | extension | `recordExtensionRun`, **only if absent** |
-| `setup.safari.celebrationShown.<app>` | extension | when the overlay RENDERS |
+| `setup.safari.celebrationShown.<app>` | extension | as soon as the overlay is COMMITTED to, before its DOM is built |
 
 The rule — all three of: tap within 24h, first run within 24h, never shown — is
 stated by `LunaSetupStatusStore.shouldCelebrateSafariSetup` and mirrored by
@@ -60,6 +60,21 @@ strings really are `LunaApp.storageIdentifier`s — the keys only meet if they a
 `resetAllRunEvidence` clears all four, including the extension's two: an extension
 first-runs exactly once, so a reset that left `firstRunAt` behind could never show
 the confirmation again.
+
+The flag is written **before** the overlay's nodes are built, not after they land.
+That ordering is load-bearing rather than incidental: a one-shot whose flag is
+written last is not a one-shot at all if the rendering in between can fail, and
+here failure was not hypothetical. `"Return to $APP$"` in `messages.json` used
+web-extension i18n **placeholder syntax** (`$NAME$`, and likewise `$1`…`$9`) with
+no `placeholders` dictionary to resolve it; WebKit's `localizedStringForKey` then
+dereferenced a null JSON object and **segfaulted the Web Content process**. Safari
+showed "A problem repeatedly occurred" on every site, forever, because the crash
+landed two statements before the flag was sent — so the next page decided to
+celebrate again. The token is now `{app}`, substituted by `content.js` itself, and
+`SafariPillLabelTests.testNoLocalizedMessageCarriesPlaceholderSyntax` fails the
+build on any `$` in the catalog that lacks a `placeholders` entry. Nothing in JS
+can catch a process-level crash, so the only defences are keeping `$` out of the
+catalog and bounding a bad render to one page.
 
 Three things constrain the design, none of them fixable in code:
 

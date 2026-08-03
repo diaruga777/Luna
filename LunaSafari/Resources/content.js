@@ -34,7 +34,15 @@
         downloadInLuna: "Download in Luna",
         trackInLuna: "Track in Luna",
         setupCompleteTitle: "Nice!\nYou're all set up",
-        returnToApp: "Return to $APP$"
+        // `{app}`, NOT `$APP$`: `$NAME$` is WebExtension i18n PLACEHOLDER syntax, and
+        // WebKit resolves it by asking the message entry's `placeholders` dictionary
+        // for that name. An entry that declares none hands the lookup a null object
+        // and `WebExtensionLocalization::localizedStringForKey` SEGFAULTS THE WHOLE
+        // WEB CONTENT PROCESS — which Safari shows as "A problem repeatedly occurred"
+        // on every site, because the crash lands before the one-shot flag below is
+        // recorded. Substitution is ours to do (see `presentSetupCelebration`), so
+        // the catalog must never carry a `$…$` token. Guarded by SafariPillLabelTests.
+        returnToApp: "Return to {app}"
     };
 
     function localizedMessage(key) {
@@ -1061,6 +1069,17 @@
         var scheme = (context && context.scheme) || "";
         var appName = (context && context.appName) || "Luna";
 
+        // Recorded HERE — committed to showing it, before a single node is built —
+        // and deliberately not after the overlay lands. What follows is arbitrary DOM
+        // work against an arbitrary page, and a one-shot whose flag is written last
+        // is not one-shot at all when that work fails: the `$APP$` crash below cost
+        // every page on the device, not one, precisely because the process died two
+        // statements before this message was sent. The confirmation is worth one
+        // page's chance; it is not worth an unbounded retry on all of them.
+        if (typeof browser !== "undefined") {
+            browser.runtime.sendMessage({ type: "setupCelebrationShown" }).catch(function () {});
+        }
+
         var overlay = document.createElement("div");
         overlay.id = SETUP_CELEBRATION_ID;
         applyStyle(overlay, {
@@ -1116,7 +1135,7 @@
             var button = document.createElement("div");
             button.setAttribute("role", "button");
             button.appendChild(document.createTextNode(
-                localizedMessage("returnToApp").replace("$APP$", appName)));
+                localizedMessage("returnToApp").replace("{app}", appName)));
             applyStyle(button, {
                 boxSizing: "border-box", display: "inline-flex",
                 alignItems: "center", justifyContent: "center", textAlign: "center",
@@ -1144,11 +1163,6 @@
         }
 
         (document.body || document.documentElement).appendChild(overlay);
-        // One-shot, recorded on RENDER: a context request that never reached this
-        // point must leave the confirmation eligible for the next page.
-        if (typeof browser !== "undefined") {
-            browser.runtime.sendMessage({ type: "setupCelebrationShown" }).catch(function () {});
-        }
         timer = setTimeout(function () { dismiss(true); }, SETUP_CELEBRATION_DURATION);
     }
 

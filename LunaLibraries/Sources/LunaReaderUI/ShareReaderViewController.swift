@@ -265,7 +265,10 @@ public final class ShareReaderViewController: UIViewController {
             // A product page: save it as a price tracker silently (the reader can't
             // present the main-app price UI) and confirm — never paywall-treated.
             ReadingListStore.shared.savePriceTracker(
-                product.makeTracker(fallbackURL: url), forURLString: url.absoluteString)
+                product.makeTracker(
+                    fallbackURL: url,
+                    alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction),
+                forURLString: url.absoluteString)
             presentSavedConfirmation(productName: product.name)
         case .needsArchive(let title):
             // A genuine paywall (WSJ/FT/…): resolve its archive.today CAPTCHA right

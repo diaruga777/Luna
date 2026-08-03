@@ -11,10 +11,17 @@ extension ProductInfo {
     /// The `PriceTracker` a classified product page seeds — the ONE
     /// ProductInfo→tracker mapping every surface shares (main-app ingestor,
     /// extension driver, extension reader).
-    public func makeTracker(fallbackURL: URL) -> PriceTracker {
+    ///
+    /// `alertThresholdFraction` is required rather than defaulted because it is a
+    /// DECISION, not a constant: nil until the user has been asked about
+    /// notifications, the default drop afterwards. Every caller passes
+    /// `PriceAlertThresholdPolicy.initialThresholdFraction` (LunaStorage, which this
+    /// tier doesn't link) — see `claudedocs/price-tracking.md`.
+    public func makeTracker(fallbackURL: URL, alertThresholdFraction: Double?) -> PriceTracker {
         PriceTracker(
             productName: name, stores: trackerStores(fallbackURL: fallbackURL),
-            brand: brand, productID: productID)
+            brand: brand, productID: productID,
+            alertThresholdFraction: alertThresholdFraction)
     }
 
     /// The tracker stores a detected product seeds: one per discovered seller

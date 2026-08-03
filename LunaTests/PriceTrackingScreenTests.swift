@@ -265,6 +265,98 @@ final class PriceTrackingScreenTests: XCTestCase {
         _ = window
     }
 
+    // MARK: - No alert set yet
+
+    /// A product tracked before the notification prompt was ever answered has no
+    /// threshold, so the card's graph has no line to drag: it offers to set one, and
+    /// that tap is what creates the default alert (and raises the prompt).
+    func testPriceTrackerCardOffersToSetAnAlertWhenNoneIsSet() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        clearEverySeededThreshold()
+        let deck = PriceTrackerCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        guard let content = deck.carousel.contentController(at: 1),
+              let graph = findSubview(of: PriceGraphView.self, in: content.view),
+              let setAlert = findButton(title: "Set price alert", in: graph)
+        else {
+            XCTFail("an alert-less price card should offer to set an alert")
+            return
+        }
+        XCTAssertFalse(setAlert.isHidden)
+        XCTAssertEqual(
+            findButton(accessibilityLabel: "Alert threshold", in: graph)?.isHidden, true,
+            "no threshold means no draggable line handle")
+
+        setAlert.sendActions(for: .touchUpInside)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        let alerted = ReadingListStore.shared.items()
+            .compactMap { $0.priceTracker }
+            .filter { $0.hasAlertThreshold }
+        XCTAssertEqual(alerted.count, 1, "only the tapped card's tracker gained an alert")
+        XCTAssertEqual(
+            alerted.first?.alertThresholdFraction, PriceTracker.defaultAlertThresholdFraction)
+        _ = window
+    }
+
+    /// The other editor's answer to the same state: the slider parks and shows its
+    /// own call to action, which commits the default threshold.
+    func testEditorSliderShowsCallToActionWhenNoAlertIsSet() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        clearEverySeededThreshold()
+        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let editor = PriceTrackingViewController(itemID: item.id)
+        let window = UITestSupport.host(editor)
+        guard let slider = findSubview(of: AlertThresholdSlider.self, in: editor.view),
+              let setAlert = findButton(title: "Set price alert", in: slider)
+        else {
+            XCTFail("the unset threshold slider should carry a call to action")
+            return
+        }
+        XCTAssertFalse(setAlert.isHidden)
+
+        setAlert.sendActions(for: .touchUpInside)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        let tracker = ReadingListStore.shared.item(withID: item.id)?.priceTracker
+        XCTAssertEqual(tracker?.hasAlertThreshold, true)
+        XCTAssertTrue(setAlert.isHidden, "the control leaves the unset state once committed")
+        _ = window
+    }
+
+    /// With a threshold set, neither editor shows the call to action — the set state
+    /// is exactly what it was.
+    func testEditorSliderHasNoCallToActionWhenAlertIsSet() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let item = ReadingListStore.shared.items().first(where: {
+            $0.priceTracker?.hasAlertThreshold == true
+        }) else {
+            XCTFail("no price tracker with an alert seeded"); return
+        }
+        let editor = PriceTrackingViewController(itemID: item.id)
+        let window = UITestSupport.host(editor)
+        guard let slider = findSubview(of: AlertThresholdSlider.self, in: editor.view) else {
+            XCTFail("the editor has no threshold slider"); return
+        }
+        XCTAssertEqual(findButton(title: "Set price alert", in: slider)?.isHidden, true)
+        _ = window
+    }
+
+    /// Drops every seeded tracker back to "no alert set", the state a product saved
+    /// before the notification prompt was answered is created in.
+    private func clearEverySeededThreshold() {
+        let store = ReadingListStore.shared
+        for item in store.items() {
+            guard var tracker = item.priceTracker else { continue }
+            tracker.clearAlertThreshold()
+            store.updatePriceTracker(tracker, for: item.id)
+        }
+    }
+
     private func findTableView(in view: UIView) -> UITableView? {
         if let table = view as? UITableView { return table }
         for subview in view.subviews {
@@ -277,6 +369,19 @@ final class PriceTrackingScreenTests: XCTestCase {
         if let match = view as? T { return match }
         for subview in view.subviews {
             if let match = findSubview(of: type, in: subview) { return match }
+        }
+        return nil
+    }
+
+    /// By visible title — the call-to-action buttons carry copy, not a bespoke
+    /// accessibility label (`UIButton.Configuration` titles reach `currentTitle`).
+    private func findButton(title: String, in view: UIView) -> UIButton? {
+        if let button = view as? UIButton,
+           button.currentTitle == title || button.configuration?.title == title {
+            return button
+        }
+        for subview in view.subviews {
+            if let button = findButton(title: title, in: subview) { return button }
         }
         return nil
     }

@@ -262,17 +262,26 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(savedSource, .manual)
     }
 
-    func testTheSubtitleNamesTheAppsNounAndItsAgeTier() throws {
+    /// The noun lives in the corner flag, not in the subtitle — which is now the
+    /// host and nothing else, so it has the whole row's width to spell it out.
+    func testTheCornerFlagNamesTheAppsNounAndItsAgeTier() throws {
         seedWeekly(.article, url: "https://example.com/a", title: "A Read")
-        let week = try XCTUnwrap(weeklyRowSubtitle(app: .reader))
-        XCTAssertTrue(week.hasSuffix("Read of the week"), week)
+        let week = try XCTUnwrap(weeklyRowFlagText(app: .reader))
+        XCTAssertEqual(week, "Read of the week")
 
         clock = clock.addingTimeInterval(10 * 86_400)
-        let month = try XCTUnwrap(weeklyRowSubtitle(app: .reader))
-        XCTAssertTrue(month.hasSuffix("Read of the month"), month)
+        let month = try XCTUnwrap(weeklyRowFlagText(app: .reader))
+        XCTAssertEqual(month, "Read of the month")
 
-        let central = try XCTUnwrap(weeklyRowSubtitle(app: .luna))
-        XCTAssertTrue(central.hasSuffix("Save of the month"), central)
+        let central = try XCTUnwrap(weeklyRowFlagText(app: .luna))
+        XCTAssertEqual(central, "Save of the month")
+    }
+
+    func testTheSubtitleIsTheHostAloneWithNoWeeklyPhraseBesideIt() {
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let hostLabels = weeklyRowLabelTexts(app: .reader)
+            .filter { $0.contains("example.com") }
+        XCTAssertEqual(hostLabels, ["example.com"])
     }
 
     func testTheRowAppearsLiveWhenTheStoreGainsAValue() {
@@ -322,16 +331,25 @@ final class UtilCardTests: XCTestCase {
             for: kind)
     }
 
-    private func weeklyRowSubtitle(app: LunaApp) -> String? {
+    private func weeklyRowLabelTexts(app: LunaApp) -> [String] {
         let card = makeCard(showsOnboarding: false, app: app)
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         card.view.layoutIfNeeded()
         guard let row = card.view.descendant(identifier: "utilCard.saveOfTheWeek") else {
-            return nil
+            return []
         }
         return row.descendants(of: UILabel.self).compactMap(\.text)
-            .first { $0.contains("•") }
+    }
+
+    /// The corner flag's own text.
+    private func weeklyRowFlagText(app: LunaApp) -> String? {
+        let card = makeCard(showsOnboarding: false, app: app)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+        return (card.view.descendant(identifier: "utilCard.weeklyRibbon")
+            as? WeeklyRibbonView)?.text
     }
 
     // MARK: - A save answers the first run

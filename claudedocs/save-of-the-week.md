@@ -77,8 +77,12 @@ its `CKContainer` lazily, on first use.
 | `WeeklySave` | `weekly-article` / `weekly-media` / `weekly-product` (fixed) | `kind` String, `url` String, `date` Date, `signature` Bytes |
 | `WeeklySaveProposal` | `proposal-<first 32 hex of SHA-256(trimmed url)>` | `kind` String, `url` String, `date` Date |
 
-Fixed record names are why reads are `fetch(withRecordID:)` — no queryable
-index needed for the weekly picks. The proposal record NAME is the per-URL
+Fixed record names are why reads are by record ID — no queryable index needed
+for the weekly picks. All of an app's kinds travel in ONE
+`CKFetchRecordsOperation` at `.userInitiated` QoS: the launch card is waiting
+on this fetch, and the convenience API's default configuration is
+discretionary-eligible, which is what used to cost the row a couple of seconds
+even on good networks. The proposal record NAME is the per-URL
 dedup: proposing the same link twice lands on the same record, and
 `serverRecordChanged` is treated as success.
 
@@ -88,9 +92,14 @@ it last knew and nothing else regresses. This is load-bearing today — the
 container in §Deployment does not exist yet.
 
 `WeeklySaveRefresher` runs at launch and on foreground (debounced to one pull a
-minute, one in flight). It fetches this app's kinds, drops anything unverified
-or expired, resolves metadata BEFORE writing so the row animates in fully
-formed, and clears a kind the cloud no longer has.
+minute, one in flight). The launch pull starts EARLY in `didFinishLaunching` —
+a `.userInitiated` task kicked off right after the metadata closure is
+installed, not the end-of-launch utility housekeeping block — because the util
+card wants the row the moment the deck appears. It fetches this app's kinds
+(one batched operation, see above), drops anything unverified or expired,
+resolves metadata BEFORE writing so the row animates in fully formed — each
+kind's metadata concurrently, writing per kind as it lands, so one slow page
+doesn't hold the other rows back — and clears a kind the cloud no longer has.
 
 ## The util card row
 
@@ -98,7 +107,11 @@ The row is CONDITIONAL. With no live entry for any of this app's kinds the slot
 collapses and both layout branches reclaim it (the setup buttons move up in the
 first-run state; the recent rows start higher in the completed state).
 
-- **Appearing / disappearing**: a 0.24s fade plus a reflow.
+- **Appearing / disappearing**: a 0.24s fade plus a reflow. An appearing row
+  fades in IN PLACE — the host is laid out before the animation, so the row
+  never grows into its slot from zero. On the launch that animates the intro
+  headline the row instead waits, invisible, for the headline's group reveal
+  (`claudedocs/util-card.md`).
 - **Replaced in place**: `WeeklyRowEclipseTransition` — the card carousel's
   choreography at row scale. The incoming row crosses from 30% out and goes
   solid in the first quarter; the outgoing one flares white at the 80% break;

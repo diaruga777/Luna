@@ -109,6 +109,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             return (title: preview.title, host: host, imageData: preview.imageData)
         }
 
+        // The weekly pull starts NOW, not with the end-of-launch housekeeping:
+        // the util card wants its Save of the Week row the moment the deck
+        // appears, and the fetch is a network round-trip that only gets slower
+        // the later it leaves. The task body still runs off the launch frame
+        // (the main actor is busy until didFinishLaunching returns).
+        Task(priority: .userInitiated) { @MainActor in
+            await WeeklySaveRefresher.shared.refreshWeeklySaves()
+        }
+
         // Diagnostics export header shows the connected email account (which lives
         // above LunaStorage), injected here.
         DiagnosticLog.exportIdentityProvider = {
@@ -211,12 +220,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 self?.refreshOverduePriceTrackersOnLaunch()
             }
         }
-        // Off the launch frame too: the weekly pull is network work whose only
-        // consumer is a card the user hasn't reached yet.
+        // Off the launch frame too: the proposal check is key-holder-only
+        // housekeeping no visible surface is waiting on. (The weekly pull
+        // itself starts earlier, at user-initiated priority — the card's row
+        // is waiting on that one.)
         DispatchQueue.global(qos: .utility).async {
             WeeklyProposalBackgroundCheck.schedule(reason: "launch")
             Task { @MainActor in
-                await WeeklySaveRefresher.shared.refreshWeeklySaves()
                 await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
             }
         }

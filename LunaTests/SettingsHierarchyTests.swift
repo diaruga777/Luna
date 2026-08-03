@@ -92,6 +92,34 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(alert.actions.map(\.title), ["Not Now", "OK"])
     }
 
+    /// The Safari extension needs no particular OS or hardware, so its section
+    /// survives on a device with no Action Button to assign the shortcut to —
+    /// and the screen renames itself to what is left of it.
+    func testWithoutShortcutHardwareOnlyTheSafariSectionRemains() {
+        let screen = ShortcutSettingsScreen(showsShortcutSetup: false)
+        window = UITestSupport.host(screen)
+
+        XCTAssertEqual(screen.tableView.numberOfSections, 1)
+        XCTAssertEqual(sectionTitles(screen), ["Luna Button"])
+        XCTAssertEqual(
+            ShortcutSettingsScreen.screenTitle(showsShortcutSetup: false), "Safari")
+    }
+
+    func testShortcutCapableDeviceKeepsEveryShortcutSection() {
+        let screen = ShortcutSettingsScreen(showsShortcutSetup: true)
+        window = UITestSupport.host(screen)
+
+        XCTAssertEqual(
+            sectionTitles(screen),
+            [
+                "Luna Button", "On-Screen URLs", "Double Save Articles",
+                "Action Button Shortcut",
+            ])
+        XCTAssertEqual(
+            ShortcutSettingsScreen.screenTitle(showsShortcutSetup: true),
+            "Shortcut & Safari")
+    }
+
     func testSettingsHasFiveTapDiagnosticsGesture() {
         let screen = SettingsViewController(emailIsConfigured: { false })
         window = UITestSupport.host(screen)
@@ -99,6 +127,12 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertTrue(screen.tableView.gestureRecognizers?.contains {
             ($0 as? UITapGestureRecognizer)?.numberOfTapsRequired == 5
         } ?? false)
+    }
+
+    private func sectionTitles(_ screen: UITableViewController) -> [String] {
+        (0..<screen.tableView.numberOfSections).compactMap {
+            screen.tableView(screen.tableView, titleForHeaderInSection: $0)
+        }
     }
 
     private func rowTitle(

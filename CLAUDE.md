@@ -118,7 +118,14 @@ stable Xcode 26.2.
 > Account section is the sign-in form until one exists, see
 > `claudedocs/email-login.md`), and an attempted send without one redirects there.
 > Shortcut install and Safari-extension setup can be entered from the util card and
-> replayed from Settings → Shortcut & Safari.
+> replayed from Settings → Shortcut & Safari. **The Safari extension is never version
+> gated** — `nativeMessaging` (and so the page pills, the unlocking, and the recent-URL
+> history the util card offers) needs no particular iOS. The ONE capability gate is the
+> Action Button shortcut, which needs iOS 27 **and** hardware with an Action Button:
+> `ShortcutSettingsScreen.deviceHasShortcutSetup` asks the same
+> `OnboardingSaveSetupMode` the onboarding save lesson asks, so Settings (which hides
+> the shortcut, On-Screen URLs and Double Save sections and renames itself "Safari")
+> and the util card can never disagree about which save route this device is taught.
 > Per-app content
 > kinds, the drop behavior, and the composition mechanism are documented in
 > `claudedocs/surface-support.md`. UI prose says

@@ -397,8 +397,13 @@ Paywall unlock + toast:
 
 The setting lives in Settings → Shortcut & Safari ("Read in Luna Button" on Reader,
 "Download Button" on Downloader, and "Track in Luna Button" on Price Tracker — a
-3-segment control). On pre-iOS 27 builds this screen shows only the Safari-button setting; the
-Action Button shortcut setup section is hidden. `background.js` relays
+3-segment control). **Nothing about the extension is version gated** — `nativeMessaging`
+needs no particular iOS, so the pills, the unlocking, and the recent-URL history the util
+card offers run everywhere Luna does. On a device with no Action Button shortcut to set up
+(`ShortcutSettingsScreen.deviceHasShortcutSetup`: iOS 27 AND Action Button hardware) this
+screen keeps only the Safari-button setting and renames itself "Safari"; the shortcut,
+On-Screen URLs and Double Save sections are hidden, since all three are behaviors OF that
+shortcut. `background.js` relays
 `buttonContext`/`buttonMode`; content scripts can't call `sendNativeMessage` directly.
 
 ## Enabling (simulator/device)

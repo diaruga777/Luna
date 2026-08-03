@@ -26,11 +26,16 @@ enum OnboardingSafariPageTiming {
     /// brighten-and-cool still takes exactly the intro's TIME; only the
     /// edge travels faster.
     static let cascadeFrontSpeed: CGFloat = 420
-    /// The content reveals (and their bloom) set out this far behind the
-    /// shatter front: the tiles directly above a stretch of content are
-    /// mid-flight when its light arrives, and without the lag they obscured
-    /// the bloom underneath.
-    static let contentBloomLag: TimeInterval = 0.14
+    /// The content's bloom sets out this far behind the shatter front: the
+    /// tiles over a stretch of content are mid-flight when its light arrives,
+    /// and a bloom on the front itself is simply crumbled over — the grains
+    /// still cover the very pixels that are flaring.
+    ///
+    /// It is a beat and a half of the tiles' own flight
+    /// (`shatterDuration * 0.54`, ease-out, so most of the travel and the fade
+    /// are already spent), which the light can afford now that it takes nothing
+    /// away: waiting used to mean a blank stretch of page waiting with it.
+    static let contentBloomLag: TimeInterval = 0.26
     /// The page's text, amplified past the intro reference — at the wave's
     /// speed the reference gain read as too soft.
     static let textBloomGain: CGFloat = 1.6
@@ -43,20 +48,24 @@ enum OnboardingSafariPageTiming {
 }
 
 /// The wave's contract. Every piece of the page's content is crossed by the
-/// same climbing lunar edge, whether it is a line of type or a block of live,
-/// tappable views.
+/// same climbing lunar light, whether it is a line of type or a block of live,
+/// tappable views — and none of them is ever taken off the screen for it: the
+/// front lights the page, it does not hand it back.
 protocol OnboardingWaveRevealing: UIView {
     var revealFrontCrossingDistance: CGFloat { get }
-    func prepareToRevealAgain()
-    func reveal(duration: TimeInterval, completion: @escaping () -> Void)
+    func prepareToBloomAgain()
+    func bloom(duration: TimeInterval)
+    func stopBloom()
 }
 
 /// Luna's own `luna.app` page about the Safari extension, as Safari would show
 /// it. The page loads already buried under ads, popups and a subscription wall;
 /// once the mock extension-enable sequence completes, a wave CLIMBS the page —
-/// the clutter crumbles bottom-to-top while the content beneath reveals as a
-/// cascade of the SAME lunar reveals that opened the app, each element's edge
-/// rising.
+/// the clutter crumbles bottom-to-top while the content beneath brightens as a
+/// cascade of the SAME lunar light that opened the app, each element's edge
+/// rising. The content itself never goes anywhere: what the extension takes
+/// away is the clutter, so the page underneath stays where the reader last saw
+/// it and the wave only lights it.
 ///
 /// The content is the explanation (`OnboardingSafariExtensionCopy`): what the
 /// extension takes off a page, that it all happens on the device, that anything
@@ -77,8 +86,8 @@ final class OnboardingSafariPageView: UIView {
     private enum Stage {
         case blocked
         /// Everything heavy is done and committed: the clutter is swapped for
-        /// still tiles, the content re-occluded, the light rasters drawn. The
-        /// sweep can now start with nothing left to stall its first frames.
+        /// still tiles and every element's light raster is drawn. The sweep can
+        /// now start with nothing left to stall its first frames.
         case primed
         case cleaning
         case revealed
@@ -98,7 +107,7 @@ final class OnboardingSafariPageView: UIView {
     /// arrives at `start + (bottom - y) / speed` — the wave enters each
     /// element at its BOTTOM and climbs. Tiles look their own page-y up in
     /// these legs so every tile detaches exactly when the light beneath it
-    /// arrives, even though each element runs its own reveal.
+    /// arrives, even though each element runs its own bloom.
     private struct FrontLeg {
         let top: CGFloat
         let bottom: CGFloat
@@ -113,7 +122,7 @@ final class OnboardingSafariPageView: UIView {
     private struct CascadeEntry {
         let start: TimeInterval
         let duration: TimeInterval
-        let reveal: (TimeInterval) -> Void
+        let bloom: (TimeInterval) -> Void
     }
 
     /// One element the climbing wave crosses.
@@ -185,7 +194,7 @@ final class OnboardingSafariPageView: UIView {
     /// empties the moment the flights are handed out, so a replay needs its
     /// own handle on them to clear a wipe that is still in the air.
     private var shatterTiles: [UIView] = []
-    private var revealSchedule: [CascadeEntry] = []
+    private var bloomSchedule: [CascadeEntry] = []
     private var frontLegs: [FrontLeg] = []
 
     /// Whose prose the page prints. The chunks differ per app, so the fitting
@@ -201,10 +210,8 @@ final class OnboardingSafariPageView: UIView {
         appIcon = MoonRevealContentView(
             image: OnboardingAppIcon.image()
                 ?? UIImage(systemName: "moon.stars.fill"),
-            occluderColor: background,
             cornerRadius: 17,
             accessibilityLabel: appName,
-            initiallyRevealed: true,
             sweepsUpward: true)
         headline = MoonRevealLineView(
             text: OnboardingSafariExtensionCopy.title,
@@ -252,18 +259,14 @@ final class OnboardingSafariPageView: UIView {
             .map { step in
                 MoonRevealContentView(
                     content: OnboardingSafariEnableStepRowView(step: step),
-                    occluderColor: background,
                     accessibilityLabel: step.text,
-                    initiallyRevealed: true,
                     sweepsUpward: true)
             }
         let actionsView = OnboardingSafariActionsView()
         self.actionsView = actionsView
         actions = MoonRevealContentView(
             content: actionsView,
-            occluderColor: background,
             accessibilityLabel: nil,
-            initiallyRevealed: true,
             sweepsUpward: true)
 
         super.init(frame: .zero)
@@ -312,7 +315,7 @@ final class OnboardingSafariPageView: UIView {
         // Every fake obstruction is a decoration, buried over the page from
         // the very first frame; the mock extension-enable pass clears them.
         // The clutter sits ABOVE the whole page — the actions included — so no
-        // element's occluder can paint over a white popup during the wave.
+        // element's own light can spill over a white popup during the wave.
         clutterContainer.isUserInteractionEnabled = false
         clutterContainer.accessibilityIdentifier =
             OnboardingStrings.Accessibility.safariClutter.value()
@@ -344,9 +347,35 @@ final class OnboardingSafariPageView: UIView {
     required init?(coder: NSCoder) { nil }
 
     /// What the mock browser bar covers at the bottom of the page, plus a
-    /// little air. The page's content stops here.
+    /// little air. The page's content stops here while the bar is up.
     static var chromeReserve: CGFloat {
         SafariBottomBar.reservedPageHeight + 12
+    }
+
+    /// What a page with no bar over it still keeps clear: the home-area strip
+    /// with air above it, never less than the bar's own controls were worth, so
+    /// the Safari button stays a thumb's reach off the bottom edge.
+    static var clearedChromeReserve: CGFloat {
+        max(SafariBottomBar.chromeHeight, SafariBottomBar.homeAreaHeight + 20)
+    }
+
+    /// What the page currently keeps clear at its bottom — `chromeReserve`
+    /// while the browser bar is up, `clearedChromeReserve` once it has gone.
+    private var bottomReserve = OnboardingSafariPageView.chromeReserve
+
+    /// The browser bar is leaving (or coming back), and the page's bottom
+    /// reserve follows it: with the bar gone the steps and the actions take
+    /// back its strip, and they dodge it again the moment it returns.
+    ///
+    /// Call this BEFORE `prepareCleanUp`, never during the wave: the cascade's
+    /// legs and every shatter tile's arrival are cut from the content frames as
+    /// they stand, so the geometry the front will cross has to be settled first.
+    func setReservesBrowserChrome(_ reserves: Bool) {
+        let reserve = reserves ? Self.chromeReserve : Self.clearedChromeReserve
+        guard reserve != bottomReserve else { return }
+        bottomReserve = reserve
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     override func layoutSubviews() {
@@ -375,19 +404,26 @@ final class OnboardingSafariPageView: UIView {
     /// multiple of a sub-topic. A container too short even for chunk one falls
     /// back to truncating it, rather than pushing the actions under the chrome.
     private func layOutContent(columnWidth: CGFloat, horizontalInset: CGFloat) {
-        let bottomLimit = bounds.height - Self.chromeReserve
+        let bottomLimit = bounds.height - bottomReserve
         let rowHeight = OnboardingSafariEnableStepRowView.preferredHeight
         let actionsHeight = OnboardingSafariActionsView.preferredHeight
         let stepsHeight = CGFloat(stepRows.count) * rowHeight
             + CGFloat(max(stepRows.count - 1, 0)) * Self.stepGap
-        let bottomGroupTop = bottomLimit
-            - (Self.headingHeight + Self.headingGap + stepsHeight
-                + Self.stepsToActionsGap + actionsHeight)
+        let bottomGroupHeight = Self.headingHeight + Self.headingGap
+            + stepsHeight + Self.stepsToActionsGap + actionsHeight
+        let bottomGroupTop = bottomLimit - bottomGroupHeight
 
         var y = Self.minimumTopInset
         let proseTop = y + Self.headerHeight + Self.bylineGap
             + Self.bylineHeight + Self.proseGap
-        let proseRoom = max(0, bottomGroupTop - Self.proseToStepsGap - proseTop)
+        // The prose is fitted against the FULL chrome reserve however much room
+        // the page currently has: releasing the browser bar's strip mid-lesson
+        // must not make another chunk of copy appear out of nowhere. The
+        // reclaimed room becomes air above the steps instead.
+        let proseRoom = max(
+            0,
+            bounds.height - Self.chromeReserve - bottomGroupHeight
+                - Self.proseToStepsGap - proseTop)
         let prose = fittedProse(columnWidth: columnWidth, room: proseRoom)
         explainer.setText(prose.text)
 
@@ -566,7 +602,9 @@ final class OnboardingSafariPageView: UIView {
     /// Everything expensive the wipe needs, done ahead of it while the page
     /// is still covered (the extension-enable pass calls this under the
     /// Manage Extensions sheet): swaps each obstruction for still image
-    /// tiles, re-occludes the content and draws every element's light raster.
+    /// tiles and draws every element's light raster. The content itself is
+    /// left exactly as it is — the page the reader has been looking at is the
+    /// page the wave lights.
     /// Idempotent; `cleanUpClutter` runs it if the host didn't.
     func prepareCleanUp() {
         guard stage == .blocked else { return }
@@ -576,7 +614,7 @@ final class OnboardingSafariPageView: UIView {
         layoutIfNeeded()
 
         for element in waveElements {
-            element.view.prepareToRevealAgain()
+            element.view.prepareToBloomAgain()
         }
         layoutIfNeeded()
         computeCascade()
@@ -604,16 +642,16 @@ final class OnboardingSafariPageView: UIView {
     /// more.”, just a faster-travelling edge.
     /// ONE front climbs the page: it enters at the bottom-most element's edge —
     /// the actions block, anchored to the page's bottom — and every element's
-    /// reveal sets out exactly when the front reaches its OWN bottom, so the
-    /// steps, then the prose, then the headline reappear only after whatever
+    /// light sets out exactly when the front reaches its OWN bottom, so the
+    /// steps, then the prose, then the headline brighten only after whatever
     /// sits beneath them; nothing ever leads the wave. The tiles ride the
-    /// unlagged front; each reveal (and its bloom) trails it by
-    /// `contentBloomLag` so the tiles flying just above a stretch of content
-    /// have cleared before its light comes up.
+    /// unlagged front; each element's bloom trails it by `contentBloomLag` so
+    /// the tiles flying over a stretch of content have cleared it before its
+    /// light comes up.
     private func computeCascade() {
         let speed = OnboardingSafariPageTiming.cascadeFrontSpeed
         let lag = OnboardingSafariPageTiming.contentBloomLag
-        revealSchedule = []
+        bloomSchedule = []
         frontLegs = []
         // Sorted rather than trusted: a layout change that reorders the page
         // must not be able to send the wave down it.
@@ -625,10 +663,10 @@ final class OnboardingSafariPageView: UIView {
             let view = element.view
             let start = TimeInterval((waveOrigin - view.frame.maxY) / speed)
             let duration = TimeInterval(view.revealFrontCrossingDistance / speed)
-            revealSchedule.append(CascadeEntry(
+            bloomSchedule.append(CascadeEntry(
                 start: start + lag,
                 duration: duration,
-                reveal: { view.reveal(duration: $0) { } }))
+                bloom: { view.bloom(duration: $0) }))
             guard element.contributesLeg else { continue }
             frontLegs.append(FrontLeg(
                 top: view.frame.minY,
@@ -650,18 +688,20 @@ final class OnboardingSafariPageView: UIView {
     }
 
     /// Shatters every obstruction bottom-to-top while the content underneath
-    /// reveals as a cascade of INTRO reveals — each element crossed by the
-    /// same climbing lunar edge, at the same speed, with the same light as
-    /// “You want to read more.” The page's own actions are the first thing the
+    /// takes a cascade of INTRO light — each element crossed by the same
+    /// climbing lunar edge, at the same speed, with the same light as “You want
+    /// to read more.” The content never leaves: it was legible under the
+    /// clutter and it stays put, brightening as the front passes rather than
+    /// being handed back by it. The page's own actions are the first thing the
     /// front crosses and the last thing to come alive: they stay inert until
     /// the whole page is clean, and the corona then swells in behind the
     /// Safari button.
     ///
     /// The cascade starts one run-loop turn after `prepareCleanUp`'s work,
-    /// never in the same turn: the preparation's heavy commit (tiles,
-    /// occluders, rasters) otherwise lands between an animation's added
-    /// wall-clock anchor and its first rendered frame, and the reveals at
-    /// the top of the page — shine and all — start already finished.
+    /// never in the same turn: the preparation's heavy commit (tiles and
+    /// rasters) otherwise lands between an animation's added wall-clock anchor
+    /// and its first rendered frame, and the light at the top of the page —
+    /// shine and all — starts already finished.
     func cleanUpClutter(completion: (() -> Void)? = nil) {
         guard stage == .blocked || stage == .primed else {
             completion?()
@@ -672,9 +712,9 @@ final class OnboardingSafariPageView: UIView {
 
         afterDelay(0) { view in
             let shatterFinish = view.animatePreparedShatterPieces()
-            let revealFinish = view.revealContentAlongCascade()
+            let bloomFinish = view.bloomContentAlongCascade()
 
-            view.afterDelay(max(shatterFinish, revealFinish) + 0.12) { view in
+            view.afterDelay(max(shatterFinish, bloomFinish) + 0.12) { view in
                 view.stage = .revealed
                 view.actionsView.setActionsEnabled(true)
                 view.igniteActionsCorona()
@@ -772,7 +812,7 @@ final class OnboardingSafariPageView: UIView {
         sequenceGeneration += 1
         stage = .blocked
         preparedShatterPieces = []
-        revealSchedule = []
+        bloomSchedule = []
         frontLegs = []
         for tile in shatterTiles {
             tile.layer.removeAllAnimations()
@@ -784,8 +824,13 @@ final class OnboardingSafariPageView: UIView {
             obstruction.alpha = 1
             obstruction.transform = .identity
         }
-        // The content stays revealed under the clutter, exactly as it loads;
-        // the next `prepareCleanUp` re-occludes it for the new sweep.
+        // The content is left where it is — it is what a buried page shows
+        // under its clutter — but a light still crossing it belonged to the
+        // wipe that is being rewound, and a band of glow under freshly restored
+        // obstructions reads as a rendering fault.
+        for element in waveElements {
+            element.view.stopBloom()
+        }
         actionsView.setActionsEnabled(false)
         // A buried page asks for nothing: the plea belongs to the clean page,
         // and the next cascade's corona ignition starts it again.
@@ -800,14 +845,14 @@ final class OnboardingSafariPageView: UIView {
     var isPulsingActionsForTesting: Bool { isPulsingActions }
     #endif
 
-    /// Plays the cascade computed in `prepareCleanUp`: each element's reveal
+    /// Plays the cascade computed in `prepareCleanUp`: each element's light
     /// climbs it, staggered up the page.
     @discardableResult
-    private func revealContentAlongCascade() -> TimeInterval {
+    private func bloomContentAlongCascade() -> TimeInterval {
         var finish: TimeInterval = 0
-        for entry in revealSchedule {
+        for entry in bloomSchedule {
             finish = max(finish, entry.start + entry.duration)
-            afterDelay(entry.start) { _ in entry.reveal(entry.duration) }
+            afterDelay(entry.start) { _ in entry.bloom(entry.duration) }
         }
         return finish
     }
@@ -891,7 +936,7 @@ final class OnboardingSafariPageView: UIView {
     }
 
     /// Sends every prepared tile on its staggered flight. Each flight starts
-    /// through the same generation-guarded dispatch clock the reveals use,
+    /// through the same generation-guarded dispatch clock the blooms use,
     /// so tiles and light share one timeline to the frame — pre-scheduled
     /// `UIView.animate(delay:)` counted from its own commit instead, which
     /// put every tile a beat ahead of the front. Returns when the last tile
@@ -914,7 +959,7 @@ final class OnboardingSafariPageView: UIView {
         // One dispatch turn (one transaction) per frame-width bucket instead
         // of one per tile — the finer tiles roughly double the count, and a
         // few hundred separate commits queue the render server up enough to
-        // delay the reveals' first frames.
+        // delay the blooms' first frames.
         let buckets = Dictionary(grouping: pieces) {
             Int(($0.delay * 60).rounded())
         }
@@ -971,32 +1016,36 @@ final class OnboardingSafariPageView: UIView {
 extension MoonRevealLineView: OnboardingWaveRevealing {}
 extension MoonRevealContentView: OnboardingWaveRevealing {}
 
-/// The page's pictures — and its one block of live, tappable views — share the
-/// same lunar edge as the type beside them, including the glyph-style light
-/// pass: a raster of the content feeds the same `GlyphPixelBloomView`, so its
-/// bright pixels flare white-hot as the edge exposes them and cool back to
-/// their normal colors, exactly like the intro lines' letters. The content is
-/// geometrically excluded inside the moon; the front itself has no marker —
-/// only its light.
+/// The page's pictures — and its one block of live, tappable views — take the
+/// same light as the type beside them: a raster of the content feeds the same
+/// `GlyphPixelBloomView`, so its bright pixels flare white-hot as the front
+/// crosses them and cool back to their normal colors, exactly like the intro
+/// lines' letters.
+///
+/// The front takes nothing away. It has no marker of its own and no occluder
+/// behind it: the content is on screen before the pass, during it and after it,
+/// and all the wave does is cross it with light (see `OnboardingSafariPageView`
+/// — the page was legible before the extension ran, so blanking it out to hand
+/// it back read as a glitch rather than a rescue).
 final class MoonRevealContentView: UIView {
-    /// Clips the occluder circle (which is page-sized) to the content's frame;
-    /// the bloom lives outside it so the glow can spill past the edges.
+    /// Clips the content to this view's frame; the bloom lives outside it so the
+    /// glow can spill past the edges.
     private let clippedContent = UIView()
-    /// What the reveal exposes: an image view for a picture, or a caller's own
+    /// What the light crosses: an image view for a picture, or a caller's own
     /// (possibly interactive) view.
     private let contentHost: UIView
-    private let moonLayer = CAShapeLayer()
-    private let revealMaskLayer = CAShapeLayer()
     private let pixelBloomView = GlyphPixelBloomView()
-    private let occluderColor: UIColor
     private let sweepsUpward: Bool
     /// A picture — or a fixed row of chrome — IS one accessibility element,
-    /// with a label of its own. A block of live controls is not: its buttons
-    /// must stay reachable, so it hides its elements while occluded instead.
+    /// with a label of its own. A block of live controls is not: its own
+    /// buttons are what a reader reaches for.
     private let standsInForItsContent: Bool
     private var initialCircleFrame = CGRect.zero
     private var edgeSagitta: CGFloat = 0
-    private var didReveal: Bool
+    /// True from `prepareToBloomAgain` until the pass it set up is over: the
+    /// bloom's raster and its circle are placed and waiting for the front.
+    private var isPreparedToBloom = false
+    private var didStartBloom = false
 
     /// See `MoonRevealLineView.revealFrontCrossingDistance`.
     var revealFrontCrossingDistance: CGFloat {
@@ -1005,10 +1054,8 @@ final class MoonRevealContentView: UIView {
 
     init(
         image: UIImage?,
-        occluderColor: UIColor,
         cornerRadius: CGFloat,
         accessibilityLabel: String?,
-        initiallyRevealed: Bool = false,
         sweepsUpward: Bool = false
     ) {
         let imageView = UIImageView(image: image)
@@ -1018,129 +1065,76 @@ final class MoonRevealContentView: UIView {
         imageView.clipsToBounds = true
         contentHost = imageView
         standsInForItsContent = true
-        self.occluderColor = occluderColor
         self.sweepsUpward = sweepsUpward
-        self.didReveal = initiallyRevealed
         super.init(frame: .zero)
-        configure(
-            accessibilityLabel: accessibilityLabel,
-            initiallyRevealed: initiallyRevealed)
+        configure(accessibilityLabel: accessibilityLabel)
     }
 
     init(
         content: UIView,
-        occluderColor: UIColor,
         accessibilityLabel: String?,
-        initiallyRevealed: Bool = false,
         sweepsUpward: Bool = false
     ) {
         contentHost = content
         standsInForItsContent = accessibilityLabel != nil
-        self.occluderColor = occluderColor
         self.sweepsUpward = sweepsUpward
-        self.didReveal = initiallyRevealed
         super.init(frame: .zero)
-        configure(
-            accessibilityLabel: accessibilityLabel,
-            initiallyRevealed: initiallyRevealed)
+        configure(accessibilityLabel: accessibilityLabel)
     }
 
-    private func configure(
-        accessibilityLabel: String?,
-        initiallyRevealed: Bool
-    ) {
+    private func configure(accessibilityLabel: String?) {
         clipsToBounds = false
-        isAccessibilityElement = standsInForItsContent && initiallyRevealed
+        isAccessibilityElement = standsInForItsContent
         self.accessibilityLabel = accessibilityLabel
-        accessibilityElementsHidden =
-            !standsInForItsContent && !initiallyRevealed
 
         clippedContent.clipsToBounds = true
         clippedContent.isUserInteractionEnabled = !standsInForItsContent
         addSubview(clippedContent)
         clippedContent.addSubview(contentHost)
-
-        revealMaskLayer.fillColor = UIColor.white.cgColor
-        revealMaskLayer.fillRule = .evenOdd
-        moonLayer.fillColor = occluderColor.cgColor
-
-        guard !initiallyRevealed else { return }
-        installOcclusion()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
-
-    private func installOcclusion() {
-        contentHost.layer.mask = revealMaskLayer
-        clippedContent.layer.addSublayer(moonLayer)
-        pixelBloomView.isUserInteractionEnabled = false
-        addSubview(pixelBloomView)
-    }
-
-    /// Returns already-visible content to its occluded state so `reveal` can
-    /// play again during the cleanup pass.
-    func prepareToRevealAgain() {
-        guard didReveal else { return }
-        didReveal = false
-        isAccessibilityElement = false
-        accessibilityElementsHidden = !standsInForItsContent
-        installOcclusion()
-        setNeedsLayout()
-        layoutIfNeeded()
-    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         clippedContent.frame = bounds
         contentHost.frame = clippedContent.bounds
         contentHost.layoutIfNeeded()
-        guard !didReveal, bounds.width > 0, bounds.height > 0 else { return }
-        prepareLayers()
+        guard isPreparedToBloom, !didStartBloom,
+              bounds.width > 0, bounds.height > 0
+        else { return }
+        prepareBloomEmitter()
     }
 
-    func reveal(duration: TimeInterval, completion: @escaping () -> Void = {}) {
-        guard !didReveal else {
-            completion()
-            return
-        }
+    /// Places the light for a pass over content that is already on screen: the
+    /// circle the emitting bands hug, and the raster they light up. The pass
+    /// itself waits for `bloom`.
+    func prepareToBloomAgain() {
+        isPreparedToBloom = true
+        didStartBloom = false
+        pixelBloomView.isUserInteractionEnabled = false
+        addSubview(pixelBloomView)
+        setNeedsLayout()
         layoutIfNeeded()
-        didReveal = true
+    }
+
+    /// The content's own light: same front, same time-constant cooling as the
+    /// glyph bloom beside it. The emitter's luminance floor guarantees even its
+    /// dark pixels bloom; the gain sits below the text's so a picture reads a
+    /// shade dimmer than the glyph strokes beside it.
+    ///
+    /// There is no occluder here to slave the band to, so the light rides its
+    /// own display clock across exactly the crossing the front would have taken.
+    func bloom(duration: TimeInterval) {
+        guard isPreparedToBloom, !didStartBloom else { return }
+        layoutIfNeeded()
+        didStartBloom = true
         let travel = revealFrontCrossingDistance
         let signedTravel = sweepsUpward ? -travel : travel
-        let finalCircle = initialCircleFrame.offsetBy(dx: 0, dy: signedTravel)
-        let transform = CATransform3DMakeTranslation(0, signedTravel, 0)
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        moonLayer.transform = transform
-        revealMaskLayer.path = revealPath(excluding: finalCircle)
-        CATransaction.commit()
-
-        let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
-        let animation = CABasicAnimation(keyPath: "transform")
-        animation.fromValue = CATransform3DIdentity
-        animation.toValue = transform
-        animation.duration = resolvedDuration
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        moonLayer.add(
-            animation,
-            forKey: OnboardingStrings.AnimationKeys.moonReveal.value())
-
-        let maskAnimation = CABasicAnimation(keyPath: "path")
-        maskAnimation.fromValue = revealPath(excluding: initialCircleFrame)
-        maskAnimation.toValue = revealPath(excluding: finalCircle)
-        maskAnimation.duration = resolvedDuration
-        maskAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
-        revealMaskLayer.add(
-            maskAnimation,
-            forKey: OnboardingStrings.AnimationKeys.moonReveal.value())
-
-        // The content's own light: same front, same time-constant cooling as
-        // the glyph bloom beside it, slaved to the same rendered edge. The
-        // emitter's luminance floor guarantees even its dark pixels bloom;
-        // the gain sits below the text's so a picture reads a shade dimmer
-        // than the glyph strokes beside it.
+        let resolvedDuration = UIAccessibility.isReduceMotionEnabled
+            ? 0.24
+            : duration
         let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
         pixelBloomView.reveal(
             circleTravel: signedTravel,
@@ -1148,26 +1142,26 @@ final class MoonRevealContentView: UIView {
                 resolvedDuration),
             edgeBandScale: max(
                 1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
-            emitterGain: OnboardingSafariPageTiming.imageBloomGain,
-            offsetProvider: { [weak moonLayer] in
-                moonLayer?.presentation().map { CGFloat($0.transform.m42) }
-            })
+            emitterGain: OnboardingSafariPageTiming.imageBloomGain)
 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
         ) { [weak self] in
-            guard let self, self.didReveal else { return }
-            self.contentHost.layer.mask = nil
-            self.moonLayer.removeFromSuperlayer()
-            self.pixelBloomView.stop()
-            self.pixelBloomView.removeFromSuperview()
-            self.isAccessibilityElement = self.standsInForItsContent
-            self.accessibilityElementsHidden = false
-            completion()
+            self?.stopBloom()
         }
     }
 
-    private func prepareLayers() {
+    /// Takes the light off the content, whether its own pass ended it or a
+    /// replay cut it short. Idempotent; the content itself is untouched.
+    func stopBloom() {
+        guard isPreparedToBloom else { return }
+        isPreparedToBloom = false
+        didStartBloom = false
+        pixelBloomView.stop()
+        pixelBloomView.removeFromSuperview()
+    }
+
+    private func prepareBloomEmitter() {
         let diameter = max(bounds.width * 8, 1_200)
         let radius = diameter / 2
         let halfWidth = bounds.width / 2
@@ -1180,12 +1174,6 @@ final class MoonRevealContentView: UIView {
                 : -1 - sagitta,
             width: diameter,
             height: diameter)
-        let circle = UIBezierPath(ovalIn: initialCircleFrame).cgPath
-        moonLayer.frame = bounds
-        moonLayer.path = circle
-        moonLayer.transform = CATransform3DIdentity
-        revealMaskLayer.frame = bounds
-        revealMaskLayer.path = revealPath(excluding: initialCircleFrame)
 
         let padding = GlyphPixelBloomView.renderPadding
         pixelBloomView.frame = bounds.insetBy(dx: -padding, dy: -padding)
@@ -1209,18 +1197,13 @@ final class MoonRevealContentView: UIView {
     /// the same white glow as a full moon and the band would read as a solid
     /// white slab crossing the frame. With luminance as alpha the light lands
     /// on the content's bright pixels exactly the way it lands on glyph
-    /// strokes. The occlusion mask is lifted for the render — rasterizing
-    /// through it left only the sliver above the initial edge, killing the
-    /// light a few points into the sweep.
+    /// strokes.
     private func rasterizedContent() -> UIImage? {
         guard contentHost.bounds.width > 0, contentHost.bounds.height > 0
         else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = traitCollection.displayScale
         format.opaque = false
-        let occlusionMask = contentHost.layer.mask
-        contentHost.layer.mask = nil
-        defer { contentHost.layer.mask = occlusionMask }
         let rendered = UIGraphicsImageRenderer(
             bounds: contentHost.bounds, format: format
         ).image { context in
@@ -1264,13 +1247,6 @@ final class MoonRevealContentView: UIView {
         else { return rendered }
         return UIImage(
             cgImage: emitter, scale: rendered.scale, orientation: .up)
-    }
-
-    private func revealPath(excluding circleFrame: CGRect) -> CGPath {
-        let path = UIBezierPath(rect: bounds)
-        path.append(UIBezierPath(ovalIn: circleFrame))
-        path.usesEvenOddFillRule = true
-        return path.cgPath
     }
 }
 

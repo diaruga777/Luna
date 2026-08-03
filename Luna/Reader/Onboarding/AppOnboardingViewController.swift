@@ -1042,9 +1042,13 @@ final class AppOnboardingViewController: UIViewController {
         // have to be on disk before Safari is anywhere near the foreground.
         LunaSetupStatusStore.shared.recordSafariSetupTap(for: configuration.app)
         safariGuide.startPictureInPicture()
-        // Any real page works for practicing the extension; Wikipedia loads
-        // reliably and looks nothing like an ad.
-        guard let url = URL(string: "https://en.wikipedia.org")
+        // The practice page has to be a page Safari's own Reader never offers
+        // on: Reader availability collapses the address field's page menu into
+        // a Reader control and pushes the extension rows around, which is the
+        // exact menu the lesson just taught. An article-shaped site (Wikipedia
+        // was one) is therefore wrong. A plain homepage is not Reader-eligible,
+        // loads reliably, and being merely OPENED carries nothing to attribute.
+        guard let url = URL(string: "https://www.apple.com")
         else {
             externalOpenFailed(.safari)
             return

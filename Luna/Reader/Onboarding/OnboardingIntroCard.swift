@@ -702,6 +702,10 @@ final class OnboardingPasteStatusView: UIView {
 /// alpha. Every newly exposed antialiased glyph pixel becomes an additive white
 /// emitter with stacked near, middle, and wide halos, then cools rapidly back
 /// to normal white as the edge moves away.
+///
+/// The light can also be run WITHOUT the circle (`prepareToBloomAgain` /
+/// `bloom`), over a line that is already legible: same front, same cooling, no
+/// occluder — for a page whose copy the reader has already been reading.
 final class MoonRevealLineView: UIView {
     /// Which way the front works the line. `conceal` is the exact mirror of
     /// `reveal`: the same circle descending at the same pace, entering with
@@ -726,6 +730,10 @@ final class MoonRevealLineView: UIView {
     private let sweepsUpward: Bool
     private var sweepDirection = SweepDirection.reveal
     private var didStartSweep = false
+    /// True while the line is set up for a LIGHT-ONLY pass: the bloom's raster
+    /// and its circle are placed, but no occluder was ever installed, so the
+    /// glyphs stay on screen for the whole crossing.
+    private var bloomsWithoutOcclusion = false
     private var initialCircleFrame = CGRect.zero
     private var edgeSagitta: CGFloat = 0
     private(set) var isFullyRevealed: Bool
@@ -875,20 +883,64 @@ final class MoonRevealLineView: UIView {
         pixelBloomView.removeFromSuperview()
     }
 
-    /// Returns an already-visible line to its occluded state so `reveal` can
-    /// play again — the cleanup pass re-reveals content that loaded plainly.
-    func prepareToRevealAgain() {
-        guard isFullyRevealed || didStartSweep else { return }
-        isFullyRevealed = false
+    /// Sets a line that is ALREADY on screen up for a pass that only lights it:
+    /// the front's bloom crosses glyphs that never leave. The mock Safari page's
+    /// wave works this way — its copy was legible before the extension ran, so
+    /// blanking it out to re-reveal it read as a glitch rather than a rescue.
+    func prepareToBloomAgain() {
+        isFullyRevealed = true
         isFullyConcealed = false
         didStartSweep = false
+        bloomsWithoutOcclusion = true
         sweepDirection = .reveal
         frontLead = 0
-        isAccessibilityElement = false
+        isAccessibilityElement = true
         finalLabel.isHidden = false
-        installOcclusion()
+        // Whatever a previous pass left behind: no line waiting behind a front
+        // can bloom, and a mask outlives its own sweep only by accident.
+        finalLabel.layer.mask = nil
+        moonLayer.removeFromSuperlayer()
+        pixelBloomView.isUserInteractionEnabled = false
+        addSubview(pixelBloomView)
         setNeedsLayout()
         layoutIfNeeded()
+    }
+
+    /// Runs the front's light across a line that stays exactly where it is.
+    /// There is no occluder to slave the emitting band to, so the bloom rides
+    /// its own display clock over the crossing the front would have taken.
+    func bloom(duration: TimeInterval) {
+        guard bloomsWithoutOcclusion, !didStartSweep else { return }
+        layoutIfNeeded()
+        didStartSweep = true
+        let travel = revealFrontCrossingDistance
+        let signedTravel = sweepsUpward ? -travel : travel
+        let resolvedDuration = UIAccessibility.isReduceMotionEnabled
+            ? 0.24
+            : duration
+        let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
+        pixelBloomView.reveal(
+            circleTravel: signedTravel,
+            duration: OnboardingAnimationClock.displayLinkDuration(
+                resolvedDuration),
+            edgeBandScale: max(
+                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
+            emitterGain: bloomGain)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(resolvedDuration)
+        ) { [weak self] in
+            self?.stopBloom()
+        }
+    }
+
+    /// Takes the light off the line, whether its own pass ended it or a replay
+    /// cut it short. Idempotent: the line itself is untouched either way.
+    func stopBloom() {
+        guard bloomsWithoutOcclusion else { return }
+        bloomsWithoutOcclusion = false
+        didStartSweep = false
+        pixelBloomView.stop()
+        pixelBloomView.removeFromSuperview()
     }
 
     @available(*, unavailable)
@@ -902,11 +954,14 @@ final class MoonRevealLineView: UIView {
         prepareRevealLayers()
     }
 
-    /// A sweep that has not begun still needs its circle placed — and a
-    /// conceal needs it placed even though the line is currently revealed.
+    /// A sweep that has not begun still needs its circle placed — and both a
+    /// conceal and a light-only bloom need it placed even though the line is
+    /// currently revealed.
     private var needsSweepLayers: Bool {
         guard !didStartSweep else { return false }
-        return sweepDirection == .conceal || !isFullyRevealed
+        return bloomsWithoutOcclusion
+            || sweepDirection == .conceal
+            || !isFullyRevealed
     }
 
     func reveal(duration: TimeInterval, completion: @escaping () -> Void) {

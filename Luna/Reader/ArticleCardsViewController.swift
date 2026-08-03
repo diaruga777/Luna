@@ -40,6 +40,10 @@ import UIKit
 /// launch through its kind wiring), so this file stays free of media and
 /// price symbols while its deck still renders those saves the way their own
 /// app does — a downloaded video as the Downloader's player, not as a link.
+///
+/// This is an INNER seam, nested inside `CardDeckProviding`: this deck is the
+/// provider for the deck, and the protocol below is how the kinds it cannot
+/// name contribute to the cards it builds.
 protocol AllKindsCardProviding: AnyObject {
     /// The real card for a non-article save. Nil when there is nothing of the
     /// kind's own to show yet, leaving the deck's title-and-link card in place.

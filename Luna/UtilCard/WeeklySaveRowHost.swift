@@ -44,6 +44,18 @@ final class WeeklySaveRowHost: UIView {
     /// Whether a replacement is mid-flight (the cycle pauses while it is).
     var isReplacing: Bool { replacement != nil }
 
+    /// The auto-advance policy. Only the central app ever has more than one
+    /// live kind, so everywhere else this simply never starts.
+    let pacer: WeeklyCyclePacer
+    /// The committed-swipe / auto-advance settle. Held so a new gesture can
+    /// interrupt it rather than queue behind it.
+    private var slide: UIViewPropertyAnimator?
+    private var pan: UIPanGestureRecognizer!
+    /// The neighbour the current drag is heading toward, and which way.
+    private var dragTarget: Int?
+    private var dragForward = true
+    private var lifecycleObservers: [NSObjectProtocol] = []
+
     /// The carousel's own Reduce Motion crossfade length
     /// (`CarouselAnimationTiming.crossfadeDuration`, which is private to it).
     static let reduceMotionCrossfade: TimeInterval = 0.28
@@ -51,11 +63,13 @@ final class WeeklySaveRowHost: UIView {
     init(
         store: WeeklySaveStore = .shared,
         app: LunaApp = .current,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        pacer: WeeklyCyclePacer = WeeklyCyclePacer()
     ) {
         self.store = store
         self.app = app
         self.now = now
+        self.pacer = pacer
         super.init(frame: .zero)
         accessibilityIdentifier = "utilCard.weeklyHost"
         clipsToBounds = false
@@ -63,11 +77,46 @@ final class WeeklySaveRowHost: UIView {
         clip.layer.cornerRadius = UtilURLRow.cornerRadius
         clip.layer.cornerCurve = .continuous
         addSubview(clip)
+
+        pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
+        addGestureRecognizer(pan)
+
+        pacer.onAdvance = { [weak self] in self?.advance(forward: true, velocity: 0) }
+        pacer.reduceMotion = UIAccessibility.isReduceMotionEnabled
+        lifecycleObservers.append(NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.pacer.appDidEnterBackground()
+        })
+        lifecycleObservers.append(NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Coming back also RE-ENABLES auto-advance after a manual swipe.
+            self?.pacer.appWillEnterForeground()
+        })
+
         reload(animated: false)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    deinit {
+        for observer in lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    // MARK: - Gates
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        pacer.isInWindow = window != nil
+    }
+
+    /// Forwarded by the util card from `CardContentViewController`.
+    func cardDidBecomeCentered() { pacer.isCentered = true }
+    func cardDidLeaveCenter() { pacer.cardDidLeaveCenter() }
 
     // MARK: - Content
 
@@ -105,12 +154,19 @@ final class WeeklySaveRowHost: UIView {
         return presenceChanged
     }
 
+    private func syncPacer() {
+        pacer.liveKindCount = displays.count
+        pacer.isReplacing = isReplacing
+        pacer.reduceMotion = UIAccessibility.isReduceMotionEnabled
+    }
+
     private func rebuildRows() {
         replacement?.finish()
         replacement = nil
         for row in rows { row.removeFromSuperview() }
         rows = displays.map(makeRow)
         updateRowVisibility()
+        syncPacer()
     }
 
     /// After an in-place replacement the OTHER kinds' rows may also have moved
@@ -129,6 +185,7 @@ final class WeeklySaveRowHost: UIView {
         }
         rows = rebuilt
         updateRowVisibility()
+        syncPacer()
     }
 
     private func makeRow(_ display: WeeklySaveDisplay) -> UtilURLRow {
@@ -187,9 +244,166 @@ final class WeeklySaveRowHost: UIView {
             host: self, clip: clip, outgoing: outgoing, incoming: incoming
         ) { [weak self] in
             self?.replacement = nil
+            self?.syncPacer()
         }
         replacement = transition
         transition.start()
+        syncPacer()
+    }
+
+    // MARK: - Cycling
+
+    /// The next/previous live kind, wrapping.
+    private func neighbour(forward: Bool) -> Int? {
+        guard rows.count > 1 else { return nil }
+        return forward
+            ? (index + 1) % rows.count
+            : (index + rows.count - 1) % rows.count
+    }
+
+    /// Auto-advance and committed-swipe settle share this: a horizontal slide,
+    /// NOT an eclipse. The eclipse means "this pick was replaced"; a cycle just
+    /// means "here is the other one".
+    func advance(forward: Bool, velocity: CGFloat) {
+        guard !isReplacing, let target = neighbour(forward: forward),
+              bounds.width > 1
+        else { return }
+        prepareNeighbour(target, forward: forward, atDrag: 0)
+        settle(to: target, forward: forward, velocity: velocity, commit: true)
+    }
+
+    /// Parks a neighbour one row-width off, in the direction it will arrive
+    /// from, with its content lagging behind its shell.
+    private func prepareNeighbour(_ target: Int, forward: Bool, atDrag drag: CGFloat) {
+        let width = clip.bounds.width
+        let row = rows[target]
+        row.isHidden = false
+        row.alpha = 1
+        row.frame = clip.bounds
+        row.transform = CGAffineTransform(
+            translationX: (forward ? width : -width) + drag, y: 0)
+        row.setContentParallax(forward ? Self.parallaxLag : -Self.parallaxLag)
+        clip.bringSubviewToFront(row)
+    }
+
+    private func settle(
+        to target: Int, forward: Bool, velocity: CGFloat, commit: Bool
+    ) {
+        let width = max(clip.bounds.width, 1)
+        let outgoing = rows[index]
+        let incoming = rows[target]
+        let timing = UISpringTimingParameters(
+            dampingRatio: 0.86,
+            initialVelocity: CGVector(dx: abs(velocity) / width, dy: 0))
+        let animator = UIViewPropertyAnimator(duration: 0.55, timingParameters: timing)
+        animator.addAnimations {
+            if commit {
+                incoming.transform = .identity
+                incoming.setContentParallax(0)
+                outgoing.transform = CGAffineTransform(
+                    translationX: forward ? -width : width, y: 0)
+                outgoing.alpha = 0.85
+            } else {
+                incoming.transform = CGAffineTransform(
+                    translationX: forward ? width : -width, y: 0)
+                incoming.setContentParallax(forward ? Self.parallaxLag : -Self.parallaxLag)
+                outgoing.transform = .identity
+                outgoing.alpha = 1
+            }
+        }
+        animator.addCompletion { [weak self] _ in
+            guard let self else { return }
+            if commit {
+                outgoing.transform = .identity
+                outgoing.alpha = 1
+                outgoing.isHidden = true
+                self.index = target
+            } else {
+                incoming.isHidden = true
+                incoming.transform = .identity
+                incoming.setContentParallax(0)
+            }
+            self.slide = nil
+        }
+        slide?.stopAnimation(true)
+        slide = animator
+        animator.startAnimation()
+    }
+
+    /// 14pt: enough for the content to read as sitting behind the shell,
+    /// not so much that it looks detached from it.
+    private static let parallaxLag: CGFloat = 14
+    /// The carousel's own commit thresholds.
+    private static let commitFraction: CGFloat = 0.5
+    private static let commitVelocity: CGFloat = 350
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard rows.count > 1, bounds.width > 1 else { return }
+        let width = clip.bounds.width
+        let drag = gesture.translation(in: self).x
+
+        switch gesture.state {
+        case .began:
+            slide?.stopAnimation(true)
+            slide = nil
+            pacer.isUserTouching = true
+            pacer.userDidTakeControl()
+            dragForward = drag < 0
+            dragTarget = neighbour(forward: dragForward)
+            if let dragTarget { prepareNeighbour(dragTarget, forward: dragForward, atDrag: drag) }
+        case .changed:
+            // Reversing direction mid-drag swaps which neighbour is tracking.
+            let forward = drag < 0
+            if forward != dragForward {
+                if let dragTarget { parkNeighbour(dragTarget) }
+                dragForward = forward
+                dragTarget = neighbour(forward: forward)
+                if let dragTarget {
+                    prepareNeighbour(dragTarget, forward: forward, atDrag: drag)
+                }
+            }
+            rows[index].transform = CGAffineTransform(translationX: drag, y: 0)
+            if let dragTarget {
+                rows[dragTarget].transform = CGAffineTransform(
+                    translationX: (dragForward ? width : -width) + drag, y: 0)
+                let progress = min(abs(drag) / width, 1)
+                rows[dragTarget].setContentParallax(
+                    (dragForward ? Self.parallaxLag : -Self.parallaxLag) * (1 - progress))
+            }
+        case .ended, .cancelled, .failed:
+            pacer.isUserTouching = false
+            guard let target = dragTarget else { return }
+            dragTarget = nil
+            let velocity = gesture.velocity(in: self).x
+            let towardTarget = dragForward ? velocity < 0 : velocity > 0
+            let commit = gesture.state == .ended
+                && (abs(drag) > width * Self.commitFraction
+                    || (abs(velocity) > Self.commitVelocity && towardTarget))
+            settle(
+                to: target, forward: dragForward, velocity: velocity, commit: commit)
+        default:
+            break
+        }
+    }
+
+    /// Horizontal intent only, and the same 1.5× test the deck's own page pan
+    /// applies — whoever passes it owns the touch, so the two never fight and
+    /// a vertical or diagonal drag still reaches the carousel.
+    override func gestureRecognizerShouldBegin(
+        _ gestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer, pan === self.pan
+        else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
+        guard rows.count > 1, !isReplacing else { return false }
+        let velocity = pan.velocity(in: self)
+        return abs(velocity.x) > abs(velocity.y) * 1.5
+    }
+
+    private func parkNeighbour(_ target: Int) {
+        let row = rows[target]
+        row.isHidden = true
+        row.transform = .identity
+        row.setContentParallax(0)
     }
 
     private static func previewKind(_ kind: WeeklySaveKind) -> RecentURLPreview.Kind {

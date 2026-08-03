@@ -28,6 +28,8 @@ final class WeeklyRowHostTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        hostWindow?.isHidden = true
+        hostWindow = nil
         store = nil
         try? FileManager.default.removeItem(at: container)
         container = nil
@@ -109,10 +111,123 @@ final class WeeklyRowHostTests: XCTestCase {
         XCTAssertEqual(saved, "https://a.example/1")
     }
 
+    // MARK: - Central-app cycling
+
+    func testTheCycleRunsOnlyWithTwoLiveKindsAndTheCardInFront() {
+        seed(.article, "https://a.example/1")
+        let clock = FakeCycleClock()
+        let host = makeHost(app: .luna, pacer: clock.pacer)
+        host.frame = CGRect(x: 0, y: 0, width: 310, height: 82)
+        window(host)
+        host.cardDidBecomeCentered()
+        XCTAssertFalse(clock.pacer.isRunning, "One live kind never cycles")
+
+        seed(.media, "https://b.example/2")
+        host.reload(animated: false)
+        XCTAssertTrue(clock.pacer.isRunning)
+
+        host.cardDidLeaveCenter()
+        XCTAssertFalse(clock.pacer.isRunning, "A card off centre stops cycling")
+    }
+
+    func testATickAdvancesToTheNextKind() {
+        seed(.article, "https://a.example/1")
+        seed(.media, "https://b.example/2")
+        let clock = FakeCycleClock()
+        let host = makeHost(app: .luna, pacer: clock.pacer)
+        host.frame = CGRect(x: 0, y: 0, width: 310, height: 82)
+        window(host)
+        host.cardDidBecomeCentered()
+
+        XCTAssertEqual(clock.interval, WeeklyCyclePacer.interval)
+        XCTAssertFalse(host.rows[1].isHidden == false)
+        clock.tick()
+        XCTAssertFalse(host.rows[1].isHidden, "The neighbour is on screen after a tick")
+    }
+
+    func testAManualGestureLatchesAutoAdvanceOffUntilTheCardLeavesOrTheAppReturns() {
+        let pacer = WeeklyCyclePacer(scheduler: { _, _ in {} })
+        pacer.liveKindCount = 2
+        pacer.isInWindow = true
+        pacer.isCentered = true
+        XCTAssertTrue(pacer.canRun)
+
+        pacer.userDidTakeControl()
+        XCTAssertFalse(pacer.canRun)
+        XCTAssertTrue(pacer.userTookControl)
+
+        // Leaving centre drops the latch (and stops for the other reason).
+        pacer.cardDidLeaveCenter()
+        XCTAssertFalse(pacer.userTookControl)
+        pacer.isCentered = true
+        XCTAssertTrue(pacer.canRun)
+
+        // So does a background → foreground round trip.
+        pacer.userDidTakeControl()
+        pacer.appDidEnterBackground()
+        XCTAssertFalse(pacer.canRun)
+        pacer.appWillEnterForeground()
+        XCTAssertTrue(pacer.canRun)
+    }
+
+    func testReduceMotionAndAReplacementBothSuppressTheCycle() {
+        let pacer = WeeklyCyclePacer(scheduler: { _, _ in {} })
+        pacer.liveKindCount = 3
+        pacer.isInWindow = true
+        pacer.isCentered = true
+        XCTAssertTrue(pacer.canRun)
+
+        pacer.reduceMotion = true
+        XCTAssertFalse(pacer.canRun)
+        pacer.reduceMotion = false
+
+        pacer.isReplacing = true
+        XCTAssertFalse(pacer.canRun)
+        pacer.isReplacing = false
+
+        pacer.isUserTouching = true
+        XCTAssertFalse(pacer.canRun)
+    }
+
+    /// A single-kind app never cycles, so a faceted app's host is inert.
+    func testAFacetedAppNeverStartsThePacer() {
+        seed(.article, "https://a.example/1")
+        let clock = FakeCycleClock()
+        let host = makeHost(app: .reader, pacer: clock.pacer)
+        host.frame = CGRect(x: 0, y: 0, width: 310, height: 82)
+        window(host)
+        host.cardDidBecomeCentered()
+        XCTAssertFalse(clock.pacer.isRunning)
+    }
+
     // MARK: - Helpers
 
-    private func makeHost(app: LunaApp) -> WeeklySaveRowHost {
-        WeeklySaveRowHost(store: store, app: app, now: { self.clock })
+    /// A pacer whose cadence the test drives by hand.
+    private final class FakeCycleClock {
+        private(set) var interval: TimeInterval = 0
+        private var tickBlock: (() -> Void)?
+        lazy var pacer = WeeklyCyclePacer(scheduler: { [weak self] interval, tick in
+            self?.interval = interval
+            self?.tickBlock = tick
+            return { [weak self] in self?.tickBlock = nil }
+        })
+        func tick() { tickBlock?() }
+    }
+
+    private var hostWindow: UIWindow?
+
+    private func window(_ host: WeeklySaveRowHost) {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.addSubview(host)
+        window.isHidden = false
+        hostWindow = window
+        host.layoutIfNeeded()
+    }
+
+    private func makeHost(
+        app: LunaApp, pacer: WeeklyCyclePacer = WeeklyCyclePacer()
+    ) -> WeeklySaveRowHost {
+        WeeklySaveRowHost(store: store, app: app, now: { self.clock }, pacer: pacer)
     }
 
     private func seed(_ kind: WeeklySaveKind, _ url: String) {

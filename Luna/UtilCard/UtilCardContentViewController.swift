@@ -221,6 +221,7 @@ final class UtilCardContentViewController: CardContentViewController {
 
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
+        weeklyHost.cardDidBecomeCentered()
         guard let headline, !didStartHeadline else { return }
         didStartHeadline = true
         view.layoutIfNeeded()
@@ -242,6 +243,11 @@ final class UtilCardContentViewController: CardContentViewController {
                 }
             }
         }
+    }
+
+    override func cardDidLeaveCenter() {
+        super.cardDidLeaveCenter()
+        weeklyHost.cardDidLeaveCenter()
     }
 
     override func paste(itemProviders: [NSItemProvider]) {
@@ -443,8 +449,30 @@ final class UtilURLRow: UIControl {
             .joined(separator: ", ")
     }
 
+    /// How far the row's CONTENT trails its shell during a cycle slide. The
+    /// shell travels a full row width; the thumbnail and labels lag behind it
+    /// by this much, which is what gives the swap depth instead of reading as
+    /// one flat rectangle sliding.
+    func setContentParallax(_ translationX: CGFloat) {
+        let transform = CGAffineTransform(translationX: translationX, y: 0)
+        thumbnail.transform = transform
+        titleLabel.transform = transform
+        subtitleLabel.transform = transform
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Frames are meaningless under a transform, so the parallax offset is
+        // lifted off, the real geometry applied, and the offset put back.
+        let parallax = thumbnail.transform
+        thumbnail.transform = .identity
+        titleLabel.transform = .identity
+        subtitleLabel.transform = .identity
+        defer {
+            thumbnail.transform = parallax
+            titleLabel.transform = parallax
+            subtitleLabel.transform = parallax
+        }
         let imageSide = min(52, max(42, bounds.height - 22))
         thumbnail.frame = CGRect(
             x: 11,

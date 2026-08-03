@@ -198,6 +198,17 @@ has already dropped foreign kinds before a presenter is consulted, so a missing
 presenter for an admitted kind is a composition-root bug and asserts).
 Tests register production-shaped presenters explicitly in `setUp`
 (`ShareKindPresenterTestSupport`), like the pipeline processors.
+
+`ShareMediaPresenting` carries two DEFAULTED asks the shared app shell makes of
+whatever media presenter is registered — `preloadDownload(forURLString:)` and
+`deleteSavedContents(forURLString:)`, used by the onboarding save lesson to start
+and undo a media save. The shell reaches them through `ShareMediaSideEffects`, a
+thin façade in LunaShareSurface, rather than by naming `ShareKindPresenters`: every
+mention of the registry inside a composition-root DIRECTORY is what
+`KindCompositionRootTests` forbids, and keeping that rule as "no root says the word"
+is sharper than narrowing it to assignments. Three of the four apps link no media
+module, so both asks are no-ops there, which is correct — they have no media to
+preload or delete.
 - The Safari extensions link no packages; the native handler derives its host's
   kinds from its own bundle id (see `claudedocs/safari-extension.md`).
 

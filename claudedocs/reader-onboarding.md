@@ -78,14 +78,106 @@ launcher so the shared card does not own target composition.
 The setup controller is now a transient lesson presenter, not the app root. It
 uses the existing offline/native demonstrations:
 
-- Safari opens the surface-specific `luna.app`/InstaTok/amayzon teaching page,
-  shows the extension effect, then guides the user to Safari extension setup.
+- Safari opens on the native `luna.app` explainer page in EVERY app, then rotates
+  to that app's own mock page (Downloader `[.lunaPage, .instaTok]`, Price Tracker
+  `[.lunaPage, .amayzon]`, Reader `[.lunaPage]`, central all three). It shows the
+  extension effect, then guides the user to Safari extension setup.
 - Save setup uses the Messages replica and selects the Action Button shortcut
   journey or share/action-extension journey from
-  `OnboardingSurfaceConfiguration.saveSetupMode`.
+  `OnboardingSurfaceConfiguration.saveSetupMode`. Its save is REAL — see below.
 - external-open recovery overlays remain available if Safari, Shortcuts, or
   Settings rejects a route.
 - Reduce Motion replaces waves and switcher choreography with short fades.
+
+### The Safari explainer's prose fits the screen it lands on
+
+The page's furniture is pinned at both ends: the header at
+`OnboardingSafariPageView.minimumTopInset`, the actions block ending exactly on
+`chromeReserve` (the mock browser bar's reserve plus 12), the steps and their
+heading stacked above it. Iconography, all three step rows and both buttons appear
+at every size, unchanged.
+
+The PROSE is the only variable. `OnboardingStrings.Safari.explainerChunks` is a
+`ChunkedDefinition` — an ordered list per app, not one string — and the page prints
+the largest cumulative prefix that fits between the byline and the steps heading
+(`fittedProse`). Each chunk closes its own sub-topic, so a screen that only holds
+the first two never shows half an idea; the leftover room becomes air above the
+steps, which is the tolerance chunk granularity needs across screen sizes. Chunk
+one is the sentence that must survive 375×667 on its own. A container too short
+even for that keeps it and truncates, rather than pushing the actions under the
+chrome.
+
+Copy differs per app (Reader/central lead with cleanup and one-tap saving,
+Downloader with saving the video off its own page, Price Tracker with tracking a
+price from it). The 17pt/lineSpacing-5 typography lives once, in
+`OnboardingSafariPageView.proseFont` / `proseLineSpacing` / `proseHeight(of:width:)`,
+read by the measurement, the label and the tests. `MoonRevealLineView.setText`
+names the prose during layout and returns early on unchanged text, which is what
+keeps a layout-time text change from scheduling another layout pass.
+
+Per-app selection and the fit at {375×667, 393×852, 430×932, 744×1133, 1024×1366}
+are asserted by `testSafariPageGrowsItsProseByWholeChunksAcrossEveryScreen`,
+`testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse` and
+`testSafariExplainerCopyIsPerAppAndChunked`.
+
+### The save lesson performs a real save
+
+`OnboardingSaveDemoController` owns it. There is no mock extension sheet any more:
+`OnboardingHostedShareSheetView` is chrome only (scrim, rounded top-corner card at
+`cardTop` 66, grabber, the same 0.55s spring in / 0.38s ease out, Reduce-Motion
+fades) and carries the real `ShareViewController`, run in-app through
+`ShareViewController(hosted:onFinish:)`. Same ingest, same `ShareSurfaceDriver`,
+same per-kind presenters, same errors. The hand-drawn
+`OnboardingActionExtensionSheetView` — which reproduced the extension reader's
+chrome and held a bundled article for a fixed 1.0s — is deleted.
+
+**Which link.** `OnboardingSaveDemoLink.resolve` decides at the moment the user
+taps in:
+
+| condition | link | what the surface does |
+|---|---|---|
+| online, live Save of the Week for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
+| online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → bundled preview, nothing stored |
+| offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline and suggestion in the surface's real error state |
+
+`practiceURLString` is declared per app (Reader/central luna, Downloader instaTok,
+Price Tracker amayzon). It used to be read off the browser's current demo page;
+now that every app's Safari lesson opens on `.lunaPage`, deriving it that way would
+have handed the Downloader an article to rehearse a media save with.
+
+**Timing.** `start(in:)` mounts the surface hidden and lets `viewDidLoad` begin the
+work immediately, so the fetch overlaps the conversation animating in front of it;
+media additionally preloads through `ShareMediaSideEffects.preloadDownload` into
+`MediaPreloadCache`. `present` then waits for the surface's OWN terminal signal
+(`HostedShareSession.onReachedTerminal`: a completed request, a presented kind
+screen, or visible error text), holds `extensionSheetHoldDuration`, and dismisses.
+No timer sits on top of the real work — the surface's 15s attachment watchdog and
+the pipeline's 28s ingest budget are the backstops.
+
+**Media.** `HostedShareSession` gates a result behind the reveal plus
+`minimumDownloadIndication` (0.3s), so a preloaded file still shows its progress
+bar; a ready video is reported via `onMediaFileReady` and played over the sheet by
+a `VideoCardContentViewController`, muted and looping, for ~2s. The downloaded file
+is retained on the session so a demo replay reuses it: each pass calls
+`session.replayBeat()`, which the media screen answers by re-running its own
+indication off the file it already has. Nothing refetches.
+
+**Cleanup and the latch.** The row the surface appends is reported through
+`onDidAppendRow`, claimed via `AppOnboardingStore.recordTemporarySave`, and deleted
+after every pass along with its `SaveFailureStore` record and the media kind's own
+bookkeeping (`ShareMediaSideEffects.deleteSavedContents`).
+`markCompletedIfSavedSinceOnboardingStart` EXCLUDES that row: an app must not
+complete its own first run on the strength of a rehearsal it played to itself.
+`endSaveDemonstration` runs from every route out of onboarding (`deinit` cannot —
+it is nonisolated where the controller is main-actor bound).
+
+Two evidence rules make the lesson's own share sheet work. The real extension now
+records `recordShareActionRun` for ANY handled URL, not only the bundled practice
+link — the lesson hands the real sheet a real weekly pick, and that save is the
+evidence `resolvePracticeShareSheetReturn` is looking for. The hosted surface
+records none at all (`recordsSetupRunEvidence` is false exactly when `isHosted`). A
+save the user makes through the real share sheet during the lesson is intentionally
+KEPT: it is a real save from a real surface and legitimately answers the first run.
 
 Completing or choosing the lesson's skip/later path both call
 `completeSetupFlow`. Safari records `markSafariSetupHandled`; Messages/save setup
@@ -93,9 +185,14 @@ records `markSaveSetupHandled`. If both are now finished, the explicit completio
 marker is also written. The lesson dismisses back to the same production root and
 does not replace the carousel.
 
-The setup demonstrations remain storage-free: their mock article, video, and
-product never enter `readingList.json` or any content directory. The legacy
-temporary-demo cleanup remains only for users updating from an older build.
+The Safari demonstration remains storage-free: its mock pages never enter
+`readingList.json` or any content directory. The SAVE demonstration is no longer
+storage-free in the trivial sense — it runs the real surface — but it is
+storage-NEUTRAL: with no live weekly entry the practice short-circuit means nothing
+is appended at all, and with one, the row it appends is marked as the temporary save
+and deleted after each pass (see above). The legacy temporary-demo cleanup
+(`BundledLunaArticle.cleanupLegacyTemporarySave`) remains for users updating from an
+older build.
 
 ## Paste as first-run success path
 
@@ -126,6 +223,10 @@ controller: `-onboardingStage`, `-forceActionButtonSetup`,
 Relevant tests:
 
 - `UtilCardTests`: launch variants, persistent controls, weekly save callback;
-- `ReaderOnboardingTests`: per-app markers and central inheritance;
+- `ReaderOnboardingTests`: per-app markers, central inheritance, the Safari page's
+  fitting/prefix contract, and that entering either lesson stores nothing;
+- `OnboardingSaveDemoTests`: link resolution's three branches, the hosted surface
+  (practice preview, the real offline failure, one-shot completion, the evidence
+  guard), the sheet's chrome-only contract, and the rehearsal's cleanup;
 - the existing onboarding visual/lesson tests: copy, setup effects, recovery,
   local assets, storage-free demos, Reduce Motion, and launch geometry.

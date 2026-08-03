@@ -167,6 +167,14 @@ and keeps it until a NEW save arrives, however full the deck already is. The
 latch runs at launch, so a save made mid-session settles the card for the next
 one — the card deliberately keeps its layout for the launch that saw the save.
 
+The ONE save it ignores is the save lesson's own. That lesson runs the real share
+surface (`claudedocs/reader-onboarding.md`), so it really does append a row; it is
+claimed as `AppOnboardingStore.temporarySaveIdentifier` while it exists and deleted
+after each demonstration pass, and the latch excludes it — an app must not complete
+its own first run on the strength of a rehearsal it played to itself. A save the
+user makes through the real share sheet during that lesson is not a rehearsal and
+does answer the first run.
+
 The Safari and save handled markers are separate. This permits the buttons to
 show their checked state during the launch in which setup finishes while keeping
 the layout stable until relaunch. Debug `-resetOnboarding` clears completion,

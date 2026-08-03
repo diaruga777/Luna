@@ -15,4 +15,13 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(AppConfig.appGroupID, AppConfig.defaultAppGroupID)
         XCTAssertFalse(AppConfig.resolvedFromInfoPlist)
     }
+
+    func testCloudKitContainerHasICloudPrefixAndMatchesTheAppGroupNamespace() {
+        XCTAssertTrue(AppConfig.cloudKitContainerID.hasPrefix("iCloud."),
+                      "Container id must start with 'iCloud.' — got \(AppConfig.cloudKitContainerID)")
+        // Both derive from PRODUCT_BUNDLE_PREFIX, so the tails must agree.
+        XCTAssertEqual(
+            AppConfig.cloudKitContainerID.dropFirst("iCloud.".count),
+            AppConfig.appGroupID.dropFirst("group.".count))
+    }
 }

@@ -6,6 +6,8 @@
 	<string>592c7c13-5ce7-4d75-a398-2527212398ff</string>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
+	<key>LunaCloudKitContainerID</key>
+	<string>iCloud.$(PRODUCT_BUNDLE_PREFIX)</string>
 	<key>LunaCoreAppStoreURL</key>
 	<string>$(LUNA_CORE_APP_STORE_URL)</string>
 	<key>LunaReaderAppClipURL</key>
@@ -60,6 +62,7 @@
 	<array>
 		<string>com.hsanabria.luna.mailFetch</string>
 		<string>com.hsanabria.luna.priceRefresh</string>
+		<string>com.hsanabria.luna.weeklyProposalCheck</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

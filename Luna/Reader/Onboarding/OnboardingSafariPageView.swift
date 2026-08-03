@@ -344,9 +344,35 @@ final class OnboardingSafariPageView: UIView {
     required init?(coder: NSCoder) { nil }
 
     /// What the mock browser bar covers at the bottom of the page, plus a
-    /// little air. The page's content stops here.
+    /// little air. The page's content stops here while the bar is up.
     static var chromeReserve: CGFloat {
         SafariBottomBar.reservedPageHeight + 12
+    }
+
+    /// What a page with no bar over it still keeps clear: the home-area strip
+    /// with air above it, never less than the bar's own controls were worth, so
+    /// the Safari button stays a thumb's reach off the bottom edge.
+    static var clearedChromeReserve: CGFloat {
+        max(SafariBottomBar.chromeHeight, SafariBottomBar.homeAreaHeight + 20)
+    }
+
+    /// What the page currently keeps clear at its bottom — `chromeReserve`
+    /// while the browser bar is up, `clearedChromeReserve` once it has gone.
+    private var bottomReserve = OnboardingSafariPageView.chromeReserve
+
+    /// The browser bar is leaving (or coming back), and the page's bottom
+    /// reserve follows it: with the bar gone the steps and the actions take
+    /// back its strip, and they dodge it again the moment it returns.
+    ///
+    /// Call this BEFORE `prepareCleanUp`, never during the wave: the cascade's
+    /// legs and every shatter tile's arrival are cut from the content frames as
+    /// they stand, so the geometry the front will cross has to be settled first.
+    func setReservesBrowserChrome(_ reserves: Bool) {
+        let reserve = reserves ? Self.chromeReserve : Self.clearedChromeReserve
+        guard reserve != bottomReserve else { return }
+        bottomReserve = reserve
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     override func layoutSubviews() {
@@ -375,19 +401,26 @@ final class OnboardingSafariPageView: UIView {
     /// multiple of a sub-topic. A container too short even for chunk one falls
     /// back to truncating it, rather than pushing the actions under the chrome.
     private func layOutContent(columnWidth: CGFloat, horizontalInset: CGFloat) {
-        let bottomLimit = bounds.height - Self.chromeReserve
+        let bottomLimit = bounds.height - bottomReserve
         let rowHeight = OnboardingSafariEnableStepRowView.preferredHeight
         let actionsHeight = OnboardingSafariActionsView.preferredHeight
         let stepsHeight = CGFloat(stepRows.count) * rowHeight
             + CGFloat(max(stepRows.count - 1, 0)) * Self.stepGap
-        let bottomGroupTop = bottomLimit
-            - (Self.headingHeight + Self.headingGap + stepsHeight
-                + Self.stepsToActionsGap + actionsHeight)
+        let bottomGroupHeight = Self.headingHeight + Self.headingGap
+            + stepsHeight + Self.stepsToActionsGap + actionsHeight
+        let bottomGroupTop = bottomLimit - bottomGroupHeight
 
         var y = Self.minimumTopInset
         let proseTop = y + Self.headerHeight + Self.bylineGap
             + Self.bylineHeight + Self.proseGap
-        let proseRoom = max(0, bottomGroupTop - Self.proseToStepsGap - proseTop)
+        // The prose is fitted against the FULL chrome reserve however much room
+        // the page currently has: releasing the browser bar's strip mid-lesson
+        // must not make another chunk of copy appear out of nowhere. The
+        // reclaimed room becomes air above the steps instead.
+        let proseRoom = max(
+            0,
+            bounds.height - Self.chromeReserve - bottomGroupHeight
+                - Self.proseToStepsGap - proseTop)
         let prose = fittedProse(columnWidth: columnWidth, room: proseRoom)
         explainer.setText(prose.text)
 

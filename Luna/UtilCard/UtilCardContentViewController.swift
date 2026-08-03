@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaMailAccount
 import LunaModels
 import LunaStorage
 import LunaURLClassification
@@ -46,6 +47,11 @@ final class UtilCardContentViewController: CardContentViewController {
     ) -> Void
 
     static var setupJourneyLauncher: ((UIViewController, OnboardingDemoSource) -> Void)?
+    /// Pushes the one email sign-in surface (Settings → Email, whose Sharing
+    /// Account section IS the form until an account exists). Installed by the
+    /// `KindWiring` variants of the two apps that do email — the screen itself
+    /// isn't compiled into the other two.
+    static var emailSetupLauncher: ((UIViewController) -> Void)?
 
     private let showsOnboarding: Bool
     /// Whether the headline's two-beat sweep belongs to THIS appearance. It is
@@ -59,11 +65,20 @@ final class UtilCardContentViewController: CardContentViewController {
     /// that is the only thing in the app.
     private let hasSaves: () -> Bool
     private let savedURLStrings: () -> Set<String>
+    /// The app this card belongs to: it decides the weekly row's noun and
+    /// whether email is a capability here at all (`LunaApp.sharesByEmail`).
+    private let app: LunaApp
+    private let now: () -> Date
+    /// When every save in the shared store was made, and whether an email
+    /// account is already connected — the two facts behind the email nudge.
+    private let savedDates: () -> [Date]
+    private let isEmailConnected: () -> Bool
 
     private let headline: OnboardingIntroHeadlineView?
     private let weeklyHost: WeeklySaveRowHost
     private let safariButton = UIButton(type: .system)
     private let saveSetupButton = UIButton(type: .system)
+    private let emailButton = UIButton(type: .system)
     private let orLabel = UILabel()
     private let pasteRow = OnboardingPasteRow()
     /// The setup lessons this card is currently offering, top to bottom. It is
@@ -87,6 +102,12 @@ final class UtilCardContentViewController: CardContentViewController {
         savedURLStrings: @escaping () -> Set<String> = {
             Set(ReadingListStore.shared.items().map(\.urlString))
         },
+        savedDates: @escaping () -> [Date] = {
+            ReadingListStore.shared.items().map(\.dateAdded)
+        },
+        isEmailConnected: @escaping () -> Bool = {
+            EmailAccountStore.shared.isConfigured
+        },
         saveHandler: @escaping SaveHandler
     ) {
         self.showsOnboarding = showsOnboarding
@@ -95,6 +116,10 @@ final class UtilCardContentViewController: CardContentViewController {
         self.onboardingStore = onboardingStore
         self.hasSaves = hasSaves
         self.savedURLStrings = savedURLStrings
+        self.app = app
+        self.now = now
+        self.savedDates = savedDates
+        self.isEmailConnected = isEmailConnected
         self.saveHandler = saveHandler
         weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app, now: now)
         headline = showsOnboarding
@@ -142,14 +167,17 @@ final class UtilCardContentViewController: CardContentViewController {
         }
         weeklyHost.isHidden = weeklyHost.isEmpty
 
+        // The setup block belongs to BOTH variants: the two system lessons are
+        // first-run business, but the email nudge only becomes due once there
+        // are saves — by which time this is the completed card.
+        configureSetupButtons()
         if showsOnboarding {
-            configureSetupButtons()
             configureOrLabel()
             view.addSubview(orLabel)
-            rebuildSetupBlock()
         } else {
             rebuildRecentRows()
         }
+        rebuildSetupBlock()
 
         observers.append(NotificationCenter.default.addObserver(
             forName: RecentURLMatcher.didChange, object: nil, queue: .main
@@ -160,7 +188,6 @@ final class UtilCardContentViewController: CardContentViewController {
         observers.append(NotificationCenter.default.addObserver(
             forName: AppOnboardingStore.didChange, object: nil, queue: .main
         ) { [weak self] _ in
-            guard self?.showsOnboarding == true else { return }
             self?.rebuildSetupBlock()
             self?.updateOrVisibility()
         })
@@ -169,13 +196,23 @@ final class UtilCardContentViewController: CardContentViewController {
         ) { [weak self] _ in
             self?.updateWeeklySavedState()
             self?.updateOrVisibility()
+            // A save can be the third one, or the first one the clock runs on.
+            self?.rebuildSetupBlock()
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: EmailAccountStore.accountChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.rebuildSetupBlock()
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
-        ) { _ in
+        ) { [weak self] _ in
             Task { @MainActor in RecentURLMatcher.shared.refresh() }
+            // Two days can pass while the app is away, and the retirement that
+            // frees a slot for email is written on the way out.
+            self?.rebuildSetupBlock()
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: WeeklySaveStore.didChange, object: nil, queue: .main
@@ -396,6 +433,11 @@ final class UtilCardContentViewController: CardContentViewController {
             symbol: "square.and.arrow.up",
             image: saveSetupIcon(),
             action: #selector(saveSetupTapped))
+        configure(
+            emailButton,
+            title: OnboardingStrings.Intro.emailAction.value(),
+            symbol: "envelope.fill",
+            action: #selector(emailSetupTapped))
     }
 
     private func configureOrLabel() {
@@ -463,8 +505,10 @@ final class UtilCardContentViewController: CardContentViewController {
     /// nothing has no buttons in it at all.
     private func rebuildSetupBlock() {
         let offers = UtilCardSetupOffer.buttons(
-            safari: true,
-            save: configuration.saveSetupMode == .actionButtonShortcut)
+            safari: !onboardingStore.isSafariSetupButtonRetired,
+            save: configuration.saveSetupMode == .actionButtonShortcut
+                && !onboardingStore.isSaveSetupButtonRetired,
+            email: offersEmailSetup)
         for offer in UtilCardSetupButton.allCases {
             let button = button(for: offer)
             guard offers.contains(offer) else {
@@ -479,17 +523,29 @@ final class UtilCardContentViewController: CardContentViewController {
         view.setNeedsLayout()
     }
 
+    /// Email is offered only where it is a capability, only while no account is
+    /// connected, and only once Luna has earned the ask.
+    private var offersEmailSetup: Bool {
+        guard app.sharesByEmail, !isEmailConnected() else { return false }
+        return UtilCardSetupOffer.emailIsEarned(
+            saveDates: savedDates(), now: now())
+    }
+
     private func button(for offer: UtilCardSetupButton) -> UIButton {
         switch offer {
         case .safari: return safariButton
         case .save: return saveSetupButton
+        case .email: return emailButton
         }
     }
 
+    /// Whether this button wears its checkmark. Email has no finished state on
+    /// the card: connecting an account takes the button away entirely.
     private func isFinished(_ offer: UtilCardSetupButton) -> Bool {
         switch offer {
         case .safari: return onboardingStore.hasFinishedSafariSetup
         case .save: return onboardingStore.hasFinishedSaveSetup
+        case .email: return false
         }
     }
 
@@ -508,6 +564,8 @@ final class UtilCardContentViewController: CardContentViewController {
             case .save:
                 button.configuration?.image = saveSetupIcon()
                     ?? UIImage(systemName: "square.and.arrow.up")
+            case .email:
+                button.configuration?.image = UIImage(systemName: "envelope.fill")
             }
         }
         button.configuration?.baseForegroundColor = finished
@@ -527,6 +585,10 @@ final class UtilCardContentViewController: CardContentViewController {
 
     @objc private func saveSetupTapped() {
         Self.setupJourneyLauncher?(self, .messages)
+    }
+
+    @objc private func emailSetupTapped() {
+        Self.emailSetupLauncher?(self)
     }
 
     private func rebuildRecentRows() {

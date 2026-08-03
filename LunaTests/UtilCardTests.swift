@@ -60,11 +60,7 @@ final class UtilCardTests: XCTestCase {
     }
 
     func testCompletingSetupKeepsLaunchVariantUntilANewCardIsConstructed() {
-        let setup = LunaSetupStatusStore(defaults: defaults)
-        let store = AppOnboardingStore(
-            app: .reader,
-            defaults: defaults,
-            setupStatusStore: setup)
+        let store = makeStore()
         let currentSession = makeCard(showsOnboarding: true, store: store)
         currentSession.loadViewIfNeeded()
 
@@ -74,6 +70,8 @@ final class UtilCardTests: XCTestCase {
         XCTAssertTrue(store.isCompleted)
         XCTAssertEqual(currentSession.view.descendants(of: UIButton.self).count, 2)
 
+        // What the next launch does before any root reads the state.
+        store.retireCompletedSetupButtons()
         let nextLaunch = makeCard(showsOnboarding: false, store: store)
         nextLaunch.loadViewIfNeeded()
         XCTAssertTrue(nextLaunch.view.descendants(of: UIButton.self).isEmpty)
@@ -224,6 +222,174 @@ final class UtilCardTests: XCTestCase {
             buttons[0].accessibilityLabel,
             OnboardingStrings.Intro.safariAction.value())
         XCTAssertEqual(buttons[0].frame.minY, bottomSlot)
+    }
+
+    // MARK: - The email nudge
+
+    func testEmailIsEarnedByThreeSavesOrTwoDaysWithTheFirst() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        func earned(_ dates: [Date]) -> Bool {
+            UtilCardSetupOffer.emailIsEarned(saveDates: dates, now: now)
+        }
+
+        XCTAssertFalse(earned([]))
+        XCTAssertFalse(earned([now, now.addingTimeInterval(-60)]))
+        XCTAssertTrue(earned([now, now, now]))
+        // The clock runs from the FIRST save, whatever order they arrive in.
+        XCTAssertFalse(earned([now.addingTimeInterval(-47 * 3600), now]))
+        XCTAssertTrue(earned([now, now.addingTimeInterval(-48 * 3600)]))
+    }
+
+    func testEmailWaitsWhileBothSystemLessonsStillWantTheirSlots() {
+        let card = makeCard(
+            showsOnboarding: true, savedDates: [clock, clock, clock])
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+
+        XCTAssertEqual(
+            actionButtons(in: card).compactMap(\.accessibilityLabel),
+            [
+                OnboardingStrings.Intro.safariAction.value(),
+                OnboardingStrings.Intro.shortcutAction.value(),
+            ])
+    }
+
+    /// A retired lesson's slot goes to email — on the completed card, which is
+    /// where a three-save user actually is.
+    func testEmailTakesTheSlotACompletedLessonGivesUp() {
+        let store = makeStore()
+        store.markSafariSetupHandled()
+        store.retireCompletedSetupButtons()
+
+        let card = makeCard(
+            showsOnboarding: false,
+            savedDates: [clock, clock, clock],
+            store: store)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+
+        let buttons = actionButtons(in: card)
+        XCTAssertEqual(
+            buttons.compactMap(\.accessibilityLabel),
+            [
+                OnboardingStrings.Intro.shortcutAction.value(),
+                OnboardingStrings.Intro.emailAction.value(),
+            ])
+        XCTAssertNotNil(buttons.last?.configuration?.image)
+    }
+
+    /// Skipping is not finishing: the button stays, and it keeps outranking the
+    /// email nudge.
+    func testASkippedLessonKeepsItsButtonAndStillOutranksEmail() {
+        let store = makeStore()
+        store.markSafariSetupHandled(outcome: .skipped)
+        store.markSaveSetupHandled()
+        store.retireCompletedSetupButtons()
+
+        XCTAssertFalse(store.isSafariSetupButtonRetired)
+        XCTAssertTrue(store.isSaveSetupButtonRetired)
+
+        let card = makeCard(
+            showsOnboarding: false,
+            savedDates: [clock, clock, clock],
+            store: store)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+
+        XCTAssertEqual(
+            actionButtons(in: card).compactMap(\.accessibilityLabel),
+            [
+                OnboardingStrings.Intro.safariAction.value(),
+                OnboardingStrings.Intro.emailAction.value(),
+            ])
+    }
+
+    func testEmailIsNeverOfferedWithoutAnAccountToConnectOrWithOneAlready() {
+        for card in [
+            // Downloader and Price Tracker connect no account at all.
+            makeCard(
+                showsOnboarding: false,
+                savedDates: [clock, clock, clock],
+                app: .downloader),
+            // Already connected: there is nothing to nudge.
+            makeCard(
+                showsOnboarding: false,
+                savedDates: [clock, clock, clock],
+                emailConnected: true),
+        ] {
+            card.loadViewIfNeeded()
+            card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+            card.view.layoutIfNeeded()
+            XCTAssertFalse(
+                actionButtons(in: card).contains {
+                    $0.accessibilityLabel
+                        == OnboardingStrings.Intro.emailAction.value()
+                })
+        }
+    }
+
+    func testTheEmailButtonLaunchesTheSignInFlow() throws {
+        let previous = UtilCardContentViewController.emailSetupLauncher
+        defer { UtilCardContentViewController.emailSetupLauncher = previous }
+        var launchedFrom: UIViewController?
+        UtilCardContentViewController.emailSetupLauncher = { launchedFrom = $0 }
+
+        let store = makeStore()
+        store.markSafariSetupHandled()
+        store.markSaveSetupHandled()
+        store.retireCompletedSetupButtons()
+        let card = makeCard(
+            showsOnboarding: false,
+            savedDates: [clock, clock, clock],
+            store: store)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+
+        let email = try XCTUnwrap(actionButtons(in: card).first)
+        XCTAssertEqual(
+            email.accessibilityLabel, OnboardingStrings.Intro.emailAction.value())
+        email.sendActions(for: .touchUpInside)
+
+        XCTAssertTrue(launchedFrom === card)
+    }
+
+    /// The email nudge arrives live: the third save reflows the card without a
+    /// relaunch.
+    func testTheThirdSaveBringsTheEmailButtonIn() {
+        let store = makeStore()
+        store.markSafariSetupHandled()
+        store.markSaveSetupHandled()
+        store.retireCompletedSetupButtons()
+        var saves: [Date] = []
+        let card = UtilCardContentViewController(
+            showsOnboarding: false,
+            configuration: .configuration(
+                for: .reader, saveSetupMode: .actionButtonShortcut),
+            onboardingStore: store,
+            weeklyStore: weekly,
+            app: .reader,
+            now: { self.clock },
+            hasSaves: { !saves.isEmpty },
+            savedURLStrings: { [] },
+            savedDates: { saves },
+            isEmailConnected: { false },
+            saveHandler: { _, _, _, completion in completion(true) })
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+        XCTAssertTrue(actionButtons(in: card).isEmpty)
+
+        saves = [clock, clock, clock]
+        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        card.view.layoutIfNeeded()
+
+        XCTAssertEqual(
+            actionButtons(in: card).compactMap(\.accessibilityLabel),
+            [OnboardingStrings.Intro.emailAction.value()])
     }
 
     // MARK: - An already-saved weekly recommendation
@@ -466,6 +632,8 @@ final class UtilCardTests: XCTestCase {
         animatesIntro: Bool = false,
         hasSaves: Bool = false,
         savedURLStrings: Set<String> = [],
+        savedDates: [Date] = [],
+        emailConnected: Bool = false,
         store: AppOnboardingStore? = nil,
         app: LunaApp = .reader,
         saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut,
@@ -483,6 +651,8 @@ final class UtilCardTests: XCTestCase {
             now: { self.clock },
             hasSaves: { hasSaves },
             savedURLStrings: { savedURLStrings },
+            savedDates: { savedDates },
+            isEmailConnected: { emailConnected },
             saveHandler: saveHandler ?? { _, _, _, completion in completion(true) })
     }
 }

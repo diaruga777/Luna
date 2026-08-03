@@ -1286,11 +1286,14 @@ final class AppOnboardingViewController: UIViewController {
         outcome: OnboardingSetupOutcome
     ) {
         guard didExpandSafari, !isFinishing else { return }
+        // The outcome is persisted, not just reflected in this session's
+        // buttons: a SKIPPED lesson keeps its util-card button (the offer is
+        // still open), while a completed one is retired at the next background.
         switch source {
         case .safari:
-            onboardingStore.markSafariSetupHandled()
+            onboardingStore.markSafariSetupHandled(outcome: outcome)
         case .messages:
-            onboardingStore.markSaveSetupHandled()
+            onboardingStore.markSaveSetupHandled(outcome: outcome)
         }
         if setupReplaySource != nil {
             if onboardingStore.hasFinishedSafariSetup,

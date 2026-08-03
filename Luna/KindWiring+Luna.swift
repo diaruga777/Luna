@@ -72,6 +72,10 @@ enum KindWiring {
         SendToFriendSheet.accountSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
+        // The util card's email nudge goes to the same one place.
+        UtilCardContentViewController.emailSetupLauncher = { presenter in
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+        }
         // The central Luna app is the only surface whose card deck contains
         // non-article cards; give them their tap routing.
         NonArticleCardOpening.install()

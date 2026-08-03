@@ -97,8 +97,9 @@ final class AppOnboardingStore {
         defaults.bool(forKey: saveSetupHandledKey)
     }
 
-    func markSaveSetupHandled() {
+    func markSaveSetupHandled(outcome: OnboardingSetupOutcome = .completed) {
         defaults.set(true, forKey: saveSetupHandledKey)
+        if outcome == .skipped { defaults.set(true, forKey: saveSetupSkippedKey) }
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
@@ -109,9 +110,56 @@ final class AppOnboardingStore {
         defaults.bool(forKey: safariSetupHandledKey)
     }
 
-    func markSafariSetupHandled() {
+    func markSafariSetupHandled(outcome: OnboardingSetupOutcome = .completed) {
         defaults.set(true, forKey: safariSetupHandledKey)
+        if outcome == .skipped { defaults.set(true, forKey: safariSetupSkippedKey) }
         NotificationCenter.default.post(name: Self.didChange, object: nil)
+    }
+
+    /// A SKIPPED lesson is not a finished one as far as the util card is
+    /// concerned: its button stays on the card, so the offer can be taken up
+    /// later. Only genuinely completed buttons are retired.
+    var wasSafariSetupSkipped: Bool {
+        defaults.bool(forKey: safariSetupSkippedKey)
+    }
+
+    var wasSaveSetupSkipped: Bool {
+        defaults.bool(forKey: saveSetupSkippedKey)
+    }
+
+    /// Whether the util card has stopped offering each lesson. A completed
+    /// button keeps its checkmark for the rest of the session it was earned in
+    /// and is retired the next time the app leaves the foreground — which is
+    /// what makes room for the email nudge.
+    var isSafariSetupButtonRetired: Bool {
+        defaults.bool(forKey: safariSetupRetiredKey)
+    }
+
+    var isSaveSetupButtonRetired: Bool {
+        defaults.bool(forKey: saveSetupRetiredKey)
+    }
+
+    /// Retires every leg that is genuinely done. Called at launch and on the way
+    /// to the background, so a button earned in this session survives until the
+    /// user looks away, and one earned in an earlier session is already gone.
+    @discardableResult
+    func retireCompletedSetupButtons() -> Bool {
+        var retired = false
+        if !isSafariSetupButtonRetired, hasFinishedSafariSetup, !wasSafariSetupSkipped {
+            defaults.set(true, forKey: safariSetupRetiredKey)
+            retired = true
+        }
+        if !isSaveSetupButtonRetired,
+           saveSetupMode == .actionButtonShortcut,
+           hasFinishedSaveSetup,
+           !wasSaveSetupSkipped
+        {
+            defaults.set(true, forKey: saveSetupRetiredKey)
+            retired = true
+        }
+        guard retired else { return false }
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
+        return true
     }
 
     var hasFinishedSafariSetup: Bool {
@@ -133,9 +181,7 @@ final class AppOnboardingStore {
     /// The diagnostics onboarding reset: the full first-run journey plays
     /// again on this app's next launch.
     func resetCompletion(now: Date = Date()) {
-        defaults.removeObject(forKey: completionKey)
-        defaults.removeObject(forKey: saveSetupHandledKey)
-        defaults.removeObject(forKey: safariSetupHandledKey)
+        for key in setupMarkerKeys { defaults.removeObject(forKey: key) }
         // A fresh journey starts here, so the saves already in the store are
         // not mistaken for its answer: the first-run card comes back on the
         // next launch and stays until a NEW save arrives.
@@ -182,6 +228,37 @@ final class AppOnboardingStore {
         "\(app.storageIdentifier).onboarding.safariSetupHandled.v1"
     }
 
+    private var saveSetupSkippedKey: String {
+        "\(app.storageIdentifier).onboarding.saveSetupSkipped.v1"
+    }
+
+    private var safariSetupSkippedKey: String {
+        "\(app.storageIdentifier).onboarding.safariSetupSkipped.v1"
+    }
+
+    private var saveSetupRetiredKey: String {
+        "\(app.storageIdentifier).onboarding.saveSetupRetired.v1"
+    }
+
+    private var safariSetupRetiredKey: String {
+        "\(app.storageIdentifier).onboarding.safariSetupRetired.v1"
+    }
+
+    /// Every marker a reset takes back out, so the next launch replays the whole
+    /// first run: completion, both handled legs, how each was handled, and
+    /// whether the card has stopped offering them.
+    private var setupMarkerKeys: [String] {
+        [
+            completionKey,
+            saveSetupHandledKey,
+            safariSetupHandledKey,
+            saveSetupSkippedKey,
+            safariSetupSkippedKey,
+            saveSetupRetiredKey,
+            safariSetupRetiredKey,
+        ]
+    }
+
     private var onboardingStartKey: String {
         "\(app.storageIdentifier).onboarding.startedAt.v1"
     }
@@ -192,9 +269,7 @@ final class AppOnboardingStore {
         guard arguments.contains("-resetOnboarding")
                 || (app == .reader && arguments.contains("-resetReaderOnboarding"))
         else { return }
-        defaults.removeObject(forKey: completionKey)
-        defaults.removeObject(forKey: saveSetupHandledKey)
-        defaults.removeObject(forKey: safariSetupHandledKey)
+        for key in setupMarkerKeys { defaults.removeObject(forKey: key) }
         defaults.set(Date(), forKey: onboardingStartKey)
         setupStatusStore.resetAllRunEvidence()
     }

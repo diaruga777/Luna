@@ -72,6 +72,9 @@ enum OnboardingStrings {
     enum Intro {
         static let safariAction = Definition(shared: "Stop popups and paywalls")
         static let shortcutAction = Definition(shared: "Show me one click save")
+        /// The util card's third, lowest-priority action: connect an account so
+        /// the newsletters already in a mailbox arrive here as saves.
+        static let emailAction = Definition(shared: "Read your newsletters in Luna")
         /// The paste row's placeholder, and the paste control's own label.
         static let paste = Definition(shared: "Paste a link")
         /// The seam between the two setup lessons and the paste row.

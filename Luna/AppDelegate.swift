@@ -61,6 +61,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // answers the first-run card, and the latch survives deleting it.
         AppOnboardingStore.shared.beginOnboardingIfNeeded()
         AppOnboardingStore.shared.markCompletedIfSavedSinceOnboardingStart()
+        // A setup button that is genuinely done stops being offered — here for
+        // one finished in an earlier session, and again on the way to the
+        // background for one finished in this one. Skipped legs keep their
+        // button. See `claudedocs/util-card.md`.
+        AppOnboardingStore.shared.retireCompletedSetupButtons()
         UtilCardContentViewController.setupJourneyLauncher = { presenter, source in
             AppOnboardingViewController.presentSetupReplay(
                 source,
@@ -237,6 +242,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Kind-specific background work: pending-completion promotion + send
         // retry (article apps), Live Activity reattachment (media apps).
         KindWiring.appDidEnterBackground()
+        // The util card reflows behind the user's back: a setup button finished
+        // in this session is retired now, freeing its slot for the email nudge.
+        AppOnboardingStore.shared.retireCompletedSetupButtons()
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
         WeeklyProposalBackgroundCheck.schedule(reason: "entered background")

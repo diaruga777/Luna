@@ -114,6 +114,10 @@ enum KindWiring {
         SendToFriendSheet.accountSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
+        // The util card's email nudge goes to the same one place.
+        UtilCardContentViewController.emailSetupLauncher = { presenter in
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+        }
     }
 
     // MARK: - Root UI shape

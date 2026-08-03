@@ -9,6 +9,7 @@ import LunaIngest
 import LunaURLClassification
 import LunaModels
 import LunaDesignSystem
+import LunaSocial
 import UIKit
 
 /// Shows and edits one price tracker: a table of its seller URLs (each row shows
@@ -259,6 +260,11 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         configureNavigationChrome()
         syncThresholdControl()
         refreshGraph()
+        // Keep the shared "has the user ever been asked about notifications" latch
+        // true to the system while a price surface is open: it is what decides
+        // whether the NEXT tracked product starts with an alert threshold, and an
+        // install that granted permission before the latch existed heals here.
+        NotificationManager.refreshAuthorizationRequestedStateInBackground()
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
     }
@@ -377,8 +383,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     }
 
     /// The graph remains present from day one. Even without history it carries the
-    /// current alert line; this legacy editor keeps that line read-only because its
-    /// separate threshold footer remains the extension-safe editing control.
+    /// current alert line — or NO line, when the tracker has no threshold yet (the
+    /// footer's parked slider is then the only alert affordance). This legacy editor
+    /// keeps the line read-only because its separate threshold footer remains the
+    /// extension-safe editing control.
     private func refreshGraph() {
         guard let tracker else { graphContainer.isHidden = true; return }
         graphContainer.isHidden = false
@@ -399,8 +407,14 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
         thresholdSlider.onCommitted = { [weak self] fraction in
             guard let self, var tracker = self.tracker else { return }
-            tracker.alertThresholdFraction = fraction
+            tracker.setAlertThresholdFraction(fraction)
             self.store.updatePriceTracker(tracker, for: self.itemID)
+            // Committing a threshold — whether it was unset or is being adjusted — is
+            // the opt-in moment for notifications: an alert the user just asked for is
+            // the first thing Luna has to tell them about this product. Idempotent,
+            // and a no-op in the extension-hosted copy of this editor (an `.appex`
+            // can't ask), so both paths just call it.
+            NotificationManager.requestAuthorization()
         }
         thresholdSlider.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(thresholdSlider)

@@ -8,6 +8,7 @@ import LunaHTMLClassification
 import LunaModels
 import LunaPriceUI
 import LunaReadingList
+import LunaSocial
 import LunaStorage
 import LunaURLClassification
 import UIKit
@@ -72,7 +73,8 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
             item.id.uuidString,
             tracker.productName,
             tracker.imageFileName ?? "",
-            String(tracker.alertThresholdFraction),
+            // "none" is a real state: a tracker with no alert threshold at all.
+            tracker.alertThresholdFraction.map(String.init) ?? "none",
             String(tracker.isArchived),
             stores,
         ].joined(separator: "|")
@@ -254,7 +256,8 @@ enum PriceTrackerProductImage {
     }
 }
 
-/// One product card: image/title, graph with the threshold editor, then its
+/// One product card: image/title, graph with the threshold editor (or, for a
+/// tracker with no alert yet, the graph's "Set price alert" pill), then its
 /// seller list and add button. It owns no archive timer or completion policy.
 private final class PriceTrackerCardContentViewController: CardContentViewController {
 
@@ -297,6 +300,9 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
         configureHeader()
         configureGraph()
         configureStores()
+        // Keeps the shared notification-permission latch honest — it decides whether
+        // the NEXT tracked product starts with an alert threshold at all.
+        NotificationManager.refreshAuthorizationRequestedStateInBackground()
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -356,6 +362,20 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
             guard let self, var tracker = self.tracker else { return }
             tracker.setAlertThresholdPrice(price)
             self.store.updatePriceTracker(tracker, for: self.itemID)
+            // The opt-in moment: an alert the user just set is the first thing this
+            // app has to notify them about. Idempotent (see NotificationManager).
+            NotificationManager.requestAuthorization()
+        }
+        // A tracker saved before the user was ever asked about notifications has no
+        // threshold and so no line to drag: the graph offers "Set price alert"
+        // instead, and this is where that default alert — and the permission prompt
+        // that makes it deliverable — comes from.
+        graphView.onThresholdRequested = { [weak self] in
+            guard let self, var tracker = self.tracker else { return }
+            tracker.setAlertThresholdFraction(PriceTracker.defaultAlertThresholdFraction)
+            self.store.updatePriceTracker(tracker, for: self.itemID)
+            NotificationManager.requestAuthorization()
+            self.reloadContent()
         }
         scrollView.panGestureRecognizer.require(
             toFail: graphView.thresholdDragGestureRecognizer)

@@ -108,8 +108,16 @@ public struct PriceTracker: Codable, Equatable {
     public var initialPrice: Decimal
     /// Currency of `initialPrice` (also the tracker's display currency).
     public var initialCurrency: String
-    /// Fractional price drop (vs `initialPrice`) that triggers an alert. Default 0.10.
-    public var alertThresholdFraction: Double
+    /// Fractional price drop (vs `initialPrice`) that triggers an alert, or **nil
+    /// when this tracker has NO alert yet**.
+    ///
+    /// A product tracked before the user was ever asked about notifications starts
+    /// unset: there is nothing to notify with, so nothing is promised. The editors
+    /// show a parked slider / a "Set price alert" call to action for that state, and
+    /// setting the threshold is the moment the system permission prompt appears (see
+    /// `claudedocs/price-tracking.md`). Persisted as an ABSENT JSON key, so unset
+    /// round-trips without a sentinel value.
+    public private(set) var alertThresholdFraction: Double?
     /// Whether the user archived this tracker (excluded from background refresh).
     public var isArchived: Bool
     /// When the user last viewed this tracker's alert (opened the tracker while it
@@ -146,14 +154,30 @@ public struct PriceTracker: Codable, Equatable {
         return NSDecimalNumber(decimal: drop).doubleValue
     }
 
+    /// Whether an alert threshold has been set at all. False for a product tracked
+    /// while notification permission was still undecided — such a tracker watches
+    /// the price but promises no alert until the user sets one.
+    public var hasAlertThreshold: Bool { alertThresholdFraction != nil }
+
     /// Whether the current best price has dropped at or past the alert threshold.
+    /// A tracker with NO threshold never alerts.
     public var isAlerting: Bool {
-        !isArchived && discountFraction >= alertThresholdFraction
+        guard let alertThresholdFraction else { return false }
+        return !isArchived && discountFraction >= alertThresholdFraction
     }
 
-    /// Absolute alert price drawn on the price-history graph.
-    public var alertThresholdPrice: Decimal {
-        initialPrice * (1 - Decimal(alertThresholdFraction))
+    /// Absolute alert price drawn on the price-history graph — nil while no
+    /// threshold is set (the graph then draws no alert line).
+    public var alertThresholdPrice: Decimal? {
+        guard let alertThresholdFraction else { return nil }
+        return initialPrice * (1 - Decimal(alertThresholdFraction))
+    }
+
+    /// Sets the fractional threshold, clamped to the model's 1%…95% drop invariant.
+    /// The only way to write the fraction, so a tracker can never hold an
+    /// impossible one — and the only way OUT of the unset state.
+    public mutating func setAlertThresholdFraction(_ fraction: Double) {
+        alertThresholdFraction = Self.clampedThresholdFraction(fraction)
     }
 
     /// Updates the stored fractional threshold from an absolute graph price.
@@ -164,7 +188,21 @@ public struct PriceTracker: Codable, Equatable {
         let fraction = NSDecimalNumber(
             decimal: (initialPrice - price) / initialPrice
         ).doubleValue
-        alertThresholdFraction = min(max(fraction, 0.01), 0.95)
+        setAlertThresholdFraction(fraction)
+    }
+
+    /// Drops the alert threshold back to unset (no alert promised).
+    public mutating func clearAlertThreshold() {
+        alertThresholdFraction = nil
+    }
+
+    /// The threshold a tracker starts with **once** the user has been asked about
+    /// notifications — a 10% drop. Before that first ask a new tracker starts unset;
+    /// the decision itself lives outside the model (`PriceAlertThresholdPolicy`).
+    public static let defaultAlertThresholdFraction: Double = 0.10
+
+    static func clampedThresholdFraction(_ fraction: Double) -> Double {
+        min(max(fraction, 0.01), 0.95)
     }
 
     /// Whether this tracker has an alert the user hasn't seen yet: it's alerting AND
@@ -188,7 +226,7 @@ public struct PriceTracker: Codable, Equatable {
         brand: String? = nil,
         productID: String? = nil,
         imageFileName: String? = nil,
-        alertThresholdFraction: Double = 0.10,
+        alertThresholdFraction: Double? = PriceTracker.defaultAlertThresholdFraction,
         now: Date = Date()
     ) {
         self.productName = productName
@@ -199,7 +237,7 @@ public struct PriceTracker: Codable, Equatable {
         self.imageFileName = imageFileName
         self.initialPrice = price
         self.initialCurrency = currency
-        self.alertThresholdFraction = alertThresholdFraction
+        self.alertThresholdFraction = alertThresholdFraction.map(Self.clampedThresholdFraction)
         self.isArchived = false
         self.alertAcknowledgedAt = nil
     }
@@ -212,7 +250,7 @@ public struct PriceTracker: Codable, Equatable {
         brand: String? = nil,
         productID: String? = nil,
         imageFileName: String? = nil,
-        alertThresholdFraction: Double = 0.10
+        alertThresholdFraction: Double? = PriceTracker.defaultAlertThresholdFraction
     ) {
         let nonEmptyStores = stores.isEmpty
             ? [PriceTrackerStore(urlString: "", lastPrice: 0, currency: "USD")]
@@ -228,7 +266,7 @@ public struct PriceTracker: Codable, Equatable {
             ?? nonEmptyStores[0]
         self.initialPrice = baselineStore.lastPrice ?? 0
         self.initialCurrency = baselineStore.currency
-        self.alertThresholdFraction = alertThresholdFraction
+        self.alertThresholdFraction = alertThresholdFraction.map(Self.clampedThresholdFraction)
         self.isArchived = false
         self.alertAcknowledgedAt = nil
     }
@@ -304,9 +342,12 @@ public struct PriceTracker: Codable, Equatable {
         productID = try container.decodeIfPresent(String.self, forKey: .productID)
         imageFileName = try container.decodeIfPresent(String.self, forKey: .imageFileName)
         initialCurrency = try container.decodeIfPresent(String.self, forKey: .initialCurrency) ?? "USD"
-        // Defaulted to keep old JSON decodable; clamps a malformed value into range.
-        let fraction = try container.decodeIfPresent(Double.self, forKey: .alertThresholdFraction) ?? 0.10
-        alertThresholdFraction = min(max(fraction, 0.01), 0.95)
+        // An ABSENT key is the unset state — which is both what a tracker saved with
+        // no alert encodes (the synthesized encoder omits a nil optional) and what
+        // pre-threshold payloads carry. A present-but-malformed value is clamped.
+        alertThresholdFraction = try container
+            .decodeIfPresent(Double.self, forKey: .alertThresholdFraction)
+            .map(Self.clampedThresholdFraction)
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         // Defaulted to nil so old payloads (no key) read as "alert not yet viewed".
         alertAcknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .alertAcknowledgedAt)

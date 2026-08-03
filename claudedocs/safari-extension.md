@@ -24,6 +24,67 @@ background.js (tabs.onActivated / tabs.onUpdated)
 
 Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root — that suits Safari (manifest.json must be at the bundle root on iOS) but it is Xcode's synchronized-group resource copy doing it, indiscriminately, to nested folders too. **`_locales/en/messages.json` must NOT be left flattened**: `browser.i18n.getMessage` reads only `_locales/<locale>/messages.json`, and a root-level copy makes every key resolve to `""` — which is what once rendered the in-page pill as a text-less indigo stub (its width is its label plus padding) and dropped the extension's own name. `scripts/update_safari_extension_branding.sh` (an `alwaysOutOfDate` build phase on all four Safari targets) re-copies the `_locales` tree from `$SRCROOT`, deletes the flattened stray, and only then rewrites `extensionName` per host app. `content.js` additionally carries an inline English default for every string it renders, so an empty lookup degrades to correct copy instead of an empty pill; `SafariPillLabelTests` covers both halves — the fallbacks (and their parity with `messages.json`) and the built appex's directory layout.
 
+## The in-page setup confirmation
+
+The first time an app's extension ever runs after that app sent the user off to
+enable it, the content script takes the whole window instead of offering a pill:
+"Nice! / You're all set up" over a tinted semi-transparent scrim, with a "Return
+to `<app name>`" button. It dismisses itself after 5s and hands the page back, so
+a pill can still appear if that page earns one.
+
+The premise it disproves is worth stating, because it shapes everything here: a
+Safari extension's **JavaScript** cannot read the container app's state, but its
+**native handler** runs in an appex holding the App Group entitlement, and
+`sendNativeMessage` bridges the two. So this is not a new capability — it is the
+same channel `buttonContext` and `recordExtensionRun` already used.
+
+Four App-Group keys, all **per app** rather than shared (unlike the
+`setup.safari.hasRun.*` completion markers, which the three faceted apps
+deliberately share): an extension may only ever hand off to its OWN containing
+app, so central Luna's tap must not make the Reader's extension offer to return
+the user to an app they never left.
+
+| key | written by | when |
+| --- | --- | --- |
+| `setup.safari.setupTapAt.<app>` | app | `AppOnboardingViewController.openSafariSetup`, before the hop |
+| `setup.safari.setupTapAppName.<app>` | app | same moment, with `LunaApp.displayName` |
+| `setup.safari.firstRunAt.<app>` | extension | `recordExtensionRun`, **only if absent** |
+| `setup.safari.celebrationShown.<app>` | extension | when the overlay RENDERS |
+
+The rule — all three of: tap within 24h, first run within 24h, never shown — is
+stated by `LunaSetupStatusStore.shouldCelebrateSafariSetup` and mirrored by
+`SharedSafariURL.shouldCelebrateSetup`, because `LunaSafari` links no package.
+`SafariSetupCelebrationTests` owns the rule, the overlay, AND the parity between
+the two copies (key formats, the window, and that `SharedSurfaceScheme`'s surface
+strings really are `LunaApp.storageIdentifier`s — the keys only meet if they are).
+`resetAllRunEvidence` clears all four, including the extension's two: an extension
+first-runs exactly once, so a reset that left `firstRunAt` behind could never show
+the confirmation again.
+
+Three things constrain the design, none of them fixable in code:
+
+- **Website permission, not the extension toggle, gates it.** Enabling the
+  extension in Settings doesn't run content scripts; host access starts at Ask. The
+  confirmation therefore appears when access is granted, which may be several taps
+  after the switch. This is the same gate `recordExtensionRun` evidence has always
+  been behind (the background script needs `tab.url`), so it adds no new failure
+  mode — but the PiP guide has to keep walking the user to the Allow step.
+- **The return hop must be a tap.** An appex cannot open a URL
+  (`NSExtensionContext.open` is not available to a Safari web extension handler on
+  iOS), and Safari only honours app-scheme navigation under user activation — an
+  automatic `window.location = "lunareader://"` is dropped silently. Hence a
+  button. Expect Safari's "Open in Luna?" confirmation; only a hosted universal
+  link would avoid it, and there is no Luna-owned page in real Safari (the
+  onboarding lesson's `.lunaPage` is a native mock, and the lesson sends the user
+  to `en.wikipedia.org`).
+- **It is independent of pill eligibility**, deliberately: the lesson proves the
+  extension runs on an ordinary page, and that page is frequently one the app would
+  never offer a pill on (Wikipedia in Downloader). It also ignores `mode: "never"`,
+  which silences pills rather than the proof that setup worked.
+
+The button opens a **bare** scheme (`lunareader://`, no `?url=`) — `SceneDelegate`'s
+`route` matches nothing and simply leaves the app on whatever it was showing.
+
 ## Annoyance suppression (not an ad blocker)
 
 The extension hides cookie dialogs and intrusive overlays before first paint without

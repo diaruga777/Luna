@@ -1087,6 +1087,10 @@
             // `pre-line` renders the deliberate line break in the localized string.
             whiteSpace: "pre-line", color: "#ffffff",
             font: "700 clamp(28px, 8vw, 44px)/1.24 -apple-system, system-ui, sans-serif",
+            // The page behind is arbitrary — dense black-on-white body text reads
+            // straight through a semi-transparent scrim, so the headline carries
+            // its own separation rather than relying on the tint alone.
+            textShadow: "0 2px 18px rgba(0,0,0,0.55)",
             margin: "0", padding: "0"
         });
         // `dvh` follows Safari's collapsing toolbars where `vh` doesn't; assigning

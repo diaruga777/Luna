@@ -81,7 +81,10 @@ uses the existing offline/native demonstrations:
 - Safari opens on the native `luna.app` explainer page in EVERY app, then rotates
   to that app's own mock page (Downloader `[.lunaPage, .instaTok]`, Price Tracker
   `[.lunaPage, .amayzon]`, Reader `[.lunaPage]`, central all three). It shows the
-  extension effect, then guides the user to Safari extension setup.
+  extension effect, then guides the user to Safari extension setup. Leaving for real
+  Safari stamps `setup.safari.setupTapAt.<app>` + that app's display name, which the
+  extension pairs with its OWN first run to confirm setup in the page and invite the
+  user back — see `claudedocs/safari-extension.md`'s "in-page setup confirmation".
 - Save setup uses the Messages replica and selects the Action Button shortcut
   journey or share/action-extension journey from
   `OnboardingSurfaceConfiguration.saveSetupMode`. Its save is REAL — see below.

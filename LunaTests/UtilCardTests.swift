@@ -185,6 +185,9 @@ final class UtilCardTests: XCTestCase {
         let headline = try XCTUnwrap(
             card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
         let weekly = try XCTUnwrap(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        // The row lives inside the host's clipping child, so its own frame is
+        // in that child's space — compare it in card coordinates.
+        let weeklyFrame = weekly.convert(weekly.bounds, to: card.view)
 
         // Bottom-up: paste field, the seam, both setup actions.
         XCTAssertLessThan(separator.frame.maxY, paste.frame.minY)
@@ -194,8 +197,8 @@ final class UtilCardTests: XCTestCase {
         // the standalone onboarding root used.
         XCTAssertGreaterThan(headline.frame.minY, card.view.bounds.height * 0.2)
         XCTAssertLessThan(headline.frame.minY, card.view.bounds.height / 3)
-        XCTAssertGreaterThan(weekly.frame.minY, headline.frame.maxY)
-        XCTAssertLessThan(weekly.frame.maxY, buttons[0].frame.minY)
+        XCTAssertGreaterThan(weeklyFrame.minY, headline.frame.maxY)
+        XCTAssertLessThan(weeklyFrame.maxY, buttons[0].frame.minY)
     }
 
     // MARK: - An already-saved weekly recommendation

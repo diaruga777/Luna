@@ -1,12 +1,57 @@
-# Card Carousel (Downloader + Reader + Price Tracker roots)
+# Card Carousel (every app's root)
 
-All three standalone apps use a carousel of vertical cards — one saved item per
-card — as their root presentation. The machinery is **generic and
-surface-agnostic** and lives in `LunaLibraries/Sources/LunaDesignSystem/CardCarousel/`
-(LunaDesignSystem is linked by all three apps). Surface adapters live in
-`Luna/Downloader/SavedMediaCardsViewController.swift`,
-`Luna/Reader/ArticleCardsViewController.swift`, and
-`Luna/PriceTracker/PriceTrackerCardsViewController.swift`.
+All four apps use a carousel of vertical cards — one saved item per card — as
+their root presentation. The machinery is **generic and surface-agnostic** and
+lives in `LunaLibraries/Sources/LunaDesignSystem/CardCarousel/` (LunaDesignSystem
+is linked by every app).
+
+## One deck, four kinds
+
+**There is ONE deck implementation**: `CardCarouselHostViewController`
+(`Luna/CardCarouselHost/`). It owns the carousel instance, the index arithmetic
+over its cards, the six-phase reload with its fingerprint diff and its centering
+ladder, the single `CardCarouselDataSource`/`CardCarouselDelegate` conformance,
+the archive tray's item pipeline, the flanking Settings/share circles, and the
+util card's save transition. None of that exists anywhere else — the three root
+decks used to parallel-implement all of it.
+
+What differs between four apps is what a card IS, and that arrives through
+`CardDeckProviding` (`Luna/CardCarouselHost/CardDeckProvider.swift`): what a card
+looks like, what its long press offers, where a tap goes, what deleting it
+releases, and how its store is ordered, filtered, and watched. **Each deck view
+controller is its own provider** (`deckProvider` returns `self`), so the
+kind-specific code stays in the file it already lived in without a second object
+or a retain cycle:
+
+| File | What it contributes |
+| --- | --- |
+| `Luna/Reader/ArticleCardsViewController.swift` | articles (and, in the central app, every kind — see "all-kinds deck") plus the reader chrome stack |
+| `Luna/Downloader/SavedMediaCardsViewController.swift` | media rows and failed saves |
+| `Luna/PriceTracker/PriceTrackerCardsViewController.swift` | product cards |
+
+The host keeps a flat `[CardDeckSlot]` — `id`, optional `urlString`,
+`fingerprint` — and **takes the util card's offset off exactly once**, so a
+provider never sees a carousel index at all. `CardDeckSlot.urlString` exists for
+the Downloader, whose media rows are keyed by the MEDIA store's id: a util-card
+save hands back a reading-list item whose id that row does not share, but whose
+URL it does, so either key resolves.
+
+Slot preparation is two steps on purpose. `deckPreparedSnapshot()` reads the
+stores and computes the slots WITHOUT adopting them; only a reload that actually
+goes ahead calls `deckCommitPreparedSnapshot()`. An abandoned reload must leave
+the provider's typed arrays exactly as the carousel was built from them.
+
+`ArticleCardsViewController` subclasses the host — the only deck that does —
+because its cards are live readers and it has real screen-level chrome of its own
+(header row, immersion, footer veil, hosted scroll indicator, inline second
+column, eye-tracking adoption, animated archive/unarchive). It rides the shared
+core through named hooks: `deckWillReload`, `deckWillApplyReload`,
+`deckDidApplyReload`, `deckWillMountBottomControls`,
+`deckDidMountBottomControls`, `deckDidCenterCard(at:)`,
+`deckDidSurfaceForEdgePaging`, `configureTrailingBottomButton`,
+`refreshTrailingBottomButton`, `deckAllowsArchivePull`,
+`deckArchiveTrayOpenStateDidChange`, `deckReconcilesArchivePullOnReload`, and
+`carouselTopClearance`.
 
 ## Layout
 
@@ -27,7 +72,7 @@ surface-agnostic** and lives in `LunaLibraries/Sources/LunaDesignSystem/CardCaro
   them span exactly the container minus one padding each side — which is what
   lets the side-by-side inline reader reuse one card width for both columns
   instead of resizing the card it slides aside.
-- All three roots have no header bar. The Downloader scrub strip is bounded between
+- All four roots have no header bar. The Downloader scrub strip is bounded between
   the inner edges of the 44pt Liquid Glass Settings and Share circles (64pt
   horizontal inset), with no edge blur that could show as a band on black.
   Its thumbnail pitch uses a 20pt gap. The Reader's miniature-card strip runs
@@ -35,7 +80,7 @@ surface-agnostic** and lives in `LunaLibraries/Sources/LunaDesignSystem/CardCaro
   edge. Its mini cards disappear through a transparent alpha mask near those
   bounds; no blur/white veil is drawn in either appearance. Downloader's Share circle
   exports the centered media file directly through the system share sheet and is
-  hidden for pasteboard/undownloaded cards. Downloader has no Friends or Add
+  hidden for undownloaded cards. Downloader has no Friends or Add
   button on the root; Friends remains reachable through Settings. Its 9:16
   thumbnail chips have a visible pitch gap and enough strip height for selection
   scaling/shadows, so neither selected nor neighboring previews overlap or clip.
@@ -128,8 +173,7 @@ Consequences for the deck:
 
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
-  leaves center, keeping position. Downloader's unsaved pasteboard preview is the
-  deliberate exception: it stays paused until the user explicitly taps Play.
+  leaves center, keeping position.
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
   playback timestamp (one card-width ≈ full duration). While a Downloader
   video is actively being scrubbed, a transient
@@ -209,15 +253,21 @@ seek/mute/centered hooks). Generic implementations:
 
 Downloader adds `UndownloadedMediaCardContentViewController` (download glyph +
 progress ring; observes `.downloaderJobProgressChanged` itself, keyed by its own
-source URL) and a transient pasteboard pipeline. Privacy-safe probable-URL pattern
-detection inserts a paste-icon placeholder at index zero without reading its value.
-Paging onto it performs the user-initiated read, validates Downloader ownership,
-and immediately stages the media to a one-hour temporary file while the card shows
-moon-horizon progress. Completion replaces it with a normal image/GIF/video card
-and a real thumbnail in the scrubber, but suppresses center autoplay. The first
-explicit Play tap (or a still-image card tap) commits it to `SavedMediaStore`, the
-shared reading list, and Photos. Changing the pasteboard or reaching the one-hour
-deadline discards the unsaved file.
+source URL).
+
+~~**The synthetic pasteboard card**~~ (DELETED). Both the Reader's and the
+Downloader's decks used to prepend a synthetic leading card driven by
+`detectPatterns(.probableWebURL)`: Reader resolved a full unsaved live reader on
+it and persisted when reading dismissed the chrome, and Downloader staged the
+media to a one-hour temporary file and committed it on the first explicit Play.
+Paste moved permanently onto the util card's own `UIPasteControl` row and neither
+deck has created that card since — `refreshPasteboardURL` had no caller — so the
+whole layer is gone: `PasteboardLinkProbe`, `PasteboardCommitPolicy`,
+`PasteboardTemporaryMediaPolicy`, the four synthetic card content controllers,
+both decks' state machines, and the `"paste|"` element the reload fingerprint
+carried for it. Removing that element left an empty deck fingerprinting as `[]` —
+the initial value of `appliedFingerprint` — which is why the host has a
+`hasAppliedSnapshot` first-reload guard.
 
 ## The eclipse page transition
 
@@ -267,13 +317,30 @@ it arrived: the util card, the share/action/Safari extension,
 an App Intent, the mailbox importer, or a sibling app writing the shared store
 while this one was suspended or dead.
 
+**One ladder, in the host, for every app**, resolved once per applied reload:
+
+1. **A save this deck has never shown.** Highest, unconditionally.
+2. The archive choreography's intended successor
+   (`pendingTransitionCenteredID`) — not a new save, so it sits below one, but
+   above the parked card: the store write happens first and the animation
+   snapshot needs its destination already under it.
+3. A save the deck is still waiting to see appear (`requestCentering`) — an
+   in-app util-card save, the price editor's Save, a row coming back out of the
+   archive. Kept until it resolves, because the row a save becomes can appear a
+   notification later than the save itself (the Downloader's media row is
+   written by a second store).
+4. The card the user was parked on, by identity.
+5. The deck's default: its newest save, or the util card when it has none.
+
+Price Tracker used to resolve (3) above (4) while Reader and Downloader resolved
+it below; that divergence is gone and the ladder above is the rule everywhere.
+**Nothing is gated on a save having been made interactively.**
+
 The decks don't ask each entry point to announce itself. Every reload hands its
 card ids to `CardCarouselHostViewController.newSaveItemIndex(cardIDs:offstageIDs:)`,
 which compares them against the previous snapshot: any id that wasn't there
-arrived since, however it got here, and its index wins the centering — ahead of
-the card the user was parked on, the permanent util card, and an in-flight
-archive transition. With several new saves, the first in card order centers,
-which on every deck's newest-first ordering is the most recent one.
+arrived since, however it got here. With several new saves, the first in card
+order centers, which on every deck's newest-first ordering is the most recent one.
 
 A save selected from the util card adds one extra visual handoff shared by all
 surface hosts: the tapped URL row's empty shell travels to the carousel's
@@ -290,19 +357,46 @@ leaves the archive tray's own transition in charge of where it lands. And the
 first snapshot only seeds the set — a deck that has shown nothing has nothing
 new, and its newest-first default already opens on the most recent save.
 
-Covered by `NewSaveCenteringTests`.
+Covered by `NewSaveCenteringTests` (all three decks, end to end, plus the shared
+seam in isolation).
 
-## Store plumbing (Downloader host)
+## Store plumbing (Downloader provider)
 
 `SavedMediaCardsViewController` keeps the grid's plumbing: cross-process Darwin
-bridge, `.savedMediaChanged`/`.readingListChanged`/foreground/activation reloads,
-expiry purge, Photos reconciliation (full `.authorized` only), long-press context
+bridge (`deckWillBeginObservingStores`),
+`.savedMediaChanged`/`.readingListChanged`/foreground/activation reloads
+(`deckChangeNotificationNames` + `deckActivationNotificationNames`), expiry purge,
+Photos reconciliation (full `.authorized` only, in `deckDidSettleReload` so a
+reload that changed nothing still notices a vanished asset), long-press context
 menu (Download / Share / Save to Photos / Archive / Delete), and mark-opened on
-centering. Reloads are fingerprinted
-(`id|thumbnail|storageState` per item) so store notifications that change nothing
-visible don't rebuild live card content mid-playback; real changes reload while
-keeping the currently centered item centered by id — unless the change brought a
-new save, which takes the center (above).
+centering. Its slot fingerprint is `id|thumbnail|storageState`, so store
+notifications that change nothing visible don't rebuild live card content
+mid-playback.
+
+**Its failed saves are SLOTS, not a second index space.** A save whose ingestion
+failed carries no kind, so the surface gate keeps it and every app shows it —
+this app included. Those cards sit after the media rows in the same
+`[CardDeckSlot]` list. This deck used to keep two index maps (`mediaIndex` /
+`failedIndex`) that every data-source method probed, and they disagreed in two
+places, both now fixed:
+
+- Parking on a failed-save card survives a reload. `centeredID` was read out of
+  the media array only, so a failed card gave nil and the deck fell back to the
+  first media row.
+- The archive tray's pull activates on the last CARD. `canPull` compared
+  `currentIndex` against `items.count + cardOffset` — the last MEDIA card — while
+  `navigationTargetDidChangeTo` correctly counted the failed saves too, so with
+  failed saves present the pull turned on mid-deck and never on the true end.
+
+Covered by `SavedMediaDeckSlotTests`.
+
+The verbs a media row offers, and the storage work behind two of them, live once
+in `MediaItemActions` (`Luna/Downloader/MediaCardFactory.swift`): the switch over
+`storageState` that decides the menu, the manual-download start, the
+save-to-Photos copy, the companion-storage release, and the `storageStateKey`
+both this deck and the all-kinds deck fingerprint a media card by. Two decks show
+the same media save, and they were answering "what can you do with this?" and
+"what goes when it goes?" with two copies of the same code.
 
 **Download progress is never floating chrome.** The app-level
 `DownloaderProgressFooterView` was deleted: an in-flight download is drawn inside
@@ -388,8 +482,9 @@ Differences from the Downloader, via `CardCarouselStyle`:
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one
   layout for both states), and paging never shows a placeholder. The layer
-  header is not a bar: back (inline-reader layers only) or Pasteboard (root
-  layer when a URL is available) occupies top-left and read-aloud sits top-right.
+  header is not a bar: the top-left circle is back (inline-reader layers only),
+  or the RSVP eye-tracking toggle the deck adopts from the focused reader, and
+  read-aloud sits top-right.
   The mode switcher occupies the bottom-center lane only while card chrome is
   dismissed, replacing the mini carousel there; the two controls trade places
   with a short translation + fade. Share is the bottom-right floating circle.
@@ -529,9 +624,12 @@ price trackers, which still open the price editor.
 
 `ArticleCardsViewController` is shared with **Luna Reader**, which links no
 media module and so cannot name any of that. The deck therefore talks to an
-`AllKindsCardProviding` seam (card content, top-leading accessory, source
-badge, thumbnail, menu actions, companion-storage delete, per-item fingerprint,
-change-notification names); only the central app compiles an implementation
+`AllKindsCardProviding` seam — an inner seam, NESTED inside the article deck's
+own `CardDeckProviding` conformance: the deck is the provider for the whole deck,
+and `AllKindsCardProviding` is how the foreign kinds contribute to it (card
+content, top-leading accessory, source badge, thumbnail, menu actions,
+companion-storage delete, per-item fingerprint, change-notification names). Only
+the central app compiles an implementation
 (`AllKindsCardProvider`, installed beside `nonArticleOpener` by
 `NonArticleCardOpening.install()`). The card construction itself lives in
 `MediaCardFactory` (compiled into Luna + LunaDownloader), which the Downloader's

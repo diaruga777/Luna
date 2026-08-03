@@ -2,12 +2,17 @@
 
 Every Luna card deck has one permanent utility card at carousel index zero. It
 replaces the former left tray, standalone onboarding root, synthetic pasteboard
-card, and card-carousel empty state.
+card (now DELETED outright — see `card-carousel.md`), and card-carousel empty
+state.
 
 The shared implementation is
-`Luna/UtilCard/UtilCardContentViewController.swift`. Each surface host constructs
-it through `CardCarouselHostViewController.makeUtilCardContentController` and
-keeps saved content at `cardOffset == 1`.
+`Luna/UtilCard/UtilCardContentViewController.swift`. There is ONE deck
+(`CardCarouselHostViewController`, see `card-carousel.md`), and it constructs the
+util card itself through `makeUtilCardContentController`, keeps its saves at
+`cardOffset == 1`, and owns the whole `saveUtilCardURL` path — the row-into-card
+transition, the ingest, and the reload that centers what the save became. A deck's
+kind provider (`CardDeckProviding`) contributes cards; it never touches the
+util card or the save path.
 
 ## Deck position and launch selection
 
@@ -62,7 +67,11 @@ Selecting the weekly row or a recent row calls the same full ingest path as any
 other in-app save. `UtilCardSaveTransition` owns the shared handoff: the source
 shell expands to the destination card while thumbnail and
 labels travel independently, then the mounted destination crossfades in and the
-deck centers it. The growing shell is a card from its first frame: it wears the
+deck centers it. The centering is the host's one ladder, where the just-made save
+resolves as "a save this deck has never shown" — the top rung
+(`card-carousel.md`, "A new save takes the center"). A deck keyed by a companion
+store's ids (the Downloader's media rows) resolves it by URL instead; both keys
+travel with the request. The growing shell is a card from its first frame: it wears the
 card rim (whose radius follows the shell's own, 16 → 22) and carries Luna's own
 waiting — `HorizonSpinnerView` for an article or product, `EclipseProgressBar`
 for a media transfer — until the real content crossfades in.

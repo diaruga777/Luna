@@ -178,7 +178,9 @@ Almost all code lives in the local SwiftPM package `LunaLibraries/` (layered: co
 orchestration/intents; `LunaAppConfig` at the bottom is the App-Group id source of
 truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared app shell
 (AppDelegate/SceneDelegate), per-app Settings, the main-screen composition
-(each app's card deck), composition wiring (AppReaderProviders), the App Intent **definitions** (`Luna/Mail/Intents/*` —
+(the ONE card deck — `Luna/CardCarouselHost/CardCarouselHostViewController.swift`
+— plus each kind's `CardDeckProviding` half; see `claudedocs/card-carousel.md`),
+composition wiring (AppReaderProviders), the App Intent **definitions** (`Luna/Mail/Intents/*` —
 business logic is in the `LunaIntents` library) — and is shared by ALL
 FOUR app targets (each picks its surface from its bundle id; per-app kind wiring
 comes from the one `KindWiring+*.swift` variant each target compiles). `KindWiring` is
@@ -191,8 +193,9 @@ the universal shell never names a foreign kind's symbols. The Action Button inte
 `ActionButtonIntentSupport.mediaHandoff` (installed by `MediaIntentHandoff`), read-aloud via
 `ReadArticleIntent.playArticle`, and URL Rescue's kind legs via
 `URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
-(article: card deck, mini-player, audio wiring, reader/email settings; media: saved-media
-deck, auto-download settings, intent handoff; `UITestScreen`/`NonArticleCardOpening`:
+(article: the article deck provider, mini-player, audio wiring, reader/email settings;
+media: the media deck provider, auto-download settings, intent handoff;
+`UITestScreen`/`NonArticleCardOpening`:
 central-app-only) are excluded from foreign targets via the same membership-exception
 mechanism. The Share/Action extensions
 link `LunaShareSurface` (+ transitive) plus their host's kind modules, `LunaSafari` links
@@ -327,8 +330,10 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 1915 tests, 9 skipped, 0 failures**
-  (measured 2026-07-29 post-merge, full run with nothing skipped on the command line). The
+- **Current suite state on the iOS 26.x sim: 2261 tests, 9 skipped, 0 failures**
+  (measured 2026-08-03 after the one-deck refactor, full run with nothing skipped on
+  the command line — five dead synthetic-paste-card tests out, five deck-slot /
+  Downloader-centering tests in). The
   long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
   snapshot set was re-recorded for the predawn palette, and the harness now pins the
   same appearance the app does (dark style + `lunaSky = .predawn`, over

@@ -871,3 +871,71 @@ final class CardCarouselChromeBackdropTests: XCTestCase {
         carousel.setImmersed(true, animated: false)
     }
 }
+
+/// The strip's util chip: the deck's permanent first card reads as a mark over a
+/// button rather than as a save's still or a favicon-and-skeleton mini card.
+@MainActor
+final class CarouselScrubberUtilityChipTests: XCTestCase {
+
+    func testUtilityChipCentersItsMarkAboveCenterWithAPillBeneathIt() throws {
+        let strip = CarouselScrubberView(style: .miniCards)
+        strip.frame = CGRect(x: 0, y: 0, width: 320, height: strip.preferredHeight)
+        strip.setThumbnailCount(3)
+        let icon = Self.solidImage(side: 40)
+        strip.setUtilityChip(icon: icon, at: 0)
+        strip.layoutIfNeeded()
+
+        let chip = try XCTUnwrap(Self.chip(carrying: icon, in: strip))
+        let mark = try XCTUnwrap(
+            chip.subviews.compactMap { $0 as? UIImageView }.first { $0.image === icon })
+        XCTAssertEqual(mark.contentMode, .scaleAspectFit)
+        // Same size as a mini card's source badge, centered horizontally, and
+        // lifted off the chip's own center by 1.3.
+        XCTAssertEqual(mark.bounds.width, 16, accuracy: 0.01)
+        XCTAssertEqual(mark.bounds.height, 16, accuracy: 0.01)
+        XCTAssertEqual(mark.center.x, chip.bounds.midX, accuracy: 1)
+        XCTAssertEqual(
+            mark.center.y, chip.bounds.height / 2 / 1.3, accuracy: 1)
+
+        let pill = try XCTUnwrap(chip.subviews.last { view in
+            !(view is UIImageView) && !view.isHidden
+                && view.bounds.height > 4 && view.bounds.height < 12
+        })
+        XCTAssertGreaterThan(pill.frame.minY, mark.frame.maxY)
+        XCTAssertEqual(pill.center.x, chip.bounds.midX, accuracy: 1)
+        XCTAssertEqual(pill.layer.cornerRadius, pill.bounds.height / 2, accuracy: 0.01)
+    }
+
+    func testASaveArtworkTakesTheChipBackFromTheUtilityLayout() throws {
+        let strip = CarouselScrubberView(style: .miniCards)
+        strip.frame = CGRect(x: 0, y: 0, width: 320, height: strip.preferredHeight)
+        strip.setThumbnailCount(2)
+        let icon = Self.solidImage(side: 40)
+        strip.setUtilityChip(icon: icon, at: 0)
+        strip.layoutIfNeeded()
+        let chip = try XCTUnwrap(Self.chip(carrying: icon, in: strip))
+
+        strip.setBadge(.symbol("safari.fill"), at: 0)
+        strip.layoutIfNeeded()
+
+        XCTAssertNil(
+            chip.subviews.compactMap { $0 as? UIImageView }.first { $0.image === icon })
+    }
+
+    private static func chip(carrying icon: UIImage, in strip: UIView) -> UIView? {
+        for view in strip.subviews {
+            if view.subviews.contains(where: { ($0 as? UIImageView)?.image === icon }) {
+                return view
+            }
+            if let match = chip(carrying: icon, in: view) { return match }
+        }
+        return nil
+    }
+
+    private static func solidImage(side: CGFloat) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        }
+    }
+}

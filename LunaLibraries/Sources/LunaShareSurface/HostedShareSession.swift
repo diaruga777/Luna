@@ -56,6 +56,13 @@ public final class HostedShareSession {
         revealDate = Date()
     }
 
+    /// Rewinds the reveal for another pass. The onboarding demonstration LOOPS,
+    /// and each pass is a fresh opening of the sheet, so each pass gets its own
+    /// minimum indication.
+    public func beginReveal() {
+        revealDate = nil
+    }
+
     /// The least time a download indication stays up after the reveal. A
     /// preloaded file is already on disk by the time the sheet opens; without a
     /// floor the progress bar would appear and vanish inside one frame.
@@ -91,6 +98,17 @@ public final class HostedShareSession {
     /// The reading-list row the hosted flow created, reported so the host can
     /// mark it as its temporary save and take it back out afterwards.
     public var onDidAppendRow: ((UUID) -> Void)?
+
+    /// Set by whichever kind screen can play its own beat AGAIN from what it
+    /// already has — the media screen re-running its download indication and its
+    /// playback off the retained file. The host calls `replayBeat()` on each pass
+    /// of the looping demonstration, so a second showing costs no network at all.
+    /// Kind-neutral by construction: the host never learns which screen answered.
+    public var onReplayBeat: (() -> Void)?
+
+    public func replayBeat() {
+        onReplayBeat?()
+    }
 
     // MARK: - Retained artifacts
 

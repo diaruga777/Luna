@@ -124,3 +124,30 @@ public enum ShareKindPresenters {
     public static var media: ShareMediaPresenting?
     public static var product: ShareProductPresenting?
 }
+
+/// The media-kind side effects the shared APP SHELL needs, addressed without
+/// naming the registry.
+///
+/// The shell compiles into all four apps, three of which link no media module, so
+/// it can only reach media through `ShareKindPresenters.media`. But every
+/// mention of that registry inside a composition-root directory is what
+/// `KindCompositionRootTests` forbids — the rule that keeps a kind from being
+/// wired on some surfaces and not others — and "no root says the word" is a
+/// sharper rule than "no root says the word in an assignment". So the two asks
+/// the shell makes get a name of their own, here, in the module that owns the
+/// registry. No-ops wherever no media presenter is registered, which is exactly
+/// the apps that have no media to preload or delete.
+@MainActor
+public enum ShareMediaSideEffects {
+
+    /// Starts fetching `urlString`'s media now, so a surface opened moments later
+    /// finds the file already on disk.
+    public static func preloadDownload(forURLString urlString: String) {
+        ShareKindPresenters.media?.preloadDownload(forURLString: urlString)
+    }
+
+    /// Removes everything the media kind persisted for `urlString`.
+    public static func deleteSavedContents(forURLString urlString: String) {
+        ShareKindPresenters.media?.deleteSavedContents(forURLString: urlString)
+    }
+}

@@ -109,7 +109,13 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private var islandView: OnboardingDynamicIslandRunView?
     private var mockTap: OnboardingMockTapIndicatorView?
     private var flyingBubble: UIView?
-    private var extensionSheet: OnboardingActionExtensionSheetView?
+    /// The real share surface, in a sheet, run by the demo controller. Injected
+    /// by the onboarding host, which owns the resolved link and the lesson's
+    /// lifetime — a conversation replica has no business deciding what gets saved.
+    var saveDemoController: OnboardingSaveDemoController?
+    /// True while that surface's sheet is on screen, so the walkthroughs can
+    /// refuse to start a second one over it.
+    private var isPresentingSaveSurface = false
     private var contextMenu: OnboardingMockLinkContextMenuView?
     private var shareSheet: OnboardingMockShareSheetView?
     private var hidesStatusBarForIsland = false
@@ -484,7 +490,8 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     }
 
     private func beginShareSheetDemonstration() {
-        guard contextMenu == nil, shareSheet == nil, extensionSheet == nil else { return }
+        guard contextMenu == nil, shareSheet == nil, !isPresentingSaveSurface
+        else { return }
         sequenceGeneration += 1
         let generation = sequenceGeneration
         let tap = OnboardingMockTapIndicatorView()
@@ -534,7 +541,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         sheet.playWalkthrough { [weak self] in
             guard let self, generation == self.sequenceGeneration else { return }
             self.shareSheet = nil
-            self.presentMockActionExtension(
+            self.presentSaveSurface(
                 generation: generation,
                 onDismiss: { [weak self] in
                     self?.finishShareSheetRunSequence(generation: generation)
@@ -697,7 +704,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                 guard let self, generation == self.sequenceGeneration else { return }
                 self.islandView = nil
                 self.setStatusBarHiddenForIsland(false)
-                self.presentMockActionExtension(
+                self.presentSaveSurface(
                     generation: generation,
                     onDismiss: { [weak self] in
                         self?.finishShortcutRunSequence(generation: generation)
@@ -706,30 +713,31 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         }
     }
 
-    /// The tapped island "runs" the save: the app's ordinary action-extension
-    /// sheet slides up over the conversation with the reader inside, holds a
-    /// beat, and slides away.
-    private func presentMockActionExtension(
+    /// The save RUNS. The app's ordinary extension sheet slides up over the
+    /// conversation with the REAL share surface inside it — same ingest, same
+    /// reader / saved-media / price editor, same errors — and stays up until that
+    /// surface resolves on its own.
+    ///
+    /// It used to be a hand-drawn fake holding a bundled article for exactly one
+    /// second. There is no timer here at all: the wait ends on the surface's own
+    /// terminal state, so a slow fetch is a longer sheet rather than a sheet that
+    /// dismissed before the thing it was demonstrating happened.
+    private func presentSaveSurface(
         generation: Int,
         onDismiss: @escaping () -> Void
     ) {
-        let sheet = OnboardingActionExtensionSheetView(frame: view.bounds)
-        extensionSheet = sheet
-        view.addSubview(sheet)
-        sheet.present { [weak self] in
+        guard let demo = saveDemoController else {
+            onDismiss()
+            return
+        }
+        isPresentingSaveSurface = true
+        demo.present { [weak self] in
             guard let self, generation == self.sequenceGeneration else { return }
-            self.afterDelay(
-                OnboardingShortcutRunTiming.extensionSheetHoldDuration,
-                generation: generation
-            ) {
-                self.extensionSheet?.dismiss { [weak self] in
-                    guard let self,
-                          generation == self.sequenceGeneration
-                    else { return }
-                    self.extensionSheet?.removeFromSuperview()
-                    self.extensionSheet = nil
-                    onDismiss()
-                }
+            demo.dismiss { [weak self] in
+                guard let self else { return }
+                self.isPresentingSaveSurface = false
+                guard generation == self.sequenceGeneration else { return }
+                onDismiss()
             }
         }
     }
@@ -820,8 +828,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         flyingBubble?.layer.removeAllAnimations()
         flyingBubble?.removeFromSuperview()
         flyingBubble = nil
-        extensionSheet?.removeFromSuperview()
-        extensionSheet = nil
+        // The surface and its result survive — re-entering the lesson must not
+        // cost another fetch — but nothing of it stays on screen, and the row it
+        // wrote goes back out of the store now rather than at the next pass.
+        saveDemoController?.abortPresentation()
+        isPresentingSaveSurface = false
         contextMenu?.removeFromSuperview()
         contextMenu = nil
         shareSheet?.cancelWalkthrough()

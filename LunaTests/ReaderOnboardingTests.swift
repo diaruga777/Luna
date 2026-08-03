@@ -6,6 +6,7 @@
 import LunaModels
 import LunaDesignSystem
 import LunaReaderUI
+import LunaShareSurface
 import LunaStorage
 import XCTest
 @testable import Luna
@@ -127,9 +128,10 @@ final class ReaderOnboardingTests: XCTestCase {
         }
     }
 
-    /// The demonstration is a picture, not a save. Every mock surface renders
-    /// `OnboardingLunaArticleCopy` itself, so entering a lesson must leave the
-    /// deck exactly as empty as the user left it.
+    /// The save demonstration is no longer a picture — it runs the REAL share
+    /// surface over a real link — so "entering a lesson writes nothing" is now an
+    /// invariant with teeth rather than a tautology. Entering leaves the deck
+    /// exactly as empty as the user left it, and claims no temporary save.
     @MainActor
     func testEnteringALessonWritesNothingToTheStore() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
@@ -166,6 +168,54 @@ final class ReaderOnboardingTests: XCTestCase {
         // runs one stage per run-loop turn.
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
 
+        XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
+        XCTAssertNil(registry.temporarySaveIdentifier)
+    }
+
+    /// The other lesson, whose engine now mounts a live `ShareViewController` the
+    /// instant it is entered. With no live Save of the Week the link it resolves is
+    /// the bundled practice one, which every surface recognizes and short-circuits
+    /// before the network — so entering it writes nothing either, and there is
+    /// nothing to clean up.
+    @MainActor
+    func testEnteringTheSaveLessonRunsTheRealSurfaceAndStillStoresNothing() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let registry = AppOnboardingStore(app: .reader, defaults: defaults)
+        let productionRoot = UINavigationController(
+            rootViewController: UIViewController())
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(for: .reader, saveSetupMode: .shareSheet),
+            onboardingStore: registry,
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { productionRoot }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+
+        let before = Set(ReadingListStore.shared.items().map(\.id))
+        let button = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.shareAction.value()
+            })
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+        button.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+
+        // The real surface IS mounted and running — that is the whole point — and
+        // it is showing the bundled practice preview rather than a hand-drawn one.
+        let surfaces = onboarding.descendantControllers(of: ShareViewController.self)
+        XCTAssertEqual(surfaces.count, 1)
+        XCTAssertTrue(try XCTUnwrap(surfaces.first).isHosted)
         XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
         XCTAssertNil(registry.temporarySaveIdentifier)
     }

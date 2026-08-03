@@ -109,6 +109,11 @@ final class AppOnboardingViewController: UIViewController {
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
     private var safariReplica: SafariReplicaViewController?
     private var messagesReplica: MessagesReplicaViewController?
+    /// The save lesson's engine, built the moment the user taps into it: it
+    /// resolves the link, starts the real work, and owns the real share surface
+    /// the lesson demonstrates with. Nil until then — nothing is fetched, saved
+    /// or downloaded on behalf of a lesson nobody entered.
+    private var saveDemoController: OnboardingSaveDemoController?
     private var savedRootViewController: UIViewController?
     private var savedCardWaveSnapshot: UIImage?
     private var introCorona: EclipseCoronaView?
@@ -535,6 +540,43 @@ final class AppOnboardingViewController: UIViewController {
         safari.view.layoutIfNeeded()
     }
 
+    /// Builds the save lesson's engine (once), points the conversation at the
+    /// link it resolved, and lets the real surface start working behind the
+    /// scenes. Called from BOTH ways into the lesson — the first-run tap and the
+    /// settings replay — which is why it is idempotent.
+    private func startSaveDemonstration(for messages: MessagesReplicaViewController) {
+        let demo = saveDemoController ?? OnboardingSaveDemoController(
+            link: OnboardingSaveDemoLink.resolve(
+                practiceURLString: configuration.practiceURLString,
+                app: configuration.app),
+            onboardingStore: onboardingStore)
+        saveDemoController = demo
+        messages.saveDemoController = demo
+        messages.updateURL(demo.link.urlString)
+        demo.start(in: messages)
+    }
+
+    /// Ends the save lesson for good: releases the downloaded file the demo
+    /// replays were reusing and takes its row back out of the store for the last
+    /// time. Called from every route out of onboarding — `deinit` cannot, being
+    /// nonisolated where the controller is main-actor bound, and a rehearsal
+    /// outliving its lesson is exactly what the temporary-save marker exists to
+    /// stop.
+    private func endSaveDemonstration() {
+        saveDemoController?.tearDown()
+        saveDemoController = nil
+        messagesReplica?.saveDemoController = nil
+    }
+
+    /// The link the lesson is rehearsing with, or the app's practice link before
+    /// the lesson has been entered.
+    private func saveDemonstrationLink() -> OnboardingSaveDemoLink {
+        saveDemoController?.link
+            ?? OnboardingSaveDemoLink.resolve(
+                practiceURLString: configuration.practiceURLString,
+                app: configuration.app)
+    }
+
     private func showSafariCard() {
         guard carousel.currentIndex == 0, !didExpandSafari else { return }
         expandSafariCard()
@@ -556,7 +598,7 @@ final class AppOnboardingViewController: UIViewController {
         journeyStage = .messagesDemonstration
         demoPresentation = .fullScreen
 
-        messages.updateURL(configuration.practiceURLString)
+        startSaveDemonstration(for: messages)
         messages.resetConversation()
         let messagesView = messages.view!
         messagesView.isHidden = false
@@ -869,8 +911,8 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func prepareSourceForPresentation(_ source: OnboardingDemoSource) {
-        if source == .messages {
-            messagesReplica?.updateURL(configuration.practiceURLString)
+        if source == .messages, let messages = messagesReplica {
+            messages.updateURL(saveDemonstrationLink().urlString)
         }
         sourceController(for: source)?.prepareForPresentation()
         for otherSource in OnboardingDemoSource.allCases where otherSource != source {
@@ -1259,6 +1301,7 @@ final class AppOnboardingViewController: UIViewController {
     private func completeOnboardingWithRealSave(animated: Bool) {
         guard !isFinishing else { return }
         isFinishing = true
+        endSaveDemonstration()
         pauseDemoPresentationPlayback()
         replaceSavedRootWithCurrentContent()
         guard let window = view.window,
@@ -1332,6 +1375,9 @@ final class AppOnboardingViewController: UIViewController {
         case .safari:
             onboardingStore.markSafariSetupHandled()
         case .messages:
+            // The lesson is answered either way, so its rehearsal has nothing
+            // left to demonstrate.
+            endSaveDemonstration()
             onboardingStore.markSaveSetupHandled()
         }
         if setupReplaySource != nil {
@@ -1364,6 +1410,7 @@ final class AppOnboardingViewController: UIViewController {
               let setupReplayOriginSnapshot
         else { return }
         isFinishing = true
+        endSaveDemonstration()
         pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
@@ -1443,6 +1490,7 @@ final class AppOnboardingViewController: UIViewController {
               let root = savedRootViewController
         else { return }
         isFinishing = true
+        endSaveDemonstration()
         pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()

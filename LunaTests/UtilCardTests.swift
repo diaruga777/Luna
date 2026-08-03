@@ -386,6 +386,35 @@ final class UtilCardTests: XCTestCase {
         XCTAssertTrue(store.isCompleted)
     }
 
+    /// The save lesson runs the REAL share surface, so it really does write a
+    /// row. That row must never answer the first run: the app would be completing
+    /// its own onboarding on the strength of a rehearsal it played to itself.
+    func testTheSaveLessonsOwnRehearsalNeverAnswersTheFirstRun() {
+        let rehearsal = UUID()
+        let other = UUID()
+        var saves: [UUID: Date] = [
+            rehearsal: Date(timeIntervalSince1970: 1_100),
+        ]
+        let store = makeStore { excluded in
+            saves.filter { $0.key != excluded }.values.max()
+        }
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+
+        store.recordTemporarySave(identifier: rehearsal)
+        XCTAssertEqual(store.temporarySaveIdentifier, rehearsal)
+        XCTAssertFalse(store.markCompletedIfSavedSinceOnboardingStart())
+        XCTAssertFalse(store.isCompleted)
+
+        // A save from anywhere ELSE, while the rehearsal is still on disk, still
+        // answers it.
+        saves[other] = Date(timeIntervalSince1970: 1_200)
+        XCTAssertTrue(store.markCompletedIfSavedSinceOnboardingStart())
+        XCTAssertTrue(store.isCompleted)
+
+        store.clearTemporarySaveIdentifier()
+        XCTAssertNil(store.temporarySaveIdentifier)
+    }
+
     func testOnboardingStartIsStampedOnlyOnce() {
         let store = makeStore(newestSaveDate: { nil })
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
@@ -405,6 +434,12 @@ final class UtilCardTests: XCTestCase {
 
     private func makeStore(
         newestSaveDate: @escaping () -> Date?
+    ) -> AppOnboardingStore {
+        makeStore { _ in newestSaveDate() }
+    }
+
+    private func makeStore(
+        newestSaveDate: @escaping (UUID?) -> Date?
     ) -> AppOnboardingStore {
         AppOnboardingStore(
             app: .reader,

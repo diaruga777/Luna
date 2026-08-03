@@ -62,6 +62,11 @@ public final class SavedNonTextualViewController: UIViewController {
     /// library (see `persistToDownloaderLibraryIfNeeded`).
     private var didPersistToLibrary = false
 
+    /// Guards the one-time handover of the preview file to a `HostedShareSession`
+    /// — a looping demonstration re-applies `.ready` on every pass, and each
+    /// retention carries a delete.
+    private var didRetainHostedPreview = false
+
     /// The on-disk preview file that still needs cleanup: set when media becomes
     /// `.ready`, cleared once it's saved to Photos (PhotoKit moves/consumes the
     /// file). Deleted in `deinit` so a downloaded-but-never-saved preview doesn't
@@ -387,6 +392,9 @@ public final class SavedNonTextualViewController: UIViewController {
     /// delete it between passes and charge the next one another download.
     private func reportMediaState(_ state: MediaState) {
         guard let session = HostedShareSession.current else { return }
+        // Whatever this screen last resolved to, it can show again from what it
+        // already holds — that is what makes a looping lesson free.
+        session.onReplayBeat = { [weak self] in self?.replayHostedBeat() }
         switch state {
         case .downloading:
             session.awaitsMediaPlayback = true
@@ -394,9 +402,14 @@ public final class SavedNonTextualViewController: UIViewController {
             session.awaitsMediaPlayback = false
         case let .ready(media):
             let fileURL = media.fileURL
-            session.retain(media) {
-                try? FileManager.default.removeItem(at: fileURL)
+            if !didRetainHostedPreview {
+                didRetainHostedPreview = true
+                session.retain(media) {
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
             }
+            // The session owns the file now; this screen's `deinit` must not take
+            // it away between demonstration passes.
             unsavedPreviewFileURL = nil
             guard media.kind == .video else {
                 session.awaitsMediaPlayback = false
@@ -409,6 +422,26 @@ public final class SavedNonTextualViewController: UIViewController {
                 return
             }
             session.onMediaFileReady?(fileURL)
+        }
+    }
+
+    /// Plays the media beat over again, off the file already on disk: back to the
+    /// download indication, through its minimum, then the same result. No
+    /// resolve, no transfer, no second copy.
+    private func replayHostedBeat() {
+        switch mediaState {
+        case let .ready(media):
+            applyMediaState(.downloading)
+            downloadProgress.setProgress(1, animated: true)
+            applyResolvedMediaState(.ready(media))
+        case let .alreadyDownloaded(item):
+            applyMediaState(.downloading)
+            downloadProgress.setProgress(1, animated: true)
+            applyResolvedMediaState(.alreadyDownloaded(item))
+        case .pending, .downloading, .failed:
+            // Still working, or nothing to show — the first pass has not finished
+            // and re-running it would only restart what is already in flight.
+            break
         }
     }
 

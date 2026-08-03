@@ -47,6 +47,12 @@ open class ShareViewController: UIViewController {
     /// written — and NOTHING about the ingest/present decisions in between.
     public var isHosted: Bool { hostedInput != nil }
 
+    /// Whether a save through this surface counts as the user having driven the
+    /// share/action extension — the cross-process evidence the onboarding save
+    /// lesson watches for. False in hosted mode and nowhere else: a rehearsal the
+    /// app played to itself must not complete a setup step on the user's behalf.
+    public var recordsSetupRunEvidence: Bool { !isHosted }
+
     /// Runs the REAL share/action surface inside the app, over `hosted`, calling
     /// `onFinish` where an extension would complete its request.
     ///
@@ -436,7 +442,7 @@ open class ShareViewController: UIViewController {
     /// NEVER from the in-app hosted mode: a rehearsal the app played to itself is
     /// not the user doing anything.
     private func recordShareSurfaceRun() {
-        guard !isHosted else { return }
+        guard recordsSetupRunEvidence else { return }
         LunaSetupStatusStore.shared.recordShareActionRun(
             isCentral: LunaApp.current == .luna)
     }
@@ -527,7 +533,7 @@ open class ShareViewController: UIViewController {
         let app = LunaApp.current
         // Hosted, this same preview is what the lesson SHOWS you. Recording the
         // run there would let the app complete its own setup step on your behalf.
-        if !isHosted {
+        if recordsSetupRunEvidence {
             LunaSetupStatusStore.shared.recordShareActionRun(isCentral: app == .luna)
         }
         SharedDiagnosticLog.record(

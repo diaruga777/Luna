@@ -49,7 +49,10 @@ intentional corona/rim/star changes, run
 `OnboardingIntroHeadlineView` retains the existing two-beat moon-reveal
 animation. Reader uses `growingLine`; the others use two lines. The util card
 starts that animation from `cardDidBecomeCentered`, so it does not spend the
-animation while mounted only as a side peek.
+animation while mounted only as a side peek. On the launch that animates it,
+the card's other elements wait at alpha 0 and fade in together, in place, from
+the second beat's completion (`claudedocs/util-card.md`, "the headline speaks
+first"); a non-animating appearance shows them immediately.
 
 ## Completion model
 

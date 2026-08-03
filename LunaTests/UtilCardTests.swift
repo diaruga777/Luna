@@ -166,6 +166,63 @@ final class UtilCardTests: XCTestCase {
         XCTAssertFalse(fragments.tail.isFullyRevealed)
     }
 
+    // MARK: - The headline speaks first
+
+    /// On the launch that animates the sweep, everything below the headline
+    /// waits invisible for the group reveal that follows the bloom.
+    func testTheLaunchsOwnIntroHoldsEveryOtherElementBehindTheHeadline() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: true)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+
+        let paste = try XCTUnwrap(card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introPaste.value()))
+        XCTAssertEqual(paste.alpha, 0)
+        for button in card.view.descendants(of: UIButton.self)
+        where button.superview === card.view {
+            XCTAssertEqual(button.alpha, 0)
+        }
+        let headline = try XCTUnwrap(
+            card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
+        XCTAssertEqual(headline.alpha, 1, "The headline is what everyone waits on")
+    }
+
+    /// Any appearance that does not animate the sweep owes nobody a wait.
+    func testANonAnimatingAppearanceShowsItsElementsImmediately() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: false)
+        card.loadViewIfNeeded()
+
+        let paste = try XCTUnwrap(card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introPaste.value()))
+        XCTAssertEqual(paste.alpha, 1)
+        for button in card.view.descendants(of: UIButton.self)
+        where button.superview === card.view {
+            XCTAssertEqual(button.alpha, 1)
+        }
+    }
+
+    /// A weekly value landing while the headline is still speaking takes its
+    /// slot silently and joins the group fade instead of fading in on its own.
+    func testAWeeklyValueArrivingMidSweepWaitsForTheGroupReveal() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: true)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+        let host = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.weeklyHost"))
+        XCTAssertTrue(host.isHidden)
+
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let deadline = Date().addingTimeInterval(2)
+        while host.isHidden, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+
+        XCTAssertFalse(host.isHidden, "The slot is claimed while invisible")
+        XCTAssertEqual(host.alpha, 0, "Its alpha belongs to the group reveal")
+    }
+
     // MARK: - Layout
 
     func testSetupActionsStackUpFromThePasteFieldAndTheHeadlineSitsBelowTheCardTop() throws {

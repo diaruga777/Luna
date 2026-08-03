@@ -68,6 +68,10 @@ final class UtilCardContentViewController: CardContentViewController {
     private let pasteRow = OnboardingPasteRow()
     private var recentRows: [UtilURLRow] = []
     private var didSettleHeadline = false
+    /// On the launch that owns the headline sweep, everything below the
+    /// headline waits invisible until the sweep's bloom has finished, then
+    /// fades in together. Never true on any other appearance.
+    private var awaitingIntroReveal = false
     private var observers: [NSObjectProtocol] = []
 
     init(
@@ -180,7 +184,38 @@ final class UtilCardContentViewController: CardContentViewController {
             self?.weeklySaveDidChange()
         })
 
+        // The launch's own sweep speaks first: everything else on the card
+        // holds back until the headline has finished saying itself.
+        if animatesIntro {
+            awaitingIntroReveal = true
+            for element in introRevealElements { element.alpha = 0 }
+        }
+
         RecentURLMatcher.shared.refresh()
+    }
+
+    /// What waits behind the headline on the launch that animates it. The
+    /// headline itself is not here — it is the thing being waited on.
+    private var introRevealElements: [UIView] {
+        [weeklyHost, safariButton, saveSetupButton, orLabel, pasteRow]
+    }
+
+    /// The headline's bloom has finished: the rest of the card fades in, in
+    /// place — the same beat the standalone intro card gave its actions.
+    private func revealIntroElements() {
+        guard awaitingIntroReveal else { return }
+        awaitingIntroReveal = false
+        if UIAccessibility.isReduceMotionEnabled {
+            for element in introRevealElements { element.alpha = 1 }
+            return
+        }
+        UIView.animate(
+            withDuration: 0.38,
+            delay: 0.16,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            for element in self.introRevealElements { element.alpha = 1 }
+        }
     }
 
     /// The store gained, replaced, or lost a value. Presence changes reflow the
@@ -190,6 +225,13 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.reload(animated: !UIAccessibility.isReduceMotionEnabled)
         let shouldHide = weeklyHost.isEmpty
         guard wasHidden != shouldHide else { return }
+        if awaitingIntroReveal {
+            // The headline is still speaking. Take the slot (or give it up)
+            // silently — the row's alpha belongs to the intro reveal.
+            weeklyHost.isHidden = shouldHide
+            view.setNeedsLayout()
+            return
+        }
         if UIAccessibility.isReduceMotionEnabled {
             weeklyHost.isHidden = shouldHide
             weeklyHost.alpha = 1
@@ -213,6 +255,11 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.isHidden = false
         weeklyHost.alpha = 0
         view.setNeedsLayout()
+        // The freshly built row is sized OUTSIDE the animation — its frame in
+        // the card doesn't depend on the slot's presence, so only the card's
+        // other elements animate their reflow while the row itself fades in
+        // already in place, rather than growing into it from zero.
+        weeklyHost.layoutIfNeeded()
         UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
             self.view.layoutIfNeeded()
             self.weeklyHost.alpha = 1
@@ -305,7 +352,7 @@ final class UtilCardContentViewController: CardContentViewController {
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
                 OnboardingIntroTiming.firstLineDelay)
-        ) { [weak headline] in
+        ) { [weak self, weak headline] in
             guard let headline else { return }
             headline.revealFirstBeat(
                 duration: OnboardingIntroTiming.lineRevealDuration
@@ -315,8 +362,10 @@ final class UtilCardContentViewController: CardContentViewController {
                         OnboardingIntroTiming.interLineDelay)
                 ) {
                     headline.revealSecondBeat(
-                        duration: OnboardingIntroTiming.lineRevealDuration,
-                        completion: {})
+                        duration: OnboardingIntroTiming.lineRevealDuration
+                    ) {
+                        self?.revealIntroElements()
+                    }
                 }
             }
         }

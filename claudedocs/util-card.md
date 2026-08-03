@@ -54,7 +54,10 @@ noun is the app's own (Save / Read / Download / Deal) and switches to "of the
 month" at nine days.
 
 A new value REPLACING the one on screen runs a row-sized eclipse; a value
-appearing or vanishing is a fade plus a reflow. In the central Luna app, which
+appearing or vanishing is a fade plus a reflow — and an appearing row fades in
+IN PLACE: its host is laid out before the animation starts, so only the card's
+other elements animate their reflow while the row itself comes up at full size
+rather than growing into its slot. In the central Luna app, which
 is the only one with more than one kind, the row cycles between them every two
 seconds on an interruptible spring slide — swipe to take it over, and it stays
 manual until the card leaves centre or the app returns from the background.
@@ -114,6 +117,15 @@ launch selection) and `AppLaunchTransition.hasFinished` is still false. Paged
 back to at any other time the sentence simply stands finished
 (`OnboardingIntroHeadlineView.showFinishedState()`), so nothing re-animates on a
 page.
+
+**On that launch, the headline speaks first.** Everything else on the card —
+weekly row, both setup actions, the “or”, the paste row — waits at alpha 0
+until the second beat's bloom has finished, then fades in together, in place
+(0.38s ease-out, 0.16s after the sweep's completion — the standalone intro
+card's own beat). A weekly value arriving mid-sweep takes its slot silently
+and joins the group fade rather than fading in on its own; Reduce Motion makes
+the reveal instant. Any appearance that does NOT animate the sweep (paged back
+to, onboarding already complete) shows everything immediately.
 
 **The corona is part of this state too.** While onboarding is unanswered the
 host keeps the launch splash's `EclipseCoronaView` behind the deck at the resting
@@ -186,8 +198,11 @@ handled markers, and setup run evidence.
 weekly row's conditional presence (and the reflow when it is absent), its
 per-app and per-age subtitle, its save callback, the bottom-up order of the
 setup block, the “or” rule in all four combinations, the launch-only headline
-sweep, the answered weekly row, and the save-completes-onboarding latch (older
-saves and a later delete both leave it alone). `WeeklyRowHostTests` covers the
+sweep, the headline-speaks-first hold (elements at alpha 0 on the animating
+launch, visible immediately on any other appearance, and a mid-sweep weekly
+arrival claiming its slot at alpha 0), the answered weekly row, and the
+save-completes-onboarding latch (older saves and a later delete both leave it
+alone). `WeeklyRowHostTests` covers the
 row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the
 permanent index-zero offset.

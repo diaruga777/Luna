@@ -492,7 +492,7 @@ final class AppOnboardingViewController: UIViewController {
         safariReplica = safari
 
         let messages = MessagesReplicaViewController(
-            urlString: safari.sharedURLString,
+            urlString: configuration.practiceURLString,
             saveSetupMode: configuration.saveSetupMode,
             app: configuration.app,
             appName: configuration.app.displayName,
@@ -556,9 +556,7 @@ final class AppOnboardingViewController: UIViewController {
         journeyStage = .messagesDemonstration
         demoPresentation = .fullScreen
 
-        if let urlString = safariReplica?.sharedURLString {
-            messages.updateURL(urlString)
-        }
+        messages.updateURL(configuration.practiceURLString)
         messages.resetConversation()
         let messagesView = messages.view!
         messagesView.isHidden = false
@@ -871,10 +869,8 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func prepareSourceForPresentation(_ source: OnboardingDemoSource) {
-        if source == .messages,
-           let urlString = safariReplica?.sharedURLString
-        {
-            messagesReplica?.updateURL(urlString)
+        if source == .messages {
+            messagesReplica?.updateURL(configuration.practiceURLString)
         }
         sourceController(for: source)?.prepareForPresentation()
         for otherSource in OnboardingDemoSource.allCases where otherSource != source {

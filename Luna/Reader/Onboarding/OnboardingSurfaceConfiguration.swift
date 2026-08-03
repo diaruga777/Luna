@@ -46,6 +46,15 @@ struct OnboardingSurfaceConfiguration {
     let supportingText: String
     let saveBenefit: String
     let demoPages: [OnboardingDemoPage]
+    /// The link the SAVE lesson rehearses with when there is no live Save of
+    /// the Week to use instead (`OnboardingSaveDemoLink`).
+    ///
+    /// Declared per app rather than read off `demoPages`, which is what it used
+    /// to be: every app's Safari lesson now opens on the native explainer page,
+    /// so the browser's first page is `.lunaPage` everywhere and deriving the
+    /// practice link from it would have handed Luna Downloader an ARTICLE to
+    /// rehearse a media save with.
+    let practiceURLString: String
     let seedTitle: String
     let seedSymbol: String
 
@@ -68,6 +77,7 @@ struct OnboardingSurfaceConfiguration {
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: [.lunaPage],
+                practiceURLString: ShareSetupPractice.lunaURLString,
                 seedTitle: OnboardingStrings.Demo.readerSeedTitle.value(),
                 seedSymbol: "safari.fill")
         case .downloader:
@@ -77,7 +87,8 @@ struct OnboardingSurfaceConfiguration {
                 introCopy: OnboardingStrings.introCopy(for: app),
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
-                demoPages: [.instaTok],
+                demoPages: [.lunaPage, .instaTok],
+                practiceURLString: ShareSetupPractice.instaTokURLString,
                 seedTitle: OnboardingStrings.Demo.instaTokSeedTitle.value(),
                 seedSymbol: "play.rectangle.fill")
         case .priceTracker:
@@ -87,7 +98,8 @@ struct OnboardingSurfaceConfiguration {
                 introCopy: OnboardingStrings.introCopy(for: app),
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
-                demoPages: [.amayzon],
+                demoPages: [.lunaPage, .amayzon],
+                practiceURLString: ShareSetupPractice.amayzonURLString,
                 seedTitle: OnboardingStrings.Demo.amayzonSeedTitle.value(),
                 seedSymbol: "tag.fill")
         case .luna:
@@ -98,6 +110,7 @@ struct OnboardingSurfaceConfiguration {
                 supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: OnboardingDemoPage.allCases,
+                practiceURLString: ShareSetupPractice.lunaURLString,
                 seedTitle: OnboardingStrings.Demo.lunaSeedTitle.value(),
                 seedSymbol: "moon.stars.fill")
         }

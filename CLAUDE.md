@@ -91,11 +91,15 @@ stable Xcode 26.2.
 
 > **Surface gating.** There is no separate onboarding root. Every app opens straight
 > into its card carousel, whose permanent index-zero util card doubles as first-run
-> onboarding. While setup is incomplete it shows the animated surface headline plus
-> Safari and Shortcut/share lessons; after both are completed or skipped, the next
-> launch replaces those controls with matching Safari-history URLs. Paste and the
-> fixed Save of the Week remain in both states. With saves present the first save,
-> not the util card, is the launch selection. See `claudedocs/util-card.md` and
+> onboarding. While onboarding is unanswered it shows the surface headline (whose
+> two-beat sweep belongs to the LAUNCH only — paged back to, it stands finished),
+> the card's corona, and the Safari and Shortcut/share lessons; after both are
+> completed or skipped, the next launch replaces those controls with matching
+> Safari-history URLs. Paste and the fixed Save of the Week remain in both states.
+> With saves present the first save, not the util card, is the launch selection.
+> **A save from any surface answers the first run**: onboarding stamps its start
+> at launch and latches completion once a newer save exists, so `-resetOnboarding`
+> / Settings' reset shows the first-run card again until the next save arrives. See `claudedocs/util-card.md` and
 > `claudedocs/reader-onboarding.md`. Notification authorization is requested at
 > launch. Email is a
 > per-app capability, `LunaApp.sharesByEmail` (true for `Luna` and

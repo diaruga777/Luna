@@ -96,8 +96,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     private let store = ReadingListStore.shared
-    private let settingsButton = UIButton(type: .system)
-    // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
+    // Screen-level reader chrome (see mountTopChrome / configureTrailingBottomButton).
     private let readerChromeRow = UIView()
     /// The focused RSVP reader's eye-tracking toggle while this deck has
     /// adopted it into `readerChromeRow` (see `syncAdoptedEyeTrackingToggle`).
@@ -105,7 +104,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private let readerBackButton = UIButton(type: .system)
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
-    private let readerShareButton = UIButton(type: .system)
+    /// The deck's trailing bottom circle, dressed as the reader's share pill.
+    private var readerShareButton: UIButton { trailingBottomButton }
     private let footerContentFade = ReaderFooterContentFadeView()
     private weak var readerForChrome: ReaderChromeControlling?
     /// The reader's scroll indicator, hosted here (not inside the card) so it can
@@ -119,18 +119,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private var chromeModes: [ReadingListItem.ReaderMode] = []
     private var items: [ReadingListItem] = []
     private var archivedItems: [ReadingListItem] = []
-    private var appliedFingerprint: [String] = []
-    /// An empty deck fingerprints as an empty array, which is also the initial
-    /// value of `appliedFingerprint` — without this the very first reload would
-    /// early-return and never unhide the carousel.
-    private var hasAppliedSnapshot = false
-    /// The id of a save made through this deck's own util card, centered by the
-    /// reload that follows it.
-    private var pendingSavedID: UUID?
-    /// One-shot centering override used by archive choreography. Store writes
-    /// happen before the visual transition, then the synchronous reload places
-    /// the intended successor/restored item under the animation snapshot.
-    private var pendingTransitionCenteredID: UUID?
+    /// What `deckPreparedSnapshot` computed, waiting for the host to say the
+    /// reload is going ahead.
+    private var preparedItems: [ReadingListItem] = []
+    private var preparedArchivedItems: [ReadingListItem] = []
     /// An unarchive reload must not let normal pull-availability reconciliation
     /// snap the still-open tray shut before its coordinated dismissal begins.
     private var isAnimatingFromArchiveTray = false
@@ -138,6 +130,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// (wide screens only). Strongly held through containment; this reference is
     /// the flag "the deck is paired" that immersion, paging, and the trays check.
     private weak var inlineColumn: SplitWebOverlayViewController?
+
+    override var deckProvider: CardDeckProviding? { self }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -172,16 +166,16 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         style.contentEdgeFadeHeight = Self.contentEdgeFade
         carousel.style = style
         carousel.managesAudioSession = false   // Reader has its own audio stack.
-        carousel.dataSource = self
-        carousel.delegate = self
         // The header row and the flanking Settings/Share circles persist through
         // immersion — only the carousel's own chrome (side cards, scrub strip,
         // card rims) fades while reading.
-        mountCarousel()
+        mountDeck()
+    }
 
-        // Above the carousel (so it clears the card's clip) but below the
-        // screen chrome added by the mount* calls (so the header/footer pills
-        // stay on top). Host-positioned every layout — no Auto Layout.
+    /// Above the carousel (so it clears the card's clip) but below the screen
+    /// chrome the flanking circles add (so the header/footer pills stay on top).
+    /// Host-positioned every layout — no Auto Layout.
+    override func deckWillMountBottomControls() {
         cardScrollIndicator.isHidden = true
         view.addSubview(cardScrollIndicator)
 
@@ -191,85 +185,22 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         footerContentFade.alpha = 0
         footerContentFade.isUserInteractionEnabled = false
         view.addSubview(footerContentFade)
+    }
 
-        mountBottomControls()
+    override func deckDidMountBottomControls() {
+        mountModeSwitcher()
         mountTopChrome()
-        mountArchiveTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view]
-            },
-            canPull: { [weak self] in
-                guard let self, self.inlineColumn == nil else { return false }
-                let count = self.items.count + self.cardOffset
-                return count == 0 || self.carousel.currentIndex == count - 1
-            },
-            openStateChanged: { [weak self] open in
-                self?.readerAudioButton.isHidden = open
-                self?.carousel.setMuteButtonOccluded(open)
-            })
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .friendsListChanged, object: nil)
-        // A save can be committed by an extension or App Intent while this app
-        // is suspended, so no in-process `.readingListChanged` reaches this
-        // controller. Reload on foreground in addition to SceneDelegate's
-        // catch-up post: the shared-store stat check reads the new snapshot and
-        // `newSaveItemIndex` makes that new card take the carousel center.
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload),
-            name: UIApplication.willEnterForegroundNotification, object: nil)
-        // A media download finishing turns a placeholder card into a player,
-        // and it lands in a store this file cannot name.
-        for name in cardProvider?.changeNotificationNames ?? [] {
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(reload), name: name, object: nil)
-        }
-        // `store.items()` serves an in-memory cache, so this shows saved articles
-        // immediately.
-        reload()
     }
 
-    private func saveUtilCardURL(
-        _ urlString: String,
-        captureSource: CaptureSource,
-        sourceView: UIView,
-        completion: @escaping (Bool) -> Void
-    ) {
-        beginUtilCardSaveTransition(for: urlString, from: sourceView)
-        Task { @MainActor [weak self] in
-            let result = await ReadingListIngestor.shared.handleSavePress(
-                urlString: urlString, source: captureSource)
-            guard let self else { return }
-            let item: ReadingListItem?
-            switch result {
-            case .saved(let value), .sentToEreaders(let value),
-                 .sentToFriends(let value), .friendPromptRequested(let value),
-                 // In-app saves pass no double-save surface, so no export is
-                 // ever requested here — the item is what matters either way.
-                 .exportRequested(let value, _):
-                item = value
-            case .ignored:
-                item = self.store.item(forURLString: urlString)
-            case .unsupportedKind:
-                item = nil
-            }
-            guard let item else {
-                self.cancelUtilCardSaveTransition()
-                completion(false)
-                return
-            }
-            self.pendingSavedID = item.id
-            self.reload()
-            self.view.layoutIfNeeded()
-            let destinationIndex = self.items.firstIndex { $0.id == item.id }
-                .map { $0 + self.cardOffset }
-            self.finishUtilCardSaveTransition(
-                to: destinationIndex.flatMap(self.carousel.cardView(at:)))
-            completion(destinationIndex != nil)
-        }
+    /// No tray pull while a second reader column is open beside the card.
+    override var deckAllowsArchivePull: Bool { inlineColumn == nil }
+
+    override func deckArchiveTrayOpenStateDidChange(_ open: Bool) {
+        readerAudioButton.isHidden = open
+        super.deckArchiveTrayOpenStateDidChange(open)
     }
+
+    override var deckReconcilesArchivePullOnReload: Bool { !isAnimatingFromArchiveTray }
 
     /// The card AREA rests below the header row; the phone-shaped card then grows
     /// back up into that clearance for its exact aspect (`cardFit`), so the row's
@@ -597,23 +528,20 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         updateReaderChrome()
     }
 
-    /// Flanks the title scrubber with Settings and Share. The strip's bounds
-    /// meet the buttons' inner edges and its chips fade before reaching them.
-    private func mountBottomControls() {
+    /// The reader's share pill takes the deck's trailing circle. It is a MENU
+    /// rather than a tap handler — and it is retargeted as the focused reader
+    /// changes, so the menu is built fresh on each press against whatever
+    /// `readerForChrome` points at now.
+    override func configureTrailingBottomButton(_ button: UIButton) {
         configureBottomButton(
-            settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: L10n.string("Settings"))
-        configureBottomButton(
-            readerShareButton, symbol: "square.and.arrow.up", action: nil,
+            button, symbol: "square.and.arrow.up", action: nil,
             accessibilityLabel: L10n.string("Share"))
-        // The pill is retargeted as the focused reader changes, so the menu is built
-        // fresh on each press against whatever `readerForChrome` points at now.
         ReaderShareMenu.install(
-            on: readerShareButton,
+            on: button,
             providesMenu: true,
             build: { [weak self] in
                 guard let self else { return nil }
-                if let menu = self.readerForChrome?.chromeShareMenu(from: self.readerShareButton) {
+                if let menu = self.readerForChrome?.chromeShareMenu(from: button) {
                     return menu
                 }
                 // No reader: the only card that still shows this pill is a locked
@@ -626,13 +554,21 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                     self.shareLockedCardLink()
                     return
                 }
-                self.readerForChrome?.chromeShare(from: self.readerShareButton)
+                self.readerForChrome?.chromeShare(from: button)
             })
-        mountBottomControls(leading: settingsButton, trailing: readerShareButton)
+    }
 
-        // The mode switcher owns the mini carousel's bottom-center lane only
-        // while the surrounding card chrome is dismissed. It begins just below
-        // its resting position so the first reveal can translate and fade in.
+    /// The pill's availability is not a share POLICY here — it is whatever the
+    /// focused reader can offer, which `updateReaderChrome` already resolves
+    /// alongside the rest of the row.
+    override func refreshTrailingBottomButton() {
+        updateReaderChrome()
+    }
+
+    /// The mode switcher owns the mini carousel's bottom-center lane only while
+    /// the surrounding card chrome is dismissed. It begins just below its resting
+    /// position so the first reveal can translate and fade in.
+    private func mountModeSwitcher() {
         readerModeControl.addTarget(self, action: #selector(readerModeChanged), for: .valueChanged)
         readerModeControl.translatesAutoresizingMaskIntoConstraints = false
         readerModeControl.alpha = 0
@@ -642,7 +578,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         view.addSubview(readerModeControl)
         NSLayoutConstraint.activate([
             readerModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            readerModeControl.centerYAnchor.constraint(equalTo: settingsButton.centerYAnchor),
+            readerModeControl.centerYAnchor.constraint(
+                equalTo: readerShareButton.centerYAnchor),
             readerModeControl.heightAnchor.constraint(equalToConstant: 32),
         ])
     }
@@ -673,77 +610,54 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             animations: changes)
     }
 
-    // MARK: - Data
+    // MARK: - Screen-level reader chrome the deck's own cards drive
 
-    private func articleIndex(forCarouselIndex index: Int) -> Int? {
-        itemIndex(forCarouselIndex: index, itemCount: items.count)
+    /// The card that just centered is a live reader, so the deck's header row,
+    /// share pill, and hosted scroll indicator all retarget onto it.
+    override func deckDidCenterCard(at index: Int) {
+        guard slotIndex(forCarouselIndex: index) != nil else {
+            readerForChrome = nil
+            updateReaderChrome()
+            layoutCardScrollIndicator(animated: false)
+            return
+        }
+        let card = carousel.contentController(at: index) as? ReaderCardContentViewController
+        card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
+        readerForChrome = card?.rabbitHoleReader
+        updateExternalReaderInsets()
+        updateReaderChrome()
+        layoutCardScrollIndicator(animated: false)
     }
 
-    @objc private func reload() {
-        reconcileFooterContentFade()
-        let allReaderItems = store.items().filter {
-            includesAllKinds || ReadingListSectioning.rendersAsReader($0)
-        }
-        let updated = Self.orderedReaderItems(allReaderItems, includesAllKinds: includesAllKinds)
-        let updatedArchive = allReaderItems.filter(\.isArchived).sorted {
-            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
-        }
-        var fingerprint = updated.map {
-            let kind = cardProvider?.fingerprint(for: $0) ?? ""
-            return "active|\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")|\(kind)"
-        }
-        fingerprint.append(contentsOf: updatedArchive.map {
-            "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
-        })
-        guard !hasAppliedSnapshot || fingerprint != appliedFingerprint
-                || pendingSavedID != nil
-        else { return }
-        hasAppliedSnapshot = true
-        appliedFingerprint = fingerprint
+    /// The carousel has already restored its card geometry so this same pan can
+    /// page. Keep the screen-level footer veil and indicator in lockstep.
+    override func deckDidSurfaceForEdgePaging() {
+        footerContentFade.alpha = 0
+        (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
+            .setCardChromeVisible(true, animated: false)
+        archiveTray?.setChromeHidden(false, animated: false)
+        updateBottomModeSwitcher(immersed: false, animated: false)
+        layoutCardScrollIndicator(animated: false)
+    }
 
-        // A real reload unmounts every slot, and with it the card that owns the
-        // open column's coordinator. Left standing, the column would keep drawing
-        // beside a card that no longer exists and its own close button — routed
-        // through that dead (weak) coordinator — would do nothing. Send it away
-        // first, while there is still something to send it back to.
+    // MARK: - Data
+
+    /// The slot a carousel index names, in this deck's own words.
+    private func articleIndex(forCarouselIndex index: Int) -> Int? {
+        slotIndex(forCarouselIndex: index)
+    }
+
+    /// A real reload unmounts every slot, and with it the card that owns the open
+    /// column's coordinator. Left standing, the column would keep drawing beside a
+    /// card that no longer exists and its own close button — routed through that
+    /// dead (weak) coordinator — would do nothing. Send it away first, while there
+    /// is still something to send it back to.
+    override func deckWillApplyReload() {
         if let inlineColumn { closeInlineColumn(inlineColumn) }
+    }
 
-        let oldItemIndex = carousel.currentIndex - cardOffset
-        let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
-        items = updated
-        archivedItems = updatedArchive
-        let newOffset = cardOffset
-        // A save that arrived since the last snapshot wins over everything the
-        // deck would otherwise hold onto — the card the user was on, an in-flight
-        // archive transition.
-        let newSaveIndex = newSaveItemIndex(
-            cardIDs: items.map(\.id), offstageIDs: Set(archivedItems.map(\.id)))
-        let pendingIndex = pendingSavedID.flatMap { id in
-            items.firstIndex { $0.id == id }
-        }
-        let transitionIndex = pendingTransitionCenteredID.flatMap { id in
-            items.firstIndex { $0.id == id }.map { $0 + newOffset }
-        }
-        let preservedIndex = centeredID.flatMap { id in
-            items.firstIndex { $0.id == id }.map { $0 + newOffset }
-        }
-        let centeredIndex = newSaveIndex.map { $0 + newOffset }
-            ?? transitionIndex ?? preservedIndex
-            ?? pendingIndex.map { $0 + newOffset }
-            ?? (items.isEmpty ? 0 : newOffset)
-        pendingTransitionCenteredID = nil
-        if pendingIndex != nil { pendingSavedID = nil }
-        carousel.reloadData(centeringAt: centeredIndex)
-        if let pendingURL = pendingUtilCardSaveURLString,
-           let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
-            prepareUtilCardSaveDestination(carousel.cardView(at: index + newOffset))
-        }
-        carousel.view.isHidden = false
-        archiveTray?.setItems(makeArchiveTrayItems())
-        if !isAnimatingFromArchiveTray {
-            refreshArchivePullAvailability(animated: false)
-        }
-        updateReaderChrome()
+    override func deckWillReload() {
+        reconcileFooterContentFade()
     }
 
     /// The reader deck keeps finished articles available as ordinary cards but
@@ -772,43 +686,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 if lhsDate != rhsDate { return lhsDate > rhsDate }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
-    }
-
-    private func makeArchiveTrayItems() -> [ArchiveTrayItem] {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return archivedItems.map { item in
-            ArchiveTrayItem(
-                id: item.id,
-                title: item.title ?? item.url?.host ?? item.urlString,
-                footer: formatter.string(from: item.dateAdded),
-                showsMetadata: true,
-                isAvailable: true,
-                loadImage: { completion in
-                    guard let url = item.url else {
-                        completion(UIImage(systemName: item.isDocument ? "doc" : "globe"))
-                        return
-                    }
-                    completion(UIImage(systemName: "globe"))
-                    SourceIconCache.shared.icon(forPageURL: url) { image in
-                        if let image { completion(image) }
-                    }
-                },
-                tap: { [weak self] in self?.openExternally(item) },
-                share: { [weak self] sourceView in
-                    guard let self else { return }
-                    AppReaderShareProvider.shared.presentShareSheet(
-                        urlString: item.urlString,
-                        title: item.title,
-                        from: self,
-                        sourceView: sourceView)
-                },
-                unarchive: { [weak self] sourceView in
-                    self?.unarchive(item, from: sourceView)
-                },
-                delete: { [weak self] in self?.deleteArchived(item) })
-        }
     }
 
     // MARK: - Archive transitions
@@ -970,20 +847,15 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         ) { [weak self] _ in
             self?.deleteActive(item)
         }
-        // Archiving a failed save would file an empty shell away where the user
-        // can't act on it — the only sensible verbs are share the link and get
-        // rid of it (matching the list row's failed-item menu).
         if ReadingListSectioning.isFailedSave(item) {
-            return UIMenu(children: [
-                UIAction(title: L10n.string("Share Link…"), image: UIImage(systemName: "square.and.arrow.up")) {
-                    [weak self] _ in
+            return FailedSaveCardFactory.makeMenu(
+                shareLink: { [weak self] in
                     guard let self else { return }
                     AppReaderShareProvider.shared.presentShareSheet(
                         urlString: item.urlString, title: nil,
                         from: self, sourceView: self.view)
                 },
-                delete,
-            ])
+                delete: delete)
         }
         // A media card offers the Downloader's own verbs (Share the file, Save
         // to Photos) above the deck's Archive/Delete.
@@ -1078,31 +950,77 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    // MARK: - Carousel data source (see CardCarouselDataSource conformance below)
-
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int {
-        items.count + cardOffset
+    /// Incoming-email cards follow the contact's current name, falling back to
+    /// the name captured from the original From header for legacy/unknown senders.
+    private func senderName(for item: ReadingListItem) -> String? {
+        Self.resolvedSenderName(for: item) { email in
+            FriendsStore.shared.friend(withEmail: email)?.displayName
+        }
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        contentControllerForCardAt index: Int
-    ) -> CardContentViewController {
-        if isUtilCard(index) {
-            return makeUtilCardContentController(
-                hasSaves: { [weak self] in self?.items.isEmpty == false }
-            ) { [weak self] url, source, sourceView, completion in
-                self?.saveUtilCardURL(
-                    url,
-                    captureSource: source,
-                    sourceView: sourceView,
-                    completion: completion)
-            }
+    static func resolvedSenderName(
+        for item: ReadingListItem,
+        contactNameForEmail: (String) -> String?
+    ) -> String? {
+        guard item.effectiveCaptureSource == .email else { return nil }
+        if let email = item.incomingSenderEmail,
+           let currentName = contactNameForEmail(email) {
+            return currentName
         }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else {
-            return CardContentViewController()
+        return item.channelName
+    }
+
+    /// The saved item behind a carousel index, past the permanent util card.
+    private func item(atCarouselIndex index: Int) -> ReadingListItem? {
+        articleIndex(forCarouselIndex: index).map { items[$0] }
+    }
+}
+
+// MARK: - The article kind (and, in the central app, every other kind too)
+
+extension ArticleCardsViewController: CardDeckProviding {
+
+    /// A media download finishing turns a placeholder card into a player, and it
+    /// lands in a store this file cannot name — plus a renamed contact changes
+    /// what an emailed card's header says.
+    var deckChangeNotificationNames: [Notification.Name] {
+        [.friendsListChanged] + (cardProvider?.changeNotificationNames ?? [])
+    }
+
+    func deckPreparedSnapshot() -> CardDeckSnapshot {
+        let allReaderItems = store.items().filter {
+            includesAllKinds || ReadingListSectioning.rendersAsReader($0)
         }
-        let item = items[itemIndex]
+        preparedItems = Self.orderedReaderItems(
+            allReaderItems, includesAllKinds: includesAllKinds)
+        preparedArchivedItems = allReaderItems.filter(\.isArchived).sorted {
+            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
+        }
+        return CardDeckSnapshot(
+            slots: preparedItems.map { item in
+                // The foreign kinds contribute their own change key — a media
+                // download that finished in the background is a different card
+                // from the placeholder that was there before it.
+                let kind = cardProvider?.fingerprint(for: item) ?? ""
+                return CardDeckSlot(
+                    id: item.id,
+                    urlString: item.urlString,
+                    fingerprint: "active|\(item.id)|\(item.title ?? "")|\(item.state)"
+                        + "|\(item.thumbnailFileName ?? "")|\(senderName(for: item) ?? "")|\(kind)")
+            },
+            offstageIDs: Set(preparedArchivedItems.map(\.id)),
+            offstageFingerprint: preparedArchivedItems.map {
+                "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
+            })
+    }
+
+    func deckCommitPreparedSnapshot() {
+        items = preparedItems
+        archivedItems = preparedArchivedItems
+    }
+
+    func deckContentController(forSlot slot: Int) -> CardContentViewController {
+        let item = items[slot]
         // A save that FAILED gets the shared error card instead of an empty
         // reader with a one-line apology: the page itself in a near-full-bleed
         // web view, a URL bar with reload + share, and "Retry with AI" in the
@@ -1124,114 +1042,40 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         return content
     }
 
+    func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool {
+        cardProvider?.allowsPreparedPreviewContent(for: items[slot]) ?? true
+    }
+
     /// A failed save's card carries a soft red rim — the only card chrome that
     /// says "this one is broken" without a badge or a banner.
-    func carousel(
-        _ carousel: CardCarouselViewController, edgeGlowColorForCardAt index: Int
-    ) -> UIColor? {
-        guard let itemIndex = articleIndex(forCarouselIndex: index),
-              items.indices.contains(itemIndex),
-              ReadingListSectioning.isFailedSave(items[itemIndex])
-        else { return nil }
-        return LunaColors.errorAccent
-    }
-
-    /// Incoming-email cards follow the contact's current name, falling back to
-    /// the name captured from the original From header for legacy/unknown senders.
-    private func senderName(for item: ReadingListItem) -> String? {
-        Self.resolvedSenderName(for: item) { email in
-            FriendsStore.shared.friend(withEmail: email)?.displayName
-        }
-    }
-
-    static func resolvedSenderName(
-        for item: ReadingListItem,
-        contactNameForEmail: (String) -> String?
-    ) -> String? {
-        guard item.effectiveCaptureSource == .email else { return nil }
-        if let email = item.incomingSenderEmail,
-           let currentName = contactNameForEmail(email) {
-            return currentName
-        }
-        return item.channelName
+    func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? {
+        ReadingListSectioning.isFailedSave(items[slot]) ? LunaColors.errorAccent : nil
     }
 
     /// Feeds both the big scrub preview and — for the media saves that ask for
-    /// one (see `prefersThumbnailChipForCardAt`) — the strip chip itself: a
-    /// media save shows as its poster rather than as its title.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadThumbnailForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        if isUtilCard(index) {
-            loadUtilCardThumbnail(completion: completion)
-            return
-        }
-        guard let provider = cardProvider, let item = item(atCarouselIndex: index) else {
+    /// one (see `deckPrefersThumbnailChip`) — the strip chip itself: a media save
+    /// shows as its poster rather than as its title.
+    func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void) {
+        guard let provider = cardProvider else {
             completion(nil)
             return
         }
-        provider.thumbnail(for: item, completion: completion)
+        provider.thumbnail(for: items[slot], completion: completion)
     }
 
-    /// A media save's chip is its own still; articles — and the synthetic paste
-    /// card, which has no item — keep the mini card and its source badge.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        prefersThumbnailChipForCardAt index: Int
-    ) -> Bool {
-        if isUtilCard(index) { return false }
-        guard let provider = cardProvider, let item = item(atCarouselIndex: index)
-        else { return false }
-        return provider.prefersThumbnailChip(for: item)
-    }
-
-    /// The util card holds no save, so its chip is neither a still nor a
-    /// favicon-and-skeleton mini card: it is the app's own mark over a button.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        prefersUtilityChipForCardAt index: Int
-    ) -> Bool {
-        isUtilCard(index)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? {
-        if let provider = cardProvider, let item = item(atCarouselIndex: index),
-           !provider.allowsPreparedPreviewContent(for: item) {
-            return nil
-        }
-        return self.carousel(carousel, contentControllerForCardAt: index)
-    }
-
-    /// The saved item behind a carousel index, past the permanent util card.
-    private func item(atCarouselIndex index: Int) -> ReadingListItem? {
-        guard let itemIndex = articleIndex(forCarouselIndex: index),
-              items.indices.contains(itemIndex)
-        else { return nil }
-        return items[itemIndex]
+    /// A media save's chip is its own still; articles keep the mini card and its
+    /// source badge.
+    func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool {
+        cardProvider?.prefersThumbnailChip(for: items[slot]) ?? false
     }
 
     /// Chip badge: an instant fallback (initials / mail / document / globe)
     /// first, then the site's real favicon replaces it once fetched. Cached
     /// icons resolve synchronously, so a warm strip shows favicons at once.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadSourceBadgeForCardAt index: Int,
-        completion: @escaping (CarouselSourceBadge?) -> Void
+    func deckLoadSourceBadge(
+        forSlot slot: Int, completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
-        if isUtilCard(index) {
-            completion(nil)
-            return
-        }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else {
-            completion(nil)
-            return
-        }
-        let item = items[itemIndex]
+        let item = items[slot]
         // A platform save is marked by its platform, not by the host's favicon.
         if let badge = cardProvider?.sourceBadge(for: item) {
             completion(badge)
@@ -1244,24 +1088,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        topLeadingAccessoryForCardAt index: Int
-    ) -> UIView? {
-        if isUtilCard(index) { return nil }
-        guard let itemIndex = articleIndex(forCarouselIndex: index),
-              items.indices.contains(itemIndex)
-        else { return nil }
-        return cardProvider?.topLeadingAccessory(for: items[itemIndex])
+    func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? {
+        cardProvider?.topLeadingAccessory(for: items[slot])
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        titleForCardAt index: Int
-    ) -> String? {
-        if isUtilCard(index) { return LunaApp.current.displayName }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
-        let item = items[itemIndex]
+    func deckTitle(forSlot slot: Int) -> String? {
+        let item = items[slot]
         // A failed save has no stored title; use the same fallback chain its
         // card headline does so the scrub preview and the card agree.
         if ReadingListSectioning.isFailedSave(item) {
@@ -1269,83 +1101,33 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         return item.title ?? item.url?.host ?? item.urlString
     }
-}
 
-// MARK: - Carousel delegate
-
-extension ArticleCardsViewController: CardCarouselDataSource {}
-
-extension ArticleCardsViewController: CardCarouselDelegate {
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        navigationTargetDidChangeTo index: Int
-    ) {
-        updateArchivePullAvailability(
-            forTargetIndex: index,
-            cardCount: items.count + cardOffset,
-            animated: true)
+    func deckMenu(forSlot slot: Int) -> UIMenu? {
+        cardContextMenu(for: items[slot], carouselIndex: carouselIndex(forSlot: slot))
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        menuForCardAt index: Int
-    ) -> UIMenu? {
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
-        let item = items[itemIndex]
-        return cardContextMenu(for: item, carouselIndex: index)
+    func deckSlotDidCenter(_ slot: Int) {
+        store.markReadState(.opened, for: items[slot].id)
     }
 
-    func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {
-        // The carousel has already restored its card geometry so this same pan
-        // can page. Keep the screen-level footer veil and indicator in lockstep.
-        footerContentFade.alpha = 0
-        (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
-            .setCardChromeVisible(true, animated: false)
-        archiveTray?.setChromeHidden(false, animated: false)
-        updateBottomModeSwitcher(immersed: false, animated: false)
-        layoutCardScrollIndicator(animated: false)
-    }
-
-    func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        refreshArchivePullAvailability(animated: true)
-        updateUtilCardCorona(forCenteredIndex: index)
-        if isUtilCard(index) {
-            readerForChrome = nil
-            updateReaderChrome()
-            layoutCardScrollIndicator(animated: false)
+    /// A non-article card (central Luna app only) routes to its own screen — the
+    /// price editor or the platform open ladder — never the reader. A media save
+    /// rendered as a REAL Downloader card is the exception: its own content owns
+    /// the tap (play/pause, the download button), exactly as in the Downloader, so
+    /// the ladder is only for the link-style card that stands in when there is
+    /// nothing downloaded to show.
+    func deckSlotWasTapped(_ slot: Int) {
+        let index = carouselIndex(forSlot: slot)
+        let item = items[slot]
+        if item.isPriceTracker {
+            Self.nonArticleOpener?(item, self)
             return
         }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return }
-        store.markReadState(.opened, for: items[itemIndex].id)
-        let card = carousel.contentController(at: index) as? ReaderCardContentViewController
-        card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
-        readerForChrome = card?.rabbitHoleReader
-        updateExternalReaderInsets()
-        updateReaderChrome()
-        layoutCardScrollIndicator(animated: false)
-    }
-
-    func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
-        // A non-article card (central Luna app only) routes to its own screen
-        // — the price editor or the platform open ladder — never the reader.
-        // A media save rendered as a REAL Downloader card is the exception: its
-        // own content owns the tap (play/pause, the download button), exactly
-        // as in the Downloader, so the ladder is only for the link-style card
-        // that stands in when there is nothing downloaded to show.
-        if let itemIndex = articleIndex(forCarouselIndex: index),
-           items.indices.contains(itemIndex) {
-            let item = items[itemIndex]
-            if item.isPriceTracker {
+        if item.contentPlatform != nil {
+            if carousel.contentController(at: index) is ReaderCardContentViewController {
                 Self.nonArticleOpener?(item, self)
-                return
             }
-            if item.contentPlatform != nil {
-                if carousel.contentController(at: index) is ReaderCardContentViewController {
-                    Self.nonArticleOpener?(item, self)
-                }
-                return
-            }
+            return
         }
         guard let card = carousel.contentController(at: index) as? ReaderCardContentViewController,
               card.rabbitHoleReader != nil
@@ -1358,6 +1140,42 @@ extension ArticleCardsViewController: CardCarouselDelegate {
             extendsCard: card.rabbitHoleReader?.focusedContentScrollView != nil)
     }
 
+    func deckArchiveTrayItems() -> [ArchiveTrayItem] {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return archivedItems.map { item in
+            ArchiveTrayItem(
+                id: item.id,
+                title: item.title ?? item.url?.host ?? item.urlString,
+                footer: formatter.string(from: item.dateAdded),
+                showsMetadata: true,
+                isAvailable: true,
+                loadImage: { completion in
+                    guard let url = item.url else {
+                        completion(UIImage(systemName: item.isDocument ? "doc" : "globe"))
+                        return
+                    }
+                    completion(UIImage(systemName: "globe"))
+                    SourceIconCache.shared.icon(forPageURL: url) { image in
+                        if let image { completion(image) }
+                    }
+                },
+                tap: { [weak self] in self?.openExternally(item) },
+                share: { [weak self] sourceView in
+                    guard let self else { return }
+                    AppReaderShareProvider.shared.presentShareSheet(
+                        urlString: item.urlString,
+                        title: item.title,
+                        from: self,
+                        sourceView: sourceView)
+                },
+                unarchive: { [weak self] sourceView in
+                    self?.unarchive(item, from: sourceView)
+                },
+                delete: { [weak self] in self?.deleteArchived(item) })
+        }
+    }
 }
 
 // MARK: - Reader card content delegate

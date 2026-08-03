@@ -12,20 +12,22 @@ import LunaStorage
 import LunaURLClassification
 import UIKit
 
-/// Luna Price Tracker's root deck. It deliberately uses the same carousel,
-/// miniature carousel, and archive arc as Reader and Downloader; only
-/// the card's content model differs.
+/// Luna Price Tracker's root deck: the shared `CardCarouselHostViewController`
+/// with product cards in it. Only the kind is different, so only the kind is
+/// here — the deck's ordering and filtering, its cards, its menu, its archive
+/// tray rows, and its share verb.
 final class PriceTrackerCardsViewController: CardCarouselHostViewController {
 
     private let store = ReadingListStore.shared
-    private let settingsButton = UIButton(type: .system)
-    private let shareButton = UIButton(type: .system)
 
     private var items: [ReadingListItem] = []
     private var archivedItems: [ReadingListItem] = []
-    private var appliedFingerprint: [String] = []
-    private var hasAppliedSnapshot = false
-    private var pendingCenteredID: UUID?
+    /// What `deckPreparedSnapshot` computed, waiting for the host to say the
+    /// reload is going ahead.
+    private var preparedItems: [ReadingListItem] = []
+    private var preparedArchivedItems: [ReadingListItem] = []
+
+    override var deckProvider: CardDeckProviding? { self }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -42,85 +44,16 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         style.scrubberEdgeFadeWidth = 28
         style.showsCardBorder = true
         carousel.style = style
-        carousel.dataSource = self
-        carousel.delegate = self
-        mountCarousel()
-
-        configureBottomButton(
-            settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: L10n.string("Settings"))
-        configureBottomButton(
-            shareButton, symbol: "square.and.arrow.up", action: #selector(shareCurrent),
-            accessibilityLabel: L10n.string("Share Current Product"))
-        mountBottomControls(leading: settingsButton, trailing: shareButton)
-
-        mountArchiveTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view]
-            },
-            canPull: { [weak self] in
-                guard let self else { return false }
-                return self.items.isEmpty
-                    || self.carousel.currentIndex == self.items.count + self.cardOffset - 1
-            })
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(priceTrackerSaved(_:)),
-            name: .priceTrackerSavedInteractively, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload),
-            name: UIApplication.willEnterForegroundNotification, object: nil)
-        reload()
+        mountDeck()
     }
 
     // MARK: - Store
 
     @objc private func priceTrackerSaved(_ notification: Notification) {
-        pendingCenteredID = notification.userInfo?["itemID"] as? UUID
-        reload()
-    }
-
-    @objc private func reload() {
-        let trackers = store.items().filter { $0.priceTracker != nil }
-        let active = trackers.filter { $0.priceTracker?.isArchived == false }
-            .sorted(by: Self.newestFirst)
-        let archived = trackers.filter { $0.priceTracker?.isArchived == true }
-            .sorted(by: Self.newestFirst)
-        let fingerprint = (active + archived).map(Self.fingerprint)
-        guard !hasAppliedSnapshot || fingerprint != appliedFingerprint || pendingCenteredID != nil
-        else { return }
-        hasAppliedSnapshot = true
-        appliedFingerprint = fingerprint
-
-        let oldCenteredID = itemIndex(
-            forCarouselIndex: carousel.currentIndex,
-            itemCount: items.count).map { items[$0].id }
-        items = active
-        archivedItems = archived
-        let centeredID = pendingCenteredID ?? oldCenteredID
-        pendingCenteredID = nil
-        // A tracker saved since the last snapshot — here, in a sibling app, or
-        // through an extension while this one was away — takes the center.
-        let newSaveIndex = newSaveItemIndex(
-            cardIDs: items.map(\.id), offstageIDs: Set(archivedItems.map(\.id)))
-        let centeredIndex = newSaveIndex
-            .map { $0 + cardOffset }
-            ?? centeredID.flatMap { id in
-                items.firstIndex { $0.id == id }.map { $0 + cardOffset }
-            }
-            ?? (items.isEmpty ? utilCardIndex : cardOffset)
-
-        carousel.reloadData(centeringAt: centeredIndex)
-        if let pendingURL = pendingUtilCardSaveURLString,
-           let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
-            prepareUtilCardSaveDestination(carousel.cardView(at: index + cardOffset))
+        if let id = notification.userInfo?["itemID"] as? UUID {
+            requestCentering(onSlotID: id)
         }
-        carousel.view.isHidden = false
-        archiveTray?.setItems(makeArchiveTrayItems())
-        refreshArchivePullAvailability(animated: false)
-        updateShareButton()
+        reload()
     }
 
     private static func newestFirst(_ lhs: ReadingListItem, _ rhs: ReadingListItem) -> Bool {
@@ -145,47 +78,120 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         ].joined(separator: "|")
     }
 
-    private func saveUtilCardURL(
-        _ urlString: String,
-        source: CaptureSource,
-        sourceView: UIView,
-        completion: @escaping (Bool) -> Void
-    ) {
-        beginUtilCardSaveTransition(for: urlString, from: sourceView)
-        Task { @MainActor [weak self] in
-            let result = await ReadingListIngestor.shared.handleSavePress(
-                urlString: urlString, source: source)
-            guard let self else { return }
-            let item: ReadingListItem?
-            switch result {
-            case .saved(let value), .sentToEreaders(let value),
-                 .sentToFriends(let value), .friendPromptRequested(let value),
-                 // In-app saves pass no double-save surface, so no export is
-                 // ever requested here — the item is what matters either way.
-                 .exportRequested(let value, _):
-                item = value
-            case .ignored:
-                item = self.store.item(forURLString: urlString)
-            case .unsupportedKind:
-                item = nil
-            }
-            guard let item else {
-                self.cancelUtilCardSaveTransition()
-                completion(false)
-                return
-            }
-            self.pendingCenteredID = item.id
-            self.reload()
-            self.view.layoutIfNeeded()
-            let destinationIndex = self.items.firstIndex { $0.id == item.id }
-                .map { $0 + self.cardOffset }
-            self.finishUtilCardSaveTransition(
-                to: destinationIndex.flatMap(self.carousel.cardView(at:)))
-            completion(destinationIndex != nil)
-        }
+    private func setArchived(_ archived: Bool, itemID: UUID) {
+        guard var tracker = store.item(withID: itemID)?.priceTracker else { return }
+        tracker.isArchived = archived
+        if !archived { requestCentering(onSlotID: itemID) }
+        store.updatePriceTracker(tracker, for: itemID)
     }
 
-    private func makeArchiveTrayItems() -> [ArchiveTrayItem] {
+    // MARK: - Sharing
+
+    private func share(_ item: ReadingListItem, sourceView: UIView) {
+        guard let urlString = item.priceTracker?.stores.first?.urlString,
+              let url = URL(string: urlString) else { return }
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = sourceView
+            popover.sourceRect = sourceView.bounds
+        }
+        present(sheet, animated: true)
+    }
+}
+
+// MARK: - The product kind
+
+extension PriceTrackerCardsViewController: CardDeckProviding {
+
+    func deckWillBeginObservingStores() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(priceTrackerSaved(_:)),
+            name: .priceTrackerSavedInteractively, object: nil)
+    }
+
+    func deckPreparedSnapshot() -> CardDeckSnapshot {
+        let trackers = store.items().filter { $0.priceTracker != nil }
+        preparedItems = trackers.filter { $0.priceTracker?.isArchived == false }
+            .sorted(by: Self.newestFirst)
+        preparedArchivedItems = trackers.filter { $0.priceTracker?.isArchived == true }
+            .sorted(by: Self.newestFirst)
+        return CardDeckSnapshot(
+            slots: preparedItems.map {
+                CardDeckSlot(
+                    id: $0.id, urlString: $0.urlString, fingerprint: Self.fingerprint($0))
+            },
+            offstageIDs: Set(preparedArchivedItems.map(\.id)),
+            offstageFingerprint: preparedArchivedItems.map(Self.fingerprint))
+    }
+
+    func deckCommitPreparedSnapshot() {
+        items = preparedItems
+        archivedItems = preparedArchivedItems
+    }
+
+    func deckContentController(forSlot slot: Int) -> CardContentViewController {
+        PriceTrackerCardContentViewController(itemID: items[slot].id)
+    }
+
+    func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void) {
+        PriceTrackerProductImage.load(
+            imageFileName: items[slot].priceTracker?.imageFileName
+        ) { completion($0 ?? PriceTrackerProductImage.fallback) }
+    }
+
+    func deckTitle(forSlot slot: Int) -> String? {
+        items[slot].priceTracker?.productName
+    }
+
+    func deckLoadSourceBadge(
+        forSlot slot: Int, completion: @escaping (CarouselSourceBadge?) -> Void
+    ) {
+        completion(.symbol("tag.fill"))
+    }
+
+    func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool { true }
+
+    func deckLoadMiniCarouselAccessory(
+        forSlot slot: Int, completion: @escaping (UIImage?) -> Void
+    ) {
+        completion(PriceTrackerTagIcon.image(size: 22))
+    }
+
+    /// Arriving at an alerting tracker is how its alert is acknowledged, so it
+    /// stops floating above the other cards' ordering.
+    func deckSlotDidCenter(_ slot: Int) {
+        guard var tracker = items[slot].priceTracker, tracker.hasUnviewedAlert else { return }
+        tracker.markAlertViewed()
+        store.updatePriceTracker(tracker, for: items[slot].id)
+    }
+
+    func deckMenu(forSlot slot: Int) -> UIMenu? {
+        let item = items[slot]
+        let weekly = WeeklyPromotionMenu.action(for: item, presenter: self)
+        return UIMenu(children: [
+            UIAction(
+                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.share(
+                    item,
+                    sourceView: self.carousel.cardView(
+                        at: self.carouselIndex(forSlot: slot)) ?? self.view)
+            },
+        ] + [weekly].compactMap { $0 } + [
+            UIAction(
+                title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
+            ) { [weak self] _ in
+                self?.setArchived(true, itemID: item.id)
+            },
+            UIAction(
+                title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [weak self] _ in self?.store.delete(item) },
+        ])
+    }
+
+    func deckArchiveTrayItems() -> [ArchiveTrayItem] {
         archivedItems.compactMap { item in
             guard let tracker = item.priceTracker else { return nil }
             return ArchiveTrayItem(
@@ -195,8 +201,10 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
                     amount: tracker.currentBestPrice, currency: tracker.displayCurrency),
                 showsMetadata: true,
                 isAvailable: true,
-                loadImage: { [weak self] completion in
-                    self?.loadProductImage(for: item, completion: completion)
+                loadImage: { completion in
+                    PriceTrackerProductImage.load(
+                        imageFileName: tracker.imageFileName
+                    ) { completion($0 ?? PriceTrackerProductImage.fallback) }
                 },
                 tap: { [weak self] in
                     guard let self, let first = tracker.stores.first else { return }
@@ -212,215 +220,37 @@ final class PriceTrackerCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    private func setArchived(_ archived: Bool, itemID: UUID) {
-        guard var tracker = store.item(withID: itemID)?.priceTracker else { return }
-        tracker.isArchived = archived
-        if !archived { pendingCenteredID = itemID }
-        store.updatePriceTracker(tracker, for: itemID)
+    /// The pill greys out on the util card rather than vanishing: it is a fixture
+    /// of this deck's chrome, and a gap beside the scrub strip reads as a fault.
+    var deckShareButton: CardDeckShareButton? {
+        CardDeckShareButton(
+            accessibilityLabel: L10n.string("Share Current Product"),
+            unavailability: .disables)
     }
 
-    // MARK: - Sharing and images
-
-    @objc private func shareCurrent() {
-        guard let index = itemIndex(
-            forCarouselIndex: carousel.currentIndex,
-            itemCount: items.count)
-        else { return }
-        share(
-            items[index],
-            sourceView: carousel.cardView(at: carousel.currentIndex) ?? shareButton)
-    }
-
-    private func share(_ item: ReadingListItem, sourceView: UIView) {
-        guard let urlString = item.priceTracker?.stores.first?.urlString,
-              let url = URL(string: urlString) else { return }
-        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = sourceView
-            popover.sourceRect = sourceView.bounds
-        }
-        present(sheet, animated: true)
-    }
-
-    private func updateShareButton() {
-        shareButton.isEnabled = itemIndex(
-            forCarouselIndex: carousel.currentIndex,
-            itemCount: items.count) != nil
-    }
-
-    private func loadProductImage(
-        for item: ReadingListItem,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        guard let fileName = item.priceTracker?.imageFileName else {
-            completion(PriceTrackerTagIcon.image(size: 52))
-            return
-        }
-        let path = store.articlesDirectory.appendingPathComponent(fileName).path
-        let fallback = PriceTrackerTagIcon.image(size: 52)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let image = UIImage(contentsOfFile: path)?.preparingForDisplay()
-                ?? fallback
-            completion(image)
-        }
+    func deckShare(slot: Int, sourceView: UIView) {
+        share(items[slot], sourceView: sourceView)
     }
 }
 
-// MARK: - Carousel data source
+/// One product image loader, for the deck's chip and archive artwork and for the
+/// card's own header — the same file, the same tag-glyph fallback, one place.
+/// The completion runs on the calling queue when the answer is immediate (there
+/// is no picture) and on a background queue when a file had to be decoded.
+enum PriceTrackerProductImage {
+    /// The tag glyph that stands in for a product with no picture of its own.
+    static var fallback: UIImage { PriceTrackerTagIcon.image(size: 52) }
 
-extension PriceTrackerCardsViewController: CardCarouselDataSource {
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int {
-        items.count + cardOffset
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        contentControllerForCardAt index: Int
-    ) -> CardContentViewController {
-        if isUtilCard(index) {
-            return makeUtilCardContentController(
-                hasSaves: { [weak self] in self?.items.isEmpty == false }
-            ) { [weak self] url, source, sourceView, completion in
-                self?.saveUtilCardURL(
-                    url,
-                    source: source,
-                    sourceView: sourceView,
-                    completion: completion)
-            }
-        }
-        guard let itemIndex = itemIndex(
-            forCarouselIndex: index,
-            itemCount: items.count)
-        else { return CardContentViewController() }
-        return PriceTrackerCardContentViewController(itemID: items[itemIndex].id)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? {
-        self.carousel(carousel, contentControllerForCardAt: index)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadThumbnailForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        if isUtilCard(index) {
-            loadUtilCardThumbnail(completion: completion)
-            return
-        }
-        guard let itemIndex = itemIndex(
-            forCarouselIndex: index,
-            itemCount: items.count)
-        else { completion(nil); return }
-        loadProductImage(for: items[itemIndex], completion: completion)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        titleForCardAt index: Int
-    ) -> String? {
-        if isUtilCard(index) { return LunaApp.current.displayName }
-        guard let itemIndex = itemIndex(
-            forCarouselIndex: index,
-            itemCount: items.count)
-        else { return nil }
-        return items[itemIndex].priceTracker?.productName
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadSourceBadgeForCardAt index: Int,
-        completion: @escaping (CarouselSourceBadge?) -> Void
-    ) {
-        if isUtilCard(index) {
+    static func load(imageFileName: String?, completion: @escaping (UIImage?) -> Void) {
+        guard let imageFileName else {
             completion(nil)
             return
         }
-        completion(.symbol("tag.fill"))
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        prefersThumbnailChipForCardAt index: Int
-    ) -> Bool {
-        !isUtilCard(index)
-    }
-
-    /// The util card holds no save, so its chip is neither a still nor a
-    /// favicon-and-skeleton mini card: it is the app's own mark over a button.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        prefersUtilityChipForCardAt index: Int
-    ) -> Bool {
-        isUtilCard(index)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadMiniCarouselAccessoryForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        completion(isUtilCard(index) ? nil : PriceTrackerTagIcon.image(size: 22))
-    }
-}
-
-// MARK: - Carousel delegate
-
-extension PriceTrackerCardsViewController: CardCarouselDelegate {
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        navigationTargetDidChangeTo index: Int
-    ) {
-        updateArchivePullAvailability(
-            forTargetIndex: index,
-            cardCount: items.count + cardOffset,
-            animated: true)
-    }
-
-    func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        refreshArchivePullAvailability(animated: true)
-        updateUtilCardCorona(forCenteredIndex: index)
-        updateShareButton()
-        guard let itemIndex = itemIndex(
-                forCarouselIndex: index,
-                itemCount: items.count),
-              var tracker = items[itemIndex].priceTracker,
-              tracker.hasUnviewedAlert else { return }
-        tracker.markAlertViewed()
-        store.updatePriceTracker(tracker, for: items[itemIndex].id)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        menuForCardAt index: Int
-    ) -> UIMenu? {
-        guard let itemIndex = itemIndex(
-            forCarouselIndex: index,
-            itemCount: items.count)
-        else { return nil }
-        let item = items[itemIndex]
-        let weekly = WeeklyPromotionMenu.action(for: item, presenter: self)
-        return UIMenu(children: [
-            UIAction(
-                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
-            ) { [weak self] _ in
-                guard let self else { return }
-                self.share(item, sourceView: carousel.cardView(at: index) ?? self.view)
-            },
-        ] + [weekly].compactMap { $0 } + [
-            UIAction(
-                title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
-            ) { [weak self] _ in
-                self?.setArchived(true, itemID: item.id)
-            },
-            UIAction(
-                title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
-                attributes: .destructive
-            ) { [weak self] _ in self?.store.delete(item) },
-        ])
+        let path = ReadingListStore.shared.articlesDirectory
+            .appendingPathComponent(imageFileName).path
+        DispatchQueue.global(qos: .userInitiated).async {
+            completion(UIImage(contentsOfFile: path)?.preparingForDisplay())
+        }
     }
 }
 
@@ -574,20 +404,16 @@ private final class PriceTrackerCardContentViewController: CardContentViewContro
         rebuildStoreRows(tracker)
     }
 
+    /// The deck's chips and this header draw the same picture, so they load it
+    /// the same way. The card is the one that also has to say HOW: a real
+    /// photograph fills its frame, the tag glyph is centred in it.
     private func loadThumbnail(_ tracker: PriceTracker) {
-        guard let fileName = tracker.imageFileName else {
-            thumbnailView.image = PriceTrackerTagIcon.image(size: 52)
-            thumbnailView.contentMode = .center
-            return
-        }
-        let path = store.articlesDirectory.appendingPathComponent(fileName).path
-        let fallback = PriceTrackerTagIcon.image(size: 52)
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let loaded = UIImage(contentsOfFile: path)?.preparingForDisplay()
-            DispatchQueue.main.async {
+        PriceTrackerProductImage.load(imageFileName: tracker.imageFileName) { [weak self] loaded in
+            let apply = {
                 self?.thumbnailView.contentMode = loaded == nil ? .center : .scaleAspectFill
-                self?.thumbnailView.image = loaded ?? fallback
+                self?.thumbnailView.image = loaded ?? PriceTrackerProductImage.fallback
             }
+            if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
         }
     }
 

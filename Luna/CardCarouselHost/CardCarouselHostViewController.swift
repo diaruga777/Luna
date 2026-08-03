@@ -5,7 +5,9 @@
 
 import LunaDesignSystem
 import LunaModels
+import LunaReadingList
 import LunaSocial
+import LunaStorage
 import UIKit
 
 /// Owns the archive tray's horizontal contribution to the card deck.
@@ -486,13 +488,52 @@ private extension UIView {
     }
 }
 
-/// The shared skeleton behind the root card decks. Every deck begins with the
-/// permanent util card, then its saved items, and may expose the archive tray
-/// beyond its final save. This base owns the carousel instance and the shared
-/// chrome/index math; subclasses keep their item models and store plumbing.
+/// THE root card deck. Every app's home screen is this class: the permanent
+/// util card at index zero, then its saves, then the archive tray beyond the
+/// last of them. It owns the carousel, the index arithmetic over its slots, the
+/// six-phase reload with its fingerprint diff and its centering ladder, the
+/// carousel's data source and delegate, the archive tray's item pipeline, the
+/// flanking Settings/share circles, and the util card's save transition.
+///
+/// What differs between four apps' decks is what a card IS, and that arrives
+/// through `deckProvider` (`CardDeckProviding`). A subclass exists only where a
+/// deck has genuine screen-level chrome of its own to add — which today is one
+/// deck, the Reader's, whose cards are live readers.
 class CardCarouselHostViewController: UIViewController {
 
     let carousel = CardCarouselViewController()
+
+    /// The kind-specific half of this deck. Subclasses return themselves; the
+    /// base default leaves a deck with nothing but its util card, which is
+    /// exactly what a bare host is.
+    var deckProvider: CardDeckProviding? { nil }
+
+    /// The cards past the util card, as the last APPLIED reload left them. The
+    /// single source of truth for every count and every index the host resolves;
+    /// a provider's own typed arrays are committed in the same breath and stay
+    /// in step with it by construction.
+    private(set) var slots: [CardDeckSlot] = []
+    private var appliedFingerprint: [String] = []
+    /// An empty deck fingerprints as an empty array, which is also
+    /// `appliedFingerprint`'s initial value — without this the very first reload
+    /// would be abandoned and the carousel would never unhide.
+    private var hasAppliedSnapshot = false
+    private var pendingCenteringRequest: CardDeckCenteringRequest?
+
+    /// A one-shot centering that outranks the parked card but NOT a save that
+    /// just arrived: the archive choreography commits its store write first and
+    /// then needs the intended successor (or the row it just restored) sitting
+    /// under its animation snapshot. Consumed by the next reload whether or not
+    /// it resolved.
+    var pendingTransitionCenteredID: UUID?
+
+    /// The deck's leading bottom circle. Always Settings, in every app.
+    let settingsButton = UIButton(type: .system)
+    /// The deck's trailing bottom circle. Its verb is the deck's business (a
+    /// share sheet, a reader's share ladder); its seat, its glass, and when it
+    /// is refreshed are not.
+    let trailingBottomButton = UIButton(type: .system)
+
     private(set) var archiveTray: ArchiveTrayController?
     private var utilCardSaveTransition: UtilCardSaveTransition?
     private let utilCardShowsOnboardingAtLaunch =
@@ -527,9 +568,286 @@ class CardCarouselHostViewController: UIViewController {
         completion(OnboardingActionExtensionIcon.image() ?? OnboardingAppIcon.image())
     }
 
-    /// Adds the already-configured `carousel` (style/dataSource/delegate are the
-    /// subclass's business, set before calling this) as a full-screen child,
-    /// pinned to all four edges.
+    // MARK: - Bringing the deck up
+
+    /// Brings the whole deck up, in the one order every app's home screen uses:
+    /// the carousel (whose `style` the caller has already set), the flanking
+    /// circles, the archive tray, the store observation, then the first reload.
+    ///
+    /// That first reload runs SYNCHRONOUSLY here on purpose — the stores serve an
+    /// in-memory cache, so the deck opens already showing its saves rather than
+    /// unhiding a frame later.
+    final func mountDeck() {
+        carousel.dataSource = self
+        carousel.delegate = self
+        mountCarousel()
+        deckWillMountBottomControls()
+        mountDeckBottomControls()
+        deckDidMountBottomControls()
+        mountDeckArchiveTray()
+        deckProvider?.deckWillBeginObservingStores()
+        observeStoreChanges()
+        reload()
+    }
+
+    /// Chrome that belongs above the carousel but below the flanking circles —
+    /// Reader's hosted scroll indicator and its footer veil.
+    func deckWillMountBottomControls() {}
+
+    /// Chrome that belongs above the flanking circles — Reader's top control row.
+    func deckDidMountBottomControls() {}
+
+    private func mountDeckBottomControls() {
+        configureBottomButton(
+            settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
+            accessibilityLabel: L10n.string("Settings"))
+        configureTrailingBottomButton(trailingBottomButton)
+        mountBottomControls(leading: settingsButton, trailing: trailingBottomButton)
+    }
+
+    /// Dresses the trailing circle. The default is the deck's share pill as its
+    /// provider describes it; Reader overrides to hang the reader's own share
+    /// MENU on it instead of a tap handler.
+    func configureTrailingBottomButton(_ button: UIButton) {
+        guard let share = deckProvider?.deckShareButton else { return }
+        configureBottomButton(
+            button, symbol: "square.and.arrow.up",
+            action: #selector(shareCenteredCardTapped),
+            accessibilityLabel: share.accessibilityLabel)
+    }
+
+    /// Reconciles the trailing circle with the centered card. Called from the two
+    /// places the centered card can change — the tail of an applied reload, and
+    /// `didCenterCardAt` — so a deck never has to remember both.
+    func refreshTrailingBottomButton() {
+        guard let provider = deckProvider, let share = provider.deckShareButton
+        else { return }
+        let available = provider.deckCanShare(
+            slot: slotIndex(forCarouselIndex: carousel.currentIndex))
+        switch share.unavailability {
+        case .hides: trailingBottomButton.isHidden = !available
+        case .disables: trailingBottomButton.isEnabled = available
+        }
+    }
+
+    @objc private func shareCenteredCardTapped() {
+        guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return }
+        deckProvider?.deckShare(
+            slot: slot,
+            sourceView: carousel.cardView(at: carousel.currentIndex) ?? trailingBottomButton)
+    }
+
+    private func mountDeckArchiveTray() {
+        mountArchiveTray(
+            shifting: { [weak self] in
+                guard let self else { return [] }
+                return [self.carousel.view]
+            },
+            canPull: { [weak self] in
+                guard let self, self.deckAllowsArchivePull else { return false }
+                // The tray opens off the END of the deck, so every card counts —
+                // including a kind's own error cards, which sit after its saves.
+                let count = self.cardCount
+                return count == 0 || self.carousel.currentIndex == count - 1
+            },
+            openStateChanged: { [weak self] open in
+                self?.deckArchiveTrayOpenStateDidChange(open)
+            })
+    }
+
+    /// Whether the tray may be pulled at all right now. Reader says no while a
+    /// second reader column is open beside the card.
+    var deckAllowsArchivePull: Bool { true }
+
+    /// The tray's chrome consequences. Every deck occludes the card's mute
+    /// button; Reader also stands its read-aloud circle down.
+    func deckArchiveTrayOpenStateDidChange(_ open: Bool) {
+        carousel.setMuteButtonOccluded(open)
+    }
+
+    private func observeStoreChanges() {
+        let center = NotificationCenter.default
+        center.addObserver(
+            self, selector: #selector(reload), name: .readingListChanged, object: nil)
+        for name in deckProvider?.deckChangeNotificationNames ?? [] {
+            center.addObserver(self, selector: #selector(reload), name: name, object: nil)
+        }
+        // A save can be committed by an extension or an App Intent while this app
+        // is suspended, so no in-process notification ever reaches this
+        // controller. Foregrounding is therefore a reload trigger in its own
+        // right, and the ladder below makes whatever turned up take the center.
+        center.addObserver(
+            self, selector: #selector(reload),
+            name: UIApplication.willEnterForegroundNotification, object: nil)
+        for name in deckProvider?.deckActivationNotificationNames ?? [] {
+            center.addObserver(self, selector: #selector(reload), name: name, object: nil)
+        }
+    }
+
+    // MARK: - Reload
+
+    /// Bring `request`'s save to the center on the next applied reload — the
+    /// deck's own interactive saves, and a row coming back out of the archive.
+    final func requestCentering(_ request: CardDeckCenteringRequest) {
+        pendingCenteringRequest = request
+    }
+
+    final func requestCentering(onSlotID id: UUID) {
+        requestCentering(CardDeckCenteringRequest(itemID: id))
+    }
+
+    final func slotIndex(resolving request: CardDeckCenteringRequest) -> Int? {
+        slots.firstIndex(where: request.matches)
+    }
+
+    /// The deck's one reload, in six phases: read, guard, remember where the user
+    /// was, adopt, resolve the center, hand the carousel the result.
+    ///
+    /// It is `@objc` because every store notification lands here directly, and
+    /// `final` because there is exactly one of it — a deck with something extra
+    /// to do hooks `deckWillReload` / `deckWillApplyReload` / `deckDidApplyReload`
+    /// rather than growing a second copy of the algorithm.
+    @objc final func reload() {
+        deckWillReload()
+        guard let provider = deckProvider else { return }
+        let snapshot = provider.deckPreparedSnapshot()
+        let fingerprint = snapshot.slots.map(\.fingerprint) + snapshot.offstageFingerprint
+        // Runs on the abandoned path too: a reload that changes nothing is
+        // exactly when a deck wants to notice something that has gone missing
+        // behind its back.
+        defer { provider.deckDidSettleReload() }
+        guard !hasAppliedSnapshot
+            || fingerprint != appliedFingerprint
+            || pendingCenteringRequest != nil
+            || pendingTransitionCenteredID != nil
+        else { return }
+        hasAppliedSnapshot = true
+        appliedFingerprint = fingerprint
+
+        deckWillApplyReload()
+
+        // Where the user was parked, by identity — the index it sat at means
+        // nothing once the deck is reordered.
+        let parkedID = slotIndex(forCarouselIndex: carousel.currentIndex)
+            .map { slots[$0].id }
+        slots = snapshot.slots
+        provider.deckCommitPreparedSnapshot()
+
+        // ONE ladder, every deck, every source. A save this deck has never shown
+        // arrived — typed into the util card here, dropped in by the share,
+        // action or Safari extension, an App Intent, the mailbox importer, or a
+        // sibling app writing the shared store while this one was suspended —
+        // and it takes the center from whatever the deck was holding. Nothing
+        // gates that on the save having been made interactively: the deck simply
+        // compares ids against the previous snapshot, so however a save got
+        // here, it is the card the user is shown.
+        //
+        // Below it: the archive choreography's intended successor, then a save
+        // this deck is still waiting to see appear, then the parked card, then
+        // the deck's own default (its newest save, or the util card if it has
+        // none).
+        let newSaveIndex = newSaveItemIndex(
+            cardIDs: slots.map(\.id), offstageIDs: snapshot.offstageIDs)
+        let transitionIndex = pendingTransitionCenteredID.flatMap { id in
+            slots.firstIndex { $0.id == id }
+        }
+        let requestedIndex = pendingCenteringRequest.flatMap(slotIndex(resolving:))
+        let parkedIndex = parkedID.flatMap { id in slots.firstIndex { $0.id == id } }
+        let centeredIndex = (newSaveIndex ?? transitionIndex ?? requestedIndex ?? parkedIndex)
+            .map { $0 + cardOffset }
+            ?? (slots.isEmpty ? utilCardIndex : cardOffset)
+        pendingTransitionCenteredID = nil
+        // Kept until it resolves: the row a save becomes can appear a
+        // notification later than the save itself (the Downloader's media row is
+        // written by a second store).
+        if requestedIndex != nil { pendingCenteringRequest = nil }
+
+        carousel.reloadData(centeringAt: centeredIndex)
+        // The util-card row that started this save now has a real card to land
+        // on; hide it before Core Animation can commit a frame of it.
+        if let pendingURL = pendingUtilCardSaveURLString,
+           let index = slots.firstIndex(where: { $0.urlString == pendingURL }) {
+            prepareUtilCardSaveDestination(carousel.cardView(at: index + cardOffset))
+        }
+        carousel.view.isHidden = false
+        archiveTray?.setItems(provider.deckArchiveTrayItems())
+        deckDidApplyReload()
+        if deckReconcilesArchivePullOnReload {
+            refreshArchivePullAvailability(animated: false)
+        }
+        refreshTrailingBottomButton()
+    }
+
+    /// Runs at the top of every reload, before the fingerprint is even computed.
+    func deckWillReload() {}
+
+    /// Runs on a reload that is going ahead, before the deck adopts its new
+    /// slots — the last moment anything may look at the OLD deck.
+    func deckWillApplyReload() {}
+
+    /// Runs after the carousel and the archive tray have been handed the new
+    /// deck, before pull availability and the trailing circle are reconciled.
+    func deckDidApplyReload() {}
+
+    /// Whether an applied reload may reconcile the archive tray's pull
+    /// availability. Reader says no mid-unarchive: the tray is still open and
+    /// about to be dismissed in step with a traveling snapshot, and reconciling
+    /// would snap it shut first.
+    var deckReconcilesArchivePullOnReload: Bool { true }
+
+    // MARK: - Saving from the util card
+
+    /// The one save path every deck's util card runs, and the only place the
+    /// `handleSavePress` outcome is read: start the row-into-card transition,
+    /// ingest, find the item the ingest settled on, reload with that item
+    /// claiming the center, then hand the transition its real destination card —
+    /// or cancel it, when the save produced no card on this deck at all.
+    private func saveUtilCardURL(
+        _ urlString: String,
+        source: CaptureSource,
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void
+    ) {
+        beginUtilCardSaveTransition(for: urlString, from: sourceView)
+        Task { @MainActor [weak self] in
+            let result = await ReadingListIngestor.shared.handleSavePress(
+                urlString: urlString, source: source)
+            guard let self else { return }
+            let item: ReadingListItem?
+            switch result {
+            case .saved(let value), .sentToEreaders(let value),
+                 .sentToFriends(let value), .friendPromptRequested(let value),
+                 // In-app saves pass no double-save surface, so no export is
+                 // ever requested here — the item is what matters either way.
+                 .exportRequested(let value, _):
+                item = value
+            case .ignored:
+                item = ReadingListStore.shared.item(forURLString: urlString)
+            case .unsupportedKind:
+                item = nil
+            }
+            guard let item else {
+                self.cancelUtilCardSaveTransition()
+                completion(false)
+                return
+            }
+            // Both keys travel: the URL the user handed over, the URL ingest
+            // settled on, and the item's id. Whichever one this deck's slots are
+            // keyed by resolves (see `CardDeckSlot.urlString`).
+            let request = CardDeckCenteringRequest(
+                itemID: item.id, urlStrings: [urlString, item.urlString])
+            self.requestCentering(request)
+            self.reload()
+            self.view.layoutIfNeeded()
+            let destination = self.slotIndex(resolving: request).map { $0 + self.cardOffset }
+            self.finishUtilCardSaveTransition(
+                to: destination.flatMap(self.carousel.cardView(at:)))
+            completion(destination != nil)
+        }
+    }
+
+    /// Adds the already-configured `carousel` (style is the subclass's business,
+    /// set before `mountDeck`) as a full-screen child, pinned to all four edges.
     final func mountCarousel() {
         addChild(carousel)
         view.addSubview(carousel.view)
@@ -782,6 +1100,18 @@ class CardCarouselHostViewController: UIViewController {
         return (0..<itemCount).contains(itemIndex) ? itemIndex : nil
     }
 
+    /// Every card this deck shows, util card included.
+    final var cardCount: Int { slots.count + cardOffset }
+
+    /// The provider slot behind a carousel index — nil for the util card and for
+    /// anything past the last save. The ONE place the util card's offset is taken
+    /// off, which is why a provider never sees a carousel index at all.
+    final func slotIndex(forCarouselIndex index: Int) -> Int? {
+        itemIndex(forCarouselIndex: index, itemCount: slots.count)
+    }
+
+    final func carouselIndex(forSlot slot: Int) -> Int { slot + cardOffset }
+
     // MARK: - Centering on a new save
 
     /// Every id this deck has already accounted for: the cards it showed plus
@@ -820,6 +1150,184 @@ class CardCarouselHostViewController: UIViewController {
 
     @objc func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
+    }
+
+    // MARK: - Delegate hooks a deck may take over
+
+    /// A card other than the util card has settled at the center, after the
+    /// shared reconciliation (archive pull, the corona, the trailing circle) and
+    /// after the provider's own `deckSlotDidCenter`. Reader retargets its reader
+    /// chrome here.
+    func deckDidCenterCard(at index: Int) {}
+
+    /// An edge page pan began while immersed; the carousel has already restored
+    /// its own chrome synchronously. Reader restores the matching screen-level
+    /// chrome before the page moves.
+    func deckDidSurfaceForEdgePaging() {}
+}
+
+// MARK: - The carousel's data source
+
+// One conformance, for every app's deck. Each method resolves the util card, then
+// hands a SLOT index to the provider — so no kind's code ever performs the
+// util-card offset, and no deck can disagree with another about what index zero
+// means.
+extension CardCarouselHostViewController: CardCarouselDataSource {
+
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { cardCount }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contentControllerForCardAt index: Int
+    ) -> CardContentViewController {
+        if isUtilCard(index) {
+            return makeUtilCardContentController(
+                hasSaves: { [weak self] in self?.slots.isEmpty == false }
+            ) { [weak self] url, source, sourceView, completion in
+                self?.saveUtilCardURL(
+                    url, source: source, sourceView: sourceView, completion: completion)
+            }
+        }
+        guard let slot = slotIndex(forCarouselIndex: index), let provider = deckProvider
+        else { return CardContentViewController() }
+        return provider.deckContentController(forSlot: slot)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController? {
+        if let slot = slotIndex(forCarouselIndex: index),
+           deckProvider?.deckAllowsPreparedPreview(forSlot: slot) == false {
+            return nil
+        }
+        return self.carousel(carousel, contentControllerForCardAt: index)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadThumbnailForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        if isUtilCard(index) {
+            loadUtilCardThumbnail(completion: completion)
+            return
+        }
+        guard let slot = slotIndex(forCarouselIndex: index), let provider = deckProvider
+        else {
+            completion(nil)
+            return
+        }
+        provider.deckLoadThumbnail(forSlot: slot, completion: completion)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        titleForCardAt index: Int
+    ) -> String? {
+        if isUtilCard(index) { return LunaApp.current.displayName }
+        guard let slot = slotIndex(forCarouselIndex: index) else { return nil }
+        return deckProvider?.deckTitle(forSlot: slot)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadSourceBadgeForCardAt index: Int,
+        completion: @escaping (CarouselSourceBadge?) -> Void
+    ) {
+        guard let slot = slotIndex(forCarouselIndex: index), let provider = deckProvider
+        else {
+            completion(nil)
+            return
+        }
+        provider.deckLoadSourceBadge(forSlot: slot, completion: completion)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadMiniCarouselAccessoryForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        guard let slot = slotIndex(forCarouselIndex: index), let provider = deckProvider
+        else {
+            completion(nil)
+            return
+        }
+        provider.deckLoadMiniCarouselAccessory(forSlot: slot, completion: completion)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersThumbnailChipForCardAt index: Int
+    ) -> Bool {
+        guard let slot = slotIndex(forCarouselIndex: index) else { return false }
+        return deckProvider?.deckPrefersThumbnailChip(forSlot: slot) ?? false
+    }
+
+    /// The util card holds no save, so its chip is neither a still nor a
+    /// favicon-and-skeleton mini card: it is the app's own mark over a button.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        prefersUtilityChipForCardAt index: Int
+    ) -> Bool {
+        isUtilCard(index)
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        topLeadingAccessoryForCardAt index: Int
+    ) -> UIView? {
+        guard let slot = slotIndex(forCarouselIndex: index) else { return nil }
+        return deckProvider?.deckTopLeadingAccessory(forSlot: slot)
+    }
+
+    /// A broken card carries a red rim — the only card chrome that says "this one
+    /// is broken" without a badge or a banner.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        edgeGlowColorForCardAt index: Int
+    ) -> UIColor? {
+        guard let slot = slotIndex(forCarouselIndex: index) else { return nil }
+        return deckProvider?.deckEdgeGlowColor(forSlot: slot)
+    }
+}
+
+// MARK: - The carousel's delegate
+
+extension CardCarouselHostViewController: CardCarouselDelegate {
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        navigationTargetDidChangeTo index: Int
+    ) {
+        updateArchivePullAvailability(
+            forTargetIndex: index, cardCount: cardCount, animated: true)
+    }
+
+    func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
+        refreshArchivePullAvailability(animated: true)
+        updateUtilCardCorona(forCenteredIndex: index)
+        refreshTrailingBottomButton()
+        if let slot = slotIndex(forCarouselIndex: index) {
+            deckProvider?.deckSlotDidCenter(slot)
+        } else {
+            deckProvider?.deckUtilCardDidCenter()
+        }
+        deckDidCenterCard(at: index)
+    }
+
+    func carousel(_ carousel: CardCarouselViewController, menuForCardAt index: Int) -> UIMenu? {
+        guard let slot = slotIndex(forCarouselIndex: index) else { return nil }
+        return deckProvider?.deckMenu(forSlot: slot)
+    }
+
+    func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
+        guard let slot = slotIndex(forCarouselIndex: index) else { return }
+        deckProvider?.deckSlotWasTapped(slot)
+    }
+
+    func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {
+        deckDidSurfaceForEdgePaging()
     }
 }
 

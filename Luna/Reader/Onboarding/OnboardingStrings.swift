@@ -379,7 +379,7 @@ enum OnboardingStrings {
         static let sharePitch = Definition(shared: "Nah, its easy. Check it")
         static let shareTryIt = Definition(shared: "Try it:")
         static let shareAside = Definition(
-            shared: "(You can also just share in the link normally tbf)")
+            shared: "(You can just share the link normally too tbf)")
         static let sharePillAccessibilityLabel = Definition(
             shared: "Share the example link")
     }

@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaModels
 import UIKit
 
 enum OnboardingSafariPagePalette {
@@ -187,11 +188,16 @@ final class OnboardingSafariPageView: UIView {
     private var revealSchedule: [CascadeEntry] = []
     private var frontLegs: [FrontLeg] = []
 
+    /// Whose prose the page prints. The chunks differ per app, so the fitting
+    /// pass needs to know which list it is choosing a prefix of.
+    private let app: LunaApp
+
     init(configuration: OnboardingSurfaceConfiguration = .current) {
         // Safari lists this app's own extension under this app's own name; the
         // page's steps have to say the same thing (see the copy's note).
         let appName = configuration.app.displayName
         let background = OnboardingSafariPagePalette.background
+        app = configuration.app
         appIcon = MoonRevealContentView(
             image: OnboardingAppIcon.image()
                 ?? UIImage(systemName: "moon.stars.fill"),
@@ -219,14 +225,17 @@ final class OnboardingSafariPageView: UIView {
             textColor: OnboardingSafariPagePalette.quietCopy,
             occluderColor: background,
             sweepsUpward: true)
+        // The shortest valid prose, so the page is publishable before it has a
+        // size; `layOutContent` grows it to whatever the screen can hold.
         explainer = MoonRevealLineView(
-            text: OnboardingSafariExtensionCopy.explainer,
+            text: OnboardingSafariExtensionCopy.explainerPrefix(
+                1, for: configuration.app),
             initiallyRevealed: true,
-            font: .systemFont(ofSize: 17, weight: .regular),
+            font: Self.proseFont,
             textAlignment: .left,
             numberOfLines: 0,
             minimumScaleFactor: 1,
-            lineSpacing: 5,
+            lineSpacing: Self.proseLineSpacing,
             occluderColor: background,
             sweepsUpward: true)
         stepsHeading = MoonRevealLineView(
@@ -352,13 +361,19 @@ final class OnboardingSafariPageView: UIView {
         layOutClutter()
     }
 
-    /// THE WHOLE PAGE IS ANCHORED TO THE BOTTOM. The actions sit on the browser
-    /// chrome and everything else stacks upward from them, so the Safari button
-    /// is in the same place on every screen and the wave has no dead middle to
-    /// climb through. Air collects above the header — a taller screen simply
-    /// starts the page lower — and on a screen too short for all of it the prose
-    /// gives way (its label truncates) rather than the actions sliding under the
-    /// chrome.
+    /// THE PAGE IS PINNED AT BOTH ENDS, AND THE PROSE FILLS WHAT IS LEFT.
+    ///
+    /// The header starts at `minimumTopInset`; the actions block ends exactly on
+    /// the browser chrome's reserve, with the steps and their heading stacked
+    /// above it — so the Safari button is in the same place on every screen, the
+    /// wave has no dead middle to climb through, and the furniture (icon,
+    /// headline, three steps, both buttons) is identical at every size. The only
+    /// thing that varies is the PROSE: it takes the largest cumulative prefix of
+    /// its chunks that fits between the byline and the steps heading, and
+    /// whatever is left over becomes air above the steps. That slack is the
+    /// tolerance the chunk granularity needs — no screen has to land on an exact
+    /// multiple of a sub-topic. A container too short even for chunk one falls
+    /// back to truncating it, rather than pushing the actions under the chrome.
     private func layOutContent(columnWidth: CGFloat, horizontalInset: CGFloat) {
         let bottomLimit = bounds.height - Self.chromeReserve
         let rowHeight = OnboardingSafariEnableStepRowView.preferredHeight
@@ -369,14 +384,12 @@ final class OnboardingSafariPageView: UIView {
             - (Self.headingHeight + Self.headingGap + stepsHeight
                 + Self.stepsToActionsGap + actionsHeight)
 
-        let proseHeight = Self.height(
-            of: OnboardingSafariExtensionCopy.explainer,
-            width: columnWidth,
-            font: .systemFont(ofSize: 17, weight: .regular))
-        let headerTop = bottomGroupTop - Self.proseToStepsGap - proseHeight
-            - Self.proseGap - Self.bylineHeight - Self.bylineGap
-            - Self.headerHeight
-        var y = max(Self.minimumTopInset, headerTop)
+        var y = Self.minimumTopInset
+        let proseTop = y + Self.headerHeight + Self.bylineGap
+            + Self.bylineHeight + Self.proseGap
+        let proseRoom = max(0, bottomGroupTop - Self.proseToStepsGap - proseTop)
+        let prose = fittedProse(columnWidth: columnWidth, room: proseRoom)
+        explainer.setText(prose.text)
 
         appIcon.frame = CGRect(
             x: horizontalInset,
@@ -399,9 +412,7 @@ final class OnboardingSafariPageView: UIView {
             x: horizontalInset,
             y: y,
             width: columnWidth,
-            height: min(
-                proseHeight,
-                max(0, bottomGroupTop - Self.proseToStepsGap - y)))
+            height: prose.height)
 
         y = bottomGroupTop
         stepsHeading.frame = CGRect(
@@ -426,11 +437,63 @@ final class OnboardingSafariPageView: UIView {
         layOutActionsCorona()
     }
 
+    /// The largest cumulative chunk prefix that fits `room`, with the height to
+    /// draw it at. Pure geometry over a width and a height — never an idiom or a
+    /// size class (see CLAUDE.md's iPad rule): an iPad in half-screen Split View
+    /// and a phone are the same fitting problem.
+    ///
+    /// Chunk one is the floor. When even it overruns (a degenerately short
+    /// container), it is kept and its label truncates — the page never drops its
+    /// opening sentence, and never lets the prose push the actions down.
+    private func fittedProse(
+        columnWidth: CGFloat,
+        room: CGFloat
+    ) -> (text: String, height: CGFloat) {
+        let chunks = OnboardingSafariExtensionCopy.explainerChunks(for: app)
+        guard !chunks.isEmpty else { return ("", 0) }
+        var text = chunks[0]
+        var height = Self.proseHeight(of: text, width: columnWidth)
+        guard chunks.count > 1 else { return (text, min(height, room)) }
+        for count in 2...chunks.count {
+            let candidate = OnboardingSafariExtensionCopy.explainerPrefix(
+                count, for: app)
+            let candidateHeight = Self.proseHeight(
+                of: candidate, width: columnWidth)
+            guard candidateHeight <= room else { break }
+            text = candidate
+            height = candidateHeight
+        }
+        return (text, min(height, room))
+    }
+
+    /// THE prose typography, defined once. The measurement above, the label the
+    /// page builds, and the tests that assert the fit all read these — the three
+    /// used to carry their own copies of "17pt regular, lineSpacing 5", which is
+    /// three places for one number to drift.
+    static let proseFont = UIFont.systemFont(ofSize: 17, weight: .regular)
+    static let proseLineSpacing: CGFloat = 5
+
+    static func proseAttributes() -> [NSAttributedString.Key: Any] {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = proseLineSpacing
+        return [.font: proseFont, .paragraphStyle: style]
+    }
+
+    static func proseHeight(of text: String, width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
+        return ceil((text as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: proseAttributes(),
+            context: nil).height)
+    }
+
     // Every one of these is spent against ONE budget: the shortest phone Luna
     // ships to (375×667) has to hold the whole stack above the browser chrome
-    // with the prose at its natural height. There is about a line of slack at
-    // these numbers — `testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse`
-    // fails the moment a gap or the copy grows past it.
+    // with the FIRST prose chunk at its natural height. There is about a line of
+    // slack at these numbers —
+    // `testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse`
+    // fails the moment a gap or that chunk grows past it.
     /// The header's own row: the headline's two lines, with the app icon
     /// centred against them.
     private static let headerHeight: CGFloat = 64
@@ -903,20 +966,6 @@ final class OnboardingSafariPageView: UIView {
         }
     }
 
-    private static func height(
-        of text: String,
-        width: CGFloat,
-        font: UIFont
-    ) -> CGFloat {
-        guard width > 0 else { return 0 }
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = 5
-        return ceil((text as NSString).boundingRect(
-            with: CGSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font, .paragraphStyle: style],
-            context: nil).height)
-    }
 }
 
 extension MoonRevealLineView: OnboardingWaveRevealing {}

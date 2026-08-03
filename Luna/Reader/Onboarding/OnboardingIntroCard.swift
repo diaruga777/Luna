@@ -1027,7 +1027,16 @@ final class MoonRevealLineView: UIView {
         }
     }
 
+    /// Replaces the line's copy, keeping every typographic setting it was built
+    /// with.
+    ///
+    /// The unchanged-text early return is what makes this safe to call from a
+    /// `layoutSubviews`, which is where the Safari explainer names its prose:
+    /// how much of it fits is geometry, so the text can only be chosen once the
+    /// view has a size. Without the guard, every layout pass would rebuild the
+    /// attributed strings and schedule another one.
     func setText(_ text: String) {
+        guard accessibilityLabel != text else { return }
         styledText = nil
         apply(text: text, to: finalLabel)
         apply(text: text, to: illuminationMaskLabel)

@@ -27,6 +27,14 @@ enum UtilCardLayout {
     /// corner flag across its top and the pick's own two lines below it.
     static let weeklyRowHeight: CGFloat = 96
     static let recentRowHeight: CGFloat = 74
+    /// The completed card's padding above the weekly row — half the padding the
+    /// recent rows keep on their own, so the flag sits near the card's top edge.
+    static let weeklyTopPadding: CGFloat = 12
+    static let recentsTopPadding: CGFloat = 24
+    /// The seam under the weekly row, and deliberately the widest gap on the
+    /// card: the pick of the week is not the first entry of the history list
+    /// beneath it.
+    static let weeklyToRecentGap: CGFloat = 25
     static let setupButtonHeight: CGFloat = 54
     static let setupButtonGap: CGFloat = 10
     /// The gap the setup block keeps above the paste field when no “or” stands
@@ -283,8 +291,13 @@ final class UtilCardContentViewController: CardContentViewController {
         }
 
         weeklyHost.frame = CGRect(
-            x: inset, y: 24, width: width, height: UtilCardLayout.weeklyRowHeight)
-        var nextY = weeklyVisible ? weeklyHost.frame.maxY + 10 : 24
+            x: inset,
+            y: UtilCardLayout.weeklyTopPadding,
+            width: width,
+            height: UtilCardLayout.weeklyRowHeight)
+        var nextY = weeklyVisible
+            ? weeklyHost.frame.maxY + UtilCardLayout.weeklyToRecentGap
+            : UtilCardLayout.recentsTopPadding
         let availableBottom = pasteRow.frame.minY - 12
         for row in recentRows {
             let fits = nextY + UtilCardLayout.recentRowHeight <= availableBottom

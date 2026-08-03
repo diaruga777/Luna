@@ -41,7 +41,13 @@ public enum HostedShareInput {
 public final class HostedShareSession {
 
     /// The live session, or nil in a real extension process.
-    public static var current: HostedShareSession?
+    ///
+    /// WEAK deliberately: the host owns the session for exactly as long as it owns
+    /// the lesson, so tying `current` to that ownership means a host that goes away
+    /// without a tidy shutdown cannot leave a stale session behind for the next
+    /// flow to obey. (It also means the assignment must be to a stored session —
+    /// `current = HostedShareSession()` would be nil on the next line.)
+    public static weak var current: HostedShareSession?
 
     public init() {}
 

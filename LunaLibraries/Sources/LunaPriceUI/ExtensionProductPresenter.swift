@@ -30,7 +30,10 @@ public final class ExtensionProductPresenter {
         complete: @escaping () -> Void
     ) {
         guard let itemID = store.savePriceTracker(
-            product.makeTracker(fallbackURL: url), forURLString: url.absoluteString)
+            product.makeTracker(
+                fallbackURL: url,
+                alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction),
+            forURLString: url.absoluteString)
         else {
             complete()
             return

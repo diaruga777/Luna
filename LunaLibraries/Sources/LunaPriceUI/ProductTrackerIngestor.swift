@@ -7,6 +7,7 @@ import LunaDesignSystem
 import LunaFetch
 import LunaHTMLClassification
 import LunaModels
+import LunaSocial
 import LunaStorage
 import UIKit
 
@@ -55,9 +56,17 @@ public final class ProductTrackerIngestor {
             return
         }
 
+        // A brand-new tracker's alert threshold is a decision, not a constant: with
+        // the notification prompt still unanswered the product is tracked with NO
+        // alert (the editors offer to set one, which is the opt-in moment). Being
+        // async here, this asks the SYSTEM rather than the cached latch — and
+        // refreshes that latch for the synchronous surfaces on the way past.
+        let notificationsRequested = await NotificationManager.refreshAuthorizationRequestedState()
         var tracker = PriceTracker(
             productName: product.name, stores: product.trackerStores(fallbackURL: url),
-            brand: product.brand, productID: product.productID)
+            brand: product.brand, productID: product.productID,
+            alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction(
+                notificationsEverRequested: notificationsRequested))
         if let imageURL = product.imageURL,
            let data = await downloadProductImage(imageURL) {
             let fileName = "\(item.id.uuidString)-product.jpg"

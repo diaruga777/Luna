@@ -6,30 +6,7 @@
 import LunaDesignSystem
 import LunaModels
 import LunaSocial
-import UniformTypeIdentifiers
 import UIKit
-
-enum PasteboardTemporaryMediaPolicy {
-    static let lifetime: TimeInterval = 60 * 60
-
-    static func isExpired(expiresAt: Date, now: Date = Date()) -> Bool {
-        expiresAt <= now
-    }
-}
-
-enum PasteboardCommitPolicy {
-    /// A completed save may clear only the synthetic card it started from.
-    /// If a newer card is already represented, it must survive the older
-    /// save's asynchronous storage/Photos completion.
-    static func shouldClearCommittedCard(
-        committedChangeCount: Int,
-        currentPasteboardChangeCount: Int,
-        representedChangeCount: Int?
-    ) -> Bool {
-        currentPasteboardChangeCount == committedChangeCount
-            || representedChangeCount == committedChangeCount
-    }
-}
 
 /// Owns the archive tray's horizontal contribution to the card deck.
 final class TrayShiftContribution {
@@ -131,8 +108,8 @@ struct UtilCardSaveTransitionGeometry {
 /// card. Only the recent's empty shell expands to the full card frame. Its
 /// favicon and title travel independently into the normal header geometry;
 /// after ingest mounts the real card, that artwork is replaced by a crossfade.
-/// Pasteboard artwork has a bespoke physical layout and retains the older flat
-/// snapshot fallback.
+/// A source view that supplies no artwork falls back to one flat snapshot of
+/// itself.
 @MainActor
 private final class UtilCardSaveTransition {
     let urlString: String
@@ -792,158 +769,5 @@ class CardCarouselHostViewController: UIViewController {
 
     @objc func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
-    }
-}
-
-/// The privacy-preserving leading card shown after pattern detection says the
-/// pasteboard might contain a URL. Merely constructing/centering it does not
-/// access the pasteboard value.
-///
-/// The read is performed by a system `UIPasteControl`, whose tap IS the
-/// authorization: the pasted item arrives through `paste(itemProviders:)` and
-/// the "Allow Paste from Other Apps" alert never appears. Nothing else on this
-/// card touches the pasteboard, so the value stays unread until the user asks
-/// for it — the same privacy posture as before, without the interruption.
-/// `onPaste` nil (the transient "Loading Paste" state) shows no control.
-final class PasteboardPlaceholderCardContentViewController: CardContentViewController {
-    private let titleText: String
-    private let detailText: String
-    private let onPaste: ((String) -> Void)?
-
-    init(title: String, detail: String, onPaste: ((String) -> Void)? = nil) {
-        self.titleText = title
-        self.detailText = detail
-        self.onPaste = onPaste
-        super.init()
-        pasteConfiguration = UIPasteConfiguration(
-            acceptableTypeIdentifiers: [UTType.url.identifier, UTType.plainText.identifier])
-    }
-
-    /// The paste control owns this card's interaction; a stray card tap would
-    /// otherwise page or toggle under the user's finger.
-    override func allowsCardTap(at point: CGPoint) -> Bool { onPaste == nil }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = LunaColors.background
-        // With a real control present the card must not swallow it into one
-        // accessibility element; without one the whole card is the affordance.
-        view.isAccessibilityElement = onPaste == nil
-        view.accessibilityLabel = titleText
-        view.accessibilityHint = detailText
-
-        let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
-        icon.tintColor = GlassStyle.readingAccent
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-            pointSize: 42, weight: .medium)
-
-        let title = UILabel()
-        title.text = titleText
-        title.font = .preferredFont(forTextStyle: .title2)
-        title.textColor = LunaColors.primaryText
-        title.textAlignment = .center
-
-        let detail = UILabel()
-        detail.text = detailText
-        detail.font = .preferredFont(forTextStyle: .subheadline)
-        detail.textColor = LunaColors.secondaryText
-        detail.textAlignment = .center
-        detail.numberOfLines = 0
-
-        var arranged: [UIView] = [icon, title, detail]
-        if onPaste != nil { arranged.append(makePasteControl()) }
-        let stack = UIStackView(arrangedSubviews: arranged)
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 14
-        stack.setCustomSpacing(24, after: detail)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
-        ])
-    }
-
-    /// The system paste button, dressed as one of Luna's capsule actions: the
-    /// fixed brand indigo rather than the configurable reading accent, so a
-    /// yellow highlight preference can't leave white-on-yellow.
-    private func makePasteControl() -> UIPasteControl {
-        var configuration = UIPasteControl.Configuration()
-        configuration.displayMode = .iconAndLabel
-        configuration.cornerStyle = .capsule
-        configuration.baseBackgroundColor = GlassStyle.lunaBrandAccent
-        configuration.baseForegroundColor = .white
-        let control = UIPasteControl(configuration: configuration)
-        control.target = self
-        control.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            control.heightAnchor.constraint(equalToConstant: 44),
-            control.widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
-        ])
-        return control
-    }
-
-    /// Delivered by `UIPasteControl` — an implicitly authorized read, so no
-    /// prompt and no timing heuristics.
-    override func paste(itemProviders: [NSItemProvider]) {
-        if let provider = itemProviders.first(where: { $0.canLoadObject(ofClass: URL.self) }) {
-            _ = provider.loadObject(ofClass: URL.self) { [weak self] url, _ in
-                guard let url else { return }
-                DispatchQueue.main.async { self?.onPaste?(url.absoluteString) }
-            }
-            return
-        }
-        guard let provider = itemProviders.first(where: { $0.canLoadObject(ofClass: NSString.self) })
-        else { return }
-        _ = provider.loadObject(ofClass: NSString.self) { [weak self] string, _ in
-            guard let string = string as? NSString else { return }
-            DispatchQueue.main.async { self?.onPaste?(string as String) }
-        }
-    }
-}
-
-/// A failed user-initiated paste read: the pasted text was not a URL this app
-/// can take. There is no "Allow Paste" branch to explain — the read arrives
-/// through `UIPasteControl`, which never asks.
-final class InvalidPasteCardContentViewController: CardContentViewController {
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = LunaColors.background
-
-        let icon = UIImageView(image: UIImage(systemName: "exclamationmark.circle"))
-        icon.tintColor = LunaColors.secondaryText
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-            pointSize: 40, weight: .medium)
-
-        let title = UILabel()
-        title.text = L10n.string("Invalid paste")
-        title.font = .preferredFont(forTextStyle: .title2)
-        title.textColor = LunaColors.primaryText
-        title.textAlignment = .center
-
-        let detail = UILabel()
-        detail.text = L10n.string("Invalid URL")
-        detail.font = .preferredFont(forTextStyle: .subheadline)
-        detail.textColor = LunaColors.secondaryText
-        detail.textAlignment = .center
-        detail.numberOfLines = 0
-
-        let stack = UIStackView(arrangedSubviews: [icon, title, detail])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 14
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -28),
-            detail.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -56),
-        ])
     }
 }

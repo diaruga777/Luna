@@ -95,31 +95,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         includesAllKinds ? Self.cardProvider : nil
     }
 
-    private enum PasteboardCardState {
-        case placeholder(changeCount: Int)
-        case loading(changeCount: Int, urlString: String)
-        case candidate(changeCount: Int, candidate: PasteboardCandidate, item: ReadingListItem)
-        case invalid(changeCount: Int)
-
-        var changeCount: Int {
-            switch self {
-            case .placeholder(let count), .loading(let count, _),
-                 .candidate(let count, _, _), .invalid(let count):
-                return count
-            }
-        }
-
-        var fingerprint: String {
-            switch self {
-            case .placeholder(let count): return "placeholder|\(count)"
-            case .loading(let count, let url): return "loading|\(count)|\(url)"
-            case .candidate(let count, let candidate, _):
-                return "candidate|\(count)|\(candidate.urlString)|\(candidate.title)"
-            case .invalid(let count): return "invalid|\(count)"
-            }
-        }
-    }
-
     private let store = ReadingListStore.shared
     private let settingsButton = UIButton(type: .system)
     // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
@@ -145,14 +120,13 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private var items: [ReadingListItem] = []
     private var archivedItems: [ReadingListItem] = []
     private var appliedFingerprint: [String] = []
-    private var pasteboardState: PasteboardCardState?
-    /// Kept separate from the latest probe state so reload can map the centered
-    /// saved article through the old index space when a leading card appears.
-    private var renderedPasteboardState: PasteboardCardState?
-    private let pasteboardProbe = PasteboardLinkProbe()
-    private var pasteboardEvaluationTask: Task<Void, Never>?
-    private var isCommittingPasteboardCandidate = false
-    private var pendingPasteboardSavedID: UUID?
+    /// An empty deck fingerprints as an empty array, which is also the initial
+    /// value of `appliedFingerprint` — without this the very first reload would
+    /// early-return and never unhide the carousel.
+    private var hasAppliedSnapshot = false
+    /// The id of a save made through this deck's own util card, centered by the
+    /// reload that follows it.
+    private var pendingSavedID: UUID?
     /// One-shot centering override used by archive choreography. Store writes
     /// happen before the visual transition, then the synchronous reload places
     /// the intended successor/restored item under the animation snapshot.
@@ -252,10 +226,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(reload), name: name, object: nil)
         }
-        // `reload()` must run synchronously here, before the async pasteboard probe:
         // `store.items()` serves an in-memory cache, so this shows saved articles
-        // immediately instead of waiting on the probe's round-trip (a `detectPatterns`
-        // call).
+        // immediately.
         reload()
     }
 
@@ -288,7 +260,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 completion(false)
                 return
             }
-            self.pendingPasteboardSavedID = item.id
+            self.pendingSavedID = item.id
             self.reload()
             self.view.layoutIfNeeded()
             let destinationIndex = self.items.firstIndex { $0.id == item.id }
@@ -553,7 +525,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// places, and a stored twin would only have to be remembered at each of
     /// them. Nil for every other card, which is also what hides the pill.
     private var lockedShareURLString: String? {
-        if renderedPasteboardState != nil, carousel.currentIndex == 0 { return nil }
         guard let index = articleIndex(forCarouselIndex: carousel.currentIndex),
               items.indices.contains(index)
         else { return nil }
@@ -707,111 +678,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     // MARK: - Data
 
-    @objc private func refreshPasteboardURL() {
-        pasteboardProbe.probe(
-            stateChangeCount: pasteboardState?.changeCount,
-            clear: { [weak self] in
-                self?.pasteboardEvaluationTask?.cancel()
-                self?.setPasteboardState(nil)
-            },
-            offer: { [weak self] changeCount in
-                self?.setPasteboardState(.placeholder(changeCount: changeCount))
-            })
-    }
-
-    private func setPasteboardState(_ state: PasteboardCardState?) {
-        pasteboardState = state
-        reload()
-    }
-
-    /// The value the card's `UIPasteControl` handed over — an implicitly
-    /// authorized read, so nothing here touches `UIPasteboard` for content.
-    private func handlePastedValue(_ value: String) {
-        guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        guard pasteboardProbe.isStillCurrent(expectedChangeCount),
-              let url = URLUnwrapper.ingestURL(from: value)
-        else {
-            setPasteboardState(.invalid(changeCount: expectedChangeCount))
-            return
-        }
-
-        let urlString = url.absoluteString
-        setPasteboardState(.loading(changeCount: expectedChangeCount, urlString: urlString))
-        pasteboardEvaluationTask?.cancel()
-        pasteboardEvaluationTask = Task { [weak self] in
-            let candidate = await PasteboardSuggester.shared.evaluate(urlString: urlString)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self,
-                      case .loading(let count, let currentURL) = self.pasteboardState,
-                      count == expectedChangeCount, currentURL == urlString,
-                      self.pasteboardProbe.isStillCurrent(expectedChangeCount)
-                else { return }
-                guard let candidate, candidate.platform == nil,
-                      candidate.content != nil || candidate.requiresUnlock
-                else {
-                    self.setPasteboardState(.invalid(changeCount: expectedChangeCount))
-                    return
-                }
-                var item = ReadingListItem(urlString: candidate.urlString)
-                item.title = candidate.title
-                item.channelName = candidate.channelName
-                item.state = candidate.requiresUnlock ? .needsCaptcha : .ready
-                self.setPasteboardState(.candidate(
-                    changeCount: expectedChangeCount, candidate: candidate, item: item))
-            }
-        }
-    }
-
     private func articleIndex(forCarouselIndex index: Int) -> Int? {
         itemIndex(forCarouselIndex: index, itemCount: items.count)
-    }
-
-    private func commitPasteboardCandidate(openLockedAfterSave: Bool = false) {
-        guard !isCommittingPasteboardCandidate,
-              case .candidate(let changeCount, let candidate, _) = renderedPasteboardState
-        else { return }
-        isCommittingPasteboardCandidate = true
-        Task { [weak self] in
-            let saved: ReadingListItem?
-            if let content = candidate.content {
-                saved = await ReadingListIngestor.shared.saveNewWithContent(
-                    urlString: candidate.urlString, content: content, source: .paste)
-            } else {
-                let result = await ReadingListIngestor.shared.handleSavePress(
-                    urlString: candidate.urlString, source: .paste)
-                switch result {
-                case .saved(let item),
-                     .sentToEreaders(let item), .sentToFriends(let item),
-                     .friendPromptRequested(let item),
-                     .exportRequested(let item, _):
-                    saved = item
-                case .ignored, .unsupportedKind:
-                    saved = nil
-                }
-            }
-            await MainActor.run {
-                guard let self else { return }
-                self.isCommittingPasteboardCandidate = false
-                guard let saved else { return }
-                self.pendingPasteboardSavedID = saved.id
-                self.pasteboardProbe.consume(changeCount)
-                let pasteboardChanged = UIPasteboard.general.changeCount != changeCount
-                if PasteboardCommitPolicy.shouldClearCommittedCard(
-                    committedChangeCount: changeCount,
-                    currentPasteboardChangeCount: UIPasteboard.general.changeCount,
-                    representedChangeCount: self.pasteboardState?.changeCount
-                ) {
-                    self.pasteboardState = nil
-                }
-                self.reload()
-                if pasteboardChanged { self.refreshPasteboardURL() }
-                if openLockedAfterSave,
-                   let fresh = self.store.item(withID: saved.id), let url = fresh.url {
-                    self.presentArchiveReader(for: fresh, articleURL: url)
-                }
-            }
-        }
     }
 
     @objc private func reload() {
@@ -819,11 +687,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         let allReaderItems = store.items().filter {
             includesAllKinds || ReadingListSectioning.rendersAsReader($0)
         }
-        var updated = Self.orderedReaderItems(allReaderItems, includesAllKinds: includesAllKinds)
-        if isCommittingPasteboardCandidate,
-           case .candidate(_, let candidate, _) = renderedPasteboardState {
-            updated.removeAll { $0.urlString == candidate.urlString }
-        }
+        let updated = Self.orderedReaderItems(allReaderItems, includesAllKinds: includesAllKinds)
         let updatedArchive = allReaderItems.filter(\.isArchived).sorted {
             ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
@@ -834,8 +698,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         fingerprint.append(contentsOf: updatedArchive.map {
             "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
         })
-        fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
-        guard fingerprint != appliedFingerprint || pendingPasteboardSavedID != nil else { return }
+        guard !hasAppliedSnapshot || fingerprint != appliedFingerprint
+                || pendingSavedID != nil
+        else { return }
+        hasAppliedSnapshot = true
         appliedFingerprint = fingerprint
 
         // A real reload unmounts every slot, and with it the card that owns the
@@ -845,27 +711,23 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // first, while there is still something to send it back to.
         if let inlineColumn { closeInlineColumn(inlineColumn) }
 
-        let wasPasteboardCentered = renderedPasteboardState != nil && carousel.currentIndex == 0
         let oldItemIndex = carousel.currentIndex - cardOffset
         let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
         items = updated
         archivedItems = updatedArchive
-        renderedPasteboardState = pasteboardState
         let newOffset = cardOffset
         // A save that arrived since the last snapshot wins over everything the
-        // deck would otherwise hold onto — the card the user was on, the paste
-        // card, an in-flight archive transition.
+        // deck would otherwise hold onto — the card the user was on, an in-flight
+        // archive transition.
         let newSaveIndex = newSaveItemIndex(
             cardIDs: items.map(\.id), offstageIDs: Set(archivedItems.map(\.id)))
-        let pendingIndex = pendingPasteboardSavedID.flatMap { id in
+        let pendingIndex = pendingSavedID.flatMap { id in
             items.firstIndex { $0.id == id }
         }
         let transitionIndex = pendingTransitionCenteredID.flatMap { id in
             items.firstIndex { $0.id == id }.map { $0 + newOffset }
         }
-        let preservedIndex = wasPasteboardCentered && renderedPasteboardState != nil
-            ? 0
-            : centeredID.flatMap { id in
+        let preservedIndex = centeredID.flatMap { id in
             items.firstIndex { $0.id == id }.map { $0 + newOffset }
         }
         let centeredIndex = newSaveIndex.map { $0 + newOffset }
@@ -873,7 +735,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             ?? pendingIndex.map { $0 + newOffset }
             ?? (items.isEmpty ? 0 : newOffset)
         pendingTransitionCenteredID = nil
-        if pendingIndex != nil { pendingPasteboardSavedID = nil }
+        if pendingIndex != nil { pendingSavedID = nil }
         carousel.reloadData(centeringAt: centeredIndex)
         if let pendingURL = pendingUtilCardSaveURLString,
            let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
@@ -1250,26 +1112,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                     completion: completion)
             }
         }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder:
-                return PasteboardPlaceholderCardContentViewController(
-                    title: L10n.string("Paste Link"),
-                    detail: L10n.string("Paste the copied link to preview it here."),
-                    onPaste: { [weak self] value in self?.handlePastedValue(value) })
-            case .loading:
-                return PasteboardPlaceholderCardContentViewController(
-                    title: L10n.string("Loading Paste"), detail: L10n.string("Preparing a temporary reader card…"))
-            case .invalid:
-                return InvalidPasteCardContentViewController()
-            case .candidate(_, let candidate, let item):
-                let content = ReaderCardContentViewController(
-                    item: item, senderName: nil, knownContent: candidate.content)
-                content.setTopContentInset(Self.contentEdgeFade)
-                content.delegate = self
-                return content
-            }
-        }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else {
             return CardContentViewController()
         }
@@ -1300,8 +1142,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     func carousel(
         _ carousel: CardCarouselViewController, edgeGlowColorForCardAt index: Int
     ) -> UIColor? {
-        guard renderedPasteboardState == nil || index != 0,
-              let itemIndex = articleIndex(forCarouselIndex: index),
+        guard let itemIndex = articleIndex(forCarouselIndex: index),
               items.indices.contains(itemIndex),
               ReadingListSectioning.isFailedSave(items[itemIndex])
         else { return nil }
@@ -1399,22 +1240,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             completion(nil)
             return
         }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder, .loading:
-                completion(.symbol("doc.on.clipboard"))
-            case .invalid:
-                completion(.symbol("exclamationmark.circle"))
-            case .candidate(_, _, let item):
-                completion(ArticleSourceBadge.fallback(for: item))
-                if ArticleSourceBadge.wantsFavicon(item), let url = item.url {
-                    SourceIconCache.shared.icon(forPageURL: url) { image in
-                        if let image { completion(.icon(image)) }
-                    }
-                }
-            }
-            return
-        }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else {
             completion(nil)
             return
@@ -1448,14 +1273,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         titleForCardAt index: Int
     ) -> String? {
         if isUtilCard(index) { return LunaApp.current.displayName }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder: return L10n.string("Paste Link")
-            case .loading: return L10n.string("Loading Paste")
-            case .invalid: return L10n.string("Invalid paste")
-            case .candidate(_, let candidate, _): return candidate.title
-            }
-        }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
         let item = items[itemIndex]
         // A failed save has no stored title; use the same fallback chain its
@@ -1512,28 +1329,6 @@ extension ArticleCardsViewController: CardCarouselDelegate {
             layoutCardScrollIndicator(animated: false)
             return
         }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder:
-                // Nothing reads the pasteboard on arrival — the card's paste
-                // control is the only way in, and its tap IS the authorization.
-                readerForChrome = nil
-                updateReaderChrome()
-                layoutCardScrollIndicator(animated: false)
-            case .loading, .invalid:
-                readerForChrome = nil
-                updateReaderChrome()
-                layoutCardScrollIndicator(animated: false)
-            case .candidate:
-                let card = carousel.contentController(at: index) as? ReaderCardContentViewController
-                card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
-                readerForChrome = card?.rabbitHoleReader
-                updateExternalReaderInsets()
-                updateReaderChrome()
-                layoutCardScrollIndicator(animated: false)
-            }
-            return
-        }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return }
         store.markReadState(.opened, for: items[itemIndex].id)
         let card = carousel.contentController(at: index) as? ReaderCardContentViewController
@@ -1545,25 +1340,6 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder:
-                break // The card's paste control owns this interaction.
-            case .candidate(_, let candidate, _):
-                if candidate.requiresUnlock {
-                    commitPasteboardCandidate(openLockedAfterSave: true)
-                } else if let card = carousel.contentController(at: index)
-                            as? ReaderCardContentViewController,
-                          card.rabbitHoleReader != nil {
-                    readerCard(
-                        card, didChangeImmersion: !carousel.isImmersed,
-                        extendsCard: card.rabbitHoleReader?.focusedContentScrollView != nil)
-                }
-            case .loading, .invalid:
-                break
-            }
-            return
-        }
         // A non-article card (central Luna app only) routes to its own screen
         // — the price editor or the platform open ladder — never the reader.
         // A media save rendered as a REAL Downloader card is the exception: its
@@ -1609,11 +1385,6 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // so reading it must not fade the deck away or grow the card downward
         // over the column's own controls.
         guard inlineColumn == nil else { return }
-        if immersed, renderedPasteboardState != nil,
-           carousel.currentIndex == 0,
-           carousel.contentController(at: 0) === card {
-            commitPasteboardCandidate()
-        }
         card.setCardChromeVisible(!immersed, animated: true)
         carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
         // The archive peek is card chrome too: it fades away with the

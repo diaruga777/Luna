@@ -145,22 +145,6 @@ enum MediaCardFactory {
         }
     }
 
-    static func loadTemporaryThumbnail(
-        for media: DownloadedMedia, completion: @escaping (UIImage?) -> Void
-    ) {
-        if media.kind == .video {
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: media.fileURL))
-            generator.appliesPreferredTrackTransform = true
-            generator.generateCGImageAsynchronously(for: .zero) { image, _, _ in
-                completion(image.map(UIImage.init))
-            }
-        } else {
-            DispatchQueue.global(qos: .userInitiated).async {
-                completion(UIImage(contentsOfFile: media.fileURL.path))
-            }
-        }
-    }
-
     static func loadPhotosImage(
         identifier: String,
         targetSize: CGSize,

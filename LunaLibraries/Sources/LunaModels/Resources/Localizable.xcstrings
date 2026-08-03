@@ -917,6 +917,12 @@
     "No link found to save." : {
 
     },
+    "No price alert set" : {
+
+    },
+    "No price alert yet. Set one to be notified when the price drops." : {
+
+    },
     "No price found" : {
 
     },
@@ -1456,6 +1462,9 @@
     "Set a name" : {
 
     },
+    "Set price alert" : {
+
+    },
     "Set up email first" : {
 
     },
@@ -1572,6 +1581,9 @@
 
     },
     "Starting download…" : {
+
+    },
+    "Starts watching for a price drop and asks to send notifications" : {
 
     },
     "Still no price" : {

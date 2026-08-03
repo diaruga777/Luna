@@ -155,6 +155,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Sharing affordances handed on to any nested reader this one opens; nil in
     /// the share sheet.
     private var shareProvider: ReaderShareProviding?
+    /// The custom scroll indicator, kept so its track can be told the extent the
+    /// reader actually SHOWS. Left to itself it mirrors the scroll view's content
+    /// insets, and this reader's bottom inset is a reserved lane (the completion
+    /// area, the read-aloud footer, the safe area) — mirroring it ends the track
+    /// well over a hundred points short of the screen.
+    private weak var scrollIndicator: HorizonScrollIndicator?
     private var contentSizeObservation: NSKeyValueObservation?
     /// Stable whitespace appended after the final text line. The completion pill
     /// lives inside this lane instead of being positioned from `contentSize`,
@@ -437,6 +443,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Positions the completion acknowledgement in a fixed-height lane below the
     /// text and reserves room for it.
     private func layoutCompletionArea() {
+        updateScrollIndicatorTrack()
         let width = textView.bounds.width
         guard width > 0 else { return }
         finishedBadge.frame = CGRect(
@@ -452,6 +459,23 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if abs(textView.contentInset.bottom - bottomInset) > 0.5 {
             textView.contentInset.bottom = bottomInset
         }
+    }
+
+    /// The track the scroll indicator runs on: from just below whatever chrome
+    /// insets the top (an extension's navigation bar, a card's floating header)
+    /// down to the top of the bottom safe area — plus the read-aloud footer while
+    /// it is up, which is the one piece of bottom chrome the indicator would
+    /// otherwise run behind. Told explicitly, because the indicator's own default
+    /// is to mirror the scroll view's content insets and the bottom one here
+    /// reserves the completion lane as well.
+    private func updateScrollIndicatorTrack() {
+        guard let scrollIndicator, scrollIndicator.superview != nil else { return }
+        let footerSpace = footer.isHidden ? 0 : footer.bounds.height
+        let insets = UIEdgeInsets(
+            top: textView.adjustedContentInset.top, left: 0,
+            bottom: view.safeAreaInsets.bottom + footerSpace, right: 0)
+        if let current = scrollIndicator.trackInsets, current == insets { return }
+        scrollIndicator.trackInsets = insets
     }
 
     public override func viewDidLoad() {
@@ -492,7 +516,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-        HorizonScrollIndicator.install(on: textView, in: view)
+        scrollIndicator = HorizonScrollIndicator.install(on: textView, in: view)
         applyTopChromeInset(preservingVisiblePosition: false)
         installAnimatedImageViews()
     }
@@ -558,6 +582,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if preservingVisiblePosition, abs(delta) > 0.5 {
             textView.contentOffset.y -= delta
         }
+        updateScrollIndicatorTrack()
     }
 
     /// Whether there's a saved/carried position to restore before revealing.
@@ -900,6 +925,13 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         } else if item.readState != .read, let word = item.lastWordIndex,
                   wordMap.attributedRange(forWord: word) != nil {
             scrollWord(word, toFractionFromTop: 0.25)
+        } else {
+            // Nothing to restore, so rest at the VISUAL top — which is
+            // `-adjustedContentInset.top`, not zero, whenever chrome insets the
+            // content (an extension's navigation bar, a card's floating header).
+            // Leaving UIKit's zero there opens the article already scrolled, with
+            // its title tucked up underneath that chrome.
+            textView.contentOffset.y = -textView.adjustedContentInset.top
         }
         // Baseline for "has the user scrolled since opening?" (the carried
         // position must survive a plain open/close untouched).

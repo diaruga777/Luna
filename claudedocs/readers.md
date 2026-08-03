@@ -404,6 +404,23 @@ same settling behind `ShareReaderViewController`'s own spinner.
 
 All three reader modes, audio (foreground only), and the inline split-web link viewer work; a Done button exits the extension. Resume starts from the first fully-visible word (`ScrollReaderViewController.firstFullyVisibleWordIndex`).
 
+**The extension's header height is MEASURED, never assumed** (`ExtensionNavigationController`,
+LunaShareSurface). The surface's one navigation container is a CHILD view controller living in the
+host's window, and a modern navigation bar draws over the content it titles — between those two, the
+screen underneath can be handed a safe area its own bar still covers. Everything measured from that
+safe area then starts too high: the article opened with its title tucked up under the bar, and the
+scroll indicator began its track behind it. So the container measures the bar after every layout and
+adds whatever it still overlaps to the visible screen's `additionalSafeAreaInsets.top` — zero on a
+runtime that already accounted for the bar, and zero while the bar is hidden (the loading / saved /
+failure states hide it), so it can only push content out from under a bar that is really there.
+Two matching rules in the scroll reader itself: a fresh open with no saved position rests at
+`-adjustedContentInset.top` rather than UIKit's zero (which IS the visual top only when no chrome
+insets the content), and the `HorizonScrollIndicator` track is given the extent the reader SHOWS —
+just below the top chrome down to the top of the bottom safe area (plus the read-aloud footer while
+it is up). The indicator's own default mirrors the scroll view's content insets, and this reader's
+bottom inset reserves the completion lane, which ended its track well over a hundred points short of
+the screen. Tests: `ExtensionScrollGeometryTests`.
+
 **Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). Schemes are per-app now — `lunareader://` (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker), via the per-target `LUNA_URL_SCHEME` build setting — and parsing accepts any of the three. The in-app "Share Link…" shares this link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
 
 ## Inline images

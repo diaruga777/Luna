@@ -3,14 +3,18 @@
 //  LunaTests
 //
 //  Every deck moves to a save it has never shown, whenever and however that
-//  save arrived: typed into the paste card here, dropped in by the share/action
-//  extension, an App Intent, Safari, the mailbox importer, or a sibling app
-//  writing the shared store while this one was suspended. The decks share one
-//  seam for it — `CardCarouselHostViewController.newSaveItemIndex` — which
-//  compares each reload's ids against the previous snapshot instead of asking
-//  every entry point to announce itself.
+//  save arrived: typed into the util card here, dropped in by the share/action
+//  or Safari extension, an App Intent, the mailbox importer, or a sibling app
+//  writing the shared store while this one was suspended. All four apps' decks
+//  are ONE implementation with one centering ladder, and a new save sits at the
+//  top of it — above the parked card, above a pending interactive save, in every
+//  app. The detection seam is `CardCarouselHostViewController.newSaveItemIndex`,
+//  which compares each reload's ids against the previous snapshot instead of
+//  asking every entry point to announce itself; nothing is gated on the save
+//  having been made interactively.
 //
 
+import LunaMediaDownload
 import LunaModels
 import LunaStorage
 import UIKit
@@ -24,10 +28,12 @@ final class NewSaveCenteringTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UIView.setAnimationsEnabled(false)
+        SavedMediaDeckFixtures.emptySharedMediaStore()
     }
 
     override func tearDown() {
         ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavedMediaDeckFixtures.emptySharedMediaStore()
         super.tearDown()
     }
 
@@ -197,7 +203,67 @@ final class NewSaveCenteringTests: XCTestCase {
         _ = window
     }
 
+    // MARK: - The media deck, end to end
+
+    /// The Downloader had no end-to-end case at all. Its rows are keyed by the
+    /// MEDIA store's ids, so this also pins that the shared diff works on a deck
+    /// whose slot ids come from somewhere other than the reading list.
+    @MainActor
+    func testMediaDeckMovesToASaveMadeElsewhere() {
+        seedMedia(count: 3)
+        let deck = SavedMediaCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        deck.carousel.reloadData(centeringAt: 2)
+        XCTAssertEqual(deck.carousel.currentIndex, 2)
+
+        seedMedia(count: 1, prefix: "elsewhere", startingAt: Date().addingTimeInterval(60))
+        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+
+        XCTAssertEqual(
+            deck.carousel.currentIndex, 1,
+            "a media save made outside the app takes the center from the card the user was on")
+        _ = window
+    }
+
+    /// A failed save is a card on this deck too, and one that arrives while the
+    /// user is parked elsewhere is still a save that just arrived.
+    @MainActor
+    func testMediaDeckMovesToAFailedSaveThatJustArrived() {
+        seedMedia(count: 2)
+        let deck = SavedMediaCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        deck.carousel.reloadData(centeringAt: 2)
+        XCTAssertEqual(deck.carousel.currentIndex, 2)
+
+        let broken = ReadingListItem(
+            seed: "new-save-broken",
+            urlString: "https://broken.example.com/new-save",
+            title: nil,
+            dateAdded: Date().addingTimeInterval(60),
+            state: .failed)
+        ReadingListStore.shared.seedForTesting(items: [broken], contents: [:])
+        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+
+        XCTAssertEqual(
+            deck.slots[deck.carousel.currentIndex - deck.cardOffset].id, broken.id,
+            "the deck comes to rest on the save that just arrived, broken or not")
+        _ = window
+    }
+
     // MARK: - Fixtures
+
+    @discardableResult
+    private func seedMedia(
+        count: Int,
+        prefix: String = "new-save",
+        startingAt date: Date = Date()
+    ) -> [SavedMediaItem] {
+        SavedMediaDeckFixtures.seedMedia(count: count, prefix: prefix, startingAt: date)
+    }
 
     @discardableResult
     private func seedArticles(

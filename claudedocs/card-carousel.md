@@ -179,18 +179,23 @@ Consequences for the deck:
   leaves center, keeping position.
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
   playback timestamp (one card-width ≈ full duration).
-  The card itself never pans.
+  The card itself never pans — and on decks that page on in-card swipes (the
+  all-kinds deck's readers), a playable card is exempt: its whole width is a
+  timeline, so the drag scrubs and never ALSO pages
+  (`CardCarouselPagePanStartPolicy`, `centeredContentScrubs`). Edge swipes and
+  the strip stay the paging affordances. Playback starts the instant a card
+  centers: the player never waits to minimize stalling (everything is local),
+  and a neighbor card pre-decodes its first frame with a zero-tolerance seek at
+  install.
 - **A PAUSED card shows its playback controls**, and they are a function of the
   paused state rather than of any gesture: a `MoonHorizonProgressBar` sits INSIDE
-  the card's bottom edge (12pt up — the mute button's inset from the top), over a
-  soft black gradient scrim (`PlaybackScrubScrimView`: clear at its top, gently
-  dark under the bar, full card width with the card's own bottom corners —
-  deliberately not a glass slab, so it reads as the video dimming toward its
-  edge rather than as chrome). The bar shows only determinate progress and the
-  head point — the traveling activity pulse remains exclusive to download
-  progress. Content that plays at a chooseable rate also gets a **glass speed
-  pill** floating above the bar's leading end (the pill re-fits its frame on
-  every speed change — it is frame-managed, and "0.25×" is wider than "1×"). One tap opens its menu:
+  the card's bottom edge (12pt up — the mute button's inset from the top), bare
+  over the video — it carries no backdrop of its own. The bar shows only
+  determinate progress and the head point — the traveling activity pulse remains
+  exclusive to download progress. Content that plays at a chooseable rate also
+  gets a **glass speed pill** floating above the bar's leading end (the pill
+  re-fits its frame on every speed change — it is frame-managed, and "0.25×" is
+  wider than "1×"). One tap opens its menu:
   0.25× / 0.5× / 1× / 1.5× / 2×, the current one checked
   (`PlaybackSpeedPillButton`, `PlaybackSpeed.options`).
   Because the pause a drag-scrub performs is the same pause, the bar comes up

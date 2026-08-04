@@ -58,13 +58,15 @@ enum MediaCardFactory {
             guard let fileURL = item.fileURL else { return CardContentViewController() }
             switch item.kind {
             case .video:
-                let content = VideoCardContentViewController(fileURL: fileURL)
+                let content = VideoCardContentViewController(
+                    fileURL: fileURL, speedMemoryKey: speedMemoryKey(for: item))
                 loadThumbnail(for: item, scale: scale) { [weak content] image in
                     DispatchQueue.main.async { content?.setPosterImage(image) }
                 }
                 return content
             case .audio:
-                let content = VideoCardContentViewController(fileURL: fileURL)
+                let content = VideoCardContentViewController(
+                    fileURL: fileURL, speedMemoryKey: speedMemoryKey(for: item))
                 content.setPosterImage(UIImage(systemName: "waveform.circle.fill"))
                 return content
             case .gif:
@@ -81,9 +83,11 @@ enum MediaCardFactory {
             }
         case .photosReference(let identifier, _, _):
             if item.kind == .video || item.kind == .audio {
-                let content = VideoCardContentViewController(itemProvider: { completion in
-                    loadPhotosVideoItem(identifier: identifier, completion: completion)
-                })
+                let content = VideoCardContentViewController(
+                    itemProvider: { completion in
+                        loadPhotosVideoItem(identifier: identifier, completion: completion)
+                    },
+                    speedMemoryKey: speedMemoryKey(for: item))
                 loadThumbnail(for: item, scale: scale) { [weak content] image in
                     DispatchQueue.main.async { content?.setPosterImage(image) }
                 }
@@ -95,6 +99,14 @@ enum MediaCardFactory {
                     completion: completion)
             })
         }
+    }
+
+    /// The identity a playback speed is remembered against — the media row, not
+    /// the card, so the speed survives the card being unmounted two slots out
+    /// and rebuilt on the way back, and is the SAME memory whichever deck (the
+    /// Downloader's or the central app's) or player surface shows the item.
+    static func speedMemoryKey(for item: SavedMediaItem) -> String {
+        "savedMedia.\(item.id.uuidString)"
     }
 
     /// The badge pinned to a card's top-leading corner for media that lives in

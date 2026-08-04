@@ -41,6 +41,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     /// The player behind the currently-presented full-screen video, held weakly
     /// so we can pause it while a share sheet is up (the player VC owns it).
     private weak var activePlayer: AVPlayer?
+    /// Keeps the fullscreen player's speed choices flowing back into the shared
+    /// per-item memory for as long as that player exists.
+    private var playerSpeedObservation: NSKeyValueObservation?
     private var items: [SavedMediaItem] = []
     private var archivedItems: [SavedMediaItem] = []
     /// Saves whose ingestion FAILED. They carry no kind (the classifier never
@@ -87,7 +90,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         style.scrubberHorizontalInset = 64
         style.scrubberEdgeFadeWidth = 0
         style.showsCardBorder = true
-        style.showsPlaybackScrubProgress = true
         carousel.style = style
         mountDeck()
     }
@@ -141,7 +143,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 return
             }
             if item.kind == .video || item.kind == .audio {
-                presentPlayer(item: AVPlayerItem(url: url))
+                presentPlayer(
+                    item: AVPlayerItem(url: url),
+                    speedMemoryKey: MediaCardFactory.speedMemoryKey(for: item))
             } else {
                 presentArchiveImage { completion in
                     DispatchQueue.global(qos: .userInitiated).async {
@@ -164,7 +168,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                             }
                             return
                         }
-                        self?.presentPlayer(item: playerItem)
+                        self?.presentPlayer(
+                            item: playerItem,
+                            speedMemoryKey: MediaCardFactory.speedMemoryKey(for: item))
                     }
                 }
             } else {
@@ -177,11 +183,28 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    private func presentPlayer(item: AVPlayerItem) {
+    /// Fullscreen playback keeps the SYSTEM player and so the system's own speed
+    /// menu — Luna draws no second control over it. What it does share is the
+    /// memory: the row opens at the speed the card was left at, the menu offers
+    /// Luna's own five speeds, and a change made here goes back to the card.
+    private func presentPlayer(item: AVPlayerItem, speedMemoryKey: String) {
         let controller = AVPlayerViewController()
         let player = AVPlayer(playerItem: item)
+        item.audioTimePitchAlgorithm = .spectral
+        player.defaultRate = Float(PlaybackSpeedMemory.shared.speed(forKey: speedMemoryKey))
+        controller.speeds = PlaybackSpeed.options.map {
+            AVPlaybackSpeed(rate: Float($0), localizedName: PlaybackSpeed.label(for: $0))
+        }
         controller.player = player
         activePlayer = player
+        // Picking a speed in the system menu sets the player's default rate;
+        // KVO can arrive off the main thread, and the memory is main-only.
+        playerSpeedObservation = player.observe(\.defaultRate) { player, _ in
+            let rate = Double(player.defaultRate)
+            DispatchQueue.main.async {
+                PlaybackSpeedMemory.shared.setSpeed(rate, forKey: speedMemoryKey)
+            }
+        }
         controller.modalPresentationStyle = .fullScreen
         present(controller, animated: true) { controller.player?.play() }
     }

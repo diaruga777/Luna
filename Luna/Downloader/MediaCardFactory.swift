@@ -263,12 +263,7 @@ enum MediaItemActions {
         shareLink: @escaping () -> Void,
         shareFile: @escaping () -> Void
     ) -> [ReaderShareSheet.Row] {
-        var rows: [ReaderShareSheet.Row] = [
-            .init(title: L10n.string("Copy link"), systemImage: "doc.on.doc",
-                  isPrimary: false, action: copyLink),
-            .init(title: L10n.string("Share link"), systemImage: "square.and.arrow.up",
-                  isPrimary: false, action: shareLink),
-        ]
+        var rows = linkRows(copyLink: copyLink, shareLink: shareLink)
         if case .undownloaded = item.storageState {} else {
             rows.append(.init(
                 title: shareFileTitle(for: item.kind),
@@ -276,6 +271,19 @@ enum MediaItemActions {
                 isPrimary: false, action: shareFile))
         }
         return rows
+    }
+
+    /// The two link rungs every save offers, whatever else it holds.
+    private static func linkRows(
+        copyLink: @escaping () -> Void,
+        shareLink: @escaping () -> Void
+    ) -> [ReaderShareSheet.Row] {
+        [
+            .init(title: L10n.string("Copy link"), systemImage: "doc.on.doc",
+                  isPrimary: false, action: copyLink),
+            .init(title: L10n.string("Share link"), systemImage: "square.and.arrow.up",
+                  isPrimary: false, action: shareLink),
+        ]
     }
 
     /// A nil kind renders as an image card (`MediaCardFactory.makeCard`), so
@@ -309,18 +317,43 @@ enum MediaItemActions {
     ) -> UIMenu {
         ReaderShareSheet.menu(rows: shareMenuRows(
             for: item,
-            copyLink: { [weak presenter] in
-                guard let presenter else { return }
-                SendToFriendSheet.copyLink(
-                    urlString: item.sourceURLString, from: presenter)
-            },
-            shareLink: { [weak presenter, weak sourceView] in
-                guard let presenter else { return }
-                SendToFriendSheet.shareLink(
-                    urlString: item.sourceURLString, from: presenter,
-                    sourceView: sourceView)
-            },
+            copyLink: copyLinkVerb(urlString: item.sourceURLString, presenter: presenter),
+            shareLink: shareLinkVerb(
+                urlString: item.sourceURLString, presenter: presenter, sourceView: sourceView),
             shareFile: shareFile))
+    }
+
+    /// Copy link / Share link alone — for a save Luna knows only as a LINK: a
+    /// platform item with no media row behind it. The pill still owes the user
+    /// the link verbs there; it just has no file to name.
+    static func linkShareMenu(
+        urlString: String,
+        presenter: UIViewController,
+        sourceView: UIView?
+    ) -> UIMenu {
+        ReaderShareSheet.menu(rows: linkRows(
+            copyLink: copyLinkVerb(urlString: urlString, presenter: presenter),
+            shareLink: shareLinkVerb(
+                urlString: urlString, presenter: presenter, sourceView: sourceView)))
+    }
+
+    private static func copyLinkVerb(
+        urlString: String, presenter: UIViewController
+    ) -> () -> Void {
+        { [weak presenter] in
+            guard let presenter else { return }
+            SendToFriendSheet.copyLink(urlString: urlString, from: presenter)
+        }
+    }
+
+    private static func shareLinkVerb(
+        urlString: String, presenter: UIViewController, sourceView: UIView?
+    ) -> () -> Void {
+        { [weak presenter, weak sourceView] in
+            guard let presenter else { return }
+            SendToFriendSheet.shareLink(
+                urlString: urlString, from: presenter, sourceView: sourceView)
+        }
     }
 
     /// An explicit "download this exact item now" gesture — it bypasses the

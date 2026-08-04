@@ -645,7 +645,10 @@ link: the looping player, the animated GIF, the full-resolution image, or the
 in-card download progress bar, plus its Photos badge, its platform logo in the
 scrub strip, and Share / Save to Photos in its long-press menu. The deck's
 trailing share pill offers the same media ladder the Downloader's circle does
-(Copy link / Share link / Share video…, via the seam's `shareMenu`). Deleting the
+(Copy link / Share link / Share video…, via the seam's `shareMenu`); a platform
+save with NO media row gets the two link verbs alone, and only the file row
+ever shares a file — a video Luna holds just a thumbnail for shares its link,
+never the thumbnail. Deleting the
 card deletes the whole save — the downloaded file and its Photos asset with it.
 Its tap belongs to the card content (play/pause, the download button); the
 native-app → embed → in-app-browser ladder (`nonArticleOpener`) is left to the

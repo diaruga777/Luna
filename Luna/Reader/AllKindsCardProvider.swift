@@ -101,12 +101,22 @@ final class AllKindsCardProvider: AllKindsCardProviding {
 
     /// The deck's trailing circle, offered the same ladder the Downloader's own
     /// circle hangs on this row: Copy link / Share link over the original saved
-    /// URL, then the file itself once one exists. Nil for a save with no media
-    /// row, which keeps the pill hidden there.
+    /// URL, then the file itself once one exists. A platform save with NO media
+    /// row still owes the user its link — that card is a link and nothing else —
+    /// so it gets the two link verbs alone. Nil for saves that aren't this
+    /// kind's at all — which includes every error card: a FAILED save is
+    /// kind-less by definition (`ReadingListSectioning.isFailedSave`), so it
+    /// never passes the platform guard and keeps its share verbs in its own
+    /// URL bar and long-press menu, the same dress in this deck and the
+    /// Downloader's.
     func shareMenu(
         for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
     ) -> UIMenu? {
-        guard let media = media(for: item) else { return nil }
+        guard item.contentPlatform != nil else { return nil }
+        guard let media = media(for: item) else {
+            return MediaItemActions.linkShareMenu(
+                urlString: item.urlString, presenter: presenter, sourceView: sourceView)
+        }
         return MediaItemActions.shareMenu(
             for: media, presenter: presenter, sourceView: sourceView,
             shareFile: { [weak presenter, weak sourceView] in

@@ -917,7 +917,15 @@ class CardCarouselHostViewController: UIViewController {
             host: self,
             shiftedViews: views,
             canPull: canPull,
+            cardClaimsDrag: { [weak self] point in self?.centeredCardClaimsDrag(at: point) ?? false },
             openStateChanged: openStateChanged)
+    }
+
+    /// The archive arc defers to the centered card wherever its own content owns
+    /// horizontal drags: a video card treats its full width as a timeline, so a
+    /// swipe there scrubs and must not also pull the arc in behind it.
+    private func centeredCardClaimsDrag(at point: CGPoint) -> Bool {
+        carousel.centeredCardConsumesHorizontalDrag(at: point, in: view)
     }
 
     final func refreshArchivePullAvailability(animated: Bool) {

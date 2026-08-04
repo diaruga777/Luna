@@ -120,6 +120,10 @@ final class ArchiveTrayController: NSObject {
     private weak var host: UIViewController?
     private let shiftContribution: TrayShiftContribution
     private let canPull: () -> Bool
+    /// Whether the centered card's own content owns a horizontal drag beginning
+    /// at this host-space point (a video card scrubbing its timeline). Such a
+    /// drag must not also pull the arc out from under the finger.
+    private let cardClaimsDrag: (CGPoint) -> Bool
     private let openStateChanged: (Bool) -> Void
     /// Invisible container that carries the arc's horizontal reveal. It still
     /// hit-tests, so an open arc blocks taps from reaching the shifted card.
@@ -162,11 +166,13 @@ final class ArchiveTrayController: NSObject {
         host: UIViewController,
         shiftedViews: @escaping () -> [UIView],
         canPull: @escaping () -> Bool,
+        cardClaimsDrag: @escaping (CGPoint) -> Bool = { _ in false },
         openStateChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.host = host
         shiftContribution = TrayShiftContribution(shiftedViews: shiftedViews)
         self.canPull = canPull
+        self.cardClaimsDrag = cardClaimsDrag
         self.openStateChanged = openStateChanged
         collection = UICollectionView(frame: .zero, collectionViewLayout: arcLayout)
         super.init()
@@ -366,13 +372,13 @@ final class ArchiveTrayController: NSObject {
 extension ArchiveTrayController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === pan else { return true }
-        // An invisible (chrome-hidden) arc must not be pullable.
-        guard !chromeHidden else { return false }
-        let velocity = pan.velocity(in: host?.view)
-        guard abs(velocity.x) > abs(velocity.y) else { return false }
-        // An empty archive has nothing to reveal — never start a new pull for
-        // one. An already-open arc can still finish its interaction defensively.
-        return progress > 0 || (velocity.x < 0 && !items.isEmpty && canPull())
+        return ArchiveTrayPullPolicy.shouldBeginPull(
+            progress: progress,
+            chromeHidden: chromeHidden,
+            hasContent: !items.isEmpty,
+            canPull: canPull(),
+            cardClaimsDrag: cardClaimsDrag(pan.location(in: host?.view)),
+            velocity: pan.velocity(in: host?.view))
     }
 
     func gestureRecognizer(

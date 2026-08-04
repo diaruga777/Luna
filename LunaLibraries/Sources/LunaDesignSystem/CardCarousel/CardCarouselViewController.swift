@@ -905,6 +905,21 @@ public final class CardCarouselViewController: UIViewController {
         metrics?.centeredCardFrame() ?? .zero
     }
 
+    /// Whether a horizontal drag starting at `point` (in `space`'s coordinates)
+    /// belongs to the centered card's own content: playable content treats its
+    /// whole width as a timeline and scrubs there. Screen-level drawers ask this
+    /// before starting a pull, so a video card's scrub is never ALSO a tray pull
+    /// — the same gesture cannot mean two things at once.
+    public func centeredCardConsumesHorizontalDrag(at point: CGPoint, in space: UIView) -> Bool {
+        guard count > 0, !isTransitioning,
+              let slot = slots[currentIndex], slot.content.isPlayable
+        else { return false }
+        // While immersed the centered card is bottom-extended past its resting
+        // frame, so use its live frame (as the card tap does).
+        let frame = isImmersed ? slot.card.frame : centeredCardFrame()
+        return frame.contains(space.convert(point, to: cardArea))
+    }
+
     private func layoutPlaybackScrubProgress() {
         guard let metrics else { return }
         let height = playbackScrubProgress.intrinsicContentSize.height

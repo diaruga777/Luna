@@ -430,32 +430,57 @@ final class OnboardingPasteRow: UIView {
     private static let controlWidth: CGFloat = 50
     private static let gap: CGFloat = 7
 
-    private let control: UIPasteControl
+    private var control: UIPasteControl
     private let field = OnboardingPasteField()
     /// The one status slot, ahead of the text. It is the field's `leftView`,
     /// so it only joins the view hierarchy while it has something to say —
     /// the row keeps the reference either way.
     let status = OnboardingPasteStatusView()
     private(set) var state = State.idle
+    private var foregroundObserver: NSObjectProtocol?
 
-    override init(frame: CGRect) {
+    /// Built fresh rather than kept, so that a return to the foreground gets a
+    /// control that has read the pasteboard as it stands now.
+    ///
+    /// `UIPasteControl` is documented to reflect whether the pasteboard holds
+    /// anything matching the target's `pasteConfiguration`, and it follows
+    /// `UIPasteboard.changedNotification` — which is **not** posted for changes
+    /// made while the app is in the background. So a link copied in Safari and
+    /// brought back here is a change the control never hears about. (Measured
+    /// on the simulator, its fill is byte-identical either way, so this buys
+    /// nothing there; it is the documented contract that is being honoured,
+    /// not an observed repair.)
+    private static func makeControl() -> UIPasteControl {
         let configuration = UIPasteControl.Configuration()
         configuration.displayMode = .iconOnly
         configuration.cornerStyle = .capsule
         // The system fills the control with this colour opaquely — an alpha
-        // component is dropped, so the wash the setup buttons get from 24% of
-        // the tint is mixed by hand here, a shade stronger because this one is
-        // the completion action.
+        // component is dropped, so the setup buttons' 26% glass wash is mixed
+        // by hand here. Nearly the whole base colour: this is the completion
+        // action, and mixing it darker (it was 0.55) landed on a navy so close
+        // to the card that the button read as disabled.
         configuration.baseBackgroundColor = LunaSurfacePalette.blended(
-            .black, toward: LunaSurfacePalette.baseColor, amount: 0.55)
+            .black, toward: LunaSurfacePalette.baseColor, amount: 0.90)
         configuration.baseForegroundColor = LunaColors.primaryText
-        control = UIPasteControl(configuration: configuration)
+        let control = UIPasteControl(configuration: configuration)
+        control.target = nil
+        control.accessibilityLabel = placeholder
+        return control
+    }
+
+    override init(frame: CGRect) {
+        control = Self.makeControl()
         super.init(frame: frame)
 
         accessibilityIdentifier = OnboardingStrings.Accessibility.introPaste.value()
-        control.target = nil
-        control.accessibilityLabel = Self.placeholder
         addSubview(control)
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rebuildControlForCurrentPasteboard() }
+        }
 
         field.accessibilityIdentifier =
             OnboardingStrings.Accessibility.introPasteField.value()
@@ -478,8 +503,18 @@ final class OnboardingPasteRow: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
+    deinit {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+    }
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        bindControlToHostingController()
+    }
+
+    private func bindControlToHostingController() {
         var responder: UIResponder? = self
         while let next = responder?.next {
             if let target = next as? UIViewController {
@@ -488,6 +523,19 @@ final class OnboardingPasteRow: UIView {
             }
             responder = next
         }
+    }
+
+    /// Swaps in a control that has read the pasteboard as it stands now. Only
+    /// at rest: mid-flight the row owns the control's enablement, and a
+    /// resolved paste has already had its answer.
+    private func rebuildControlForCurrentPasteboard() {
+        guard state == .idle, window != nil else { return }
+        let replacement = Self.makeControl()
+        control.removeFromSuperview()
+        control = replacement
+        addSubview(replacement)
+        bindControlToHostingController()
+        setNeedsLayout()
     }
 
     override func layoutSubviews() {

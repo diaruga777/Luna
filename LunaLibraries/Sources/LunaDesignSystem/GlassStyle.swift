@@ -254,6 +254,30 @@ public enum GlassStyle {
         return config
     }
 
+    /// The same pill, but with `tint` as an actual glass FILL rather than the
+    /// wash `prominent` gives it — iOS 26's *prominent* glass, which is what a
+    /// screen's single primary action wants when the colour is the point (the
+    /// extensions' full-width Done). Plain glass tinted at 55% reads as another
+    /// grey capsule over a true-black background.
+    public static func primaryActionButtonConfiguration(
+        title: String, symbol: String, tint: UIColor = GlassStyle.lunaBrandAccent
+    ) -> UIButton.Configuration {
+        let base = actionButtonConfiguration(
+            title: title, symbol: symbol, prominent: true, tint: tint)
+        guard #available(iOS 26.0, *) else { return base }
+        var config = UIButton.Configuration.prominentGlass()
+        config.baseBackgroundColor = tint
+        config.baseForegroundColor = LunaColors.primaryText
+        config.image = base.image
+        config.imagePadding = base.imagePadding
+        config.cornerStyle = base.cornerStyle
+        config.preferredSymbolConfigurationForImage = base.preferredSymbolConfigurationForImage
+        config.contentInsets = base.contentInsets
+        config.titleLineBreakMode = base.titleLineBreakMode
+        config.attributedTitle = base.attributedTitle
+        return config
+    }
+
     /// A subtle trait-aware stroke approximating a liquid-glass rim light, for
     /// hairline borders on card edges sitting over the screen background.
     public static var glassBorderColor: UIColor {

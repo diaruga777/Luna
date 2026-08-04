@@ -386,8 +386,8 @@ public final class SavedNonTextualViewController: UIViewController {
 
     private func configureDoneButton() {
         guard doneButton.configuration == nil else { return }
-        doneButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Done"), symbol: "checkmark", prominent: true, tint: Self.tint)
+        doneButton.configuration = GlassStyle.primaryActionButtonConfiguration(
+            title: L10n.string("Done"), symbol: "checkmark", tint: Self.tint)
         doneButton.addAction(UIAction { [weak self] _ in self?.onDone() }, for: .touchUpInside)
     }
 

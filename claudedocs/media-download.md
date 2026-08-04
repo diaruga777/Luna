@@ -178,7 +178,9 @@ Photos references remain governed by the user's Photos library.
   Video/social links arrive through the same shared `IngestPipeline` outcomes and media
   resolver as every other ingestion context; YouTube has no extension-only embed or
   URL-derived poster path. Once resolved, media renders only in the extension preview
-  area with the extension's Download, Share, Save to Photos, and Delete controls.
+  area, which is a SQUARE filled aspect-fit: its side follows the content column, not
+  the still's proportions, so the media's vertical centre — and the Photos button
+  anchored under it — is fixed from load.
   Before deciding to auto-download or wait for a tap, it checks
   `SavedMediaStore.existingDownloadedItem(forURLString:)`; a duplicate link renders
   directly from the existing local file or Photos asset (`alreadyDownloaded`) with no
@@ -188,15 +190,26 @@ Photos references remain governed by the user's Photos library.
   set inline before the word "Photos" in BOTH states, and reads "Saved to Photos", disabled,
   after either an automatic or manual Photos save. Download progress is drawn INSIDE the
   media placeholder (`MoonHorizonProgressBar` under the media icon) rather than in a row of
-  its own, and there is no separate spinner — one indicator for one wait. The download row
-  retains a fixed layout slot while its contents change, so completion does not pull the
-  Share/Save controls upward. Its chrome is the extensions' shared chrome: a
+  its own, and there is no separate spinner — one indicator for one wait. **Download and
+  Save to Photos are one fixed-height slot** directly under the preview, in two states —
+  the media either isn't on disk yet or is, never both — so nothing moves when the
+  download completes, and the status line under it stays put. Save to Photos is inset one
+  further standard margin on each side than the full-width controls, so it reads as the
+  media's own action.
+  Its chrome is the extensions' shared chrome: a
   `GlassConfirmationBadge` header ("Saved to Luna" — the screen used to carry a navigation
-  title hard-coded to "Luna Downloader" in all four apps), Liquid Glass action pills in the
-  host app's own tint (`GlassStyle.actionButtonConfiguration(tint:)`), and the floating
-  `ExtensionExitButton` bottom-right in place of a navigation bar holding one Done.
+  title hard-coded to "Luna Downloader" in all four apps) and Liquid Glass action pills in
+  the host app's own tint (`GlassStyle.actionButtonConfiguration(tint:)`). **The ways out
+  stack up from the bottom safe area** instead: a full-width **Done** carrying the app's
+  tint as a real glass fill (`GlassStyle.primaryActionButtonConfiguration`, iOS 26
+  prominent glass — plain glass tinted at 55% is indistinguishable from the quiet pills
+  over true black), **Delete** directly above it, and — in the ACTION extension only, whose
+  user did not arrive from a share sheet — the system-share affordance as a floating glass
+  circle above that (`ExtensionFloatingGlassButton`, the same object as
+  `ExtensionExitButton`, which every other extension surface still uses bottom-right).
+  Because the stack is bottom-anchored, an absent Share circle is not a gap.
   Leaving completes SILENTLY — the host's "Saved" checkmark card used to animate in over a
-  screen the user had just dismissed, re-stating the header it replaced. **Delete and exit** removes a
+  screen the user had just dismissed, re-stating the header it replaced. **Delete** removes a
   Photos asset first when one backs the item, then removes the Downloader and reading-list
   records; a Photos permission failure retains the Luna records. The separate
   `autoDownloadMediaInPreview` setting, also default on, decides whether a genuinely new

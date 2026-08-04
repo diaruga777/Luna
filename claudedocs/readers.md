@@ -377,13 +377,15 @@ Fixed behavior: the **share extension** (`com.apple.share-services`) always save
 
 **Exits.** Every extension screen whose bottom-right corner is free carries the same
 floating Liquid Glass exit (`ExtensionExitButton`, LunaDesignSystem) instead of a
-navigation bar holding one "Done": the media save screen, the action extension's
-status/error screen, and `ShareReaderViewController`'s loading / saved / failure states —
-which hide the host's bar for exactly that reason. A checkmark where something WAS saved,
-an `xmark` where the screen is an error (never a checkmark over a failure). Two screens
-deliberately keep their existing exit: the in-sheet **reader** (its bottom-right is the
+navigation bar holding one "Done": the action extension's status/error screen and
+`ShareReaderViewController`'s loading / saved / failure states — which hide the host's bar
+for exactly that reason. A checkmark where something WAS saved,
+an `xmark` where the screen is an error (never a checkmark over a failure). Three screens
+deliberately keep their own: the **media save screen**, whose exits are a stack of
+full-width pills on the bottom safe area (Done under Delete, with the floating share
+circle above them — see `claudedocs/media-download.md`); the in-sheet **reader** (its bottom-right is the
 floating share control, and two hovering circles in one corner is worse than one bar
-button — `ShareReaderViewController.doneButton` documents this) and the extension **price
+button — `ShareReaderViewController.doneButton` documents this); and the extension **price
 editor** (its bottom-right is the alert-threshold footer, and it is the same object in-app,
 where the header control is the one the user already knows). The archive-CAPTCHA reader
 keeps its own bar buttons, so `presentArchiveReader` restores the navigation bar before

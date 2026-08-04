@@ -81,14 +81,18 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertEqual(frame.size, metrics.cardSize)
     }
 
-    func testPlaybackScrubProgressSitsBelowCenteredCard() {
+    /// The bar lives INSIDE the card's bottom edge now — over the video, backed
+    /// by the controller's scrim — leaving the runway beneath the card to the
+    /// thumbnail strip.
+    func testPlaybackScrubProgressSitsInsideTheCardBottomEdge() {
         let metrics = CardCarouselMetrics.resolve(containerSize: CGSize(width: 400, height: 800))
         let cardFrame = metrics.centeredCardFrame()
         let progressFrame = metrics.playbackScrubProgressFrame(height: 20)
 
-        XCTAssertEqual(progressFrame.minY, cardFrame.maxY + 8, accuracy: 0.01)
+        XCTAssertEqual(progressFrame.maxY, cardFrame.maxY - 12, accuracy: 0.01)
         XCTAssertEqual(progressFrame.minX, cardFrame.minX + 18, accuracy: 0.01)
         XCTAssertEqual(progressFrame.maxX, cardFrame.maxX - 18, accuracy: 0.01)
+        XCTAssertTrue(cardFrame.contains(progressFrame))
     }
 
     func testFillIgnoresAspectAndTakesEveryPoint() {

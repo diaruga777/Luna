@@ -186,10 +186,10 @@ public struct CardCarouselStyle {
     /// away as it approaches an edge. 0 (the default) keeps the hard clip.
     public var contentEdgeFadeHeight: CGFloat = 0
 
-    /// How far the paused card's speed pill floats above the card's bottom edge —
-    /// the mute button's inset from the top, so the two controls sit in from the
-    /// same margin.
-    static let playbackSpeedPillCardInset: CGFloat = 12
+    /// How far the paused card's playback controls sit in from the card's
+    /// bottom and side edges — the mute button's inset from the top, so the
+    /// card's floating controls all keep the same margin.
+    static let playbackControlsCardInset: CGFloat = 12
 
     public init() {}
 }
@@ -391,6 +391,12 @@ public final class CardCarouselViewController: UIViewController {
     private var scrubStartFraction: Double = 0
     private var wasPlayingBeforeScrub = false
     private let playbackScrubProgress = MoonHorizonProgressBar()
+    /// The bar's home: a soft black gradient over the card's bottom edge, there
+    /// only so the bar keeps contrast against whatever frame the video is
+    /// paused on. Deliberately NOT the mute button's glass pill — a second
+    /// control surface would read as chrome; this reads as the video dimming
+    /// toward its edge.
+    private let playbackScrubScrim = PlaybackScrubScrimView()
     private let playbackSpeedPill = PlaybackSpeedPillButton()
     private var playbackScrubPresentation = 0
 
@@ -415,18 +421,24 @@ public final class CardCarouselViewController: UIViewController {
         cardArea.clipsToBounds = false
         cardArea.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(cardArea)
-        playbackScrubProgress.alpha = 0
-        playbackScrubProgress.isHidden = true
+        playbackScrubScrim.alpha = 0
+        playbackScrubScrim.isHidden = true
         // The traveling activity pulse belongs to download progress, not
         // deterministic media playback position.
         playbackScrubProgress.showsActivityPulse = false
         playbackScrubProgress.accessibilityLabel = L10n.string("Video position")
-        cardArea.addSubview(playbackScrubProgress)
+        // The bar lives inside its scrim so the two fade as one piece of chrome.
+        playbackScrubScrim.addSubview(playbackScrubProgress)
+        cardArea.addSubview(playbackScrubScrim)
         playbackSpeedPill.alpha = 0
         playbackSpeedPill.isHidden = true
         playbackSpeedPill.onSelectSpeed = { [weak self] speed in
             guard let self, let content = self.slots[self.currentIndex]?.content else { return }
             content.setPlaybackSpeed(speed)
+            // The new label needs a new pill frame ("0.25×" is wider than
+            // "1×", and the pill is frame-managed) — without this the longer
+            // title wraps to a second line inside the old width.
+            self.layoutPlaybackScrubProgress()
         }
         cardArea.addSubview(playbackSpeedPill)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
@@ -923,17 +935,29 @@ public final class CardCarouselViewController: UIViewController {
     private func layoutPlaybackScrubProgress() {
         guard let metrics else { return }
         let height = playbackScrubProgress.intrinsicContentSize.height
-        let bar = metrics.playbackScrubProgressFrame(height: height)
-        playbackScrubProgress.frame = bar
+        let bar = metrics.playbackScrubProgressFrame(
+            bottomInset: CardCarouselStyle.playbackControlsCardInset, height: height)
+        // The scrim runs from a little above the bar to the card's bottom edge,
+        // full card width, so its fade never shows a seam of its own.
+        let cardFrame = metrics.centeredCardFrame()
+        let scrimTop = bar.minY - PlaybackScrubScrimView.fadeLead
+        playbackScrubScrim.frame = CGRect(
+            x: cardFrame.minX,
+            y: scrimTop,
+            width: cardFrame.width,
+            height: max(cardFrame.maxY - scrimTop, 0))
+        playbackScrubProgress.frame = CGRect(
+            x: bar.minX - cardFrame.minX,
+            y: bar.minY - scrimTop,
+            width: bar.width,
+            height: bar.height)
         // The speed pill rides above the bar's LEFT end — so the two read as one
-        // stack of controls for the card — and floats INSIDE the card's bottom
-        // edge at the same inset the mute button keeps at the top.
+        // stack of controls floating inside the card's bottom edge.
         let pill = playbackSpeedPill.systemLayoutSizeFitting(
             UIView.layoutFittingCompressedSize)
         playbackSpeedPill.frame = CGRect(
             x: bar.minX,
-            y: metrics.centeredCardFrame().maxY
-                - CardCarouselStyle.playbackSpeedPillCardInset - pill.height,
+            y: bar.minY - 8 - pill.height,
             width: pill.width,
             height: pill.height)
     }
@@ -973,12 +997,12 @@ public final class CardCarouselViewController: UIViewController {
     /// `speed` nil means this content plays at one rate only — no pill.
     private func showPlaybackControls(at fraction: Double, speed: Double?) {
         playbackScrubPresentation += 1
-        playbackScrubProgress.layer.removeAllAnimations()
+        playbackScrubScrim.layer.removeAllAnimations()
         playbackScrubProgress.setProgress(Float(min(max(fraction, 0), 1)), animated: false)
-        let wasHidden = playbackScrubProgress.isHidden
-        playbackScrubProgress.isHidden = false
-        if wasHidden { playbackScrubProgress.alpha = 0 }
-        cardArea.bringSubviewToFront(playbackScrubProgress)
+        let wasHidden = playbackScrubScrim.isHidden
+        playbackScrubScrim.isHidden = false
+        if wasHidden { playbackScrubScrim.alpha = 0 }
+        cardArea.bringSubviewToFront(playbackScrubScrim)
         if let speed {
             playbackSpeedPill.speed = speed
             if playbackSpeedPill.isHidden {
@@ -993,7 +1017,7 @@ public final class CardCarouselViewController: UIViewController {
             delay: 0,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
-            self.playbackScrubProgress.alpha = 1
+            self.playbackScrubScrim.alpha = 1
             self.playbackSpeedPill.alpha = speed == nil ? 0 : 1
         } completion: { [weak self] _ in
             guard let self, speed == nil else { return }
@@ -1006,21 +1030,34 @@ public final class CardCarouselViewController: UIViewController {
     /// completion), so `alpha` — set on the model layer immediately — is what
     /// "showing" means synchronously.
     var isPlaybackPositionBarShowingForTesting: Bool {
-        !playbackScrubProgress.isHidden && playbackScrubProgress.alpha > 0
+        !playbackScrubScrim.isHidden && playbackScrubScrim.alpha > 0
     }
 
     var playbackSpeedPillForTesting: PlaybackSpeedPillButton? {
         playbackSpeedPill.isHidden || playbackSpeedPill.alpha == 0 ? nil : playbackSpeedPill
     }
+
+    /// The scrim's and bar's frames in card-area coordinates, for geometry
+    /// tests. Nil while the controls are down.
+    var playbackScrubChromeFramesForTesting: (scrim: CGRect, bar: CGRect)? {
+        guard isPlaybackPositionBarShowingForTesting else { return nil }
+        return (
+            playbackScrubScrim.frame,
+            playbackScrubScrim.convert(playbackScrubProgress.frame, to: cardArea))
+    }
+
+    var playbackSpeedPillFrameForTesting: CGRect? {
+        playbackSpeedPillForTesting?.frame
+    }
     #endif
 
     private func updatePlaybackScrubProgress(to fraction: Double) {
-        guard !playbackScrubProgress.isHidden else { return }
+        guard !playbackScrubScrim.isHidden else { return }
         playbackScrubProgress.setProgress(Float(min(max(fraction, 0), 1)), animated: false)
     }
 
     private func hidePlaybackControls() {
-        guard !playbackScrubProgress.isHidden || !playbackSpeedPill.isHidden else { return }
+        guard !playbackScrubScrim.isHidden || !playbackSpeedPill.isHidden else { return }
         playbackScrubPresentation += 1
         let presentation = playbackScrubPresentation
         UIView.animate(
@@ -1028,11 +1065,11 @@ public final class CardCarouselViewController: UIViewController {
             delay: 0,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
-            self.playbackScrubProgress.alpha = 0
+            self.playbackScrubScrim.alpha = 0
             self.playbackSpeedPill.alpha = 0
         } completion: { [weak self] finished in
             guard let self, finished, presentation == self.playbackScrubPresentation else { return }
-            self.playbackScrubProgress.isHidden = true
+            self.playbackScrubScrim.isHidden = true
             self.playbackSpeedPill.isHidden = true
         }
     }
@@ -1748,4 +1785,43 @@ extension CardCarouselViewController: UIContextMenuInteractionDelegate {
         parameters.backgroundColor = .clear
         return UITargetedPreview(view: card, parameters: parameters)
     }
+}
+
+/// The playback bar's home: a soft black gradient laid over the card's bottom
+/// edge, clear at its top and gently dark under the bar, so the bar stays
+/// legible on whatever frame the video paused on. It is deliberately not a
+/// glass pill or a blur slab — those read as a second control surface, where
+/// this should read as the video itself dimming toward the card's edge. The
+/// black is fixed rather than trait-aware for the same reason the poster dim
+/// is: it sits on video frames, not on the app's sky.
+final class PlaybackScrubScrimView: UIView {
+
+    /// How far above the bar the gradient runs before reaching transparency —
+    /// enough travel that no starting edge is visible.
+    static let fadeLead: CGFloat = 28
+
+    override class var layerClass: AnyClass { CAGradientLayer.self }
+
+    init() {
+        super.init(frame: .zero)
+        // Display only: card taps and timeline scrubs must pass through to the
+        // card's own gesture handling (the bar itself is non-interactive too).
+        isUserInteractionEnabled = false
+        clipsToBounds = true
+        // The scrim spans the card's full width down to its bottom edge, so it
+        // has to follow the card's own corners or it would square them off.
+        layer.cornerRadius = CarouselCardView.cornerRadius
+        layer.cornerCurve = .continuous
+        layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        let gradient = layer as? CAGradientLayer
+        gradient?.colors = [
+            UIColor.black.withAlphaComponent(0).cgColor,
+            UIColor.black.withAlphaComponent(0.28).cgColor,
+            UIColor.black.withAlphaComponent(0.45).cgColor,
+        ]
+        gradient?.locations = [0, 0.55, 1]
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 }

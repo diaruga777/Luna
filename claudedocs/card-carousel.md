@@ -181,13 +181,16 @@ Consequences for the deck:
   playback timestamp (one card-width ≈ full duration).
   The card itself never pans.
 - **A PAUSED card shows its playback controls**, and they are a function of the
-  paused state rather than of any gesture: a `MoonHorizonProgressBar` sits just
-  below the card, against the black carousel background, following the position
-  (it shows only determinate progress and the head point — the traveling activity
-  pulse remains exclusive to download progress), and content that plays at a
-  chooseable rate also gets a **glass speed pill** at the card's bottom-left,
-  12pt in from the card's bottom edge (the mute button's inset from the top) and
-  aligned with the bar's leading edge. One tap opens its menu:
+  paused state rather than of any gesture: a `MoonHorizonProgressBar` sits INSIDE
+  the card's bottom edge (12pt up — the mute button's inset from the top), over a
+  soft black gradient scrim (`PlaybackScrubScrimView`: clear at its top, gently
+  dark under the bar, full card width with the card's own bottom corners —
+  deliberately not a glass slab, so it reads as the video dimming toward its
+  edge rather than as chrome). The bar shows only determinate progress and the
+  head point — the traveling activity pulse remains exclusive to download
+  progress. Content that plays at a chooseable rate also gets a **glass speed
+  pill** floating above the bar's leading end (the pill re-fits its frame on
+  every speed change — it is frame-managed, and "0.25×" is wider than "1×"). One tap opens its menu:
   0.25× / 0.5× / 1× / 1.5× / 2×, the current one checked
   (`PlaybackSpeedPillButton`, `PlaybackSpeed.options`).
   Because the pause a drag-scrub performs is the same pause, the bar comes up

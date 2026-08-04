@@ -391,9 +391,9 @@ public final class SavedNonTextualViewController: UIViewController {
         doneButton.addAction(UIAction { [weak self] _ in self?.onDone() }, for: .touchUpInside)
     }
 
-    /// The Share circle, centred on the same axis as the controls under it. It
-    /// stays visible but disabled until a file exists, so the action extension's
-    /// bottom chrome doesn't rearrange itself mid-download.
+    /// The Share circle, sitting against the trailing edge the pills under it
+    /// end at. It stays visible but disabled until a file exists, so the action
+    /// extension's bottom chrome doesn't rearrange itself mid-download.
     private func floatingShareRow() -> UIView {
         shareButton.isEnabled = false
         ExtensionFloatingGlassButton.style(
@@ -406,7 +406,7 @@ public final class SavedNonTextualViewController: UIViewController {
         row.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(shareButton)
         NSLayoutConstraint.activate([
-            shareButton.centerXAnchor.constraint(equalTo: row.centerXAnchor),
+            shareButton.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             shareButton.topAnchor.constraint(equalTo: row.topAnchor),
             // A little more air under the circle than the pills keep between
             // themselves, so it floats rather than joining the stack.

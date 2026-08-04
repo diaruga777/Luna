@@ -206,7 +206,8 @@ Photos references remain governed by the user's Photos library.
   over true black), **Delete** directly above it, and — in the ACTION extension only, whose
   user did not arrive from a share sheet — the system-share affordance as a floating glass
   circle above that (`ExtensionFloatingGlassButton`, the same object as
-  `ExtensionExitButton`, which every other extension surface still uses bottom-right).
+  `ExtensionExitButton`, which every other extension surface still uses bottom-right) —
+  pinned to the trailing edge the two pills end at, not centred over them.
   Because the stack is bottom-anchored, an absent Share circle is not a gap.
   Leaving completes SILENTLY — the host's "Saved" checkmark card used to animate in over a
   screen the user had just dismissed, re-stating the header it replaced. **Delete** removes a

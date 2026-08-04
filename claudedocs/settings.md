@@ -28,6 +28,10 @@ and finished by `SettingsViewController`.
   only in Luna and Reader (see double-save.md) and defaults to Nothing.
 - Appearance contains only the theme choice. Reader eclipse navigation is always
   enabled unless the system Reduce Motion accessibility setting is on.
+- Import & Export is two buttons: share every link this app is responsible for as
+  one CSV, or pick a file and review what it found before anything is saved. It
+  is universal — every app can hand its links out and take a file back, and each
+  keeps only its own kinds either way. See `import-export.md`.
 
 ## Reader and Luna
 

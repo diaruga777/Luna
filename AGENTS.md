@@ -55,6 +55,14 @@ Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2
 ## Agent workflow
 
 - Commit completed work in small, logical chunks as it is verified. Do not bundle unrelated changes into the same commit.
+- Unless told otherwise, do all work in your own worktree taken off `main`, not a
+  shared checkout. Commit as you go, then merge the worktree's branch into `main`
+  and delete both the worktree and the branch once the task is done — handle any
+  merge conflicts yourself rather than leaving them for later. Repeat the same
+  cycle for follow-up work (new worktree off the updated `main`, commit, merge,
+  delete) rather than reusing a stale one. Never end a task with finished work
+  still sitting unmerged in a worktree, including one left over from an earlier
+  task in the same session.
 
 ## Module structure
 

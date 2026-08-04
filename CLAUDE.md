@@ -191,6 +191,15 @@ stable Xcode 26.2.
 - Always commit completed work in small, logical chunks as you go — don't wait for
   explicit permission each time, and don't batch everything into one commit at the
   end of a task. Do not bundle unrelated changes into the same commit.
+- Unless told otherwise, do all work in your own worktree taken off `main`, not in
+  a shared checkout. Commit as you go (per the rule above), then merge the
+  worktree's branch into `main` and delete both the worktree and the branch once
+  the task is done — handle any merge conflicts yourself rather than leaving them
+  for later. If the user asks for follow-up work afterward, repeat the same
+  cycle (new worktree off the now-updated `main`, commit, merge, delete) rather
+  than reusing a stale one. Never end a task with finished work still sitting
+  unmerged in a worktree — that includes a worktree from an earlier task in the
+  same session.
 
 ## Module structure
 

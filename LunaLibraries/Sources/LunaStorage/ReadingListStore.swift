@@ -260,6 +260,95 @@ public final class ReadingListStore {
         }
     }
 
+    // MARK: - Bulk import
+
+    /// One link from a file import, with the list it belongs in.
+    public struct ImportedLink: Equatable, Sendable {
+        public let urlString: String
+        public let isArchived: Bool
+
+        public init(urlString: String, isArchived: Bool) {
+            self.urlString = urlString
+            self.isArchived = isArchived
+        }
+    }
+
+    /// What `insertImported` did with one requested link.
+    /// Not `Sendable`: it carries a `ReadingListItem`, which isn't.
+    public struct ImportedLinkPlacement: Equatable {
+        /// The stored item: the one just inserted, or the save this URL already had.
+        public let item: ReadingListItem
+        /// False when the URL was already in the list, so nothing was inserted.
+        public let wasInserted: Bool
+
+        public init(item: ReadingListItem, wasInserted: Bool) {
+            self.item = item
+            self.wasInserted = wasInserted
+        }
+    }
+
+    /// Places a whole imported batch in ONE coordinated write, preserving the
+    /// caller's order (see `claudedocs/import-export.md`).
+    ///
+    /// Three things this does that a loop over `addIfAbsent` cannot:
+    ///
+    /// - **Order survives.** Every deck sorts by `bumpDate ?? dateAdded`
+    ///   descending, not by array position, so N items stamped with the same
+    ///   `Date()` come out ordered by UUID — i.e. shuffled. Each item's
+    ///   `dateAdded` is therefore stepped `spacing` further back than the one
+    ///   before it, which reproduces the file's order exactly. `spacing` is
+    ///   deliberately small: the whole batch should still read as "just now".
+    /// - **One file coordination** instead of N read-modify-write cycles over the
+    ///   entire list, which for a few hundred links is the difference between a
+    ///   blink and a visible stall.
+    /// - **The archive arrives archived**, in the same write, so a batch
+    ///   interrupted by a crash or a background can't leave archived saves
+    ///   sitting in the deck.
+    ///
+    /// `lastSaveAttemptDate` is pinned to `.distantPast` rather than left nil:
+    /// the save-press window falls back to `dateAdded` when it's absent, and a
+    /// just-imported URL shared from Safari seconds later would otherwise read as
+    /// the SECOND press on that item and route to Kindle. An import is not a
+    /// save press.
+    ///
+    /// Returns one placement per requested link, in request order. Duplicates —
+    /// already in the list, or repeated inside the batch — return the existing
+    /// item with `wasInserted == false`.
+    @discardableResult
+    public func insertImported(
+        _ links: [ImportedLink], source: CaptureSource = .manual,
+        startingAt date: Date = Date(), spacing: TimeInterval = 0.01
+    ) -> [ImportedLinkPlacement] {
+        guard !links.isEmpty else { return [] }
+        return coordinatedMutate { all in
+            var existingByURL = Dictionary(
+                all.map { ($0.urlString, $0) }, uniquingKeysWith: { first, _ in first })
+            var placements: [ImportedLinkPlacement] = []
+            var inserted: [ReadingListItem] = []
+            placements.reserveCapacity(links.count)
+
+            for link in links {
+                if let existing = existingByURL[link.urlString] {
+                    placements.append(
+                        ImportedLinkPlacement(item: existing, wasInserted: false))
+                    continue
+                }
+                var item = ReadingListItem(urlString: link.urlString)
+                item.captureSource = source
+                item.dateAdded = date.addingTimeInterval(-Double(inserted.count) * spacing)
+                item.lastSaveAttemptDate = .distantPast
+                if link.isArchived { item.archivedAt = item.dateAdded }
+                inserted.append(item)
+                existingByURL[link.urlString] = item
+                placements.append(ImportedLinkPlacement(item: item, wasInserted: true))
+            }
+            // `inserted` is already newest-first (index 0 carries the latest
+            // `dateAdded`), which is the array's own convention.
+            all.insert(contentsOf: inserted, at: 0)
+            return placements
+        }
+    }
+
     // Mutations are targeted (fetch-fresh, set one field, save) rather than
     // whole-item writes: callers hold stale copies, and overwriting the whole
     // item silently reverts fields written by other screens in the meantime.

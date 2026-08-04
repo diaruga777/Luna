@@ -18,6 +18,7 @@ import LunaDesignSystem
 import LunaMediaDownload
 import LunaModels
 import LunaReadingList
+import LunaSocialUI
 import LunaStorage
 import Photos
 import UIKit
@@ -247,6 +248,79 @@ enum MediaItemActions {
                 title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in share() }]
         }
+    }
+
+    /// The share circle's menu for a media row, in the reader pill's ladder
+    /// shape: the link verbs first, then the file itself once Luna actually
+    /// holds one. The link is always `sourceURLString` — the original URL the
+    /// save came from, never the resolved CDN asset — and it is shareable in
+    /// every storage state, which is why an undownloaded row still gets a menu
+    /// (just without its file row). Both decks that show media hang this off
+    /// their trailing circle, so the options never diverge between apps.
+    static func shareMenuRows(
+        for item: SavedMediaItem,
+        copyLink: @escaping () -> Void,
+        shareLink: @escaping () -> Void,
+        shareFile: @escaping () -> Void
+    ) -> [ReaderShareSheet.Row] {
+        var rows: [ReaderShareSheet.Row] = [
+            .init(title: L10n.string("Copy link"), systemImage: "doc.on.doc",
+                  isPrimary: false, action: copyLink),
+            .init(title: L10n.string("Share link"), systemImage: "square.and.arrow.up",
+                  isPrimary: false, action: shareLink),
+        ]
+        if case .undownloaded = item.storageState {} else {
+            rows.append(.init(
+                title: shareFileTitle(for: item.kind),
+                systemImage: shareFileSymbol(for: item.kind),
+                isPrimary: false, action: shareFile))
+        }
+        return rows
+    }
+
+    /// A nil kind renders as an image card (`MediaCardFactory.makeCard`), so
+    /// its share row says the same.
+    static func shareFileTitle(for kind: MediaAsset.Kind?) -> String {
+        switch kind {
+        case .video: return L10n.string("Share video")
+        case .gif: return L10n.string("Share GIF")
+        case .audio: return L10n.string("Share audio")
+        case .image, nil: return L10n.string("Share image")
+        }
+    }
+
+    private static func shareFileSymbol(for kind: MediaAsset.Kind?) -> String {
+        switch kind {
+        case .video: return "video"
+        case .audio: return "waveform"
+        case .gif, .image, nil: return "photo"
+        }
+    }
+
+    /// The rows as the native menu the trailing circle presents, with the link
+    /// verbs wired to the shared social sheet. `shareFile` stays injected — the
+    /// export-and-present dance differs per deck (the Downloader prewarms and
+    /// pauses its player; the all-kinds deck exports cold).
+    static func shareMenu(
+        for item: SavedMediaItem,
+        presenter: UIViewController,
+        sourceView: UIView?,
+        shareFile: @escaping () -> Void
+    ) -> UIMenu {
+        ReaderShareSheet.menu(rows: shareMenuRows(
+            for: item,
+            copyLink: { [weak presenter] in
+                guard let presenter else { return }
+                SendToFriendSheet.copyLink(
+                    urlString: item.sourceURLString, from: presenter)
+            },
+            shareLink: { [weak presenter, weak sourceView] in
+                guard let presenter else { return }
+                SendToFriendSheet.shareLink(
+                    urlString: item.sourceURLString, from: presenter,
+                    sourceView: sourceView)
+            },
+            shareFile: shareFile))
     }
 
     /// An explicit "download this exact item now" gesture — it bypasses the

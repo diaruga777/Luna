@@ -63,11 +63,18 @@ final class KindCompositionRootTests: XCTestCase {
         "Luna", "LunaShare", "LunaAction", "LunaReaderClip", "LunaDownloaderClip",
     ]
 
-    /// Symlinks resolved, because these tests compare a `#filePath`-derived
-    /// prefix against paths a `FileManager` enumerator produces — and those two
-    /// disagree the moment the checkout lives under one. A worktree under
-    /// `/tmp` (a symlink to `/private/tmp` on macOS) made every path strip to
-    /// `/privateLuna/KindWiring+Luna.swift` and every root read as unlisted.
+    /// These tests compare a `#filePath`-derived prefix against paths a
+    /// `FileManager` enumerator produces, and those two disagree the moment the
+    /// checkout sits under a symlink: a worktree under `/tmp` (a symlink to
+    /// `/private/tmp` on macOS) is compiled with a `/tmp` `#filePath` and walked
+    /// as `/private/tmp`, so the prefix strip left `/privateLuna/KindWiring+Luna
+    /// .swift` and every root read as unlisted.
+    ///
+    /// Both sides therefore go through `resolvingSymlinksInPath`, which is a
+    /// NORMALIZER here rather than a resolver — note it strips `/private` from
+    /// `/private/tmp` rather than adding it, so it is only correct when applied
+    /// to both ends of the comparison. Applying it to one was the first
+    /// (wrong) fix.
     private var repositoryRoot: URL {
         URL(fileURLWithPath: "\(#filePath)")
             .deletingLastPathComponent()   // LunaTests
@@ -254,7 +261,7 @@ final class KindCompositionRootTests: XCTestCase {
                 at: base, includingPropertiesForKeys: nil) else { continue }
             for case let url as URL in walker where url.pathExtension == "swift" {
                 guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                let relative = url.path
+                let relative = url.resolvingSymlinksInPath().path
                     .replacingOccurrences(of: repositoryRoot.path + "/", with: "")
                 result.append((relative, source))
             }

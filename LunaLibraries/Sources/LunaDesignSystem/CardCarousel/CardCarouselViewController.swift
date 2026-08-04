@@ -186,9 +186,10 @@ public struct CardCarouselStyle {
     /// away as it approaches an edge. 0 (the default) keeps the hard clip.
     public var contentEdgeFadeHeight: CGFloat = 0
 
-    /// The gap between the paused card's speed pill and the position bar it
-    /// sits above.
-    static let playbackSpeedPillSpacing: CGFloat = 8
+    /// How far the paused card's speed pill floats above the card's bottom edge —
+    /// the mute button's inset from the top, so the two controls sit in from the
+    /// same margin.
+    static let playbackSpeedPillCardInset: CGFloat = 12
 
     public init() {}
 }
@@ -909,13 +910,15 @@ public final class CardCarouselViewController: UIViewController {
         let height = playbackScrubProgress.intrinsicContentSize.height
         let bar = metrics.playbackScrubProgressFrame(height: height)
         playbackScrubProgress.frame = bar
-        // The speed pill rides above the bar's LEFT end, so the two read as one
-        // stack of controls belonging to the card they sit under.
+        // The speed pill rides above the bar's LEFT end — so the two read as one
+        // stack of controls for the card — and floats INSIDE the card's bottom
+        // edge at the same inset the mute button keeps at the top.
         let pill = playbackSpeedPill.systemLayoutSizeFitting(
             UIView.layoutFittingCompressedSize)
         playbackSpeedPill.frame = CGRect(
             x: bar.minX,
-            y: bar.minY - CardCarouselStyle.playbackSpeedPillSpacing - pill.height,
+            y: metrics.centeredCardFrame().maxY
+                - CardCarouselStyle.playbackSpeedPillCardInset - pill.height,
             width: pill.width,
             height: pill.height)
     }

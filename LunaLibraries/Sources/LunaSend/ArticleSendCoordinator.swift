@@ -139,6 +139,14 @@ public final class ArticleSendCoordinator {
     private var inFlight = Set<String>()
     private let lock = NSLock()
 
+    /// Testing seam. `articleBecameReady`/`retryPendingSends` are synchronous
+    /// entry points that fan delivery out into detached `Task`s; with nothing
+    /// to await, a test can only sleep and hope. When this is set, every task
+    /// they start is handed over so the test can await it instead. Nil in
+    /// production — nothing is retained and no behavior changes.
+    @_spi(Testing)
+    public var didStartDeliveryTask: ((Task<Void, Never>) -> Void)?
+
     public init(
         store: ReadingListStore = .shared,
         destinations: [ArticleDestination]? = nil,
@@ -187,7 +195,8 @@ public final class ArticleSendCoordinator {
             let shouldSend = state == .queued
                 || (destination.sendMode(for: item) == .allSaves && state == nil)
             guard shouldSend else { continue }
-            Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+            let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+            didStartDeliveryTask?(task)
         }
     }
 
@@ -200,7 +209,8 @@ public final class ArticleSendCoordinator {
                 guard shouldAttempt(item, destinationID: destination.id, respectBackoff: true) else {
                     continue
                 }
-                Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+                let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+                didStartDeliveryTask?(task)
             }
         }
     }

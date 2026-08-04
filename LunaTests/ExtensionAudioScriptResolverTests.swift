@@ -169,7 +169,9 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let content = readableContent()
 
         _ = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // Nothing to await when the setting is off — the kick-off decision is
+        // synchronous, so no task was ever started, and that IS the assertion.
+        await resolver.awaitLastStartedRefinement()
 
         XCTAssertTrue(session.requestedPrompts.isEmpty)
         XCTAssertEqual(scriptStore.load(forContentFileName: item.contentFileName!)?.refined, false)
@@ -185,7 +187,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let content = readableContent()
 
         let script = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await resolver.awaitLastStartedRefinement()
 
         XCTAssertFalse(script.spokenBlocks.isEmpty)
         XCTAssertTrue(session.requestedPrompts.isEmpty, "an unavailable session must never be asked anything")
@@ -204,9 +206,9 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         _ = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
         resolver.cancelInFlightRefinement()
 
-        // Give the (cancelled) task a moment to have run to completion had it
-        // not been cancelled — the cache must still show the unrefined entry.
-        try await Task.sleep(nanoseconds: 300_000_000)
+        // Let the cancelled task run all the way to where it WOULD have applied
+        // its result — the cache must still show the unrefined entry.
+        await resolver.awaitLastStartedRefinement()
         XCTAssertEqual(
             scriptStore.load(forContentFileName: item.contentFileName!)?.refined, false,
             "a cancelled refinement must never write its result to the cache")
@@ -228,7 +230,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
             articlesDirectory: tempDirectory, modelSessionFactory: { session })
 
         _ = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await resolver.awaitLastStartedRefinement()
 
         XCTAssertTrue(session.requestedPrompts.isEmpty, "a permanently-failed article must never be retried")
     }

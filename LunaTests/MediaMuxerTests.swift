@@ -109,56 +109,46 @@ final class MediaMuxerTests: XCTestCase {
 
     // MARK: - Video + audio mux
 
-    func testMuxesVideoAndAudioIntoOnePlayableFile() async throws {
-        let video = try makeVideoFile(duration: 0.6)
-        let audio = try makeAudioFile(duration: 0.6)
-        let output = freshURL(ext: "mp4")
-
-        try await MediaMuxer.mux(videoURL: video, audioURL: audio, outputURL: output)
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
-        let asset = AVURLAsset(url: output)
-        let videoTracks = try await asset.loadTracks(withMediaType: .video)
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        XCTAssertEqual(videoTracks.count, 1)
-        XCTAssertEqual(audioTracks.count, 1)
-    }
-
-    func testAudioShorterThanVideoIsTrimmedToTheShorterDuration() async throws {
+    /// Every success-path behavior over ONE generated source pair: encoding a
+    /// real H.264 file with `AVAssetWriter` is by far the most expensive thing
+    /// in this class, so the mux, the shorter-audio trim, and the video-only
+    /// passthrough are all asserted against the same two inputs rather than
+    /// re-encoding a fresh video per behavior.
+    func testMuxCombinesTracksTrimsShortAudioAndPassesVideoOnlyThrough() async throws {
         let video = try makeVideoFile(duration: 0.8)
         let audio = try makeAudioFile(duration: 0.3) // shorter than the video
-        let output = freshURL(ext: "mp4")
 
-        try await MediaMuxer.mux(videoURL: video, audioURL: audio, outputURL: output)
-
-        let asset = AVURLAsset(url: output)
-        guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
+        // 1. Both tracks land in one playable file.
+        let muxed = freshURL(ext: "mp4")
+        try await MediaMuxer.mux(videoURL: video, audioURL: audio, outputURL: muxed)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: muxed.path))
+        let muxedAsset = AVURLAsset(url: muxed)
+        let muxedVideoTracks = try await muxedAsset.loadTracks(withMediaType: .video)
+        XCTAssertEqual(muxedVideoTracks.count, 1)
+        guard let audioTrack = try await muxedAsset.loadTracks(withMediaType: .audio).first else {
             return XCTFail("expected an audio track in the muxed output")
         }
+
+        // 2. The shorter audio is trimmed to its own length; the asset follows
+        //    the longer video track.
         let audioDuration = seconds(try await audioTrack.load(.timeRange).duration)
         XCTAssertEqual(audioDuration, 0.3, accuracy: 0.15,
                        "the audio track must not extend past its own (shorter) source duration")
-
-        let videoDuration = seconds(try await asset.load(.duration))
+        let videoDuration = seconds(try await muxedAsset.load(.duration))
         XCTAssertEqual(videoDuration, 0.8, accuracy: 0.15,
                        "the overall asset duration follows the (longer) video track")
-    }
 
-    // MARK: - Video-only passthrough (no usable audio track)
-
-    func testNoAudioTrackInSourceStillProducesAPlayableVideoOnlyFile() async throws {
-        let video = try makeVideoFile(duration: 0.5)
-        // A video file has no audio track of its own — used here as a stand-in for
-        // Reddit's video-only DASH leg with a missing/unavailable audio URL.
-        let output = freshURL(ext: "mp4")
-
-        try await MediaMuxer.mux(videoURL: video, audioURL: video, outputURL: output)
-
-        let asset = AVURLAsset(url: output)
-        let videoTracks = try await asset.loadTracks(withMediaType: .video)
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        XCTAssertEqual(videoTracks.count, 1)
-        XCTAssertTrue(audioTracks.isEmpty, "no audio track exists to mux in, so none is produced")
+        // 3. Video-only passthrough: the video file has no audio track of its
+        //    own, standing in for Reddit's video-only DASH leg with a missing
+        //    audio URL. The output is still playable, with no audio track.
+        let passthrough = freshURL(ext: "mp4")
+        try await MediaMuxer.mux(videoURL: video, audioURL: video, outputURL: passthrough)
+        let passthroughAsset = AVURLAsset(url: passthrough)
+        let passthroughVideoTracks = try await passthroughAsset.loadTracks(withMediaType: .video)
+        let passthroughAudioTracks = try await passthroughAsset.loadTracks(withMediaType: .audio)
+        XCTAssertEqual(passthroughVideoTracks.count, 1)
+        XCTAssertTrue(passthroughAudioTracks.isEmpty,
+                      "no audio track exists to mux in, so none is produced")
     }
 
     // MARK: - Failure path

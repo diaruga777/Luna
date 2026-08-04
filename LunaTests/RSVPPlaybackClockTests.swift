@@ -13,8 +13,12 @@ import XCTest
 
 private final class RecordingDelegate: RSVPPlaybackClockDelegate {
     var fireCount = 0
+    /// Lets a test wait on the FIRE itself rather than parking the run loop for
+    /// a fixed interval that has to out-last it.
+    var onFire: (() -> Void)?
     func playbackClockDidFire(_ clock: RSVPPlaybackClock) {
         fireCount += 1
+        onFire?()
     }
 }
 
@@ -98,10 +102,10 @@ final class RSVPPlaybackClockTests: XCTestCase {
         let clock = RSVPPlaybackClock()
         let delegate = RecordingDelegate()
         clock.delegate = delegate
-        let expectation = expectation(description: "fired")
-        clock.schedule(0.05)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { expectation.fulfill() }
-        wait(for: [expectation], timeout: 1)
+        let fired = expectation(description: "fired")
+        delegate.onFire = { fired.fulfill() }
+        clock.schedule(0.02)
+        wait(for: [fired], timeout: 1)
         XCTAssertEqual(delegate.fireCount, 1)
         XCTAssertFalse(clock.isScheduled, "the clock clears its own scheduled state once it fires")
     }
@@ -110,11 +114,15 @@ final class RSVPPlaybackClockTests: XCTestCase {
         let clock = RSVPPlaybackClock()
         let delegate = RecordingDelegate()
         clock.delegate = delegate
-        clock.schedule(0.05)
+        // An inverted expectation states the negative directly: the run loop is
+        // parked only long enough for the replaced 0.02s interval to have fired
+        // several times over, not for a round number of tenths.
+        let neverFires = expectation(description: "replaced interval must not fire")
+        neverFires.isInverted = true
+        delegate.onFire = { neverFires.fulfill() }
+        clock.schedule(0.02)
         clock.schedule(1) // replaces the short interval before it can fire
-        let expectation = expectation(description: "settled")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { expectation.fulfill() }
-        wait(for: [expectation], timeout: 1)
+        wait(for: [neverFires], timeout: 0.15)
         XCTAssertEqual(delegate.fireCount, 0, "the replaced interval must never fire")
     }
 }

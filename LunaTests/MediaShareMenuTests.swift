@@ -133,7 +133,7 @@ final class AllKindsShareMenuTests: XCTestCase {
     }
 
     @MainActor
-    func testSaveWithoutAMediaRowOffersNoMenu() {
+    func testNonPlatformSaveOffersNoMenu() {
         let item = ReadingListItem(
             seed: "allkinds-share-article",
             urlString: "https://example.com/article", title: "Article",
@@ -141,6 +141,22 @@ final class AllKindsShareMenuTests: XCTestCase {
 
         XCTAssertNil(AllKindsCardProvider().shareMenu(
             for: item, presenter: UIViewController(), sourceView: UIView()))
+    }
+
+    /// A platform save Luna never fetched media for is still a LINK — its card
+    /// is a link and nothing else — so the pill offers the two link verbs
+    /// rather than hiding.
+    @MainActor
+    func testPlatformSaveWithoutAMediaRowSharesItsLinkAlone() {
+        let item = ReadingListItem(
+            seed: "allkinds-share-link-only",
+            urlString: "https://x.com/luna/status/272727", title: "Post",
+            dateAdded: Date(), state: .ready, platform: .x)
+
+        let menu = AllKindsCardProvider().shareMenu(
+            for: item, presenter: UIViewController(), sourceView: UIView())
+
+        XCTAssertEqual(menu?.children.map(\.title), ["Copy link", "Share link"])
     }
 }
 

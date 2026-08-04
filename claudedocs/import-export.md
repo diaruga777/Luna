@@ -85,9 +85,14 @@ sheet never blinks out from under the user mid-import. A large detent, and it
 otherwise carry on with nothing on screen showing it.
 
 Review lists the found links in two sections (Links / Archive; an empty one is
-not rendered), each row a path over its host, all selected by default. Selection
-is a **checkmark**, not a radio glyph — a radio would claim the links were
-mutually exclusive. Import and Cancel sit at the bottom.
+not rendered), each row a path over its host, all selected by default. The
+selection control is a LEADING circle that fills when chosen, so it sits where
+the eye and thumb already are; a trailing checkmark would read as "just tapped"
+rather than "included". Import and Cancel sit at the bottom.
+
+The list stays up during the import, frozen and non-interactive — its filled
+circles are the record of what was chosen, and hiding it would leave the sheet's
+middle blank with the bar stranded at the bottom.
 
 ### The run
 
@@ -158,6 +163,15 @@ before the file was durable. That file is media-only and takes a membership
 exception in the Reader and Price Tracker sets; in those apps the seam stays nil,
 which is correct — a media link can't pass their content gate, so no transfer
 ever exists to watch.
+
+The first look for a transfer is decisive, with no grace period: the media ingest
+handler awaits `LiveMediaDownloadManager.start` before returning, so by the time
+the runner looks the job either exists or was never going to. A grace period
+would cost every non-downloadable social save a pointless pause, which over a few
+hundred of them is minutes. If that handler ever becomes fire-and-forget the only
+consequence is a coarser bar, not a wrong result. A transfer still running after
+`downloadWait` (180 s) is left to finish in the background, where it has its own
+Live Activity.
 
 ### The summary
 

@@ -58,6 +58,10 @@ final class LinkImportSheetViewController: UIViewController {
     private let primaryButton = UIButton(type: .system)
     private let secondaryButton = UIButton(type: .system)
     private let buttonRow = UIStackView()
+    /// Holds the progress block above the buttons. A stack, so hiding the block
+    /// COLLAPSES it: `isHidden` on a plain subview leaves its frame (and the
+    /// progress bar's 24pt intrinsic height) behind as a gap above the buttons.
+    private let footerStack = UIStackView()
     private let titleLabel = UILabel()
 
     /// How often the pulled progress is read. 1/12 s is smooth for a bar whose
@@ -145,7 +149,12 @@ final class LinkImportSheetViewController: UIViewController {
         buttonRow.addArrangedSubview(secondaryButton)
         buttonRow.addArrangedSubview(primaryButton)
 
-        for subview in [titleLabel, table, progressStack, buttonRow] {
+        footerStack.axis = .vertical
+        footerStack.spacing = 16
+        footerStack.addArrangedSubview(progressStack)
+        footerStack.addArrangedSubview(buttonRow)
+
+        for subview in [titleLabel, table, footerStack] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
@@ -166,14 +175,10 @@ final class LinkImportSheetViewController: UIViewController {
             column,
             table.leadingAnchor.constraint(greaterThanOrEqualTo: guide.leadingAnchor),
 
-            progressStack.topAnchor.constraint(equalTo: table.bottomAnchor, constant: 8),
-            progressStack.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
-            progressStack.widthAnchor.constraint(equalTo: table.widthAnchor),
-
-            buttonRow.topAnchor.constraint(equalTo: progressStack.bottomAnchor, constant: 16),
-            buttonRow.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
-            buttonRow.widthAnchor.constraint(equalTo: table.widthAnchor),
-            buttonRow.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -16),
+            footerStack.topAnchor.constraint(equalTo: table.bottomAnchor, constant: 8),
+            footerStack.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            footerStack.widthAnchor.constraint(equalTo: table.widthAnchor),
+            footerStack.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -16),
         ])
     }
 
@@ -205,7 +210,11 @@ final class LinkImportSheetViewController: UIViewController {
 
         case .importing:
             titleLabel.text = L10n.string("Importing…")
-            table.isHidden = true
+            // The list stays up, frozen: its checkmarks are the record of what
+            // the user chose, and hiding it would leave the sheet's middle blank
+            // with the bar stranded at the bottom.
+            table.isHidden = false
+            table.allowsSelection = false
             progressStack.isHidden = false
             secondaryButton.isHidden = true
             primaryButton.setTitle(L10n.string("Stop"), for: .normal)
@@ -275,7 +284,10 @@ final class LinkImportSheetViewController: UIViewController {
 
     private func refreshProgress() {
         let progress = runner.currentProgress()
-        progressBar.setProgress(Float(progress.fraction), animated: true)
+        // `animated: false`: the 12 Hz pull IS the smoothness. Animating each tick
+        // would stack a quarter-second implicit animation on top of the previous
+        // one twelve times a second, which reads as lag rather than motion.
+        progressBar.setProgress(Float(progress.fraction), animated: false)
         statusLabel.text = statusText(for: progress)
         guard progress.total > 0 else {
             countLabel.text = nil
@@ -420,10 +432,15 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         content.secondaryText = Self.displaySubtitle(for: entry.urlString)
         content.secondaryTextProperties.numberOfLines = 1
         content.secondaryTextProperties.color = LunaColors.tertiaryText
+        // A leading circle that fills when chosen — the selection control sits
+        // where the user's eye and thumb already are, and a FILLED circle reads as
+        // "this one is included" without the trailing checkmark's suggestion that
+        // the row was just tapped.
+        content.image = UIImage(
+            systemName: entry.isSelected ? "checkmark.circle.fill" : "circle")
+        content.imageProperties.tintColor = entry.isSelected
+            ? (view.tintColor ?? .systemBlue) : LunaColors.tertiaryText
         cell.contentConfiguration = content
-        // A checkmark, which is how iOS spells "selected in a list" — a literal
-        // radio glyph would claim these were mutually exclusive.
-        cell.accessoryType = entry.isSelected ? .checkmark : .none
         cell.accessibilityTraits = entry.isSelected ? [.button, .selected] : [.button]
         return cell
     }

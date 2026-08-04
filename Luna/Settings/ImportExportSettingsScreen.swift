@@ -92,7 +92,10 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
         guard !document.isEmpty else {
             presentInfoAlert(
                 title: L10n.string("Nothing to Export"),
-                message: L10n.string("Save a link first — there's nothing in your list yet."))
+                // Not "your list is empty": the store is shared, so a sibling
+                // app's saves may well be in it — there is just nothing here that
+                // belongs to this one.
+                message: L10n.string("There are no links in this app's list to export yet."))
             return
         }
         guard let fileURL = try? LinkListExport.writeTemporaryFile(document) else {

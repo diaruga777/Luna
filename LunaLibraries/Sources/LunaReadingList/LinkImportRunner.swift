@@ -130,10 +130,6 @@ public final class LinkImportRunner {
     /// How long an item's own download is waited on before the run moves on and
     /// lets the background transfer finish by itself.
     static let downloadWait: TimeInterval = 180
-    /// How long a media save is given to produce a transfer before concluding it
-    /// has none. The media ingest handler hands the download off asynchronously,
-    /// so "no job yet" and "no job at all" are only distinguishable by waiting.
-    static let downloadAppearanceGrace: TimeInterval = 2
     private static let downloadPoll: TimeInterval = 0.25
     /// How long an ingest is assumed to take, for the clock-based creep.
     private static let expectedIngestDuration: TimeInterval = 6
@@ -461,21 +457,23 @@ public final class LinkImportRunner {
 
     /// Watches this link's media transfer so real bytes drive its slice, instead
     /// of the item reading as done the moment its metadata landed.
+    ///
+    /// The FIRST look is decisive: the media ingest handler awaits
+    /// `LiveMediaDownloadManager.start` before returning, so by the time this
+    /// runs the job either exists or was never going to. That is why there's no
+    /// grace period here — one would cost every social save that isn't
+    /// downloadable a pointless pause, and with a few hundred of them that adds
+    /// up to minutes. If that handler ever becomes fire-and-forget the only
+    /// consequence is a coarser bar, not a wrong result.
     private func awaitDownload(for item: ReadingListItem, slice: Int) async {
-        guard let observe = Self.mediaDownloadProgress else { return }
+        guard let observe = Self.mediaDownloadProgress,
+              observe(item.urlString) != nil else { return }
         let started = clock()
         let span = Self.followUpShare - Self.ingestShare
-        var sawTransfer = false
         while clock().timeIntervalSince(started) < Self.downloadWait, !isCancelled {
-            if let state = observe(item.urlString) {
-                sawTransfer = true
-                setSlice(slice, to: Self.ingestShare + span * min(1, max(0, state.fraction)))
-                if state.isFinished { return }
-            } else if sawTransfer {
-                return // Finished and reaped.
-            } else if clock().timeIntervalSince(started) >= Self.downloadAppearanceGrace {
-                return // Nothing appeared: this link has no transfer.
-            }
+            guard let state = observe(item.urlString) else { return } // Finished and reaped.
+            setSlice(slice, to: Self.ingestShare + span * min(1, max(0, state.fraction)))
+            if state.isFinished { return }
             try? await Task.sleep(nanoseconds: UInt64(Self.downloadPoll * 1_000_000_000))
         }
     }

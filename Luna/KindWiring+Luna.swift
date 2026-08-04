@@ -54,6 +54,13 @@ enum KindWiring {
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
+        // …and the CARD half of each kind, on the same principle: one
+        // definition per kind, installed by every app that shows it, so the
+        // central deck and each single-kind deck cannot disagree about the
+        // same save (`CardKindPresenter.swift`).
+        CardKindPresenters.article = ArticleCardPresenter()
+        CardKindPresenters.media = MediaCardPresenter()
+        CardKindPresenters.product = ProductCardPresenter()
         // The central Luna app handles every kind, so it installs every
         // ingestor handler and every kind-specific presentation hook.
         IngestorKindHandlers.article = ArticleKindHandler()

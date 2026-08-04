@@ -40,6 +40,9 @@ enum KindWiring {
         // web-processing pipeline stage (platform recognition is URL-only
         // classification), which is stated there rather than re-derived here.
         MediaKindComposition.install()
+        // The media kind's CARD half, on the same principle — the one
+        // definition the central app installs too (`CardKindPresenter.swift`).
+        CardKindPresenters.media = MediaCardPresenter()
         // Post-save ingestion — metadata, thumbnail, auto-download handoff — is
         // the app-shell media ingestor handler.
         IngestorKindHandlers.media = MediaKindHandler()

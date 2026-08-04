@@ -138,6 +138,106 @@ final class KindCompositionRootTests: XCTestCase {
         }
     }
 
+    // MARK: - The CARD half of a kind
+
+    /// The card presenters, and the app roots allowed to install them. A card's
+    /// kind behavior is defined once per kind (`CardKindPresenter.swift`) and
+    /// installed by every app that shows that kind — the exact same contract the
+    /// packs above hold for ingest, and for the exact same reason: the central
+    /// app and each single-kind app were answering the same questions about the
+    /// same save in two places and drifting apart.
+    private static let presenters = [
+        "article": "ArticleCardPresenter",
+        "media": "MediaCardPresenter",
+        "product": "ProductCardPresenter",
+    ]
+
+    /// Only the app shell draws cards, so only its four roots install presenters
+    /// (an extension has no deck).
+    private static let presenterRoots: [String: Set<String>] = [
+        "Luna/KindWiring+Luna.swift": ["article", "media", "product"],
+        "Luna/KindWiring+Reader.swift": ["article"],
+        "Luna/KindWiring+Downloader.swift": ["media"],
+        "Luna/KindWiring+PriceTracker.swift": ["product"],
+    ]
+
+    func testEachAppRootInstallsExactlyItsAppsCardPresenters() throws {
+        for (path, kinds) in Self.presenterRoots.sorted(by: { $0.key < $1.key }) {
+            let source = try self.source(path)
+            let installed = Set(
+                Self.presenters
+                    .filter { source.contains("CardKindPresenters.\($0.key) = \($0.value)()") }
+                    .keys)
+            XCTAssertEqual(
+                installed, kinds,
+                """
+                \(path) installs card presenters \(installed.sorted()) but its app \
+                shows \(kinds.sorted()). A kind its app shows with no presenter \
+                installed renders as a generic link card; a foreign one would break \
+                the per-app content split.
+                """)
+        }
+    }
+
+    /// Nothing but an app root ASSIGNS the registry. Reading it
+    /// (`CardKindPresenters.presenter(for:)`) is how the deck works and is fine;
+    /// a second write is how a surface ends up with a different card for the
+    /// same save.
+    func testOnlyAppRootsWriteTheCardPresenterRegistry() throws {
+        let allowed = Set(Self.presenterRoots.keys)
+        var offenders: [String] = []
+        for (path, source) in try allRootSources() where !allowed.contains(path) {
+            for line in source.split(separator: "\n") {
+                let text = line.trimmingCharacters(in: .whitespaces)
+                guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
+                for slot in Self.presenters.keys
+                where text.contains("CardKindPresenters.\(slot) =") {
+                    offenders.append("\(path): \(text)")
+                }
+            }
+        }
+        XCTAssertTrue(
+            offenders.isEmpty,
+            """
+            Something other than a KindWiring root installed a card presenter. \
+            A kind's card behavior is installed in exactly one place per app:
+            \(offenders.joined(separator: "\n"))
+            """)
+    }
+
+    /// The deck itself never asks what KIND a save is. Resolution lives once, in
+    /// `CardKindPresenters.presenter(for:)`; a deck that re-derives it is exactly
+    /// how a kind gains a second, divergent code path.
+    ///
+    /// `ReadingListSectioning.isFailedSave` is deliberately allowed: a failed
+    /// save carries NO kind, so its card is the deck's own and belongs to every
+    /// app.
+    func testTheDeckNeverBranchesOnKind() throws {
+        let deckDirectory = repositoryRoot.appendingPathComponent("Luna/CardCarouselHost")
+        let walker = FileManager.default.enumerator(at: deckDirectory, includingPropertiesForKeys: nil)
+        var offenders: [String] = []
+        for case let url as URL in walker ?? .init() where url.pathExtension == "swift" {
+            // The registry file is where kind resolution is SUPPOSED to live.
+            guard url.lastPathComponent != "CardKindPresenter.swift" else { continue }
+            let source = try String(contentsOf: url, encoding: .utf8)
+            for line in source.split(separator: "\n") {
+                let text = line.trimmingCharacters(in: .whitespaces)
+                guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
+                for marker in ["isPriceTracker", "contentPlatform", "priceTracker"]
+                where text.contains(marker) {
+                    offenders.append("\(url.lastPathComponent): \(text)")
+                }
+            }
+        }
+        XCTAssertTrue(
+            offenders.isEmpty,
+            """
+            The deck branched on a save's kind. Move the behavior into that kind's \
+            presenter and let `CardKindPresenters.presenter(for:)` resolve it:
+            \(offenders.joined(separator: "\n"))
+            """)
+    }
+
     /// Every `.swift` file under the composition-root directories, keyed by its
     /// repo-relative path.
     private func allRootSources() throws -> [(String, String)] {

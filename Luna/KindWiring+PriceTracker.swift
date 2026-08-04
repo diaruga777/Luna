@@ -31,6 +31,9 @@ enum KindWiring {
         #endif
 
         ProductKindComposition.install()
+        // The product kind's CARD half, on the same principle — the one
+        // definition the central app installs too (`CardKindPresenter.swift`).
+        CardKindPresenters.product = ProductCardPresenter()
         IngestorKindHandlers.product = ProductKindHandler()
         // No price-graph email snapshot: Price Tracker shares a tracker as its
         // product link, never as a Luna email (see `LunaApp.sharesByEmail`).

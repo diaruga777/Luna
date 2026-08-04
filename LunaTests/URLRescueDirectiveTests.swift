@@ -1,5 +1,5 @@
 //
-//  RescueDirectiveValidatorTests.swift
+//  URLRescueDirectiveTests.swift
 //  LunaTests
 //
 
@@ -7,7 +7,7 @@ import XCTest
 import LunaModels
 @testable import LunaURLRescue
 
-final class RescueDirectiveValidatorTests: XCTestCase {
+final class URLRescueDirectiveTests: XCTestCase {
     private let validator = RescueDirectiveValidator()
 
     private func request(_ urlString: String = "https://www.example.com/story",
@@ -286,9 +286,8 @@ final class RescueDirectiveValidatorTests: XCTestCase {
             return XCTFail("auto must still require a verbatim price")
         }
     }
-}
 
-final class RescuePromptAutoClassificationTests: XCTestCase {
+    // MARK: - Prompt auto classification (model-chosen content type)
 
     /// Under a nil hint every payload option is on the table AND the model is told
     /// the classification is its job — without that, the options read as a menu

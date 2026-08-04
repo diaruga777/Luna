@@ -1,15 +1,41 @@
 //
-//  URLRescueEngineTests.swift
+//  URLRescueTests.swift
 //  LunaTests
 //
 
-import XCTest
 import LunaIngest
 import LunaModels
+import LunaShareSurface
+import LunaStorage
+import UIKit
+import XCTest
+@testable import Luna
 @testable import LunaURLRescue
 
-final class URLRescueEngineTests: XCTestCase {
+/// Marked `@MainActor` for the `ShareSurfaceDriverRescue` section below, which
+/// drives UIKit-hosting fakes; the other sections run fine under the main actor.
+@MainActor
+final class URLRescueTests: XCTestCase {
     private let url = URL(string: "https://www.example.com/story")!
+    private let builder = RescueDigestBuilder()
+
+    private var scratch: URL!
+    private var store: ReadingListStore!
+
+    override func setUp() {
+        super.setUp()
+        scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ShareRescue-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        store = ReadingListStore(containerURL: scratch)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: scratch)
+        super.tearDown()
+    }
+
+    // MARK: - URLRescueEngine
 
     private func request(hint: RescueHint? = .article,
                          failure: RescueRequest.FailureKind = .articleFailed,
@@ -227,5 +253,175 @@ final class URLRescueEngineTests: XCTestCase {
         // First call overflowed, second (halved) succeeded → rescued.
         guard case .rescued = outcome else { return XCTFail("expected retry to succeed") }
         XCTAssertEqual(session.planPrompts.count, 2, "exactly one retry after overflow")
+    }
+
+    // MARK: - RescueDigestBuilder
+
+    func testRespectsCharacterBudget() {
+        let big = String(repeating: "<p>lorem ipsum dolor sit amet consectetur adipiscing elit </p>", count: 5000)
+        let html = "<html><head><title>T</title></head><body>\(big)</body></html>"
+        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .onDevice)
+        XCTAssertLessThanOrEqual(digest.count, RescueDigestBudget.onDevice.maxCharacters)
+    }
+
+    func testHeadMetadataIncluded() {
+        let html = """
+        <html><head><title>Headline</title>
+        <meta name="description" content="A great story">
+        <meta property="og:title" content="OG Headline">
+        <link rel="canonical" href="https://www.example.com/story">
+        </head><body><p>Body text here.</p></body></html>
+        """
+        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .privateCloud)
+        XCTAssertTrue(digest.contains("Headline"))
+        XCTAssertTrue(digest.contains("A great story"))
+        XCTAssertTrue(digest.contains("canonical"))
+    }
+
+    func testJSONLDProductRankedFirst() {
+        let html = """
+        <html><head>
+        <script type="application/ld+json">{"@type":"WebPage","name":"generic"}</script>
+        <script type="application/ld+json">{"@type":"Product","offers":{"price":"9.99"}}</script>
+        </head><body></body></html>
+        """
+        let digest = builder.buildDigest(url: url, html: html, hint: .product, budget: .privateCloud)
+        let productIdx = digest.range(of: "\"Product\"")?.lowerBound
+        let genericIdx = digest.range(of: "\"generic\"")?.lowerBound
+        XCTAssertNotNil(productIdx)
+        XCTAssertNotNil(genericIdx)
+        if let p = productIdx, let g = genericIdx { XCTAssertLessThan(p, g) }
+    }
+
+    func testMediaHintGrepsMediaURLs() {
+        let html = """
+        <html><body><script>var x = {"playable_url":"https://cdn.net/v.mp4"};</script></body></html>
+        """
+        let digest = builder.buildDigest(url: url, html: html, hint: .media, budget: .privateCloud)
+        XCTAssertTrue(digest.contains("playable_url") || digest.contains("v.mp4"))
+    }
+
+    func testCandidateURLsCappedAt30() {
+        var links = ""
+        for i in 0..<60 { links += "<a href=\"https://www.example.com/amp/\(i)\">l</a>" }
+        let html = "<html><body>\(links)</body></html>"
+        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .privateCloud)
+        let count = digest.components(separatedBy: "link: ").count - 1
+        XCTAssertLessThanOrEqual(count, 30)
+    }
+
+    func testMalformedHTMLDegradesGracefully() {
+        let html = "<<<not really html >>> plain text body content here for the digest"
+        let digest = builder.buildDigest(url: url, html: html, hint: .article, budget: .onDevice)
+        XCTAssertFalse(digest.isEmpty)
+    }
+
+    func testHalvedBudgetIsSmaller() {
+        XCTAssertLessThan(RescueDigestBudget.onDevice.halved.maxCharacters, RescueDigestBudget.onDevice.maxCharacters)
+    }
+
+    func testTokenEstimate() {
+        XCTAssertEqual(RescueDigestBudget.estimatedTokens(forCharacters: 400), 100)
+    }
+
+    // MARK: - RescueWebScriptWrapping
+    //
+    // Pure tests of the JS wrapper + the applier's JSON-shell wrapping. The
+    // WebView itself isn't unit-tested (same as WebViewPriceRenderer).
+
+    func testWrapProducesTryCatchIIFE() {
+        let wrapped = RescueWebScriptRunner.wrap("return 'hi';")
+        XCTAssertTrue(wrapped.contains("try"))
+        XCTAssertTrue(wrapped.contains("catch"))
+        XCTAssertTrue(wrapped.contains("return 'hi';"))
+        // Always yields a string / empty-string, never throws out.
+        XCTAssertTrue(wrapped.contains("typeof r"))
+    }
+
+    func testJSONResultWrappedAsJSONLDShell() {
+        let shell = RescueDirectiveApplier.wrapJSONAsHTML("{\"@type\":\"Product\"}")
+        XCTAssertTrue(shell.contains("application/ld+json"))
+        XCTAssertTrue(shell.contains("{\"@type\":\"Product\"}"))
+    }
+
+    func testDirectAssetKindInference() {
+        XCTAssertEqual(RescueDirectiveApplier.directAsset(from: URL(string: "https://x/y.mp4")!)?.kind, .video)
+        XCTAssertEqual(RescueDirectiveApplier.directAsset(from: URL(string: "https://x/y.jpg")!)?.kind, .image)
+        XCTAssertEqual(RescueDirectiveApplier.directAsset(from: URL(string: "https://x/y.mp3")!)?.kind, .audio)
+        XCTAssertNil(RescueDirectiveApplier.directAsset(from: URL(string: "https://x/y.html")!))
+    }
+
+    func testOpenGraphContentExtraction() {
+        let html = "<meta property=\"og:video\" content=\"https://cdn/v.mp4\">"
+        XCTAssertEqual(RescueDirectiveApplier.openGraphContent(named: "og:video", in: html), "https://cdn/v.mp4")
+    }
+
+    // MARK: - ShareSurfaceDriverRescue
+    //
+    // The `.failed` rescue-handoff behavior of `ShareSurfaceDriver`: the action
+    // extension presents the rescue card (and marks the row failed); the zero-UI
+    // share extension completes silently (and marks it failed) with no card.
+
+    private final class FakeHost: ExtensionHost {
+        var readerMode: ExtensionReaderMode?
+        private(set) var presented: [UIViewController] = []
+        private(set) var completedSilently = 0
+        private(set) var openedURLs: [URL] = []
+        init(isActionExtension: Bool) { readerMode = isActionExtension ? .reader : nil }
+        func presentModally(_ vc: UIViewController) { presented.append(vc) }
+        func confirmSavedThenComplete() {}
+        func completeSilently() { completedSilently += 1 }
+        func autoDownloadThenComplete(urlString: String) {}
+        func failOrComplete(_ message: String) {}
+        func openURL(_ url: URL) { openedURLs.append(url) }
+    }
+
+    func testActionExtensionFailedPresentsRescueCardAndMarksFailed() {
+        let host = FakeHost(isActionExtension: true)
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
+        let url = URL(string: "https://example.com/broken")!
+        let item = store.add(urlString: url.absoluteString)
+
+        driver.present(.failed(nil), url: url)
+
+        XCTAssertTrue(host.presented.contains { $0 is RescueFailureViewController },
+                      "action extension should present the rescue card")
+        XCTAssertEqual(store.item(withID: item.id)?.state, .failed)
+    }
+
+    func testShareExtensionFailedCompletesSilentlyNoCard() {
+        let host = FakeHost(isActionExtension: false)
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
+        let url = URL(string: "https://example.com/broken")!
+        let item = store.add(urlString: url.absoluteString)
+
+        driver.present(.failed(nil), url: url)
+
+        XCTAssertFalse(host.presented.contains { $0 is RescueFailureViewController })
+        XCTAssertEqual(host.completedSilently, 1)
+        XCTAssertEqual(store.item(withID: item.id)?.state, .failed)
+    }
+
+    /// The extension no longer asks what the save should become — the model
+    /// classifies the page when the app drains the queue — so the queued record
+    /// must carry NO hint. A hint here would silently pin the answer and undo the
+    /// classification (a nil hint).
+    func testQueuedRescueRequestCarriesNoContentHint() {
+        _ = PendingRescueRequestStore.shared.takeAll()   // start from a clean queue
+        let host = FakeHost(isActionExtension: true)
+        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
+        let url = URL(string: "https://example.com/broken")!
+        _ = store.add(urlString: url.absoluteString)
+
+        driver.present(.failed(nil), url: url)
+        guard let card = host.presented.compactMap({ $0 as? RescueFailureViewController }).first
+        else { return XCTFail("expected the rescue card") }
+        card.recordPendingRescueForTesting()
+
+        let queued = PendingRescueRequestStore.shared.takeAll()
+        guard let request = queued.first(where: { $0.urlString == url.absoluteString }) else {
+            return XCTFail("expected a queued rescue request")
+        }
+        XCTAssertNil(request.hint)
     }
 }

@@ -1,25 +1,16 @@
 //
-//  RSVPAudioResyncTests.swift
+//  RSVPAudioSyncTests.swift
 //  LunaTests
-//
-//  The RabbitHole reader REUSES one RSVP instance across mode switches
-//  (scroll <-> rsvp), re-preparing it with `configureForReuse` each time. When
-//  read-aloud is playing through the app-wide `AudioPlaybackCenter`, that
-//  playback continues in the background across the switch. Returning to RSVP
-//  therefore has to re-adopt the center's live playing state — otherwise
-//  `configureForReuse`'s reset leaves `isPlaying == false` while audio is still
-//  voicing the article, which freezes the word display (the center's word
-//  events are gated on `isPlaying`) and makes the play button's first tap pause
-//  the audio instead of resuming. These tests pin that re-sync.
 //
 
 import AVFoundation
 import LunaModels
+import LunaReaderEngine
 import LunaReaderUI
 import XCTest
 @testable import LunaAudioPlayback
 
-final class RSVPAudioResyncTests: XCTestCase {
+final class RSVPAudioSyncTests: XCTestCase {
 
     private var store: FakePlaybackStore!
     private var renderer: FakeRenderer!
@@ -58,6 +49,62 @@ final class RSVPAudioResyncTests: XCTestCase {
         center = nil
         super.tearDown()
     }
+
+    // MARK: - RSVPAudioWordSync
+    //
+    // The shared "audio-center word event -> RSVP frame" sequence both
+    // RSVPViewController and LinkRSVPPreview apply in their AudioPlaybackObserver
+    // conformances.
+
+    private func content(_ paragraphs: [String]) -> ArticleContent {
+        ArticleContent(title: "T", blocks: paragraphs.map { .init(kind: .paragraph, text: $0, links: []) })
+    }
+
+    func testFrameIndexMapsAWordEventToTheCorrespondingFrame() {
+        let content = content(["One two three.", "Four five"])
+        let engine = RSVPEngine(content: content)
+        let blockTokenStarts = AudioWordEventTokenMapping.blockTokenStarts(blocks: content.blocks)
+
+        // Block 1 ("Four five"), UTF-16 location 5 -> "five" -> global token 4.
+        let event = AudioWordEvent(blockIndex: 1, rangeInBlockText: NSRange(location: 5, length: 4))
+        let frame = RSVPAudioWordSync.frameIndex(
+            for: event, blocks: content.blocks, blockTokenStarts: blockTokenStarts, engine: engine)
+        XCTAssertEqual(frame, 4)
+        XCTAssertEqual(engine.words[frame!].text, "five")
+    }
+
+    func testFrameIndexIsNilForAnOutOfRangeBlock() {
+        let content = content(["One two"])
+        let engine = RSVPEngine(content: content)
+        let blockTokenStarts = AudioWordEventTokenMapping.blockTokenStarts(blocks: content.blocks)
+        let event = AudioWordEvent(blockIndex: 5, rangeInBlockText: NSRange(location: 0, length: 3))
+        XCTAssertNil(RSVPAudioWordSync.frameIndex(
+            for: event, blocks: content.blocks, blockTokenStarts: blockTokenStarts, engine: engine))
+    }
+
+    /// A long word split into several RSVP frames maps to the FIRST frame of
+    /// its token (`RSVPEngine.frameIndex(forTokenIndex:)`'s contract).
+    func testFrameIndexLandsOnFirstFrameOfASplitLongWord() {
+        let content = content(["pneumonoultramicroscopic ok"])
+        let engine = RSVPEngine(content: content, maxCharactersPerWord: 10)
+        let blockTokenStarts = AudioWordEventTokenMapping.blockTokenStarts(blocks: content.blocks)
+        let event = AudioWordEvent(blockIndex: 0, rangeInBlockText: NSRange(location: 0, length: 24))
+        let frame = RSVPAudioWordSync.frameIndex(
+            for: event, blocks: content.blocks, blockTokenStarts: blockTokenStarts, engine: engine)
+        XCTAssertEqual(frame, engine.firstFrameIndexByToken[0])
+    }
+
+    // MARK: - RSVPAudioResync
+    //
+    // The RabbitHole reader REUSES one RSVP instance across mode switches
+    // (scroll <-> rsvp), re-preparing it with `configureForReuse` each time. When
+    // read-aloud is playing through the app-wide `AudioPlaybackCenter`, that
+    // playback continues in the background across the switch. Returning to RSVP
+    // therefore has to re-adopt the center's live playing state — otherwise
+    // `configureForReuse`'s reset leaves `isPlaying == false` while audio is
+    // still voicing the article, which freezes the word display (the center's
+    // word events are gated on `isPlaying`) and makes the play button's first
+    // tap pause the audio instead of resuming. These tests pin that re-sync.
 
     /// Spins the main run loop until `condition` holds (the center's render
     /// pipeline hops through a `Task` + a main-queue dispatch).

@@ -11,8 +11,14 @@ import XCTest
 /// Exercises the Stage-2 `ArticleExtraction` component: the single
 /// `isReadableArticle(content:html:)` predicate that consolidated the three former
 /// duplicate readable/locked checks, driven per-site over readable + paywalled-stub
-/// fixtures (nytimes / washingtonpost / wsj / smh.com.au), plus the HTML-lock
-/// false-negative guard.
+/// fixtures (nytimes / washingtonpost / wsj / smh.com.au / theparisreview).
+///
+/// This is the ONLY sweep of the `Fixtures/Readable/*` corpus, and it reads each
+/// fixture once. The predicate's synthetic decision boundaries (HTML lock vs body
+/// length, gate markers at any length) are pinned one layer down in
+/// `PaywallDetectorTests`, against the detector they actually belong to; the
+/// empty-document throw is pinned in `ArticleExtractorTests` against the parser that
+/// raises it.
 final class ArticleExtractionTests: XCTestCase {
 
     private let extraction = ArticleExtraction()
@@ -66,57 +72,7 @@ final class ArticleExtractionTests: XCTestCase {
         }
     }
 
-    // MARK: - HTML lock signal policy
-
-    /// A clean body that only just clears the readable threshold can still be a teaser
-    /// whose CTA was stripped. The source HTML lock rejects that short/medium shape.
-    func testHTMLLockRejectsShortCleanBody() {
-        let cleanBody = String(repeating: "Clean prose with no subscription words at all here. ", count: 40)
-        let content = ArticleContent(title: "Story", blocks: [
-            .init(kind: .paragraph, text: cleanBody, links: []),
-        ])
-        XCTAssertLessThan(content.bodyTextLength, PaywallDetector.shortBodyThreshold)
-        // Text-only: readable.
-        XCTAssertTrue(ArticleExtraction.isReadableArticle(content, html: nil))
-        // With the lock-declaring HTML: NOT readable.
-        XCTAssertFalse(ArticleExtraction.isReadableArticle(
-            content, html: #"{"isAccessibleForFree":false}"#))
-    }
-
-    /// Some publishers serve complete subscriber-marked stories in the initial HTML.
-    /// Once the extracted body is long and has no gate language, the stale lock signal
-    /// must not force an unnecessary archive flow.
-    func testLongCleanBodyBeatsHTMLLock() {
-        let body = String(repeating: "Clean reported prose continues with enough specific article detail here. ", count: 70)
-        let content = ArticleContent(title: "Story", blocks: [
-            .init(kind: .paragraph, text: body, links: []),
-        ])
-        XCTAssertGreaterThan(content.bodyTextLength, PaywallDetector.shortBodyThreshold)
-        XCTAssertTrue(ArticleExtraction.isReadableArticle(
-            content, html: #"{"isAccessibleForFree":false}"#))
-    }
-
-    // MARK: - Long-article-quoting-a-gate-phrase policy (locked deliberately)
-
-    /// A long article that QUOTES a full gate phrase is flagged as a wall (gate markers
-    /// fire at any length — a deliberate precision-over-recall trade). Locking the
-    /// policy so a future change is a conscious one.
-    func testLongArticleQuotingGatePhraseIsFlagged() {
-        let long = String(repeating: "Substantive reporting continues across the piece. ", count: 80)
-        let content = ArticleContent(title: "Story", blocks: [
-            .init(kind: .paragraph, text: long + " The notice read: subscribe to continue.", links: []),
-        ])
-        XCTAssertGreaterThan(content.bodyTextLength, PaywallDetector.shortBodyThreshold)
-        XCTAssertFalse(ArticleExtraction.isReadableArticle(content, html: nil),
-                       "a quoted gate phrase flags the wall regardless of length (locked policy)")
-    }
-
-    // MARK: - extract + extractFromJSONLD delegate to the parser
-
-    func testExtractThrowsOnEmptyDocument() {
-        XCTAssertThrowsError(try extraction.extract(
-            html: "<html><head></head><body></body></html>", baseURL: url("https://e.com/")))
-    }
+    // MARK: - extractFromJSONLD delegates to the parser
 
     func testExtractFromJSONLDRecoversArticleBody() {
         let html = BypassFixtures.html("jsonld-bloomberg.html")

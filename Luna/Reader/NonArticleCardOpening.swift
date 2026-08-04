@@ -12,18 +12,18 @@ import UIKit
 
 /// Installs the card deck's non-article tap routing (`ArticleCardsViewController
 /// .nonArticleOpener`) — the central Luna app's all-kinds deck opens a price
-/// tracker in the price editor and a platform post through the same
-/// native-app → embed → in-app-browser ladder the list rows use. Installed at
-/// launch from the app shell; the deck only contains non-article cards on the
-/// `.all` surface, so the closure is never hit elsewhere.
+/// tracker in the price editor. Installed at launch from the app shell; the deck
+/// only contains non-article cards on the `.all` surface, so the closure is
+/// never hit elsewhere.
+///
+/// The media leg of that ladder has moved into `MediaCardPresenter.openExternally`,
+/// where it is the ONE implementation both media-showing apps use; what remains
+/// here is the product leg, until the product presenter takes it in phase C.
 enum NonArticleCardOpening {
     static func install() {
         ArticleCardsViewController.nonArticleOpener = { item, presenter in
             open(item, from: presenter)
         }
-        // …and the cards themselves: a downloaded media save renders here with
-        // the Downloader's own player, not as a link that has to be opened.
-        ArticleCardsViewController.cardProvider = AllKindsCardProvider()
     }
 
     private static func open(_ item: ReadingListItem, from presenter: UIViewController) {

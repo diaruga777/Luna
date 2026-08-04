@@ -65,16 +65,20 @@ enum KindWiring {
     // MARK: - Root UI shape
 
     /// The saved-media card deck in a bare nav controller — no audio
-    /// mini-player host (read-aloud is an article-app feature).
+    /// mini-player host (read-aloud is an article-app feature). The deck itself
+    /// is the shared host configured by `MediaCardDeck`; this app has no deck
+    /// subclass of its own.
+    @MainActor
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = SavedMediaCardsViewController()
-        return UINavigationController(rootViewController: content)
+        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
     }
 
+    @MainActor
     private static func makeCompletedRootViewController() -> UIViewController {
-        UINavigationController(rootViewController: SavedMediaCardsViewController())
+        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
     }
 
+    @MainActor
     static func makeSetupReplayRootViewController() -> UIViewController {
         makeCompletedRootViewController()
     }

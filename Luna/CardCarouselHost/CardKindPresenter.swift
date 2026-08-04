@@ -59,6 +59,11 @@ protocol CardPresenterHost: AnyObject {
     /// The mounted card view for an item, for popover anchoring. Nil when the
     /// item has no card mounted right now (it is offstage, or archived).
     func cardView(forItemID id: UUID) -> UIView?
+
+    /// A presenter's archive-tray download bars changed. Progress ticks arrive
+    /// several times a second, so the tray updates its visible cells in place
+    /// rather than reloading the deck.
+    func archiveDownloadProgressDidChange()
 }
 
 // MARK: - The kind
@@ -79,14 +84,38 @@ protocol CardKindPresenting: AnyObject {
     /// placeholder into a player; a price change must re-render the graph.
     func fingerprint(for item: ReadingListItem) -> String
 
-    /// URLs besides the item's own that identify this save, for centering a row
-    /// written by a COMPANION store (see `CardDeckSlot.urlString`).
-    func slotURLStrings(for item: ReadingListItem) -> [String]
+    /// Whether this kind holds anything of its own to draw for this save yet —
+    /// a media row behind a platform link, a tracker behind a product URL.
+    ///
+    /// A deck with a generic link card of its own shows the save regardless (see
+    /// `CardDeckConfiguration.showsSavesWithoutKindContent`); a deck without one
+    /// gives it no slot, which is what the Downloader and Price Tracker have
+    /// always done by reading their own store rather than the reading list.
+    func hasContent(for item: ReadingListItem) -> Bool
 
     /// Whether this save currently belongs on the deck at all. A media row
     /// archived in the media store is gone from the deck even though its
     /// reading-list row is live.
     func isArchived(_ item: ReadingListItem) -> Bool
+
+    /// Saves this kind holds that have NO reading-list row to find them by.
+    ///
+    /// The deck's slot list is the reading list, because that is the one store
+    /// every kind writes. Media is the exception, and not a theoretical one: a
+    /// media row is keyed by its own store's id and its `sourceURLString` is
+    /// whatever the URL was when the DOWNLOAD started, which is not always what
+    /// the reading-list row says. A Reddit `/r/…/s/<token>` share link is
+    /// network-resolved to its permalink inside `gateAndPrepare`; a wrapper URL
+    /// is resolved by the share driver, which then deletes the wrapper row. Both
+    /// leave real, downloaded user media with no row pointing at it —
+    /// `SavedMediaStore.purgeExpired`'s own comment records that an earlier
+    /// membership sweep was removed because it was deleting exactly these.
+    ///
+    /// A presenter returns stand-in items for them (id and URL from its own
+    /// store) and the deck routes those slots straight back to it, so they get
+    /// the same card, verbs and archive behavior as any other save of the kind
+    /// without the deck learning what a `SavedMediaItem` is.
+    func unbackedItems() -> [ReadingListItem]
 
     // MARK: The card
 
@@ -178,6 +207,11 @@ protocol CardKindPresenting: AnyObject {
 
     // MARK: The archive tray
 
+    /// In-flight download progress for this kind's ARCHIVED rows, keyed by the
+    /// slot id. An archived row has no card to draw a bar in — tapping an
+    /// unavailable tray cell re-downloads in place — so the cell carries it.
+    var archiveDownloadProgress: [UUID: Double] { get }
+
     /// This kind's archived rows, as tray cells. The deck supplies the verbs it
     /// owns (unarchive choreography); the presenter supplies everything that is
     /// a statement about the kind.
@@ -193,8 +227,9 @@ protocol CardKindPresenting: AnyObject {
 // Every hook a kind doesn't need.
 extension CardKindPresenting {
     func fingerprint(for item: ReadingListItem) -> String { "" }
-    func slotURLStrings(for item: ReadingListItem) -> [String] { [] }
+    func hasContent(for item: ReadingListItem) -> Bool { true }
     func isArchived(_ item: ReadingListItem) -> Bool { item.isArchived }
+    func unbackedItems() -> [ReadingListItem] { [] }
     func cardContent(for item: ReadingListItem, host: CardPresenterHost)
         -> CardContentViewController? { nil }
     func topLeadingAccessory(for item: ReadingListItem) -> UIView? { nil }
@@ -231,6 +266,7 @@ extension CardKindPresenting {
     func willBeginObservingStores(host: CardPresenterHost) {}
     func prepareSnapshotSideEffects() {}
     func didSettleReload(host: CardPresenterHost) {}
+    var archiveDownloadProgress: [UUID: Double] { [:] }
     func archiveTrayItem(for item: ReadingListItem, host: CardPresenterHost)
         -> ArchiveTrayItem? { nil }
     @discardableResult

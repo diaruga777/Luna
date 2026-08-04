@@ -40,6 +40,14 @@ enum MediaCardRescue {
     }
 }
 
+/// Newest first — the order every deck shows media rows in. It is a property of
+/// the media store's own rows, so it lives beside the cards they become.
+enum SavedMediaCardOrdering {
+    static func newestFirst(_ items: [SavedMediaItem]) -> [SavedMediaItem] {
+        items.sorted { $0.dateSaved > $1.dateSaved }
+    }
+}
+
 enum MediaCardFactory {
 
     /// The card content for one saved media item. `download` is invoked by the
@@ -453,5 +461,260 @@ enum MediaItemActions {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
         presenter.present(alert, animated: true)
+    }
+}
+
+// MARK: - Undownloaded card content
+
+/// Card content for an item whose media hasn't been fetched yet. During a job it
+/// becomes a real downloading card: early poster, explicit status, percentage,
+/// and the same moon-horizon progress bar the Live Activity draws — all inside
+/// this card. There is deliberately no app-level download bar: the download
+/// belongs to one item, so its progress is drawn on that item.
+///
+/// The bar is a pure OBSERVER of `LiveMediaDownloadManager`'s job state. Nothing
+/// here starts, holds, or stops the transfer, so paging this card off screen (or
+/// backgrounding the app) tears the view down without touching the background
+/// URLSession; `viewDidLoad` re-reads `currentDownloadSnapshot` so a card that
+/// comes back mid-transfer picks the bar up where it is.
+final class UndownloadedMediaCardContentViewController: CardContentViewController {
+
+    private let sourceURLString: String
+    private let download: () -> Void
+    private let rescue: (() -> Void)?
+    private let button = UIButton(configuration: .plain())
+    private let rescueButton = UIButton(configuration: .plain())
+    private let poster = UIImageView()
+    private let posterDim = UIView()
+    private let statusLabel = UILabel()
+    private let percentLabel = UILabel()
+    private let progress = MoonHorizonProgressBar()
+    /// The embedded bar: a glass slab inside the card's bottom edge, reading
+    /// status on the leading side and percent-complete on the trailing side,
+    /// with the horizon bar spanning beneath them.
+    private let statusBar = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private var loadedThumbnailFileName: String?
+
+    init(item: SavedMediaItem, download: @escaping () -> Void, rescue: (() -> Void)? = nil) {
+        self.sourceURLString = item.sourceURLString
+        self.download = download
+        self.rescue = rescue
+        super.init()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+
+        poster.contentMode = .scaleAspectFit
+        poster.clipsToBounds = true
+        poster.isHidden = true
+        poster.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(poster)
+
+        posterDim.backgroundColor = UIColor.black.withAlphaComponent(0.24)
+        posterDim.isHidden = true
+        posterDim.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(posterDim)
+
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: "arrow.down.circle.dotted")
+            ?? UIImage(systemName: "arrow.down.circle")
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 52, weight: .regular)
+        configuration.baseForegroundColor = LunaColors.secondaryText
+        button.configuration = configuration
+        button.accessibilityLabel = L10n.string("Download media")
+        button.addAction(UIAction { [weak self] _ in self?.download() }, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(button)
+
+        // "Retry with AI ✦" — shown only on a no-media failure when a model is
+        // available. Styled by the one shared definition
+        // (`GlassStyle.retryWithAIConfiguration`) so this card's offer is visibly
+        // the SAME offer as the failed-save card's, which it wasn't when it read
+        // "Try Apple Intelligence" over a `wand.and.stars`.
+        rescueButton.configuration = GlassStyle.retryWithAIConfiguration(compact: true)
+        rescueButton.isHidden = true
+        rescueButton.addAction(UIAction { [weak self] _ in
+            self?.rescueButton.isHidden = true
+            self?.statusLabel.text = L10n.string("Trying harder with Apple Intelligence…")
+            self?.rescue?()
+        }, for: .touchUpInside)
+        rescueButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(rescueButton)
+
+        statusLabel.text = L10n.string("Downloading")
+        statusLabel.textColor = LunaColors.primaryText
+        statusLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        statusLabel.numberOfLines = 2
+
+        percentLabel.textColor = LunaColors.secondaryText
+        percentLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .regular)
+        percentLabel.textAlignment = .right
+        percentLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        progress.translatesAutoresizingMaskIntoConstraints = false
+
+        let row = UIStackView(arrangedSubviews: [statusLabel, percentLabel])
+        row.axis = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 10
+        let column = UIStackView(arrangedSubviews: [row, progress])
+        column.axis = .vertical
+        column.alignment = .fill
+        column.spacing = 8
+        column.translatesAutoresizingMaskIntoConstraints = false
+
+        statusBar.isHidden = true
+        statusBar.clipsToBounds = true
+        // Purely informational: the card's own tap/scrub handling must still see
+        // the points the bar covers. Cancel/retry live on the card's controls.
+        statusBar.isUserInteractionEnabled = false
+        if #available(iOS 26.0, *) {
+            statusBar.cornerConfiguration = .corners(radius: .fixed(18))
+        } else {
+            statusBar.layer.cornerRadius = 18
+            statusBar.layer.cornerCurve = .continuous
+        }
+        statusBar.translatesAutoresizingMaskIntoConstraints = false
+        statusBar.contentView.addSubview(column)
+        view.addSubview(statusBar)
+
+        NSLayoutConstraint.activate([
+            poster.topAnchor.constraint(equalTo: view.topAnchor),
+            poster.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            poster.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            poster.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            posterDim.topAnchor.constraint(equalTo: view.topAnchor),
+            posterDim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            posterDim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            posterDim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            button.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            statusBar.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            column.leadingAnchor.constraint(
+                equalTo: statusBar.contentView.leadingAnchor, constant: 14),
+            column.trailingAnchor.constraint(
+                equalTo: statusBar.contentView.trailingAnchor, constant: -14),
+            column.topAnchor.constraint(equalTo: statusBar.contentView.topAnchor, constant: 10),
+            column.bottomAnchor.constraint(
+                equalTo: statusBar.contentView.bottomAnchor, constant: -10),
+            progress.heightAnchor.constraint(equalToConstant: 20),
+            rescueButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            rescueButton.bottomAnchor.constraint(equalTo: statusBar.topAnchor, constant: -16),
+        ])
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleJobProgressChanged(_:)),
+            name: .downloaderJobProgressChanged, object: nil)
+        apply(LiveMediaDownloadManager.shared.currentDownloadSnapshot(
+            forSourceURLString: sourceURLString))
+    }
+
+    @objc private func handleJobProgressChanged(_ notification: Notification) {
+        guard let urlString = notification.userInfo?["sourceURLString"] as? String,
+              urlString == sourceURLString
+        else { return }
+        let snapshot = notification.userInfo?["snapshot"] as? DownloaderJobSnapshot
+        DispatchQueue.main.async { [weak self] in
+            self?.apply(snapshot)
+        }
+    }
+
+    private func apply(_ snapshot: DownloaderJobSnapshot?) {
+        guard let snapshot else {
+            statusBar.isHidden = true
+            posterDim.isHidden = true
+            button.isHidden = false
+            rescueButton.isHidden = true
+            return
+        }
+
+        statusLabel.text = snapshot.message
+        statusLabel.textColor = snapshot.phase == .failed
+            ? .systemRed : LunaColors.primaryText
+        // A percentage is only honest once bytes are actually moving; resolving
+        // and waiting phases have no meaningful fraction yet.
+        percentLabel.text = snapshot.phase == .downloading
+            ? "\(Int((snapshot.progress * 100).rounded()))%" : nil
+        progress.isHidden = snapshot.phase == .failed
+        progress.setProgress(Float(snapshot.progress), animated: true)
+        statusBar.isHidden = false
+        button.isHidden = snapshot.phase != .failed
+        // Offer the AI rescue only on a genuine no-media failure, when installed.
+        rescueButton.isHidden = !(snapshot.phase == .failed
+            && snapshot.failureKind == .noMedia && rescue != nil)
+
+        guard let fileName = snapshot.thumbnailFileName,
+              fileName != loadedThumbnailFileName
+        else {
+            posterDim.isHidden = poster.isHidden
+            return
+        }
+        loadedThumbnailFileName = fileName
+        let path = LiveMediaDownloadAssets.thumbnailURL(fileName: fileName).path
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let image = UIImage(contentsOfFile: path)?.preparingForDisplay()
+            DispatchQueue.main.async {
+                guard let self, self.loadedThumbnailFileName == fileName,
+                      let image else { return }
+                self.poster.image = image
+                self.poster.isHidden = false
+                self.posterDim.isHidden = false
+            }
+        }
+    }
+
+    #if DEBUG
+    /// The embedded bar, exposed so a test can assert it is inside this card's
+    /// own view (never host chrome) and that it mirrors the job snapshot.
+    var downloadBarForTesting: UIView { statusBar }
+    var isDownloadBarVisibleForTesting: Bool { !statusBar.isHidden }
+    var statusTextForTesting: String? { statusLabel.text }
+    var percentTextForTesting: String? { percentLabel.text }
+    var progressForTesting: Float { progress.progress }
+    var isRetryGlyphVisibleForTesting: Bool { !button.isHidden }
+    #endif
+}
+
+// MARK: - The Downloader's root deck
+
+/// The Downloader's home screen: the shared deck host, the media kind's style,
+/// and the one universal provider. Built here rather than inside
+/// `KindWiring+Downloader` so the deck the tests exercise is the deck the app
+/// ships — and so the app needs no deck subclass of its own at all.
+enum MediaCardDeck {
+
+    @MainActor
+    static func makeRoot() -> CardCarouselHostViewController {
+        let deck = CardCarouselHostViewController()
+        var style = CardCarouselStyle()
+        style.pageSwipeMovementMultiplier = 1.5
+        style.autoplaysScrubPreviewContent = true
+        // Keep the strip inside the inner edges of the 44pt footer buttons. A
+        // bounded strip needs no blur veil (which reads as a dark band on black).
+        style.scrubberHorizontalInset = 64
+        style.scrubberEdgeFadeWidth = 0
+        style.showsCardBorder = true
+        deck.configure(style: style) { host in
+            var configuration = CardDeckConfiguration()
+            configuration.ordering = .newestFirst
+            // This app has no generic link card, so a platform save with nothing
+            // downloaded behind it is not a slot here — the same set of rows it
+            // showed when it read the media store directly.
+            configuration.showsSavesWithoutKindContent = false
+            // The LINK is shareable in every storage state — only the file row of
+            // the menu waits for a download — so the circle shows for any media
+            // card and hides on the util and failed-save ones.
+            configuration.shareButton = CardDeckShareButton(
+                accessibilityLabel: L10n.string("Share Current Media"),
+                unavailability: .hides)
+            return KindDeckProvider(host: host, configuration: configuration)
+        }
+        return deck
     }
 }

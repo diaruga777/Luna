@@ -31,10 +31,10 @@ struct CardDeckSlot {
     let id: UUID
     /// The save's URL, when the slot has one.
     ///
-    /// A deck whose slots are keyed by a COMPANION store's id — the Downloader's
-    /// media rows carry `SavedMediaItem.id` — cannot be centered by the id of
-    /// the reading-list item a save produced, because the row does not share it.
-    /// It does share the URL, so the URL travels too and either key resolves.
+    /// A save's id is not always the key a centering request knows it by: an
+    /// ingest that reshapes the URL, or a companion store that wrote the row
+    /// under its OWN id (a media download keyed by `SavedMediaItem.id`), leaves
+    /// the two out of step. The URL travels alongside so either key resolves.
     let urlString: String?
     /// Everything about this slot that its card renders. Two reloads with equal
     /// fingerprints are the same deck, and the second one is abandoned rather
@@ -190,6 +190,11 @@ protocol CardDeckProviding: AnyObject {
     /// Whether the circle's verb is available for the centered card. `slot` is
     /// nil on the util card.
     func deckCanShare(slot: Int?) -> Bool
+    /// The circle's MENU for the centered card, built fresh on each press. A
+    /// deck that offers a ladder (media's Copy link / Share link / Share video…)
+    /// answers here; one with a single verb leaves it nil and `deckShare` fires
+    /// on the tap instead.
+    func deckShareMenu(slot: Int, sourceView: UIView) -> UIMenu?
     func deckShare(slot: Int, sourceView: UIView)
 }
 
@@ -219,5 +224,6 @@ extension CardDeckProviding {
     func deckArchiveTrayItems() -> [ArchiveTrayItem] { [] }
     var deckShareButton: CardDeckShareButton? { nil }
     func deckCanShare(slot: Int?) -> Bool { slot != nil }
+    func deckShareMenu(slot: Int, sourceView: UIView) -> UIMenu? { nil }
     func deckShare(slot: Int, sourceView: UIView) {}
 }

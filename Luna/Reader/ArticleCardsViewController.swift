@@ -35,59 +35,11 @@ import LunaStorage
 import LunaURLClassification
 import UIKit
 
-/// The all-kinds deck's seam to the kinds a Reader build cannot even name.
-/// Only the central Luna app compiles an implementation (and installs it at
-/// launch through its kind wiring), so this file stays free of media and
-/// price symbols while its deck still renders those saves the way their own
-/// app does — a downloaded video as the Downloader's player, not as a link.
-///
-/// This is an INNER seam, nested inside `CardDeckProviding`: this deck is the
-/// provider for the deck, and the protocol below is how the kinds it cannot
-/// name contribute to the cards it builds.
-protocol AllKindsCardProviding: AnyObject {
-    /// The real card for a non-article save. Nil when there is nothing of the
-    /// kind's own to show yet, leaving the deck's title-and-link card in place.
-    func cardContent(for item: ReadingListItem) -> CardContentViewController?
-    func topLeadingAccessory(for item: ReadingListItem) -> UIView?
-    func sourceBadge(for item: ReadingListItem) -> CarouselSourceBadge?
-    /// A card-sized still for the scrub preview; nil leaves the card's title.
-    func thumbnail(for item: ReadingListItem, completion: @escaping (UIImage?) -> Void)
-    /// Whether this save's strip chip should be that still rather than a mini
-    /// card with a source badge — true for a save whose card IS a picture (a
-    /// Downloader video or image), so the strip shows it the way the
-    /// Downloader's own strip does instead of its host's favicon.
-    func prefersThumbnailChip(for item: ReadingListItem) -> Bool
-    /// Whether the scrub strip may build this card's real content ahead of the
-    /// finger. A card backed by a video player answers false — sweeping the
-    /// strip must not spin up one player per chip — and previews as its poster
-    /// until the scrub settles on it.
-    func allowsPreparedPreviewContent(for item: ReadingListItem) -> Bool
-    /// Kind-specific actions, offered above the deck's own Archive/Delete.
-    func menuActions(
-        for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
-    ) -> [UIMenuElement]
-    /// The trailing circle's share menu for this save — a media save's
-    /// copy-link / share-link / share-file ladder. Nil when the kind has
-    /// nothing to offer, which is also what keeps the pill hidden.
-    func shareMenu(
-        for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
-    ) -> UIMenu?
-    /// Companion storage (a downloaded file, a Photos asset) to release when
-    /// the deck deletes the reading-list item.
-    func deleteCompanionStorage(for item: ReadingListItem)
-    /// What this item's card is showing right now, so a download that finishes
-    /// in the background re-renders it instead of staying a placeholder.
-    func fingerprint(for item: ReadingListItem) -> String
-    /// Change notifications outside the reading list that this deck must
-    /// reload on (a media store write, say).
-    var changeNotificationNames: [Notification.Name] { get }
-}
-
 final class ArticleCardsViewController: CardCarouselHostViewController {
 
     /// The central Luna app's card deck shows EVERY content kind, not just
     /// reader articles: media and price-tracker items get their own kind's
-    /// card through `cardProvider`, or a title/badge card whose tap routes
+    /// card through its kind's presenter, or a title/badge card whose tap routes
     /// through `nonArticleOpener` when that kind has nothing to render yet.
     private let includesAllKinds = LunaApp.current == .luna
 
@@ -97,12 +49,24 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// the card deck stays article-only elsewhere (`includesAllKinds`).
     static var nonArticleOpener: ((ReadingListItem, UIViewController) -> Void)?
 
-    /// Renders non-article kinds with their own app's card. Installed
-    /// alongside `nonArticleOpener`; nil everywhere but the central app.
-    static var cardProvider: AllKindsCardProviding?
+    /// The kind that owns a save, resolved once in `CardKindPresenters`. Nil for
+    /// a FAILED save, which carries no kind at all and keeps the deck's own error
+    /// card in every app.
+    ///
+    /// On the Reader surface this deliberately still answers — the article
+    /// presenter is installed there — but the deck only ever holds articles, so
+    /// media and product presenters are simply absent from that build.
+    private func presenter(for item: ReadingListItem) -> CardKindPresenting? {
+        CardKindPresenters.presenter(for: item)
+    }
 
-    private var cardProvider: AllKindsCardProviding? {
-        includesAllKinds ? Self.cardProvider : nil
+    /// The presenter for a save whose kind is NOT the article one, which is the
+    /// only case where this deck defers its card to another kind. Reader links no
+    /// such kind, so this is nil there by construction.
+    private func foreignPresenter(for item: ReadingListItem) -> CardKindPresenting? {
+        guard includesAllKinds else { return nil }
+        let presenter = CardKindPresenters.presenter(for: item)
+        return presenter === CardKindPresenters.article ? nil : presenter
     }
 
     private let store = ReadingListStore.shared
@@ -514,8 +478,9 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         guard let index = articleIndex(forCarouselIndex: carousel.currentIndex),
               items.indices.contains(index)
         else { return nil }
-        return cardProvider?.shareMenu(
-            for: items[index], presenter: self, sourceView: sourceView)
+        let item = items[index]
+        return foreignPresenter(for: item)?.shareMenu(
+            for: item, host: self, sourceView: sourceView)
     }
 
     /// The locked card's single share verb. A locked save has no extracted text,
@@ -855,7 +820,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         // Deleting the card deletes the save WHOLE — a downloaded file and its
         // Photos asset go with the reading-list entry, not on after it.
-        cardProvider?.deleteCompanionStorage(for: item)
+        presenter(for: item)?.deleteCompanionStorage(for: item, host: self)
         store.delete(item)
         reload()
     }
@@ -885,9 +850,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         // A media card offers the Downloader's own verbs (Share the file, Save
         // to Photos) above the deck's Archive/Delete.
-        let kindActions = cardProvider?.menuActions(
-            for: item, presenter: self,
-            sourceView: carousel.cardView(at: carouselIndex) ?? view) ?? []
+        let kindActions = foreignPresenter(for: item)?
+            .menuActions(for: item, host: self) ?? []
         let weekly = WeeklyPromotionMenu.action(for: item, presenter: self)
         return UIMenu(children: kindActions + [weekly].compactMap { $0 } + [
             UIAction(title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")) {
@@ -1010,7 +974,7 @@ extension ArticleCardsViewController: CardDeckProviding {
     /// lands in a store this file cannot name — plus a renamed contact changes
     /// what an emailed card's header says.
     var deckChangeNotificationNames: [Notification.Name] {
-        [.friendsListChanged] + (cardProvider?.changeNotificationNames ?? [])
+        Array(Set(CardKindPresenters.installed.flatMap(\.changeNotificationNames)))
     }
 
     func deckPreparedSnapshot() -> CardDeckSnapshot {
@@ -1027,7 +991,7 @@ extension ArticleCardsViewController: CardDeckProviding {
                 // The foreign kinds contribute their own change key — a media
                 // download that finished in the background is a different card
                 // from the placeholder that was there before it.
-                let kind = cardProvider?.fingerprint(for: item) ?? ""
+                let kind = self.presenter(for: item)?.fingerprint(for: item) ?? ""
                 return CardDeckSlot(
                     id: item.id,
                     urlString: item.urlString,
@@ -1057,7 +1021,9 @@ extension ArticleCardsViewController: CardDeckProviding {
         }
         // A Downloader save is a Downloader card here too — the same player,
         // GIF, image, or download-progress surface its own app shows.
-        if let card = cardProvider?.cardContent(for: item) { return card }
+        if let card = foreignPresenter(for: item)?.cardContent(for: item, host: self) {
+            return card
+        }
         let content = ReaderCardContentViewController(item: item, senderName: senderName(for: item))
         // Apply the title clearance as part of construction, not only after a
         // card becomes centered. A scrubber jump can stage index ±2 immediately
@@ -1069,30 +1035,33 @@ extension ArticleCardsViewController: CardDeckProviding {
     }
 
     func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool {
-        cardProvider?.allowsPreparedPreviewContent(for: items[slot]) ?? true
+        foreignPresenter(for: items[slot])?
+            .allowsPreparedPreviewContent(for: items[slot]) ?? true
     }
 
     /// A failed save's card carries a soft red rim — the only card chrome that
     /// says "this one is broken" without a badge or a banner.
     func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? {
-        ReadingListSectioning.isFailedSave(items[slot]) ? LunaColors.errorAccent : nil
+        let item = items[slot]
+        guard let presenter = presenter(for: item) else { return LunaColors.errorAccent }
+        return presenter.edgeGlowColor(for: item)
     }
 
     /// Feeds both the big scrub preview and — for the media saves that ask for
     /// one (see `deckPrefersThumbnailChip`) — the strip chip itself: a media save
     /// shows as its poster rather than as its title.
     func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void) {
-        guard let provider = cardProvider else {
+        guard let presenter = foreignPresenter(for: items[slot]) else {
             completion(nil)
             return
         }
-        provider.thumbnail(for: items[slot], completion: completion)
+        presenter.loadThumbnail(for: items[slot], host: self, completion: completion)
     }
 
     /// A media save's chip is its own still; articles keep the mini card and its
     /// source badge.
     func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool {
-        cardProvider?.prefersThumbnailChip(for: items[slot]) ?? false
+        foreignPresenter(for: items[slot])?.prefersThumbnailChip(for: items[slot]) ?? false
     }
 
     /// Chip badge: an instant fallback (initials / mail / document / globe)
@@ -1103,8 +1072,8 @@ extension ArticleCardsViewController: CardDeckProviding {
     ) {
         let item = items[slot]
         // A platform save is marked by its platform, not by the host's favicon.
-        if let badge = cardProvider?.sourceBadge(for: item) {
-            completion(badge)
+        if let presenter = foreignPresenter(for: item) {
+            presenter.loadSourceBadge(for: item, completion: completion)
             return
         }
         completion(ArticleSourceBadge.fallback(for: item))
@@ -1115,7 +1084,7 @@ extension ArticleCardsViewController: CardDeckProviding {
     }
 
     func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? {
-        cardProvider?.topLeadingAccessory(for: items[slot])
+        foreignPresenter(for: items[slot])?.topLeadingAccessory(for: items[slot])
     }
 
     func deckTitle(forSlot slot: Int) -> String? {

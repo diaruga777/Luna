@@ -1,0 +1,495 @@
+//
+//  KindDeckProvider.swift
+//  Luna
+//
+//  THE `CardDeckProviding` implementation — one, for every app.
+//
+//  A deck used to be its own provider (`deckProvider` returned `self`), so the
+//  three roots each carried a copy of "read the store, order it, split off the
+//  archive, fingerprint it, build the cards, offer the verbs". The copies drifted
+//  in every direction the refactor plan lists. This file is that algorithm once;
+//  everything in it that is a statement about a KIND is asked of
+//  `CardKindPresenters.presenter(for:)` instead of switched on here.
+//
+//  What stays per-app is genuinely per-app and lives in `CardDeckConfiguration`:
+//  the ordering strategy (Reader groups finished articles last, everyone else is
+//  newest-first), whether the app has a generic link card for a save its kind
+//  holds nothing for, and how its trailing circle reads. Those are properties of
+//  a home screen, not of a save.
+//
+//  This file is compiled into ALL FOUR targets, so it may not name a kind
+//  module's symbols. Everything kind-shaped arrives through the presenter
+//  protocol; the one exception is the FAILED save, which carries no kind at all
+//  (`ReadingListSectioning.isFailedSave`) and is therefore the deck's own card in
+//  every app.
+//
+
+import LunaDesignSystem
+import LunaModels
+import LunaReadingList
+import LunaReadingListUI
+import LunaSocialUI
+import LunaStorage
+import UIKit
+
+// MARK: - What is per-app about a deck
+
+struct CardDeckConfiguration {
+
+    /// How the deck's cards are ordered.
+    enum Ordering {
+        /// Most recent first. Every app but Reader — "read" is an article-only
+        /// notion and would file a just-watched video behind everything else.
+        case newestFirst
+        /// Reader's: finished articles kept as ordinary cards but grouped after
+        /// every unopened/in-progress one, each group newest-first.
+        case readUnreadGrouped
+    }
+
+    var ordering: Ordering = .newestFirst
+
+    /// Whether a save whose kind holds nothing to draw yet still earns a card.
+    ///
+    /// The central app and Reader have a generic link card to fall back on, so a
+    /// platform link with no download behind it is still a card there. The
+    /// Downloader and Price Tracker have no such card — they have always shown
+    /// their own store's rows and nothing else — so for them such a save is not
+    /// a slot at all rather than an empty rectangle.
+    var showsSavesWithoutKindContent = false
+
+    /// The card for a save whose kind returned none. Only ever reached when
+    /// `showsSavesWithoutKindContent` is true.
+    var fallbackContent: (ReadingListItem) -> CardContentViewController = { _ in
+        CardContentViewController()
+    }
+
+    /// What a tap on a card the resolved presenter declined does. Reader toggles
+    /// immersion / runs the unlock flow from its own subclass, so it passes nil.
+    var fallbackTap: ((ReadingListItem, CardContentViewController?) -> Void)?
+
+    /// The trailing bottom circle, or nil for a deck that dresses it itself
+    /// (Reader hangs the focused reader's share ladder there).
+    var shareButton: CardDeckShareButton?
+}
+
+// MARK: - The provider
+
+@MainActor
+final class KindDeckProvider: CardDeckProviding {
+
+    private let configuration: CardDeckConfiguration
+    private unowned let host: CardCarouselHostViewController
+    private let store = ReadingListStore.shared
+
+    private var items: [ReadingListItem] = []
+    private var archivedItems: [ReadingListItem] = []
+    /// What `deckPreparedSnapshot` computed, waiting for the host to say the
+    /// reload is going ahead.
+    private var preparedItems: [ReadingListItem] = []
+    private var preparedArchivedItems: [ReadingListItem] = []
+    /// The presenter that CONTRIBUTED a slot, for the stand-in items that have
+    /// no reading-list row for the registry to resolve them from (see
+    /// `CardKindPresenting.unbackedItems`).
+    private var unbackedOwners: [UUID: CardKindPresenting] = [:]
+    private var preparedUnbackedOwners: [UUID: CardKindPresenting] = [:]
+
+    init(host: CardCarouselHostViewController, configuration: CardDeckConfiguration) {
+        self.host = host
+        self.configuration = configuration
+    }
+
+    /// The kind that owns a save. A stand-in for an unbacked row goes straight
+    /// back to the presenter that supplied it; everything else is the registry's
+    /// single resolution point. Nil means the save has no kind — a failed one.
+    private func presenter(for item: ReadingListItem) -> CardKindPresenting? {
+        unbackedOwners[item.id] ?? CardKindPresenters.presenter(for: item)
+    }
+
+    private func item(atSlot slot: Int) -> ReadingListItem? {
+        items.indices.contains(slot) ? items[slot] : nil
+    }
+
+    // MARK: - Store observation
+
+    /// The union of what every installed kind needs watching. A deck watches its
+    /// kinds' stores because its kinds say so, not because its app remembered to.
+    var deckChangeNotificationNames: [Notification.Name] {
+        Array(Set(CardKindPresenters.installed.flatMap(\.changeNotificationNames)))
+    }
+
+    var deckActivationNotificationNames: [Notification.Name] {
+        Array(Set(CardKindPresenters.installed.flatMap(\.activationNotificationNames)))
+    }
+
+    func deckWillBeginObservingStores() {
+        for presenter in CardKindPresenters.installed {
+            presenter.willBeginObservingStores(host: host)
+        }
+    }
+
+    /// Runs on the ABANDONED reload path too — which is exactly when a Photos
+    /// asset deleted behind Luna's back needs noticing.
+    func deckDidSettleReload() {
+        for presenter in CardKindPresenters.installed {
+            presenter.didSettleReload(host: host)
+        }
+    }
+
+    // MARK: - The slot list
+
+    func deckPreparedSnapshot() -> CardDeckSnapshot {
+        for presenter in CardKindPresenters.installed {
+            presenter.prepareSnapshotSideEffects()
+        }
+
+        var owners: [UUID: CardKindPresenting] = [:]
+        var candidates = store.items().filter { LunaApp.current.includes($0) }
+        // Media Luna holds that the reading list has no row for. Real user
+        // downloads, not an edge case — see `CardKindPresenting.unbackedItems`.
+        for presenter in CardKindPresenters.installed {
+            for standIn in presenter.unbackedItems() {
+                owners[standIn.id] = presenter
+                candidates.append(standIn)
+            }
+        }
+        preparedUnbackedOwners = owners
+
+        let visible = candidates.filter { item in
+            guard let presenter = owners[item.id] ?? CardKindPresenters.presenter(for: item)
+            else { return true }   // a failed save belongs to every app
+            return configuration.showsSavesWithoutKindContent || presenter.hasContent(for: item)
+        }
+
+        let archived = visible.filter { isArchived($0, owners: owners) }
+        let active = visible.filter { !isArchived($0, owners: owners) }
+
+        preparedItems = Self.ordered(active, by: configuration.ordering)
+        preparedArchivedItems = archived.sorted {
+            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
+        }
+
+        return CardDeckSnapshot(
+            slots: preparedItems.map { item in
+                CardDeckSlot(
+                    id: item.id,
+                    urlString: item.urlString,
+                    fingerprint: Self.fingerprint(
+                        item, prefix: "active",
+                        presenter: owners[item.id] ?? CardKindPresenters.presenter(for: item)))
+            },
+            offstageIDs: Set(preparedArchivedItems.map(\.id)),
+            offstageFingerprint: preparedArchivedItems.map { item in
+                Self.fingerprint(
+                    item, prefix: "archive",
+                    presenter: owners[item.id] ?? CardKindPresenters.presenter(for: item))
+            })
+    }
+
+    func deckCommitPreparedSnapshot() {
+        items = preparedItems
+        archivedItems = preparedArchivedItems
+        unbackedOwners = preparedUnbackedOwners
+    }
+
+    /// Archived-ness is the KIND's answer, because the flag can live in the
+    /// kind's own store (a media row's, a tracker's) rather than on the
+    /// reading-list row. A failed save has only the row.
+    private func isArchived(
+        _ item: ReadingListItem, owners: [UUID: CardKindPresenting]
+    ) -> Bool {
+        guard let presenter = owners[item.id] ?? CardKindPresenters.presenter(for: item)
+        else { return item.isArchived }
+        return presenter.isArchived(item)
+    }
+
+    static func ordered(
+        _ items: [ReadingListItem], by ordering: CardDeckConfiguration.Ordering
+    ) -> [ReadingListItem] {
+        items.sorted { lhs, rhs in
+            if ordering == .readUnreadGrouped {
+                // A just-finished card keeps its current foreground-session
+                // position until the pending archive is committed on background.
+                let lhsIsRead = lhs.readState == .read && lhs.pendingArchiveAt == nil
+                let rhsIsRead = rhs.readState == .read && rhs.pendingArchiveAt == nil
+                if lhsIsRead != rhsIsRead { return !lhsIsRead }
+            }
+            let lhsDate = lhs.bumpDate ?? lhs.dateAdded
+            let rhsDate = rhs.bumpDate ?? rhs.dateAdded
+            if lhsDate != rhsDate { return lhsDate > rhsDate }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    /// The deck-generic half of a card's identity plus the kind's own. Two
+    /// reloads with equal fingerprints are the same deck, and the second is
+    /// abandoned rather than tearing down live card content to rebuild it.
+    private static func fingerprint(
+        _ item: ReadingListItem, prefix: String, presenter: CardKindPresenting?
+    ) -> String {
+        guard let presenter else {
+            // A failed save's card changes when a rescue starts or stops.
+            return "\(prefix)|failed|\(item.id)"
+                + "|\(URLRescueCoordinator.shared.isRescuing(item.id))"
+        }
+        return "\(prefix)|\(item.id)|\(item.title ?? "")|\(item.state)"
+            + "|\(item.thumbnailFileName ?? "")|\(item.isArchived)"
+            + "|\(presenter.fingerprint(for: item))"
+    }
+
+    // MARK: - Cards
+
+    func deckContentController(forSlot slot: Int) -> CardContentViewController {
+        guard let item = item(atSlot: slot) else { return CardContentViewController() }
+        guard let presenter = presenter(for: item) else {
+            // A save that FAILED gets the shared error card instead of an empty
+            // one with a one-line apology: the page itself in a near-full-bleed
+            // web view, a URL bar with reload + share, and "Retry with AI" in the
+            // chin (`claudedocs/failed-saves.md`).
+            return FailedSaveCardFactory.makeCard(
+                for: item, host: host, onChanged: { [weak host] in host?.reload() })
+        }
+        return presenter.cardContent(for: item, host: host)
+            ?? configuration.fallbackContent(item)
+    }
+
+    func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool {
+        guard let item = item(atSlot: slot) else { return true }
+        return presenter(for: item)?.allowsPreparedPreviewContent(for: item) ?? true
+    }
+
+    /// Two kinds of broken wear the soft red rim: a failed SAVE, and a media item
+    /// whose DOWNLOAD failed. The second is the kind's own answer, which is why
+    /// it now shows in every app that draws media rather than only in the
+    /// Downloader.
+    func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? {
+        guard let item = item(atSlot: slot) else { return nil }
+        guard let presenter = presenter(for: item) else { return LunaColors.errorAccent }
+        return presenter.edgeGlowColor(for: item)
+    }
+
+    func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void) {
+        guard let item = item(atSlot: slot) else {
+            completion(nil)
+            return
+        }
+        guard let presenter = presenter(for: item) else {
+            completion(UIImage(systemName: "exclamationmark.triangle"))
+            return
+        }
+        presenter.loadThumbnail(for: item, host: host, completion: completion)
+    }
+
+    func deckTitle(forSlot slot: Int) -> String? {
+        guard let item = item(atSlot: slot) else { return nil }
+        guard let presenter = presenter(for: item) else {
+            // A failed save has no stored title; use the same fallback chain its
+            // card headline does so the scrub preview and the card agree.
+            return FailedSaveCardFactory.displayTitle(for: item)
+        }
+        return presenter.title(for: item)
+    }
+
+    func deckLoadSourceBadge(
+        forSlot slot: Int, completion: @escaping (CarouselSourceBadge?) -> Void
+    ) {
+        guard let item = item(atSlot: slot), let presenter = presenter(for: item) else {
+            completion(nil)
+            return
+        }
+        presenter.loadSourceBadge(for: item, completion: completion)
+    }
+
+    func deckLoadMiniCarouselAccessory(
+        forSlot slot: Int, completion: @escaping (UIImage?) -> Void
+    ) {
+        guard let item = item(atSlot: slot), let presenter = presenter(for: item) else {
+            completion(nil)
+            return
+        }
+        presenter.loadMiniCarouselAccessory(for: item, completion: completion)
+    }
+
+    func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool {
+        guard let item = item(atSlot: slot) else { return false }
+        return presenter(for: item)?.prefersThumbnailChip(for: item) ?? false
+    }
+
+    func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? {
+        guard let item = item(atSlot: slot) else { return nil }
+        return presenter(for: item)?.topLeadingAccessory(for: item)
+    }
+
+    // MARK: - Verbs
+
+    func deckMenu(forSlot slot: Int) -> UIMenu? {
+        guard let item = item(atSlot: slot) else { return nil }
+        let delete = UIAction(
+            title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
+            attributes: .destructive
+        ) { [weak self] _ in self?.delete(item) }
+
+        guard let presenter = presenter(for: item) else {
+            // A failed save has no extracted text, no eBook and no audio, so the
+            // richer ladder has nothing to offer: the link is the whole of it.
+            return FailedSaveCardFactory.makeMenu(
+                shareLink: { [weak self] in
+                    guard let self else { return }
+                    SendToFriendSheet.shareLink(
+                        urlString: item.urlString, from: self.host,
+                        sourceView: self.host.view)
+                },
+                delete: delete)
+        }
+
+        let kindActions = presenter.menuActions(for: item, host: host)
+        let weekly = WeeklyPromotionMenu.action(for: item, presenter: host)
+        return UIMenu(children: kindActions + [weekly].compactMap { $0 } + [
+            UIAction(
+                title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
+            ) { [weak self] _ in self?.archive(item) },
+            delete,
+        ])
+    }
+
+    /// ONE archive per kind, writing every store that kind owns. The three decks
+    /// used to write three different flags, so a save archived in one app stayed
+    /// live in another.
+    private func archive(_ item: ReadingListItem) {
+        // Persist first. The manual reload consumes the new truth in this same
+        // event turn; the queued notification becomes a no-op because its
+        // fingerprint has already been applied.
+        if let presenter = presenter(for: item) {
+            presenter.setArchived(true, for: item)
+        } else {
+            store.setArchived(true, for: item.id)
+        }
+        host.reload()
+    }
+
+    /// Deleting a card deletes the save WHOLE: the kind's companion storage — a
+    /// downloaded file, its Photos asset, the auto-download bookkeeping — goes
+    /// with the reading-list row rather than on after it.
+    private func delete(_ item: ReadingListItem) {
+        if let index = items.firstIndex(where: { $0.id == item.id }),
+           host.carouselIndex(forSlot: index) == host.carousel.currentIndex {
+            let successor = items.indices.contains(index + 1)
+                ? items[index + 1]
+                : (index > 0 ? items[index - 1] : nil)
+            host.pendingTransitionCenteredID = successor?.id
+        }
+        presenter(for: item)?.deleteCompanionStorage(for: item, host: host)
+        store.delete(item)
+        host.reload()
+    }
+
+    // MARK: - Lifecycle
+
+    func deckSlotDidCenter(_ slot: Int) {
+        guard let item = item(atSlot: slot) else { return }
+        // Every kind's "this took the center" work, plus the read-state mark a
+        // failed save still earns.
+        guard let presenter = presenter(for: item) else {
+            store.markReadState(.opened, for: item.id)
+            return
+        }
+        presenter.itemDidCenter(item, host: host)
+    }
+
+    func deckUtilCardDidCenter() {
+        for presenter in CardKindPresenters.installed { presenter.utilCardDidCenter() }
+    }
+
+    func deckSlotWasTapped(_ slot: Int) {
+        guard let item = item(atSlot: slot) else { return }
+        let content = host.carousel.contentController(at: host.carouselIndex(forSlot: slot))
+        if presenter(for: item)?.itemWasTapped(item, cardContent: content, host: host) == true {
+            return
+        }
+        configuration.fallbackTap?(item, content)
+    }
+
+    // MARK: - The archive tray
+
+    func deckArchiveTrayItems() -> [ArchiveTrayItem] {
+        archivedItems.map { item in
+            presenter(for: item)?.archiveTrayItem(for: item, host: host)
+                ?? genericArchiveTrayItem(for: item)
+        }
+    }
+
+    /// The tray row for a save whose kind supplies none — an article, or a
+    /// failed one: favicon, title, original save date.
+    private func genericArchiveTrayItem(for item: ReadingListItem) -> ArchiveTrayItem {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return ArchiveTrayItem(
+            id: item.id,
+            title: item.title ?? item.url?.host ?? item.urlString,
+            footer: formatter.string(from: item.dateAdded),
+            showsMetadata: true,
+            isAvailable: true,
+            loadImage: { completion in
+                guard let url = item.url else {
+                    completion(UIImage(systemName: item.isDocument ? "doc" : "globe"))
+                    return
+                }
+                completion(UIImage(systemName: "globe"))
+                SourceIconCache.shared.icon(forPageURL: url) { image in
+                    if let image { completion(image) }
+                }
+            },
+            tap: { [weak self] in
+                guard let self else { return }
+                _ = self.presenter(for: item)?.openExternally(item, host: self.host)
+            },
+            share: { [weak self] sourceView in
+                guard let self else { return }
+                SendToFriendSheet.shareLink(
+                    urlString: item.urlString, from: self.host, sourceView: sourceView)
+            },
+            unarchive: { [weak self] _ in
+                guard let self else { return }
+                self.host.requestCentering(onSlotID: item.id)
+                if let presenter = self.presenter(for: item) {
+                    presenter.setArchived(false, for: item)
+                } else {
+                    self.store.setArchived(false, for: item.id)
+                }
+                self.host.reload()
+            },
+            delete: { [weak self] in
+                guard let self else { return }
+                // The archived delete releases companion storage too. It did not,
+                // which is how deleting an archived media save from the central
+                // tray left its file, its Photos asset and its auto-download
+                // bookkeeping behind.
+                self.presenter(for: item)?.deleteCompanionStorage(for: item, host: self.host)
+                self.store.delete(item)
+                self.host.reload()
+            })
+    }
+
+    // MARK: - The trailing bottom circle
+
+    var deckShareButton: CardDeckShareButton? { configuration.shareButton }
+
+    func deckCanShare(slot: Int?) -> Bool {
+        guard let slot, let item = item(atSlot: slot) else { return false }
+        // A failed save keeps its share verbs in its own URL bar and long-press
+        // menu, the same dress in every deck.
+        return presenter(for: item) != nil
+    }
+
+    func deckShareMenu(slot: Int, sourceView: UIView) -> UIMenu? {
+        guard let item = item(atSlot: slot) else { return nil }
+        return presenter(for: item)?.shareMenu(for: item, host: host, sourceView: sourceView)
+    }
+
+    func deckShare(slot: Int, sourceView: UIView) {
+        guard let item = item(atSlot: slot) else { return }
+        // The fallback path when the menu could not be built: the link verb.
+        SendToFriendSheet.shareLink(
+            urlString: item.urlString, from: host, sourceView: sourceView)
+    }
+}

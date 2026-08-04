@@ -320,6 +320,38 @@ the stale scroll offset; unsaved links use a bounded App-Group URL→word map in
 its former duplicated UIKit link menu; its plain-text sentence-selection hold is unchanged.
 - `Luna/Settings/ReaderSettings.swift` — base WPM in standard defaults (also adjustable in Settings screen slider).
 
+### Highlight, copy, share (plain-text selection)
+
+A hold on plain text in the scroll reader selects the whole enclosing SENTENCE, not the
+word UIKit would give you, and the selection callout carries a **Share** action ahead of
+the system's own items. Both COPY and SHARE emit the same payload —
+`ScrollReaderViewController.makeHighlightShareText`: the trimmed quote in literal double
+quotes, a blank line, then the item's URL (a save with no real web URL — an imported
+document, a synthetic scheme — sends the bare quote, since there is nothing to cite).
+Two mechanics are worth knowing before touching this:
+
+- **Copy is intercepted at the text view, not in the menu.** `QuotingTextView` (LunaReaderUI)
+  overrides `copy(_:)`, which is where the callout's Copy, ⌘C and the accessibility action
+  all converge — so one override covers every route and `editMenuForTextIn` can keep
+  handing back `suggestedActions` verbatim. An empty selection, or a range the reader
+  declines, falls through to UIKit's plain-text copy.
+- **The sentence snap must not depend on recognizer order.** The reader's own long-press
+  never moves the selection; it either expands what is already selected or arms the next
+  selection change to snap (`sentenceLongPressAction`, pure and unit-tested; the expansion
+  itself is `enclosingSentenceRange`, scoped to the pressed paragraph). Arming alone used
+  to be the whole rule, which assumed this recognizer fires BEFORE the text view's own
+  word-select — true in a full-screen reader, unreliable inside a carousel card, where the
+  deck's context-menu interaction competes for the same press and the flag could end up
+  waiting on a change that had already happened. A selection elsewhere in the article is
+  stale and is never the one expanded. Tests: `HighlightShareTextTests`.
+
+On a card this rides on the deck declining the press: `CardCarouselViewController`'s
+context-menu delegate returns nil when the content claims the point, and
+`ArticleCardsViewController.longPressSelectsContent` claims every press over a glyph, a
+link, or an inline image — bare whitespace is what keeps the card's own Archive/Delete
+menu. Nothing about the selection behavior is per-app: the article card is the same
+`ScrollReaderViewController` in the central Luna app and in Luna Reader.
+
 ## Header bar
 
 The 3-mode switcher lives in an **inline header bar** at the top of the reader's

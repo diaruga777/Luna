@@ -351,21 +351,24 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 2261 tests, 9 skipped, 0 failures**
-  (measured 2026-08-03 after the one-deck refactor, full run with nothing skipped on
-  the command line — five dead synthetic-paste-card tests out, five deck-slot /
-  Downloader-centering tests in). The
+- **Current suite state on the iOS 26.x sim: 2335 tests, 10 skipped, 0 failures**
+  (measured 2026-08-04 after the weekly-flag merge, full run with nothing skipped on
+  the command line). One caveat from that run: the host process died mid-suite in
+  `ImageReferenceStoreTests.testImageFilesHelperPullsFromImageBlocks`, the runner
+  restarted and finished clean, and that class passes on its own — the environmental
+  kill described two bullets down, not a regression. The
   long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
   snapshot set was re-recorded for the predawn palette, and the harness now pins the
   same appearance the app does (dark style + `lunaSky = .predawn`, over
-  `LunaColors.background`) instead of forcing a light style. The 9 skips are
+  `LunaColors.background`) instead of forcing a light style. The 10 skips are
   intentional `XCTSkip`s —
   `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot`, two
   `SocialMediaResolverTests` live-YouTube transfers
   (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), the four
   `EclipsePreviewRecorderTests` corona/starfield preview recorders
-  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`), and
-  `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested`. One class,
+  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`),
+  `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested`, and
+  `WaveProbeRecorderTests.testRecordActionButtonPressWaveWhenRequested`. One class,
   `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
   rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
   test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a

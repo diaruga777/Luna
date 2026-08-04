@@ -76,7 +76,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// draws attachments as static bitmaps, so a real image view is required for GIF
     /// playback. Views are enabled only while visible to bound decode/CPU cost.
     private var animatedImageViews: [AnimatedArticleImageView] = []
-    private let textView = UITextView(usingTextLayoutManager: false)
+    private let textView = QuotingTextView(usingTextLayoutManager: false)
     private let store = ReadingListStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
     private let finishedBadge = FinishedReadingBadgeView()
@@ -501,6 +501,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         textView.isEditable = false
         textView.isSelectable = true
         textView.delegate = self
+        // Copy carries the same quote-plus-URL payload the selection menu shares.
+        textView.copySelectionAsQuote = { [weak self] range in
+            self?.copyHighlightedText(in: range) ?? false
+        }
         textView.attributedText = rendered.text
         textView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 40, right: 20)
         textView.linkTextAttributes = [
@@ -884,11 +888,71 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     @objc private func handleSentenceLongPress(_ gesture: UILongPressGestureRecognizer) {
-        // Arm the next selection change to snap to a sentence. Do NOT alter the
-        // selection here — the text view's own long-press drives it; we only expand it.
-        if gesture.state == .began {
+        guard gesture.state == .began else { return }
+        // Usually this fires BEFORE the text view has selected anything, so all we
+        // do is arm the next selection change (never touching the selection here —
+        // the text view's own long-press drives it).
+        //
+        // But the two recognizers' order is not guaranteed: inside a carousel card
+        // the deck's own context-menu interaction competes for the same press and
+        // this one can arrive AFTER the word is already selected, leaving the flag
+        // waiting for a change that has been and gone — which is why the snap was
+        // reliable in a full-screen reader and a coin-flip on a card. When the word
+        // under the finger is already selected, expand it right here instead.
+        switch Self.sentenceLongPressAction(
+            caret: characterIndex(at: gesture.location(in: textView)),
+            selection: textView.selectedRange)
+        {
+        case .expandNow(let caret):
+            expandNextSelectionToSentence = !expandSelectionToSentence(around: caret)
+        case .armNextSelectionChange:
             expandNextSelectionToSentence = true
         }
+    }
+
+    /// What a sentence long-press does at the instant it fires. Pure + static so the
+    /// recognizer-ordering rule is unit-testable without a real press.
+    public enum SentenceLongPressAction: Equatable {
+        /// The word under the finger is already selected — snap it to its sentence now.
+        case expandNow(caret: Int)
+        /// Nothing selected here yet; the next selection change is the one to snap.
+        case armNextSelectionChange
+    }
+
+    /// `caret` is the character index under the finger (nil for empty text);
+    /// `selection` is the live selection. A non-empty selection that CONTAINS the
+    /// caret is this press's own word-select, so it can be expanded immediately; a
+    /// selection somewhere else in the article is stale and must not be touched.
+    /// The end boundary counts — a press on a word's trailing half resolves to the
+    /// position after its last glyph.
+    public static func sentenceLongPressAction(
+        caret: Int?, selection: NSRange
+    ) -> SentenceLongPressAction {
+        guard let caret, selection.length > 0,
+              NSLocationInRange(caret, selection) || caret == NSMaxRange(selection)
+        else { return .armNextSelectionChange }
+        return .expandNow(caret: caret)
+    }
+
+    /// The character index under a point in the text view, or nil for empty text.
+    /// `closestPosition(to:)` snaps to the nearest glyph, which is what a press
+    /// just past the end of a word should resolve to.
+    private func characterIndex(at point: CGPoint) -> Int? {
+        guard textView.attributedText.length > 0,
+              let position = textView.closestPosition(to: point)
+        else { return nil }
+        return textView.offset(from: textView.beginningOfDocument, to: position)
+    }
+
+    /// Snaps the selection to the sentence around `caret`. False when no sentence
+    /// resolves, which leaves the selection exactly as it was.
+    private func expandSelectionToSentence(around caret: Int) -> Bool {
+        guard let sentence = Self.enclosingSentenceRange(in: textView.text, caret: caret)
+        else { return false }
+        isExpandingSelection = true
+        textView.selectedRange = sentence
+        isExpandingSelection = false
+        return true
     }
 
     public func contextMenuInteraction(
@@ -1507,8 +1571,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     /// Adds a "Share" action to the text-SELECTION menu (the callout shown for a
     /// selected passage, distinct from the link menu above). The system's
-    /// `suggestedActions` (Copy, Look Up, Translate, …) are preserved verbatim so Copy
-    /// et al. behave exactly as before; ours is only prepended.
+    /// `suggestedActions` (Copy, Look Up, Translate, …) are preserved verbatim —
+    /// Copy stays the system's menu item, and carries the reader's quote payload
+    /// because `QuotingTextView` overrides `copy(_:)` rather than this menu.
     public func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
                          suggestedActions: [UIMenuElement]) -> UIMenu? {
         guard range.length > 0 else { return nil }
@@ -1526,6 +1591,17 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public static func makeHighlightShareText(quote: String, item: ReadingListItem) -> String {
         let q = quote.trimmingCharacters(in: .whitespacesAndNewlines)
         return item.isShareable ? "\"\(q)\"\n\n\(item.urlString)" : q
+    }
+
+    /// Puts a highlighted passage on the pasteboard in the SAME form Share sends it
+    /// (`makeHighlightShareText`) — quote, blank line, URL. Returns false when the
+    /// range doesn't resolve, which hands the copy back to UIKit's plain-text one.
+    private func copyHighlightedText(in range: NSRange) -> Bool {
+        let text = textView.text as NSString
+        guard range.location >= 0, NSMaxRange(range) <= text.length else { return false }
+        UIPasteboard.general.string = Self.makeHighlightShareText(
+            quote: text.substring(with: range), item: item)
+        return true
     }
 
     /// Presents the share sheet for a highlighted passage, anchoring the iPad popover
@@ -1555,10 +1631,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         guard selected.length > 0 else { return }
         // Clear immediately so drag-handle adjustments afterward are not re-snapped.
         expandNextSelectionToSentence = false
-        guard let sentence = Self.enclosingSentenceRange(in: textView.text, caret: selected.location) else { return }
-        isExpandingSelection = true
-        textView.selectedRange = sentence
-        isExpandingSelection = false
+        _ = expandSelectionToSentence(around: selected.location)
     }
 
     /// The character range of the sentence containing (or nearest to) `caret`, scoped

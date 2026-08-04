@@ -66,6 +66,12 @@ protocol AllKindsCardProviding: AnyObject {
     func menuActions(
         for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
     ) -> [UIMenuElement]
+    /// The trailing circle's share menu for this save — a media save's
+    /// copy-link / share-link / share-file ladder. Nil when the kind has
+    /// nothing to offer, which is also what keeps the pill hidden.
+    func shareMenu(
+        for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
+    ) -> UIMenu?
     /// Companion storage (a downloaded file, a Photos asset) to release when
     /// the deck deletes the reading-list item.
     func deleteCompanionStorage(for item: ReadingListItem)
@@ -474,10 +480,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         guard let state else {
             readerAudioButton.isHidden = true
             readerModeControl.isHidden = true
-            // A locked card has no reader to drive the chrome, but it does have a
-            // URL — and sharing the link is the one thing that still works before
-            // the article is unlocked, so the Share pill stays.
+            // No reader behind the card, but the pill can still have something
+            // to offer: a locked save's URL, or a media save's ladder from its
+            // own kind's provider (Copy link / Share link / Share video…).
             readerShareButton.isHidden = lockedShareURLString == nil
+                && providerShareMenu(from: readerShareButton) == nil
             return
         }
         readerAudioButton.setImage(
@@ -497,6 +504,18 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         updateBottomModeSwitcher(immersed: carousel.isImmersed, animated: false)
         readerAudioButton.isHidden = !state.isArticle
         readerShareButton.isHidden = !state.offersSaveShare
+    }
+
+    /// The centered card's share menu when that card belongs to another KIND —
+    /// the ladder a downloaded media save offers (the same one the Downloader's
+    /// own deck hangs on its circle). Nil for articles (the focused reader
+    /// outranks it in the build chain) and for kinds with nothing to share.
+    private func providerShareMenu(from sourceView: UIView) -> UIMenu? {
+        guard let index = articleIndex(forCarouselIndex: carousel.currentIndex),
+              items.indices.contains(index)
+        else { return nil }
+        return cardProvider?.shareMenu(
+            for: items[index], presenter: self, sourceView: sourceView)
     }
 
     /// The locked card's single share verb. A locked save has no extracted text,
@@ -548,8 +567,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 if let menu = self.readerForChrome?.chromeShareMenu(from: button) {
                     return menu
                 }
-                // No reader: the only card that still shows this pill is a locked
-                // save, and the only thing it can share is its link.
+                // No reader: the pill belongs to a media save's own ladder, or
+                // failing that to a locked save's single link.
+                if let menu = self.providerShareMenu(from: button) {
+                    return menu
+                }
                 return self.lockedShareMenu()
             },
             fallback: { [weak self] in

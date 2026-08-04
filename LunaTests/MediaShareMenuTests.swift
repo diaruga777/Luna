@@ -9,6 +9,7 @@
 //  state and kind, and that each row fires its own verb.
 //
 
+import LunaModels
 import UIKit
 import XCTest
 @testable import Luna
@@ -94,6 +95,52 @@ final class MediaShareMenuTests: XCTestCase {
             menu.children.map(\.title),
             ["Copy link", "Share link", "Share GIF"])
         XCTAssertTrue(menu.children.allSatisfy { $0 is UIAction })
+    }
+}
+
+/// The central app's all-kinds deck reaches the same ladder through the
+/// `AllKindsCardProviding` seam, so a media save's pill offers exactly what
+/// the Downloader's own circle does — and a save with no media row offers
+/// nothing, which is what keeps its pill hidden.
+final class AllKindsShareMenuTests: XCTestCase {
+
+    override func setUp() {
+        super.setUp()
+        SavedMediaDeckFixtures.emptySharedMediaStore()
+    }
+
+    override func tearDown() {
+        SavedMediaDeckFixtures.emptySharedMediaStore()
+        super.tearDown()
+    }
+
+    @MainActor
+    func testMediaSaveOffersTheLadderOverItsOriginalURL() throws {
+        let url = "https://x.com/luna/status/91919"
+        _ = try SavedMediaStore.shared.ensureUndownloaded(
+            id: UUID(), sourceURLString: url, title: "Clip",
+            kind: .video, dateSaved: Date())
+        let item = ReadingListItem(
+            seed: "allkinds-share", urlString: url, title: "Clip",
+            dateAdded: Date(), state: .ready, platform: .x)
+
+        let menu = AllKindsCardProvider().shareMenu(
+            for: item, presenter: UIViewController(), sourceView: UIView())
+
+        XCTAssertEqual(
+            menu?.children.map(\.title), ["Copy link", "Share link"],
+            "an undownloaded media save shares its link, not a file it doesn't hold")
+    }
+
+    @MainActor
+    func testSaveWithoutAMediaRowOffersNoMenu() {
+        let item = ReadingListItem(
+            seed: "allkinds-share-article",
+            urlString: "https://example.com/article", title: "Article",
+            dateAdded: Date(), state: .ready)
+
+        XCTAssertNil(AllKindsCardProvider().shareMenu(
+            for: item, presenter: UIViewController(), sourceView: UIView()))
     }
 }
 

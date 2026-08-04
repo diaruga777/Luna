@@ -1,6 +1,6 @@
 //
-//  ReaderShareMenu.swift
-//  LunaReaderUI
+//  ShareButtonMenu.swift
+//  LunaDesignSystem
 //
 
 import UIKit
@@ -15,7 +15,7 @@ import UIKit
 /// frame and ignores the finger until it has moved onto a row. Re-implementing that
 /// with a custom long-press recogniser is exactly how you get a tap that selects
 /// whatever happens to be under it.
-public enum ReaderShareMenu {
+public enum ShareButtonMenu {
 
     /// Makes `button` present `build()`'s menu on press.
     ///

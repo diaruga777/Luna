@@ -366,7 +366,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             shareButton.configuration = GlassStyle.circularButtonConfiguration(
                 symbol: "square.and.arrow.up", padding: 8)
             shareButton.tintColor = GlassStyle.readingAccent
-            ReaderShareMenu.install(
+            ShareButtonMenu.install(
                 on: shareButton,
                 providesMenu: shareProvider?.providesShareMenu == true,
                 build: { [weak self] in

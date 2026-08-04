@@ -221,7 +221,44 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    // MARK: - Sharing the file
+    // MARK: - Sharing
+
+    /// The trailing circle is a MENU, not a single-verb tap — the same ladder
+    /// shape as the reader pill: Copy link / Share link over the original
+    /// saved URL, then the file itself once Luna holds one
+    /// (`MediaItemActions.shareMenuRows`). Deferred, so a press always builds
+    /// against whatever card is centered now.
+    override func configureTrailingBottomButton(_ button: UIButton) {
+        configureBottomButton(
+            button, symbol: "square.and.arrow.up", action: nil,
+            accessibilityLabel: L10n.string("Share Current Media"))
+        ShareButtonMenu.install(
+            on: button, providesMenu: true,
+            build: { [weak self] in self?.shareMenuForCenteredCard(from: button) },
+            fallback: { [weak self] in
+                guard let self,
+                      let slot = self.slotIndex(forCarouselIndex: self.carousel.currentIndex),
+                      let item = self.mediaItem(forSlot: slot)
+                else { return }
+                self.share(item, sourceView: button)
+            })
+    }
+
+    private func shareMenuForCenteredCard(from sourceView: UIView) -> UIMenu? {
+        guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex),
+              let item = mediaItem(forSlot: slot)
+        else { return nil }
+        return MediaItemActions.shareMenu(
+            for: item, presenter: self, sourceView: sourceView,
+            shareFile: { [weak self] in self?.share(item, sourceView: sourceView) })
+    }
+
+    #if DEBUG
+    /// The menu the trailing circle would present right now, for tests.
+    var shareMenuForTesting: UIMenu? {
+        shareMenuForCenteredCard(from: trailingBottomButton)
+    }
+    #endif
 
     private func share(_ item: SavedMediaItem, sourceIndex: Int) {
         share(item, sourceView: carousel.cardView(at: sourceIndex) ?? trailingBottomButton)
@@ -558,13 +595,12 @@ extension SavedMediaCardsViewController: CardDeckProviding {
             unavailability: .hides)
     }
 
-    /// There is nothing to hand the system until the file is actually here.
+    /// The LINK is shareable in every storage state — only the file row of the
+    /// menu waits for a download — so the circle shows for any media card. A
+    /// failed-save card keeps its share verbs in its own context menu.
     func deckCanShare(slot: Int?) -> Bool {
-        guard let slot, let item = mediaItem(forSlot: slot) else { return false }
-        switch item.storageState {
-        case .localFile, .photosReference: return true
-        case .undownloaded: return false
-        }
+        guard let slot else { return false }
+        return mediaItem(forSlot: slot) != nil
     }
 
     func deckShare(slot: Int, sourceView: UIView) {

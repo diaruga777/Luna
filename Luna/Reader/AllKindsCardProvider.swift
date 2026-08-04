@@ -99,6 +99,23 @@ final class AllKindsCardProvider: AllKindsCardProviding {
             })
     }
 
+    /// The deck's trailing circle, offered the same ladder the Downloader's own
+    /// circle hangs on this row: Copy link / Share link over the original saved
+    /// URL, then the file itself once one exists. Nil for a save with no media
+    /// row, which keeps the pill hidden there.
+    func shareMenu(
+        for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
+    ) -> UIMenu? {
+        guard let media = media(for: item) else { return nil }
+        return MediaItemActions.shareMenu(
+            for: media, presenter: presenter, sourceView: sourceView,
+            shareFile: { [weak presenter, weak sourceView] in
+                guard let presenter else { return }
+                Self.share(
+                    media, from: presenter, sourceView: sourceView ?? presenter.view)
+            })
+    }
+
     /// The whole save goes when the card does: the downloaded file, its Photos
     /// asset, and the auto-download bookkeeping that would otherwise treat the
     /// URL as already fetched. The reading-list row itself is the CARD here, and

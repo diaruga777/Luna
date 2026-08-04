@@ -22,12 +22,15 @@ final class RSVPEngineTests: XCTestCase {
     }
 
     func testORPIndexByLength() {
-        XCTAssertEqual(RSVPEngine.orpIndex(forLength: 1), 0)
-        XCTAssertEqual(RSVPEngine.orpIndex(forLength: 2), 1)
-        XCTAssertEqual(RSVPEngine.orpIndex(forLength: 5), 1)
-        XCTAssertEqual(RSVPEngine.orpIndex(forLength: 6), 2)
-        XCTAssertEqual(RSVPEngine.orpIndex(forLength: 9), 2)
-        XCTAssertEqual(RSVPEngine.orpIndex(forLength: 14), 3)
+        let cases: [(length: Int, orp: Int)] = [
+            (1, 0), (2, 1), (5, 1), (6, 2), (9, 2), (14, 3),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                RSVPEngine.orpIndex(forLength: testCase.length),
+                testCase.orp,
+                "length \(testCase.length)")
+        }
     }
 
     func testSentenceAndParagraphFlags() {
@@ -38,10 +41,25 @@ final class RSVPEngineTests: XCTestCase {
         XCTAssertTrue(engine.words[3].endsParagraph)   // "Next"
     }
 
-    func testBaseDurationMatchesWPM() {
-        let engine = RSVPEngine(content: makeContent(["abc abc"]))
-        // Plain short word at 300 wpm = 200ms.
-        XCTAssertEqual(engine.duration(at: 0, wpm: 300), 0.2, accuracy: 0.0001)
+    /// Word duration at 300 wpm, in multiples of the plain-short-word base (200ms):
+    /// clause and sentence ends dwell, a paragraph end dwells longest.
+    func testWordDurationsAtStandardWPM() {
+        let base = 0.2
+        let cases: [(name: String, paragraphs: [String], index: Int, expected: Double)] = [
+            ("plain short word = 200ms", ["abc abc"], 0, base),
+            ("plain word in a mixed block", ["word word. word, word"], 0, base),
+            ("sentence end dwells 1.8×", ["word word. word, word"], 1, base * 1.8),
+            ("clause end dwells 1.3×", ["word word. word, word"], 2, base * 1.3),
+            ("paragraph end dwells 2.5×", ["one two", "three"], 1, base * 2.5),
+        ]
+        for testCase in cases {
+            let engine = RSVPEngine(content: makeContent(testCase.paragraphs))
+            XCTAssertEqual(
+                engine.duration(at: testCase.index, wpm: 300),
+                testCase.expected,
+                accuracy: 0.0001,
+                testCase.name)
+        }
     }
 
     func testLongWordsShowLonger() {
@@ -51,21 +69,6 @@ final class RSVPEngineTests: XCTestCase {
         let long = engine.duration(at: 2, wpm: 300)
         XCTAssertGreaterThan(medium, short)
         XCTAssertGreaterThanOrEqual(long, medium)
-    }
-
-    func testSentenceEndPausesLonger() {
-        let engine = RSVPEngine(content: makeContent(["word word. word, word"]))
-        let plain = engine.duration(at: 0, wpm: 300)
-        let sentenceEnd = engine.duration(at: 1, wpm: 300)
-        let clauseEnd = engine.duration(at: 2, wpm: 300)
-        XCTAssertEqual(sentenceEnd, plain * 1.8, accuracy: 0.0001)
-        XCTAssertEqual(clauseEnd, plain * 1.3, accuracy: 0.0001)
-    }
-
-    func testParagraphEndPausesLongest() {
-        let engine = RSVPEngine(content: makeContent(["one two", "three"]))
-        let paragraphEnd = engine.duration(at: 1, wpm: 300)
-        XCTAssertEqual(paragraphEnd, 0.2 * 2.5, accuracy: 0.0001)
     }
 
     func testDefaultDoesNotSplitLongWords() {
@@ -107,38 +110,26 @@ final class RSVPEngineTests: XCTestCase {
 
     // MARK: - Skip target math
 
-    func testSkipForwardMovesExactly25Words() {
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 10, by: 25, wordCount: 100), 35)
-    }
-
-    func testSkipBackwardMovesExactly25Words() {
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 40, by: -25, wordCount: 100), 15)
-    }
-
-    func testSkipForwardClampsToLastWord() {
-        // 90 + 25 = 115, but the last valid index is 99.
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 90, by: 25, wordCount: 100), 99)
-    }
-
-    func testSkipBackwardClampsToZero() {
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 10, by: -25, wordCount: 100), 0)
-    }
-
-    func testSkipAtLastWordForwardStaysPut() {
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 99, by: 25, wordCount: 100), 99)
-    }
-
-    func testSkipAtFirstWordBackwardStaysPut() {
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: -25, wordCount: 100), 0)
-    }
-
-    func testSkipInShortDocumentClampsToLastWord() {
-        // Fewer than 25 words: a forward skip lands on the final word.
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: 25, wordCount: 5), 4)
-    }
-
-    func testSkipInEmptyDocumentClampsToZero() {
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: 25, wordCount: 0), 0)
-        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: -25, wordCount: 0), 0)
+    func testSkipTargetMath() {
+        let cases: [(name: String, index: Int, by: Int, wordCount: Int, expected: Int)] = [
+            ("forward moves exactly 25 words", 10, 25, 100, 35),
+            ("backward moves exactly 25 words", 40, -25, 100, 15),
+            // 90 + 25 = 115, but the last valid index is 99.
+            ("forward clamps to the last word", 90, 25, 100, 99),
+            ("backward clamps to zero", 10, -25, 100, 0),
+            ("at the last word, forward stays put", 99, 25, 100, 99),
+            ("at the first word, backward stays put", 0, -25, 100, 0),
+            // Fewer than 25 words: a forward skip lands on the final word.
+            ("short document clamps to the last word", 0, 25, 5, 4),
+            ("empty document, forward", 0, 25, 0, 0),
+            ("empty document, backward", 0, -25, 0, 0),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                RSVPEngine.skipTarget(
+                    currentIndex: testCase.index, by: testCase.by, wordCount: testCase.wordCount),
+                testCase.expected,
+                testCase.name)
+        }
     }
 }

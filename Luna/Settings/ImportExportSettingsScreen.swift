@@ -124,12 +124,35 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
 
     private func presentReview(for document: LinkListDocument) {
         guard !document.isEmpty else {
-            presentInfoAlert(
-                title: L10n.string("No Links Found"),
-                message: L10n.string("That file didn't contain any links Luna could read."))
+            presentWhenClear(
+                infoAlert(
+                    title: L10n.string("No Links Found"),
+                    message: L10n.string("That file didn't contain any links Luna could read.")))
             return
         }
-        present(LinkImportSheetViewController(document: document), animated: true)
+        presentWhenClear(LinkImportSheetViewController(document: document))
+    }
+
+    /// Presents once nothing else is up.
+    ///
+    /// The document picker dismisses ITSELF after handing over its result, so a
+    /// plain `present` racing that animation is silently dropped — the user picks
+    /// a file and nothing happens. This makes the review sheet's appearance
+    /// unconditional.
+    private func presentWhenClear(_ viewController: UIViewController) {
+        guard let presented = presentedViewController else {
+            present(viewController, animated: true)
+            return
+        }
+        presented.dismiss(animated: false) { [weak self] in
+            self?.present(viewController, animated: true)
+        }
+    }
+
+    private func infoAlert(title: String, message: String) -> UIAlertController {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        return alert
     }
 }
 
@@ -147,10 +170,11 @@ extension ImportExportSettingsScreen: UIDocumentPickerDelegate {
             DispatchQueue.main.async {
                 guard let self else { return }
                 guard let document else {
-                    self.presentInfoAlert(
-                        title: L10n.string("Couldn't Read That File"),
-                        message: L10n.string(
-                            "Luna couldn't open it as text. Pick a CSV or plain-text file."))
+                    self.presentWhenClear(
+                        self.infoAlert(
+                            title: L10n.string("Couldn't Read That File"),
+                            message: L10n.string(
+                                "Luna couldn't open it as text. Pick a CSV or plain-text file.")))
                     return
                 }
                 self.presentReview(for: document)

@@ -3,11 +3,14 @@
 //  LunaTests
 //
 //  Covers ScrollReaderViewController.makeHighlightShareText — the pure formatter
-//  behind the reader's "highlight and share" text-selection action.
+//  behind the reader's "highlight and share" text-selection action (which Copy
+//  goes through too, via QuotingTextView) — and the pure rule deciding when a
+//  sentence long-press expands the selection immediately.
 //
 
 import LunaReaderUI
 import LunaModels
+import UIKit
 import XCTest
 
 final class HighlightShareTextTests: XCTestCase {
@@ -57,5 +60,99 @@ final class HighlightShareTextTests: XCTestCase {
             quote: "Bare.", item: item)
 
         XCTAssertEqual(text, "Bare.")
+    }
+
+    // MARK: - Copy goes through the same formatter
+
+    /// A selected passage's Copy is handed to the reader, which formats it exactly
+    /// as Share does. UIKit's plain-text copy is NOT what runs.
+    func testCopyWithASelectionAsksTheReaderForTheQuote() {
+        let textView = QuotingTextView(usingTextLayoutManager: false)
+        textView.text = "One sentence. Another one."
+        textView.selectedRange = NSRange(location: 0, length: 13)
+        var asked: [NSRange] = []
+        textView.copySelectionAsQuote = { range in
+            asked.append(range)
+            return true
+        }
+
+        textView.copy(nil)
+
+        XCTAssertEqual(asked, [NSRange(location: 0, length: 13)])
+    }
+
+    /// With nothing selected there is no quote to make, so the copy falls straight
+    /// through to UIKit.
+    func testCopyWithoutASelectionFallsThroughToTheSystem() {
+        let textView = QuotingTextView(usingTextLayoutManager: false)
+        textView.text = "One sentence."
+        textView.selectedRange = NSRange(location: 4, length: 0)
+        var asked = false
+        textView.copySelectionAsQuote = { _ in
+            asked = true
+            return true
+        }
+
+        textView.copy(nil)
+
+        XCTAssertFalse(asked)
+    }
+
+    /// A reader that declines the range (a bad range) also falls through rather
+    /// than leaving the user with nothing on the pasteboard.
+    func testCopyFallsThroughWhenTheReaderDeclines() {
+        let textView = QuotingTextView(usingTextLayoutManager: false)
+        textView.text = "One sentence."
+        textView.selectedRange = NSRange(location: 0, length: 3)
+        textView.copySelectionAsQuote = { _ in false }
+
+        // Nothing to assert beyond "it didn't trap" — the system copy path runs.
+        textView.copy(nil)
+    }
+
+    // MARK: - When the long press expands the selection itself
+
+    /// The ordinary order: the press lands before the text view has selected
+    /// anything, so the NEXT selection change is the one to snap.
+    func testLongPressWithNoSelectionArmsTheNextChange() {
+        XCTAssertEqual(
+            ScrollReaderViewController.sentenceLongPressAction(
+                caret: 12, selection: NSRange(location: 12, length: 0)),
+            .armNextSelectionChange)
+    }
+
+    /// The card order: the word under the finger is ALREADY selected by the time
+    /// the press fires, so it expands immediately — waiting would wait forever.
+    func testLongPressOverAnAlreadySelectedWordExpandsImmediately() {
+        XCTAssertEqual(
+            ScrollReaderViewController.sentenceLongPressAction(
+                caret: 6, selection: NSRange(location: 4, length: 8)),
+            .expandNow(caret: 6))
+    }
+
+    /// A press on a word's trailing half resolves to the position AFTER its last
+    /// glyph, which is still that word's selection.
+    func testLongPressAtTheSelectionsEndBoundaryExpandsImmediately() {
+        XCTAssertEqual(
+            ScrollReaderViewController.sentenceLongPressAction(
+                caret: 12, selection: NSRange(location: 4, length: 8)),
+            .expandNow(caret: 12))
+    }
+
+    /// A selection left over from an earlier press elsewhere in the article is not
+    /// this press's, so it is left alone.
+    func testLongPressAwayFromAStaleSelectionArmsTheNextChange() {
+        XCTAssertEqual(
+            ScrollReaderViewController.sentenceLongPressAction(
+                caret: 400, selection: NSRange(location: 4, length: 8)),
+            .armNextSelectionChange)
+    }
+
+    /// Empty text has no caret at all.
+    func testLongPressWithNoCaretArmsTheNextChange() {
+        XCTAssertEqual(
+            ScrollReaderViewController.sentenceLongPressAction(
+                caret: nil, selection: NSRange(location: 0, length: 0)),
+            .armNextSelectionChange)
     }
 }

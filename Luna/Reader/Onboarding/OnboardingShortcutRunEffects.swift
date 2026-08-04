@@ -402,32 +402,33 @@ final class OnboardingMockTapIndicatorView: UIView {
     }
 }
 
-/// The mock "Read in Luna" action-extension presentation: the standard
-/// extension sheet slides up over the conversation with the scrolling reader
-/// inside, showing the same article the Safari mock just cleaned up.
+/// The extension sheet the save lesson slides up over the conversation.
 ///
-/// The header matches the real extension's compact reader chrome
-/// (`ReaderViewController` under a nav controller): Done on the left, the mode
-/// switcher in the title slot, read-aloud on the right. It uses the SAME
-/// `LunaSegmentedControl` and `ReaderModeIcons` the reader does, so the mock
-/// can't drift from the screen it is impersonating. Two segments, not three:
-/// the action extension persists no page archive, so `.original` is never
-/// offered there (`ReaderViewController.baseModes`).
-final class OnboardingActionExtensionSheetView: UIView {
+/// It is CHROME ONLY: the scrim, the rounded top-corner card, the grabber, and
+/// the two spring/ease curves iOS presents and dismisses a sheet with. What goes
+/// inside is the REAL `ShareViewController` — same ingest, same per-kind
+/// presenters, same errors — mounted as a child view controller by
+/// `OnboardingSaveDemoController`.
+///
+/// It replaced a hand-drawn fake of the action extension's reader: a card that
+/// impersonated `ReaderViewController`'s compact chrome down to its segmented
+/// control, held a bundled article for a fixed 1.0s, and could drift from the
+/// screen it was pretending to be at any time. The container survived that
+/// deletion because its geometry and timing were the only parts that were ever
+/// real.
+final class OnboardingHostedShareSheetView: UIView {
     private let scrim = UIView()
     private let card = UIView()
     private let grabber = UIView()
-    private let doneChip = UILabel()
-    private let modeControl = LunaSegmentedControl()
-    private let audioButton = UIButton(type: .system)
-    private let titleLabel = UILabel()
-    private let bylineLabel = UILabel()
-    private let eclipseImage = UIImageView()
-    private let bodyLabel = UILabel()
-    private let bottomFade = CAGradientLayer()
+
+    /// Where the hosted surface's view goes. Inset nothing — the surface owns its
+    /// whole card, exactly as it owns the whole extension sheet.
+    let content = UIView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        // Nothing here is tappable: the lesson is a demonstration, and a stray
+        // touch must not reach a real reader's Done button.
         isUserInteractionEnabled = false
         accessibilityIdentifier =
             OnboardingStrings.Accessibility.messagesExtensionSheet.value()
@@ -443,148 +444,58 @@ final class OnboardingActionExtensionSheetView: UIView {
         card.clipsToBounds = true
         addSubview(card)
 
+        card.addSubview(content)
+
         grabber.backgroundColor = UIColor.white.withAlphaComponent(0.28)
         grabber.layer.cornerRadius = 2.5
         card.addSubview(grabber)
-
-        // A nav-bar Done: plain tinted text on the leading edge, not a chip.
-        doneChip.text = OnboardingStrings.Instruction.done.value()
-        doneChip.font = .systemFont(ofSize: 17, weight: .semibold)
-        doneChip.textColor = GlassStyle.readingAccent
-        doneChip.textAlignment = .left
-        card.addSubview(doneChip)
-
-        for (index, mode) in Self.extensionReaderModes.enumerated() {
-            modeControl.insertSegment(
-                with: ReaderModeIcons.image(for: mode), at: index, animated: false)
-        }
-        // The extension opens in the scrolling reader unless its own last-used
-        // mode says otherwise; the demonstration always shows that first open.
-        modeControl.selectedSegmentIndex = 0
-        card.addSubview(modeControl)
-
-        // Read-aloud rests off, exactly as it does on a freshly opened article.
-        audioButton.setImage(
-            UIImage(systemName: "speaker.slash"), for: .normal)
-        audioButton.tintColor = GlassStyle.readingAccent
-        card.addSubview(audioButton)
-
-        titleLabel.text = OnboardingLunaArticleCopy.title
-        titleLabel.font = .systemFont(ofSize: 27, weight: .bold)
-        titleLabel.textColor = .white
-        titleLabel.numberOfLines = 2
-        card.addSubview(titleLabel)
-
-        bylineLabel.text = OnboardingLunaArticleCopy.byline
-        bylineLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        bylineLabel.textColor = UIColor.white.withAlphaComponent(0.55)
-        card.addSubview(bylineLabel)
-
-        if let path = Bundle.main.path(
-            forResource: "LunaEclipseComposite", ofType: "jpg")
-        {
-            eclipseImage.image = UIImage(contentsOfFile: path)
-        }
-        eclipseImage.contentMode = .scaleAspectFill
-        eclipseImage.layer.cornerRadius = 12
-        eclipseImage.layer.cornerCurve = .continuous
-        eclipseImage.clipsToBounds = true
-        card.addSubview(eclipseImage)
-
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = 5
-        bodyLabel.attributedText = NSAttributedString(
-            string: OnboardingLunaArticleCopy.plainText,
-            attributes: [
-                .font: UIFont.systemFont(ofSize: 17),
-                .foregroundColor: UIColor.white.withAlphaComponent(0.92),
-                .paragraphStyle: style,
-            ])
-        bodyLabel.numberOfLines = 0
-        card.addSubview(bodyLabel)
-
-        // The article continues past the sheet; a fade says "scrollable".
-        bottomFade.colors = [
-            UIColor.black.withAlphaComponent(0).cgColor,
-            UIColor.black.cgColor,
-        ]
-        bottomFade.locations = [0, 1]
-        card.layer.addSublayer(bottomFade)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
     /// The top edge of the presented card.
-    private static let cardTop: CGFloat = 66
+    static let cardTop: CGFloat = 66
 
-    /// What the action extension's reader offers. It persists no page archive,
-    /// so `.original` never appears there.
-    private static let extensionReaderModes: [ReadingListItem.ReaderMode] =
-        [.scroll, .rsvp]
+    /// The card's frame in this view's own space — what a playback overlay has to
+    /// cover to sit exactly over the sheet.
+    var cardFrame: CGRect {
+        CGRect(
+            x: 0,
+            y: Self.cardTop,
+            width: bounds.width,
+            height: max(bounds.height - Self.cardTop, 0))
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         scrim.frame = bounds
         // The card animates via its transform (present/dismiss slides), and a
-        // layout pass can land mid-animation — setting `frame` on a
-        // transformed view corrupts its geometry (that read as the sheet
-        // "popping" to the top mid-dismiss). bounds+center are transform-safe.
+        // layout pass can land mid-animation — setting `frame` on a transformed
+        // view corrupts its geometry (that read as the sheet "popping" to the top
+        // mid-dismiss). bounds+center are transform-safe.
         card.bounds = CGRect(
-            x: 0,
-            y: 0,
-            width: bounds.width,
-            height: bounds.height - Self.cardTop)
-        card.center = CGPoint(
-            x: bounds.midX,
-            y: Self.cardTop + card.bounds.height / 2)
+            x: 0, y: 0, width: bounds.width, height: cardFrame.height)
+        card.center = CGPoint(x: bounds.midX, y: cardFrame.midY)
+        content.frame = card.bounds
         grabber.frame = CGRect(
             x: (card.bounds.width - 36) / 2, y: 6, width: 36, height: 5)
-        let inset: CGFloat = 24
-        let width = card.bounds.width - inset * 2
-        // One nav-bar row: Done leading, mode switcher centred, audio trailing.
-        let barMidY: CGFloat = 34
-        doneChip.frame = CGRect(x: 16, y: barMidY - 12, width: 70, height: 24)
-        let modeSize = modeControl.intrinsicContentSize
-        modeControl.frame = CGRect(
-            x: (card.bounds.width - modeSize.width) / 2,
-            y: barMidY - modeSize.height / 2,
-            width: modeSize.width,
-            height: modeSize.height)
-        audioButton.frame = CGRect(
-            x: card.bounds.width - 16 - 34, y: barMidY - 17,
-            width: 34, height: 34)
-        titleLabel.frame = CGRect(
-            x: inset, y: barMidY + 26, width: width, height: 66)
-        bylineLabel.frame = CGRect(
-            x: inset, y: titleLabel.frame.maxY + 6, width: width, height: 18)
-        eclipseImage.frame = CGRect(
-            x: inset,
-            y: bylineLabel.frame.maxY + 14,
-            width: width,
-            height: (width * 708 / 1920).rounded())
-        bodyLabel.frame = CGRect(
-            x: inset,
-            y: eclipseImage.frame.maxY + 14,
-            width: width,
-            height: card.bounds.height - eclipseImage.frame.maxY - 14)
-        bottomFade.frame = CGRect(
-            x: 0,
-            y: card.bounds.height - 96,
-            width: card.bounds.width,
-            height: 96)
+        // Above the surface's own content, as a real sheet's grabber is.
+        card.bringSubviewToFront(grabber)
     }
 
     func present(completion: @escaping () -> Void) {
         layoutIfNeeded()
         if UIAccessibility.isReduceMotionEnabled {
             alpha = 0
+            card.transform = .identity
             UIView.animate(withDuration: 0.22, animations: {
                 self.alpha = 1
                 self.scrim.alpha = 1
             }) { _ in completion() }
             return
         }
+        alpha = 1
         card.transform = CGAffineTransform(
             translationX: 0, y: bounds.height - Self.cardTop)
         UIView.animate(
@@ -621,6 +532,17 @@ final class OnboardingActionExtensionSheetView: UIView {
         } completion: { _ in
             completion()
         }
+    }
+
+    /// Returns the sheet to its hidden resting state without animating, so the
+    /// surface inside keeps working while nothing of it is on screen.
+    func hideImmediately() {
+        layer.removeAllAnimations()
+        card.layer.removeAllAnimations()
+        alpha = 0
+        scrim.alpha = 0
+        card.transform = CGAffineTransform(
+            translationX: 0, y: max(bounds.height - Self.cardTop, 0))
     }
 }
 

@@ -393,8 +393,8 @@ the two mechanisms on the same intent type. Used for: the double-save
 
 ## Action Button setup
 
-The iOS 27+ Action Button is set up from the permanent util card and can be
-replayed from Settings. Its first state imports the bundled
+The Action Button — iOS 27 **and** hardware that has one — is set up from the
+permanent util card and can be replayed from Settings. Its first state imports the bundled
 `Send To Luna.shortcut`; once opened, the setup action assumes installation and
 becomes “One more step! Set your action button to {App Name}.” Open Settings
 starts the per-surface PiP guide and opens Settings at its root. The action remains
@@ -436,7 +436,11 @@ User setup:
    prompts to allow sharing app info with Luna; choose Always Allow.
 3. Settings → Action Button → Shortcut → pick "Send To Luna".
 
-The Action Button shortcut setup section is hidden below iOS 27. The onboarding
+Settings' Action Button shortcut sections (the install rows, On-Screen URLs, Double
+Save) are hidden unless `ShortcutSettingsScreen.deviceHasShortcutSetup` — iOS 27 AND
+known Action Button hardware, asked of the same `OnboardingSaveSetupMode` the
+onboarding lesson asks, so the two never disagree. The Safari extension is NOT part
+of that gate and stays on every OS. The onboarding
 Messages lesson also requires known Action Button hardware; otherwise it teaches
 the ordinary two-tap share/action-extension route and verifies it with a separate
 App-Group marker (see `reader-onboarding.md`). Action Button can't be assigned

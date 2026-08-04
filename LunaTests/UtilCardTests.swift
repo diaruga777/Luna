@@ -4,6 +4,7 @@
 //
 
 import CryptoKit
+import LunaDesignSystem
 import LunaModels
 import LunaStorage
 import LunaWeekly
@@ -162,6 +163,63 @@ final class UtilCardTests: XCTestCase {
         let fragments = try XCTUnwrap(headline.growingLine?.fragments)
         XCTAssertFalse(fragments.stem.isFullyRevealed)
         XCTAssertFalse(fragments.tail.isFullyRevealed)
+    }
+
+    // MARK: - The headline speaks first
+
+    /// On the launch that animates the sweep, everything below the headline
+    /// waits invisible for the group reveal that follows the bloom.
+    func testTheLaunchsOwnIntroHoldsEveryOtherElementBehindTheHeadline() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: true)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+
+        let paste = try XCTUnwrap(card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introPaste.value()))
+        XCTAssertEqual(paste.alpha, 0)
+        for button in card.view.descendants(of: UIButton.self)
+        where button.superview === card.view {
+            XCTAssertEqual(button.alpha, 0)
+        }
+        let headline = try XCTUnwrap(
+            card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
+        XCTAssertEqual(headline.alpha, 1, "The headline is what everyone waits on")
+    }
+
+    /// Any appearance that does not animate the sweep owes nobody a wait.
+    func testANonAnimatingAppearanceShowsItsElementsImmediately() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: false)
+        card.loadViewIfNeeded()
+
+        let paste = try XCTUnwrap(card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introPaste.value()))
+        XCTAssertEqual(paste.alpha, 1)
+        for button in card.view.descendants(of: UIButton.self)
+        where button.superview === card.view {
+            XCTAssertEqual(button.alpha, 1)
+        }
+    }
+
+    /// A weekly value landing while the headline is still speaking takes its
+    /// slot silently and joins the group fade instead of fading in on its own.
+    func testAWeeklyValueArrivingMidSweepWaitsForTheGroupReveal() throws {
+        let card = makeCard(showsOnboarding: true, animatesIntro: true)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+        let host = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.weeklyHost"))
+        XCTAssertTrue(host.isHidden)
+
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let deadline = Date().addingTimeInterval(2)
+        while host.isHidden, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+
+        XCTAssertFalse(host.isHidden, "The slot is claimed while invisible")
+        XCTAssertEqual(host.alpha, 0, "Its alpha belongs to the group reveal")
     }
 
     // MARK: - Layout
@@ -458,17 +516,87 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(savedSource, .manual)
     }
 
-    func testTheSubtitleNamesTheAppsNounAndItsAgeTier() throws {
+    /// The noun lives in the corner flag, not in the subtitle — which is now the
+    /// host and nothing else, so it has the whole row's width to spell it out.
+    func testTheCornerFlagNamesTheAppsNounAndItsAgeTier() throws {
         seedWeekly(.article, url: "https://example.com/a", title: "A Read")
-        let week = try XCTUnwrap(weeklyRowSubtitle(app: .reader))
-        XCTAssertTrue(week.hasSuffix("Read of the week"), week)
+        let week = try XCTUnwrap(weeklyRowFlagText(app: .reader))
+        XCTAssertEqual(week, "Read of the week")
 
         clock = clock.addingTimeInterval(10 * 86_400)
-        let month = try XCTUnwrap(weeklyRowSubtitle(app: .reader))
-        XCTAssertTrue(month.hasSuffix("Read of the month"), month)
+        let month = try XCTUnwrap(weeklyRowFlagText(app: .reader))
+        XCTAssertEqual(month, "Read of the month")
 
-        let central = try XCTUnwrap(weeklyRowSubtitle(app: .luna))
-        XCTAssertTrue(central.hasSuffix("Save of the month"), central)
+        let central = try XCTUnwrap(weeklyRowFlagText(app: .luna))
+        XCTAssertEqual(central, "Save of the month")
+    }
+
+    func testTheSubtitleIsTheHostAloneWithNoWeeklyPhraseBesideIt() {
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let hostLabels = weeklyRowLabelTexts(app: .reader)
+            .filter { $0.contains("example.com") }
+        XCTAssertEqual(hostLabels, ["example.com"])
+    }
+
+    /// The flag is a band across the row's top, not a sticker on the artwork —
+    /// it used to overhang the thumbnail by a few points on purpose.
+    func testTheCornerFlagClearsTheArtworkItLabels() throws {
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let card = makeCard(showsOnboarding: false, app: .reader)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+
+        let row = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        let flag = try XCTUnwrap(
+            row.descendant(identifier: "utilCard.weeklyRibbon"))
+        let artwork = try XCTUnwrap(row.descendants(of: UIImageView.self).first)
+
+        XCTAssertEqual(row.bounds.height, UtilCardLayout.weeklyRowHeight)
+        XCTAssertEqual(flag.frame.height, WeeklyRibbonView.height)
+        XCTAssertLessThanOrEqual(flag.frame.maxY, artwork.frame.minY)
+        // And the artwork is still centred in the row: at this height clearing
+        // the flag costs it nothing.
+        XCTAssertEqual(
+            artwork.frame.midY, row.bounds.midY, accuracy: 0.5)
+    }
+
+    /// The trailing edge is ONE arc: it leaves the bottom edge and rises to the
+    /// top without turning back, which is exactly what the old swallowtail did.
+    func testTheCornerFlagsTrailingEdgeIsOneArcRatherThanANotch() throws {
+        let rect = CGRect(x: 0, y: 0, width: 120, height: WeeklyRibbonView.height)
+        let path = WeeklyRibbonView.pennantPath(in: rect)
+        let edges = stride(from: rect.minY + 0.5, to: rect.maxY, by: 1)
+            .map { trailingEdgeX(of: path, at: $0, in: rect) }
+
+        XCTAssertGreaterThan(edges.count, 10)
+        for (upper, lower) in zip(edges, edges.dropFirst()) {
+            XCTAssertLessThanOrEqual(lower, upper + 0.01, "the edge doubled back")
+        }
+        // It reaches the top edge, and has visibly swept in by the bottom one.
+        let top = try XCTUnwrap(edges.first)
+        let bottom = try XCTUnwrap(edges.last)
+        XCTAssertEqual(top, rect.maxX, accuracy: 1)
+        XCTAssertGreaterThan(top - bottom, 6)
+    }
+
+    /// The fill used to be the palette at full strength — bright enough that two
+    /// of the four had to letter in black to stay legible. Dimmed into the row's
+    /// own black, every one of them is a quiet patch that carries white.
+    func testEveryAppsFlagIsDimmedFarEnoughBelowItsLettering() {
+        let surfaces: [LunaSurfacePalette.Surface] =
+            [.luna, .reader, .downloader, .priceTracker]
+        for surface in surfaces {
+            let fill = WeeklyRibbonView.fillColor(for: surface)
+            let base = LunaSurfacePalette.baseColor(for: surface)
+            XCTAssertLessThan(
+                relativeLuminance(fill), relativeLuminance(base) * 0.4,
+                "\(surface) flag is still as bright as its palette")
+            XCTAssertGreaterThan(
+                contrastRatio(WeeklyRibbonView.textColor, fill), 4.5,
+                "\(surface) flag cannot carry white lettering")
+        }
     }
 
     func testTheRowAppearsLiveWhenTheStoreGainsAValue() {
@@ -502,6 +630,93 @@ final class UtilCardTests: XCTestCase {
         XCTAssertNotNil(central.view.descendant(identifier: "utilCard.saveOfTheWeek"))
     }
 
+    // MARK: - The completed card's horizon
+
+    /// Post-onboarding the pick of the week rides at its own seat, half the
+    /// height of the one the intro headline had — it is not the first entry of
+    /// the history list, and the seam below it is far wider than the one
+    /// between two history rows.
+    func testCompletedCardSeatsTheWeeklyRowAtHalfTheHeadlinesSeatAboveTheRecents() throws {
+        seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
+        let card = makeCard(
+            showsOnboarding: false,
+            recents: [recent("a"), recent("b")])
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let weeklyRow = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        let weekly = weeklyRow.convert(weeklyRow.bounds, to: card.view)
+        let recents = visibleRecentRows(in: card)
+        XCTAssertEqual(recents.count, 2)
+
+        XCTAssertEqual(
+            weekly.minY,
+            (card.view.bounds.height * UtilCardLayout.weeklyTopRatio).rounded())
+        XCTAssertEqual(
+            UtilCardLayout.weeklyTopRatio, UtilCardLayout.headlineTopRatio / 2)
+        XCTAssertGreaterThan(recents[0].frame.minY, weekly.maxY)
+        let seam = recents[0].frame.minY - weekly.maxY
+        let betweenRecents = recents[1].frame.minY - recents[0].frame.maxY
+        XCTAssertGreaterThan(seam, betweenRecents)
+    }
+
+    /// No live pick, no seat to keep: history takes the whole card.
+    func testCompletedCardWithoutAWeeklyPickLetsTheRecentsReclaimTheTop() throws {
+        let card = makeCard(showsOnboarding: false, recents: [recent("a")])
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        XCTAssertNil(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        let recents = visibleRecentRows(in: card)
+        XCTAssertEqual(recents.first?.frame.minY, UtilCardLayout.recentsTop)
+    }
+
+    /// Luna's own pick wears the app's colour; raw history stays neutral.
+    func testTheWeeklyRowIsDressedApartFromAHistoryRow() throws {
+        seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
+        let card = makeCard(showsOnboarding: false, recents: [recent("a")])
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let weeklyRow = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UtilURLRow)
+        let recentRow = try XCTUnwrap(visibleRecentRows(in: card).first)
+        // The save transition's artwork is the row's own dressing, flattened.
+        let weekly = try XCTUnwrap(
+            weeklyRow.makeUtilCardSaveTransitionArtwork(in: card.view))
+        let history = try XCTUnwrap(
+            recentRow.makeUtilCardSaveTransitionArtwork(in: card.view))
+
+        XCTAssertNotNil(weekly.rimTint)
+        XCTAssertNil(history.rimTint)
+        XCTAssertNotEqual(weekly.backgroundColor, history.backgroundColor)
+        let traits = card.view.traitCollection
+        XCTAssertNotEqual(
+            weekly.subtitle?.textColor?.resolvedColor(with: traits),
+            history.subtitle?.textColor?.resolvedColor(with: traits))
+    }
+
+    private func visibleRecentRows(
+        in card: UtilCardContentViewController
+    ) -> [UtilURLRow] {
+        card.view.descendants(of: UtilURLRow.self)
+            .filter { $0.accessibilityIdentifier == "utilCard.recent" && !$0.isHidden }
+            .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    private func recent(_ path: String) -> RecentURLPreview {
+        RecentURLPreview(
+            urlString: "https://recent.example/\(path)",
+            title: "Recent \(path)",
+            subtitle: "recent.example",
+            kind: .article,
+            imageData: nil)
+    }
+
     // MARK: - Weekly helpers
 
     private func seedWeekly(
@@ -518,16 +733,59 @@ final class UtilCardTests: XCTestCase {
             for: kind)
     }
 
-    private func weeklyRowSubtitle(app: LunaApp) -> String? {
+    private func weeklyRowLabelTexts(app: LunaApp) -> [String] {
         let card = makeCard(showsOnboarding: false, app: app)
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
         card.view.layoutIfNeeded()
         guard let row = card.view.descendant(identifier: "utilCard.saveOfTheWeek") else {
-            return nil
+            return []
         }
         return row.descendants(of: UILabel.self).compactMap(\.text)
-            .first { $0.contains("•") }
+    }
+
+    /// The corner flag's own text.
+    private func weeklyRowFlagText(app: LunaApp) -> String? {
+        let card = makeCard(showsOnboarding: false, app: app)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+        return (card.view.descendant(identifier: "utilCard.weeklyRibbon")
+            as? WeeklyRibbonView)?.text
+    }
+
+    /// The x of the flag's trailing edge at one height, found by walking in from
+    /// the rect's own right edge until the shape claims the point.
+    private func trailingEdgeX(
+        of path: UIBezierPath, at y: CGFloat, in rect: CGRect
+    ) -> CGFloat {
+        var x = rect.maxX
+        while x > rect.minX {
+            if path.contains(CGPoint(x: x, y: y)) { return x }
+            x -= 0.25
+        }
+        return rect.minX
+    }
+
+    /// WCAG relative luminance, so "less bright" is measured rather than eyeballed.
+    private func relativeLuminance(_ color: UIColor) -> CGFloat {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return 0 }
+        let linear: (CGFloat) -> CGFloat = { channel in
+            channel <= 0.03928
+                ? channel / 12.92
+                : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    }
+
+    private func contrastRatio(_ one: UIColor, _ other: UIColor) -> CGFloat {
+        let a = relativeLuminance(one)
+        let b = relativeLuminance(other)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
     // MARK: - A save answers the first run
@@ -582,6 +840,35 @@ final class UtilCardTests: XCTestCase {
         XCTAssertTrue(store.isCompleted)
     }
 
+    /// The save lesson runs the REAL share surface, so it really does write a
+    /// row. That row must never answer the first run: the app would be completing
+    /// its own onboarding on the strength of a rehearsal it played to itself.
+    func testTheSaveLessonsOwnRehearsalNeverAnswersTheFirstRun() {
+        let rehearsal = UUID()
+        let other = UUID()
+        var saves: [UUID: Date] = [
+            rehearsal: Date(timeIntervalSince1970: 1_100),
+        ]
+        let store = makeStore { excluded in
+            saves.filter { $0.key != excluded }.values.max()
+        }
+        store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+
+        store.recordTemporarySave(identifier: rehearsal)
+        XCTAssertEqual(store.temporarySaveIdentifier, rehearsal)
+        XCTAssertFalse(store.markCompletedIfSavedSinceOnboardingStart())
+        XCTAssertFalse(store.isCompleted)
+
+        // A save from anywhere ELSE, while the rehearsal is still on disk, still
+        // answers it.
+        saves[other] = Date(timeIntervalSince1970: 1_200)
+        XCTAssertTrue(store.markCompletedIfSavedSinceOnboardingStart())
+        XCTAssertTrue(store.isCompleted)
+
+        store.clearTemporarySaveIdentifier()
+        XCTAssertNil(store.temporarySaveIdentifier)
+    }
+
     func testOnboardingStartIsStampedOnlyOnce() {
         let store = makeStore(newestSaveDate: { nil })
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
@@ -601,6 +888,12 @@ final class UtilCardTests: XCTestCase {
 
     private func makeStore(
         newestSaveDate: @escaping () -> Date?
+    ) -> AppOnboardingStore {
+        makeStore { _ in newestSaveDate() }
+    }
+
+    private func makeStore(
+        newestSaveDate: @escaping (UUID?) -> Date?
     ) -> AppOnboardingStore {
         AppOnboardingStore(
             app: .reader,
@@ -642,6 +935,7 @@ final class UtilCardTests: XCTestCase {
         store: AppOnboardingStore? = nil,
         app: LunaApp = .reader,
         saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut,
+        recents: [RecentURLPreview] = [],
         saveHandler: UtilCardContentViewController.SaveHandler? = nil
     ) -> UtilCardContentViewController {
         UtilCardContentViewController(
@@ -658,6 +952,7 @@ final class UtilCardTests: XCTestCase {
             savedURLStrings: { savedURLStrings },
             savedDates: { savedDates },
             isEmailConnected: { emailConnected },
+            recentMatches: { recents },
             saveHandler: saveHandler ?? { _, _, _, completion in completion(true) })
     }
 }

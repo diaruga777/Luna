@@ -40,6 +40,10 @@ import UIKit
 /// launch through its kind wiring), so this file stays free of media and
 /// price symbols while its deck still renders those saves the way their own
 /// app does — a downloaded video as the Downloader's player, not as a link.
+///
+/// This is an INNER seam, nested inside `CardDeckProviding`: this deck is the
+/// provider for the deck, and the protocol below is how the kinds it cannot
+/// name contribute to the cards it builds.
 protocol AllKindsCardProviding: AnyObject {
     /// The real card for a non-article save. Nil when there is nothing of the
     /// kind's own to show yet, leaving the deck's title-and-link card in place.
@@ -95,34 +99,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         includesAllKinds ? Self.cardProvider : nil
     }
 
-    private enum PasteboardCardState {
-        case placeholder(changeCount: Int)
-        case loading(changeCount: Int, urlString: String)
-        case candidate(changeCount: Int, candidate: PasteboardCandidate, item: ReadingListItem)
-        case invalid(changeCount: Int)
-
-        var changeCount: Int {
-            switch self {
-            case .placeholder(let count), .loading(let count, _),
-                 .candidate(let count, _, _), .invalid(let count):
-                return count
-            }
-        }
-
-        var fingerprint: String {
-            switch self {
-            case .placeholder(let count): return "placeholder|\(count)"
-            case .loading(let count, let url): return "loading|\(count)|\(url)"
-            case .candidate(let count, let candidate, _):
-                return "candidate|\(count)|\(candidate.urlString)|\(candidate.title)"
-            case .invalid(let count): return "invalid|\(count)"
-            }
-        }
-    }
-
     private let store = ReadingListStore.shared
-    private let settingsButton = UIButton(type: .system)
-    // Screen-level reader chrome (see mountTopChrome / mountBottomControls).
+    // Screen-level reader chrome (see mountTopChrome / configureTrailingBottomButton).
     private let readerChromeRow = UIView()
     /// The focused RSVP reader's eye-tracking toggle while this deck has
     /// adopted it into `readerChromeRow` (see `syncAdoptedEyeTrackingToggle`).
@@ -130,7 +108,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private let readerBackButton = UIButton(type: .system)
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
-    private let readerShareButton = UIButton(type: .system)
+    /// The deck's trailing bottom circle, dressed as the reader's share pill.
+    private var readerShareButton: UIButton { trailingBottomButton }
     private let footerContentFade = ReaderFooterContentFadeView()
     private weak var readerForChrome: ReaderChromeControlling?
     /// The reader's scroll indicator, hosted here (not inside the card) so it can
@@ -144,19 +123,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private var chromeModes: [ReadingListItem.ReaderMode] = []
     private var items: [ReadingListItem] = []
     private var archivedItems: [ReadingListItem] = []
-    private var appliedFingerprint: [String] = []
-    private var pasteboardState: PasteboardCardState?
-    /// Kept separate from the latest probe state so reload can map the centered
-    /// saved article through the old index space when a leading card appears.
-    private var renderedPasteboardState: PasteboardCardState?
-    private let pasteboardProbe = PasteboardLinkProbe()
-    private var pasteboardEvaluationTask: Task<Void, Never>?
-    private var isCommittingPasteboardCandidate = false
-    private var pendingPasteboardSavedID: UUID?
-    /// One-shot centering override used by archive choreography. Store writes
-    /// happen before the visual transition, then the synchronous reload places
-    /// the intended successor/restored item under the animation snapshot.
-    private var pendingTransitionCenteredID: UUID?
+    /// What `deckPreparedSnapshot` computed, waiting for the host to say the
+    /// reload is going ahead.
+    private var preparedItems: [ReadingListItem] = []
+    private var preparedArchivedItems: [ReadingListItem] = []
     /// An unarchive reload must not let normal pull-availability reconciliation
     /// snap the still-open tray shut before its coordinated dismissal begins.
     private var isAnimatingFromArchiveTray = false
@@ -164,6 +134,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// (wide screens only). Strongly held through containment; this reference is
     /// the flag "the deck is paired" that immersion, paging, and the trays check.
     private weak var inlineColumn: SplitWebOverlayViewController?
+
+    override var deckProvider: CardDeckProviding? { self }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -198,16 +170,16 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         style.contentEdgeFadeHeight = Self.contentEdgeFade
         carousel.style = style
         carousel.managesAudioSession = false   // Reader has its own audio stack.
-        carousel.dataSource = self
-        carousel.delegate = self
         // The header row and the flanking Settings/Share circles persist through
         // immersion — only the carousel's own chrome (side cards, scrub strip,
         // card rims) fades while reading.
-        mountCarousel()
+        mountDeck()
+    }
 
-        // Above the carousel (so it clears the card's clip) but below the
-        // screen chrome added by the mount* calls (so the header/footer pills
-        // stay on top). Host-positioned every layout — no Auto Layout.
+    /// Above the carousel (so it clears the card's clip) but below the screen
+    /// chrome the flanking circles add (so the header/footer pills stay on top).
+    /// Host-positioned every layout — no Auto Layout.
+    override func deckWillMountBottomControls() {
         cardScrollIndicator.isHidden = true
         view.addSubview(cardScrollIndicator)
 
@@ -217,98 +189,36 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         footerContentFade.alpha = 0
         footerContentFade.isUserInteractionEnabled = false
         view.addSubview(footerContentFade)
+    }
 
-        mountBottomControls()
+    override func deckDidMountBottomControls() {
+        mountModeSwitcher()
         mountTopChrome()
-        mountArchiveTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view]
-            },
-            canPull: { [weak self] in
-                guard let self, self.inlineColumn == nil else { return false }
-                let count = self.items.count + self.cardOffset
-                return count == 0 || self.carousel.currentIndex == count - 1
-            },
-            openStateChanged: { [weak self] open in
-                self?.readerAudioButton.isHidden = open
-                self?.carousel.setMuteButtonOccluded(open)
-            })
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .friendsListChanged, object: nil)
-        // A save can be committed by an extension or App Intent while this app
-        // is suspended, so no in-process `.readingListChanged` reaches this
-        // controller. Reload on foreground in addition to SceneDelegate's
-        // catch-up post: the shared-store stat check reads the new snapshot and
-        // `newSaveItemIndex` makes that new card take the carousel center.
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload),
-            name: UIApplication.willEnterForegroundNotification, object: nil)
-        // A media download finishing turns a placeholder card into a player,
-        // and it lands in a store this file cannot name.
-        for name in cardProvider?.changeNotificationNames ?? [] {
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(reload), name: name, object: nil)
-        }
-        // `reload()` must run synchronously here, before the async pasteboard probe:
-        // `store.items()` serves an in-memory cache, so this shows saved articles
-        // immediately instead of waiting on the probe's round-trip (a `detectPatterns`
-        // call).
-        reload()
     }
 
-    private func saveUtilCardURL(
-        _ urlString: String,
-        captureSource: CaptureSource,
-        sourceView: UIView,
-        completion: @escaping (Bool) -> Void
-    ) {
-        beginUtilCardSaveTransition(for: urlString, from: sourceView)
-        Task { @MainActor [weak self] in
-            let result = await ReadingListIngestor.shared.handleSavePress(
-                urlString: urlString, source: captureSource)
-            guard let self else { return }
-            let item: ReadingListItem?
-            switch result {
-            case .saved(let value), .sentToEreaders(let value),
-                 .sentToFriends(let value), .friendPromptRequested(let value),
-                 // In-app saves pass no double-save surface, so no export is
-                 // ever requested here — the item is what matters either way.
-                 .exportRequested(let value, _):
-                item = value
-            case .ignored:
-                item = self.store.item(forURLString: urlString)
-            case .unsupportedKind:
-                item = nil
-            }
-            guard let item else {
-                self.cancelUtilCardSaveTransition()
-                completion(false)
-                return
-            }
-            self.pendingPasteboardSavedID = item.id
-            self.reload()
-            self.view.layoutIfNeeded()
-            let destinationIndex = self.items.firstIndex { $0.id == item.id }
-                .map { $0 + self.cardOffset }
-            self.finishUtilCardSaveTransition(
-                to: destinationIndex.flatMap(self.carousel.cardView(at:)))
-            completion(destinationIndex != nil)
-        }
+    /// No tray pull while a second reader column is open beside the card.
+    override var deckAllowsArchivePull: Bool { inlineColumn == nil }
+
+    override func deckArchiveTrayOpenStateDidChange(_ open: Bool) {
+        readerAudioButton.isHidden = open
+        super.deckArchiveTrayOpenStateDidChange(open)
     }
+
+    override var deckReconcilesArchivePullOnReload: Bool { !isAnimatingFromArchiveTray }
+
+    /// The card AREA rests below the header row; the phone-shaped card then grows
+    /// back up into that clearance for its exact aspect (`cardFit`), so the row's
+    /// buttons float over the card's faded top edge rather than over the screen
+    /// background.
+    override class var carouselTopClearance: CGFloat { carouselTopInset }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: false)
-        // The card AREA rests below the header row; the phone-shaped card then
-        // grows back up into that clearance for its exact aspect (`cardFit`
-        // above), so the row's buttons float over the card's faded top edge
-        // rather than over the screen background.
-        applyCarouselTopInset(Self.carouselTopInset)
-        updateExternalReaderInsets()
         reconcileFooterContentFade()
+    }
+
+    override func deckCarouselInsetsDidChange() {
+        updateExternalReaderInsets()
     }
 
     /// The footer veil belongs to an immersed, bottom-extended reader and to
@@ -323,12 +233,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private func reconcileFooterContentFade() {
         guard !carousel.isImmersed, footerContentFade.alpha != 0 else { return }
         footerContentFade.alpha = 0
-    }
-
-    override func viewSafeAreaInsetsDidChange() {
-        super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset(Self.carouselTopInset)
-        updateExternalReaderInsets()
     }
 
     /// The height of the screen-level chrome row: it spans safeTop+4 …
@@ -553,7 +457,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// places, and a stored twin would only have to be remembered at each of
     /// them. Nil for every other card, which is also what hides the pill.
     private var lockedShareURLString: String? {
-        if renderedPasteboardState != nil, carousel.currentIndex == 0 { return nil }
         guard let index = articleIndex(forCarouselIndex: carousel.currentIndex),
               items.indices.contains(index)
         else { return nil }
@@ -629,23 +532,20 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         updateReaderChrome()
     }
 
-    /// Flanks the title scrubber with Settings and Share. The strip's bounds
-    /// meet the buttons' inner edges and its chips fade before reaching them.
-    private func mountBottomControls() {
+    /// The reader's share pill takes the deck's trailing circle. It is a MENU
+    /// rather than a tap handler — and it is retargeted as the focused reader
+    /// changes, so the menu is built fresh on each press against whatever
+    /// `readerForChrome` points at now.
+    override func configureTrailingBottomButton(_ button: UIButton) {
         configureBottomButton(
-            settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: L10n.string("Settings"))
-        configureBottomButton(
-            readerShareButton, symbol: "square.and.arrow.up", action: nil,
+            button, symbol: "square.and.arrow.up", action: nil,
             accessibilityLabel: L10n.string("Share"))
-        // The pill is retargeted as the focused reader changes, so the menu is built
-        // fresh on each press against whatever `readerForChrome` points at now.
         ReaderShareMenu.install(
-            on: readerShareButton,
+            on: button,
             providesMenu: true,
             build: { [weak self] in
                 guard let self else { return nil }
-                if let menu = self.readerForChrome?.chromeShareMenu(from: self.readerShareButton) {
+                if let menu = self.readerForChrome?.chromeShareMenu(from: button) {
                     return menu
                 }
                 // No reader: the only card that still shows this pill is a locked
@@ -658,13 +558,21 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                     self.shareLockedCardLink()
                     return
                 }
-                self.readerForChrome?.chromeShare(from: self.readerShareButton)
+                self.readerForChrome?.chromeShare(from: button)
             })
-        mountBottomControls(leading: settingsButton, trailing: readerShareButton)
+    }
 
-        // The mode switcher owns the mini carousel's bottom-center lane only
-        // while the surrounding card chrome is dismissed. It begins just below
-        // its resting position so the first reveal can translate and fade in.
+    /// The pill's availability is not a share POLICY here — it is whatever the
+    /// focused reader can offer, which `updateReaderChrome` already resolves
+    /// alongside the rest of the row.
+    override func refreshTrailingBottomButton() {
+        updateReaderChrome()
+    }
+
+    /// The mode switcher owns the mini carousel's bottom-center lane only while
+    /// the surrounding card chrome is dismissed. It begins just below its resting
+    /// position so the first reveal can translate and fade in.
+    private func mountModeSwitcher() {
         readerModeControl.addTarget(self, action: #selector(readerModeChanged), for: .valueChanged)
         readerModeControl.translatesAutoresizingMaskIntoConstraints = false
         readerModeControl.alpha = 0
@@ -674,7 +582,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         view.addSubview(readerModeControl)
         NSLayoutConstraint.activate([
             readerModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            readerModeControl.centerYAnchor.constraint(equalTo: settingsButton.centerYAnchor),
+            readerModeControl.centerYAnchor.constraint(
+                equalTo: readerShareButton.centerYAnchor),
             readerModeControl.heightAnchor.constraint(equalToConstant: 32),
         ])
     }
@@ -705,186 +614,54 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             animations: changes)
     }
 
-    // MARK: - Data
+    // MARK: - Screen-level reader chrome the deck's own cards drive
 
-    @objc private func refreshPasteboardURL() {
-        pasteboardProbe.probe(
-            stateChangeCount: pasteboardState?.changeCount,
-            clear: { [weak self] in
-                self?.pasteboardEvaluationTask?.cancel()
-                self?.setPasteboardState(nil)
-            },
-            offer: { [weak self] changeCount in
-                self?.setPasteboardState(.placeholder(changeCount: changeCount))
-            })
-    }
-
-    private func setPasteboardState(_ state: PasteboardCardState?) {
-        pasteboardState = state
-        reload()
-    }
-
-    /// The value the card's `UIPasteControl` handed over — an implicitly
-    /// authorized read, so nothing here touches `UIPasteboard` for content.
-    private func handlePastedValue(_ value: String) {
-        guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        guard pasteboardProbe.isStillCurrent(expectedChangeCount),
-              let url = URLUnwrapper.ingestURL(from: value)
-        else {
-            setPasteboardState(.invalid(changeCount: expectedChangeCount))
+    /// The card that just centered is a live reader, so the deck's header row,
+    /// share pill, and hosted scroll indicator all retarget onto it.
+    override func deckDidCenterCard(at index: Int) {
+        guard slotIndex(forCarouselIndex: index) != nil else {
+            readerForChrome = nil
+            updateReaderChrome()
+            layoutCardScrollIndicator(animated: false)
             return
         }
-
-        let urlString = url.absoluteString
-        setPasteboardState(.loading(changeCount: expectedChangeCount, urlString: urlString))
-        pasteboardEvaluationTask?.cancel()
-        pasteboardEvaluationTask = Task { [weak self] in
-            let candidate = await PasteboardSuggester.shared.evaluate(urlString: urlString)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self,
-                      case .loading(let count, let currentURL) = self.pasteboardState,
-                      count == expectedChangeCount, currentURL == urlString,
-                      self.pasteboardProbe.isStillCurrent(expectedChangeCount)
-                else { return }
-                guard let candidate, candidate.platform == nil,
-                      candidate.content != nil || candidate.requiresUnlock
-                else {
-                    self.setPasteboardState(.invalid(changeCount: expectedChangeCount))
-                    return
-                }
-                var item = ReadingListItem(urlString: candidate.urlString)
-                item.title = candidate.title
-                item.channelName = candidate.channelName
-                item.state = candidate.requiresUnlock ? .needsCaptcha : .ready
-                self.setPasteboardState(.candidate(
-                    changeCount: expectedChangeCount, candidate: candidate, item: item))
-            }
-        }
-    }
-
-    private func articleIndex(forCarouselIndex index: Int) -> Int? {
-        itemIndex(forCarouselIndex: index, itemCount: items.count)
-    }
-
-    private func commitPasteboardCandidate(openLockedAfterSave: Bool = false) {
-        guard !isCommittingPasteboardCandidate,
-              case .candidate(let changeCount, let candidate, _) = renderedPasteboardState
-        else { return }
-        isCommittingPasteboardCandidate = true
-        Task { [weak self] in
-            let saved: ReadingListItem?
-            if let content = candidate.content {
-                saved = await ReadingListIngestor.shared.saveNewWithContent(
-                    urlString: candidate.urlString, content: content, source: .paste)
-            } else {
-                let result = await ReadingListIngestor.shared.handleSavePress(
-                    urlString: candidate.urlString, source: .paste)
-                switch result {
-                case .saved(let item),
-                     .sentToEreaders(let item), .sentToFriends(let item),
-                     .friendPromptRequested(let item),
-                     .exportRequested(let item, _):
-                    saved = item
-                case .ignored, .unsupportedKind:
-                    saved = nil
-                }
-            }
-            await MainActor.run {
-                guard let self else { return }
-                self.isCommittingPasteboardCandidate = false
-                guard let saved else { return }
-                self.pendingPasteboardSavedID = saved.id
-                self.pasteboardProbe.consume(changeCount)
-                let pasteboardChanged = UIPasteboard.general.changeCount != changeCount
-                if PasteboardCommitPolicy.shouldClearCommittedCard(
-                    committedChangeCount: changeCount,
-                    currentPasteboardChangeCount: UIPasteboard.general.changeCount,
-                    representedChangeCount: self.pasteboardState?.changeCount
-                ) {
-                    self.pasteboardState = nil
-                }
-                self.reload()
-                if pasteboardChanged { self.refreshPasteboardURL() }
-                if openLockedAfterSave,
-                   let fresh = self.store.item(withID: saved.id), let url = fresh.url {
-                    self.presentArchiveReader(for: fresh, articleURL: url)
-                }
-            }
-        }
-    }
-
-    @objc private func reload() {
-        reconcileFooterContentFade()
-        let allReaderItems = store.items().filter {
-            includesAllKinds || ReadingListSectioning.rendersAsReader($0)
-        }
-        var updated = Self.orderedReaderItems(allReaderItems, includesAllKinds: includesAllKinds)
-        if isCommittingPasteboardCandidate,
-           case .candidate(_, let candidate, _) = renderedPasteboardState {
-            updated.removeAll { $0.urlString == candidate.urlString }
-        }
-        let updatedArchive = allReaderItems.filter(\.isArchived).sorted {
-            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
-        }
-        var fingerprint = updated.map {
-            let kind = cardProvider?.fingerprint(for: $0) ?? ""
-            return "active|\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")|\(kind)"
-        }
-        fingerprint.append(contentsOf: updatedArchive.map {
-            "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
-        })
-        fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
-        guard fingerprint != appliedFingerprint || pendingPasteboardSavedID != nil else { return }
-        appliedFingerprint = fingerprint
-
-        // A real reload unmounts every slot, and with it the card that owns the
-        // open column's coordinator. Left standing, the column would keep drawing
-        // beside a card that no longer exists and its own close button — routed
-        // through that dead (weak) coordinator — would do nothing. Send it away
-        // first, while there is still something to send it back to.
-        if let inlineColumn { closeInlineColumn(inlineColumn) }
-
-        let wasPasteboardCentered = renderedPasteboardState != nil && carousel.currentIndex == 0
-        let oldItemIndex = carousel.currentIndex - cardOffset
-        let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
-        items = updated
-        archivedItems = updatedArchive
-        renderedPasteboardState = pasteboardState
-        let newOffset = cardOffset
-        // A save that arrived since the last snapshot wins over everything the
-        // deck would otherwise hold onto — the card the user was on, the paste
-        // card, an in-flight archive transition.
-        let newSaveIndex = newSaveItemIndex(
-            cardIDs: items.map(\.id), offstageIDs: Set(archivedItems.map(\.id)))
-        let pendingIndex = pendingPasteboardSavedID.flatMap { id in
-            items.firstIndex { $0.id == id }
-        }
-        let transitionIndex = pendingTransitionCenteredID.flatMap { id in
-            items.firstIndex { $0.id == id }.map { $0 + newOffset }
-        }
-        let preservedIndex = wasPasteboardCentered && renderedPasteboardState != nil
-            ? 0
-            : centeredID.flatMap { id in
-            items.firstIndex { $0.id == id }.map { $0 + newOffset }
-        }
-        let centeredIndex = newSaveIndex.map { $0 + newOffset }
-            ?? transitionIndex ?? preservedIndex
-            ?? pendingIndex.map { $0 + newOffset }
-            ?? (items.isEmpty ? 0 : newOffset)
-        pendingTransitionCenteredID = nil
-        if pendingIndex != nil { pendingPasteboardSavedID = nil }
-        carousel.reloadData(centeringAt: centeredIndex)
-        if let pendingURL = pendingUtilCardSaveURLString,
-           let index = items.firstIndex(where: { $0.urlString == pendingURL }) {
-            prepareUtilCardSaveDestination(carousel.cardView(at: index + newOffset))
-        }
-        carousel.view.isHidden = false
-        archiveTray?.setItems(makeArchiveTrayItems())
-        if !isAnimatingFromArchiveTray {
-            refreshArchivePullAvailability(animated: false)
-        }
+        let card = carousel.contentController(at: index) as? ReaderCardContentViewController
+        card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
+        readerForChrome = card?.rabbitHoleReader
+        updateExternalReaderInsets()
         updateReaderChrome()
+        layoutCardScrollIndicator(animated: false)
+    }
+
+    /// The carousel has already restored its card geometry so this same pan can
+    /// page. Keep the screen-level footer veil and indicator in lockstep.
+    override func deckDidSurfaceForEdgePaging() {
+        footerContentFade.alpha = 0
+        (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
+            .setCardChromeVisible(true, animated: false)
+        archiveTray?.setChromeHidden(false, animated: false)
+        updateBottomModeSwitcher(immersed: false, animated: false)
+        layoutCardScrollIndicator(animated: false)
+    }
+
+    // MARK: - Data
+
+    /// The slot a carousel index names, in this deck's own words.
+    private func articleIndex(forCarouselIndex index: Int) -> Int? {
+        slotIndex(forCarouselIndex: index)
+    }
+
+    /// A real reload unmounts every slot, and with it the card that owns the open
+    /// column's coordinator. Left standing, the column would keep drawing beside a
+    /// card that no longer exists and its own close button — routed through that
+    /// dead (weak) coordinator — would do nothing. Send it away first, while there
+    /// is still something to send it back to.
+    override func deckWillApplyReload() {
+        if let inlineColumn { closeInlineColumn(inlineColumn) }
+    }
+
+    override func deckWillReload() {
+        reconcileFooterContentFade()
     }
 
     /// The reader deck keeps finished articles available as ordinary cards but
@@ -913,43 +690,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 if lhsDate != rhsDate { return lhsDate > rhsDate }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
-    }
-
-    private func makeArchiveTrayItems() -> [ArchiveTrayItem] {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return archivedItems.map { item in
-            ArchiveTrayItem(
-                id: item.id,
-                title: item.title ?? item.url?.host ?? item.urlString,
-                footer: formatter.string(from: item.dateAdded),
-                showsMetadata: true,
-                isAvailable: true,
-                loadImage: { completion in
-                    guard let url = item.url else {
-                        completion(UIImage(systemName: item.isDocument ? "doc" : "globe"))
-                        return
-                    }
-                    completion(UIImage(systemName: "globe"))
-                    SourceIconCache.shared.icon(forPageURL: url) { image in
-                        if let image { completion(image) }
-                    }
-                },
-                tap: { [weak self] in self?.openExternally(item) },
-                share: { [weak self] sourceView in
-                    guard let self else { return }
-                    AppReaderShareProvider.shared.presentShareSheet(
-                        urlString: item.urlString,
-                        title: item.title,
-                        from: self,
-                        sourceView: sourceView)
-                },
-                unarchive: { [weak self] sourceView in
-                    self?.unarchive(item, from: sourceView)
-                },
-                delete: { [weak self] in self?.deleteArchived(item) })
-        }
     }
 
     // MARK: - Archive transitions
@@ -1099,17 +839,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     private func makeTransitionSnapshot(of sourceView: UIView) -> UIView? {
-        guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
-        snapshot.frame = sourceView.convert(sourceView.bounds, to: view)
-        if let cell = sourceView as? UICollectionViewCell {
-            snapshot.layer.cornerRadius = cell.contentView.layer.cornerRadius
-        } else {
-            snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
-        }
-        snapshot.layer.cornerCurve = .continuous
-        snapshot.clipsToBounds = true
-        view.addSubview(snapshot)
-        return snapshot
+        CardTransitionSnapshot.make(of: sourceView, in: view)
     }
 
     private func cardContextMenu(
@@ -1121,20 +851,15 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         ) { [weak self] _ in
             self?.deleteActive(item)
         }
-        // Archiving a failed save would file an empty shell away where the user
-        // can't act on it — the only sensible verbs are share the link and get
-        // rid of it (matching the list row's failed-item menu).
         if ReadingListSectioning.isFailedSave(item) {
-            return UIMenu(children: [
-                UIAction(title: L10n.string("Share Link…"), image: UIImage(systemName: "square.and.arrow.up")) {
-                    [weak self] _ in
+            return FailedSaveCardFactory.makeMenu(
+                shareLink: { [weak self] in
                     guard let self else { return }
                     AppReaderShareProvider.shared.presentShareSheet(
                         urlString: item.urlString, title: nil,
                         from: self, sourceView: self.view)
                 },
-                delete,
-            ])
+                delete: delete)
         }
         // A media card offers the Downloader's own verbs (Share the file, Save
         // to Photos) above the deck's Archive/Delete.
@@ -1229,51 +954,77 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    // MARK: - Carousel data source (see CardCarouselDataSource conformance below)
-
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int {
-        items.count + cardOffset
+    /// Incoming-email cards follow the contact's current name, falling back to
+    /// the name captured from the original From header for legacy/unknown senders.
+    private func senderName(for item: ReadingListItem) -> String? {
+        Self.resolvedSenderName(for: item) { email in
+            FriendsStore.shared.friend(withEmail: email)?.displayName
+        }
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        contentControllerForCardAt index: Int
-    ) -> CardContentViewController {
-        if isUtilCard(index) {
-            return makeUtilCardContentController(
-                hasSaves: { [weak self] in self?.items.isEmpty == false }
-            ) { [weak self] url, source, sourceView, completion in
-                self?.saveUtilCardURL(
-                    url,
-                    captureSource: source,
-                    sourceView: sourceView,
-                    completion: completion)
-            }
+    static func resolvedSenderName(
+        for item: ReadingListItem,
+        contactNameForEmail: (String) -> String?
+    ) -> String? {
+        guard item.effectiveCaptureSource == .email else { return nil }
+        if let email = item.incomingSenderEmail,
+           let currentName = contactNameForEmail(email) {
+            return currentName
         }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder:
-                return PasteboardPlaceholderCardContentViewController(
-                    title: L10n.string("Paste Link"),
-                    detail: L10n.string("Paste the copied link to preview it here."),
-                    onPaste: { [weak self] value in self?.handlePastedValue(value) })
-            case .loading:
-                return PasteboardPlaceholderCardContentViewController(
-                    title: L10n.string("Loading Paste"), detail: L10n.string("Preparing a temporary reader card…"))
-            case .invalid:
-                return InvalidPasteCardContentViewController()
-            case .candidate(_, let candidate, let item):
-                let content = ReaderCardContentViewController(
-                    item: item, senderName: nil, knownContent: candidate.content)
-                content.setTopContentInset(Self.contentEdgeFade)
-                content.delegate = self
-                return content
-            }
+        return item.channelName
+    }
+
+    /// The saved item behind a carousel index, past the permanent util card.
+    private func item(atCarouselIndex index: Int) -> ReadingListItem? {
+        articleIndex(forCarouselIndex: index).map { items[$0] }
+    }
+}
+
+// MARK: - The article kind (and, in the central app, every other kind too)
+
+extension ArticleCardsViewController: CardDeckProviding {
+
+    /// A media download finishing turns a placeholder card into a player, and it
+    /// lands in a store this file cannot name — plus a renamed contact changes
+    /// what an emailed card's header says.
+    var deckChangeNotificationNames: [Notification.Name] {
+        [.friendsListChanged] + (cardProvider?.changeNotificationNames ?? [])
+    }
+
+    func deckPreparedSnapshot() -> CardDeckSnapshot {
+        let allReaderItems = store.items().filter {
+            includesAllKinds || ReadingListSectioning.rendersAsReader($0)
         }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else {
-            return CardContentViewController()
+        preparedItems = Self.orderedReaderItems(
+            allReaderItems, includesAllKinds: includesAllKinds)
+        preparedArchivedItems = allReaderItems.filter(\.isArchived).sorted {
+            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
-        let item = items[itemIndex]
+        return CardDeckSnapshot(
+            slots: preparedItems.map { item in
+                // The foreign kinds contribute their own change key — a media
+                // download that finished in the background is a different card
+                // from the placeholder that was there before it.
+                let kind = cardProvider?.fingerprint(for: item) ?? ""
+                return CardDeckSlot(
+                    id: item.id,
+                    urlString: item.urlString,
+                    fingerprint: "active|\(item.id)|\(item.title ?? "")|\(item.state)"
+                        + "|\(item.thumbnailFileName ?? "")|\(senderName(for: item) ?? "")|\(kind)")
+            },
+            offstageIDs: Set(preparedArchivedItems.map(\.id)),
+            offstageFingerprint: preparedArchivedItems.map {
+                "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
+            })
+    }
+
+    func deckCommitPreparedSnapshot() {
+        items = preparedItems
+        archivedItems = preparedArchivedItems
+    }
+
+    func deckContentController(forSlot slot: Int) -> CardContentViewController {
+        let item = items[slot]
         // A save that FAILED gets the shared error card instead of an empty
         // reader with a one-line apology: the page itself in a near-full-bleed
         // web view, a URL bar with reload + share, and "Retry with AI" in the
@@ -1295,131 +1046,40 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         return content
     }
 
+    func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool {
+        cardProvider?.allowsPreparedPreviewContent(for: items[slot]) ?? true
+    }
+
     /// A failed save's card carries a soft red rim — the only card chrome that
     /// says "this one is broken" without a badge or a banner.
-    func carousel(
-        _ carousel: CardCarouselViewController, edgeGlowColorForCardAt index: Int
-    ) -> UIColor? {
-        guard renderedPasteboardState == nil || index != 0,
-              let itemIndex = articleIndex(forCarouselIndex: index),
-              items.indices.contains(itemIndex),
-              ReadingListSectioning.isFailedSave(items[itemIndex])
-        else { return nil }
-        return LunaColors.errorAccent
-    }
-
-    /// Incoming-email cards follow the contact's current name, falling back to
-    /// the name captured from the original From header for legacy/unknown senders.
-    private func senderName(for item: ReadingListItem) -> String? {
-        Self.resolvedSenderName(for: item) { email in
-            FriendsStore.shared.friend(withEmail: email)?.displayName
-        }
-    }
-
-    static func resolvedSenderName(
-        for item: ReadingListItem,
-        contactNameForEmail: (String) -> String?
-    ) -> String? {
-        guard item.effectiveCaptureSource == .email else { return nil }
-        if let email = item.incomingSenderEmail,
-           let currentName = contactNameForEmail(email) {
-            return currentName
-        }
-        return item.channelName
+    func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? {
+        ReadingListSectioning.isFailedSave(items[slot]) ? LunaColors.errorAccent : nil
     }
 
     /// Feeds both the big scrub preview and — for the media saves that ask for
-    /// one (see `prefersThumbnailChipForCardAt`) — the strip chip itself: a
-    /// media save shows as its poster rather than as its title.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadThumbnailForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        if isUtilCard(index) {
-            loadUtilCardThumbnail(completion: completion)
-            return
-        }
-        guard let provider = cardProvider, let item = item(atCarouselIndex: index) else {
+    /// one (see `deckPrefersThumbnailChip`) — the strip chip itself: a media save
+    /// shows as its poster rather than as its title.
+    func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void) {
+        guard let provider = cardProvider else {
             completion(nil)
             return
         }
-        provider.thumbnail(for: item, completion: completion)
+        provider.thumbnail(for: items[slot], completion: completion)
     }
 
-    /// A media save's chip is its own still; articles — and the synthetic paste
-    /// card, which has no item — keep the mini card and its source badge.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        prefersThumbnailChipForCardAt index: Int
-    ) -> Bool {
-        if isUtilCard(index) { return false }
-        guard let provider = cardProvider, let item = item(atCarouselIndex: index)
-        else { return false }
-        return provider.prefersThumbnailChip(for: item)
-    }
-
-    /// The util card holds no save, so its chip is neither a still nor a
-    /// favicon-and-skeleton mini card: it is the app's own mark over a button.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        prefersUtilityChipForCardAt index: Int
-    ) -> Bool {
-        isUtilCard(index)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? {
-        if let provider = cardProvider, let item = item(atCarouselIndex: index),
-           !provider.allowsPreparedPreviewContent(for: item) {
-            return nil
-        }
-        return self.carousel(carousel, contentControllerForCardAt: index)
-    }
-
-    /// The saved item behind a carousel index, past the permanent util card.
-    private func item(atCarouselIndex index: Int) -> ReadingListItem? {
-        guard let itemIndex = articleIndex(forCarouselIndex: index),
-              items.indices.contains(itemIndex)
-        else { return nil }
-        return items[itemIndex]
+    /// A media save's chip is its own still; articles keep the mini card and its
+    /// source badge.
+    func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool {
+        cardProvider?.prefersThumbnailChip(for: items[slot]) ?? false
     }
 
     /// Chip badge: an instant fallback (initials / mail / document / globe)
     /// first, then the site's real favicon replaces it once fetched. Cached
     /// icons resolve synchronously, so a warm strip shows favicons at once.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadSourceBadgeForCardAt index: Int,
-        completion: @escaping (CarouselSourceBadge?) -> Void
+    func deckLoadSourceBadge(
+        forSlot slot: Int, completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
-        if isUtilCard(index) {
-            completion(nil)
-            return
-        }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder, .loading:
-                completion(.symbol("doc.on.clipboard"))
-            case .invalid:
-                completion(.symbol("exclamationmark.circle"))
-            case .candidate(_, _, let item):
-                completion(ArticleSourceBadge.fallback(for: item))
-                if ArticleSourceBadge.wantsFavicon(item), let url = item.url {
-                    SourceIconCache.shared.icon(forPageURL: url) { image in
-                        if let image { completion(.icon(image)) }
-                    }
-                }
-            }
-            return
-        }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else {
-            completion(nil)
-            return
-        }
-        let item = items[itemIndex]
+        let item = items[slot]
         // A platform save is marked by its platform, not by the host's favicon.
         if let badge = cardProvider?.sourceBadge(for: item) {
             completion(badge)
@@ -1432,32 +1092,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        topLeadingAccessoryForCardAt index: Int
-    ) -> UIView? {
-        if isUtilCard(index) { return nil }
-        guard let itemIndex = articleIndex(forCarouselIndex: index),
-              items.indices.contains(itemIndex)
-        else { return nil }
-        return cardProvider?.topLeadingAccessory(for: items[itemIndex])
+    func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? {
+        cardProvider?.topLeadingAccessory(for: items[slot])
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        titleForCardAt index: Int
-    ) -> String? {
-        if isUtilCard(index) { return LunaApp.current.displayName }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder: return L10n.string("Paste Link")
-            case .loading: return L10n.string("Loading Paste")
-            case .invalid: return L10n.string("Invalid paste")
-            case .candidate(_, let candidate, _): return candidate.title
-            }
-        }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
-        let item = items[itemIndex]
+    func deckTitle(forSlot slot: Int) -> String? {
+        let item = items[slot]
         // A failed save has no stored title; use the same fallback chain its
         // card headline does so the scrub preview and the card agree.
         if ReadingListSectioning.isFailedSave(item) {
@@ -1465,124 +1105,33 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         return item.title ?? item.url?.host ?? item.urlString
     }
-}
 
-// MARK: - Carousel delegate
-
-extension ArticleCardsViewController: CardCarouselDataSource {}
-
-extension ArticleCardsViewController: CardCarouselDelegate {
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        navigationTargetDidChangeTo index: Int
-    ) {
-        updateArchivePullAvailability(
-            forTargetIndex: index,
-            cardCount: items.count + cardOffset,
-            animated: true)
+    func deckMenu(forSlot slot: Int) -> UIMenu? {
+        cardContextMenu(for: items[slot], carouselIndex: carouselIndex(forSlot: slot))
     }
 
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        menuForCardAt index: Int
-    ) -> UIMenu? {
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
-        let item = items[itemIndex]
-        return cardContextMenu(for: item, carouselIndex: index)
+    func deckSlotDidCenter(_ slot: Int) {
+        store.markReadState(.opened, for: items[slot].id)
     }
 
-    func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {
-        // The carousel has already restored its card geometry so this same pan
-        // can page. Keep the screen-level footer veil and indicator in lockstep.
-        footerContentFade.alpha = 0
-        (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
-            .setCardChromeVisible(true, animated: false)
-        archiveTray?.setChromeHidden(false, animated: false)
-        updateBottomModeSwitcher(immersed: false, animated: false)
-        layoutCardScrollIndicator(animated: false)
-    }
-
-    func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        refreshArchivePullAvailability(animated: true)
-        updateUtilCardCorona(forCenteredIndex: index)
-        if isUtilCard(index) {
-            readerForChrome = nil
-            updateReaderChrome()
-            layoutCardScrollIndicator(animated: false)
+    /// A non-article card (central Luna app only) routes to its own screen — the
+    /// price editor or the platform open ladder — never the reader. A media save
+    /// rendered as a REAL Downloader card is the exception: its own content owns
+    /// the tap (play/pause, the download button), exactly as in the Downloader, so
+    /// the ladder is only for the link-style card that stands in when there is
+    /// nothing downloaded to show.
+    func deckSlotWasTapped(_ slot: Int) {
+        let index = carouselIndex(forSlot: slot)
+        let item = items[slot]
+        if item.isPriceTracker {
+            Self.nonArticleOpener?(item, self)
             return
         }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder:
-                // Nothing reads the pasteboard on arrival — the card's paste
-                // control is the only way in, and its tap IS the authorization.
-                readerForChrome = nil
-                updateReaderChrome()
-                layoutCardScrollIndicator(animated: false)
-            case .loading, .invalid:
-                readerForChrome = nil
-                updateReaderChrome()
-                layoutCardScrollIndicator(animated: false)
-            case .candidate:
-                let card = carousel.contentController(at: index) as? ReaderCardContentViewController
-                card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
-                readerForChrome = card?.rabbitHoleReader
-                updateExternalReaderInsets()
-                updateReaderChrome()
-                layoutCardScrollIndicator(animated: false)
-            }
-            return
-        }
-        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return }
-        store.markReadState(.opened, for: items[itemIndex].id)
-        let card = carousel.contentController(at: index) as? ReaderCardContentViewController
-        card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
-        readerForChrome = card?.rabbitHoleReader
-        updateExternalReaderInsets()
-        updateReaderChrome()
-        layoutCardScrollIndicator(animated: false)
-    }
-
-    func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder:
-                break // The card's paste control owns this interaction.
-            case .candidate(_, let candidate, _):
-                if candidate.requiresUnlock {
-                    commitPasteboardCandidate(openLockedAfterSave: true)
-                } else if let card = carousel.contentController(at: index)
-                            as? ReaderCardContentViewController,
-                          card.rabbitHoleReader != nil {
-                    readerCard(
-                        card, didChangeImmersion: !carousel.isImmersed,
-                        extendsCard: card.rabbitHoleReader?.focusedContentScrollView != nil)
-                }
-            case .loading, .invalid:
-                break
-            }
-            return
-        }
-        // A non-article card (central Luna app only) routes to its own screen
-        // — the price editor or the platform open ladder — never the reader.
-        // A media save rendered as a REAL Downloader card is the exception: its
-        // own content owns the tap (play/pause, the download button), exactly
-        // as in the Downloader, so the ladder is only for the link-style card
-        // that stands in when there is nothing downloaded to show.
-        if let itemIndex = articleIndex(forCarouselIndex: index),
-           items.indices.contains(itemIndex) {
-            let item = items[itemIndex]
-            if item.isPriceTracker {
+        if item.contentPlatform != nil {
+            if carousel.contentController(at: index) is ReaderCardContentViewController {
                 Self.nonArticleOpener?(item, self)
-                return
             }
-            if item.contentPlatform != nil {
-                if carousel.contentController(at: index) is ReaderCardContentViewController {
-                    Self.nonArticleOpener?(item, self)
-                }
-                return
-            }
+            return
         }
         guard let card = carousel.contentController(at: index) as? ReaderCardContentViewController,
               card.rabbitHoleReader != nil
@@ -1595,6 +1144,42 @@ extension ArticleCardsViewController: CardCarouselDelegate {
             extendsCard: card.rabbitHoleReader?.focusedContentScrollView != nil)
     }
 
+    func deckArchiveTrayItems() -> [ArchiveTrayItem] {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return archivedItems.map { item in
+            ArchiveTrayItem(
+                id: item.id,
+                title: item.title ?? item.url?.host ?? item.urlString,
+                footer: formatter.string(from: item.dateAdded),
+                showsMetadata: true,
+                isAvailable: true,
+                loadImage: { completion in
+                    guard let url = item.url else {
+                        completion(UIImage(systemName: item.isDocument ? "doc" : "globe"))
+                        return
+                    }
+                    completion(UIImage(systemName: "globe"))
+                    SourceIconCache.shared.icon(forPageURL: url) { image in
+                        if let image { completion(image) }
+                    }
+                },
+                tap: { [weak self] in self?.openExternally(item) },
+                share: { [weak self] sourceView in
+                    guard let self else { return }
+                    AppReaderShareProvider.shared.presentShareSheet(
+                        urlString: item.urlString,
+                        title: item.title,
+                        from: self,
+                        sourceView: sourceView)
+                },
+                unarchive: { [weak self] sourceView in
+                    self?.unarchive(item, from: sourceView)
+                },
+                delete: { [weak self] in self?.deleteArchived(item) })
+        }
+    }
 }
 
 // MARK: - Reader card content delegate
@@ -1609,11 +1194,6 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // so reading it must not fade the deck away or grow the card downward
         // over the column's own controls.
         guard inlineColumn == nil else { return }
-        if immersed, renderedPasteboardState != nil,
-           carousel.currentIndex == 0,
-           carousel.contentController(at: 0) === card {
-            commitPasteboardCandidate()
-        }
         card.setCardChromeVisible(!immersed, animated: true)
         carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
         // The archive peek is card chrome too: it fades away with the
@@ -2658,14 +2238,3 @@ private final class ReaderFooterContentFadeView: UIView {
 /// `openExternally(_:)` itself is defined above; this just marks the deck as a
 /// root `SceneDelegate` can hand items to without a kind-specific downcast.
 extension ArticleCardsViewController: ExternalItemOpening {}
-
-// Every Reader launch crossfades from the real resting card geometry. The
-// carousel owns that geometry, so the launch transition asks it instead of
-// duplicating safe-area/scrubber math in SceneDelegate.
-extension ArticleCardsViewController: AppLaunchTransitionTarget {
-    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
-        view.layoutIfNeeded()
-        guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
-        return view.convert(frame, to: window)
-    }
-}

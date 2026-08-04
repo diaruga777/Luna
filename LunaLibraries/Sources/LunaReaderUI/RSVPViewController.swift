@@ -154,11 +154,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private let playPauseButton = UIButton(type: .system)
     private let scrubber = UISlider()
     private let controlsStack = UIStackView()
-    /// Sharing affordances; nil → the end-of-article share view never reveals.
+    /// Sharing affordances handed on to any nested reader this one opens; nil in
+    /// the share sheet.
     private var shareProvider: ReaderShareProviding?
-    /// Revealed (above the controls) when the reader reaches the end.
-    private lazy var shareView = makeShareView()
-    private var didRevealShare = false
     private var finishedReadingTracker = FinishedReadingTracker()
     private let finishedBadge = FinishedReadingBadgeView()
     private let statusLabel = UILabel()
@@ -330,7 +328,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.currentIndex = 0
         self.currentChunkIndex = 0
         self.isPlaying = false
-        self.didRevealShare = false
         self.finishedReadingTracker = FinishedReadingTracker()
 
         currentIndex = resolveResumeFrame(carriedOver: resumeWordIndex)
@@ -341,13 +338,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         updateMeldAnchor()
         scrubber.maximumValue = Float(max(engine.words.count - 1, 1))
         scrubber.value = Float(currentIndex)
-        // The share view bakes in the previous item's friend suggestion —
-        // rebuild it for the new item/provider.
-        shareView.removeFromSuperview()
-        shareView = makeShareView()
-        installShareView()
-        shareView.isHidden = true
-        shareView.alpha = 0
         applyDisplayMode()
         refreshDisplay()
         updateStatus()
@@ -926,10 +916,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         controlsStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(controlsStack)
 
-        // Hidden until the reader finishes; sits above the controls so it never
-        // obscures them.
-        installShareView()
-
         // Prefer the roomy 32pt footer margins and 48pt secondary circles, but
         // let compact widths ease them together—symmetrically—down to 16pt /
         // 44pt. The 60pt play circle stays required and never becomes the row's
@@ -1408,7 +1394,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func finish() {
         guard finishedReadingTracker.update(reachedEnd: true) == .finished else { return }
         pause()
-        revealShareView()
         hideLinkPill()
         finishedBadge.present()
         completionDelegate?.readerDidFinishReading(self)
@@ -1590,52 +1575,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if isAtEnd() {
             finish()
         } else if finishedReadingTracker.update(reachedEnd: false) == .movedAway {
-            didRevealShare = false
-            shareView.isHidden = true
-            shareView.alpha = 0
             completionDelegate?.readerDidMoveAwayFromEnd(self)
         }
-    }
-
-    // MARK: - End-of-article share
-
-    /// Adds `shareView` to the hierarchy, hidden, pinned above the controls.
-    private func installShareView() {
-        shareView.isHidden = true
-        shareView.alpha = 0
-        shareView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(shareView)
-        NSLayoutConstraint.activate([
-            shareView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            shareView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            shareView.bottomAnchor.constraint(equalTo: controlsStack.topAnchor, constant: -16),
-        ])
-    }
-
-    private func makeShareView() -> ArticleShareView {
-        return ArticleShareView(
-            shareMenu: shareProvider?.providesShareMenu == true
-                ? { [weak self] in
-                    guard let self else { return nil }
-                    return self.shareProvider?.shareMenu(
-                        urlString: self.item.urlString, title: self.item.title,
-                        from: self, sourceView: self.shareView)
-                }
-                : nil,
-            onShare: { [weak self] in
-                guard let self else { return }
-                self.shareProvider?.presentShareSheet(
-                    urlString: self.item.urlString, title: self.item.title,
-                    from: self, sourceView: self.shareView)
-            })
-    }
-
-    private func revealShareView() {
-        // No share affordance in the share sheet or for non-shareable items.
-        guard shareProvider != nil, item.isShareable, !didRevealShare else { return }
-        didRevealShare = true
-        shareView.isHidden = false
-        UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }
     }
 }
 

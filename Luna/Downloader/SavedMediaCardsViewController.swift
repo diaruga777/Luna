@@ -36,55 +36,13 @@ enum SavedMediaCardOrdering {
 
 final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
-    private enum PasteboardCardState {
-        case placeholder(changeCount: Int)
-        case invalid(changeCount: Int)
-        case downloading(
-            changeCount: Int, url: URL, title: String, progress: Double)
-        case ready(
-            changeCount: Int, url: URL, title: String,
-            media: DownloadedMedia, expiresAt: Date)
-
-        var changeCount: Int {
-            switch self {
-            case .placeholder(let count), .invalid(let count),
-                 .downloading(let count, _, _, _), .ready(let count, _, _, _, _):
-                return count
-            }
-        }
-
-        var fingerprint: String {
-            switch self {
-            case .placeholder(let count): return "placeholder|\(count)"
-            case .invalid(let count): return "invalid|\(count)"
-            case .downloading(let count, let url, _, _):
-                return "downloading|\(count)|\(url.absoluteString)"
-            case .ready(let count, let url, _, let media, _):
-                return "ready|\(count)|\(url.absoluteString)|\(media.fileURL.path)"
-            }
-        }
-
-        var temporaryMedia: DownloadedMedia? {
-            guard case .ready(_, _, _, let media, _) = self else { return nil }
-            return media
-        }
-    }
-
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
-    private let settingsButton = UIButton(type: .system)
-    private let shareButton = UIButton(type: .system)
     /// The player behind the currently-presented full-screen video, held weakly
     /// so we can pause it while a share sheet is up (the player VC owns it).
     private weak var activePlayer: AVPlayer?
     private var items: [SavedMediaItem] = []
     private var archivedItems: [SavedMediaItem] = []
-    /// In-flight progress of jobs whose row is ARCHIVED, keyed by item id. An
-    /// archived row has no carousel card to draw its bar in — tapping an
-    /// unavailable archive cell re-downloads in place — so its tray cell carries
-    /// the bar instead. Live rows need no equivalent map: their own card content
-    /// controller observes the same notification directly.
-    private var archiveDownloadProgress: [UUID: Double] = [:]
     /// Saves whose ingestion FAILED. They carry no kind (the classifier never
     /// got one), so the surface gate keeps them and every app shows them — this
     /// app included: a Downloader link that broke belongs on the Downloader's
@@ -92,24 +50,26 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     /// as error cards, and vanish from here the moment a rescue gives them a
     /// kind (media resolves into `items`; anything else surfaces in its own app).
     private var failedSaves: [ReadingListItem] = []
+    /// What `deckPreparedSnapshot` computed, waiting for the host to say the
+    /// reload is going ahead.
+    private var preparedItems: [SavedMediaItem] = []
+    private var preparedArchivedItems: [SavedMediaItem] = []
+    private var preparedFailedSaves: [ReadingListItem] = []
+    /// In-flight progress of jobs whose row is ARCHIVED, keyed by item id. An
+    /// archived row has no carousel card to draw its bar in — tapping an
+    /// unavailable archive cell re-downloads in place — so its tray cell carries
+    /// the bar instead. Live rows need no equivalent map: their own card content
+    /// controller observes the same notification directly.
+    private var archiveDownloadProgress: [UUID: Double] = [:]
     private var isReconcilingPhotos = false
-    private var pasteboardState: PasteboardCardState?
-    private var renderedPasteboardState: PasteboardCardState?
-    private let pasteboardProbe = PasteboardLinkProbe()
-    private var pendingPasteboardDownloadURLString: String?
-    private var pasteboardDownloadTask: Task<Void, Never>?
-    private var pasteboardExpiryWorkItem: DispatchWorkItem?
-    private var isCommittingPasteboardMedia = false
     /// One concrete export for the centered item. Photos-backed videos can be
     /// large, so superseded exports are cancelled and reclaimed immediately.
     private var sharePreparationItemID: UUID?
     private var preparedShareFile: URL?
     private var sharePreparationTask: Task<URL?, Never>?
     private var sharePreparationGeneration = UUID()
-    /// Fingerprint of the last-applied item list, so store notifications that
-    /// changed nothing visible (frequent on foreground/activation catch-ups)
-    /// don't tear down and rebuild live card content mid-playback.
-    private var appliedFingerprint: [String] = []
+
+    override var deckProvider: CardDeckProviding? { self }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -129,70 +89,27 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         style.showsCardBorder = true
         style.showsPlaybackScrubProgress = true
         carousel.style = style
-        carousel.dataSource = self
-        carousel.delegate = self
-        mountCarousel()
-
-        mountBottomControls()
-        mountArchiveTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view]
-            },
-            canPull: { [weak self] in
-                guard let self else { return false }
-                let count = self.items.count + self.cardOffset
-                return count == 0 || self.carousel.currentIndex == count - 1
-            },
-            openStateChanged: { [weak self] open in
-                self?.carousel.setMuteButtonOccluded(open)
-            })
-        // Bridges saves/deletes made by the action/share extension (a DIFFERENT
-        // process, so the in-process .savedMediaChanged post below never reaches
-        // it) back to a .savedMediaChanged post here via a Darwin notification.
-        SavedMediaStore.startObservingCrossProcessChanges()
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .savedMediaChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(applicationForegrounded),
-            name: UIApplication.willEnterForegroundNotification,
-            object: nil)
-        // Darwin notifications are dropped while suspended, so also catch up on
-        // activation (covers iPad multitasking, where the app can stay
-        // foregrounded the whole time an extension runs alongside it).
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(applicationForegrounded), name: UIApplication.didBecomeActiveNotification,
-            object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleJobProgressChanged(_:)),
-            name: .downloaderJobProgressChanged, object: nil)
-        reload()
+        mountDeck()
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: false)
-        applyCarouselTopInset(4)
+    /// The tray's own in-cell bars, refreshed alongside its rows.
+    override func deckDidApplyReload() {
+        archiveTray?.setDownloadProgress(archiveDownloadProgress)
     }
 
-    override func viewSafeAreaInsetsDidChange() {
-        super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset(4)
+    // MARK: - Slots
+
+    private func mediaItem(forSlot slot: Int) -> SavedMediaItem? {
+        items.indices.contains(slot) ? items[slot] : nil
     }
 
-    /// Matches Reader's outer chrome: the scrubber runs edge-to-edge beneath
-    /// two persistent Liquid Glass circles.
-    private func mountBottomControls() {
-        configureBottomButton(
-            settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: L10n.string("Settings"))
-        configureBottomButton(
-            shareButton, symbol: "square.and.arrow.up", action: #selector(shareCurrentTapped),
-            accessibilityLabel: L10n.string("Share Current Media"))
-        mountBottomControls(leading: settingsButton, trailing: shareButton)
+    /// Failed-save cards occupy the slots after the media ones.
+    private func failedSave(forSlot slot: Int) -> ReadingListItem? {
+        let index = slot - items.count
+        return failedSaves.indices.contains(index) ? failedSaves[index] : nil
     }
+
+    var screenScale: CGFloat { view.window?.screen.scale ?? UIScreen.main.scale }
 
     // MARK: - Store
 
@@ -212,168 +129,17 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         archiveTray?.setDownloadProgress(archiveDownloadProgress)
     }
 
-    @objc private func applicationForegrounded() {
-        store.purgeExpired()
-        expireTemporaryPasteboardMediaIfNeeded()
-        reload()
-    }
-
-    private func saveUtilCardURL(
-        _ urlString: String,
-        captureSource: CaptureSource,
-        sourceView: UIView,
-        completion: @escaping (Bool) -> Void
-    ) {
-        beginUtilCardSaveTransition(for: urlString, from: sourceView)
-        Task { @MainActor [weak self] in
-            let result = await ReadingListIngestor.shared.handleSavePress(
-                urlString: urlString, source: captureSource)
-            guard let self else { return }
-            let item: ReadingListItem?
-            switch result {
-            case .saved(let value), .sentToEreaders(let value),
-                 .sentToFriends(let value), .friendPromptRequested(let value),
-                 // In-app saves pass no double-save surface, so no export is
-                 // ever requested here — the item is what matters either way.
-                 .exportRequested(let value, _):
-                item = value
-            case .ignored:
-                item = ReadingListStore.shared.item(forURLString: urlString)
-            case .unsupportedKind:
-                item = nil
-            }
-            guard let item else {
-                self.cancelUtilCardSaveTransition()
-                completion(false)
-                return
-            }
-            self.pendingPasteboardDownloadURLString = item.urlString
-            self.reload()
-            self.view.layoutIfNeeded()
-            let sourceURLs = Set([urlString, item.urlString])
-            let destinationIndex: Int?
-            if let index = self.items.firstIndex(where: {
-                sourceURLs.contains($0.sourceURLString)
-            }) {
-                destinationIndex = index + self.cardOffset
-            } else if let index = self.failedSaves.firstIndex(where: { $0.id == item.id }) {
-                destinationIndex = self.items.count + index + self.cardOffset
-            } else {
-                destinationIndex = nil
-            }
-            self.finishUtilCardSaveTransition(
-                to: destinationIndex.flatMap(self.carousel.cardView(at:)))
-            completion(destinationIndex != nil)
-        }
-    }
-
-    @objc private func reload() {
-        store.purgeExpired()
-        let allItems = store.items()
-        var updated = SavedMediaCardOrdering.newestFirst(
-            allItems.filter { !$0.isArchived })
-        if isCommittingPasteboardMedia,
-           case .ready(_, let url, _, _, _) = renderedPasteboardState {
-            updated.removeAll { $0.sourceURLString == url.absoluteString }
-        }
-        let updatedArchive = allItems.filter(\.isArchived).sorted {
-            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
-        }
-        let updatedFailed = ReadingListStore.shared.items()
-            .filter { ReadingListSectioning.isFailedSave($0) && !$0.isArchived }
-            .sorted { ($0.bumpDate ?? $0.dateAdded) > ($1.bumpDate ?? $1.dateAdded) }
-        var fingerprint = updated.map { item in
-            "active|\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
-        }
-        fingerprint.append(contentsOf: updatedArchive.map { item in
-            "archive|\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
-        })
-        fingerprint.append(contentsOf: updatedFailed.map { item in
-            "failed|\(item.id)|\(URLRescueCoordinator.shared.isRescuing(item.id))"
-        })
-        fingerprint.insert("paste|\(pasteboardState?.fingerprint ?? "")", at: 0)
-        defer { reconcilePhotosReferencesIfAuthorized() }
-        guard fingerprint != appliedFingerprint
-                || pendingPasteboardDownloadURLString != nil
-        else { return }
-        appliedFingerprint = fingerprint
-
-        let wasPasteboardCentered = renderedPasteboardState != nil && carousel.currentIndex == 0
-        let oldItemIndex = carousel.currentIndex - cardOffset
-        let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
-        items = updated
-        archivedItems = updatedArchive
-        failedSaves = updatedFailed
-        // A row that left the archive (unarchived, or completed into a live card)
-        // takes its tray bar with it.
-        let archivedIDs = Set(archivedItems.map(\.id))
-        archiveDownloadProgress = archiveDownloadProgress.filter { archivedIDs.contains($0.key) }
-        renderedPasteboardState = pasteboardState
-        // A save that arrived since the last snapshot — from anywhere, at any
-        // time — takes the center from the card the user was left on. Failed
-        // saves are cards too, and sit after the media ones, so they join the
-        // same ordered id list.
-        let newSaveIndex = newSaveItemIndex(
-            cardIDs: items.map(\.id) + failedSaves.map(\.id),
-            offstageIDs: Set(archivedItems.map(\.id)))
-        let pendingIndex = pendingPasteboardDownloadURLString.flatMap { pending in
-            items.firstIndex { $0.sourceURLString == pending }
-        }
-        let preservedIndex = wasPasteboardCentered && renderedPasteboardState != nil
-            ? 0
-            : centeredID.flatMap { id in
-            items.firstIndex { $0.id == id }.map { $0 + cardOffset }
-        } ?? pendingIndex.map { $0 + cardOffset }
-            ?? (items.isEmpty ? 0 : cardOffset)
-        let centeredIndex = newSaveIndex.map { $0 + cardOffset } ?? preservedIndex
-        if pendingIndex != nil { pendingPasteboardDownloadURLString = nil }
-        carousel.reloadData(centeringAt: centeredIndex)
-        if let pendingURL = pendingUtilCardSaveURLString {
-            let destinationIndex = items.firstIndex {
-                $0.sourceURLString == pendingURL
-            }.map { $0 + cardOffset } ?? failedSaves.firstIndex {
-                $0.urlString == pendingURL
-            }.map { items.count + $0 + cardOffset }
-            prepareUtilCardSaveDestination(
-                destinationIndex.flatMap(carousel.cardView(at:)))
-        }
-        carousel.view.isHidden = false
-        archiveTray?.setItems(makeArchiveTrayItems())
-        archiveTray?.setDownloadProgress(archiveDownloadProgress)
-        refreshArchivePullAvailability(animated: false)
-        updateShareButton()
-    }
-
-    private func makeArchiveTrayItems() -> [ArchiveTrayItem] {
-        archivedItems.map { item in
-            let available: Bool
-            switch item.storageState {
-            case .localFile, .photosReference: available = true
-            case .undownloaded: available = false
-            }
-            return ArchiveTrayItem(
-                id: item.id, title: nil, footer: nil, showsMetadata: false,
-                isAvailable: available,
-                loadImage: { [weak self] completion in
-                    self?.loadThumbnail(for: item, completion: completion)
-                },
-                tap: { [weak self] in self?.openArchivedMedia(item) },
-                share: { [weak self] sourceView in
-                    self?.share(item, sourceView: sourceView)
-                },
-                unarchive: { [weak self] _ in
-                    self?.store.setArchived(false, for: item.id)
-                },
-                delete: { [weak self] in self?.deleteSavedItem(for: item) })
-        }
-    }
+    // MARK: - Opening an archived row
 
     private func openArchivedMedia(_ item: SavedMediaItem) {
         switch item.storageState {
         case .undownloaded:
-            startDownload(item)
+            MediaItemActions.startManualDownload(item)
         case .localFile:
-            guard let url = item.fileURL else { startDownload(item); return }
+            guard let url = item.fileURL else {
+                MediaItemActions.startManualDownload(item)
+                return
+            }
             if item.kind == .video || item.kind == .audio {
                 presentPlayer(item: AVPlayerItem(url: url))
             } else {
@@ -390,7 +156,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                         guard let playerItem else {
                             if PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
                                 self?.store.markArchivedPhotosAssetMissing(item.id)
-                                self?.startDownload(item)
+                                MediaItemActions.startManualDownload(item)
                             } else {
                                 self?.presentAlert(
                                     title: L10n.string("Photos Access Needed"),
@@ -426,260 +192,16 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         present(controller, animated: true)
     }
 
-    private func storageStateKey(_ item: SavedMediaItem) -> String {
-        switch item.storageState {
-        case .undownloaded: return "undownloaded"
-        case .localFile: return "local|\(item.fileName ?? "")"
-        case .photosReference(let identifier, _, _): return "photos|\(identifier)"
-        }
-    }
-
     private func markOpened(_ item: SavedMediaItem) {
         if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
             ReadingListStore.shared.markReadState(.opened, for: saved.id)
         }
     }
 
-    private func mediaIndex(forCarouselIndex index: Int) -> Int? {
-        itemIndex(forCarouselIndex: index, itemCount: items.count)
-    }
-
-    /// Failed-save cards occupy the slots after the media cards, so one shared
-    /// offset keeps both index maps honest.
-    private func failedIndex(forCarouselIndex index: Int) -> Int? {
-        let failedIndex = index - cardOffset - items.count
-        return (0..<failedSaves.count).contains(failedIndex) ? failedIndex : nil
-    }
-
-    private func failedSave(atCarouselIndex index: Int) -> ReadingListItem? {
-        failedIndex(forCarouselIndex: index).map { failedSaves[$0] }
-    }
-
-    private func currentMediaItem() -> (item: SavedMediaItem, carouselIndex: Int)? {
-        let index = carousel.currentIndex
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
-        return (items[mediaIndex], index)
-    }
-
-    private func updateShareButton() {
-        guard let current = currentMediaItem() else {
-            shareButton.isHidden = true
-            return
-        }
-        switch current.item.storageState {
-        case .localFile, .photosReference:
-            shareButton.isHidden = false
-        case .undownloaded:
-            shareButton.isHidden = true
-        }
-    }
-
-    // MARK: - Outer controls + pasteboard
-
-    @objc private func shareCurrentTapped() {
-        guard let current = currentMediaItem() else { return }
-        share(current.item, sourceIndex: current.carouselIndex)
-    }
-
-    @objc private func refreshPasteboardURL() {
-        pasteboardProbe.probe(
-            stateChangeCount: pasteboardState?.changeCount,
-            clear: { [weak self] in
-                self?.pasteboardDownloadTask?.cancel()
-                self?.clearPasteboardCard(removingTemporaryFile: true)
-            },
-            offer: { [weak self] changeCount in
-                self?.pasteboardState = .placeholder(changeCount: changeCount)
-                self?.reload()
-            })
-    }
-
-    /// The value the card's `UIPasteControl` handed over — an implicitly
-    /// authorized read, so nothing here touches `UIPasteboard` for content.
-    private func handlePastedValue(_ value: String) {
-        guard case .placeholder(let expectedChangeCount) = renderedPasteboardState else { return }
-        guard pasteboardProbe.isStillCurrent(expectedChangeCount),
-              let url = URLUnwrapper.ingestURL(from: value, allowBareHost: true),
-              MediaDownloadablePlatform.supports(url.absoluteString),
-              store.matchingItem(forURLString: url.absoluteString) == nil
-        else {
-            pasteboardState = .invalid(changeCount: expectedChangeCount)
-            reload()
-            return
-        }
-
-        let title = PlatformRecognizer.recognize(url.absoluteString)?.platform.displayName
-            ?? url.host ?? L10n.string("Pasted Media")
-        pasteboardState = .downloading(
-            changeCount: expectedChangeCount, url: url, title: title, progress: 0)
-        reload()
-        pasteboardDownloadTask?.cancel()
-        pasteboardDownloadTask = Task { [weak self] in
-            do {
-                let media = try await MediaDownloadService().downloadFirstMediaToFile(
-                    from: url,
-                    onProgress: { progress in
-                        DispatchQueue.main.async { [weak self] in
-                            guard let self,
-                                  case .downloading(let count, let currentURL, let currentTitle, _) = self.pasteboardState,
-                                  count == expectedChangeCount, currentURL == url
-                            else { return }
-                            self.pasteboardState = .downloading(
-                                changeCount: count, url: currentURL,
-                                title: currentTitle, progress: progress)
-                            (self.carousel.contentController(at: 0)
-                                as? PasteboardMediaDownloadCardContentViewController)?
-                                .setProgress(progress)
-                        }
-                    })
-                guard !Task.isCancelled else {
-                    try? FileManager.default.removeItem(at: media.fileURL)
-                    return
-                }
-                await MainActor.run {
-                    guard let self,
-                          case .downloading(let count, let currentURL, let currentTitle, _) = self.pasteboardState,
-                          count == expectedChangeCount, currentURL == url,
-                          UIPasteboard.general.changeCount == expectedChangeCount
-                    else {
-                        try? FileManager.default.removeItem(at: media.fileURL)
-                        return
-                    }
-                    let expiry = Date().addingTimeInterval(PasteboardTemporaryMediaPolicy.lifetime)
-                    self.pasteboardState = .ready(
-                        changeCount: count, url: currentURL, title: currentTitle,
-                        media: media, expiresAt: expiry)
-                    self.reload()
-                    self.schedulePasteboardExpiry(at: expiry)
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self,
-                          self.pasteboardState?.changeCount == expectedChangeCount
-                    else { return }
-                    self.pasteboardState = .invalid(changeCount: expectedChangeCount)
-                    self.reload()
-                }
-            }
-        }
-    }
-
-    private func commitTemporaryPasteboardMedia() {
-        guard !isCommittingPasteboardMedia,
-              case .ready(let changeCount, let url, let title, let media, _) = renderedPasteboardState
-        else { return }
-        isCommittingPasteboardMedia = true
-        Task { [weak self] in
-            guard let self else { return }
-            let persistentCopy = MediaDownloadStorage.newFileURL(
-                extension: media.fileURL.pathExtension)
-            do {
-                try FileManager.default.copyItem(at: media.fileURL, to: persistentCopy)
-            } catch {
-                await MainActor.run {
-                    self.isCommittingPasteboardMedia = false
-                    self.presentAlert(title: L10n.string("Save Failed"), message: L10n.string("Couldn't keep the pasted media."))
-                }
-                return
-            }
-
-            let saved: SavedMediaItem
-            do {
-                saved = try self.store.addDownloadedFile(
-                    persistentCopy, kind: media.kind,
-                    sourceURLString: url.absoluteString, title: title)
-            } catch {
-                try? FileManager.default.removeItem(at: persistentCopy)
-                await MainActor.run {
-                    self.isCommittingPasteboardMedia = false
-                    self.presentAlert(title: L10n.string("Save Failed"), message: L10n.string("Couldn't keep the pasted media."))
-                }
-                return
-            }
-
-            var photosFailure = false
-            if media.kind.canSaveToPhotos,
-               await self.photoSaver.requestReadAuthorization() {
-                do {
-                    let identifier = try await self.photoSaver.save(
-                        fileURL: media.fileURL, kind: media.kind, shouldMoveFile: false)
-                    _ = try self.store.transitionToPhotosReference(
-                        saved.id, localIdentifier: identifier, kind: media.kind)
-                } catch {
-                    photosFailure = true
-                }
-            } else if media.kind.canSaveToPhotos {
-                photosFailure = true
-            }
-            AutoDownloadSettings.markDownloaded(url.absoluteString)
-            _ = await ReadingListIngestor.shared.handleSavePress(
-                urlString: url.absoluteString, source: .paste)
-
-            await MainActor.run {
-                self.isCommittingPasteboardMedia = false
-                self.pendingPasteboardDownloadURLString = url.absoluteString
-                self.pasteboardProbe.consume(changeCount)
-                let pasteboardChanged = UIPasteboard.general.changeCount != changeCount
-                if PasteboardCommitPolicy.shouldClearCommittedCard(
-                    committedChangeCount: changeCount,
-                    currentPasteboardChangeCount: UIPasteboard.general.changeCount,
-                    representedChangeCount: self.pasteboardState?.changeCount
-                ) {
-                    self.clearPasteboardCard(removingTemporaryFile: true)
-                } else {
-                    // A newer paste arrived while Photos/storage work was in
-                    // flight. Keep its synthetic card and only fold the saved
-                    // media row into the current carousel snapshot.
-                    self.reload()
-                }
-                if pasteboardChanged { self.refreshPasteboardURL() }
-                if photosFailure {
-                    self.presentAlert(
-                        title: L10n.string("Photos Access Needed"),
-                        message: L10n.string("The media was saved in Luna. Allow photo library access in Settings to also save it to Photos."))
-                }
-            }
-        }
-    }
-
-    private func clearPasteboardCard(removingTemporaryFile: Bool) {
-        pasteboardExpiryWorkItem?.cancel()
-        pasteboardExpiryWorkItem = nil
-        if removingTemporaryFile {
-            let urls = [pasteboardState?.temporaryMedia?.fileURL,
-                        renderedPasteboardState?.temporaryMedia?.fileURL]
-            for url in Set(urls.compactMap { $0 }) {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
-        pasteboardState = nil
-        reload()
-    }
-
-    private func schedulePasteboardExpiry(at date: Date) {
-        pasteboardExpiryWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.expireTemporaryPasteboardMediaIfNeeded()
-        }
-        pasteboardExpiryWorkItem = work
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + max(0, date.timeIntervalSinceNow), execute: work)
-    }
-
-    private func expireTemporaryPasteboardMediaIfNeeded(now: Date = Date()) {
-        guard case .ready(let count, _, _, _, let expiry) = pasteboardState,
-              PasteboardTemporaryMediaPolicy.isExpired(expiresAt: expiry, now: now)
-        else { return }
-        pasteboardProbe.consume(count)
-        clearPasteboardCard(removingTemporaryFile: true)
-    }
-
-    // MARK: - Item actions (context menu)
+    // MARK: - Sharing the file
 
     private func share(_ item: SavedMediaItem, sourceIndex: Int) {
-        let sourceView = carousel.cardView(at: sourceIndex) ?? shareButton
-        share(item, sourceView: sourceView)
+        share(item, sourceView: carousel.cardView(at: sourceIndex) ?? trailingBottomButton)
     }
 
     private func share(_ item: SavedMediaItem, sourceView: UIView) {
@@ -762,69 +284,20 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         sharePreparationItemID = nil
     }
 
-    /// Saves a defensive COPY of the item's local file to Photos (never the file
-    /// itself) — moving the original would risk losing the carousel's own copy
-    /// if the Photos save fails or is slow.
-    private func saveToPhotos(_ item: SavedMediaItem) {
-        Task { @MainActor in
-            do {
-                guard case .localFile = item.storageState,
-                      let fileURL = item.fileURL,
-                      let kind = item.kind
-                else { return }
-                guard await photoSaver.requestReadAuthorization() else {
-                    presentAlert(
-                        title: L10n.string("Photos Access Needed"),
-                        message: L10n.string("Allow photo library access in Settings to save media."))
-                    return
-                }
-                let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
-                try FileManager.default.copyItem(at: fileURL, to: tempURL)
-                defer { try? FileManager.default.removeItem(at: tempURL) }
-                try await SavedMediaPhotosSync.saveAndTransition(
-                    itemID: item.id, fileURL: tempURL, kind: kind, shouldMoveFile: true,
-                    saver: photoSaver, store: store)
-                presentAlert(title: L10n.string("Saved to Photos"), message: L10n.string("The media was added to your photo library."))
-            } catch {
-                presentAlert(title: L10n.string("Save Failed"), message: L10n.string("Couldn't save this media to Photos."))
-            }
-        }
-    }
+    // MARK: - Deleting
 
     private func presentAlert(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
-        present(alert, animated: true)
+        MediaItemActions.presentAlert(title: title, message: message, from: self)
     }
 
     private func deleteSavedItem(for item: SavedMediaItem) {
-        Task { @MainActor [weak self] in
-            do {
-                if let localIdentifier = item.photosLocalIdentifier, let self {
-                    try await SavedMediaPhotosSync.deletePhotosAssetIfPresent(
-                        localIdentifier, saver: self.photoSaver)
-                }
-                guard let self else { return }
-                AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
-                if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
-                    ReadingListStore.shared.delete(saved)
-                }
-                self.store.delete(item)
-            } catch {
+        MediaItemActions.release(
+            item, saver: photoSaver, deletesReadingListItem: true,
+            onPhotosDeletionFailure: { [weak self] in
                 self?.presentAlert(
                     title: L10n.string("Photos Access Needed"),
                     message: L10n.string("Allow Photos access in Settings to delete this media from Photos."))
-            }
-        }
-    }
-
-    private func startDownload(_ item: SavedMediaItem) {
-        Task {
-            // An explicit "download this exact item now" gesture — bypasses the
-            // Wi-Fi-only setting (unlike the opportunistic resume sweep).
-            _ = await LiveMediaDownloadManager.shared.start(
-                urlString: item.sourceURLString, title: item.title, manual: true)
-        }
+            })
     }
 
     /// A Photos identifier that no longer resolves is a deletion only when Luna
@@ -856,12 +329,224 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     }
 }
 
-// The launch splash crossfades from this deck's real resting card geometry.
-extension SavedMediaCardsViewController: AppLaunchTransitionTarget {
-    func appLaunchTargetFrame(in window: UIWindow) -> CGRect? {
-        view.layoutIfNeeded()
-        guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
-        return view.convert(frame, to: window)
+// MARK: - The media kind
+
+extension SavedMediaCardsViewController: CardDeckProviding {
+
+    var deckChangeNotificationNames: [Notification.Name] { [.savedMediaChanged] }
+
+    /// Darwin notifications are dropped while suspended, so also catch up on
+    /// activation — which covers iPad multitasking, where the app can stay
+    /// foregrounded the whole time an extension runs alongside it.
+    var deckActivationNotificationNames: [Notification.Name] {
+        [UIApplication.didBecomeActiveNotification]
+    }
+
+    func deckWillBeginObservingStores() {
+        // Bridges saves/deletes made by the action/share extension (a DIFFERENT
+        // process, so an in-process `.savedMediaChanged` post never reaches it)
+        // back to a `.savedMediaChanged` post here via a Darwin notification.
+        SavedMediaStore.startObservingCrossProcessChanges()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleJobProgressChanged(_:)),
+            name: .downloaderJobProgressChanged, object: nil)
+    }
+
+    func deckPreparedSnapshot() -> CardDeckSnapshot {
+        store.purgeExpired()
+        let allItems = store.items()
+        preparedItems = SavedMediaCardOrdering.newestFirst(allItems.filter { !$0.isArchived })
+        preparedArchivedItems = allItems.filter(\.isArchived).sorted {
+            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
+        }
+        preparedFailedSaves = ReadingListStore.shared.items()
+            .filter { ReadingListSectioning.isFailedSave($0) && !$0.isArchived }
+            .sorted { ($0.bumpDate ?? $0.dateAdded) > ($1.bumpDate ?? $1.dateAdded) }
+        // A media row is keyed by the MEDIA store's id, which the reading-list
+        // item a save produced does not share — so the source URL travels with it
+        // and the host can still center a just-saved link (see
+        // `CardDeckSlot.urlString`).
+        let mediaSlots = preparedItems.map { item in
+            CardDeckSlot(
+                id: item.id, urlString: item.sourceURLString,
+                fingerprint: "active|\(item.id)|\(item.thumbnailFileName ?? "")"
+                    + "|\(MediaItemActions.storageStateKey(item))")
+        }
+        let failedSlots = preparedFailedSaves.map { item in
+            CardDeckSlot(
+                id: item.id, urlString: item.urlString,
+                fingerprint: "failed|\(item.id)|\(URLRescueCoordinator.shared.isRescuing(item.id))")
+        }
+        return CardDeckSnapshot(
+            slots: mediaSlots + failedSlots,
+            offstageIDs: Set(preparedArchivedItems.map(\.id)),
+            offstageFingerprint: preparedArchivedItems.map { item in
+                "archive|\(item.id)|\(item.thumbnailFileName ?? "")"
+                    + "|\(MediaItemActions.storageStateKey(item))"
+            })
+    }
+
+    func deckCommitPreparedSnapshot() {
+        items = preparedItems
+        archivedItems = preparedArchivedItems
+        failedSaves = preparedFailedSaves
+        // A row that left the archive (unarchived, or completed into a live card)
+        // takes its tray bar with it.
+        let archivedIDs = Set(archivedItems.map(\.id))
+        archiveDownloadProgress = archiveDownloadProgress.filter { archivedIDs.contains($0.key) }
+    }
+
+    /// A reload that changed nothing is exactly when a Photos asset deleted
+    /// behind Luna's back needs noticing, so this runs on that path too.
+    func deckDidSettleReload() {
+        reconcilePhotosReferencesIfAuthorized()
+    }
+
+    func deckContentController(forSlot slot: Int) -> CardContentViewController {
+        if let failed = failedSave(forSlot: slot) {
+            return FailedSaveCardFactory.makeCard(
+                for: failed, host: self, onChanged: { [weak self] in self?.reload() })
+        }
+        guard let item = mediaItem(forSlot: slot) else { return CardContentViewController() }
+        return MediaCardFactory.makeCard(
+            for: item, scale: screenScale,
+            download: { MediaItemActions.startManualDownload(item) },
+            rescue: MediaCardRescue.starter(forSourceURLString: item.sourceURLString))
+    }
+
+    func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void) {
+        if failedSave(forSlot: slot) != nil {
+            completion(UIImage(systemName: "exclamationmark.triangle"))
+            return
+        }
+        guard let item = mediaItem(forSlot: slot) else {
+            completion(nil)
+            return
+        }
+        MediaCardFactory.loadThumbnail(for: item, scale: screenScale, completion: completion)
+    }
+
+    /// Media cards title themselves; only a failed save needs the deck to say
+    /// what it is.
+    func deckTitle(forSlot slot: Int) -> String? {
+        failedSave(forSlot: slot).map(FailedSaveCardFactory.displayTitle(for:))
+    }
+
+    /// Two kinds of broken wear the red rim: a failed SAVE, and a media item
+    /// whose DOWNLOAD failed. The second was missing, so the two failures looked
+    /// nothing alike despite sitting in the same deck.
+    func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? {
+        if failedSave(forSlot: slot) != nil { return LunaColors.errorAccent }
+        guard let item = mediaItem(forSlot: slot),
+              LiveMediaDownloadManager.shared.currentDownloadSnapshot(
+                forSourceURLString: item.sourceURLString)?.phase == .failed
+        else { return nil }
+        return LunaColors.errorAccent
+    }
+
+    func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? {
+        mediaItem(forSlot: slot).flatMap(MediaCardFactory.photosBadge(for:))
+    }
+
+    func deckSlotDidCenter(_ slot: Int) {
+        guard let item = mediaItem(forSlot: slot) else {
+            discardPreparedShareFile()
+            return
+        }
+        markOpened(item)
+        prewarmShareFile(for: item)
+    }
+
+    func deckUtilCardDidCenter() {
+        discardPreparedShareFile()
+    }
+
+    func deckMenu(forSlot slot: Int) -> UIMenu? {
+        if let failed = failedSave(forSlot: slot) {
+            return FailedSaveCardFactory.makeMenu(
+                shareLink: { [weak self] in
+                    guard let self else { return }
+                    SendToFriendSheet.shareLink(
+                        urlString: failed.urlString, from: self, sourceView: self.view)
+                },
+                delete: UIAction(
+                    title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
+                    attributes: .destructive
+                ) { [weak self] _ in
+                    ReadingListStore.shared.delete(failed)
+                    self?.reload()
+                })
+        }
+        guard let item = mediaItem(forSlot: slot) else { return nil }
+        let carouselIndex = carouselIndex(forSlot: slot)
+        var actions = MediaItemActions.menuActions(
+            for: item,
+            download: { MediaItemActions.startManualDownload(item) },
+            share: { [weak self] in self?.share(item, sourceIndex: carouselIndex) },
+            saveToPhotos: { [weak self] in
+                guard let self else { return }
+                MediaItemActions.saveToPhotos(item, saver: self.photoSaver, from: self)
+            })
+        actions.append(WeeklyPromotionMenu.action(
+            kind: .media, urlString: item.sourceURLString, title: item.title,
+            presenter: self))
+        actions.append(UIAction(
+            title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
+        ) { [weak self] _ in self?.store.setArchived(true, for: item.id) })
+        actions.append(UIAction(
+            title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
+            attributes: .destructive
+        ) { [weak self] _ in self?.deleteSavedItem(for: item) })
+        return UIMenu(children: actions)
+    }
+
+    func deckArchiveTrayItems() -> [ArchiveTrayItem] {
+        archivedItems.map { item in
+            let available: Bool
+            switch item.storageState {
+            case .localFile, .photosReference: available = true
+            case .undownloaded: available = false
+            }
+            return ArchiveTrayItem(
+                id: item.id, title: nil, footer: nil, showsMetadata: false,
+                isAvailable: available,
+                loadImage: { [weak self] completion in
+                    guard let self else {
+                        completion(nil)
+                        return
+                    }
+                    MediaCardFactory.loadThumbnail(
+                        for: item, scale: self.screenScale, completion: completion)
+                },
+                tap: { [weak self] in self?.openArchivedMedia(item) },
+                share: { [weak self] sourceView in
+                    self?.share(item, sourceView: sourceView)
+                },
+                unarchive: { [weak self] _ in
+                    self?.store.setArchived(false, for: item.id)
+                },
+                delete: { [weak self] in self?.deleteSavedItem(for: item) })
+        }
+    }
+
+    var deckShareButton: CardDeckShareButton? {
+        CardDeckShareButton(
+            accessibilityLabel: L10n.string("Share Current Media"),
+            unavailability: .hides)
+    }
+
+    /// There is nothing to hand the system until the file is actually here.
+    func deckCanShare(slot: Int?) -> Bool {
+        guard let slot, let item = mediaItem(forSlot: slot) else { return false }
+        switch item.storageState {
+        case .localFile, .photosReference: return true
+        case .undownloaded: return false
+        }
+    }
+
+    func deckShare(slot: Int, sourceView: UIView) {
+        guard let item = mediaItem(forSlot: slot) else { return }
+        share(item, sourceView: sourceView)
     }
 }
 
@@ -902,410 +587,6 @@ private final class ArchivedImageViewController: UIViewController {
     }
 
     @objc private func closeTapped() { dismiss(animated: true) }
-}
-
-// MARK: - Carousel data source
-
-extension SavedMediaCardsViewController: CardCarouselDataSource {
-
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int {
-        items.count + failedSaves.count + cardOffset
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        contentControllerForCardAt index: Int
-    ) -> CardContentViewController {
-        if isUtilCard(index) {
-            return makeUtilCardContentController(
-                hasSaves: { [weak self] in self?.items.isEmpty == false }
-            ) { [weak self] url, source, sourceView, completion in
-                self?.saveUtilCardURL(
-                    url,
-                    captureSource: source,
-                    sourceView: sourceView,
-                    completion: completion)
-            }
-        }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder:
-                return PasteboardPlaceholderCardContentViewController(
-                    title: L10n.string("Paste Link"),
-                    detail: L10n.string("Paste the copied link to preview it here."),
-                    onPaste: { [weak self] value in self?.handlePastedValue(value) })
-            case .invalid:
-                return InvalidPasteCardContentViewController()
-            case .downloading(_, let url, let title, let progress):
-                return PasteboardMediaDownloadCardContentViewController(
-                    url: url, title: title, progress: progress)
-            case .ready(_, _, _, let media, _):
-                return TemporaryPasteboardMediaCardContentViewController(
-                    media: media,
-                    onFirstPlay: { [weak self] in self?.commitTemporaryPasteboardMedia() })
-            }
-        }
-        if let failed = failedSave(atCarouselIndex: index) {
-            return FailedSaveCardFactory.makeCard(
-                for: failed, host: self, onChanged: { [weak self] in self?.reload() })
-        }
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
-            return CardContentViewController()
-        }
-        let item = items[mediaIndex]
-        return MediaCardFactory.makeCard(
-            for: item, scale: screenScale,
-            download: { [weak self] in self?.startDownload(item) },
-            rescue: MediaCardRescue.starter(forSourceURLString: item.sourceURLString))
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? {
-        self.carousel(carousel, contentControllerForCardAt: index)
-    }
-
-    /// The util card holds no save, so its chip is the app's own mark over a
-    /// button pill rather than a media still.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        prefersUtilityChipForCardAt index: Int
-    ) -> Bool {
-        isUtilCard(index)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadThumbnailForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        if isUtilCard(index) {
-            loadUtilCardThumbnail(completion: completion)
-            return
-        }
-        if let state = renderedPasteboardState, index == 0 {
-            switch state {
-            case .placeholder, .downloading:
-                completion(UIImage(systemName: "doc.on.clipboard"))
-            case .invalid:
-                completion(UIImage(systemName: "exclamationmark.circle"))
-            case .ready(_, _, _, let media, _):
-                MediaCardFactory.loadTemporaryThumbnail(for: media, completion: completion)
-            }
-            return
-        }
-        if failedSave(atCarouselIndex: index) != nil {
-            completion(UIImage(systemName: "exclamationmark.triangle"))
-            return
-        }
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
-            completion(nil)
-            return
-        }
-        loadThumbnail(for: items[mediaIndex], completion: completion)
-    }
-
-    /// A broken card carries a red rim — the only card chrome that says "this one
-    /// is broken" without a badge or a banner. Two kinds of broken get it: a
-    /// failed SAVE (the shared error card) and a media item whose DOWNLOAD failed.
-    /// The second was missing, so the two failures looked nothing alike despite
-    /// sitting in the same deck.
-    func carousel(
-        _ carousel: CardCarouselViewController, edgeGlowColorForCardAt index: Int
-    ) -> UIColor? {
-        if failedSave(atCarouselIndex: index) != nil { return LunaColors.errorAccent }
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index),
-              items.indices.contains(mediaIndex),
-              LiveMediaDownloadManager.shared.currentDownloadSnapshot(
-                forSourceURLString: items[mediaIndex].sourceURLString)?.phase == .failed
-        else { return nil }
-        return LunaColors.errorAccent
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController, titleForCardAt index: Int
-    ) -> String? {
-        if isUtilCard(index) { return LunaApp.current.displayName }
-        return failedSave(atCarouselIndex: index).map {
-            FailedSaveCardFactory.displayTitle(for: $0)
-        }
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        topLeadingAccessoryForCardAt index: Int
-    ) -> UIView? {
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
-        return MediaCardFactory.photosBadge(for: items[mediaIndex])
-    }
-
-    private func loadThumbnail(for item: SavedMediaItem, completion: @escaping (UIImage?) -> Void) {
-        MediaCardFactory.loadThumbnail(for: item, scale: screenScale, completion: completion)
-    }
-
-    var screenScale: CGFloat { view.window?.screen.scale ?? UIScreen.main.scale }
-}
-
-// MARK: - Carousel delegate
-
-extension SavedMediaCardsViewController: CardCarouselDelegate {
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        navigationTargetDidChangeTo index: Int
-    ) {
-        updateArchivePullAvailability(
-            forTargetIndex: index,
-            cardCount: items.count + failedSaves.count + cardOffset,
-            animated: true)
-    }
-
-    func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        refreshArchivePullAvailability(animated: true)
-        updateUtilCardCorona(forCenteredIndex: index)
-        updateShareButton()
-        if renderedPasteboardState != nil, index == 0 {
-            // Nothing reads the pasteboard on arrival — the card's paste control
-            // is the only way in, and its tap IS the authorization.
-            discardPreparedShareFile()
-            return
-        }
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
-            discardPreparedShareFile()
-            return
-        }
-        let item = items[mediaIndex]
-        markOpened(item)
-        prewarmShareFile(for: item)
-    }
-
-    func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
-        guard let state = renderedPasteboardState, index == 0 else { return }
-        switch state {
-        case .placeholder:
-            break // The card's paste control owns this interaction.
-        case .ready(_, _, _, let media, _):
-            // Still images are non-playable, so their card tap arrives here.
-            // Video/GIF taps go through `setPlaying(true)` on the temporary
-            // content controller and commit from there.
-            if media.kind == .image { commitTemporaryPasteboardMedia() }
-        case .invalid, .downloading:
-            break
-        }
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        menuForCardAt index: Int
-    ) -> UIMenu? {
-        // A failed save has nothing to download, nothing to put in Photos, and
-        // no reason to be archived — sharing the link and deleting it are the
-        // only honest verbs.
-        if let failed = failedSave(atCarouselIndex: index) {
-            return UIMenu(children: [
-                UIAction(title: L10n.string("Share Link…"), image: UIImage(systemName: "square.and.arrow.up")) {
-                    [weak self] _ in
-                    guard let self else { return }
-                    SendToFriendSheet.shareLink(
-                        urlString: failed.urlString, from: self, sourceView: self.view)
-                },
-                UIAction(
-                    title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
-                    attributes: .destructive
-                ) { [weak self] _ in
-                    ReadingListStore.shared.delete(failed)
-                    self?.reload()
-                },
-            ])
-        }
-        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
-        let item = items[mediaIndex]
-        var actions: [UIMenuElement] = []
-        switch item.storageState {
-        case .undownloaded:
-            actions.append(UIAction(
-                title: L10n.string("Download"), image: UIImage(systemName: "arrow.down.circle")
-            ) { [weak self] _ in self?.startDownload(item) })
-        case .localFile:
-            actions.append(UIAction(
-                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
-            ) { [weak self] _ in self?.share(item, sourceIndex: index) })
-            if item.kind?.canSaveToPhotos == true {
-                actions.append(UIAction(
-                    title: L10n.string("Save to Photos"), image: UIImage(systemName: "photo.badge.plus")
-                ) { [weak self] _ in self?.saveToPhotos(item) })
-            }
-        case .photosReference:
-            actions.append(UIAction(
-                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
-            ) { [weak self] _ in self?.share(item, sourceIndex: index) })
-        }
-        actions.append(WeeklyPromotionMenu.action(
-            kind: .media, urlString: item.sourceURLString, title: item.title,
-            presenter: self))
-        actions.append(UIAction(
-            title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
-        ) { [weak self] _ in self?.store.setArchived(true, for: item.id) })
-        actions.append(UIAction(
-            title: L10n.string("Delete"), image: UIImage(systemName: "trash"), attributes: .destructive
-        ) { [weak self] _ in self?.deleteSavedItem(for: item) })
-        return UIMenu(children: actions)
-    }
-}
-
-// MARK: - Pasteboard card
-
-/// The user-triggered paste read succeeded and its media is being staged in a
-/// one-hour temporary file. The paste icon remains in the scrubber until this
-/// progress card is replaced by the real, paused media card.
-private final class PasteboardMediaDownloadCardContentViewController: CardContentViewController {
-    private let url: URL
-    private let titleText: String
-    private let initialProgress: Double
-    private let statusLabel = UILabel()
-    private let progress = MoonHorizonProgressBar()
-
-    init(url: URL, title: String, progress: Double) {
-        self.url = url
-        self.titleText = title
-        self.initialProgress = progress
-        super.init()
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = LunaColors.background
-
-        let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
-        icon.tintColor = GlassStyle.readingAccent
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-            pointSize: 42, weight: .medium)
-
-        let title = UILabel()
-        title.text = titleText
-        title.font = .preferredFont(forTextStyle: .title2)
-        title.textColor = LunaColors.primaryText
-        title.textAlignment = .center
-
-        let urlLabel = UILabel()
-        urlLabel.text = url.absoluteString
-        urlLabel.font = .preferredFont(forTextStyle: .subheadline)
-        urlLabel.textColor = LunaColors.secondaryText
-        urlLabel.textAlignment = .center
-        urlLabel.numberOfLines = 4
-        urlLabel.lineBreakMode = .byTruncatingMiddle
-
-        statusLabel.text = L10n.string("Downloading temporary preview…")
-        statusLabel.font = .preferredFont(forTextStyle: .subheadline)
-        statusLabel.textColor = LunaColors.secondaryText
-        statusLabel.textAlignment = .center
-        progress.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = UIStackView(arrangedSubviews: [
-            icon, title, urlLabel, statusLabel, progress,
-        ])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 14
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -28),
-            progress.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            progress.heightAnchor.constraint(equalToConstant: 20),
-        ])
-        setProgress(initialProgress)
-    }
-
-    func setProgress(_ value: Double) {
-        guard isViewLoaded else { return }
-        progress.setProgress(Float(value), animated: true)
-    }
-}
-
-/// A fully downloaded but unsaved pasteboard card. It deliberately suppresses
-/// the carousel's normal center-autoplay. The first explicit play tap commits
-/// the file to Luna and Photos; still images commit through the host's normal
-/// non-playable card-tap callback.
-final class TemporaryPasteboardMediaCardContentViewController: CardContentViewController {
-    private let content: CardContentViewController
-    private let onFirstPlay: () -> Void
-    private var didRequestCommit = false
-
-    init(media: DownloadedMedia, onFirstPlay: @escaping () -> Void) {
-        switch media.kind {
-        case .video:
-            self.content = VideoCardContentViewController(fileURL: media.fileURL)
-        case .audio:
-            let content = VideoCardContentViewController(fileURL: media.fileURL)
-            content.setPosterImage(UIImage(systemName: "waveform.circle.fill"))
-            self.content = content
-        case .gif:
-            self.content = AnimatedImageCardContentViewController(fileURL: media.fileURL)
-        case .image:
-            self.content = ImageCardContentViewController(loader: { completion in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let raw = UIImage(contentsOfFile: media.fileURL.path)
-                    completion(raw?.preparingForDisplay() ?? raw)
-                }
-            })
-        }
-        self.onFirstPlay = onFirstPlay
-        super.init()
-        content.audioAvailabilityChanged = { [weak self] in
-            self?.audioAvailabilityChanged?()
-        }
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .clear
-        addChild(content)
-        content.view.frame = view.bounds
-        content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(content.view)
-        content.didMove(toParent: self)
-    }
-
-    override var isPlayable: Bool { content.isPlayable }
-    override var supportsAudio: Bool { content.supportsAudio }
-    override var isPlaying: Bool { content.isPlaying }
-    override var playbackFraction: Double { content.playbackFraction }
-    override var showsPlaybackScrubProgress: Bool { content.showsPlaybackScrubProgress }
-
-    override func setPlaying(_ playing: Bool) {
-        if playing, !didRequestCommit {
-            didRequestCommit = true
-            onFirstPlay()
-        }
-        content.setPlaying(playing)
-    }
-
-    override func seek(toFraction fraction: Double) {
-        content.seek(toFraction: fraction)
-    }
-
-    override func setMuted(_ muted: Bool) {
-        content.setMuted(muted)
-    }
-
-    override func allowsCardTap(at point: CGPoint) -> Bool {
-        content.allowsCardTap(at: point)
-    }
-
-    override func cardDidBecomeCentered() {
-        // Unlike durable media cards, a temporary paste always starts paused.
-        content.setPlaying(false)
-    }
-
-    override func cardDidLeaveCenter() {
-        content.cardDidLeaveCenter()
-    }
 }
 
 // MARK: - Undownloaded card content

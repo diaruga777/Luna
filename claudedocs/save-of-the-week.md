@@ -6,7 +6,7 @@ proposable by anyone. It replaces the util card's former hardcoded weekly link.
 
 Module: `LunaLibraries/Sources/LunaWeekly` (linked by the four APPS only — no
 extension reads or writes it). UI: `Luna/UtilCard/WeeklySaveRowHost.swift`,
-`WeeklyRowEclipseTransition.swift`, `WeeklyCyclePacer.swift`,
+`WeeklyRibbonView.swift`, `WeeklyRowEclipseTransition.swift`, `WeeklyCyclePacer.swift`,
 `WeeklyPromotionMenu.swift`, `Luna/Settings/WeeklyProposalsScreen.swift`.
 
 ## The value
@@ -77,8 +77,12 @@ its `CKContainer` lazily, on first use.
 | `WeeklySave` | `weekly-article` / `weekly-media` / `weekly-product` (fixed) | `kind` String, `url` String, `date` Date, `signature` Bytes |
 | `WeeklySaveProposal` | `proposal-<first 32 hex of SHA-256(trimmed url)>` | `kind` String, `url` String, `date` Date |
 
-Fixed record names are why reads are `fetch(withRecordID:)` — no queryable
-index needed for the weekly picks. The proposal record NAME is the per-URL
+Fixed record names are why reads are by record ID — no queryable index needed
+for the weekly picks. All of an app's kinds travel in ONE
+`CKFetchRecordsOperation` at `.userInitiated` QoS: the launch card is waiting
+on this fetch, and the convenience API's default configuration is
+discretionary-eligible, which is what used to cost the row a couple of seconds
+even on good networks. The proposal record NAME is the per-URL
 dedup: proposing the same link twice lands on the same record, and
 `serverRecordChanged` is treated as success.
 
@@ -88,22 +92,76 @@ it last knew and nothing else regresses. This is load-bearing today — the
 container in §Deployment does not exist yet.
 
 `WeeklySaveRefresher` runs at launch and on foreground (debounced to one pull a
-minute, one in flight). It fetches this app's kinds, drops anything unverified
-or expired, resolves metadata BEFORE writing so the row animates in fully
-formed, and clears a kind the cloud no longer has.
+minute, one in flight). The launch pull starts EARLY in `didFinishLaunching` —
+a `.userInitiated` task kicked off right after the metadata closure is
+installed, not the end-of-launch utility housekeeping block — because the util
+card wants the row the moment the deck appears. It fetches this app's kinds
+(one batched operation, see above), drops anything unverified or expired,
+resolves metadata BEFORE writing so the row animates in fully formed — each
+kind's metadata concurrently, writing per kind as it lands, so one slow page
+doesn't hold the other rows back — and clears a kind the cloud no longer has.
 
 ## The util card row
 
 The row is CONDITIONAL. With no live entry for any of this app's kinds the slot
 collapses and both layout branches reclaim it (the setup buttons move up in the
-first-run state; the recent rows start higher in the completed state).
+first-run state; in the completed state the recent rows take the card's top,
+which is a seat the weekly row otherwise does not occupy — see
+`claudedocs/util-card.md`).
 
-- **Appearing / disappearing**: a 0.24s fade plus a reflow.
+It is also the one util row that is NOT dressed like Safari history: Luna's own
+pick carries the app's colour — a palette wash over the shared black, a
+palette-tinted rim instead of the neutral glass one, and the corner flag below —
+so it never reads as the first entry of the recents list.
+
+**The weekly noun is a corner flag, not a phrase in the subtitle.**
+`WeeklyRibbonView` is a small tinted tab pinned flush to the row's TOP-LEFT
+corner, carrying the app's own noun from `WeeklySaveLabels.subtitle` ("Read of
+the week", "Deal of the month", …). Three shape decisions, all of them
+corrections of a first pass that was a bright pennant across the artwork:
+
+- **it CLEARS the thumbnail** rather than overhanging it. 20pt tall against the
+  centred 52pt thumbnail's 22pt top, and the row's layout guarantees the gap
+  rather than inheriting it: the artwork is centred as ever *unless* centring
+  would put it under the flag, in which case it sits just below. At the weekly
+  row's own 96pt the two agree to the point, so nothing moved when the guard
+  went in.
+- **its trailing edge is ONE arc**, not a swallowtail's two cuts: a single cubic
+  that leaves the bottom edge horizontally and turns up to meet the top edge
+  vertically, so there is no corner anywhere along the sweep (both tangents are
+  load-bearing — drop either and the join reads as a bend). The flag draws only
+  that edge; the row's own `clipsToBounds` plus its 16pt continuous corner round
+  the flag's outer corner for it.
+- **the fill is the palette DIMMED into the row's black**
+  (`WeeklyRibbonView.fillColor`, 45% of `LunaSurfacePalette.baseColor` over
+  `UtilURLRow.rowBackground`). At full strength the four colours were a patch
+  brighter than the pick they label, and two of them — the Reader's periwinkle
+  and the Price Tracker's green — had to letter in near-black to stay legible.
+  Dimmed, all four clear 4.5:1 against white, so the lettering is simply white
+  and the per-app luminance branch is gone.
+
+Two things that did not change: the shape layer holds a RESOLVED `CGColor`, so it
+re-applies on `LunaSkyTrait` changes (a style change never arrives under the
+pinned-dark trait — see CLAUDE.md); and the flag travels with
+`setContentParallax` during a cycle slide, because it names the PICK, not the
+slot.
+
+The subtitle is therefore the URL host ALONE — the noun used to sit beside it
+behind a bullet and truncate it. The row is `UtilCardLayout.weeklyRowHeight`
+(96pt, against a history row's 74) to seat the flag above the pick's own two
+lines, and the title starts below the flag (`WeeklyRibbonView.height + 6`) rather
+than at a history row's 13pt. VoiceOver reads flag, title, host.
+
+- **Appearing / disappearing**: a 0.24s fade plus a reflow. An appearing row
+  fades in IN PLACE — the host is laid out before the animation, so the row
+  never grows into its slot from zero. On the launch that animates the intro
+  headline the row instead waits, invisible, for the headline's group reveal
+  (`claudedocs/util-card.md`).
 - **Replaced in place**: `WeeklyRowEclipseTransition` — the card carousel's
   choreography at row scale. The incoming row crosses from 30% out and goes
   solid in the first quarter; the outgoing one flares white at the 80% break;
   the corona blooms at totality and fades on the egress. No dimmer, no peek
-  veils, no diamond-ring flare: at 82pt the corona IS the effect. The corona's
+  veils, no diamond-ring flare: at row scale the corona IS the effect. The corona's
   `reach` is overridden to 30 because `EclipseCorona`'s own default has a 56pt
   floor sized for a CARD. Consequently the slot's clipping lives in a child
   view and `WeeklySaveRowHost` itself does not clip — the overhang is the
@@ -153,8 +211,10 @@ local notification per batch.
 
 Settings → five taps on blank space → Diagnostics → **Enter Weekly Key**. The
 pasted base64 is validated against the bundled public key; a wrong key is never
-stored. A right one also requests notification authorization (this device now
-receives proposals) and schedules the background check. With a key stored the
+stored. A right one also requests notification authorization — this device now
+receives proposals, and this is one of only three moments Luna asks (launch does
+not; the others are connecting a sending account and committing a price alert
+threshold) — and schedules the background check. With a key stored the
 button reads "Weekly Key ✓" and offers Replace / Remove.
 
 ## Deployment (manual — not automatable)

@@ -4,12 +4,6 @@
     "%@" : {
 
     },
-    "%@ · App-specific password" : {
-
-    },
-    "%@ · Secure provider sign-in" : {
-
-    },
     "%@ Button" : {
 
     },
@@ -70,9 +64,6 @@
     "Apple Intelligence" : {
 
     },
-    "Apply Luna in Safari" : {
-
-    },
     "archive" : {
 
     },
@@ -85,13 +76,7 @@
     "Articles are emailed from your connected Luna email account. That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings)." : {
 
     },
-    "Articles you save appear here as cards." : {
-
-    },
     "Audio" : {
-
-    },
-    "Authorization expired or was revoked" : {
 
     },
     "Autoplay next article" : {
@@ -115,7 +100,7 @@
     "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list." : {
 
     },
-    "Checking URL" : {
+    "Checking…" : {
 
     },
     "Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away." : {
@@ -136,9 +121,6 @@
     "Clears onboarding completion and the Safari extension and Shortcut run evidence. Full onboarding will show again on the next launch." : {
 
     },
-    "Close email setup" : {
-
-    },
     "Connect" : {
 
     },
@@ -148,16 +130,13 @@
     "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next." : {
 
     },
-    "Connect Email" : {
-
-    },
-    "Connect your email" : {
-
-    },
     "Contacts" : {
 
     },
     "Context Result" : {
+
+    },
+    "Couldn't Delete" : {
 
     },
     "Couldn't fetch this article" : {
@@ -169,10 +148,13 @@
     "Couldn't identify anything to save on this screen." : {
 
     },
-    "Couldn't keep the pasted media." : {
+    "Couldn't prepare this media for sharing." : {
 
     },
-    "Couldn't prepare this media for sharing." : {
+    "Couldn't Promote" : {
+
+    },
+    "Couldn't Propose" : {
 
     },
     "Couldn't reach the mail servers. Check your connection and try again." : {
@@ -194,9 +176,6 @@
 
     },
     "CurrentApp" : {
-
-    },
-    "Custom provider · IMAP setup" : {
 
     },
     "Delete" : {
@@ -229,9 +208,6 @@
     "Downloading" : {
 
     },
-    "Downloading temporary preview…" : {
-
-    },
     "Downloads" : {
 
     },
@@ -256,10 +232,13 @@
     "Enter an app-specific password for this account." : {
 
     },
-    "Enter the address Luna should use to send and import links." : {
+    "Enter Weekly Key" : {
 
     },
     "Enter your Kindle address first." : {
+
+    },
+    "Every Luna will show it on its next check." : {
 
     },
     "Export Failed" : {
@@ -304,19 +283,16 @@
     "Install Enhanced Voices" : {
 
     },
-    "Install shortcut" : {
-
-    },
     "Install Shortcut" : {
-
-    },
-    "Invalid paste" : {
 
     },
     "Invalid URL" : {
 
     },
     "Keep Luna mail out of your inbox" : {
+
+    },
+    "Key Accepted" : {
 
     },
     "Kindle" : {
@@ -339,9 +315,6 @@
       }
     },
     "Listening" : {
-
-    },
-    "Loading Paste" : {
 
     },
     "Locked — tap to unlock" : {
@@ -404,9 +377,6 @@
     "New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight." : {
 
     },
-    "Next" : {
-
-    },
     "Next article" : {
 
     },
@@ -416,22 +386,13 @@
     "No diagnostics recorded yet." : {
 
     },
+    "No proposals right now." : {
+
+    },
     "No Safari page tracked yet. Is the Luna extension enabled?" : {
 
     },
     "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page." : {
-
-    },
-    "No Saved Articles" : {
-
-    },
-    "No Saved Media" : {
-
-    },
-    "No Tracked Products" : {
-
-    },
-    "No URL to paste" : {
 
     },
     "Not Configured" : {
@@ -467,13 +428,7 @@
     "Onboarding Reset" : {
 
     },
-    "One more step! Set your action button to %@" : {
-
-    },
     "OnScreenURLs" : {
-
-    },
-    "Open" : {
 
     },
     "Open Filter Settings" : {
@@ -482,16 +437,10 @@
     "Open in Photos" : {
 
     },
-    "Open Safari" : {
-
-    },
     "Open Settings" : {
 
     },
     "Open Shortcuts" : {
-
-    },
-    "Opens Email settings to reconnect" : {
 
     },
     "Opens item" : {
@@ -500,13 +449,7 @@
     "Opens this tracked site" : {
 
     },
-    "Opens when this tray is opened" : {
-
-    },
     "Optional opaque state returned by Provide Context." : {
-
-    },
-    "Or change %@ to “Allow”" : {
 
     },
     "Outcome" : {
@@ -518,25 +461,7 @@
     "Outlook sign-in failed. Please try again." : {
 
     },
-    "Paste Link" : {
-
-    },
-    "Paste or share a product page to start tracking its price." : {
-
-    },
-    "Paste setting" : {
-
-    },
-    "Paste the copied link to preview it here." : {
-
-    },
-    "Paste URL" : {
-
-    },
-    "Paste URL automatically" : {
-
-    },
-    "Pasted Media" : {
+    "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored." : {
 
     },
     "Pause" : {
@@ -563,9 +488,6 @@
     "Preload the content of links in a saved article (and links on those pages, up to this depth) in the background, so tapping a link opens instantly. 0 turns preloading off. Preloading uses any network by default; turn on Wi-Fi Only to restrict it to Wi-Fi." : {
 
     },
-    "Preparing a temporary reader card…" : {
-
-    },
     "Previous paragraph" : {
 
     },
@@ -573,6 +495,18 @@
 
     },
     "Price unavailable" : {
+
+    },
+    "Promote" : {
+
+    },
+    "Promoted" : {
+
+    },
+    "Proposal Sent" : {
+
+    },
+    "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again." : {
 
     },
     "Provide Context" : {
@@ -605,13 +539,16 @@
     "Reconnect Email" : {
 
     },
-    "Reconnect in Settings" : {
-
-    },
     "Refresh Last Visited Website" : {
 
     },
+    "Remove" : {
+
+    },
     "Remove %@" : {
+
+    },
+    "Replace" : {
 
     },
     "Reset" : {
@@ -626,13 +563,19 @@
     "S" : {
 
     },
+    "Safari" : {
+
+    },
     "Save" : {
 
     },
     "Save Failed" : {
 
     },
-    "Save From Safari" : {
+    "Save of the Week" : {
+
+    },
+    "Save of the Week Key" : {
 
     },
     "Save Result" : {
@@ -648,9 +591,6 @@
         }
       }
     },
-    "Save to Luna with your Action Button" : {
-
-    },
     "Save to Photos" : {
 
     },
@@ -658,9 +598,6 @@
 
     },
     "Saved" : {
-
-    },
-    "Saved Downloader links appear here after Luna downloads the media." : {
 
     },
     "Saved to Luna" : {
@@ -688,9 +625,6 @@
 
     },
     "Second article save" : {
-
-    },
-    "Send articles and import links · Tap to continue" : {
 
     },
     "Send Test to Kindle" : {
@@ -741,10 +675,16 @@
     "Shortcut & Safari" : {
 
     },
+    "Show me one click save" : {
+
+    },
     "Sign In" : {
 
     },
     "Sign in again with this account" : {
+
+    },
+    "Sign in to iCloud" : {
 
     },
     "Sign Out" : {
@@ -795,7 +735,13 @@
     "Text Size" : {
 
     },
+    "Thanks — it's in the queue." : {
+
+    },
     "That article isn't ready to read yet." : {
+
+    },
+    "That key doesn't match this build. Nothing was stored." : {
 
     },
     "The article to read. Leave blank for your latest unread article." : {
@@ -807,9 +753,6 @@
     "The media was added to your photo library." : {
 
     },
-    "The media was saved in Luna. Allow photo library access in Settings to also save it to Photos." : {
-
-    },
     "The output from Get On-Screen URLs. Compatible complete values may be saved directly." : {
 
     },
@@ -819,10 +762,13 @@
     "The provider rejected the saved app password." : {
 
     },
-    "The saved app password was rejected" : {
+    "Theme" : {
 
     },
-    "Theme" : {
+    "This device can now promote Saves of the Week." : {
+
+    },
+    "This device can promote Saves of the Week." : {
 
     },
     "This erases the saved log." : {
@@ -850,6 +796,9 @@
     "Trying harder with Apple Intelligence…" : {
 
     },
+    "Unable to save URL" : {
+
+    },
     "Unarchive" : {
 
     },
@@ -865,6 +814,9 @@
     "Up Next · %@" : {
 
     },
+    "Weekly Key ✓" : {
+
+    },
     "When an article finishes, mark it read and continue with the next unread article — after a chime and a short “Now Reading” announcement." : {
 
     },
@@ -878,6 +830,9 @@
 
     },
     "Words" : {
+
+    },
+    "Wrong Key" : {
 
     },
     "XL" : {

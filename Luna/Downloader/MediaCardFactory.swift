@@ -145,22 +145,6 @@ enum MediaCardFactory {
         }
     }
 
-    static func loadTemporaryThumbnail(
-        for media: DownloadedMedia, completion: @escaping (UIImage?) -> Void
-    ) {
-        if media.kind == .video {
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: media.fileURL))
-            generator.appliesPreferredTrackTransform = true
-            generator.generateCGImageAsynchronously(for: .zero) { image, _, _ in
-                completion(image.map(UIImage.init))
-            }
-        } else {
-            DispatchQueue.global(qos: .userInitiated).async {
-                completion(UIImage(contentsOfFile: media.fileURL.path))
-            }
-        }
-    }
-
     static func loadPhotosImage(
         identifier: String,
         targetSize: CGSize,
@@ -209,5 +193,146 @@ enum MediaCardFactory {
                 completion(avAsset.map { AVPlayerItem(asset: $0) })
             }
         }
+    }
+}
+
+/// The verbs a media row offers, and the storage work behind two of them.
+///
+/// It exists for the same reason `MediaCardFactory` does: TWO decks show the
+/// same media save — the Downloader's own root and the central app's all-kinds
+/// deck — and they were answering "what can you do with this?" and "what goes
+/// when it goes?" with two copies of the same switch over `storageState`.
+enum MediaItemActions {
+
+    /// What you can do with a media row depends only on where its file is: an
+    /// undownloaded row can be fetched, a local one can be shared and put in
+    /// Photos, one that is ALREADY in Photos can only be shared. In that order,
+    /// above whatever the deck adds of its own (Archive, Delete).
+    static func menuActions(
+        for item: SavedMediaItem,
+        download: @escaping () -> Void,
+        share: @escaping () -> Void,
+        saveToPhotos: @escaping () -> Void
+    ) -> [UIMenuElement] {
+        switch item.storageState {
+        case .undownloaded:
+            return [UIAction(
+                title: L10n.string("Download"), image: UIImage(systemName: "arrow.down.circle")
+            ) { _ in download() }]
+        case .localFile:
+            var actions: [UIMenuElement] = [UIAction(
+                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
+            ) { _ in share() }]
+            if item.kind?.canSaveToPhotos == true {
+                actions.append(UIAction(
+                    title: L10n.string("Save to Photos"),
+                    image: UIImage(systemName: "photo.badge.plus")
+                ) { _ in saveToPhotos() })
+            }
+            return actions
+        case .photosReference:
+            return [UIAction(
+                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
+            ) { _ in share() }]
+        }
+    }
+
+    /// An explicit "download this exact item now" gesture — it bypasses the
+    /// Wi-Fi-only setting, unlike the opportunistic resume sweep.
+    static func startManualDownload(_ item: SavedMediaItem) {
+        Task {
+            _ = await LiveMediaDownloadManager.shared.start(
+                urlString: item.sourceURLString, title: item.title, manual: true)
+        }
+    }
+
+    /// Where a media row's file actually is, as one string — the change key both
+    /// decks fingerprint a media card by, so a download that finishes in the
+    /// background re-renders the card instead of leaving a placeholder.
+    static func storageStateKey(_ item: SavedMediaItem) -> String {
+        switch item.storageState {
+        case .undownloaded: return "undownloaded"
+        case .localFile: return "local|\(item.fileName ?? "")"
+        case .photosReference(let identifier, _, _): return "photos|\(identifier)"
+        }
+    }
+
+    /// Saves a defensive COPY of the row's local file to Photos (never the file
+    /// itself) — moving the original would risk losing Luna's own copy if the
+    /// Photos save fails or is slow.
+    static func saveToPhotos(
+        _ item: SavedMediaItem,
+        saver: PhotoLibrarySaver,
+        from presenter: UIViewController
+    ) {
+        Task { @MainActor in
+            do {
+                guard case .localFile = item.storageState,
+                      let fileURL = item.fileURL, let kind = item.kind
+                else { return }
+                guard await saver.requestReadAuthorization() else {
+                    presentAlert(
+                        title: L10n.string("Photos Access Needed"),
+                        message: L10n.string("Allow photo library access in Settings to save media."),
+                        from: presenter)
+                    return
+                }
+                let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
+                try FileManager.default.copyItem(at: fileURL, to: tempURL)
+                defer { try? FileManager.default.removeItem(at: tempURL) }
+                try await SavedMediaPhotosSync.saveAndTransition(
+                    itemID: item.id, fileURL: tempURL, kind: kind, shouldMoveFile: true,
+                    saver: saver, store: SavedMediaStore.shared)
+                presentAlert(
+                    title: L10n.string("Saved to Photos"),
+                    message: L10n.string("The media was added to your photo library."),
+                    from: presenter)
+            } catch {
+                presentAlert(
+                    title: L10n.string("Save Failed"),
+                    message: L10n.string("Couldn't save this media to Photos."), from: presenter)
+            }
+        }
+    }
+
+    /// Everything that belongs to a media row besides the row itself: its Photos
+    /// asset and the auto-download bookkeeping that would otherwise treat the URL
+    /// as already fetched. The whole save goes when the card does.
+    ///
+    /// - Parameters:
+    ///   - deletesReadingListItem: true for a deck whose card IS the media row
+    ///     (the Downloader's), false where the reading-list entry is the card and
+    ///     its own deck deletes it.
+    ///   - onPhotosDeletionFailure: the Downloader tells the user its Photos
+    ///     deletion needs permission; the all-kinds deck lets it pass, having
+    ///     already removed the card.
+    static func release(
+        _ item: SavedMediaItem,
+        saver: PhotoLibrarySaver,
+        deletesReadingListItem: Bool,
+        onPhotosDeletionFailure: (@MainActor () -> Void)? = nil
+    ) {
+        Task { @MainActor in
+            do {
+                if let localIdentifier = item.photosLocalIdentifier {
+                    try await SavedMediaPhotosSync.deletePhotosAssetIfPresent(
+                        localIdentifier, saver: saver)
+                }
+                AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
+                if deletesReadingListItem,
+                   let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
+                    ReadingListStore.shared.delete(saved)
+                }
+                SavedMediaStore.shared.delete(item)
+            } catch {
+                onPhotosDeletionFailure?()
+            }
+        }
+    }
+
+    static func presentAlert(title: String, message: String, from presenter: UIViewController) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        presenter.present(alert, animated: true)
     }
 }

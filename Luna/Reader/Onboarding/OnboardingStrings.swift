@@ -69,6 +69,43 @@ enum OnboardingStrings {
         }
     }
 
+    /// A definition whose value is an ORDERED LIST of chunks rather than one
+    /// string — copy whose length is decided by the screen it lands on.
+    ///
+    /// `Definition` cannot carry this: each app's chunk COUNT differs, so the
+    /// four values are not interchangeable strings. The rule the chunks encode
+    /// is that every cumulative prefix (chunk 1, chunks 1–2, …) is itself
+    /// publishable copy: each chunk ends on a sentence boundary that closes a
+    /// sub-topic, so a screen that can only hold the first two never shows half
+    /// an idea.
+    struct ChunkedDefinition: Equatable {
+        private let core: [String]
+        private let reader: [String]
+        private let downloader: [String]
+        private let priceTracker: [String]
+
+        init(
+            core: [String],
+            reader: [String],
+            downloader: [String],
+            priceTracker: [String]
+        ) {
+            self.core = core
+            self.reader = reader
+            self.downloader = downloader
+            self.priceTracker = priceTracker
+        }
+
+        func value(for app: LunaApp = .current) -> [String] {
+            switch app {
+            case .luna: return core
+            case .reader: return reader
+            case .downloader: return downloader
+            case .priceTracker: return priceTracker
+            }
+        }
+    }
+
     enum Intro {
         static let safariAction = Definition(shared: "Stop popups and paywalls")
         static let shortcutAction = Definition(shared: "Show me one click save")
@@ -222,8 +259,44 @@ enum OnboardingStrings {
     enum Safari {
         static let title = Definition(shared: "Read the page, not the popups")
         static let bylineTemplate = Definition(shared: "A Safari extension • by %@")
-        static let explainer = Definition(
-            shared: "Ads, popups and subscription walls come off on their own, privately, on your device. Anything you keep saves to Luna in one tap.")
+        /// The page's prose, per app, in the order it reads — and it is only
+        /// ever shown as a PREFIX of this list. The page's own header, steps and
+        /// actions are fixed furniture, so what is left over between them is the
+        /// only room the prose has; the page picks the longest prefix that fits
+        /// (`OnboardingSafariPageView.fittedProse`). Chunk one therefore has to
+        /// stand alone on the shortest phone Luna ships to, and every later
+        /// chunk is depth a taller screen (or an iPad's wider column) can
+        /// afford. Each ends on a sentence boundary that finishes its own
+        /// sub-topic, so no prefix ever cuts an idea in half.
+        static let explainerChunks = ChunkedDefinition(
+            core: [
+                "Ads, popups and subscription walls come off on their own, privately, on your device. Anything on the page saves to Luna in one tap.",
+                "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.",
+                "Articles arrive ready to read offline — scrolling, a word at a time, or aloud with the screen off.",
+                "The same tap keeps a video for the flight, or starts watching a product’s price for you.",
+                "One app, one deck: everything you saved from anywhere, in the order you saved it.",
+            ],
+            reader: [
+                "Ads, popups and subscription walls come off on their own, privately, on your device. Anything you keep saves to Luna in one tap.",
+                "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.",
+                "A saved page is yours offline — on a plane, on the subway, next week.",
+                "Read it scrolling, a word at a time, or aloud with the screen off.",
+                "Send it to your Kindle, or export it as EPUB, PDF, Markdown or plain text.",
+            ],
+            downloader: [
+                "Save the video, the clip or the audio straight from the page it lives on — one tap, no account, no signup wall.",
+                "Ads, popups and signup sheets come off first, privately, on your device.",
+                "Every download lands in your library on this phone, ready offline — on a plane, underground, anywhere.",
+                "Send one on to whoever you were going to send the link to instead.",
+                "None of what you watch leaves your phone.",
+            ],
+            priceTracker: [
+                "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on.",
+                "Ads, popups and upsell sheets come off first, privately, on your device.",
+                "Luna checks back for you and tells you the moment the price drops.",
+                "Every check is kept, so the whole run of a price draws as a graph you can read.",
+                "None of what you shop for leaves your phone.",
+            ])
         static let stepsHeading = Definition(shared: "Turn it on in Safari")
         static let manageExtensionsTitle = Definition(shared: "Manage Extensions")
         static let pageMenuStep = Definition(shared: "Tap the page menu in the address bar")
@@ -436,6 +509,29 @@ enum OnboardingStrings {
         }
     }
 
+    /// Words that belong to iOS rather than to Luna. The mock link menu and the
+    /// mock share sheet replicate system surfaces, so they spell every label
+    /// exactly as the OS does — and they are gathered here for the same reason
+    /// all the other copy is: so a change is one edit, not a hunt through views.
+    enum SystemUI {
+        static let openLink = Definition(shared: "Open Link")
+        static let copy = Definition(shared: "Copy")
+        static let share = Definition(shared: "Share…")
+        static let editActions = Definition(shared: "Edit Actions")
+        static let favorites = Definition(shared: "Favorites")
+        static let otherActions = Definition(shared: "Other Actions")
+        static let saveToFiles = Definition(shared: "Save to Files")
+        static let addToReadingList = Definition(shared: "Add to Reading List")
+        static let airDrop = Definition(shared: "AirDrop")
+        static let messages = Definition(shared: "Messages")
+        static let reminders = Definition(shared: "Reminders")
+        static let more = Definition(shared: "More")
+        /// The two share targets the sheet always has: this user's own Mac and
+        /// somebody in Contacts.
+        static let laptop = Definition(shared: "Laptop")
+        static let contact = Definition(shared: "Johnny\nAppleseed")
+    }
+
     enum AnimationKeys {
         static let messageBubbleFlight = Definition(shared: "onboarding.bubble.flight")
         static let pillPulse = Definition(shared: "onboarding.pill.pulse")
@@ -445,6 +541,12 @@ enum OnboardingStrings {
         static let attentionPulseScale = Definition(
             shared: "onboarding.attention.pulse.scale")
         static let ringFill = Definition(shared: "onboarding.ring.fill")
+        /// The visible front of the Action Button press wave.
+        static let actionButtonPressWave = Definition(
+            shared: "onboarding.press.wave")
+        /// The lift a context menu's preview and menu cast while they are up.
+        static let contextMenuShadow = Definition(
+            shared: "onboarding.contextMenu.shadow")
         static let switcherCorner = Definition(shared: "onboarding.switcher.corner")
         static let moonReveal = Definition(shared: "moonReveal")
         static let opaqueGlyphReveal = Definition(shared: "opaqueGlyphReveal")
@@ -489,7 +591,30 @@ enum OnboardingSafariExtensionCopy {
     static func byline(appName: String) -> String {
         OnboardingStrings.Safari.byline(appName: appName)
     }
-    static var explainer: String { OnboardingStrings.Safari.explainer.value() }
+    /// What joins two chunks into a valid prefix. One space: the chunks are
+    /// sentences of one paragraph, not paragraphs of their own.
+    static let chunkSeparator = " "
+
+    /// The page's prose in the order it reads. Only a PREFIX of this ever
+    /// appears — see `OnboardingStrings.Safari.explainerChunks`.
+    static func explainerChunks(for app: LunaApp = .current) -> [String] {
+        OnboardingStrings.Safari.explainerChunks.value(for: app)
+    }
+
+    /// The cumulative join of the first `count` chunks — the only shape the
+    /// page is ever allowed to display.
+    static func explainerPrefix(_ count: Int, for app: LunaApp = .current) -> String {
+        explainerChunks(for: app).prefix(max(count, 1))
+            .joined(separator: chunkSeparator)
+    }
+
+    /// Every chunk joined: the longest prefix, and so the whole of the page's
+    /// copy. Used where the text as a body of prose matters (copy audits, an
+    /// iPad's column) rather than what fits a given screen.
+    static func explainer(for app: LunaApp = .current) -> String {
+        explainerPrefix(explainerChunks(for: app).count, for: app)
+    }
+
     static var stepsHeading: String { OnboardingStrings.Safari.stepsHeading.value() }
     static var manageExtensionsTitle: String {
         OnboardingStrings.Safari.manageExtensionsTitle.value()

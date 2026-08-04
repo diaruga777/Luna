@@ -2,12 +2,17 @@
 
 Every Luna card deck has one permanent utility card at carousel index zero. It
 replaces the former left tray, standalone onboarding root, synthetic pasteboard
-card, and card-carousel empty state.
+card (now DELETED outright — see `card-carousel.md`), and card-carousel empty
+state.
 
 The shared implementation is
-`Luna/UtilCard/UtilCardContentViewController.swift`. Each surface host constructs
-it through `CardCarouselHostViewController.makeUtilCardContentController` and
-keeps saved content at `cardOffset == 1`.
+`Luna/UtilCard/UtilCardContentViewController.swift`. There is ONE deck
+(`CardCarouselHostViewController`, see `card-carousel.md`), and it constructs the
+util card itself through `makeUtilCardContentController`, keeps its saves at
+`cardOffset == 1`, and owns the whole `saveUtilCardURL` path — the row-into-card
+transition, the ingest, and the reload that centers what the save became. A deck's
+kind provider (`CardDeckProviding`) contributes cards; it never touches the
+util card or the save path.
 
 ## Deck position and launch selection
 
@@ -40,16 +45,38 @@ The Save of the Week row is CONDITIONAL: it exists whenever
 `WeeklySaveStore` holds a live signed entry for one of this app's kinds, and the
 card reclaims its slot when it doesn't. Its content is the signed, CloudKit-
 published weekly pick — see `claudedocs/save-of-the-week.md` for the record
-schema, the signing, the 9-day/30-day age rules and the deployment steps. The
-row is black with the SAME Liquid Glass rim the deck's own cards wear —
-`GlassStyle.barEffect()` under `GlassStyle.glassBorderColor`, no app-palette tint
-(`UtilURLRowGlassBorder`, shared with the recent rows and with the save
-transition's shell) — and its subtitle is `host • <noun> of the week`, where the
-noun is the app's own (Save / Read / Download / Deal) and switches to "of the
-month" at nine days.
+schema, the signing, the 9-day/30-day age rules and the deployment steps.
+
+**The weekly row is dressed apart from the recent rows.** Both are the same black
+`UtilURLRow` under the same Liquid Glass recipe (`GlassStyle.barEffect()` in
+`UtilURLRowGlassBorder`), but the pick of the week is Luna's own recommendation
+and carries the app's colour, three ways at once: a palette wash over the black
+(`UtilURLRow.weeklyWashAlpha`), the rim's stroke replaced by the palette
+(`UtilURLRowGlassBorder.rimTint` at `weeklyRimAlpha` — comparable in weight to
+the neutral white-at-0.14 rim, not a saturated outline), and the corner flag. A
+recent is raw Safari history and stays neutral in all three. The save
+transition's growing shell takes the weekly row's flattened fill and its rim
+tint (`UtilCardSaveTransitionArtwork` carries both), so a weekly save opens from
+exactly the row that was tapped instead of flicking to neutral on its first
+frame.
+
+**The weekly noun is a CORNER FLAG, not a phrase in the subtitle.**
+`WeeklyRibbonView` is a small tab flush to the row's top-left corner, 20pt tall
+so it clears the thumbnail instead of crossing it, closed by a single arc on its
+trailing edge, and filled with the app's colour dimmed into the row's own black —
+so each app still flies its own without outshining the pick it labels. It carries
+the app's noun (Save / Read / Download / Deal), which switches to "of the month"
+at nine days. The subtitle underneath is the URL host and NOTHING else: the noun
+used to share that line behind a bullet and truncate the host. The row is 96pt for
+it (`UtilCardLayout.weeklyRowHeight`, against a history row's 74). See
+`claudedocs/save-of-the-week.md` for the flag's shape, its dimming and contrast
+rule, and its trait registration.
 
 A new value REPLACING the one on screen runs a row-sized eclipse; a value
-appearing or vanishing is a fade plus a reflow. In the central Luna app, which
+appearing or vanishing is a fade plus a reflow — and an appearing row fades in
+IN PLACE: its host is laid out before the animation starts, so only the card's
+other elements animate their reflow while the row itself comes up at full size
+rather than growing into its slot. In the central Luna app, which
 is the only one with more than one kind, the row cycles between them every two
 seconds on an interruptible spring slide — swipe to take it over, and it stays
 manual until the card leaves centre or the app returns from the background.
@@ -62,7 +89,11 @@ Selecting the weekly row or a recent row calls the same full ingest path as any
 other in-app save. `UtilCardSaveTransition` owns the shared handoff: the source
 shell expands to the destination card while thumbnail and
 labels travel independently, then the mounted destination crossfades in and the
-deck centers it. The growing shell is a card from its first frame: it wears the
+deck centers it. The centering is the host's one ladder, where the just-made save
+resolves as "a save this deck has never shown" — the top rung
+(`card-carousel.md`, "A new save takes the center"). A deck keyed by a companion
+store's ids (the Downloader's media rows) resolves it by URL instead; both keys
+travel with the request. The growing shell is a card from its first frame: it wears the
 card rim (whose radius follows the shell's own, 16 → 22) and carries Luna's own
 waiting — `HorizonSpinnerView` for an article or product, `EclipseProgressBar`
 for a media transfer — until the real content crossfades in.
@@ -146,6 +177,15 @@ back to at any other time the sentence simply stands finished
 (`OnboardingIntroHeadlineView.showFinishedState()`), so nothing re-animates on a
 page.
 
+**On that launch, the headline speaks first.** Everything else on the card —
+weekly row, both setup actions, the “or”, the paste row — waits at alpha 0
+until the second beat's bloom has finished, then fades in together, in place
+(0.38s ease-out, 0.16s after the sweep's completion — the standalone intro
+card's own beat). A weekly value arriving mid-sweep takes its slot silently
+and joins the group fade rather than fading in on its own; Reduce Motion makes
+the reveal instant. Any appearance that does NOT animate the sweep (paged back
+to, onboarding already complete) shows everything immediately.
+
 **The corona is part of this state too.** While onboarding is unanswered the
 host keeps the launch splash's `EclipseCoronaView` behind the deck at the resting
 centered card frame (`CardCarouselHostViewController.updateUtilCardCorona`),
@@ -158,14 +198,22 @@ the host observes completion and constructs the completed variant.
 
 ## Completed state and recent URLs
 
-Once setup is complete the headline is absent, and so are the two lesson buttons
-as soon as they are retired. Save of the Week, when there is one, moves to the top
-of the card. Beneath it the card adds as many matching, unsaved recent Safari URLs
-as fit above whatever the setup block leaves (the paste row, when it is empty);
-the card never scrolls.
+Once setup is complete the headline is absent, and so are the lesson buttons as
+soon as they are retired. **Save of the Week sits at its own seat above the
+headline's**: `UtilCardLayout.weeklyTopRatio` (0.14 of the card, half
+`headlineTopRatio`), so the flag is the first thing the card says. Beneath it the
+card adds as many matching, unsaved recent Safari URLs as fit above whatever the
+setup block leaves (the paste row, when the block is empty — the email nudge can
+still hold a slot here); the card never scrolls. The seam between the weekly row
+and the recents (`weeklyToRecentsGap`, 65) is by far the widest gap on the card,
+deliberately: that distance is what groups the history rows together and leaves
+the weekly row on its own. With no live pick there is no seat to keep and the
+history block starts at `recentsTop` instead, taking the whole card (one row more
+fits).
 
-Recent rows use the same black layout as Save of the Week but a neutral Liquid
-Glass rim and only the URL host as the subtitle. They come from
+Recent rows use the same black layout as Save of the Week but the neutral Liquid
+Glass rim, no palette wash, no corner flag (and so 74pt tall, with the title back
+at its 13pt top), and only the URL host as the subtitle. They come from
 `RecentURLMatcher.shared.matches`, so source, classification, cache, newest-first
 ordering, and unsaved filtering are exactly the former recent-URL behavior:
 
@@ -201,6 +249,14 @@ and keeps it until a NEW save arrives, however full the deck already is. The
 latch runs at launch, so a save made mid-session settles the card for the next
 one — the card deliberately keeps its layout for the launch that saw the save.
 
+The ONE save it ignores is the save lesson's own. That lesson runs the real share
+surface (`claudedocs/reader-onboarding.md`), so it really does append a row; it is
+claimed as `AppOnboardingStore.temporarySaveIdentifier` while it exists and deleted
+after each demonstration pass, and the latch excludes it — an app must not complete
+its own first run on the strength of a rehearsal it played to itself. A save the
+user makes through the real share sheet during that lesson is not a rehearsal and
+does answer the first run.
+
 The Safari and save handled markers are separate, and each records HOW it was
 handled (completed or skipped) plus whether its button has been retired. This
 permits the buttons to show their checked state during the launch in which setup
@@ -210,15 +266,26 @@ clears completion, all six per-leg markers, and setup run evidence.
 ## Validation
 
 `UtilCardTests` pins both launch variants, the permanent paste control, the
-weekly row's conditional presence (and the reflow when it is absent), its
-per-app and per-age subtitle, its save callback, the bottom-up order of the
+weekly row's conditional presence (and the reflow when it is absent), the corner
+flag's per-app and per-age text, the host-only subtitle beneath it, its save
+callback, the bottom-up order of the
 setup block, the “or” rule in all four combinations, the launch-only headline
-sweep, the answered weekly row, and the save-completes-onboarding latch (older
+sweep, the headline-speaks-first hold (elements at alpha 0 on the animating
+launch, visible immediately on any other appearance, and a mid-sweep weekly
+arrival claiming its slot at alpha 0), the answered weekly row, the completed
+card's horizon (the weekly row on the headline's ratio, a wider seam above the
+recents than between them, and the recents reclaiming the top without a pick),
+the weekly row's dressing apart from a history row (rim tint, fill, subtitle
+colour, all read back through the save-transition artwork), the corner flag's
+geometry (clear of the artwork, one arc on its trailing edge, every app's fill
+dim enough to letter in white), and the save-completes-onboarding latch (older
 saves and a later delete both leave it alone). It also pins the setup block's
 offers: Safari taking the bottom slot when there is no save lesson, the email
 nudge's two earning conditions, its absence while both lessons are still offered
 and in the apps that connect no account, the slot a retired lesson gives up, a
-skipped lesson keeping its button, and the third save bringing email in live.
+skipped lesson keeping its button, and the third save bringing email in live. Its
+recents come through the card's injected `recentMatches`, so the block's geometry
+is assertable without a real Safari trail.
 `WeeklyRowHostTests` covers the
 row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the

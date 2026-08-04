@@ -108,6 +108,11 @@ final class AppOnboardingViewController: UIViewController {
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
     private var safariReplica: SafariReplicaViewController?
     private var messagesReplica: MessagesReplicaViewController?
+    /// The save lesson's engine, built the moment the user taps into it: it
+    /// resolves the link, starts the real work, and owns the real share surface
+    /// the lesson demonstrates with. Nil until then — nothing is fetched, saved
+    /// or downloaded on behalf of a lesson nobody entered.
+    private var saveDemoController: OnboardingSaveDemoController?
     private var savedRootViewController: UIViewController?
     private var savedCardWaveSnapshot: UIImage?
     private var introCorona: EclipseCoronaView?
@@ -490,7 +495,7 @@ final class AppOnboardingViewController: UIViewController {
         safariReplica = safari
 
         let messages = MessagesReplicaViewController(
-            urlString: safari.sharedURLString,
+            urlString: configuration.practiceURLString,
             app: configuration.app,
             appName: configuration.app.displayName,
             previouslyConfiguredApp: previouslyConfiguredShortcutApp)
@@ -529,6 +534,43 @@ final class AppOnboardingViewController: UIViewController {
         safari.view.layoutIfNeeded()
     }
 
+    /// Builds the save lesson's engine (once), points the conversation at the
+    /// link it resolved, and lets the real surface start working behind the
+    /// scenes. Called from BOTH ways into the lesson — the first-run tap and the
+    /// settings replay — which is why it is idempotent.
+    private func startSaveDemonstration(for messages: MessagesReplicaViewController) {
+        let demo = saveDemoController ?? OnboardingSaveDemoController(
+            link: OnboardingSaveDemoLink.resolve(
+                practiceURLString: configuration.practiceURLString,
+                app: configuration.app),
+            onboardingStore: onboardingStore)
+        saveDemoController = demo
+        messages.saveDemoController = demo
+        messages.updateURL(demo.link.urlString)
+        demo.start(in: messages)
+    }
+
+    /// Ends the save lesson for good: releases the downloaded file the demo
+    /// replays were reusing and takes its row back out of the store for the last
+    /// time. Called from every route out of onboarding — `deinit` cannot, being
+    /// nonisolated where the controller is main-actor bound, and a rehearsal
+    /// outliving its lesson is exactly what the temporary-save marker exists to
+    /// stop.
+    private func endSaveDemonstration() {
+        saveDemoController?.tearDown()
+        saveDemoController = nil
+        messagesReplica?.saveDemoController = nil
+    }
+
+    /// The link the lesson is rehearsing with, or the app's practice link before
+    /// the lesson has been entered.
+    private func saveDemonstrationLink() -> OnboardingSaveDemoLink {
+        saveDemoController?.link
+            ?? OnboardingSaveDemoLink.resolve(
+                practiceURLString: configuration.practiceURLString,
+                app: configuration.app)
+    }
+
     private func showSafariCard() {
         guard carousel.currentIndex == 0, !didExpandSafari else { return }
         expandSafariCard()
@@ -550,9 +592,7 @@ final class AppOnboardingViewController: UIViewController {
         journeyStage = .messagesDemonstration
         demoPresentation = .fullScreen
 
-        if let urlString = safariReplica?.sharedURLString {
-            messages.updateURL(urlString)
-        }
+        startSaveDemonstration(for: messages)
         messages.resetConversation()
         let messagesView = messages.view!
         messagesView.isHidden = false
@@ -865,10 +905,8 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func prepareSourceForPresentation(_ source: OnboardingDemoSource) {
-        if source == .messages,
-           let urlString = safariReplica?.sharedURLString
-        {
-            messagesReplica?.updateURL(urlString)
+        if source == .messages, let messages = messagesReplica {
+            messages.updateURL(saveDemonstrationLink().urlString)
         }
         sourceController(for: source)?.prepareForPresentation()
         for otherSource in OnboardingDemoSource.allCases where otherSource != source {
@@ -880,6 +918,25 @@ final class AppOnboardingViewController: UIViewController {
         sourceView.layer.cornerCurve = .continuous
         sourceView.clipsToBounds = true
         sourceView.alpha = 0
+    }
+
+    /// Takes both mock lessons off screen for good — the last thing any ending
+    /// does before the screen changes hands.
+    ///
+    /// A demonstration is mounted full screen at the SIZE of the screen, so
+    /// while it is attached it is the topmost thing in the window under the
+    /// app-switcher hop. Every ending used to leave it there: the hop came down,
+    /// or the window's root was swapped, or the replay was dismissed, with the
+    /// mock still live underneath — and whichever of those needed a frame of its
+    /// own showed the lesson flashing back over the card deck it had just handed
+    /// off to. Nothing may outlive the hop that covered it.
+    private func hideDemonstrationSources() {
+        for kind in OnboardingDemoSource.allCases {
+            guard let sourceView = sourceController(for: kind)?.view else { continue }
+            sourceView.layer.removeAllAnimations()
+            sourceView.isHidden = true
+            sourceView.alpha = 0
+        }
     }
 
     private func sourceController(
@@ -993,10 +1050,18 @@ final class AppOnboardingViewController: UIViewController {
         pauseDemoPresentationPlayback()
         journeyStage = .safariSetup
         externalReturn = .safari
+        // Stamped before the hop, not after a successful open: the extension's
+        // in-page confirmation pairs this with its own first run, and both halves
+        // have to be on disk before Safari is anywhere near the foreground.
+        LunaSetupStatusStore.shared.recordSafariSetupTap(for: configuration.app)
         safariGuide.startPictureInPicture()
-        // Any real page works for practicing the extension; Wikipedia loads
-        // reliably and looks nothing like an ad.
-        guard let url = URL(string: "https://en.wikipedia.org")
+        // The practice page has to be a page Safari's own Reader never offers
+        // on: Reader availability collapses the address field's page menu into
+        // a Reader control and pushes the extension rows around, which is the
+        // exact menu the lesson just taught. An article-shaped site (Wikipedia
+        // was one) is therefore wrong. A plain homepage is not Reader-eligible,
+        // loads reliably, and being merely OPENED carries nothing to attribute.
+        guard let url = URL(string: "https://www.apple.com")
         else {
             externalOpenFailed(.safari)
             return
@@ -1068,16 +1133,10 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
-    /// The save lesson is the Action Button shortcut, and its evidence is an
-    /// intent run. A device without one is never offered the lesson at all.
+    /// The one save lesson is the Action Button shortcut, so its run evidence is
+    /// the only kind there is.
     private var saveSetupHasRun: Bool {
-        switch configuration.saveSetupMode {
-        case .actionButtonShortcut:
-            return LunaSetupStatusStore.shared.shortcutRunApplies(
-                to: configuration.app)
-        case .unavailable:
-            return false
-        }
+        LunaSetupStatusStore.shared.shortcutRunApplies(to: configuration.app)
     }
 
     private func externalOpenFailed(_ expectedReturn: ExternalReturn) {
@@ -1217,7 +1276,11 @@ final class AppOnboardingViewController: UIViewController {
     private func completeOnboardingWithRealSave(animated: Bool) {
         guard !isFinishing else { return }
         isFinishing = true
+        endSaveDemonstration()
         pauseDemoPresentationPlayback()
+        // The same rule the app-switcher endings follow: no mock lesson may be
+        // attached when the window changes hands.
+        hideDemonstrationSources()
         replaceSavedRootWithCurrentContent()
         guard let window = view.window,
               let root = savedRootViewController
@@ -1286,13 +1349,13 @@ final class AppOnboardingViewController: UIViewController {
         outcome: OnboardingSetupOutcome
     ) {
         guard didExpandSafari, !isFinishing else { return }
-        // The outcome is persisted, not just reflected in this session's
-        // buttons: a SKIPPED lesson keeps its util-card button (the offer is
-        // still open), while a completed one is retired at the next background.
         switch source {
         case .safari:
             onboardingStore.markSafariSetupHandled(outcome: outcome)
         case .messages:
+            // The lesson is answered either way, so its rehearsal has nothing
+            // left to demonstrate.
+            endSaveDemonstration()
             onboardingStore.markSaveSetupHandled(outcome: outcome)
         }
         if setupReplaySource != nil {
@@ -1325,6 +1388,7 @@ final class AppOnboardingViewController: UIViewController {
               let setupReplayOriginSnapshot
         else { return }
         isFinishing = true
+        endSaveDemonstration()
         pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
@@ -1339,9 +1403,13 @@ final class AppOnboardingViewController: UIViewController {
         view.addSubview(switcher)
         switcher.playForward { [weak self] in
             guard let self else { return }
+            // The mock goes first and the dismissal second, both under the
+            // hop's own last frame. Taking the hop down first uncovered the
+            // full-screen lesson for however long the dismissal took.
+            self.hideDemonstrationSources()
+            self.dismiss(animated: false)
             switcher.removeFromSuperview()
             self.appSwitcher = nil
-            self.dismiss(animated: false)
         }
     }
 
@@ -1370,9 +1438,7 @@ final class AppOnboardingViewController: UIViewController {
         view.addSubview(switcher)
         switcher.playForward { [weak self] in
             guard let self else { return }
-            for kind in OnboardingDemoSource.allCases {
-                self.sourceController(for: kind)?.view.isHidden = true
-            }
+            self.hideDemonstrationSources()
             self.carousel.view.isHidden = false
             self.carousel.view.alpha = 1
             self.savedRootViewController?.view.alpha = 0
@@ -1404,6 +1470,7 @@ final class AppOnboardingViewController: UIViewController {
               let root = savedRootViewController
         else { return }
         isFinishing = true
+        endSaveDemonstration()
         pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
@@ -1426,6 +1493,15 @@ final class AppOnboardingViewController: UIViewController {
         switcher.playForward { [weak self, weak window, weak root] in
             guard let self, let window, let root else { return }
             self.onboardingStore.markCompleted()
+            // The handoff snapshots the window and reparents the root out of
+            // this controller, and for that one frame the outgoing tree still
+            // owns the screen. So the lesson comes down and the live root comes
+            // up FIRST, under the hop's frozen last frame — which is a raster of
+            // that same root, so nothing moves — and only then does the window
+            // change hands and the hop come down.
+            self.hideDemonstrationSources()
+            root.view.alpha = 1
+            root.view.layoutIfNeeded()
             AppOnboardingCompletionTransition.run(in: window, to: root)
             switcher.removeFromSuperview()
             self.appSwitcher = nil

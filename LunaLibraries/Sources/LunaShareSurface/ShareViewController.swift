@@ -25,9 +25,50 @@ open class ShareViewController: UIViewController {
     /// (`com.apple.ui-services`) rather than the zero-UI share extension
     /// (`com.apple.share-services`). The action extension always opens the
     /// reader; the share extension only does when the user enabled it.
+    ///
+    /// An IN-APP host counts as the action extension: it embeds this surface to
+    /// SHOW what saving looks like, so it wants the status chrome and the reader,
+    /// not the zero-UI terminal.
     public var isActionExtension: Bool {
+        if hostedInput != nil { return true }
         let nsExtension = Bundle.main.infoDictionary?["NSExtension"] as? [String: Any]
         return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
+    }
+
+    /// What an in-app host asked this surface to run, or nil in a real extension.
+    private var hostedInput: HostedShareInput?
+    /// Replaces `extensionContext.completeRequest` when hosted. Called at most
+    /// once, from the same chokepoint (`finishRequest`).
+    private var hostedFinish: (() -> Void)?
+
+    /// True when this surface is running inside the app rather than an extension
+    /// process. It changes exactly three things — where the input comes from,
+    /// what completion means, and that no cross-process setup evidence is
+    /// written — and NOTHING about the ingest/present decisions in between.
+    public var isHosted: Bool { hostedInput != nil }
+
+    /// Whether a save through this surface counts as the user having driven the
+    /// share/action extension — the cross-process evidence the onboarding save
+    /// lesson watches for. False in hosted mode and nowhere else: a rehearsal the
+    /// app played to itself must not complete a setup step on the user's behalf.
+    public var recordsSetupRunEvidence: Bool { !isHosted }
+
+    /// Runs the REAL share/action surface inside the app, over `hosted`, calling
+    /// `onFinish` where an extension would complete its request.
+    ///
+    /// This exists so the onboarding save lesson can be the actual thing instead
+    /// of a picture of it: the same attachment-free entry, the same
+    /// `ShareSurfaceDriver`, the same per-kind presenters, the same error states.
+    /// A convenience initializer deliberately — the extension targets' principal
+    /// classes subclass this and instantiate through `init(nibName:bundle:)`,
+    /// which must keep being the designated route in.
+    public convenience init(
+        hosted input: HostedShareInput,
+        onFinish: @escaping () -> Void
+    ) {
+        self.init(nibName: nil, bundle: nil)
+        hostedInput = input
+        hostedFinish = onFinish
     }
 
     private let spinner = HorizonSpinnerView(side: 36)
@@ -62,6 +103,19 @@ open class ShareViewController: UIViewController {
             setUpStatusUI()
         } else {
             view.backgroundColor = .clear
+        }
+
+        // An in-app host supplies the link directly: there is no
+        // `extensionContext`, so there are no attachments to route and no
+        // watchdog to arm around loading them.
+        if let hostedInput {
+            switch hostedInput {
+            case let .url(url):
+                handleHostedURL(url)
+            case let .offlineFailure(url):
+                presentHostedOfflineFailure(url: url)
+            }
+            return
         }
 
         // Defensive: never let a thrown error or unexpected state kill the
@@ -174,6 +228,12 @@ open class ShareViewController: UIViewController {
             self.statusLabel.textColor = LunaColors.primaryText
             self.statusLabel.setTextImmediately(message)
             self.closeButton.isHidden = false
+            // Visible error text IS a terminal state: nothing further will
+            // happen until somebody taps Close, and an in-app host has no
+            // finger to do it with.
+            if self.isHosted {
+                HostedShareSession.current?.onReachedTerminal?()
+            }
         }
     }
 
@@ -322,16 +382,69 @@ open class ShareViewController: UIViewController {
         }
     }
 
+    // MARK: - Hosted (in-app) entry
+
+    /// The hosted twin of `handleURL`'s success leg: append, then hand the URL to
+    /// the same driver. Deliberately no watchdog — nothing is being loaded from a
+    /// provider — and no `ingestURL` unwrap, because the host resolved the link
+    /// before it opened the sheet.
+    private func handleHostedURL(_ url: URL) {
+        if presentShareSetupPracticeIfNeeded(url) { return }
+        SharedReadingListAppender.append(urlString: url.absoluteString)
+        SharedDiagnosticLog.record(
+            "hosted surface saved url \(url.absoluteString)", category: "share")
+        if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
+            HostedShareSession.current?.onDidAppendRow?(row.id)
+        }
+        presentSavedOrReader(url: url)
+    }
+
+    /// The genuine offline failure, driven straight: `SaveFailureReason.offline`'s
+    /// own headline and suggestion in the surface's own error state. Nothing is
+    /// appended and nothing is fetched — there is no connection to fetch over,
+    /// and inventing a save that did not happen is the one thing this lesson must
+    /// not do.
+    private func presentHostedOfflineFailure(url: URL) {
+        let reason = SaveFailureReason.offline
+        SharedDiagnosticLog.record(
+            "hosted surface offline for \(url.absoluteString)", category: "share")
+        failOrComplete(
+            [reason.headline, reason.suggestion]
+                .compactMap { $0 }
+                .joined(separator: "\n\n"))
+    }
+
     /// Runs the ONE shared ingest+present flow for the just-appended `originalURL`
     /// through the host-agnostic `ShareSurfaceDriver` (which unwraps + classifies +
     /// processes under a hard timeout, then persists + presents the `Outcome` via this
     /// VC as its `ExtensionHost`). Safe to call from any thread.
     private func presentSavedOrReader(url originalURL: URL, prefetchedHTML: String? = nil) {
+        recordShareSurfaceRun()
         Task { [weak self] in
             guard let self else { return }
             await ShareSurfaceDriver(host: self).ingestAndPresent(
                 originalURL: originalURL, prefetchedHTML: prefetchedHTML)
         }
+    }
+
+    /// Cross-process evidence that the user really did drive a save through this
+    /// app's share/action extension — the one fact the onboarding save lesson
+    /// watches for when the real share sheet comes back.
+    ///
+    /// Recorded for ANY handled URL, not just the bundled practice link. The
+    /// lesson hands the sheet a live Save of the Week when there is one, and a
+    /// real save of a real link through the real extension is *more* convincing
+    /// evidence than a rehearsal, not less — without this it produced no evidence
+    /// at all and the lesson offered the user a way to skip a step they had just
+    /// completed. The practice path keeps its own (idempotent) write, because it
+    /// deliberately never reaches here.
+    ///
+    /// NEVER from the in-app hosted mode: a rehearsal the app played to itself is
+    /// not the user doing anything.
+    private func recordShareSurfaceRun() {
+        guard recordsSetupRunEvidence else { return }
+        LunaSetupStatusStore.shared.recordShareActionRun(
+            isCentral: LunaApp.current == .luna)
     }
 
     /// Converts Safari's text-only action snapshot into the smallest valid HTML
@@ -418,7 +531,11 @@ open class ShareViewController: UIViewController {
     private func presentShareSetupPracticeIfNeeded(_ url: URL) -> Bool {
         guard ShareSetupPractice.matches(url) else { return false }
         let app = LunaApp.current
-        LunaSetupStatusStore.shared.recordShareActionRun(isCentral: app == .luna)
+        // Hosted, this same preview is what the lesson SHOWS you. Recording the
+        // run there would let the app complete its own setup step on your behalf.
+        if recordsSetupRunEvidence {
+            LunaSetupStatusStore.shared.recordShareActionRun(isCentral: app == .luna)
+        }
         SharedDiagnosticLog.record(
             "completed share-sheet onboarding practice", category: "share")
         DispatchQueue.main.async { [weak self] in
@@ -517,6 +634,15 @@ open class ShareViewController: UIViewController {
         guard !hasCompleted else { return }
         hasCompleted = true
         cancelLoadWatchdog()
+        // Hosted, "the request is complete" is the host's business, not
+        // `NSExtensionContext`'s — and `extensionContext` is nil in-app anyway,
+        // so the old line would have been a silent no-op that never ended the
+        // flow. Same chokepoint, so it still happens at most once.
+        if let hostedFinish {
+            HostedShareSession.current?.onReachedTerminal?()
+            hostedFinish()
+            return
+        }
         extensionContext?.completeRequest(returningItems: nil)
     }
 
@@ -697,6 +823,13 @@ extension ShareViewController: ExtensionHost {
     /// screens inside one embedded navigation controller, so archive → reader does
     /// not create a second presentation that can dismiss the extension host.
     public func presentModally(_ viewController: UIViewController) {
+        // A presented kind screen — reader, saved media, price editor, rescue
+        // card, practice preview — is where the flow STOPS on its own; every
+        // route out of one is a tap. An in-app host is told so it can hold the
+        // sheet on it and then take it away itself.
+        if isHosted {
+            HostedShareSession.current?.onReachedTerminal?()
+        }
         if isActionExtension {
             articleLoadingStatus?.stop()
             spinner.stopAnimating()
@@ -706,7 +839,8 @@ extension ShareViewController: ExtensionHost {
                 navigationController.setViewControllers([viewController], animated: false)
                 return
             }
-            let navigationController = UINavigationController(rootViewController: viewController)
+            let navigationController = ExtensionNavigationController(
+                rootViewController: viewController)
             navigationController.view.translatesAutoresizingMaskIntoConstraints = false
             addChild(navigationController)
             view.addSubview(navigationController.view)
@@ -720,7 +854,7 @@ extension ShareViewController: ExtensionHost {
             actionNavigationController = navigationController
             return
         }
-        let nav = UINavigationController(rootViewController: viewController)
+        let nav = ExtensionNavigationController(rootViewController: viewController)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)
     }

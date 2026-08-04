@@ -22,7 +22,11 @@ enum OnboardingMessagesReplicaTiming {
     /// which is a transcript being replayed, not a conversation happening.
     static let stagedMessageDelays: [TimeInterval] = [0.85, 2.0, 1.5, 0.75, 0.75]
     static let messageDuration: TimeInterval = 0.42
-    static let saveDelayAfterLastMessage: TimeInterval = 1.1
+    /// The beat between the last staged message and the save gesture. Short:
+    /// the press is the ANSWER to the link that just landed, and a full second
+    /// of nothing in between read as the demonstration having stalled rather
+    /// than as somebody reaching for a button.
+    static let saveDelayAfterLastMessage: TimeInterval = 0.55
 
     static var actionButtonReplayDelay: TimeInterval {
         firstMessageDelay
@@ -30,6 +34,7 @@ enum OnboardingMessagesReplicaTiming {
             + messageDuration
             + saveDelayAfterLastMessage
     }
+
 }
 
 /// A noninteractive iMessage conversation used as the second source in the
@@ -81,7 +86,6 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private let app: LunaApp
     private let appName: String
     private let previouslyConfiguredApp: LunaApp?
-    private let actionExtensionIcon: UIImage?
     private var shortcutBubble: OnboardingMessageBubble?
     private var currentURLString: String
     private var messageRows: [Row: OnboardingMessageRow] = [:]
@@ -91,7 +95,13 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private var islandView: OnboardingDynamicIslandRunView?
     private var mockTap: OnboardingMockTapIndicatorView?
     private var flyingBubble: UIView?
-    private var extensionSheet: OnboardingActionExtensionSheetView?
+    /// The real share surface, in a sheet, run by the demo controller. Injected
+    /// by the onboarding host, which owns the resolved link and the lesson's
+    /// lifetime — a conversation replica has no business deciding what gets saved.
+    var saveDemoController: OnboardingSaveDemoController?
+    /// True while that surface's sheet is on screen, so the walkthroughs can
+    /// refuse to start a second one over it.
+    private var isPresentingSaveSurface = false
     private var hidesStatusBarForIsland = false
     private(set) var isShowingSetupMessages = false
     var usesPreviousSetupConversation: Bool { previouslyConfiguredApp != nil }
@@ -112,14 +122,12 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         urlString: String,
         app: LunaApp = .current,
         appName: String = LunaApp.current.displayName,
-        previouslyConfiguredApp: LunaApp? = nil,
-        actionExtensionIcon: UIImage? = OnboardingActionExtensionIcon.image()
+        previouslyConfiguredApp: LunaApp? = nil
     ) {
         currentURLString = urlString
         self.app = app
         self.appName = appName
         self.previouslyConfiguredApp = previouslyConfiguredApp
-        self.actionExtensionIcon = actionExtensionIcon
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -181,9 +189,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
 
     func updateURL(_ urlString: String) {
         currentURLString = urlString
-        if isViewLoaded {
-            urlBubble.setURL(urlString)
-        }
+        if isViewLoaded { urlBubble.setURL(urlString) }
     }
 
     override func setURLHighlighted(_ highlighted: Bool) {
@@ -574,7 +580,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
                 guard let self, generation == self.sequenceGeneration else { return }
                 self.islandView = nil
                 self.setStatusBarHiddenForIsland(false)
-                self.presentMockActionExtension(
+                self.presentSaveSurface(
                     generation: generation,
                     onDismiss: { [weak self] in
                         self?.finishShortcutRunSequence(generation: generation)
@@ -583,30 +589,31 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         }
     }
 
-    /// The tapped island "runs" the save: the app's ordinary action-extension
-    /// sheet slides up over the conversation with the reader inside, holds a
-    /// beat, and slides away.
-    private func presentMockActionExtension(
+    /// The save RUNS. The app's ordinary extension sheet slides up over the
+    /// conversation with the REAL share surface inside it — same ingest, same
+    /// reader / saved-media / price editor, same errors — and stays up until that
+    /// surface resolves on its own.
+    ///
+    /// It used to be a hand-drawn fake holding a bundled article for exactly one
+    /// second. There is no timer here at all: the wait ends on the surface's own
+    /// terminal state, so a slow fetch is a longer sheet rather than a sheet that
+    /// dismissed before the thing it was demonstrating happened.
+    private func presentSaveSurface(
         generation: Int,
         onDismiss: @escaping () -> Void
     ) {
-        let sheet = OnboardingActionExtensionSheetView(frame: view.bounds)
-        extensionSheet = sheet
-        view.addSubview(sheet)
-        sheet.present { [weak self] in
+        guard let demo = saveDemoController else {
+            onDismiss()
+            return
+        }
+        isPresentingSaveSurface = true
+        demo.present { [weak self] in
             guard let self, generation == self.sequenceGeneration else { return }
-            self.afterDelay(
-                OnboardingShortcutRunTiming.extensionSheetHoldDuration,
-                generation: generation
-            ) {
-                self.extensionSheet?.dismiss { [weak self] in
-                    guard let self,
-                          generation == self.sequenceGeneration
-                    else { return }
-                    self.extensionSheet?.removeFromSuperview()
-                    self.extensionSheet = nil
-                    onDismiss()
-                }
+            demo.dismiss { [weak self] in
+                guard let self else { return }
+                self.isPresentingSaveSurface = false
+                guard generation == self.sequenceGeneration else { return }
+                onDismiss()
             }
         }
     }
@@ -662,8 +669,11 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         flyingBubble?.layer.removeAllAnimations()
         flyingBubble?.removeFromSuperview()
         flyingBubble = nil
-        extensionSheet?.removeFromSuperview()
-        extensionSheet = nil
+        // The surface and its result survive — re-entering the lesson must not
+        // cost another fetch — but nothing of it stays on screen, and the row it
+        // wrote goes back out of the store now rather than at the next pass.
+        saveDemoController?.abortPresentation()
+        isPresentingSaveSurface = false
         setStatusBarHiddenForIsland(false)
         urlBubble.layer.removeAllAnimations()
         urlBubble.transform = .identity
@@ -1366,9 +1376,9 @@ private final class OnboardingMessageStandalonePillBubble: OnboardingMessageBubb
     }
 }
 
-/// The tappable in-bubble chip: app, shortcut, Settings, or skip. Every setup
-/// destination breathes an eclipse corona until tapped; the skip-out never asks
-/// for the tap, so it does not.
+/// The tappable in-bubble chip: app, shortcut, Settings, share, or skip. Every
+/// setup destination breathes an eclipse corona until tapped; the skip-out
+/// never asks for the tap, so it does not.
 final class OnboardingMessagePillButton: UIControl {
     enum Style {
         case shortcuts
@@ -1391,7 +1401,7 @@ final class OnboardingMessagePillButton: UIControl {
         red: 0.46, green: 0.29, blue: 0.96, alpha: 1)
     /// On Messages white, this neutral moonlight keeps the photographic
     /// eclipse rays legible without turning them into a generic blue control
-    /// shadow. The Settings pill's light.
+    /// shadow.
     private static let moonlight = UIColor(white: 0.55, alpha: 1)
 
     init(style: Style) {

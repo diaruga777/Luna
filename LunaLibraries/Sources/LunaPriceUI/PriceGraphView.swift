@@ -13,10 +13,20 @@ import UIKit
 /// Threshold editing belongs to the green line's leading handle: dragging it moves
 /// the line, while tapping its price label opens a number-pad field. A pending edit
 /// is explicit — checkmark commits, xmark restores the value that began the edit.
+///
+/// With `allowsThresholdEditing` and NO threshold (`thresholdPrice: nil` — a product
+/// tracked before the user was ever asked about notifications) there is no line to
+/// drag, so the graph shows a **"Set price alert"** pill instead and reports the tap
+/// through `onThresholdRequested`. The host seeds the default threshold there, which
+/// is also where the notification-permission prompt is raised; the line, handle and
+/// label then arrive with the next `setData`.
 public final class PriceGraphView: UIView, UITextFieldDelegate {
 
     public var onThresholdChanged: ((Decimal) -> Void)?
     public var onThresholdCommitted: ((Decimal) -> Void)?
+    /// Fired when the user asks for an alert on a tracker that has none. The host
+    /// decides the starting threshold (and asks for notification permission).
+    public var onThresholdRequested: (() -> Void)?
 
     private var points: [PriceGraphPoint] = []
     private var currency = "USD"
@@ -30,6 +40,8 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     private let plotInsets = UIEdgeInsets(top: 34, left: 58, bottom: 32, right: 14)
 
     private let thresholdHandle = UIButton(type: .custom)
+    /// Shown in place of the line's controls while the tracker has no threshold.
+    private let setThresholdButton = UIButton(type: .system)
     private let thresholdPan = UIPanGestureRecognizer()
     private let thresholdLabel = UIButton(type: .system)
     private let thresholdEditor = UIVisualEffectView(effect: GlassStyle.barEffect())
@@ -85,6 +97,10 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         thresholdEditor.isHidden = true
         thresholdLabel.isHidden = thresholdPrice == nil
         thresholdHandle.isHidden = thresholdPrice == nil
+        // No threshold + editable = the tracker has no alert yet, and the graph is
+        // the only place to make one on the card. Read-only graphs (the email
+        // snapshot, the legacy editor's line) stay untouched.
+        setThresholdButton.isHidden = !(thresholdPrice == nil && allowsThresholdEditing)
         calloutView.isHidden = true
         syncThresholdText()
         setNeedsLayout()
@@ -256,6 +272,28 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         thresholdLabel.addTarget(self, action: #selector(thresholdLabelTapped), for: .touchUpInside)
         addSubview(thresholdLabel)
 
+        var setConfiguration = UIButton.Configuration.plain()
+        setConfiguration.title = L10n.string("Set price alert")
+        setConfiguration.image = UIImage(
+            systemName: "bell.badge",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+        setConfiguration.imagePadding = 5
+        setConfiguration.contentInsets = NSDirectionalEdgeInsets(
+            top: 5, leading: 9, bottom: 5, trailing: 10)
+        setConfiguration.baseForegroundColor = thresholdColor
+        setConfiguration.background.backgroundColor = LunaColors.background.withAlphaComponent(0.86)
+        setConfiguration.background.strokeColor = thresholdColor.withAlphaComponent(0.55)
+        setConfiguration.background.strokeWidth = 1
+        setConfiguration.background.cornerRadius = 9
+        setThresholdButton.configuration = setConfiguration
+        setThresholdButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .bold)
+        setThresholdButton.isHidden = true
+        setThresholdButton.accessibilityHint = L10n.string(
+            "Starts watching for a price drop and asks to send notifications")
+        setThresholdButton.addTarget(
+            self, action: #selector(setThresholdTapped), for: .touchUpInside)
+        addSubview(setThresholdButton)
+
         thresholdEditor.layer.cornerRadius = 9
         thresholdEditor.layer.cornerCurve = .continuous
         thresholdEditor.clipsToBounds = true
@@ -291,7 +329,10 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     }
 
     private func layoutThresholdControls() {
-        guard let thresholdPrice else { return }
+        guard let thresholdPrice else {
+            layoutSetThresholdButton()
+            return
+        }
         let plot = plotRect(in: bounds)
         let y = yPosition(for: decimalDouble(thresholdPrice), in: plot)
         thresholdHandle.frame = CGRect(x: plot.minX - 9, y: y - 9, width: 18, height: 18)
@@ -316,6 +357,25 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
             commitButton.frame = CGRect(x: width - 60, y: 1, width: 28, height: 30)
             thresholdField.frame = CGRect(x: 8, y: 2, width: width - 70, height: 28)
         }
+    }
+
+    /// The no-alert pill sits at the top-left of the plot — where the line's own
+    /// price label would be, so setting an alert leaves the eye where it already is.
+    private func layoutSetThresholdButton() {
+        guard !setThresholdButton.isHidden else { return }
+        let plot = plotRect(in: bounds)
+        let size = setThresholdButton.systemLayoutSizeFitting(
+            CGSize(width: max(plot.width, 1), height: 30),
+            withHorizontalFittingPriority: .fittingSizeLevel,
+            verticalFittingPriority: .required)
+        setThresholdButton.frame = CGRect(
+            x: plot.minX + 8, y: max(bounds.minY + 2, plot.minY - size.height - 4),
+            width: min(size.width, max(plot.width - 8, 1)), height: size.height)
+    }
+
+    @objc private func setThresholdTapped() {
+        guard allowsThresholdEditing, thresholdPrice == nil else { return }
+        onThresholdRequested?()
     }
 
     private func syncThresholdText() {

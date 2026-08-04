@@ -58,17 +58,15 @@ into `LunaApp`.
   and extension/save-time flows retain `PriceTrackingViewController`.
 - `Luna/ReadingList/ReadingListSectioning.swift` — **pure** (UIKit-free, unit-tested) sectioning logic extracted from the VC: `Section`/`ListFilter` enums (stable raw values 0/2/3/4/5), `assignSections(items:now:)` (Reading/Archive/Error buckets, 7-day `archiveAge` strict-`>` cutoff), `shouldShowFilter(items:)`, `rendersAsReader(_:)`. The VC delegates to these.
 - ~~`ReadingListSubtitle`~~ (DELETED with the list) — was the **pure** assembly of the grey metadata line: `parts(for:leadingLabel:formattedDate:showReadingTime:showReadingProgress:)` → ordered `[String]` (leading label · date · reading time · progress% · send status · lifecycle status); `readingTimeMinutes(wordCount:)` = `ceil(words/220)` floored at 1. Article surfaces always pass both display flags on; they are no longer settings. The VC builds the `NSAttributedString` (colors + "from <friend>") around these parts.
-  - **Pasteboard suggestion**: the Reader and Downloader card roots use only
-    `detectPatterns(.probableWebURL)` on launch/foreground and prepend a synthetic
-    paste-icon card without reading the value. The actual read happens when the
-    user pages onto that card. Reader resolves a full unsaved live reader and
-    persists it when reading dismisses the carousel chrome. Downloader downloads
-    into a one-hour temporary file, presents the real media paused, and persists
-    to Luna + Photos on explicit Play (or a still-image tap). Both disappear if
-    the clipboard changes. Both decks share `PasteboardLinkProbe` for the
-    change-count/`detectPatterns` discipline while keeping their own card-state
-    machines (the reader's ends at a save candidate, the downloader's at an
-    expiring temporary download). The list's separate
+  - ~~**Pasteboard suggestion**~~ (DELETED): the Reader and Downloader card roots
+    used to prepend a SYNTHETIC leading paste card, probed with
+    `detectPatterns(.probableWebURL)` and read through a `UIPasteControl`. Paste
+    moved permanently onto the util card's own paste row (`claudedocs/util-card.md`)
+    and the synthetic card became unreachable — `PasteboardLinkProbe`,
+    `PasteboardCommitPolicy`, `PasteboardTemporaryMediaPolicy`, and the four
+    synthetic card content controllers are gone with it. `PasteboardSuggester`
+    (LunaReadingList) survives: the util card's `RecentURLMatcher` still uses its
+    `platformPreviewArt` hook. The list's separate
     `PasteboardSuggestionController` was deleted with the list.
 - `Luna/ReadingList/SafariURLStore.swift` — reads `lastSafariURL`/`lastSafariURLDate` App Group defaults written by the LunaSafari extension.
   - **Hard paywalls in the extensions** (`ShareSurfaceDriver.presentArchive` + `ArchiveWebReaderViewController`, see `readers.md`): EVERY surface gets the same `Outcome` from the shared `IngestPipeline` and, on `.needsArchive`, marks `.needsCaptcha` and presents the SAME `ArchiveWebReaderViewController` directly (it used to wrap it in `ShareReaderViewController` only in the action ext — collapsed so the presentation intent matches the main app, enforced by `SurfaceParityTests`). The action ext swaps to the in-sheet native reader on extract; the share ext confirms. On `.failed` → the action ext shows an ERROR (never a misleading "Saved"), the share ext marks the item failed + completes quietly for the app to retry. Done completes the extension. The whole call is bounded by the pipeline's overall timeout, so the action extension can never spin forever.

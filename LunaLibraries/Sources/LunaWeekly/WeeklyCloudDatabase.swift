@@ -64,17 +64,46 @@ public final class CKWeeklyCloudDatabase: WeeklyCloudDatabase, @unchecked Sendab
     // MARK: - Weekly saves
 
     public func fetchWeeklySaves(for kinds: [WeeklySaveKind]) async throws -> [WeeklySave] {
-        var results: [WeeklySave] = []
-        for kind in kinds {
-            let recordID = CKRecord.ID(recordName: kind.recordName)
-            do {
-                let record = try await database.record(for: recordID)
-                if let save = Self.weeklySave(from: record) { results.append(save) }
-            } catch let error as CKError where error.code == .unknownItem {
-                continue   // no entry for this kind — not an error
+        // One batched operation, not a round-trip per kind: the util card is
+        // waiting on this at launch, so the kinds travel together and the
+        // request is explicitly user-initiated — the convenience API's default
+        // configuration is discretionary-eligible, which is exactly the "a
+        // couple of seconds on good internet" the row used to sit out.
+        let ids = kinds.map { CKRecord.ID(recordName: $0.recordName) }
+        let operation = CKFetchRecordsOperation(recordIDs: ids)
+        operation.configuration.qualityOfService = .userInitiated
+        let database = database
+        return try await withCheckedThrowingContinuation { continuation in
+            var results: [WeeklySave] = []
+            var recordError: Error?
+            operation.perRecordResultBlock = { _, result in
+                switch result {
+                case .success(let record):
+                    if let save = Self.weeklySave(from: record) { results.append(save) }
+                case .failure(let error as CKError) where error.code == .unknownItem:
+                    break   // no entry for this kind — not an error
+                case .failure(let error):
+                    recordError = error
+                }
             }
+            operation.fetchRecordsResultBlock = { result in
+                if let recordError {
+                    continuation.resume(throwing: recordError)
+                    return
+                }
+                switch result {
+                case .success:
+                    continuation.resume(returning: results)
+                case .failure(let error as CKError) where error.code == .partialFailure:
+                    // Only per-record failures, and every one of those was
+                    // an unknownItem swallowed above.
+                    continuation.resume(returning: results)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+            database.add(operation)
         }
-        return results
     }
 
     public func saveWeekly(_ save: WeeklySave) async throws {

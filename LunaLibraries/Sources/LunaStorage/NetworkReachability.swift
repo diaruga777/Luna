@@ -42,6 +42,23 @@ public final class NetworkReachability {
         monitor.start(queue: DispatchQueue(label: "inc.putty.clip.reachability"))
     }
 
+    /// True when there is any usable route off the device — Wi-Fi, cellular,
+    /// wired, anything. The question `isOnWiFi` does not answer: a background
+    /// crawl should defer off Wi-Fi, but a USER-initiated load happily runs on
+    /// cellular and only "no connection at all" changes what it should do.
+    ///
+    /// Optimistic before the first path update, deliberately, and the opposite
+    /// of `isOnWiFi`'s pessimism for the same reason: this gates a load the user
+    /// asked for. Guessing "offline" would show an error page instead of
+    /// attempting a fetch that would have worked; guessing "online" attempts the
+    /// fetch, and if it really is offline the fetch fails into the same real
+    /// error state a moment later.
+    public var isOnline: Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard let path else { return true }
+        return path.status == .satisfied
+    }
+
     /// True only when connected over Wi-Fi (or wired Ethernet, e.g. a simulator) and
     /// NOT over cellular. `false` until the first path update.
     public var isOnWiFi: Bool {

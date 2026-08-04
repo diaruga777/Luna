@@ -20,21 +20,23 @@ final class AppOnboardingStore {
 
     private let defaults: UserDefaults
     private let setupStatusStore: LunaSetupStatusStore
-    /// Whether this device has a save lesson at all. Injected because it is
-    /// hardware-derived: every simulator answers `.unavailable`.
+    /// Which save lesson this device gets. Injected because it is
+    /// hardware-derived, so a test can pin either answer.
     private let saveSetupMode: OnboardingSaveSetupMode
-    /// When the newest save in the shared store was made. Injected so the
-    /// save-completes-onboarding latch is assertable without writing the real
-    /// App Group store.
-    private let newestSaveDate: () -> Date?
+    /// When the newest save in the shared store was made, ignoring one id.
+    /// Injected so the save-completes-onboarding latch is assertable without
+    /// writing the real App Group store.
+    private let newestSaveDate: (UUID?) -> Date?
 
     init(
         app: LunaApp = .current,
         defaults: UserDefaults = .standard,
         setupStatusStore: LunaSetupStatusStore? = nil,
         saveSetupMode: OnboardingSaveSetupMode = .current,
-        newestSaveDate: @escaping () -> Date? = {
-            ReadingListStore.shared.items().map(\.dateAdded).max()
+        newestSaveDate: @escaping (UUID?) -> Date? = { excluded in
+            ReadingListStore.shared.items()
+                .filter { $0.id != excluded }
+                .map(\.dateAdded).max()
         }
     ) {
         self.app = app
@@ -80,10 +82,18 @@ final class AppOnboardingStore {
     /// Called at launch, so a save made mid-session settles the card's state
     /// for the next one — the util card deliberately keeps its layout for the
     /// remainder of the launch that saw the save.
+    /// The ONE save that does not answer it is the lesson's own: the save
+    /// demonstration runs the real share surface, so it really does write a real
+    /// row, and letting the app complete its own first run on the strength of a
+    /// rehearsal it played to itself would be a lie. It is marked as the temporary
+    /// save while it exists (`temporarySaveIdentifier`) and deleted immediately
+    /// after each pass; this exclusion covers the case where a launch lands in
+    /// between.
     @discardableResult
     func markCompletedIfSavedSinceOnboardingStart() -> Bool {
         guard !isCompleted, let start = onboardingStartDate,
-              let newest = newestSaveDate(), newest > start
+              let newest = newestSaveDate(temporarySaveIdentifier),
+              newest > start
         else { return false }
         markCompleted()
         return true
@@ -149,11 +159,7 @@ final class AppOnboardingStore {
             defaults.set(true, forKey: safariSetupRetiredKey)
             retired = true
         }
-        if !isSaveSetupButtonRetired,
-           saveSetupMode == .actionButtonShortcut,
-           hasFinishedSaveSetup,
-           !wasSaveSetupSkipped
-        {
+        if !isSaveSetupButtonRetired, hasFinishedSaveSetup, !wasSaveSetupSkipped {
             defaults.set(true, forKey: saveSetupRetiredKey)
             retired = true
         }
@@ -189,12 +195,21 @@ final class AppOnboardingStore {
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
-    /// The demonstration item an OLDER build installed into the shared store.
-    /// Nothing records one any more — onboarding writes nothing — so this is
-    /// read only by the launch sweep that takes such an item back out
-    /// (`OnboardingLegacyDemoSave`).
+    /// The row the save lesson's rehearsal currently owns, if one exists right
+    /// now. Two readers: the launch sweep that removes an item an OLDER build
+    /// left behind (`BundledLunaArticle.cleanupLegacyTemporarySave`), and the
+    /// first-run latch, which must not count this app's own rehearsal as the
+    /// user's first save.
     var temporarySaveIdentifier: UUID? {
         defaults.string(forKey: temporarySaveKey).flatMap(UUID.init(uuidString:))
+    }
+
+    /// Claims a row as the save lesson's own. The lesson runs the REAL share
+    /// surface — which really does append — so between the append and the
+    /// deletion that follows each demonstration pass there is a row in the store
+    /// that nobody asked for, and this is what names it.
+    func recordTemporarySave(identifier: UUID) {
+        defaults.set(identifier.uuidString, forKey: temporarySaveKey)
     }
 
     #if DEBUG

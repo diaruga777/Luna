@@ -153,8 +153,8 @@ public final class ShareReaderViewController: UIViewController {
         onModeChange: ((Mode) -> Void)?, onDone: @escaping () -> Void
     ) -> ReaderViewController {
         // A lightweight share provider (friend-share via the App Group queue +
-        // link share — no CloudKit in the extension) so the end-of-article share
-        // affordance works. The reader marks the (real, shared) item opened/read
+        // link share — no CloudKit in the extension) so the reader's own share
+        // button works. The reader marks the (real, shared) item opened/read
         // via ReadingListStore.
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,
@@ -265,7 +265,10 @@ public final class ShareReaderViewController: UIViewController {
             // A product page: save it as a price tracker silently (the reader can't
             // present the main-app price UI) and confirm — never paywall-treated.
             ReadingListStore.shared.savePriceTracker(
-                product.makeTracker(fallbackURL: url), forURLString: url.absoluteString)
+                product.makeTracker(
+                    fallbackURL: url,
+                    alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction),
+                forURLString: url.absoluteString)
             presentSavedConfirmation(productName: product.name)
         case .needsArchive(let title):
             // A genuine paywall (WSJ/FT/…): resolve its archive.today CAPTCHA right

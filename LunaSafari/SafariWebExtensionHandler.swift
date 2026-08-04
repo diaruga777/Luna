@@ -15,7 +15,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private static let suggestionModeKey = "safariSuggestionMode"
 
     func beginRequest(with context: NSExtensionContext) {
-        SharedSafariURL.recordExtensionRun(isCentral: Self.isCentralLunaHost)
+        let (surface, scheme) = SharedSurfaceScheme.currentSurfaceAndScheme
+        SharedSafariURL.recordExtensionRun(
+            isCentral: Self.isCentralLunaHost, surface: surface)
         let item = context.inputItems.first as? NSExtensionItem
         let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any]
         var payload: [String: Any] = ["ok": true]
@@ -28,11 +30,20 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // The pill deep-links ONLY into this extension's own containing app,
             // and only for the content kinds that app handles: the central Luna
             // app handles everything; each single-content app handles one kind.
-            let (_, scheme) = SharedSurfaceScheme.currentSurfaceAndScheme
             payload["scheme"] = scheme
             payload["supportsArticles"] = Self.hostHandlesArticles
             payload["supportsMedia"] = Self.hostHandlesMedia
             payload["supportsProducts"] = Self.hostHandlesProducts
+            // Rides the context the content script already asks for, so deciding
+            // whether to congratulate the user costs no extra round trip. The
+            // script suppresses its pill for the confirmation's lifetime.
+            payload["celebrateSetup"] = SharedSafariURL.shouldCelebrateSetup(surface: surface)
+            payload["appName"] = SharedSafariURL.setupTapAppName(surface: surface)
+                ?? Self.hostDisplayName
+        case "setupCelebrationShown":
+            // Written when the overlay renders, not when the decision is made: a
+            // context request whose page never showed one must stay eligible.
+            SharedSafariURL.recordCelebrationShown(surface: surface)
         case "bypassEnabled":
             // On-device unlocking is article handling, so only article-capable
             // hosts (Reader and the central Luna app) enable the Referer
@@ -56,6 +67,17 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let response = NSExtensionItem()
         response.userInfo = [SFExtensionMessageKey: payload]
         context.completeRequest(returningItems: [response], completionHandler: nil)
+    }
+
+    /// Fallback name for the "Return to …" button when no app stamped one with its
+    /// setup tap. `scripts/update_safari_extension_branding.sh` rewrites this
+    /// extension's OWN display name to its host app's at build time, so it already
+    /// reads "Luna Reader" / "Luna Price Tracker" / …
+    private static var hostDisplayName: String {
+        let name = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? ""
+        return name.isEmpty ? "Luna" : name
     }
 
     /// Per-kind capability of this extension's containing app, from the bundle

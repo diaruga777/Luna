@@ -35,14 +35,74 @@ enum SharedSafariURL {
 
     /// Records that this containing app's extension has actually executed.
     /// Reader/Downloader/Price Tracker share completion; bare central Luna is
-    /// deliberately independent.
-    static func recordExtensionRun(isCentral: Bool) {
-        UserDefaults(suiteName: appGroupID)?.set(
-            true, forKey: isCentral ? centralSafariSetupKey : sharedSafariSetupKey)
+    /// deliberately independent. `surface` additionally stamps the FIRST such run
+    /// per app, which the in-page setup confirmation pairs with the app's own
+    /// setup tap.
+    static func recordExtensionRun(isCentral: Bool, surface: String) {
+        let defaults = UserDefaults(suiteName: appGroupID)
+        defaults?.set(true, forKey: isCentral ? centralSafariSetupKey : sharedSafariSetupKey)
+        // Only-if-absent: every later run must leave the original moment alone, or
+        // "first ran recently" would be true forever.
+        if defaults?.object(forKey: firstRunKey(surface)) == nil {
+            defaults?.set(Date().timeIntervalSince1970, forKey: firstRunKey(surface))
+        }
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName(setupStatusDarwinNotification as CFString),
             nil, nil, true)
+    }
+
+    // MARK: - The in-page setup confirmation
+
+    /// Mirrors `LunaStorage.LunaSetupStatusStore`'s four keys and its window; this
+    /// target links no package (see the note above), so both copies are checked
+    /// against each other by `SafariSetupCelebrationTests`.
+    static let celebrationWindow: TimeInterval = 24 * 60 * 60
+
+    static func setupTapKey(_ surface: String) -> String { "setup.safari.setupTapAt.\(surface)" }
+    static func setupTapAppNameKey(_ surface: String) -> String {
+        "setup.safari.setupTapAppName.\(surface)"
+    }
+    static func firstRunKey(_ surface: String) -> String { "setup.safari.firstRunAt.\(surface)" }
+    static func celebrationShownKey(_ surface: String) -> String {
+        "setup.safari.celebrationShown.\(surface)"
+    }
+
+    /// Whether the content script should take the page over with "You're all set
+    /// up" instead of offering its usual pill: this app's setup button was tapped
+    /// recently, this app's extension first ran recently, and it has not confirmed
+    /// before. `recordExtensionRun` runs first on every request, so by the time the
+    /// content script asks, the first-run stamp always exists.
+    static func shouldCelebrateSetup(surface: String, now: Date = Date()) -> Bool {
+        let defaults = UserDefaults(suiteName: appGroupID)
+        guard defaults?.bool(forKey: celebrationShownKey(surface)) != true,
+              let tap = storedDate(defaults, setupTapKey(surface)),
+              let firstRun = storedDate(defaults, firstRunKey(surface))
+        else { return false }
+        return isRecent(tap, now: now) && isRecent(firstRun, now: now)
+    }
+
+    /// The name of the app to invite the user back to, stamped by that app itself.
+    static func setupTapAppName(surface: String) -> String? {
+        let name = UserDefaults(suiteName: appGroupID)?
+            .string(forKey: setupTapAppNameKey(surface)) ?? ""
+        return name.isEmpty ? nil : name
+    }
+
+    /// One-shot: the confirmation has now been seen, so it never takes over a page
+    /// again. Written when the overlay actually renders, not when it's decided.
+    static func recordCelebrationShown(surface: String) {
+        UserDefaults(suiteName: appGroupID)?.set(true, forKey: celebrationShownKey(surface))
+    }
+
+    private static func isRecent(_ date: Date, now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(date)
+        return elapsed >= 0 && elapsed < celebrationWindow
+    }
+
+    private static func storedDate(_ defaults: UserDefaults?, _ key: String) -> Date? {
+        guard let seconds = defaults?.object(forKey: key) as? Double else { return nil }
+        return Date(timeIntervalSince1970: seconds)
     }
 
     // The already-unlocked article HTML captured in Safari, handed to the app so it

@@ -13,8 +13,10 @@ import XCTest
 /// stalest-first refresh ordering.
 final class PriceTrackerTests: XCTestCase {
 
+    /// `threshold: nil` is the real "no alert set" state a product tracked before
+    /// the notification prompt was ever shown starts in.
     private func makeTracker(price: String = "100.00", currency: String = "USD",
-                             threshold: Double = 0.10) -> PriceTracker {
+                             threshold: Double? = 0.10) -> PriceTracker {
         PriceTracker(
             productName: "Widget",
             firstStoreURL: "https://a.example/p",
@@ -24,17 +26,18 @@ final class PriceTrackerTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1000))
     }
 
-    func testAbsoluteThresholdRoundTripsThroughStoredFraction() {
+    func testAbsoluteThresholdRoundTripsThroughStoredFraction() throws {
         var tracker = makeTracker(price: "120", threshold: 0.10)
         XCTAssertEqual(tracker.alertThresholdPrice, Decimal(string: "108"))
 
         tracker.setAlertThresholdPrice(Decimal(string: "100")!)
 
         XCTAssertEqual(
-            NSDecimalNumber(decimal: tracker.alertThresholdPrice).doubleValue,
+            NSDecimalNumber(decimal: try XCTUnwrap(tracker.alertThresholdPrice)).doubleValue,
             100,
             accuracy: 0.0001)
-        XCTAssertEqual(tracker.alertThresholdFraction, 1.0 / 6.0, accuracy: 0.0001)
+        XCTAssertEqual(
+            try XCTUnwrap(tracker.alertThresholdFraction), 1.0 / 6.0, accuracy: 0.0001)
     }
 
     func testAbsoluteThresholdClampsToModelRange() {
@@ -43,6 +46,73 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.alertThresholdFraction, 0.01)
         tracker.setAlertThresholdPrice(Decimal(-50))
         XCTAssertEqual(tracker.alertThresholdFraction, 0.95)
+    }
+
+    // MARK: - No alert set
+
+    /// A tracker created while the notification prompt was still unanswered watches
+    /// the price but promises nothing: no threshold, no line, and never alerting —
+    /// however far the price falls.
+    func testTrackerWithoutThresholdNeverAlerts() {
+        var tracker = makeTracker(price: "100", threshold: nil)
+        XCTAssertFalse(tracker.hasAlertThreshold)
+        XCTAssertNil(tracker.alertThresholdFraction)
+        XCTAssertNil(tracker.alertThresholdPrice, "no threshold means no alert line")
+
+        tracker.setPrice(Decimal(string: "10"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        XCTAssertEqual(tracker.discountFraction, 0.90, accuracy: 0.0001)
+        XCTAssertFalse(tracker.isAlerting, "a 90% drop still can't alert without a threshold")
+        XCTAssertFalse(tracker.hasUnviewedAlert)
+    }
+
+    /// Setting the threshold is what leaves the unset state — from either editor,
+    /// through either mutator — and it clamps like every other write.
+    func testSettingThresholdLeavesTheUnsetState() throws {
+        var tracker = makeTracker(price: "100", threshold: nil)
+        tracker.setPrice(Decimal(string: "80"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+
+        tracker.setAlertThresholdFraction(0.10)
+        XCTAssertTrue(tracker.hasAlertThreshold)
+        XCTAssertEqual(try XCTUnwrap(tracker.alertThresholdFraction), 0.10, accuracy: 0.0001)
+        XCTAssertTrue(tracker.isAlerting, "the drop now counts against a real threshold")
+
+        tracker.setAlertThresholdFraction(9.0)
+        XCTAssertEqual(try XCTUnwrap(tracker.alertThresholdFraction), 0.95, accuracy: 0.0001)
+    }
+
+    func testClearingThresholdReturnsToUnset() {
+        var tracker = makeTracker(price: "100", threshold: 0.10)
+        tracker.setPrice(Decimal(string: "50"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        XCTAssertTrue(tracker.isAlerting)
+
+        tracker.clearAlertThreshold()
+        XCTAssertFalse(tracker.hasAlertThreshold)
+        XCTAssertFalse(tracker.isAlerting)
+    }
+
+    /// "No threshold" persists as an ABSENT key, not a sentinel value — so it
+    /// round-trips through the shared store and reads the same in an old build.
+    func testUnsetThresholdEncodesAsAbsentKeyAndRoundTrips() throws {
+        let tracker = makeTracker(price: "100", threshold: nil)
+        let data = try JSONEncoder().encode(tracker)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertFalse(
+            json.contains("alertThresholdFraction"),
+            "an unset threshold must not persist a sentinel number")
+
+        let decoded = try JSONDecoder().decode(PriceTracker.self, from: data)
+        XCTAssertNil(decoded.alertThresholdFraction)
+        XCTAssertEqual(decoded, tracker)
+    }
+
+    func testDefaultThresholdIsStillTenPercentWhenSeeded() throws {
+        let tracker = makeTracker(
+            price: "100", threshold: PriceTracker.defaultAlertThresholdFraction)
+        XCTAssertEqual(try XCTUnwrap(tracker.alertThresholdFraction), 0.10, accuracy: 0.0001)
+        XCTAssertEqual(tracker.alertThresholdPrice, Decimal(90))
     }
 
     // MARK: - Best price
@@ -146,8 +216,10 @@ final class PriceTrackerTests: XCTestCase {
     }
 
     func testOldPayloadDecodesAsUnviewedAlert() throws {
-        // A payload from before the alertAcknowledgedAt key → nil → unviewed.
-        let json = #"{"productName":"X","initialPrice":100,"initialCurrency":"USD","stores":[{"urlString":"https://a.example/p","lastPrice":50,"currency":"USD"}]}"#
+        // A payload from before the alertAcknowledgedAt key → nil → unviewed. It
+        // carries a threshold, since a payload WITHOUT one now means "no alert set"
+        // (covered by testDecodesMinimalPayloadAndRepairsEmptyStores).
+        let json = #"{"productName":"X","initialPrice":100,"initialCurrency":"USD","alertThresholdFraction":0.10,"stores":[{"urlString":"https://a.example/p","lastPrice":50,"currency":"USD"}]}"#
         let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))
         XCTAssertNil(tracker.alertAcknowledgedAt)
         XCTAssertTrue(tracker.isAlerting)
@@ -227,7 +299,9 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.stores.count, 1, "empty stores repaired to satisfy ≥1 invariant")
         XCTAssertEqual(tracker.initialPrice, Decimal(42))
         XCTAssertEqual(tracker.initialCurrency, "GBP")
-        XCTAssertEqual(tracker.alertThresholdFraction, 0.10)
+        XCTAssertNil(
+            tracker.alertThresholdFraction,
+            "an absent threshold key IS the unset state — it is no longer defaulted")
         XCTAssertFalse(tracker.isArchived)
     }
 
@@ -243,7 +317,7 @@ final class PriceTrackerTests: XCTestCase {
     func testClampsOutOfRangeThreshold() throws {
         let json = #"{"productName":"X","initialPrice":10,"initialCurrency":"USD","alertThresholdFraction":5.0}"#
         let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))
-        XCTAssertEqual(tracker.alertThresholdFraction, 0.95, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(tracker.alertThresholdFraction), 0.95, accuracy: 0.0001)
     }
 
     // MARK: - Stalest-first ordering

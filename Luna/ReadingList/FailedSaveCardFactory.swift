@@ -71,6 +71,24 @@ enum FailedSaveCardFactory {
             url: item.url, itemTitle: item.title, resolvedTitle: record?.resolvedTitle)
     }
 
+    /// The long-press menu for a failed card, in one place because two decks show
+    /// one. Archiving an empty shell would only file it where the user can't act
+    /// on it, so sharing the link and getting rid of it are the only honest verbs
+    /// (`claudedocs/failed-saves.md`) — the same two the card's own chin offers.
+    ///
+    /// Both legs are supplied because each deck deletes on its own terms: the
+    /// Downloader drops the reading-list row, the article deck also releases the
+    /// save's companion storage and picks the successor card to land on.
+    static func makeMenu(shareLink: @escaping () -> Void, delete: UIAction) -> UIMenu {
+        UIMenu(children: [
+            UIAction(
+                title: L10n.string("Share Link…"),
+                image: UIImage(systemName: "square.and.arrow.up")
+            ) { _ in shareLink() },
+            delete,
+        ])
+    }
+
     /// "Tried 3 times · 2 days ago" — provenance that makes a stubborn failure
     /// legible. Suppressed for a single fresh attempt, which needs no history.
     /// No longer on the card (the page itself is the explanation now), but the

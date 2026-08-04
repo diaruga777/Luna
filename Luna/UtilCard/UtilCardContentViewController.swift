@@ -22,10 +22,28 @@ enum UtilCardLayout {
     /// exactly a third of the surface; the util card lifts it a little to leave
     /// the weekly row its own room below — a little, not up onto the card's
     /// shoulder.
+    ///
+    /// The completed card has no headline; the weekly row sits at
+    /// `weeklyTopRatio`, half this, riding higher than the intro sentence did.
     static let headlineTopRatio: CGFloat = 0.28
     static let headlineToWeekly: CGFloat = 24
-    static let weeklyRowHeight: CGFloat = 82
+    /// The weekly row is deliberately taller than a history row: it carries the
+    /// corner flag across its top and the pick's own two lines below it.
+    static let weeklyRowHeight: CGFloat = 96
     static let recentRowHeight: CGFloat = 74
+    /// The completed card's seat for the weekly row — HALF the headline's
+    /// ratio, so the pick rides higher than the intro sentence ever did and the
+    /// flag is the first thing the card says.
+    static let weeklyTopRatio: CGFloat = 0.14
+    /// Where a block of recents starts when there is no weekly row to hang off.
+    static let recentsTop: CGFloat = 24
+    /// The seam between Luna's own pick and raw Safari history. It is by far
+    /// the widest gap on the card — several times `recentRowGap` — so the
+    /// weekly row stands alone above the list rather than as the list's first
+    /// entry.
+    static let weeklyToRecentsGap: CGFloat = 65
+    static let recentRowGap: CGFloat = 9
+    static let recentsToPasteGap: CGFloat = 12
     static let setupButtonHeight: CGFloat = 54
     static let setupButtonGap: CGFloat = 10
     /// The gap the setup block keeps above the paste field when no “or” stands
@@ -73,6 +91,9 @@ final class UtilCardContentViewController: CardContentViewController {
     /// account is already connected — the two facts behind the email nudge.
     private let savedDates: () -> [Date]
     private let isEmailConnected: () -> Bool
+    /// The Safari-history rows the completed card offers. Injected so the block's
+    /// geometry is assertable without a real history trail behind it.
+    private let recentMatches: @MainActor () -> [RecentURLPreview]
 
     private let headline: OnboardingIntroHeadlineView?
     private let weeklyHost: WeeklySaveRowHost
@@ -88,6 +109,10 @@ final class UtilCardContentViewController: CardContentViewController {
     private var setupOffers: [UtilCardSetupButton] = []
     private var recentRows: [UtilURLRow] = []
     private var didSettleHeadline = false
+    /// On the launch that owns the headline sweep, everything below the
+    /// headline waits invisible until the sweep's bloom has finished, then
+    /// fades in together. Never true on any other appearance.
+    private var awaitingIntroReveal = false
     private var observers: [NSObjectProtocol] = []
 
     init(
@@ -108,6 +133,9 @@ final class UtilCardContentViewController: CardContentViewController {
         isEmailConnected: @escaping () -> Bool = {
             EmailAccountStore.shared.isConfigured
         },
+        recentMatches: @escaping @MainActor () -> [RecentURLPreview] = {
+            RecentURLMatcher.shared.matches
+        },
         saveHandler: @escaping SaveHandler
     ) {
         self.showsOnboarding = showsOnboarding
@@ -120,6 +148,7 @@ final class UtilCardContentViewController: CardContentViewController {
         self.now = now
         self.savedDates = savedDates
         self.isEmailConnected = isEmailConnected
+        self.recentMatches = recentMatches
         self.saveHandler = saveHandler
         weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app, now: now)
         headline = showsOnboarding
@@ -220,7 +249,38 @@ final class UtilCardContentViewController: CardContentViewController {
             self?.weeklySaveDidChange()
         })
 
+        // The launch's own sweep speaks first: everything else on the card
+        // holds back until the headline has finished saying itself.
+        if animatesIntro {
+            awaitingIntroReveal = true
+            for element in introRevealElements { element.alpha = 0 }
+        }
+
         RecentURLMatcher.shared.refresh()
+    }
+
+    /// What waits behind the headline on the launch that animates it. The
+    /// headline itself is not here — it is the thing being waited on.
+    private var introRevealElements: [UIView] {
+        [weeklyHost, safariButton, saveSetupButton, orLabel, pasteRow]
+    }
+
+    /// The headline's bloom has finished: the rest of the card fades in, in
+    /// place — the same beat the standalone intro card gave its actions.
+    private func revealIntroElements() {
+        guard awaitingIntroReveal else { return }
+        awaitingIntroReveal = false
+        if UIAccessibility.isReduceMotionEnabled {
+            for element in introRevealElements { element.alpha = 1 }
+            return
+        }
+        UIView.animate(
+            withDuration: 0.38,
+            delay: 0.16,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            for element in self.introRevealElements { element.alpha = 1 }
+        }
     }
 
     /// The store gained, replaced, or lost a value. Presence changes reflow the
@@ -230,6 +290,13 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.reload(animated: !UIAccessibility.isReduceMotionEnabled)
         let shouldHide = weeklyHost.isEmpty
         guard wasHidden != shouldHide else { return }
+        if awaitingIntroReveal {
+            // The headline is still speaking. Take the slot (or give it up)
+            // silently — the row's alpha belongs to the intro reveal.
+            weeklyHost.isHidden = shouldHide
+            view.setNeedsLayout()
+            return
+        }
         if UIAccessibility.isReduceMotionEnabled {
             weeklyHost.isHidden = shouldHide
             weeklyHost.alpha = 1
@@ -253,6 +320,11 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.isHidden = false
         weeklyHost.alpha = 0
         view.setNeedsLayout()
+        // The freshly built row is sized OUTSIDE the animation — its frame in
+        // the card doesn't depend on the slot's presence, so only the card's
+        // other elements animate their reflow while the row itself fades in
+        // already in place, rather than growing into it from zero.
+        weeklyHost.layoutIfNeeded()
         UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
             self.view.layoutIfNeeded()
             self.weeklyHost.alpha = 1
@@ -324,11 +396,26 @@ final class UtilCardContentViewController: CardContentViewController {
             return
         }
 
+        // With the headline gone the weekly row takes its own seat — a fraction
+        // of the card half the headline's, not the top edge — and the recents
+        // hang below it across a seam far wider than the one between two
+        // recents. Without a live pick there is no seat to keep: the history
+        // block reclaims the whole card.
         weeklyHost.frame = CGRect(
-            x: inset, y: 24, width: width, height: UtilCardLayout.weeklyRowHeight)
-        var nextY = weeklyVisible ? weeklyHost.frame.maxY + 10 : 24
-        // Recent rows fill whatever the setup block leaves them.
-        let availableBottom = (setupBlockTop ?? pasteRow.frame.minY) - 12
+            x: inset,
+            y: weeklyVisible
+                ? (view.bounds.height * UtilCardLayout.weeklyTopRatio).rounded()
+                : UtilCardLayout.recentsTop,
+            width: width,
+            height: UtilCardLayout.weeklyRowHeight)
+        var nextY = weeklyVisible
+            ? weeklyHost.frame.maxY + UtilCardLayout.weeklyToRecentsGap
+            : UtilCardLayout.recentsTop
+        // The completed card can still carry a setup button — the email nudge
+        // becomes due only once there are saves — so the recents stop above
+        // whichever comes first, the block or the paste row.
+        let availableBottom = (setupBlockTop ?? pasteRow.frame.minY)
+            - UtilCardLayout.recentsToPasteGap
         for row in recentRows {
             let fits = nextY + UtilCardLayout.recentRowHeight <= availableBottom
             row.isHidden = !fits
@@ -336,7 +423,7 @@ final class UtilCardContentViewController: CardContentViewController {
                 row.frame = CGRect(
                     x: inset, y: nextY,
                     width: width, height: UtilCardLayout.recentRowHeight)
-                nextY = row.frame.maxY + 9
+                nextY = row.frame.maxY + UtilCardLayout.recentRowGap
             }
         }
     }
@@ -350,7 +437,7 @@ final class UtilCardContentViewController: CardContentViewController {
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
                 OnboardingIntroTiming.firstLineDelay)
-        ) { [weak headline] in
+        ) { [weak self, weak headline] in
             guard let headline else { return }
             headline.revealFirstBeat(
                 duration: OnboardingIntroTiming.lineRevealDuration
@@ -360,8 +447,10 @@ final class UtilCardContentViewController: CardContentViewController {
                         OnboardingIntroTiming.interLineDelay)
                 ) {
                     headline.revealSecondBeat(
-                        duration: OnboardingIntroTiming.lineRevealDuration,
-                        completion: {})
+                        duration: OnboardingIntroTiming.lineRevealDuration
+                    ) {
+                        self?.revealIntroElements()
+                    }
                 }
             }
         }
@@ -593,7 +682,7 @@ final class UtilCardContentViewController: CardContentViewController {
 
     private func rebuildRecentRows() {
         for row in recentRows { row.removeFromSuperview() }
-        recentRows = RecentURLMatcher.shared.matches.map { preview in
+        recentRows = recentMatches().map { preview in
             let row = UtilURLRow(style: .recent)
             row.configure(preview)
             row.onTap = { [weak self, weak row] in
@@ -610,6 +699,12 @@ final class UtilCardContentViewController: CardContentViewController {
 /// A black URL row with a narrow Liquid Glass rim — the same rim the deck's own
 /// cards wear, so a row reads as a card in waiting rather than as a tinted
 /// banner.
+///
+/// The two styles are deliberately NOT interchangeable dressings of one row.
+/// A recent is raw Safari history and stays neutral; the Save of the Week is
+/// Luna's own pick and carries the app's colour — a wash over the same black, a
+/// palette-tinted rim, and its "… of the week" line in the accent — so the two
+/// never read as one list of equals.
 final class UtilURLRow: UIControl {
     enum Style: Equatable { case saveOfTheWeek, recent }
 
@@ -617,12 +712,29 @@ final class UtilURLRow: UIControl {
     /// slide, so all three round by the same amount.
     static let cornerRadius: CGFloat = 16
 
+    /// The black both styles share. Also the colour the weekly flag dims its
+    /// palette into (`WeeklyRibbonView.fillColor`), so the two never drift.
+    static let rowBackground = UIColor(white: 0.025, alpha: 1)
+
+    /// The wash the weekly row wears over the shared black. Low enough that the
+    /// row is still a black card in waiting, high enough to separate it from the
+    /// history rows beneath at a glance.
+    static let weeklyWashAlpha: CGFloat = 0.13
+    /// The weekly rim's tint. The neutral rim is white at 0.14, so the palette
+    /// goes on at a comparable weight rather than as a saturated outline.
+    static let weeklyRimAlpha: CGFloat = 0.42
+
     private let style: Style
+    /// Present on the weekly row only, beneath every other subview.
+    private let wash = UIView()
     private let thumbnail = UIImageView()
     private let savedOverlay = UIView()
     private let savedCheckmark = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
+    /// The weekly noun, on the Save of the Week row only: a tinted corner flag
+    /// instead of a phrase competing with the host for the subtitle's width.
+    private let weeklyRibbon: WeeklyRibbonView?
     private let border = UtilURLRowGlassBorder()
     private var previewKind: RecentURLPreview.Kind?
     private(set) var isShownAsSaved = false
@@ -630,12 +742,13 @@ final class UtilURLRow: UIControl {
 
     init(style: Style) {
         self.style = style
+        weeklyRibbon = style == .saveOfTheWeek ? WeeklyRibbonView() : nil
         super.init(frame: .zero)
         accessibilityIdentifier = style == .saveOfTheWeek
             ? "utilCard.saveOfTheWeek"
             : "utilCard.recent"
         isAccessibilityElement = true
-        backgroundColor = UIColor(white: 0.025, alpha: 1)
+        backgroundColor = Self.rowBackground
         layer.cornerRadius = Self.cornerRadius
         layer.cornerCurve = .continuous
         clipsToBounds = true
@@ -648,8 +761,11 @@ final class UtilURLRow: UIControl {
         titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         titleLabel.textColor = LunaColors.primaryText
         titleLabel.numberOfLines = 2
-        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        subtitleLabel.textColor = LunaColors.secondaryText
+        subtitleLabel.font = .systemFont(
+            ofSize: 12, weight: style == .saveOfTheWeek ? .semibold : .regular)
+        subtitleLabel.textColor = style == .saveOfTheWeek
+            ? LunaSurfacePalette.progressAccent
+            : LunaColors.secondaryText
         subtitleLabel.lineBreakMode = .byTruncatingMiddle
 
         // Already saved: the artwork stays legible under a thin scrim and the
@@ -664,10 +780,22 @@ final class UtilURLRow: UIControl {
         savedCheckmark.contentMode = .scaleAspectFit
         savedOverlay.addSubview(savedCheckmark)
 
+        if style == .saveOfTheWeek {
+            wash.backgroundColor = LunaSurfacePalette.baseColor
+                .withAlphaComponent(Self.weeklyWashAlpha)
+            wash.isUserInteractionEnabled = false
+            addSubview(wash)
+            border.rimTint = LunaSurfacePalette.baseColor
+                .withAlphaComponent(Self.weeklyRimAlpha)
+        }
         addSubview(thumbnail)
         addSubview(savedOverlay)
         addSubview(titleLabel)
         addSubview(subtitleLabel)
+        // Last of the content, so the rim is still the only thing over it — the
+        // flag clears the artwork rather than sitting on it, so the order is
+        // only about the glass.
+        if let weeklyRibbon { addSubview(weeklyRibbon) }
         addSubview(border)
         thumbnail.isAccessibilityElement = false
         titleLabel.isAccessibilityElement = false
@@ -681,7 +809,9 @@ final class UtilURLRow: UIControl {
     required init?(coder: NSCoder) { nil }
 
     /// - Parameter weeklyLabel: The "… of the week/month" phrase, which is per
-    ///   app and per age tier (`WeeklySaveLabels`). Ignored by history rows.
+    ///   app and per age tier (`WeeklySaveLabels`). It goes in the corner flag,
+    ///   which is why the subtitle is the host and nothing else — the phrase used
+    ///   to sit beside it and truncate it. Ignored by history rows.
     func configure(_ preview: RecentURLPreview, weeklyLabel: String? = nil) {
         previewKind = preview.kind
         thumbnail.image = preview.image ?? UIImage(
@@ -689,10 +819,12 @@ final class UtilURLRow: UIControl {
                 : preview.kind == .product ? "bag.fill" : "safari.fill")
         titleLabel.text = preview.title
         let host = URL(string: preview.urlString)?.host ?? preview.subtitle ?? preview.urlString
-        subtitleLabel.text = style == .saveOfTheWeek
-            ? host + "  •  " + (weeklyLabel ?? WeeklySaveLabels.subtitle(monthTier: false))
-            : host
-        accessibilityLabel = [titleLabel.text, subtitleLabel.text]
+        subtitleLabel.text = host
+        weeklyRibbon?.text = weeklyLabel ?? WeeklySaveLabels.subtitle(monthTier: false)
+        setNeedsLayout()
+        // The flag carries the noun now, so VoiceOver reads it first — the row
+        // still announces everything it shows.
+        accessibilityLabel = [weeklyRibbon?.text, titleLabel.text, subtitleLabel.text]
             .compactMap { $0 }
             .joined(separator: ", ")
     }
@@ -707,6 +839,28 @@ final class UtilURLRow: UIControl {
         savedOverlay.transform = transform
         titleLabel.transform = transform
         subtitleLabel.transform = transform
+        // The flag names the PICK, not the slot, so it travels with the content.
+        weeklyRibbon?.transform = transform
+    }
+
+    /// The row's fill as ONE flat colour, with the weekly wash already
+    /// composited into the black base. The save transition's shell is a single
+    /// view, so it takes this rather than the base plus a wash it cannot layer.
+    private var compositedFill: UIColor {
+        let base = backgroundColor ?? .black
+        guard style == .saveOfTheWeek else { return base }
+        var baseRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
+        var washRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
+        guard base.getRed(&baseRGBA.r, green: &baseRGBA.g, blue: &baseRGBA.b, alpha: &baseRGBA.a),
+              LunaSurfacePalette.baseColor.getRed(
+                &washRGBA.r, green: &washRGBA.g, blue: &washRGBA.b, alpha: &washRGBA.a)
+        else { return base }
+        let wash = Self.weeklyWashAlpha
+        return UIColor(
+            red: washRGBA.r * wash + baseRGBA.r * (1 - wash),
+            green: washRGBA.g * wash + baseRGBA.g * (1 - wash),
+            blue: washRGBA.b * wash + baseRGBA.b * (1 - wash),
+            alpha: 1)
     }
 
     /// This URL is already in the deck: the row dims and its artwork carries a
@@ -727,16 +881,24 @@ final class UtilURLRow: UIControl {
         savedOverlay.transform = .identity
         titleLabel.transform = .identity
         subtitleLabel.transform = .identity
+        weeklyRibbon?.transform = .identity
         defer {
             thumbnail.transform = parallax
             savedOverlay.transform = parallax
             titleLabel.transform = parallax
             subtitleLabel.transform = parallax
+            weeklyRibbon?.transform = parallax
         }
+        wash.frame = bounds
         let imageSide = min(52, max(42, bounds.height - 22))
+        // The flag is a band across the row's top, and the artwork stays clear of
+        // it: centred as ever, unless the row is short enough that centring would
+        // put it under the flag, in which case it sits just below instead. At the
+        // weekly row's own 96pt the two agree to the point, so nothing moves.
+        let flagFloor: CGFloat = weeklyRibbon == nil ? 0 : WeeklyRibbonView.height + 2
         thumbnail.frame = CGRect(
             x: 11,
-            y: (bounds.height - imageSide) / 2,
+            y: max(flagFloor, (bounds.height - imageSide) / 2),
             width: imageSide,
             height: imageSide)
         savedOverlay.frame = thumbnail.frame
@@ -748,16 +910,30 @@ final class UtilURLRow: UIControl {
             height: checkSide)
         let labelX = thumbnail.frame.maxX + 11
         let labelWidth = max(0, bounds.width - labelX - 12)
+        // The flag occupies the row's top-left corner, so the title starts BELOW
+        // it; a history row has no flag and keeps its old 13pt top exactly.
+        let titleTop: CGFloat = weeklyRibbon == nil ? 13 : WeeklyRibbonView.height + 6
         titleLabel.frame = CGRect(
             x: labelX,
-            y: 13,
+            y: titleTop,
             width: labelWidth,
-            height: max(22, bounds.height - 40))
+            height: weeklyRibbon == nil
+                ? max(22, bounds.height - 40)
+                : max(22, bounds.height - titleTop - 28))
         subtitleLabel.frame = CGRect(
             x: labelX,
             y: bounds.height - 27,
             width: labelWidth,
             height: 16)
+        if let weeklyRibbon {
+            weeklyRibbon.frame = CGRect(
+                x: 0,
+                y: 0,
+                // Never more than the row's leading half: a long localisation
+                // must not sail across the title.
+                width: min(weeklyRibbon.fittingWidth, (bounds.width * 0.55).rounded()),
+                height: WeeklyRibbonView.height)
+        }
         border.frame = bounds
     }
 
@@ -796,7 +972,8 @@ extension UtilURLRow: UtilCardSaveTransitionArtworkProviding {
         return UtilCardSaveTransitionArtwork(
             kind: previewKind,
             sourceFrame: convert(bounds, to: coordinateView),
-            backgroundColor: backgroundColor ?? .black,
+            backgroundColor: compositedFill,
+            rimTint: border.rimTint,
             cornerRadius: layer.cornerRadius,
             thumbnail: thumbnailCopy,
             title: titleCopy,
@@ -822,6 +999,16 @@ final class UtilURLRowGlassBorder: UIVisualEffectView {
     var cornerRadius: CGFloat = UtilURLRowGlassBorder.cornerRadius {
         didSet {
             guard cornerRadius != oldValue else { return }
+            applyGeometry()
+        }
+    }
+
+    /// Replaces the neutral glass rim. The Save of the Week row is the one
+    /// caller: everything else — the history rows, the save transition's growing
+    /// shell — is a card in waiting and stays untinted.
+    var rimTint: UIColor? {
+        didSet {
+            guard rimTint != oldValue else { return }
             applyGeometry()
         }
     }
@@ -864,7 +1051,7 @@ final class UtilURLRowGlassBorder: UIVisualEffectView {
         highlight.path = UIBezierPath(
             roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
             cornerRadius: max(0, corner - 0.5)).cgPath
-        highlight.strokeColor = GlassStyle.glassBorderColor
+        highlight.strokeColor = (rimTint ?? GlassStyle.glassBorderColor)
             .resolvedColor(with: traitCollection).cgColor
     }
 }

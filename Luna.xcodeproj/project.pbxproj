@@ -91,11 +91,6 @@
 		4911C008C9AEDE7D14A6B71A /* LunaPriceIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 36B0BB44ECCD5CD26BF99D27 /* LunaPriceIngest */; };
 		4A1B3F8FAA22CE45ADB6CAB6 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		4B500C3B992386B75D3E5834 /* LunaSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LunaSocial */; };
-		C1W0000000000000000000011 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
-		C1W0000000000000000000012 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
-		C1W0000000000000000000013 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
-		C1W0000000000000000000014 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
-		C1W0000000000000000000015 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
 		4BC473ADAA6923F949BDF70A /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
 		4C96821EC560A1FB3C4920CF /* LunaPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunaPaywallBypass */; };
 		4D3D663339F8B858C39C1253 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
@@ -245,6 +240,11 @@
 		C100000000000000000000057 /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
 		C1666BA7FC1EAE467E0165F4 /* LunaSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LunaSocialUI */; };
 		C1C100000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1C100000000000000000002 /* Localizable.xcstrings */; };
+		C1W0000000000000000000011 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
+		C1W0000000000000000000012 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
+		C1W0000000000000000000013 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
+		C1W0000000000000000000014 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
+		C1W0000000000000000000015 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
 		C2651D3DB2A545CDDEA3C458 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
 		C26534B9CC10C012BE3D43B6 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		C475B735E4CE89B206574DD2 /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
@@ -4753,15 +4753,15 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaTransitions;
 		};
-		DE798ED2A5DA5A986EE4B864 /* LunaSocial */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
-			productName = LunaSocial;
-		};
 		C1W0000000000000000000001 /* LunaWeekly */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaWeekly;
+		};
+		DE798ED2A5DA5A986EE4B864 /* LunaSocial */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaSocial;
 		};
 		DF70301FEEF23F3F893F8BFD /* LunaURLRescue */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -27,7 +27,25 @@ public enum NotificationManager {
     private static let receivedIdentifierPrefix = "shareReceived-"
 
     /// Requests alert/sound authorization (no-op if already decided).
+    ///
+    /// Called only from the moments a user opts into something Luna will notify
+    /// about — the Save of the Week key, connecting a sending account, committing a
+    /// price alert threshold. Launch does not ask (see `AppDelegate`).
+    ///
+    /// Skipped in an extension process: the price editor is reachable from the share
+    /// and action sheets, and this prompt is a ONE-TIME decision — spending it on a
+    /// sheet that is about to dismiss (with no app around it to explain why it
+    /// appeared) risks a silent no. The next in-app commit asks properly.
     public static func requestAuthorization() {
+        guard !isAppExtension else {
+            DiagnosticLog.shared.record(
+                "notification authorization skipped in extension", category: "push")
+            return
+        }
+        // The prompt is up the moment we ask, so the latch is set here rather than in
+        // the callback: "has the user been asked" is true whatever they answer, and
+        // even if they never answer at all.
+        NotificationAuthorizationState.markRequested()
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound]) { granted, error in
             if let error {
@@ -38,6 +56,38 @@ public enum NotificationManager {
                     "notification authorization granted: \(granted)", category: "push")
             }
         }
+    }
+
+    /// Whether the permission prompt has EVER been shown (granted or denied), from
+    /// the shared App-Group latch — synchronous, and readable from an `.appex`.
+    /// Features that must decide *before* the user has opted in (a new price
+    /// tracker's alert threshold) read this; `refreshAuthorizationRequestedState()`
+    /// keeps it true to the system.
+    public static var hasEverRequestedAuthorization: Bool {
+        NotificationAuthorizationState.hasEverBeenRequested
+    }
+
+    /// Reads the REAL system authorization status and latches
+    /// `hasEverRequestedAuthorization` when it is no longer `.notDetermined`.
+    /// Returns the same answer, so an async caller can use it directly instead of
+    /// the cache. Safe in an `.appex` (reading settings is allowed there; only
+    /// asking is not).
+    @discardableResult
+    public static func refreshAuthorizationRequestedState() async -> Bool {
+        let status = await UNUserNotificationCenter.current().notificationSettings()
+            .authorizationStatus
+        let determined = status != .notDetermined
+        NotificationAuthorizationState.recordSystemStatus(determined: determined)
+        return determined
+    }
+
+    /// Fire-and-forget form for synchronous callers (a view controller appearing).
+    public static func refreshAuthorizationRequestedStateInBackground() {
+        Task { await refreshAuthorizationRequestedState() }
+    }
+
+    static var isAppExtension: Bool {
+        Bundle.main.bundleURL.pathExtension == "appex"
     }
 
     /// Posts "X shared an article" for an accepted friend's import. A follow-up

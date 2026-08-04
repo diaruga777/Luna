@@ -36,14 +36,7 @@ final class AllKindsCardProvider: AllKindsCardProviding {
         return MediaCardFactory.makeCard(
             for: media,
             scale: UIScreen.main.scale,
-            download: {
-                Task {
-                    // An explicit "download this one now" — bypasses the
-                    // Wi-Fi-only setting, as the Downloader's own card does.
-                    _ = await LiveMediaDownloadManager.shared.start(
-                        urlString: media.sourceURLString, title: media.title, manual: true)
-                }
-            },
+            download: { MediaItemActions.startManualDownload(media) },
             rescue: MediaCardRescue.starter(forSourceURLString: media.sourceURLString))
     }
 
@@ -85,128 +78,66 @@ final class AllKindsCardProvider: AllKindsCardProviding {
         media(for: item) == nil
     }
 
+    /// The Downloader's own verbs for this row — the same switch over where its
+    /// file is, from the same place its own deck reads it — offered above the
+    /// deck's Archive/Delete.
     func menuActions(
         for item: ReadingListItem, presenter: UIViewController, sourceView: UIView
     ) -> [UIMenuElement] {
         guard let media = media(for: item) else { return [] }
-        switch media.storageState {
-        case .undownloaded:
-            return [UIAction(
-                title: L10n.string("Download"), image: UIImage(systemName: "arrow.down.circle")
-            ) { _ in
-                Task {
-                    _ = await LiveMediaDownloadManager.shared.start(
-                        urlString: media.sourceURLString, title: media.title, manual: true)
-                }
-            }]
-        case .localFile:
-            var actions: [UIMenuElement] = [shareAction(media, presenter: presenter, sourceView: sourceView)]
-            if media.kind?.canSaveToPhotos == true {
-                actions.append(UIAction(
-                    title: L10n.string("Save to Photos"), image: UIImage(systemName: "photo.badge.plus")
-                ) { [weak self, weak presenter] _ in
-                    guard let presenter else { return }
-                    self?.saveToPhotos(media, from: presenter)
-                })
-            }
-            return actions
-        case .photosReference:
-            return [shareAction(media, presenter: presenter, sourceView: sourceView)]
-        }
+        return MediaItemActions.menuActions(
+            for: media,
+            download: { MediaItemActions.startManualDownload(media) },
+            share: { [weak presenter] in
+                guard let presenter else { return }
+                Self.share(media, from: presenter, sourceView: sourceView)
+            },
+            saveToPhotos: { [weak self, weak presenter] in
+                guard let self, let presenter else { return }
+                MediaItemActions.saveToPhotos(
+                    media, saver: self.photoSaver, from: presenter)
+            })
     }
 
     /// The whole save goes when the card does: the downloaded file, its Photos
     /// asset, and the auto-download bookkeeping that would otherwise treat the
-    /// URL as already fetched.
+    /// URL as already fetched. The reading-list row itself is the CARD here, and
+    /// the deck deletes it directly.
     func deleteCompanionStorage(for item: ReadingListItem) {
         guard let media = SavedMediaStore.shared.item(forURLString: item.urlString) else { return }
-        AutoDownloadSettings.unmarkDownloaded(media.sourceURLString)
-        if let localIdentifier = media.photosLocalIdentifier {
-            Task { [photoSaver] in
-                try? await SavedMediaPhotosSync.deletePhotosAssetIfPresent(
-                    localIdentifier, saver: photoSaver)
-            }
-        }
-        SavedMediaStore.shared.delete(media)
+        MediaItemActions.release(
+            media, saver: photoSaver, deletesReadingListItem: false)
     }
 
     func fingerprint(for item: ReadingListItem) -> String {
-        guard let media = media(for: item) else { return "" }
-        switch media.storageState {
-        case .undownloaded: return "undownloaded"
-        case .localFile: return "local|\(media.fileName ?? "")"
-        case .photosReference(let identifier, _, _): return "photos|\(identifier)"
-        }
+        media(for: item).map(MediaItemActions.storageStateKey) ?? ""
     }
 
     var changeNotificationNames: [Notification.Name] { [.savedMediaChanged] }
 
     // MARK: - Actions
 
-    private func shareAction(
-        _ media: SavedMediaItem, presenter: UIViewController, sourceView: UIView
-    ) -> UIAction {
-        UIAction(title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")) {
-            [weak presenter] _ in
-            guard let presenter else { return }
-            Task { @MainActor in
-                // A single concrete file URL is the whole payload — the system
-                // derives the preview and no Luna metadata rides along.
-                guard let export = await MediaAutoDownloader.exportFile(from: media) else {
-                    Self.presentAlert(
-                        title: L10n.string("Share Failed"),
-                        message: L10n.string("Couldn't prepare this media for sharing."), from: presenter)
-                    return
-                }
-                let activity = UIActivityViewController(
-                    activityItems: [export.fileURL], applicationActivities: nil)
-                activity.completionWithItemsHandler = { _, _, _, _ in
-                    MediaDownloadStorage.discardIntentExport(at: export.fileURL)
-                }
-                activity.popoverPresentationController?.sourceView = sourceView
-                activity.popoverPresentationController?.sourceRect = sourceView.bounds
-                presenter.present(activity, animated: true)
-            }
-        }
-    }
-
-    /// Saves a defensive COPY to Photos — moving the original would risk losing
-    /// Luna's own copy if the save fails.
-    private func saveToPhotos(_ media: SavedMediaItem, from presenter: UIViewController) {
-        Task { @MainActor in
-            do {
-                guard case .localFile = media.storageState,
-                      let fileURL = media.fileURL, let kind = media.kind
-                else { return }
-                guard await photoSaver.requestReadAuthorization() else {
-                    Self.presentAlert(
-                        title: L10n.string("Photos Access Needed"),
-                        message: L10n.string("Allow photo library access in Settings to save media."),
-                        from: presenter)
-                    return
-                }
-                let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
-                try FileManager.default.copyItem(at: fileURL, to: tempURL)
-                defer { try? FileManager.default.removeItem(at: tempURL) }
-                try await SavedMediaPhotosSync.saveAndTransition(
-                    itemID: media.id, fileURL: tempURL, kind: kind, shouldMoveFile: true,
-                    saver: photoSaver, store: SavedMediaStore.shared)
-                Self.presentAlert(
-                    title: L10n.string("Saved to Photos"),
-                    message: L10n.string("The media was added to your photo library."), from: presenter)
-            } catch {
-                Self.presentAlert(
-                    title: L10n.string("Save Failed"),
-                    message: L10n.string("Couldn't save this media to Photos."), from: presenter)
-            }
-        }
-    }
-
-    private static func presentAlert(
-        title: String, message: String, from presenter: UIViewController
+    /// A single concrete file URL is the whole payload — the system derives the
+    /// preview and no Luna metadata rides along.
+    private static func share(
+        _ media: SavedMediaItem, from presenter: UIViewController, sourceView: UIView
     ) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
-        presenter.present(alert, animated: true)
+        Task { @MainActor in
+            guard let export = await MediaAutoDownloader.exportFile(from: media) else {
+                MediaItemActions.presentAlert(
+                    title: L10n.string("Share Failed"),
+                    message: L10n.string("Couldn't prepare this media for sharing."),
+                    from: presenter)
+                return
+            }
+            let activity = UIActivityViewController(
+                activityItems: [export.fileURL], applicationActivities: nil)
+            activity.completionWithItemsHandler = { _, _, _, _ in
+                MediaDownloadStorage.discardIntentExport(at: export.fileURL)
+            }
+            activity.popoverPresentationController?.sourceView = sourceView
+            activity.popoverPresentationController?.sourceRect = sourceView.bounds
+            presenter.present(activity, animated: true)
+        }
     }
 }

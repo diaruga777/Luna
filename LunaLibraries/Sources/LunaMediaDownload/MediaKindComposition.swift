@@ -49,4 +49,22 @@ struct MediaSharePresenter: ShareMediaPresenting {
     func startAutoDownload(urlString: String) async {
         await presenter.startAutoDownload(urlString: urlString)
     }
+
+    func preloadDownload(forURLString urlString: String) {
+        MediaPreloadCache.shared.preload(urlString: urlString)
+    }
+
+    /// Everything the media kind may have written for this link: the durable
+    /// library entry (whose own delete removes its files) and the
+    /// already-downloaded marker that would otherwise make the next save skip
+    /// its fetch. The reading-list row itself belongs to the caller — it is
+    /// kind-neutral.
+    func deleteSavedContents(forURLString urlString: String) {
+        MediaPreloadCache.shared.discard(urlString: urlString)
+        if let item = SavedMediaStore.shared.existingDownloadedItem(
+            forURLString: urlString) {
+            SavedMediaStore.shared.delete(item)
+        }
+        AutoDownloadSettings.unmarkDownloaded(urlString)
+    }
 }

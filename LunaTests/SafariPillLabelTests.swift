@@ -40,6 +40,7 @@ final class SafariPillLabelTests: XCTestCase {
     /// The keys `content.js` renders (extensionName/Description are manifest-only).
     private static let renderedKeys = [
         "readInLuna", "downloadInLuna", "trackInLuna", "openingLuna", "unlockedWithLuna",
+        "setupCompleteTitle", "returnToApp",
     ]
 
     override func setUp() {
@@ -80,6 +81,43 @@ final class SafariPillLabelTests: XCTestCase {
             XCTAssertEqual(
                 fallback, resourceValue,
                 "content.js's MESSAGE_DEFAULTS[\"\(key)\"] has drifted from messages.json")
+        }
+    }
+
+    /// No message may contain a `$`.
+    ///
+    /// `$NAME$` is web-extension i18n PLACEHOLDER syntax and `$1`…`$9` are its
+    /// positional substitutions, so WebKit does not treat either as text: it
+    /// resolves the name against the message entry's `placeholders` dictionary.
+    /// An entry that declares none hands that lookup a NULL object, and
+    /// `WebExtensionLocalization::localizedStringForKey` dereferences it —
+    /// SIGSEGV in the Web Content process, which Safari reports to the user as
+    /// "A problem repeatedly occurred" and which no amount of JS `try`/`catch`
+    /// can contain. `"Return to $APP$"` shipped exactly this on 2026-08-04 and
+    /// broke EVERY page on the device, because the crash landed just before the
+    /// content script could record its one-shot flag.
+    ///
+    /// Luna substitutes its own tokens in `content.js` (`{app}`), so a `$` in
+    /// this file buys nothing and risks the whole browser. A future message that
+    /// genuinely needs a placeholder must declare a `placeholders` dictionary for
+    /// it — and then relax this test deliberately, having checked that path works.
+    func testNoLocalizedMessageCarriesPlaceholderSyntax() throws {
+        let url = Self.repoRoot
+            .appendingPathComponent("LunaSafari/Resources/_locales/en/messages.json")
+        let data = try Data(contentsOf: url)
+        let messages = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        for (key, entry) in messages {
+            let entry = try XCTUnwrap(entry as? [String: Any], "\"\(key)\" is not an object")
+            let message = try XCTUnwrap(entry["message"] as? String, "\"\(key)\" has no message")
+            guard message.contains("$") else { continue }
+            XCTAssertNotNil(
+                entry["placeholders"],
+                "messages.json's \"\(key)\" is \"\(message)\", which carries i18n placeholder "
+                    + "syntax with no \"placeholders\" dictionary to resolve it. "
+                    + "browser.i18n.getMessage(\"\(key)\") will SEGFAULT the Web Content "
+                    + "process and every page in Safari will fail to load. Use a "
+                    + "$-free token and substitute it in content.js.")
         }
     }
 

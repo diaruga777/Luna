@@ -6,6 +6,7 @@
 import LunaModels
 import LunaDesignSystem
 import LunaReaderUI
+import LunaShareSurface
 import LunaStorage
 import XCTest
 @testable import Luna
@@ -138,9 +139,10 @@ final class ReaderOnboardingTests: XCTestCase {
         let everyLine = [
             plain,
             OnboardingSafariExtensionCopy.title,
-            OnboardingSafariExtensionCopy.explainer,
             OnboardingSafariExtensionCopy.stepsHeading,
-        ] + OnboardingSafariExtensionCopy.steps(
+        ] + LunaApp.allCases.flatMap {
+            OnboardingSafariExtensionCopy.explainerChunks(for: $0)
+        } + OnboardingSafariExtensionCopy.steps(
             appName: LunaApp.luna.displayName).map(\.text)
         for line in everyLine {
             XCTAssertFalse(
@@ -149,9 +151,10 @@ final class ReaderOnboardingTests: XCTestCase {
         }
     }
 
-    /// The demonstration is a picture, not a save. Every mock surface renders
-    /// `OnboardingLunaArticleCopy` itself, so entering a lesson must leave the
-    /// deck exactly as empty as the user left it.
+    /// The save demonstration is no longer a picture — it runs the REAL share
+    /// surface over a real link — so "entering a lesson writes nothing" is now an
+    /// invariant with teeth rather than a tautology. Entering leaves the deck
+    /// exactly as empty as the user left it, and claims no temporary save.
     @MainActor
     func testEnteringALessonWritesNothingToTheStore() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
@@ -188,6 +191,55 @@ final class ReaderOnboardingTests: XCTestCase {
         // runs one stage per run-loop turn.
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
 
+        XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
+        XCTAssertNil(registry.temporarySaveIdentifier)
+    }
+
+    /// The other lesson, whose engine now mounts a live `ShareViewController` the
+    /// instant it is entered. With no live Save of the Week the link it resolves is
+    /// the bundled practice one, which every surface recognizes and short-circuits
+    /// before the network — so entering it writes nothing either, and there is
+    /// nothing to clean up.
+    @MainActor
+    func testEnteringTheSaveLessonRunsTheRealSurfaceAndStillStoresNothing() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let registry = AppOnboardingStore(app: .reader, defaults: defaults)
+        let productionRoot = UINavigationController(
+            rootViewController: UIViewController())
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .reader, saveSetupMode: .actionButtonShortcut),
+            onboardingStore: registry,
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { productionRoot }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+
+        let before = Set(ReadingListStore.shared.items().map(\.id))
+        let button = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.shortcutAction.value()
+            })
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+        button.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+
+        // The real surface IS mounted and running — that is the whole point — and
+        // it is showing the bundled practice preview rather than a hand-drawn one.
+        let surfaces = onboarding.descendantControllers(of: ShareViewController.self)
+        XCTAssertEqual(surfaces.count, 1)
+        XCTAssertTrue(try XCTUnwrap(surfaces.first).isHosted)
         XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
         XCTAssertNil(registry.temporarySaveIdentifier)
     }
@@ -237,7 +289,7 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingStrings.Intro.saveBenefit.value(for: .reader))
         XCTAssertEqual(reader.demoPages, [.lunaPage])
         XCTAssertEqual(
-            reader.demoPages.first?.sharedURLString,
+            reader.practiceURLString,
             OnboardingStrings.Demo.lunaURL.value())
 
         let downloader = OnboardingSurfaceConfiguration.configuration(for: .downloader)
@@ -250,9 +302,11 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             downloader.saveBenefit,
             OnboardingStrings.Intro.saveBenefit.value(for: .downloader))
-        XCTAssertEqual(downloader.demoPages, [.instaTok])
+        // Every app's Safari lesson opens on the native explainer page; the
+        // app's OWN mock page follows it in the rotation.
+        XCTAssertEqual(downloader.demoPages, [.lunaPage, .instaTok])
         XCTAssertEqual(
-            downloader.demoPages.first?.sharedURLString,
+            downloader.practiceURLString,
             OnboardingStrings.Demo.instaTokURL.value())
 
         let price = OnboardingSurfaceConfiguration.configuration(for: .priceTracker)
@@ -263,9 +317,9 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             price.saveBenefit,
             OnboardingStrings.Intro.saveBenefit.value(for: .priceTracker))
-        XCTAssertEqual(price.demoPages, [.amayzon])
+        XCTAssertEqual(price.demoPages, [.lunaPage, .amayzon])
         XCTAssertEqual(
-            price.demoPages.first?.sharedURLString,
+            price.practiceURLString,
             OnboardingStrings.Demo.amayzonURL.value())
 
         let luna = OnboardingSurfaceConfiguration.configuration(for: .luna)
@@ -277,6 +331,16 @@ final class ReaderOnboardingTests: XCTestCase {
             luna.saveBenefit,
             OnboardingStrings.Intro.saveBenefit.value(for: .luna))
         XCTAssertEqual(luna.demoPages, [.lunaPage, .instaTok, .amayzon])
+        XCTAssertEqual(
+            luna.practiceURLString,
+            OnboardingStrings.Demo.lunaURL.value())
+
+        // The practice link is declared per app, NOT read off the first demo
+        // page: the browser now opens on the article explainer everywhere, and
+        // the Downloader must still rehearse its save with a media link.
+        XCTAssertNotEqual(
+            downloader.practiceURLString,
+            downloader.demoPages[0].sharedURLString)
     }
 
     /// There is no fallback lesson: a device that cannot run the Action Button
@@ -814,8 +878,7 @@ final class ReaderOnboardingTests: XCTestCase {
             urlString: OnboardingDemoPage.instaTok.sharedURLString,
             app: .downloader,
             appName: LunaApp.downloader.displayName,
-            previouslyConfiguredApp: .reader,
-            actionExtensionIcon: nil)
+            previouslyConfiguredApp: .reader)
         let window = UIWindow(
             frame: CGRect(origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = messages
@@ -891,8 +954,7 @@ final class ReaderOnboardingTests: XCTestCase {
             urlString: OnboardingDemoPage.lunaPage.sharedURLString,
             app: .luna,
             appName: LunaApp.luna.displayName,
-            previouslyConfiguredApp: .priceTracker,
-            actionExtensionIcon: nil)
+            previouslyConfiguredApp: .priceTracker)
         messages.loadViewIfNeeded()
 
         let labels = messages.view.descendants(of: UILabel.self).compactMap(\.text)
@@ -1489,8 +1551,9 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(revealCopy.contains(OnboardingSafariExtensionCopy.title))
         XCTAssertTrue(revealCopy.contains(
             OnboardingSafariExtensionCopy.byline(appName: appName)))
-        XCTAssertTrue(
-            revealCopy.contains(OnboardingSafariExtensionCopy.explainer))
+        XCTAssertTrue(revealCopy.contains {
+            Self.isValidExplainerPrefix($0, for: .reader)
+        })
         XCTAssertTrue(
             revealCopy.contains(OnboardingSafariExtensionCopy.stepsHeading))
 
@@ -1556,14 +1619,15 @@ final class ReaderOnboardingTests: XCTestCase {
         })
         XCTAssertGreaterThan(stepRows[0].frame.minY, explainer.frame.maxY)
         XCTAssertGreaterThan(actionsFrame.minY, stepRows[2].frame.maxY)
-        // A tall screen's slack collects ABOVE the header rather than in a hole
-        // between the prose and the steps: the page hangs from its actions.
-        XCTAssertGreaterThan(
+        // The page is pinned at BOTH ends now: the header sits exactly on the
+        // top inset and the actions exactly on the chrome reserve, so a tall
+        // screen's slack lands between the prose and the steps — where the
+        // chunk granularity needs it. (It used to hang from the actions alone,
+        // collecting every spare point above the header.)
+        XCTAssertEqual(
             headline.frame.minY,
-            stepRows[0].frame.minY - explainer.frame.maxY,
-            "The page must hang from the bottom, not split around a gap")
-        XCTAssertGreaterThanOrEqual(
-            headline.frame.minY, OnboardingSafariPageView.minimumTopInset)
+            OnboardingSafariPageView.minimumTopInset,
+            accuracy: 0.5)
         XCTAssertTrue(
             page.descendants(of: CardSurfaceView.self).isEmpty,
             "The setup card is gone: the actions are the page's own content")
@@ -1598,46 +1662,210 @@ final class ReaderOnboardingTests: XCTestCase {
             OnboardingExtensionEnableTiming.toggleDelay, 0.25)
     }
 
+    /// Every prefix the page may print is a CUMULATIVE join of whole chunks —
+    /// never a partial one, and never a later chunk without its predecessors.
+    static func isValidExplainerPrefix(_ text: String, for app: LunaApp) -> Bool {
+        let chunks = OnboardingSafariExtensionCopy.explainerChunks(for: app)
+        return (1...chunks.count).contains {
+            OnboardingSafariExtensionCopy.explainerPrefix($0, for: app) == text
+        }
+    }
+
+    /// How many chunks a rendered prose string is.
+    static func explainerPrefixLength(
+        _ text: String, for app: LunaApp
+    ) -> Int? {
+        let chunks = OnboardingSafariExtensionCopy.explainerChunks(for: app)
+        return (1...chunks.count).first {
+            OnboardingSafariExtensionCopy.explainerPrefix($0, for: app) == text
+        }
+    }
+
+    @MainActor
+    private func safariExplainerLine(
+        of page: OnboardingSafariPageView
+    ) throws -> MoonRevealLineView {
+        try XCTUnwrap(page.descendants(of: MoonRevealLineView.self).first {
+            $0.accessibilityIdentifier
+                == OnboardingStrings.Accessibility.safariExplainer.value()
+        })
+    }
+
     /// The one-screen budget is real: on the shortest phone Luna ships to, the
-    /// whole explainer — header, prose, three steps and both actions — still
-    /// fits above the browser chrome without the prose being cut.
+    /// whole explainer — header, the FIRST prose chunk, three steps and both
+    /// actions — still fits above the browser chrome without the prose being
+    /// cut. Chunk one is the copy that has to survive that screen; the later
+    /// chunks are depth only a taller one buys.
     @MainActor
     func testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse() throws {
-        let page = OnboardingSafariPageView(
-            configuration: .configuration(for: .reader))
-        page.frame = CGRect(x: 0, y: 0, width: 375, height: 667 - 20)
-        page.layoutIfNeeded()
+        for app in LunaApp.allCases {
+            let page = OnboardingSafariPageView(
+                configuration: .configuration(for: app))
+            page.frame = CGRect(x: 0, y: 0, width: 375, height: 667)
+            page.layoutIfNeeded()
 
-        let explainer = try XCTUnwrap(
-            page.descendants(of: MoonRevealLineView.self).first {
-                $0.accessibilityIdentifier
-                    == OnboardingStrings.Accessibility.safariExplainer.value()
-            })
-        let naturalHeight = (OnboardingSafariExtensionCopy.explainer as NSString)
-            .boundingRect(
-                with: CGSize(
-                    width: explainer.frame.width,
-                    height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [
-                    .font: UIFont.systemFont(ofSize: 17, weight: .regular),
-                    .paragraphStyle: {
-                        let style = NSMutableParagraphStyle()
-                        style.lineSpacing = 5
-                        return style
-                    }(),
-                ],
-                context: nil).height
-        XCTAssertGreaterThanOrEqual(
-            explainer.frame.height,
-            ceil(naturalHeight),
-            "Shorten the explainer copy: it no longer fits above the steps")
-        let header = try XCTUnwrap(
-            page.descendants(of: MoonRevealLineView.self).first {
-                $0.accessibilityIdentifier
-                    == OnboardingStrings.Accessibility.safariHeadline.value()
-            })
-        XCTAssertGreaterThan(explainer.frame.minY, header.frame.maxY)
+            let explainer = try safariExplainerLine(of: page)
+            let firstChunk = OnboardingSafariExtensionCopy
+                .explainerPrefix(1, for: app)
+            let naturalHeight = OnboardingSafariPageView.proseHeight(
+                of: firstChunk, width: explainer.frame.width)
+            XCTAssertGreaterThanOrEqual(
+                explainer.frame.height,
+                naturalHeight,
+                "Shorten \(app)'s first explainer chunk: it no longer fits "
+                    + "above the steps on a 375×667 screen")
+            let header = try XCTUnwrap(
+                page.descendants(of: MoonRevealLineView.self).first {
+                    $0.accessibilityIdentifier
+                        == OnboardingStrings.Accessibility.safariHeadline.value()
+                })
+            XCTAssertGreaterThan(explainer.frame.minY, header.frame.maxY)
+            XCTAssertTrue(Self.isValidExplainerPrefix(
+                try XCTUnwrap(explainer.accessibilityLabel), for: app))
+        }
+    }
+
+    /// THE FURNITURE IS FIXED AND THE PROSE IS THE VARIABLE. At every size Luna
+    /// ships to — the shortest phone, three current phones, both iPads — the
+    /// header starts at the page's top inset, the actions end exactly on the
+    /// browser chrome's reserve, every step row and both buttons are present,
+    /// and the prose is a whole-chunk prefix that fits the room left between
+    /// them. A bigger screen never shows LESS than a smaller one.
+    @MainActor
+    func testSafariPageGrowsItsProseByWholeChunksAcrossEveryScreen() throws {
+        let sizes: [CGSize] = [
+            CGSize(width: 375, height: 667),
+            CGSize(width: 393, height: 852),
+            CGSize(width: 430, height: 932),
+            CGSize(width: 744, height: 1133),
+            CGSize(width: 1024, height: 1366),
+        ]
+        for app in LunaApp.allCases {
+            var previousLength = 0
+            var lengths: [Int] = []
+            for size in sizes {
+                let page = OnboardingSafariPageView(
+                    configuration: .configuration(for: app))
+                page.frame = CGRect(origin: .zero, size: size)
+                page.layoutIfNeeded()
+
+                // (1) The header is pinned to the top inset.
+                let icon = try XCTUnwrap(page.descendants(of: UIView.self).first {
+                    $0.accessibilityIdentifier
+                        == OnboardingStrings.Accessibility.safariAppIcon.value()
+                })
+                let headline = try XCTUnwrap(
+                    page.descendants(of: MoonRevealLineView.self).first {
+                        $0.accessibilityIdentifier
+                            == OnboardingStrings.Accessibility.safariHeadline
+                                .value()
+                    })
+                XCTAssertEqual(
+                    headline.frame.minY,
+                    OnboardingSafariPageView.minimumTopInset,
+                    accuracy: 0.5,
+                    "\(app) at \(size): the header must start at the top inset")
+                XCTAssertGreaterThanOrEqual(
+                    page.convert(icon.bounds, from: icon).minY,
+                    OnboardingSafariPageView.minimumTopInset - 0.5)
+
+                // (2) The actions end exactly on the chrome reserve.
+                let actions = try XCTUnwrap(
+                    page.descendants(of: OnboardingSafariActionsView.self).first)
+                let actionsFrame = page.convert(actions.bounds, from: actions)
+                XCTAssertEqual(
+                    actionsFrame.maxY,
+                    size.height - OnboardingSafariPageView.chromeReserve,
+                    accuracy: 0.5,
+                    "\(app) at \(size): the skip button must sit on the "
+                        + "browser chrome")
+
+                // (6) Iconography, step rows and both buttons are never part of
+                // the prefix.
+                let stepRows = try (0..<3).map { index in
+                    try XCTUnwrap(page.descendants(of: UIView.self).first {
+                        $0.accessibilityIdentifier
+                            == OnboardingStrings.Accessibility.safariStep(index)
+                    })
+                }
+                XCTAssertEqual(stepRows.count, 3)
+                XCTAssertNotNil(actions.activateButton.superview)
+                XCTAssertNotNil(actions.skipButton.superview)
+
+                // (3) + (4) The prose is a whole-chunk prefix that fits.
+                let explainer = try safariExplainerLine(of: page)
+                let text = try XCTUnwrap(explainer.accessibilityLabel)
+                let length = try XCTUnwrap(
+                    Self.explainerPrefixLength(text, for: app),
+                    "\(app) at \(size): “\(text)” is not a chunk-boundary "
+                        + "prefix")
+                let measured = OnboardingSafariPageView.proseHeight(
+                    of: text, width: explainer.frame.width)
+                let stepsHeading = try XCTUnwrap(
+                    page.descendants(of: MoonRevealLineView.self).first {
+                        $0.accessibilityIdentifier
+                            == OnboardingStrings.Accessibility
+                                .safariStepsHeading.value()
+                    })
+                XCTAssertGreaterThanOrEqual(
+                    explainer.frame.height, measured,
+                    "\(app) at \(size): the chosen prefix is being truncated")
+                XCTAssertLessThanOrEqual(
+                    explainer.frame.maxY, stepsHeading.frame.minY,
+                    "\(app) at \(size): the prose overruns its region")
+                XCTAssertGreaterThan(stepRows[0].frame.minY, explainer.frame.maxY)
+
+                // (5) Monotonic: a larger screen never shows a shorter prefix.
+                XCTAssertGreaterThanOrEqual(
+                    length, previousLength,
+                    "\(app) at \(size): a bigger screen showed less prose")
+                previousLength = length
+                lengths.append(length)
+            }
+            // The fitting has to actually DO something: the shortest phone
+            // holds less than the whole list, and the largest iPad holds it all.
+            let chunkCount = OnboardingSafariExtensionCopy
+                .explainerChunks(for: app).count
+            XCTAssertLessThan(
+                try XCTUnwrap(lengths.first), chunkCount,
+                "\(app): 375×667 must not already fit every chunk — there is "
+                    + "no depth left for a taller screen to add")
+            XCTAssertEqual(
+                lengths.last, chunkCount,
+                "\(app): a 13-inch iPad has room for the whole explainer")
+        }
+    }
+
+    /// Each app's page carries its OWN copy, and every chunk list opens with a
+    /// sentence that stands alone.
+    @MainActor
+    func testSafariExplainerCopyIsPerAppAndChunked() throws {
+        var firstChunks: Set<String> = []
+        for app in LunaApp.allCases {
+            let chunks = OnboardingSafariExtensionCopy.explainerChunks(for: app)
+            XCTAssertTrue(
+                (3...6).contains(chunks.count),
+                "\(app): 3–6 chunks is the shape that fits every screen")
+            for chunk in chunks {
+                XCTAssertFalse(chunk.isEmpty)
+                XCTAssertTrue(
+                    chunk.hasSuffix(".") || chunk.hasSuffix("?"),
+                    "\(app): “\(chunk)” must close its own sub-topic")
+                XCTAssertEqual(
+                    chunk.trimmingCharacters(in: .whitespacesAndNewlines),
+                    chunk,
+                    "chunks are joined with a single space, so they carry no "
+                        + "edge whitespace of their own")
+            }
+            firstChunks.insert(chunks[0])
+            XCTAssertEqual(
+                OnboardingSafariExtensionCopy.explainerPrefix(2, for: app),
+                chunks[0] + OnboardingSafariExtensionCopy.chunkSeparator
+                    + chunks[1])
+        }
+        // The Downloader and the Price Tracker lead with their own kind, not
+        // with the Reader's sentence.
+        XCTAssertEqual(firstChunks.count, LunaApp.allCases.count)
     }
 
     /// The enable pass skips Safari's page menu entirely: the sheet is up, and
@@ -1737,9 +1965,8 @@ final class ReaderOnboardingTests: XCTestCase {
                 $0.accessibilityIdentifier
                     == OnboardingStrings.Accessibility.safariExplainer.value()
             })
-        XCTAssertEqual(
-            explainer.accessibilityLabel,
-            OnboardingSafariExtensionCopy.explainer)
+        XCTAssertTrue(Self.isValidExplainerPrefix(
+            try XCTUnwrap(explainer.accessibilityLabel), for: .reader))
         XCTAssertTrue(explainer.isFullyRevealed)
         let clutter = try XCTUnwrap(page.descendants(of: UIView.self).first {
             $0.accessibilityIdentifier

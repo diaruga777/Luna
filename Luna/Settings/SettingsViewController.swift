@@ -63,7 +63,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
             ? [SettingsCategory(title: L10n.string("Contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
         + [
-            SettingsCategory(title: L10n.string("Shortcut & Safari"), symbol: "safari") { ShortcutSettingsScreen() },
+            SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() },
             SettingsCategory(title: L10n.string("Appearance"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
         ]
         // The curator's proposal inbox. Settings is rebuilt on every visit, so
@@ -193,9 +193,10 @@ enum DoubleSaveSettingsSupport {
 // MARK: - Shortcut & Safari
 
 final class ShortcutSettingsScreen: NavHeaderTableController {
-    /// Section 0: the Safari extension's surface-specific button visibility.
+    /// Section 0: the Safari extension's surface-specific button visibility —
+    /// the extension needs no particular OS or hardware, so it is always here.
     /// Then the Action-Button shortcut's URL preference, double-save action,
-    /// and actions.
+    /// and actions, which are here only on a device that can run the shortcut.
     private enum Section: Int, CaseIterable {
         case suggestionButton, onScreenURLs, doubleSave, shortcut
     }
@@ -218,24 +219,47 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         case .priceTracker: return L10n.string("Track in Luna")
         }
     }
+    /// Whether THIS device has an Action Button shortcut to set up: it needs the
+    /// OS that can run the bundled shortcut AND hardware with an Action Button to
+    /// assign it to. Asked of the same helper the onboarding save lesson asks
+    /// (`OnboardingSaveSetupMode`), so Settings and the util card can never
+    /// disagree about which save route this device is being taught.
+    ///
+    /// Nothing about the Safari extension is behind this: `nativeMessaging` — and
+    /// so the extension's page buttons, its unlocking, and the recent-URL history
+    /// the util card offers — runs on every OS Luna supports.
+    static var deviceHasShortcutSetup: Bool {
+        OnboardingSaveSetupMode.current == .actionButtonShortcut
+    }
+
+    /// Settings' row title, and this screen's own header: with no shortcut to set
+    /// up, this screen IS the Safari extension's settings and says so.
+    static func screenTitle(showsShortcutSetup: Bool = deviceHasShortcutSetup) -> String {
+        showsShortcutSetup ? L10n.string("Shortcut & Safari") : L10n.string("Safari")
+    }
+
+    private let showsShortcutSetup: Bool
+
     private var visibleSections: [Section] {
         var sections: [Section] = [.suggestionButton]
-        if #available(iOS 27.0, *) {
-            sections.append(.onScreenURLs)
-            // Double save is a behavior of the Action Button shortcut, so it
-            // only shows where that shortcut does — and only in the apps that
-            // can act on it.
-            if doubleSaveSurface != nil { sections.append(.doubleSave) }
-            sections.append(.shortcut)
-        }
+        guard showsShortcutSetup else { return sections }
+        sections.append(.onScreenURLs)
+        // Double save is a behavior of the Action Button shortcut, so it
+        // only shows where that shortcut does — and only in the apps that
+        // can act on it.
+        if doubleSaveSurface != nil { sections.append(.doubleSave) }
+        sections.append(.shortcut)
         return sections
     }
 
-    init() { super.init(style: .insetGrouped) }
+    init(showsShortcutSetup: Bool = ShortcutSettingsScreen.deviceHasShortcutSetup) {
+        self.showsShortcutSetup = showsShortcutSetup
+        super.init(style: .insetGrouped)
+    }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = L10n.string("Shortcut & Safari")
+        headerTitle = Self.screenTitle(showsShortcutSetup: showsShortcutSetup)
         super.viewDidLoad()
         refreshSafariStatus()
     }

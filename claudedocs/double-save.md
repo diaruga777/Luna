@@ -116,10 +116,10 @@ its aspect ratio.
 ## Settings UI
 
 `ShortcutSettingsScreen` (universal, `Luna/Settings/SettingsViewController.swift`)
-draws the three-choice picker as a pull-down menu button. It sits inside the same
-`#available(iOS 27.0, *)` gate as the rest of
-the Action Button shortcut setup (app-intents.md): below iOS 27 there is no
-shortcut section, so there is nothing for a double save to be a behavior of.
+draws the three-choice picker as a pull-down menu button. It sits behind the same
+`ShortcutSettingsScreen.deviceHasShortcutSetup` check as the rest of
+the Action Button shortcut setup (app-intents.md): where there is no shortcut
+section there is nothing for a double save to be a behavior of.
 Picking "Send to Kindle" without a configured Kindle offers the setup it
 needs through `DoubleSaveSettingsSupport.kindleSetupLauncher` (article-only
 screens, installed by the same two `KindWiring` variants), and **keeps the

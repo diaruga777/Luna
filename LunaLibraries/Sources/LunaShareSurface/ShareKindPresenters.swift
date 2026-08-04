@@ -77,6 +77,26 @@ public protocol ShareMediaPresenting {
     /// The background auto-download handoff for `urlString`: hands the media
     /// download to the system background-transfer service and Live Activity.
     func startAutoDownload(urlString: String) async
+
+    /// Starts fetching `urlString`'s media NOW, before any screen asks for it,
+    /// so a surface opened moments later finds the file already on disk. Used by
+    /// the onboarding save lesson, which knows its link the instant the user taps
+    /// into it but does not mount the surface until its sheet is sliding up.
+    func preloadDownload(forURLString urlString: String)
+
+    /// Removes everything the media kind persisted for `urlString`. The
+    /// onboarding lesson's rehearsal has to leave the library exactly as it found
+    /// it, and it cannot name `SavedMediaStore` itself — the shared app shell
+    /// compiles into apps that link no media module at all.
+    func deleteSavedContents(forURLString urlString: String)
+}
+
+/// Both of these are asks from ONE caller (the onboarding save lesson) that most
+/// media presenters have no work for, so they default to nothing rather than
+/// forcing every conformance to say so.
+extension ShareMediaPresenting {
+    public func preloadDownload(forURLString urlString: String) {}
+    public func deleteSavedContents(forURLString urlString: String) {}
 }
 
 /// Product-kind presentation for the extension surfaces: persist the tracker
@@ -103,4 +123,31 @@ public enum ShareKindPresenters {
     public static var article: ShareArticlePresenting?
     public static var media: ShareMediaPresenting?
     public static var product: ShareProductPresenting?
+}
+
+/// The media-kind side effects the shared APP SHELL needs, addressed without
+/// naming the registry.
+///
+/// The shell compiles into all four apps, three of which link no media module, so
+/// it can only reach media through `ShareKindPresenters.media`. But every
+/// mention of that registry inside a composition-root directory is what
+/// `KindCompositionRootTests` forbids — the rule that keeps a kind from being
+/// wired on some surfaces and not others — and "no root says the word" is a
+/// sharper rule than "no root says the word in an assignment". So the two asks
+/// the shell makes get a name of their own, here, in the module that owns the
+/// registry. No-ops wherever no media presenter is registered, which is exactly
+/// the apps that have no media to preload or delete.
+@MainActor
+public enum ShareMediaSideEffects {
+
+    /// Starts fetching `urlString`'s media now, so a surface opened moments later
+    /// finds the file already on disk.
+    public static func preloadDownload(forURLString urlString: String) {
+        ShareKindPresenters.media?.preloadDownload(forURLString: urlString)
+    }
+
+    /// Removes everything the media kind persisted for `urlString`.
+    public static func deleteSavedContents(forURLString urlString: String) {
+        ShareKindPresenters.media?.deleteSavedContents(forURLString: urlString)
+    }
 }

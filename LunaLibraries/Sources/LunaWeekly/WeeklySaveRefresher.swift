@@ -92,22 +92,34 @@ public final class WeeklySaveRefresher {
                 .map { ($0.kind, $0) },
             uniquingKeysWith: { first, _ in first })
 
-        for kind in kinds {
-            guard let save = live[kind] else {
-                store.clear(kind: kind)
-                continue
+        // Metadata resolves per kind CONCURRENTLY, each writing its display
+        // the moment it lands: the card's row is a launch surface, and one
+        // slow page must not hold the others' rows hostage.
+        await withTaskGroup(of: Void.self) { group in
+            for kind in kinds {
+                guard let save = live[kind] else {
+                    store.clear(kind: kind)
+                    continue
+                }
+                let existing = store.display(for: kind)?.save
+                if existing?.urlString == save.urlString, existing?.date == save.date {
+                    continue
+                }
+                let store = store
+                group.addTask { @MainActor in
+                    let metadata = await Self.metadataFetcher?(save.urlString)
+                    let host = metadata?.host
+                        ?? URL(string: save.urlString)?.host
+                        ?? save.urlString
+                    store.setDisplay(
+                        WeeklySaveDisplay(
+                            save: save,
+                            title: metadata?.title ?? host,
+                            subtitleHost: host,
+                            imageData: metadata?.imageData),
+                        for: kind)
+                }
             }
-            let existing = store.display(for: kind)?.save
-            if existing?.urlString == save.urlString, existing?.date == save.date { continue }
-            let metadata = await Self.metadataFetcher?(save.urlString)
-            let host = metadata?.host ?? URL(string: save.urlString)?.host ?? save.urlString
-            store.setDisplay(
-                WeeklySaveDisplay(
-                    save: save,
-                    title: metadata?.title ?? host,
-                    subtitleHost: host,
-                    imageData: metadata?.imageData),
-                for: kind)
         }
     }
 

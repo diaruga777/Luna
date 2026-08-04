@@ -18,7 +18,8 @@ final class LinkImportSheetViewController: UIViewController {
 
     // MARK: - Stage
 
-    private enum Stage {
+    /// Internal, not private: the tests drive the sheet through its real stages.
+    enum Stage {
         case review
         case importing
         case summary(LinkImportRunner.Summary)
@@ -39,7 +40,7 @@ final class LinkImportSheetViewController: UIViewController {
         case rejected
     }
 
-    private var stage: Stage = .review
+    private(set) var stage: Stage = .review
     private var links: [Entry]
     private var archived: [Entry]
     private let isStructured: Bool
@@ -50,12 +51,12 @@ final class LinkImportSheetViewController: UIViewController {
 
     // MARK: - Views
 
-    private let table = UITableView(frame: .zero, style: .insetGrouped)
-    private let progressBar = EclipseProgressBar()
+    let table = UITableView(frame: .zero, style: .insetGrouped)
+    let progressBar = EclipseProgressBar()
     private let statusLabel = UILabel()
     private let countLabel = UILabel()
     private let progressStack = UIStackView()
-    private let primaryButton = UIButton(type: .system)
+    let primaryButton = UIButton(type: .system)
     private let secondaryButton = UIButton(type: .system)
     private let buttonRow = UIStackView()
     /// Holds the progress block above the buttons. A stack, so hiding the block
@@ -184,7 +185,7 @@ final class LinkImportSheetViewController: UIViewController {
 
     // MARK: - Stage rendering
 
-    private var selectedCandidates: [LinkImportRunner.Candidate] {
+    var selectedCandidates: [LinkImportRunner.Candidate] {
         links.filter(\.isSelected).map {
             LinkImportRunner.Candidate(urlString: $0.urlString, isArchived: false)
         }
@@ -254,8 +255,15 @@ final class LinkImportSheetViewController: UIViewController {
     }
 
     private func startImport() {
+        runTask = Task { [weak self] in await self?.performImport() }
+    }
+
+    /// The import, awaited. `startImport` is just this wrapped in a `Task`; the
+    /// split exists so the sheet can be driven to its summary in a test without
+    /// racing a detached task.
+    func performImport() async {
         let candidates = selectedCandidates
-        guard !candidates.isEmpty else { return }
+        guard !candidates.isEmpty, case .review = stage else { return }
         stage = .importing
         applyStage()
         // The bar starts at nothing rather than jumping: the first slice's own
@@ -263,13 +271,8 @@ final class LinkImportSheetViewController: UIViewController {
         progressBar.setProgress(0, animated: false)
         startProgressTimer()
 
-        runTask = Task { [weak self] in
-            guard let self else { return }
-            let summary = await self.runner.run(candidates)
-            await MainActor.run {
-                self.finish(with: summary)
-            }
-        }
+        let summary = await runner.run(candidates)
+        finish(with: summary)
     }
 
     private func startProgressTimer() {
@@ -519,8 +522,12 @@ extension LinkImportSheetViewController: UISheetPresentationControllerDelegate {
     /// A swipe-away mid-import would leave the run going with nothing showing it,
     /// so the sheet holds until the user stops it or it finishes. Review and
     /// summary dismiss freely.
-    func presentationControllerShouldDismiss(_: UIPresentationController) -> Bool {
+    var allowsInteractiveDismissal: Bool {
         if case .importing = stage { return false }
         return true
+    }
+
+    func presentationControllerShouldDismiss(_: UIPresentationController) -> Bool {
+        allowsInteractiveDismissal
     }
 }

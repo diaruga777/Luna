@@ -79,8 +79,11 @@ core through named hooks: `deckWillReload`, `deckWillApplyReload`,
   exactly from the Settings circle's trailing edge to the Share circle's leading
   edge. Its mini cards disappear through a transparent alpha mask near those
   bounds; no blur/white veil is drawn in either appearance. Downloader's Share circle
-  exports the centered media file directly through the system share sheet and is
-  hidden for undownloaded cards. Downloader has no Friends or Add
+  opens the media share MENU (`MediaItemActions.shareMenuRows`, hung off the
+  button by `ShareButtonMenu` exactly like the Reader's pill): Copy link and
+  Share link over the original saved URL, plus Share video / GIF / image /
+  audio once the file exists. The link is always shareable, so the circle shows
+  for undownloaded cards too; only the util and failed-save cards hide it. Downloader has no Friends or Add
   button on the root; Friends remains reachable through Settings. Its 9:16
   thumbnail chips have a visible pitch gap and enough strip height for selection
   scaling/shadows, so neither selected nor neighboring previews overlap or clip.
@@ -640,7 +643,9 @@ just-watched video behind everything else.
 A Downloader save is rendered here by the **Downloader's own card**, not as a
 link: the looping player, the animated GIF, the full-resolution image, or the
 in-card download progress bar, plus its Photos badge, its platform logo in the
-scrub strip, and Share / Save to Photos in its long-press menu. Deleting the
+scrub strip, and Share / Save to Photos in its long-press menu. The deck's
+trailing share pill offers the same media ladder the Downloader's circle does
+(Copy link / Share link / Share video…, via the seam's `shareMenu`). Deleting the
 card deletes the whole save — the downloaded file and its Photos asset with it.
 Its tap belongs to the card content (play/pause, the download button); the
 native-app → embed → in-app-browser ladder (`nonArticleOpener`) is left to the
@@ -652,8 +657,9 @@ media module and so cannot name any of that. The deck therefore talks to an
 `AllKindsCardProviding` seam — an inner seam, NESTED inside the article deck's
 own `CardDeckProviding` conformance: the deck is the provider for the whole deck,
 and `AllKindsCardProviding` is how the foreign kinds contribute to it (card
-content, top-leading accessory, source badge, thumbnail, menu actions,
-companion-storage delete, per-item fingerprint, change-notification names). Only
+content, top-leading accessory, source badge, thumbnail, menu actions, the
+trailing circle's share menu, companion-storage delete, per-item fingerprint,
+change-notification names). Only
 the central app compiles an implementation
 (`AllKindsCardProvider`, installed beside `nonArticleOpener` by
 `NonArticleCardOpening.install()`). The card construction itself lives in

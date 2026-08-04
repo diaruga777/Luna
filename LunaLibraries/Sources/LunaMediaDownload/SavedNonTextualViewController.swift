@@ -362,7 +362,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
     /// The ways out, bottom-up: Done (full width, the app's tinted glass — the
     /// affirmative exit this screen is reached by), Delete above it, and — in the
-    /// action extension only, and only when there's a file to share — a floating
+    /// action extension, and only where a file could exist to share — a floating
     /// glass Share circle above that.
     private func exitControlViews() -> [UIView] {
         configureDeleteButton()
@@ -395,7 +395,6 @@ public final class SavedNonTextualViewController: UIViewController {
     /// stays visible but disabled until a file exists, so the action extension's
     /// bottom chrome doesn't rearrange itself mid-download.
     private func floatingShareRow() -> UIView {
-        shareButton.translatesAutoresizingMaskIntoConstraints = false
         shareButton.isEnabled = false
         ExtensionFloatingGlassButton.style(
             shareButton, symbol: "square.and.arrow.up",

@@ -61,15 +61,16 @@ exactly the row that was tapped instead of flicking to neutral on its first
 frame.
 
 **The weekly noun is a CORNER FLAG, not a phrase in the subtitle.**
-`WeeklyRibbonView` is a small pennant flush to the row's top-left corner,
-overlapping the thumbnail, filled with `LunaSurfacePalette.baseColor` — so each
-app flies its own colour — and carrying the app's own noun (Save / Read /
-Download / Deal), which switches to "of the month" at nine days. The subtitle
-underneath is the URL host and NOTHING else: the noun used to share that line
-behind a bullet and truncate the host. The row is 96pt for it
-(`UtilCardLayout.weeklyRowHeight`, against a history row's 74). See
-`claudedocs/save-of-the-week.md` for the flag's shape, its contrast rule and its
-trait registration.
+`WeeklyRibbonView` is a small tab flush to the row's top-left corner, 20pt tall
+so it clears the thumbnail instead of crossing it, closed by a single arc on its
+trailing edge, and filled with the app's colour dimmed into the row's own black —
+so each app still flies its own without outshining the pick it labels. It carries
+the app's noun (Save / Read / Download / Deal), which switches to "of the month"
+at nine days. The subtitle underneath is the URL host and NOTHING else: the noun
+used to share that line behind a bullet and truncate the host. The row is 96pt for
+it (`UtilCardLayout.weeklyRowHeight`, against a history row's 74). See
+`claudedocs/save-of-the-week.md` for the flag's shape, its dimming and contrast
+rule, and its trait registration.
 
 A new value REPLACING the one on screen runs a row-sized eclipse; a value
 appearing or vanishing is a fade plus a reflow — and an appearing row fades in

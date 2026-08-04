@@ -611,6 +611,10 @@ final class UtilURLRow: UIControl {
     /// slide, so all three round by the same amount.
     static let cornerRadius: CGFloat = 16
 
+    /// The black both styles share. Also the colour the weekly flag dims its
+    /// palette into (`WeeklyRibbonView.fillColor`), so the two never drift.
+    static let rowBackground = UIColor(white: 0.025, alpha: 1)
+
     /// The wash the weekly row wears over the shared black. Low enough that the
     /// row is still a black card in waiting, high enough to separate it from the
     /// history rows beneath at a glance.
@@ -643,7 +647,7 @@ final class UtilURLRow: UIControl {
             ? "utilCard.saveOfTheWeek"
             : "utilCard.recent"
         isAccessibilityElement = true
-        backgroundColor = UIColor(white: 0.025, alpha: 1)
+        backgroundColor = Self.rowBackground
         layer.cornerRadius = Self.cornerRadius
         layer.cornerCurve = .continuous
         clipsToBounds = true
@@ -687,7 +691,9 @@ final class UtilURLRow: UIControl {
         addSubview(savedOverlay)
         addSubview(titleLabel)
         addSubview(subtitleLabel)
-        // Above the artwork: the flag is pinned ON the thumbnail's corner.
+        // Last of the content, so the rim is still the only thing over it — the
+        // flag clears the artwork rather than sitting on it, so the order is
+        // only about the glass.
         if let weeklyRibbon { addSubview(weeklyRibbon) }
         addSubview(border)
         thumbnail.isAccessibilityElement = false
@@ -784,9 +790,14 @@ final class UtilURLRow: UIControl {
         }
         wash.frame = bounds
         let imageSide = min(52, max(42, bounds.height - 22))
+        // The flag is a band across the row's top, and the artwork stays clear of
+        // it: centred as ever, unless the row is short enough that centring would
+        // put it under the flag, in which case it sits just below instead. At the
+        // weekly row's own 96pt the two agree to the point, so nothing moves.
+        let flagFloor: CGFloat = weeklyRibbon == nil ? 0 : WeeklyRibbonView.height + 2
         thumbnail.frame = CGRect(
             x: 11,
-            y: (bounds.height - imageSide) / 2,
+            y: max(flagFloor, (bounds.height - imageSide) / 2),
             width: imageSide,
             height: imageSide)
         savedOverlay.frame = thumbnail.frame
@@ -798,7 +809,7 @@ final class UtilURLRow: UIControl {
             height: checkSide)
         let labelX = thumbnail.frame.maxX + 11
         let labelWidth = max(0, bounds.width - labelX - 12)
-        // The flag spans the row's top-left corner, so the title starts BELOW
+        // The flag occupies the row's top-left corner, so the title starts BELOW
         // it; a history row has no flag and keeps its old 13pt top exactly.
         let titleTop: CGFloat = weeklyRibbon == nil ? 13 : WeeklyRibbonView.height + 6
         titleLabel.frame = CGRect(

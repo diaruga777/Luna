@@ -4,6 +4,7 @@
 //
 
 import CryptoKit
+import LunaDesignSystem
 import LunaModels
 import LunaStorage
 import LunaWeekly
@@ -341,6 +342,67 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(hostLabels, ["example.com"])
     }
 
+    /// The flag is a band across the row's top, not a sticker on the artwork —
+    /// it used to overhang the thumbnail by a few points on purpose.
+    func testTheCornerFlagClearsTheArtworkItLabels() throws {
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let card = makeCard(showsOnboarding: false, app: .reader)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
+        card.view.layoutIfNeeded()
+
+        let row = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        let flag = try XCTUnwrap(
+            row.descendant(identifier: "utilCard.weeklyRibbon"))
+        let artwork = try XCTUnwrap(row.descendants(of: UIImageView.self).first)
+
+        XCTAssertEqual(row.bounds.height, UtilCardLayout.weeklyRowHeight)
+        XCTAssertEqual(flag.frame.height, WeeklyRibbonView.height)
+        XCTAssertLessThanOrEqual(flag.frame.maxY, artwork.frame.minY)
+        // And the artwork is still centred in the row: at this height clearing
+        // the flag costs it nothing.
+        XCTAssertEqual(
+            artwork.frame.midY, row.bounds.midY, accuracy: 0.5)
+    }
+
+    /// The trailing edge is ONE arc: it leaves the bottom edge and rises to the
+    /// top without turning back, which is exactly what the old swallowtail did.
+    func testTheCornerFlagsTrailingEdgeIsOneArcRatherThanANotch() throws {
+        let rect = CGRect(x: 0, y: 0, width: 120, height: WeeklyRibbonView.height)
+        let path = WeeklyRibbonView.pennantPath(in: rect)
+        let edges = stride(from: rect.minY + 0.5, to: rect.maxY, by: 1)
+            .map { trailingEdgeX(of: path, at: $0, in: rect) }
+
+        XCTAssertGreaterThan(edges.count, 10)
+        for (upper, lower) in zip(edges, edges.dropFirst()) {
+            XCTAssertLessThanOrEqual(lower, upper + 0.01, "the edge doubled back")
+        }
+        // It reaches the top edge, and has visibly swept in by the bottom one.
+        let top = try XCTUnwrap(edges.first)
+        let bottom = try XCTUnwrap(edges.last)
+        XCTAssertEqual(top, rect.maxX, accuracy: 1)
+        XCTAssertGreaterThan(top - bottom, 6)
+    }
+
+    /// The fill used to be the palette at full strength — bright enough that two
+    /// of the four had to letter in black to stay legible. Dimmed into the row's
+    /// own black, every one of them is a quiet patch that carries white.
+    func testEveryAppsFlagIsDimmedFarEnoughBelowItsLettering() {
+        let surfaces: [LunaSurfacePalette.Surface] =
+            [.luna, .reader, .downloader, .priceTracker]
+        for surface in surfaces {
+            let fill = WeeklyRibbonView.fillColor(for: surface)
+            let base = LunaSurfacePalette.baseColor(for: surface)
+            XCTAssertLessThan(
+                relativeLuminance(fill), relativeLuminance(base) * 0.4,
+                "\(surface) flag is still as bright as its palette")
+            XCTAssertGreaterThan(
+                contrastRatio(WeeklyRibbonView.textColor, fill), 4.5,
+                "\(surface) flag cannot carry white lettering")
+        }
+    }
+
     func testTheRowAppearsLiveWhenTheStoreGainsAValue() {
         let card = makeCard(showsOnboarding: false)
         card.loadViewIfNeeded()
@@ -494,6 +556,40 @@ final class UtilCardTests: XCTestCase {
         card.view.layoutIfNeeded()
         return (card.view.descendant(identifier: "utilCard.weeklyRibbon")
             as? WeeklyRibbonView)?.text
+    }
+
+    /// The x of the flag's trailing edge at one height, found by walking in from
+    /// the rect's own right edge until the shape claims the point.
+    private func trailingEdgeX(
+        of path: UIBezierPath, at y: CGFloat, in rect: CGRect
+    ) -> CGFloat {
+        var x = rect.maxX
+        while x > rect.minX {
+            if path.contains(CGPoint(x: x, y: y)) { return x }
+            x -= 0.25
+        }
+        return rect.minX
+    }
+
+    /// WCAG relative luminance, so "less bright" is measured rather than eyeballed.
+    private func relativeLuminance(_ color: UIColor) -> CGFloat {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return 0 }
+        let linear: (CGFloat) -> CGFloat = { channel in
+            channel <= 0.03928
+                ? channel / 12.92
+                : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    }
+
+    private func contrastRatio(_ one: UIColor, _ other: UIColor) -> CGFloat {
+        let a = relativeLuminance(one)
+        let b = relativeLuminance(other)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
     // MARK: - A save answers the first run

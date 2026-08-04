@@ -115,28 +115,42 @@ palette-tinted rim instead of the neutral glass one, and the corner flag below �
 so it never reads as the first entry of the recents list.
 
 **The weekly noun is a corner flag, not a phrase in the subtitle.**
-`WeeklyRibbonView` is a small tinted pennant pinned flush to the row's TOP-LEFT
-corner, overlapping the top of the thumbnail, carrying the app's own noun from
-`WeeklySaveLabels.subtitle` ("Read of the week", "Deal of the month", …). It is
-filled with `LunaSurfacePalette.baseColor` — the running app's tint, so each of
-the four flies its own colour — and lettered white or near-black depending on
-that colour's luminance, because the four straddle the legibility line (indigo
-and amber take white; the Reader's periwinkle and the Price Tracker's green take
-black). Three things follow:
+`WeeklyRibbonView` is a small tinted tab pinned flush to the row's TOP-LEFT
+corner, carrying the app's own noun from `WeeklySaveLabels.subtitle` ("Read of
+the week", "Deal of the month", …). Three shape decisions, all of them
+corrections of a first pass that was a bright pennant across the artwork:
 
-- the flag only draws its swallowtail; the row's own `clipsToBounds` plus its
-  16pt continuous corner round the flag's outer corner for it;
-- the shape layer holds a RESOLVED `CGColor`, so it re-applies on
-  `LunaSkyTrait` changes (a style change never arrives under the pinned-dark
-  trait — see CLAUDE.md);
-- it travels with `setContentParallax` during a cycle slide: the flag names the
-  PICK, not the slot.
+- **it CLEARS the thumbnail** rather than overhanging it. 20pt tall against the
+  centred 52pt thumbnail's 22pt top, and the row's layout guarantees the gap
+  rather than inheriting it: the artwork is centred as ever *unless* centring
+  would put it under the flag, in which case it sits just below. At the weekly
+  row's own 96pt the two agree to the point, so nothing moved when the guard
+  went in.
+- **its trailing edge is ONE arc**, not a swallowtail's two cuts: a single cubic
+  that leaves the bottom edge horizontally and turns up to meet the top edge
+  vertically, so there is no corner anywhere along the sweep (both tangents are
+  load-bearing — drop either and the join reads as a bend). The flag draws only
+  that edge; the row's own `clipsToBounds` plus its 16pt continuous corner round
+  the flag's outer corner for it.
+- **the fill is the palette DIMMED into the row's black**
+  (`WeeklyRibbonView.fillColor`, 45% of `LunaSurfacePalette.baseColor` over
+  `UtilURLRow.rowBackground`). At full strength the four colours were a patch
+  brighter than the pick they label, and two of them — the Reader's periwinkle
+  and the Price Tracker's green — had to letter in near-black to stay legible.
+  Dimmed, all four clear 4.5:1 against white, so the lettering is simply white
+  and the per-app luminance branch is gone.
+
+Two things that did not change: the shape layer holds a RESOLVED `CGColor`, so it
+re-applies on `LunaSkyTrait` changes (a style change never arrives under the
+pinned-dark trait — see CLAUDE.md); and the flag travels with
+`setContentParallax` during a cycle slide, because it names the PICK, not the
+slot.
 
 The subtitle is therefore the URL host ALONE — the noun used to sit beside it
 behind a bullet and truncate it. The row is `UtilCardLayout.weeklyRowHeight`
 (96pt, against a history row's 74) to seat the flag above the pick's own two
-lines, and the title starts below the flag rather than at a history row's 13pt.
-VoiceOver reads flag, title, host.
+lines, and the title starts below the flag (`WeeklyRibbonView.height + 6`) rather
+than at a history row's 13pt. VoiceOver reads flag, title, host.
 
 - **Appearing / disappearing**: a 0.24s fade plus a reflow. An appearing row
   fades in IN PLACE — the host is laid out before the animation, so the row

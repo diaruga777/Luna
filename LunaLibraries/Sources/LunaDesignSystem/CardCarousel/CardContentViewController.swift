@@ -33,6 +33,20 @@ open class CardContentViewController: UIViewController {
 
     open var isPlaying: Bool { false }
 
+    /// Set by the hosting carousel; invoke whenever `isPlaying` changes for any
+    /// reason (including the carousel's own `setPlaying`), so the paused card's
+    /// playback controls follow the content rather than each call site.
+    public var playbackStateChanged: (() -> Void)?
+
+    /// Whether this content plays at a chooseable rate — the card's speed pill
+    /// appears only for content that says yes.
+    open var supportsPlaybackSpeed: Bool { false }
+
+    /// The current rate, as a multiple of natural speed.
+    open var playbackSpeed: Double { PlaybackSpeed.normal }
+
+    open func setPlaybackSpeed(_ speed: Double) {}
+
     /// Current playback position as a fraction (0...1) of the duration.
     open var playbackFraction: Double { 0 }
 

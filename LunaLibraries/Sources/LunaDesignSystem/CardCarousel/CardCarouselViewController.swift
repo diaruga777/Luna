@@ -185,9 +185,10 @@ public struct CardCarouselStyle {
     /// bottom edges instead of hitting a hard clip — scrolled reader text fades
     /// away as it approaches an edge. 0 (the default) keeps the hard clip.
     public var contentEdgeFadeHeight: CGFloat = 0
-    /// Show a transient moon-horizon position bar beneath opted-in playable
-    /// content while an in-card horizontal drag seeks through it.
-    public var showsPlaybackScrubProgress = false
+
+    /// The gap between the paused card's speed pill and the position bar it
+    /// sits above.
+    static let playbackSpeedPillSpacing: CGFloat = 8
 
     public init() {}
 }
@@ -389,6 +390,7 @@ public final class CardCarouselViewController: UIViewController {
     private var scrubStartFraction: Double = 0
     private var wasPlayingBeforeScrub = false
     private let playbackScrubProgress = MoonHorizonProgressBar()
+    private let playbackSpeedPill = PlaybackSpeedPillButton()
     private var playbackScrubPresentation = 0
 
     public init() {
@@ -419,6 +421,13 @@ public final class CardCarouselViewController: UIViewController {
         playbackScrubProgress.showsActivityPulse = false
         playbackScrubProgress.accessibilityLabel = L10n.string("Video position")
         cardArea.addSubview(playbackScrubProgress)
+        playbackSpeedPill.alpha = 0
+        playbackSpeedPill.isHidden = true
+        playbackSpeedPill.onSelectSpeed = { [weak self] speed in
+            guard let self, let content = self.slots[self.currentIndex]?.content else { return }
+            content.setPlaybackSpeed(speed)
+        }
+        cardArea.addSubview(playbackSpeedPill)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
         scrubberLeadingConstraint = scrubber.leadingAnchor.constraint(
             equalTo: view.leadingAnchor, constant: style.scrubberHorizontalInset)
@@ -479,6 +488,7 @@ public final class CardCarouselViewController: UIViewController {
         for slot in slots.values { applyRestingLayout(to: slot) }
         scrubPreview.layout()
         layoutPlaybackScrubProgress()
+        updatePlaybackControls()
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -486,6 +496,7 @@ public final class CardCarouselViewController: UIViewController {
         isViewVisible = true
         audioSession.startVolumeObservation()
         slots[currentIndex]?.content.cardDidBecomeCentered()
+        updatePlaybackControls()
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -493,6 +504,7 @@ public final class CardCarouselViewController: UIViewController {
         isViewVisible = false
         audioSession.stopVolumeObservation()
         slots[currentIndex]?.content.cardDidLeaveCenter()
+        updatePlaybackControls()
     }
 
     // MARK: - Public surface
@@ -523,10 +535,14 @@ public final class CardCarouselViewController: UIViewController {
         removeOrphanCardViews()
         scrubber.setThumbnailCount(count)
         loadAllThumbnails()
-        guard count > 0 else { return }
+        guard count > 0 else {
+            updatePlaybackControls()
+            return
+        }
         scrubber.setSelectedIndex(currentIndex, animated: false)
         applyMuteState()
         if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
+        updatePlaybackControls()
         delegate?.carousel(self, didCenterCardAt: currentIndex)
     }
 
@@ -643,6 +659,8 @@ public final class CardCarouselViewController: UIViewController {
         isImmersed = immersed
         immersionExtendsCard = extendsCard
         scrubber.isUserInteractionEnabled = !immersed && !isColumnAside
+        // Immersion hands the runway under the card to the reader's own chrome.
+        updatePlaybackControls()
         if animated {
             UIView.animate(
                 withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
@@ -675,6 +693,7 @@ public final class CardCarouselViewController: UIViewController {
         guard abs(shift - columnAsideShift) > 0.5 else { return }
         columnAsideShift = shift
         scrubber.isUserInteractionEnabled = !isImmersed && !isColumnAside
+        updatePlaybackControls()
         let changes = { self.applyColumnAsideLayout() }
         guard animated, !UIAccessibility.isReduceMotionEnabled else {
             changes()
@@ -789,6 +808,7 @@ public final class CardCarouselViewController: UIViewController {
         card.installContentView(content.view)
         content.setMuted(audioSession.isMuted)
         content.audioAvailabilityChanged = { [weak self] in self?.updateMuteUI() }
+        content.playbackStateChanged = { [weak self] in self?.updatePlaybackControls() }
         cardArea.addSubview(card)
         return Slot(index: index, card: card, content: content)
     }
@@ -824,6 +844,8 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     private func unmount(_ slot: Slot) {
+        // A retiring card must not drive the deck's chrome on its way out.
+        slot.content.playbackStateChanged = nil
         slot.content.setPlaying(false)
         slot.content.willMove(toParent: nil)
         slot.card.removeFromSuperview()
@@ -885,33 +907,102 @@ public final class CardCarouselViewController: UIViewController {
     private func layoutPlaybackScrubProgress() {
         guard let metrics else { return }
         let height = playbackScrubProgress.intrinsicContentSize.height
-        playbackScrubProgress.frame = metrics.playbackScrubProgressFrame(height: height)
+        let bar = metrics.playbackScrubProgressFrame(height: height)
+        playbackScrubProgress.frame = bar
+        // The speed pill rides above the bar's LEFT end, so the two read as one
+        // stack of controls belonging to the card they sit under.
+        let pill = playbackSpeedPill.systemLayoutSizeFitting(
+            UIView.layoutFittingCompressedSize)
+        playbackSpeedPill.frame = CGRect(
+            x: bar.minX,
+            y: bar.minY - CardCarouselStyle.playbackSpeedPillSpacing - pill.height,
+            width: pill.width,
+            height: pill.height)
     }
 
-    private func showPlaybackScrubProgress(at fraction: Double) {
-        guard style.showsPlaybackScrubProgress else { return }
+    // MARK: - Playback controls (paused card)
+
+    /// The centered card's content when it is a paused timeline at rest — the
+    /// one state that shows playback controls.
+    ///
+    /// "At rest" is the point of the guards: a card paged away is paused too,
+    /// and a transition, a live scrub preview, immersion or a stepped-aside
+    /// column would all draw the controls over, or beside, a card that has left
+    /// its resting frame.
+    private func pausedPlaybackContent() -> CardContentViewController? {
+        guard isViewVisible, !isTransitioning, !isShowingScrubPreview,
+              !isImmersed, !isColumnAside,
+              let content = slots[currentIndex]?.content,
+              content.isPlayable, !content.isPlaying,
+              content.showsPlaybackScrubProgress
+        else { return nil }
+        return content
+    }
+
+    /// Brings the paused card's controls up (or takes them down) to match the
+    /// current state. Called from every point that can change it, including the
+    /// content's own `playbackStateChanged`.
+    private func updatePlaybackControls() {
+        guard let content = pausedPlaybackContent() else {
+            hidePlaybackControls()
+            return
+        }
+        showPlaybackControls(
+            at: content.playbackFraction,
+            speed: content.supportsPlaybackSpeed ? content.playbackSpeed : nil)
+    }
+
+    /// `speed` nil means this content plays at one rate only — no pill.
+    private func showPlaybackControls(at fraction: Double, speed: Double?) {
         playbackScrubPresentation += 1
         playbackScrubProgress.layer.removeAllAnimations()
         playbackScrubProgress.setProgress(Float(min(max(fraction, 0), 1)), animated: false)
+        let wasHidden = playbackScrubProgress.isHidden
         playbackScrubProgress.isHidden = false
-        playbackScrubProgress.alpha = 0
+        if wasHidden { playbackScrubProgress.alpha = 0 }
         cardArea.bringSubviewToFront(playbackScrubProgress)
+        if let speed {
+            playbackSpeedPill.speed = speed
+            if playbackSpeedPill.isHidden {
+                playbackSpeedPill.isHidden = false
+                playbackSpeedPill.alpha = 0
+            }
+            cardArea.bringSubviewToFront(playbackSpeedPill)
+        }
+        layoutPlaybackScrubProgress()
         UIView.animate(
             withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.16,
             delay: 0,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             self.playbackScrubProgress.alpha = 1
+            self.playbackSpeedPill.alpha = speed == nil ? 0 : 1
+        } completion: { [weak self] _ in
+            guard let self, speed == nil else { return }
+            self.playbackSpeedPill.isHidden = true
         }
     }
+
+    #if DEBUG
+    /// The chrome is faded out before it is hidden (the flag lands in the fade's
+    /// completion), so `alpha` — set on the model layer immediately — is what
+    /// "showing" means synchronously.
+    var isPlaybackPositionBarShowingForTesting: Bool {
+        !playbackScrubProgress.isHidden && playbackScrubProgress.alpha > 0
+    }
+
+    var playbackSpeedPillForTesting: PlaybackSpeedPillButton? {
+        playbackSpeedPill.isHidden || playbackSpeedPill.alpha == 0 ? nil : playbackSpeedPill
+    }
+    #endif
 
     private func updatePlaybackScrubProgress(to fraction: Double) {
         guard !playbackScrubProgress.isHidden else { return }
         playbackScrubProgress.setProgress(Float(min(max(fraction, 0), 1)), animated: false)
     }
 
-    private func hidePlaybackScrubProgress() {
-        guard !playbackScrubProgress.isHidden else { return }
+    private func hidePlaybackControls() {
+        guard !playbackScrubProgress.isHidden || !playbackSpeedPill.isHidden else { return }
         playbackScrubPresentation += 1
         let presentation = playbackScrubPresentation
         UIView.animate(
@@ -920,9 +1011,11 @@ public final class CardCarouselViewController: UIViewController {
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             self.playbackScrubProgress.alpha = 0
+            self.playbackSpeedPill.alpha = 0
         } completion: { [weak self] finished in
             guard let self, finished, presentation == self.playbackScrubPresentation else { return }
             self.playbackScrubProgress.isHidden = true
+            self.playbackSpeedPill.isHidden = true
         }
     }
 
@@ -982,6 +1075,10 @@ public final class CardCarouselViewController: UIViewController {
         let opposite = slots[currentIndex - direction]
 
         isTransitioning = true
+        // The outgoing card's controls leave WITH it, before the eclipse starts —
+        // they belong to a card at rest, and the pause that retires them at the
+        // zenith is no state change at all (the card was already paused).
+        updatePlaybackControls()
 
         // The veil should darken the scrub strip too, not just the card region.
         let dimmingBounds = view.convert(view.bounds, to: cardArea)
@@ -1027,6 +1124,7 @@ public final class CardCarouselViewController: UIViewController {
         // Restores target-dependent chrome when an interactive page reverses,
         // and confirms the new target after a successful transition.
         reportNavigationTarget(currentIndex)
+        updatePlaybackControls()
         if case .pending(let centerIndex) = pendingReload {
             pendingReload = .none
             reloadData(centeringAt: centerIndex)
@@ -1121,6 +1219,7 @@ public final class CardCarouselViewController: UIViewController {
         }
         slots[currentIndex]?.content.cardDidLeaveCenter()
         currentIndex = target
+        updatePlaybackControls()
         UIView.transition(
             with: cardArea,
             duration: CarouselAnimationTiming.crossfadeDuration,
@@ -1135,6 +1234,7 @@ public final class CardCarouselViewController: UIViewController {
         } completion: { _ in completion?() }
         applyMuteState()
         if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
+        updatePlaybackControls()
         scrubber.setSelectedIndex(currentIndex, animated: true)
         delegate?.carousel(self, didCenterCardAt: currentIndex)
     }
@@ -1149,6 +1249,7 @@ public final class CardCarouselViewController: UIViewController {
         scrubPreview.show(at: index, cardCount: count)
         // The preview owns the deck for the duration of the gesture.
         for slot in slots.values { slot.card.alpha = 0 }
+        updatePlaybackControls()
     }
 
     /// Tears the preview down and gives the real cards the deck back.
@@ -1157,6 +1258,7 @@ public final class CardCarouselViewController: UIViewController {
         guard isShowingScrubPreview else { return }
         isShowingScrubPreview = false
         for slot in slots.values { applyRestingLayout(to: slot) }
+        updatePlaybackControls()
     }
 
     private func commitScrub(to index: Int, isDirectTap: Bool = false) {
@@ -1450,18 +1552,19 @@ public final class CardCarouselViewController: UIViewController {
         case .began:
             scrubStartFraction = content.playbackFraction
             wasPlayingBeforeScrub = content.isPlaying
+            // Pausing brings the controls up on its own (they are a function of
+            // the paused state, whether the pause came from a tap or a drag).
             content.setPlaying(false)
-            if content.showsPlaybackScrubProgress {
-                showPlaybackScrubProgress(at: scrubStartFraction)
-            }
+            updatePlaybackControls()
         case .changed:
             let translation = gesture.translation(in: cardArea).x
             let fraction = scrubStartFraction + Double(translation / metrics.cardSize.width)
             content.seek(toFraction: fraction)
             updatePlaybackScrubProgress(to: fraction)
         case .ended, .cancelled, .failed:
-            hidePlaybackScrubProgress()
+            // Resuming takes them down again; a drag that ends paused keeps them.
             if wasPlayingBeforeScrub { content.setPlaying(true) }
+            updatePlaybackControls()
         default:
             break
         }

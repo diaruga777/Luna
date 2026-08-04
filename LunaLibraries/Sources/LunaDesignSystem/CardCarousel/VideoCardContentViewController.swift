@@ -24,16 +24,25 @@ public final class VideoCardContentViewController: CardContentViewController {
     private var wantsPlaying = false
     private var endObserver: NSObjectProtocol?
     private var readyForDisplayObservation: NSKeyValueObservation?
+    /// Identifies the ITEM this player is showing, so the speed the user picks
+    /// outlives the controller — a card unmounts as soon as it is two slots
+    /// from center and is rebuilt from scratch on the way back.
+    private let speedMemoryKey: String?
+    private var speed: Double
 
-    public init(fileURL: URL) {
+    public init(fileURL: URL, speedMemoryKey: String? = nil) {
         self.itemProvider = { completion in
             completion(AVPlayerItem(url: fileURL))
         }
+        self.speedMemoryKey = speedMemoryKey
+        self.speed = PlaybackSpeedMemory.shared.speed(forKey: speedMemoryKey)
         super.init()
     }
 
-    public init(itemProvider: @escaping ItemProvider) {
+    public init(itemProvider: @escaping ItemProvider, speedMemoryKey: String? = nil) {
         self.itemProvider = itemProvider
+        self.speedMemoryKey = speedMemoryKey
+        self.speed = PlaybackSpeedMemory.shared.speed(forKey: speedMemoryKey)
         super.init()
     }
 
@@ -58,6 +67,9 @@ public final class VideoCardContentViewController: CardContentViewController {
         playerView.playerLayer.videoGravity = .resizeAspect
         playerView.playerLayer.player = player
         player.isMuted = true
+        // `play()` resumes at the default rate, so the remembered speed is set
+        // once here and every later resume (loop, foregrounding) honors it.
+        player.defaultRate = Float(speed)
         // Looping is handled manually on the end notification (rather than
         // AVPlayerLooper) so scrubbing and pause state stay under our control.
         player.actionAtItemEnd = .none
@@ -90,6 +102,9 @@ public final class VideoCardContentViewController: CardContentViewController {
 
     private func install(_ item: AVPlayerItem?) {
         guard let item else { return }
+        // Keeps voices at their own pitch across the whole speed range rather
+        // than turning 0.25× into a groan and 2× into a chipmunk.
+        item.audioTimePitchAlgorithm = .spectral
         player.replaceCurrentItem(with: item)
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
@@ -126,9 +141,24 @@ public final class VideoCardContentViewController: CardContentViewController {
         return min(max(player.currentTime().seconds / duration, 0), 1)
     }
 
+    public override var supportsPlaybackSpeed: Bool { true }
+
+    public override var playbackSpeed: Double { speed }
+
+    public override func setPlaybackSpeed(_ newSpeed: Double) {
+        speed = newSpeed
+        PlaybackSpeedMemory.shared.setSpeed(newSpeed, forKey: speedMemoryKey)
+        player.defaultRate = Float(newSpeed)
+        // Assigning `rate` would START a paused player, so a speed chosen while
+        // paused waits for the next resume — which reads `defaultRate`.
+        if wantsPlaying { player.rate = Float(newSpeed) }
+    }
+
     public override func setPlaying(_ playing: Bool) {
+        let changed = wantsPlaying != playing
         wantsPlaying = playing
         if playing { player.play() } else { player.pause() }
+        if changed { playbackStateChanged?() }
     }
 
     public override func seek(toFraction fraction: Double) {

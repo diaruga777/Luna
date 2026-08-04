@@ -166,6 +166,7 @@ enum KindWiring {
             await LiveMediaDownloadManager.shared.startWithResolvedAssets(
                 sourceURLString: sourceURLString, title: title, assets: assets)
         }
+        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
     }
 
     /// Product-kind launch wiring (identical in the Price Tracker variant).

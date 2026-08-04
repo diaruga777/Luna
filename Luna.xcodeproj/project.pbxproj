@@ -627,6 +627,7 @@
 				AudioScriptPipelineWiring.swift,
 				Downloader/DownloaderOnboardingDemoSave.swift,
 				Downloader/MediaCardFactory.swift,
+				Downloader/MediaImportProgress.swift,
 				Downloader/SavedMediaCardsViewController.swift,
 				Info.plist,
 				"KindWiring+Downloader.swift",
@@ -689,6 +690,7 @@
 			membershipExceptions = (
 				Downloader/DownloaderOnboardingDemoSave.swift,
 				Downloader/MediaCardFactory.swift,
+				Downloader/MediaImportProgress.swift,
 				Downloader/SavedMediaCardsViewController.swift,
 				Info.plist,
 				"KindWiring+Downloader.swift",

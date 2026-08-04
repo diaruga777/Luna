@@ -12,6 +12,7 @@ import LunaPriceUI
 import LunaReaderUI
 import LunaStorage
 import LunaModels
+import LunaURLClassification
 import UIKit
 
 #if DEBUG
@@ -35,6 +36,10 @@ enum UITestScreen: String, CaseIterable {
     case settings
     case emailRecovery
     case priceTrackingEditor
+    case importExport
+    /// The import review sheet, over Import & Export, with a fixture document —
+    /// the real one only ever arrives from a file the document picker returned.
+    case importReview
 
     // Readers (built from a deterministic fixture article).
     case readerScroll
@@ -69,12 +74,33 @@ enum UITestScreenBuilder {
         UITestFixtures.sampleArticleContent(title: "The Quiet Architecture of Everyday Things")
     }
 
+    /// A both-sections document for the import review sheet.
+    private static var importReviewFixture: LinkListDocument {
+        LinkListDocument(
+            links: [
+                "https://example.com/the-quiet-architecture-of-everyday-things",
+                "https://example.com/notes-on-a-long-winter",
+                "https://example.org/why-maps-lie",
+            ],
+            archived: ["https://example.com/an-older-piece-worth-keeping"],
+            isStructured: true)
+    }
+
     /// Returns the root view controller for `screen`. The store has already been
     /// seeded by `UITestSeeder.applyIfNeeded()` before this is called.
     static func rootViewController(for screen: UITestScreen) -> UIViewController {
         switch screen {
         case .settings:
             return UINavigationController(rootViewController: SettingsViewController())
+
+        case .importExport:
+            return UINavigationController(rootViewController: ImportExportSettingsScreen())
+
+        case .importReview:
+            let host = UINavigationController(rootViewController: ImportExportSettingsScreen())
+            return PresentingHostViewController(host: host) {
+                LinkImportSheetViewController(document: importReviewFixture)
+            }
 
         case .emailRecovery:
             let suiteName = "UITestScreen.emailRecovery"

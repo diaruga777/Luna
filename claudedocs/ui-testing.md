@@ -66,11 +66,21 @@ coordinate-tapping, launch with `-uiTestScreen <rawValue>` (seeds `.mixed`
 automatically if no `-uiTestState` given). `UITestScreenBuilder` builds that screen
 (or presents it over a host) as the window root using the **same construction seams
 the snapshot tests use**. Cases: `friends`, `friendDetail`, `settings`,
-`priceTrackingEditor`, `readerScroll`/`readerHighlight`/`readerRSVP`/
+`priceTrackingEditor`, `importExport`, `importReview`,
+`readerScroll`/`readerHighlight`/`readerRSVP`/
 `readerOriginal`/`readerInlineHeader`/`readerNested`/
 `shareMediaPlatform`/`actionMediaPlatform`. Share/action-extension screens are
 hosted in-app (the real share sheet can't be driven on a simulator) — the two
 media cases differ only in the action extension's floating share button.
+`importReview` carries a fixture document for the same reason: the real one only
+ever arrives from a file the document picker returned, which a simulator run
+can't produce (`claudedocs/import-export.md`).
+
+> **Two booted simulators break interaction, silently.** `get_screenshot` honors
+> an explicit udid but taps land on whichever device is "booted" by default, so a
+> screenshot of the right device and a tap on the wrong one look exactly like an
+> app that ignores touches. `xcrun simctl list devices booted` should print ONE
+> device before you conclude anything from a tap that did nothing.
 
 ### Suppressing simulator debug hooks in captures
 

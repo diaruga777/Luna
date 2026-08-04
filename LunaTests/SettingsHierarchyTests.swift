@@ -57,6 +57,23 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(rowTitle(screen, row: 0, section: 1), "Storage")
     }
 
+    func testImportExportIsTwoButtonsAndReachableFromTheTopLevel() {
+        let screen = ImportExportSettingsScreen()
+        window = UITestSupport.host(screen)
+
+        XCTAssertEqual(screen.tableView.numberOfSections, 1)
+        XCTAssertEqual(rowTitle(screen, row: 0, section: 0), "Export Links")
+        XCTAssertEqual(rowTitle(screen, row: 1, section: 0), "Import Links")
+        XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 2)
+
+        let top = SettingsViewController(emailIsConfigured: { true })
+        window = UITestSupport.host(UINavigationController(rootViewController: top))
+        let titles = (0..<top.tableView.numberOfRows(inSection: 0)).compactMap {
+            rowTitle(top, row: $0, section: 0)
+        }
+        XCTAssertTrue(titles.contains("Import & Export"), "\(titles)")
+    }
+
     func testKindleForwardingDoesNotExposeDoubleSaveMode() {
         let screen = AutoSendBySourceScreen(
             destinationID: "test-kindle", destinationName: "Kindle")

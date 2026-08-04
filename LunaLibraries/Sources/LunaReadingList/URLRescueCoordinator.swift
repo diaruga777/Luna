@@ -164,6 +164,28 @@ public final class URLRescueCoordinator {
         }
     }
 
+    /// The same consented one-shot rescue as `requestManualRescue`, AWAITED, and
+    /// reporting whether the item recovered.
+    ///
+    /// For the bulk file import (`claudedocs/import-export.md`), which cannot use
+    /// the fire-and-forget form: it has to know each item's fate before it can
+    /// score the run, and its progress bar has to hold the item's slice open
+    /// until the rescue is really finished. Consent is the Import button, so the
+    /// auto-attempt budget is bypassed exactly as it is for a tap on a failed
+    /// card, and the version attempt is spent the same way — a link the model
+    /// couldn't recover during an import doesn't get asked again until the next
+    /// app update.
+    ///
+    /// Returns false when rescue is unavailable, so the caller reports an
+    /// ordinary failure rather than pretending an attempt happened.
+    @discardableResult
+    public func rescueAndWait(itemID: UUID, hint: RescueHint? = nil) async -> Bool {
+        guard let engine = Self.engine, engine.isAvailable() else { return false }
+        return await runRescue(
+            itemID: itemID, hint: hint, interactive: true,
+            countsAgainstBudget: false, spendsVersionAttempt: true)
+    }
+
     /// Whether `itemID` is being rescued right now (for the "trying harder…" row).
     public func isRescuing(_ itemID: UUID) -> Bool {
         inFlightLock.lock(); defer { inFlightLock.unlock() }
@@ -269,17 +291,20 @@ public final class URLRescueCoordinator {
 
     // MARK: - Run
 
+    /// Returns whether the item advanced. Every early return is a false: the
+    /// awaited caller (`rescueAndWait`) must not read "nothing to do" as success.
+    @discardableResult
     private func runRescue(
         itemID: UUID, hint: RescueHint?, interactive: Bool,
         countsAgainstBudget: Bool, spendsVersionAttempt: Bool = false
-    ) async {
-        guard let engine = Self.engine else { return }
+    ) async -> Bool {
+        guard let engine = Self.engine else { return false }
         // Re-read: the item may have advanced or been deleted since we scheduled.
         // Rescue anything not-yet-ready — the "only .failed" gating for AUTOMATIC
         // rescue is enforced at the call sites (itemJustFailed / the sweep); a
         // manual or drained request may target a still-.pending item.
-        guard let item = store.item(withID: itemID), item.state != .ready else { return }
-        guard beginInFlight(itemID) else { return }
+        guard let item = store.item(withID: itemID), item.state != .ready else { return false }
+        guard beginInFlight(itemID) else { return false }
         defer {
             endInFlight(itemID)
             postReadingListChanged()
@@ -297,6 +322,7 @@ public final class URLRescueCoordinator {
             // itself again after the next update.
             failures.recordAIAttempt(itemID)
         }
+        return succeeded
     }
 
     /// `.readingListChanged` is a UI-refresh notification, and its list/deck

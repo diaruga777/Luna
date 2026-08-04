@@ -224,7 +224,8 @@ the universal shell never names a foreign kind's symbols. The Action Button inte
 `ReadArticleIntent.playArticle`, and URL Rescue's kind legs via
 `URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
 (article: the article deck provider, mini-player, audio wiring, reader/email settings;
-media: the media deck provider, auto-download settings, intent handoff;
+media: the media deck provider, auto-download settings, intent handoff, the bulk
+import's download watcher;
 `UITestScreen`/`NonArticleCardOpening`:
 central-app-only) are excluded from foreign targets via the same membership-exception
 mechanism. The Share/Action extensions
@@ -360,9 +361,16 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 2354 tests, 9 skipped, 0 failures**
-  (measured 2026-08-04 after the paused-card playback controls landed, full run with
-  nothing skipped on the command line, no mid-suite host death). The
+- **Current suite state on the iOS 26.x sim: 2398 tests, 9 skipped, 0 failures**
+  (measured 2026-08-05 after Import & Export landed, on a FRESH simulator, with
+  `-skip-testing:LunaTests/ArticleAudioEngineTests
+  -skip-testing:LunaTests/SpeechRendererSpikeTests`). Both excluded classes drive a
+  real audio engine: on this machine `SpeechRendererSpikeTests`
+  `testRenderedSegmentIsAlwaysPlayableRegardlessOfMarkerAvailability` hangs
+  indefinitely, the same mediaserverd-deadlock family already documented below for
+  `ArticleAudioEngineTests` — run them alone or on another Mac. A first attempt on
+  the pre-existing booted sim died with "Test crashed with signal kill before
+  establishing connection"; a fresh simulator fixed it, as the note below says. The
   long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
   snapshot set was re-recorded for the predawn palette, and the harness now pins the
   same appearance the app does (dark style + `lunaSky = .predawn`, over
@@ -381,7 +389,11 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   simulator reboot and a sandbox toggle, ruling out a code regression (the class hasn't
   changed since it first landed). If you hit this, verify the rest of the suite with
   `-skip-testing:LunaTests/ArticleAudioEngineTests` and run that class alone/on another
-  Mac. The ~36 failures previously documented here were all stale test data, not the
+  Mac. `SpeechRendererSpikeTests` belongs to the same family and fails differently:
+  `testRenderedSegmentIsAlwaysPlayableRegardlessOfMarkerAvailability` HANGS rather than
+  aborting, so the run never ends and looks like a slow suite rather than a failure —
+  if progress stops with no new `Test Case … started` line for minutes, check which
+  case started last before assuming anything about your own changes. The ~36 failures previously documented here were all stale test data, not the
   environment, and have been fixed: snapshot reference PNGs are device-specific and
   were re-recorded on this sim with `RECORD_SNAPSHOTS=1` (re-record after intentional
   UI changes via `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …` — the build-setting

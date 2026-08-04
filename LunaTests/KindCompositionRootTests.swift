@@ -63,10 +63,16 @@ final class KindCompositionRootTests: XCTestCase {
         "Luna", "LunaShare", "LunaAction", "LunaReaderClip", "LunaDownloaderClip",
     ]
 
+    /// Symlinks resolved, because these tests compare a `#filePath`-derived
+    /// prefix against paths a `FileManager` enumerator produces — and those two
+    /// disagree the moment the checkout lives under one. A worktree under
+    /// `/tmp` (a symlink to `/private/tmp` on macOS) made every path strip to
+    /// `/privateLuna/KindWiring+Luna.swift` and every root read as unlisted.
     private var repositoryRoot: URL {
         URL(fileURLWithPath: "\(#filePath)")
             .deletingLastPathComponent()   // LunaTests
             .deletingLastPathComponent()   // repo root
+            .resolvingSymlinksInPath()
     }
 
     private func source(_ relativePath: String) throws -> String {

@@ -3,52 +3,22 @@
 //  LunaTests
 //
 
-import WebKit
 import XCTest
 
-/// Exercises the document-start annoyance script in a bare WKWebView. These
-/// fixtures focus on the safety boundary: consent is rejected, true popovers are
-/// hidden, and inline ads / user-critical dialogs are left alone.
+/// Exercises the document-start annoyance script in the shared bare-`WKWebView`
+/// harness (`SafariJSTestHarness`). These fixtures focus on the safety boundary:
+/// consent is rejected, true popovers are hidden, and inline ads / user-critical
+/// dialogs are left alone.
 @MainActor
 final class SafariAnnoyanceSuppressionTests: XCTestCase {
 
-    private static let scriptSource: String = {
-        let thisFile = URL(fileURLWithPath: #filePath)
-        let repoRoot = thisFile.deletingLastPathComponent().deletingLastPathComponent()
-        let scriptURL = repoRoot.appendingPathComponent("LunaSafari/Resources/annoyances.js")
-        return (try? String(contentsOf: scriptURL, encoding: .utf8)) ?? ""
-    }()
-
-    override func setUp() {
-        super.setUp()
-        XCTAssertFalse(Self.scriptSource.isEmpty, "annoyances.js not found relative to #filePath")
-    }
+    private lazy var js = SafariJSTestHarness(self)
 
     private func evaluate(_ expression: String, html: String) -> String? {
-        let expectation = expectation(description: "annoyance script evaluated")
-        var outcome: String?
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let delegate = LoadDelegate {
-            webView.evaluateJavaScript(Self.scriptSource) { _, scriptError in
-                if let scriptError { XCTFail("annoyances.js failed: \(scriptError)") }
-                webView.evaluateJavaScript(expression) { result, expressionError in
-                    if let expressionError { XCTFail("fixture expression failed: \(expressionError)") }
-                    outcome = result as? String
-                    expectation.fulfill()
-                }
-            }
-        }
-        webView.navigationDelegate = delegate
-        webView.loadHTMLString(html, baseURL: URL(string: "https://example.com/story"))
-        wait(for: [expectation], timeout: 10)
-        withExtendedLifetime(delegate) {}
-        return outcome
-    }
-
-    private final class LoadDelegate: NSObject, WKNavigationDelegate {
-        private let onFinish: () -> Void
-        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onFinish() }
+        js.load(
+            html: html, urlString: "https://example.com/story",
+            scripts: [SafariJSTestHarness.annoyances])
+        return js.string(expression)
     }
 
     func testOneTrustRejectAllIsChosenAndBannerIsHidden() {

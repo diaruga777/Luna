@@ -281,22 +281,20 @@ final class SurfaceParityTests: XCTestCase {
 
     // MARK: - The parity assertions
 
-    /// Same link → same `Outcome` from the main-app source AND the extension source.
-    func testSameOutcomeAcrossMainAppAndExtensionSources() async {
+    /// Same link → the same `Outcome` from every source, AND the main-app presenter
+    /// and BOTH extension presenters map that Outcome to the IDENTICAL presentation
+    /// intent (the headline cross-surface guarantee). One pipeline pass per source,
+    /// reused for both halves.
+    func testSameOutcomeAndPresentationIntentAcrossSurfaces() async {
         for link in links() {
-            let mainApp = await process(link, source: .manual)        // paste / typed / app
-            let shareExt = await process(link, source: .shareSheet)   // share extension
-            let actionExt = await process(link, source: .appIntent)   // action extension
-            XCTAssertEqual(mainApp, shareExt, "\(link.name): main app vs share extension Outcome")
-            XCTAssertEqual(mainApp, actionExt, "\(link.name): main app vs action extension Outcome")
-        }
-    }
+            let outcome = await process(link, source: .manual)        // paste / typed / app
+            let shareExtOutcome = await process(link, source: .shareSheet)
+            let actionExtOutcome = await process(link, source: .appIntent)
+            XCTAssertEqual(outcome, shareExtOutcome,
+                           "\(link.name): main app vs share extension Outcome")
+            XCTAssertEqual(outcome, actionExtOutcome,
+                           "\(link.name): main app vs action extension Outcome")
 
-    /// Same link → the main-app presenter and BOTH extension presenters map the Outcome
-    /// to the IDENTICAL presentation intent (the headline cross-surface guarantee).
-    func testSamePresentationIntentAcrossSurfaces() async {
-        for link in links() {
-            let outcome = await process(link, source: .manual)
             let appIntent = mainAppIntent(for: outcome)
             let actionIntent = await extensionIntent(for: outcome, link: link, isAction: true)
             if appIntent == .error {

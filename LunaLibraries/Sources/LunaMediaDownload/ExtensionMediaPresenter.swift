@@ -19,7 +19,9 @@ public final class ExtensionMediaPresenter {
 
     /// Routes a saved video/social item. Downloadable media always opens the
     /// saved-content screen on BOTH extension surfaces (`interactive` is the
-    /// action extension) so the user can explicitly choose the media download;
+    /// action extension — which is also the only one that offers the system
+    /// share sheet, the share extension's user having just come from one) so the
+    /// user can explicitly choose the media download;
     /// non-downloadable items retain the share extension's silent-save terminal
     /// (`autoDownloadThenComplete`, a confirm when nothing is downloadable).
     ///
@@ -35,7 +37,8 @@ public final class ExtensionMediaPresenter {
     ) {
         if interactive || MediaDownloadablePlatform.supports(urlString) {
             presentModally(SavedNonTextualViewController(
-                articleURLString: urlString, onDone: completeOnExit))
+                articleURLString: urlString, showsSystemShare: interactive,
+                onDone: completeOnExit))
         } else {
             autoDownloadThenComplete(urlString)
         }

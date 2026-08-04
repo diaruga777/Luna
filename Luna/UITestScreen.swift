@@ -48,6 +48,7 @@ enum UITestScreen: String, CaseIterable {
     case shareReaderArticle
     case shareMediaPlatform
     case actionReaderArticle
+    case actionMediaPlatform
     case actionRescueFailure
 }
 
@@ -156,9 +157,12 @@ enum UITestScreenBuilder {
             let reader = ShareReaderViewController(url: url, mode: .reader, onDone: {})
             return UINavigationController(rootViewController: reader)
 
-        case .shareMediaPlatform:
+        case .shareMediaPlatform, .actionMediaPlatform:
+            // The same screen either way, minus the system-share circle in the
+            // share extension (its user just came from a share sheet).
             let screen = SavedNonTextualViewController(
-                articleURLString: "https://x.com/user/status/123", onDone: {})
+                articleURLString: "https://x.com/user/status/123",
+                showsSystemShare: screen == .actionMediaPlatform, onDone: {})
             return UINavigationController(rootViewController: screen)
 
         case .actionRescueFailure:

@@ -68,8 +68,9 @@ automatically if no `-uiTestState` given). `UITestScreenBuilder` builds that scr
 the snapshot tests use**. Cases: `friends`, `friendDetail`, `settings`,
 `priceTrackingEditor`, `readerScroll`/`readerHighlight`/`readerRSVP`/
 `readerOriginal`/`readerInlineHeader`/`readerNested`/
-`shareMediaPlatform`. Share/action-extension screens are hosted in-app (the
-real share sheet can't be driven on a simulator).
+`shareMediaPlatform`/`actionMediaPlatform`. Share/action-extension screens are
+hosted in-app (the real share sheet can't be driven on a simulator) — the two
+media cases differ only in the action extension's floating share button.
 
 ### Suppressing simulator debug hooks in captures
 

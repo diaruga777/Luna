@@ -55,15 +55,30 @@ public enum ExtensionExitButton {
         action: @escaping () -> Void
     ) -> UIButton {
         let button = UIButton(type: .system)
+        ExtensionFloatingGlassButton.style(
+            button, symbol: symbol,
+            accessibilityLabel: accessibilityLabel ?? L10n.string("Done"))
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        return button
+    }
+}
+
+/// The floating glass circle itself, separated from the exiting: the same object
+/// serves an extension surface's secondary action (the media screen's system
+/// share), and a second styling of it would drift.
+public enum ExtensionFloatingGlassButton {
+
+    @MainActor
+    public static func style(
+        _ button: UIButton, symbol: String, accessibilityLabel: String
+    ) {
         var config = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 15)
         config.baseForegroundColor = LunaSurfacePalette.progressAccent
         config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
             pointSize: 19, weight: .semibold)
         button.configuration = config
-        button.accessibilityLabel = accessibilityLabel ?? L10n.string("Done")
-        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        button.accessibilityLabel = accessibilityLabel
         button.translatesAutoresizingMaskIntoConstraints = false
-        return button
     }
 }
 

@@ -158,8 +158,15 @@ public final class LinkImportRunner {
     // MARK: - State
 
     private let store: ReadingListStore
-    private let ingestor: ReadingListIngestor
-    private let rescuer: URLRescueCoordinator
+    /// The two operations a link goes through, injected rather than reached for.
+    ///
+    /// Both defaults are the real thing; the seams exist so the ORCHESTRATION —
+    /// order, concurrency, scoring, the progress arithmetic, cancellation — is
+    /// testable without a network or a language model, which is where this type's
+    /// risk actually lives.
+    private let ingest: (ReadingListItem) async -> SurfaceSupport.Decision
+    private let rescue: (UUID) async -> Bool
+    private let rescueFraction: (UUID) -> Double?
     private let concurrency: Int
     private let clock: () -> Date
 
@@ -179,16 +186,31 @@ public final class LinkImportRunner {
 
     public init(
         store: ReadingListStore = .shared,
-        ingestor: ReadingListIngestor = .shared,
-        rescuer: URLRescueCoordinator = .shared,
         concurrency: Int = LinkImportRunner.defaultConcurrency(),
-        clock: @escaping () -> Date = Date.init
+        clock: @escaping () -> Date = Date.init,
+        // `allowsInteractivePrompt: false` does two things here. It suppresses the
+        // unsupported-kind modal — `.manual` is an interactive source, so a batch
+        // of foreign links would otherwise stack one alert per dropped link on top
+        // of the progress sheet. And it makes the ingestor's own `rescueTrigger`
+        // non-interactive, so a failure is left for the debounced background sweep
+        // instead of starting an inline rescue that would race phase three's
+        // awaited one over the same item.
+        ingest: @escaping (ReadingListItem) async -> SurfaceSupport.Decision = {
+            await ReadingListIngestor.shared.ingest($0, allowsInteractivePrompt: false)
+        },
+        rescue: @escaping (UUID) async -> Bool = {
+            await URLRescueCoordinator.shared.rescueAndWait(itemID: $0)
+        },
+        rescueFraction: @escaping (UUID) -> Double? = {
+            URLRescueCoordinator.shared.rescueProgress($0)
+        }
     ) {
         self.store = store
-        self.ingestor = ingestor
-        self.rescuer = rescuer
         self.concurrency = max(1, concurrency)
         self.clock = clock
+        self.ingest = ingest
+        self.rescue = rescue
+        self.rescueFraction = rescueFraction
     }
 
     // MARK: - Progress readout
@@ -212,7 +234,7 @@ public final class LinkImportRunner {
         lock.unlock()
 
         // Asked outside the lock: the coordinator takes its own.
-        if let rescuing, let fraction = rescuer.rescueProgress(rescuing.itemID) {
+        if let rescuing, let fraction = rescueFraction(rescuing.itemID) {
             let span = Self.followUpShare - Self.ingestShare
             let mapped = Self.ingestShare + span * min(1, max(0, fraction))
             lock.lock()
@@ -365,7 +387,7 @@ public final class LinkImportRunner {
                 continue
             }
             beginRescue(slice: failure.slice, itemID: failure.item.id)
-            let recovered = await rescuer.rescueAndWait(itemID: failure.item.id)
+            let recovered = await rescue(failure.item.id)
             endRescue()
             if let fresh = store.item(withID: failure.item.id) {
                 if recovered, case .imported = fate(of: fresh) {
@@ -409,14 +431,7 @@ public final class LinkImportRunner {
     private func ingestOne(_ item: ReadingListItem) async -> ItemFate {
         let slice = sliceIndex(forItem: item)
         beginIngest(slice: slice)
-        // `allowsInteractivePrompt: false` does two things here. It suppresses the
-        // unsupported-kind modal — `.manual` is an interactive source, so a batch
-        // of foreign links would otherwise stack one alert per dropped link on top
-        // of the progress sheet. And it makes the ingestor's own `rescueTrigger`
-        // non-interactive, so a failure is left for the debounced background sweep
-        // instead of starting an inline rescue that would race phase three's
-        // awaited one over the same item.
-        let decision = await ingestor.ingest(item, allowsInteractivePrompt: false)
+        let decision = await ingest(item)
         if case let .unsupported(owner) = decision { return .rejected(owner: owner) }
         setSlice(slice, to: Self.ingestShare)
 

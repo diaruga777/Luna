@@ -27,7 +27,11 @@ final class PriceTrackingScreenTests: XCTestCase {
 
     // MARK: - Price Tracker card root
 
-    func testPriceTrackerRootUsesSharedCarouselUtilCardAndArchiveTray() {
+    /// One hosted deck answers both questions about the Price Tracker's root: it
+    /// is the shared carousel (util card at zero, mini-card scrubber, archive
+    /// tray), and its newest card — a tracker with no history points — still owns
+    /// the graph and its editable absolute threshold.
+    func testPriceTrackerRootIsTheSharedCarouselAndKeepsThresholdOnZeroPointGraph() {
         UITestSupport.seedSharedStore(.priceTracking)
         let deck = PriceTrackerCardsViewController()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
@@ -41,15 +45,6 @@ final class PriceTrackingScreenTests: XCTestCase {
         }
         XCTAssertTrue(deck.carousel.contentController(at: 0) is UtilCardContentViewController)
         XCTAssertNotNil(deck.archiveTray)
-        XCTAssertNotNil(deck.carousel.contentController(at: 1))
-        _ = window
-    }
-
-    func testPriceTrackerCardKeepsThresholdOnZeroPointGraph() {
-        UITestSupport.seedSharedStore(.priceTracking)
-        let deck = PriceTrackerCardsViewController()
-        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
-        deck.view.layoutIfNeeded()
 
         // Pending Keyboard is newest: it has no history points but still owns
         // the graph and its editable absolute threshold.
@@ -66,19 +61,6 @@ final class PriceTrackingScreenTests: XCTestCase {
     }
 
     // MARK: - Price tracking editor
-
-    // NOTE: The two PriceTrackingViewController snapshot tests are skipped — since the
-    // price-history graph was added, offscreen `layer.render(in:)` of this VC hangs in
-    // the snapshot harness (the live app renders it fine: see
-    // testPriceTrackingEditorLayoutHasStoreList, which hosts + asserts the VC, and
-    // manual/TestFlight verification). Snapshotting this VC isn't viable on-sim.
-    func testPriceTrackingEditorSnapshot() throws {
-        throw XCTSkip("PriceTrackingViewController hangs offscreen layer.render; covered by layout test.")
-    }
-
-    func testPriceTrackingAlertingEditorSnapshot() throws {
-        throw XCTSkip("PriceTrackingViewController hangs offscreen layer.render; covered by layout test.")
-    }
 
     func testPriceTrackingEditorLayoutHasStoreList() {
         UITestSupport.seedSharedStore(.priceTracking)

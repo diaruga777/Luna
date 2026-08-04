@@ -8,48 +8,36 @@ import XCTest
 
 final class ArticleSourceNameTests: XCTestCase {
 
-    // MARK: - host(fromURLString:)
+    /// Both halves of the source-name derivation, as tables: the host a saved URL
+    /// reduces to, and the spoken name that host reduces to.
+    func testHostAndHumanReadableDerivations() {
+        // urlString → host (nil = no host worth showing)
+        let hosts: [(String, String?)] = [
+            ("https://www.theatlantic.com/article", "theatlantic.com"),
+            ("https://TheAtlantic.COM/x", "theatlantic.com"),
+            ("lunadoc://abc-123", nil),
+            ("", nil),
+        ]
+        for (input, expected) in hosts {
+            XCTAssertEqual(
+                ArticleSourceName.host(fromURLString: input), expected,
+                "host(fromURLString: \(input))")
+        }
 
-    func testHostStripsWWW() {
-        XCTAssertEqual(ArticleSourceName.host(fromURLString: "https://www.theatlantic.com/article"), "theatlantic.com")
-    }
-
-    func testHostLowercased() {
-        XCTAssertEqual(ArticleSourceName.host(fromURLString: "https://TheAtlantic.COM/x"), "theatlantic.com")
-    }
-
-    func testHostNilForSyntheticScheme() {
-        XCTAssertNil(ArticleSourceName.host(fromURLString: "lunadoc://abc-123"))
-    }
-
-    func testHostNilForUnparsableString() {
-        XCTAssertNil(ArticleSourceName.host(fromURLString: ""))
-    }
-
-    // MARK: - humanReadable(host:)
-
-    func testHumanReadableSplitsLeadingThe() {
-        XCTAssertEqual(ArticleSourceName.humanReadable(host: "theatlantic.com"), "the atlantic")
-    }
-
-    func testHumanReadableSplitsLeadingTheForOtherSites() {
-        XCTAssertEqual(ArticleSourceName.humanReadable(host: "thehill.com"), "the hill")
-        XCTAssertEqual(ArticleSourceName.humanReadable(host: "theverge.com"), "the verge")
-    }
-
-    func testHumanReadableSplitsHyphens() {
-        XCTAssertEqual(ArticleSourceName.humanReadable(host: "new-york-times.com"), "new york times")
-    }
-
-    func testHumanReadableHandlesMultiPartTLD() {
-        XCTAssertEqual(ArticleSourceName.humanReadable(host: "bbc.co.uk"), "bbc")
-    }
-
-    func testHumanReadableStripsWWWDefensively() {
-        XCTAssertEqual(ArticleSourceName.humanReadable(host: "www.theatlantic.com"), "the atlantic")
-    }
-
-    func testHumanReadableNoSpecialCaseWhenNoThePrefix() {
-        XCTAssertEqual(ArticleSourceName.humanReadable(host: "nytimes.com"), "nytimes")
+        // host → human-readable name
+        let names: [(String, String)] = [
+            ("theatlantic.com", "the atlantic"),
+            ("thehill.com", "the hill"),
+            ("theverge.com", "the verge"),
+            ("new-york-times.com", "new york times"),
+            ("bbc.co.uk", "bbc"),
+            ("www.theatlantic.com", "the atlantic"),
+            ("nytimes.com", "nytimes"),
+        ]
+        for (input, expected) in names {
+            XCTAssertEqual(
+                ArticleSourceName.humanReadable(host: input), expected,
+                "humanReadable(host: \(input))")
+        }
     }
 }

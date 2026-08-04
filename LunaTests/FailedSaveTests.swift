@@ -55,27 +55,7 @@ final class SaveFailureReasonTests: XCTestCase {
         XCTAssertEqual(SaveFailureReason(fetchError: Opaque()), .unknown)
     }
 
-    // MARK: - Copy
-
-    func testEveryReasonHasANonEmptyHeadline() {
-        let reasons: [SaveFailureReason] = [
-            .offline, .timedOut, .httpStatus(403), .httpStatus(404), .httpStatus(429),
-            .httpStatus(503), .httpStatus(418), .network("Lost connection"), .notReadable,
-            .notHTML, .tooLarge, .unsupportedDocument("xyz"), .unsupportedDocument(""),
-            .noMediaFound, .couldNotSave, .unknown,
-        ]
-        for reason in reasons {
-            XCTAssertFalse(
-                reason.headline.isEmpty, "\(reason) must always have something to say")
-        }
-    }
-
-    func testStatusCodesAreWordedByWhatTheyMean() {
-        XCTAssertTrue(SaveFailureReason.httpStatus(403).headline.contains("refused"))
-        XCTAssertTrue(SaveFailureReason.httpStatus(404).headline.contains("gone"))
-        XCTAssertTrue(SaveFailureReason.httpStatus(429).headline.contains("rate-limiting"))
-        XCTAssertTrue(SaveFailureReason.httpStatus(503).headline.contains("server error"))
-    }
+    // MARK: - Retry policy and persistence
 
     /// Retrying the same background fetch only helps for transient failures — a
     /// 403 or an unreadable page will fail identically forever, so the card

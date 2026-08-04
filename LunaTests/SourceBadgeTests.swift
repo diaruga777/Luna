@@ -16,16 +16,34 @@ import XCTest
 
 final class SourceBadgeTests: XCTestCase {
 
-    // MARK: - Initials
+    // MARK: - Pure string derivations (initials + icon-cache keys)
 
-    func testInitialsTakeFirstTwoWords() {
-        XCTAssertEqual(CarouselSourceBadge.initials(fromName: "The Atlantic"), "TA")
-        XCTAssertEqual(CarouselSourceBadge.initials(fromName: "Ada Lovelace-Byron"), "AL")
-    }
+    func testInitialsAndCacheKeyDerivations() {
+        // sender name → chip initials
+        let initials: [(String, String)] = [
+            ("The Atlantic", "TA"),
+            ("Ada Lovelace-Byron", "AL"),
+            ("substack", "S"),
+            (" …—! ", ""),
+        ]
+        for (name, expected) in initials {
+            XCTAssertEqual(
+                CarouselSourceBadge.initials(fromName: name), expected,
+                "initials(fromName: \(name))")
+        }
 
-    func testInitialsSingleWordAndEmpty() {
-        XCTAssertEqual(CarouselSourceBadge.initials(fromName: "substack"), "S")
-        XCTAssertEqual(CarouselSourceBadge.initials(fromName: " …—! "), "")
+        // page URL → icon-cache key (nil = never cached)
+        let keys: [(String, String?)] = [
+            ("https://WWW.TheVerge.com/x", "theverge.com"),
+            ("http://news.bbc.co.uk/y", "news.bbc.co.uk"),
+            ("lunamail://abc", nil),
+            ("lunadoc://abc", nil),
+        ]
+        for (urlString, expected) in keys {
+            XCTAssertEqual(
+                SourceIconCache.cacheKey(forPageURL: URL(string: urlString)!), expected,
+                "cacheKey(forPageURL: \(urlString))")
+        }
     }
 
     func testSenderColorIsDeterministic() {
@@ -87,58 +105,53 @@ final class SourceBadgeTests: XCTestCase {
 
     // MARK: - Favicon <link> candidates
 
-    func testIconCandidatesPreferTouchIconsThenDeclaredSize() {
-        let html = """
-        <html><head>
-        <link rel="icon" href="/favicon-32.png" sizes="32x32">
-        <link rel="icon" href="/favicon-192.png" sizes="192x192">
-        <link rel="apple-touch-icon" href="/touch.png" sizes="180x180">
-        </head><body></body></html>
-        """
-        let candidates = FaviconFetcher.iconLinkCandidates(
-            inHTML: html, pageURL: URL(string: "https://example.com/")!)
-        XCTAssertEqual(candidates.map(\.absoluteString), [
-            "https://example.com/touch.png",
-            "https://example.com/favicon-192.png",
-            "https://example.com/favicon-32.png",
-        ])
-    }
-
-    func testIconCandidatesSkipSVGDataAndMaskIcons() {
-        let html = """
-        <html><head>
-        <link rel="mask-icon" href="/pinned.svg" color="#000">
-        <link rel="icon" href="/icon.svg" type="image/svg+xml">
-        <link rel="icon" href="data:image/png;base64,AAAA">
-        <link rel="shortcut icon" href="favicon.ico">
-        <link rel="stylesheet" href="/style.css">
-        </head></html>
-        """
-        let candidates = FaviconFetcher.iconLinkCandidates(
-            inHTML: html, pageURL: URL(string: "https://example.com/index.html")!)
-        XCTAssertEqual(candidates.map(\.absoluteString), ["https://example.com/favicon.ico"])
-    }
-
-    func testIconCandidatesResolveProtocolRelativeHrefs() {
-        let html = #"<link rel="icon" href="//cdn.example.net/i.png">"#
-        let candidates = FaviconFetcher.iconLinkCandidates(
-            inHTML: html, pageURL: URL(string: "https://example.com/")!)
-        XCTAssertEqual(candidates.map(\.absoluteString), ["https://cdn.example.net/i.png"])
-    }
-
-    // MARK: - Icon cache keys
-
-    func testCacheKeyStripsWWWAndLowercases() {
-        XCTAssertEqual(
-            SourceIconCache.cacheKey(forPageURL: URL(string: "https://WWW.TheVerge.com/x")!),
-            "theverge.com")
-        XCTAssertEqual(
-            SourceIconCache.cacheKey(forPageURL: URL(string: "http://news.bbc.co.uk/y")!),
-            "news.bbc.co.uk")
-    }
-
-    func testCacheKeyRejectsSyntheticSchemes() {
-        XCTAssertNil(SourceIconCache.cacheKey(forPageURL: URL(string: "lunamail://abc")!))
-        XCTAssertNil(SourceIconCache.cacheKey(forPageURL: URL(string: "lunadoc://abc")!))
+    /// (page URL, head HTML) → the ranked, resolved candidate list: touch icons
+    /// first, then declared size; SVG/data/mask icons never qualify; hrefs of
+    /// every relative form resolve against the page.
+    func testIconLinkCandidateRanking() {
+        let cases: [(name: String, page: String, html: String, expected: [String])] = [
+            (
+                "touch icon first, then declared size",
+                "https://example.com/",
+                """
+                <html><head>
+                <link rel="icon" href="/favicon-32.png" sizes="32x32">
+                <link rel="icon" href="/favicon-192.png" sizes="192x192">
+                <link rel="apple-touch-icon" href="/touch.png" sizes="180x180">
+                </head><body></body></html>
+                """,
+                [
+                    "https://example.com/touch.png",
+                    "https://example.com/favicon-192.png",
+                    "https://example.com/favicon-32.png",
+                ]
+            ),
+            (
+                "SVG, data and mask icons are skipped",
+                "https://example.com/index.html",
+                """
+                <html><head>
+                <link rel="mask-icon" href="/pinned.svg" color="#000">
+                <link rel="icon" href="/icon.svg" type="image/svg+xml">
+                <link rel="icon" href="data:image/png;base64,AAAA">
+                <link rel="shortcut icon" href="favicon.ico">
+                <link rel="stylesheet" href="/style.css">
+                </head></html>
+                """,
+                ["https://example.com/favicon.ico"]
+            ),
+            (
+                "protocol-relative hrefs resolve",
+                "https://example.com/",
+                #"<link rel="icon" href="//cdn.example.net/i.png">"#,
+                ["https://cdn.example.net/i.png"]
+            ),
+        ]
+        for testCase in cases {
+            let candidates = FaviconFetcher.iconLinkCandidates(
+                inHTML: testCase.html, pageURL: URL(string: testCase.page)!)
+            XCTAssertEqual(
+                candidates.map(\.absoluteString), testCase.expected, testCase.name)
+        }
     }
 }

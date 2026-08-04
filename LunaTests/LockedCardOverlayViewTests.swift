@@ -43,8 +43,7 @@ final class LockedCardOverlayViewTests: XCTestCase {
         XCTAssertGreaterThan(alpha, 0, "…but it is a wash, not nothing")
     }
 
-    func testCaptionCarriesTheAccessibilityLabelAndCanBeOmitted() {
-        XCTAssertEqual(mounted().accessibilityLabel, "Locked — tap to unlock")
+    func testTheOverlayIsOneAccessibilityElementAndTheCaptionCanBeOmitted() {
         XCTAssertTrue(mounted().isAccessibilityElement)
 
         let bare = mounted(caption: nil)

@@ -65,6 +65,11 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         + [
             SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() },
             SettingsCategory(title: L10n.string("Appearance"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
+            // Universal: every app can hand its own links out and take a file
+            // back, and each keeps only its own kinds either way.
+            SettingsCategory(
+                title: ImportExportSettingsScreen.screenTitle(),
+                symbol: "arrow.up.arrow.down.square") { ImportExportSettingsScreen() },
         ]
         // The curator's proposal inbox. Settings is rebuilt on every visit, so
         // pasting the key in diagnostics and coming back is enough to reveal it.

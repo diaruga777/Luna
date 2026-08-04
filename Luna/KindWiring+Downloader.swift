@@ -56,6 +56,7 @@ enum KindWiring {
             await LiveMediaDownloadManager.shared.startWithResolvedAssets(
                 sourceURLString: sourceURLString, title: title, assets: assets)
         }
+        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
     }
 
     // MARK: - Root UI shape

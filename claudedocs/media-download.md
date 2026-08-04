@@ -157,6 +157,10 @@ Photos references remain governed by the user's Photos library.
   Share, and Delete. Delete uses the same full cleanup as an active card: it removes
   the saved-media record and files, shared reading-list save, auto-download marker,
   and any referenced Photos asset.
+  A PAUSED video or audio card shows its playback controls — the position bar
+  under the card and a glass speed pill (0.25×–2×) at the card's bottom-left,
+  remembered per row for the run of the app, shared with the fullscreen system
+  player's own speed menu (`claudedocs/card-carousel.md`).
   Settings and direct system file sharing flank the edge-to-edge scrub strip in glass
   circles; there is no root Friends or Add button. Sharing hands the activity controller
   exactly one concrete media file URL (no source link, text, or lazy provider), so it shows

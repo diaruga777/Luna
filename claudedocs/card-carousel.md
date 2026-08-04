@@ -175,14 +175,38 @@ Consequences for the deck:
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
   leaves center, keeping position.
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
-  playback timestamp (one card-width ≈ full duration). While a Downloader
-  video is actively being scrubbed, a transient
-  `MoonHorizonProgressBar` sits just below the card, against the black carousel
-  background, and follows the seek position; it fades away when the drag ends.
-  It shows only determinate progress and the head point—the traveling activity
-  pulse remains exclusive to download progress. GIF scrubbing retains its
-  existing gesture without showing the video-position bar.
+  playback timestamp (one card-width ≈ full duration).
   The card itself never pans.
+- **A PAUSED card shows its playback controls**, and they are a function of the
+  paused state rather than of any gesture: a `MoonHorizonProgressBar` sits just
+  below the card, against the black carousel background, following the position
+  (it shows only determinate progress and the head point — the traveling activity
+  pulse remains exclusive to download progress), and content that plays at a
+  chooseable rate also gets a **glass speed pill** at the card's bottom-left,
+  12pt in from the card's bottom edge (the mute button's inset from the top) and
+  aligned with the bar's leading edge. One tap opens its menu:
+  0.25× / 0.5× / 1× / 1.5× / 2×, the current one checked
+  (`PlaybackSpeedPillButton`, `PlaybackSpeed.options`).
+  Because the pause a drag-scrub performs is the same pause, the bar comes up
+  for the duration of a seek as before — and now STAYS up if the drag ends
+  paused. Resuming takes both controls down.
+  **The opt-in is the CONTENT's**, `showsPlaybackScrubProgress` (video yes, GIF
+  no) plus `supportsPlaybackSpeed` for the pill; there is no deck-level style
+  flag, so the Downloader's deck and the central app's all-kinds deck cannot
+  disagree about the same media card. "At rest" is enforced: a transition, a
+  live scrub preview, immersion, a stepped-aside column or a card paged away
+  (paused too) shows nothing. Content reports every play/pause through
+  `playbackStateChanged`, which is the one input to
+  `updatePlaybackControls()`.
+- **Speed is remembered per ITEM, in memory only** (`PlaybackSpeedMemory`, keyed
+  for media by `MediaCardFactory.speedMemoryKey` = the row id). A card is
+  destroyed two slots out and rebuilt on the way back, so the memory outlives the
+  player; the process forgets. `AVPlayer.defaultRate` carries it, so loops and
+  foregrounding resume at the chosen speed, and `.spectral` pitch keeps voices
+  their own at 0.25× and 2×. Fullscreen playback (the archive tray's
+  `AVPlayerViewController`) keeps the SYSTEM speed menu — Luna draws no second
+  control there — but shares the same memory in both directions and offers
+  Luna's five speeds.
 - **Paging** happens outside the card: a horizontal drag on the insets left/right of
   the card drives the eclipse transition *interactively* — it tracks the finger,
   with 1.5× horizontal movement on both the Reader and Downloader root screens,
@@ -245,7 +269,8 @@ seek/mute/centered hooks). Generic implementations:
 - `VideoCardContentViewController` — AVPlayer, manual loop on end-notification (so
   scrubbing stays in our control), zero-tolerance seeks, poster image until first
   frame (`isReadyForDisplay`), local-file or async `AVPlayerItem` provider
-  (Photos-backed).
+  (Photos-backed). Takes an optional `speedMemoryKey`: the ITEM it is showing,
+  which is what the chosen playback speed is remembered against.
 - `AnimatedImageCardContentViewController` — GIFs decoded once via ImageIO
   (downsampled) and driven by a CADisplayLink, so GIFs loop *and* scrub by frame
   (the old viewer showed GIFs as static images).

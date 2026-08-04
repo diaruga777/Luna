@@ -112,7 +112,8 @@ final class AppOnboardingViewController: UIViewController {
     /// resolves the link, starts the real work, and owns the real share surface
     /// the lesson demonstrates with. Nil until then — nothing is fetched, saved
     /// or downloaded on behalf of a lesson nobody entered.
-    private var saveDemoController: OnboardingSaveDemoController?
+    /// Internal for the lesson tests, which assert the engine runs detached.
+    private(set) var saveDemoController: OnboardingSaveDemoController?
     private var savedRootViewController: UIViewController?
     private var savedCardWaveSnapshot: UIImage?
     private var introCorona: EclipseCoronaView?

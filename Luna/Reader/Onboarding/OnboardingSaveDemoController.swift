@@ -39,9 +39,13 @@ enum OnboardingSaveDemoTiming {
 /// - it resolves a real link (`OnboardingSaveDemoLink`): this app's live Save of
 ///   the Week when there is one, else the bundled practice link, else — offline —
 ///   the genuine failure state;
-/// - it starts the work EARLY. The surface is mounted, hidden, the moment the
-///   user taps into the lesson, so the fetch overlaps the conversation animating
-///   in front of it rather than starting when the sheet opens;
+/// - it starts the work EARLY, and the UI late. The real surface is loaded the
+///   moment the user taps into the lesson — DETACHED, in no view hierarchy —
+///   so the fetch overlaps the conversation animating in front of it; the
+///   sheet and the surface's view are mounted only when `present` needs them.
+///   The split is deliberate beyond taste: the press wave opens by
+///   screen-snapshotting the replica's hierarchy, and a hidden live WKWebView
+///   sitting inside it is exactly the thing that can make that snapshot fail;
 /// - it waits for the surface's OWN terminal state instead of a timer, so the
 ///   sheet is up for exactly as long as the real work took;
 /// - it takes the save back out. A rehearsal must leave the deck exactly as
@@ -62,7 +66,9 @@ final class OnboardingSaveDemoController {
     private let contentStore: ReadingListStore
     private let session = HostedShareSession()
     private weak var host: UIViewController?
-    private var surface: ShareViewController?
+    /// Internal read for the lesson tests: loaded at `start`, mounted at
+    /// `present`.
+    private(set) var surface: ShareViewController?
     private var sheet: OnboardingHostedShareSheetView?
     private var playback: VideoCardContentViewController?
     private var pendingVideoFileURL: URL?
@@ -90,9 +96,11 @@ final class OnboardingSaveDemoController {
 
     // MARK: - Lifecycle
 
-    /// Mounts the real surface inside `host`, hidden, and lets it start working.
+    /// Starts the real surface WORKING — detached, in no view hierarchy.
     /// Idempotent: both entries into the lesson (first run and the settings
     /// replay) call it, and the demonstration loop calls it again on every pass.
+    /// Nothing joins `host`'s view tree here; `present` mounts the UI when the
+    /// sheet is actually about to slide up.
     func start(in host: UIViewController) {
         guard !didStart else { return }
         didStart = true
@@ -115,24 +123,34 @@ final class OnboardingSaveDemoController {
             self?.pendingVideoFileURL = fileURL
         }
 
+        let surface = ShareViewController(
+            hosted: hostedInput,
+            onFinish: { [weak self] in self?.surfaceDidReachTerminal() })
+        self.surface = surface
+        // Force the surface's own load: `viewDidLoad` — which is where the save
+        // begins — runs NOW, on a view that hangs nowhere yet.
+        surface.view.frame = host.view.bounds
+        surface.view.layoutIfNeeded()
+    }
+
+    /// Builds the sheet and mounts the working surface into `host` — the UI
+    /// half of `start`, deferred to first presentation and reused by every
+    /// replay after it.
+    private func mountUIIfNeeded() -> OnboardingHostedShareSheetView? {
+        if let sheet { return sheet }
+        guard let host, let surface else { return nil }
         let sheet = OnboardingHostedShareSheetView(frame: host.view.bounds)
         sheet.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         sheet.hideImmediately()
         host.view.addSubview(sheet)
         self.sheet = sheet
 
-        let surface = ShareViewController(
-            hosted: hostedInput,
-            onFinish: { [weak self] in self?.surfaceDidReachTerminal() })
         host.addChild(surface)
         surface.view.frame = sheet.content.bounds
         surface.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         sheet.content.addSubview(surface.view)
         surface.didMove(toParent: host)
-        self.surface = surface
-        // Force the surface's own load: the whole point of mounting it hidden is
-        // that `viewDidLoad` — which is where the save begins — runs NOW.
-        surface.view.layoutIfNeeded()
+        return sheet
     }
 
     private var hostedInput: HostedShareInput {
@@ -150,7 +168,7 @@ final class OnboardingSaveDemoController {
     /// finished request, a screen it presented, an error, or a video it
     /// downloaded and played. `completion` runs when the lesson may move on.
     func present(completion: @escaping () -> Void) {
-        guard let sheet else {
+        guard let sheet = mountUIIfNeeded() else {
             completion()
             return
         }

@@ -30,3 +30,11 @@ LUNA_CORE_APP_STORE_URL = https:/$()/apps.apple.com/search?term=$(DISPLAY_NAME_P
 // targets (and is harmlessly inert on the extension targets and the two apps
 // that link no audio module, which never start playback).
 INFOPLIST_KEY_UIBackgroundModes = audio
+
+// Compile every .metal source as a CORE IMAGE kernel library. The only Metal in
+// the project is `LunaWaveKernels.ci.metal` (the save wave's kernels, loaded
+// from the app bundle's default.metallib by `LiquidScreenWaveAnimator`); if a
+// rendering .metal file ever arrives, move it to its own target or split these
+// flags per-target, because the two compile modes are mutually exclusive.
+MTL_COMPILER_FLAGS = -fcikernel
+MTLLINKER_FLAGS = -fcikernel

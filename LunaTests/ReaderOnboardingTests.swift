@@ -235,11 +235,17 @@ final class ReaderOnboardingTests: XCTestCase {
         button.sendActions(for: .touchUpInside)
         RunLoop.current.run(until: Date().addingTimeInterval(0.6))
 
-        // The real surface IS mounted and running — that is the whole point — and
-        // it is showing the bundled practice preview rather than a hand-drawn one.
-        let surfaces = onboarding.descendantControllers(of: ShareViewController.self)
-        XCTAssertEqual(surfaces.count, 1)
-        XCTAssertTrue(try XCTUnwrap(surfaces.first).isHosted)
+        // The real surface IS loaded and running — that is the whole point —
+        // but DETACHED: its UI joins the hierarchy only when the sheet
+        // presents, so nothing of the lesson's machinery (notably its live
+        // WKWebView) sits inside the replica while the conversation — and the
+        // press wave's screen snapshot — plays over it.
+        XCTAssertEqual(
+            onboarding.descendantControllers(of: ShareViewController.self).count, 0)
+        let surface = try XCTUnwrap(onboarding.saveDemoController?.surface)
+        XCTAssertTrue(surface.isHosted)
+        XCTAssertTrue(surface.isViewLoaded)
+        XCTAssertNil(surface.view.window)
         XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
         XCTAssertNil(registry.temporarySaveIdentifier)
     }

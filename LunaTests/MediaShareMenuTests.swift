@@ -96,3 +96,58 @@ final class MediaShareMenuTests: XCTestCase {
         XCTAssertTrue(menu.children.allSatisfy { $0 is UIAction })
     }
 }
+
+/// The Downloader deck's trailing circle carries that menu — and it now shows
+/// for EVERY media card, undownloaded ones included, because the link is
+/// shareable before the file exists.
+final class SavedMediaDeckShareChromeTests: XCTestCase {
+
+    override func setUp() {
+        super.setUp()
+        UIView.setAnimationsEnabled(false)
+        SavedMediaDeckFixtures.emptySharedMediaStore()
+    }
+
+    override func tearDown() {
+        SavedMediaDeckFixtures.emptySharedMediaStore()
+        super.tearDown()
+    }
+
+    @MainActor
+    func testTrailingCircleIsAMenuOverTheCenteredCard() {
+        SavedMediaDeckFixtures.seedMedia(count: 1, prefix: "share-chrome")
+
+        let deck = SavedMediaCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+        deck.carousel.reloadData(centeringAt: deck.cardOffset)
+        deck.refreshTrailingBottomButton()
+
+        XCTAssertTrue(deck.trailingBottomButton.showsMenuAsPrimaryAction)
+        XCTAssertFalse(
+            deck.trailingBottomButton.isHidden,
+            "an undownloaded row's link is shareable, so the circle shows")
+        XCTAssertEqual(
+            deck.shareMenuForTesting?.children.map(\.title),
+            ["Copy link", "Share link"],
+            "no file yet, so the menu is the link verbs alone")
+        _ = window
+    }
+
+    @MainActor
+    func testUtilCardOffersNoShareMenu() {
+        SavedMediaDeckFixtures.seedMedia(count: 1, prefix: "share-chrome-util")
+
+        let deck = SavedMediaCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+        deck.carousel.reloadData(centeringAt: deck.utilCardIndex)
+        deck.refreshTrailingBottomButton()
+
+        XCTAssertNil(deck.shareMenuForTesting)
+        XCTAssertTrue(
+            deck.trailingBottomButton.isHidden,
+            "the util card has no link to offer, so the circle hides")
+        _ = window
+    }
+}

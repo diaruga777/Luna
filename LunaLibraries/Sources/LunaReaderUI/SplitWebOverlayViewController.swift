@@ -952,7 +952,7 @@ private final class InlineReaderPresentationController: UIPresentationController
             x: max(containerView.bounds.maxX - 92, 0), y: cardFrame.maxY,
             width: min(92, containerView.bounds.width),
             height: max(containerView.bounds.maxY - cardFrame.maxY, 0))
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: shareProxy,
             providesMenu: overlay.providesShareMenu,
             build: { [weak overlay, weak shareProxy] in
@@ -1058,12 +1058,12 @@ private final class InlineReaderColumnChromeBar: UIView {
     }
 
     func apply(_ state: ReaderChromeState?, providesShareMenu: Bool) {
-        // Installed once and only once: `ReaderShareMenu.install` fixes the
+        // Installed once and only once: `ShareButtonMenu.install` fixes the
         // menu-vs-tap behaviour at install time, and stacking a second install
         // would leave two handlers on one press.
         if !didInstallShare {
             didInstallShare = true
-            ReaderShareMenu.install(
+            ShareButtonMenu.install(
                 on: shareButton,
                 providesMenu: providesShareMenu,
                 build: { [weak self] in

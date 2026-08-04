@@ -212,7 +212,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         floatingShareButton.configuration = GlassStyle.solidCircularButtonConfiguration(
             symbol: "square.and.arrow.up", padding: 14)
         floatingShareButton.tintColor = GlassStyle.readingAccent
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: floatingShareButton,
             providesMenu: shareProvider?.providesShareMenu == true,
             build: { [weak self] in self?.shareMenu() },

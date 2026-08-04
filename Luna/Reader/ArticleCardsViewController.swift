@@ -540,7 +540,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         configureBottomButton(
             button, symbol: "square.and.arrow.up", action: nil,
             accessibilityLabel: L10n.string("Share"))
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: button,
             providesMenu: true,
             build: { [weak self] in

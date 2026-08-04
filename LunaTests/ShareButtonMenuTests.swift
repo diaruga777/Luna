@@ -1,15 +1,14 @@
 //
-//  ReaderShareMenuTests.swift
+//  ShareButtonMenuTests.swift
 //  LunaTests
 //
 
 import LunaDesignSystem
-import LunaReaderUI
 import UIKit
 import XCTest
 
 @MainActor
-final class ReaderShareMenuTests: XCTestCase {
+final class ShareButtonMenuTests: XCTestCase {
 
     /// A provider that offers options gets a menu button: the press opens the system
     /// popover (which is what supplies press-and-slide-to-pick), and the tap handler
@@ -17,7 +16,7 @@ final class ReaderShareMenuTests: XCTestCase {
     func testInstallMakesTheMenuThePrimaryAction() {
         let button = UIButton(type: .system)
         var fellBack = false
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: button, providesMenu: true,
             build: { UIMenu(children: [UIAction(title: "Copy link") { _ in }]) },
             fallback: { fellBack = true })
@@ -34,7 +33,7 @@ final class ReaderShareMenuTests: XCTestCase {
     func testInstallKeepsTheTapWhenThereIsNoMenu() {
         let button = UIButton(type: .system)
         var fellBack = false
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: button, providesMenu: false,
             build: { XCTFail("should not build a menu"); return nil },
             fallback: { fellBack = true })
@@ -50,7 +49,7 @@ final class ReaderShareMenuTests: XCTestCase {
     func testMenuIsRebuiltOnEachPresentation() {
         let button = UIButton(type: .system)
         var builds = 0
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: button, providesMenu: true,
             build: {
                 builds += 1

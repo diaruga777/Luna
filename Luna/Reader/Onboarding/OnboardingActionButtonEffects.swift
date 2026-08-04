@@ -4,6 +4,7 @@
 //
 
 import CoreImage
+import LunaStorage
 import UIKit
 
 enum OnboardingActionButtonTiming {
@@ -437,7 +438,61 @@ final class ActionButtonPressWaveView: UIView {
 /// screen.
 @MainActor
 final class LiquidScreenWaveAnimator {
-    private static let radialWaveKernel = CIWarpKernel(source: """
+    /// The kernels live in `LunaWaveKernels.ci.metal`, compiled into the app
+    /// bundle's `default.metallib` under the CI flags in `Config/Luna.xcconfig`
+    /// (`-fcikernel` / `-cikernel`). Metal is the supported path; the CIKL
+    /// strings below are a FALLBACK for a bundle without the library — CIKL is
+    /// deprecated, and an OS that declines to compile it returns nil kernels,
+    /// which silently costs the whole wave. The fallback logs, so an invisible
+    /// wave is diagnosable from a device's diagnostics.
+    private static let metalKernelLibrary: Data? = {
+        guard let url = Bundle.main.url(
+            forResource: "default", withExtension: "metallib")
+        else { return nil }
+        return try? Data(contentsOf: url)
+    }()
+
+    /// True when the kernels come from the compiled Metal library rather than
+    /// the deprecated-CIKL fallback. Asserted by a regression test so a build
+    /// change that silently drops or mis-compiles the metallib shows up as a
+    /// failing test instead of a missing wave.
+    static var kernelsLoadFromMetalLibrary: Bool {
+        guard let data = metalKernelLibrary else { return false }
+        return (try? CIWarpKernel(
+            functionName: "lunaRadialWave", fromMetalLibraryData: data)) != nil
+    }
+
+    private static func makeWarpKernel(
+        _ functionName: String, ciklFallback: String
+    ) -> CIWarpKernel? {
+        if let data = metalKernelLibrary,
+           let kernel = try? CIWarpKernel(
+               functionName: functionName, fromMetalLibraryData: data) {
+            return kernel
+        }
+        DiagnosticLog.shared.record(
+            "wave kernel \(functionName) missing from metallib; CIKL fallback",
+            category: "onboarding")
+        return CIWarpKernel(source: ciklFallback)
+    }
+
+    private static func makeColorKernel(
+        _ functionName: String, ciklFallback: String
+    ) -> CIColorKernel? {
+        if let data = metalKernelLibrary,
+           let kernel = try? CIColorKernel(
+               functionName: functionName, fromMetalLibraryData: data) {
+            return kernel
+        }
+        DiagnosticLog.shared.record(
+            "wave kernel \(functionName) missing from metallib; CIKL fallback",
+            category: "onboarding")
+        return CIColorKernel(source: ciklFallback)
+    }
+
+    private static let radialWaveKernel = makeWarpKernel(
+        "lunaRadialWave",
+        ciklFallback: """
         kernel vec2 lunaRadialWave(
             vec2 center, float radius, float halfWidth, float amplitude
         ) {
@@ -452,7 +507,9 @@ final class LiquidScreenWaveAnimator {
         }
         """)
 
-    private static let roundedRectWaveKernel = CIWarpKernel(source: """
+    private static let roundedRectWaveKernel = makeWarpKernel(
+        "lunaRoundedRectWave",
+        ciklFallback: """
         kernel vec2 lunaRoundedRectWave(
             vec2 center, vec2 halfSize, float cornerRadius,
             float radius, float halfWidth, float amplitude
@@ -475,7 +532,9 @@ final class LiquidScreenWaveAnimator {
         }
         """)
 
-    private static let blackoutKernel = CIColorKernel(source: """
+    private static let blackoutKernel = makeColorKernel(
+        "lunaBlackOutsideHighlightedLink",
+        ciklFallback: """
         kernel vec4 lunaBlackOutsideHighlightedLink(
             __sample displaced, __sample original,
             vec2 center, vec2 halfSize, float cornerRadius,
@@ -497,7 +556,9 @@ final class LiquidScreenWaveAnimator {
         }
         """)
 
-    private static let crossfadeKernel = CIColorKernel(source: """
+    private static let crossfadeKernel = makeColorKernel(
+        "lunaSaveCrossfade",
+        ciklFallback: """
         kernel vec4 lunaSaveCrossfade(
             __sample source, __sample destination, float progress
         ) {
@@ -505,7 +566,9 @@ final class LiquidScreenWaveAnimator {
         }
         """)
 
-    private static let lightingKernel = CIColorKernel(source: """
+    private static let lightingKernel = makeColorKernel(
+        "lunaFirstWaveLighting",
+        ciklFallback: """
         kernel vec4 lunaFirstWaveLighting(
             __sample image, vec2 center,
             float radius, float halfWidth, float strength

@@ -64,6 +64,11 @@ protocol CardPresenterHost: AnyObject {
     /// several times a second, so the tray updates its visible cells in place
     /// rather than reloading the deck.
     func archiveDownloadProgressDidChange()
+
+    /// Bring this save to the center on the next applied reload. Presenters
+    /// speak in items, never in slots — the deck owns that arithmetic — so this
+    /// is the item-shaped face of the host's own centering request.
+    func requestCentering(onItemID id: UUID)
 }
 
 // MARK: - The kind
@@ -150,9 +155,16 @@ protocol CardKindPresenting: AnyObject {
     func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement]
 
     /// This save's share ladder for the deck's trailing circle. Nil when the
-    /// kind has nothing of its own to offer.
+    /// kind has nothing of its own to offer, which is also what leaves the
+    /// circle a plain tap running `share` below.
     func shareMenu(for item: ReadingListItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu?
+
+    /// The single share verb, for a kind whose share is one action rather than a
+    /// ladder — a product shares its SELLER's page, which is not the reading-list
+    /// row's URL. Return false to let the deck share the row's link instead.
+    @discardableResult
+    func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView) -> Bool
 
     /// THE archive implementation for this kind — every store the kind owns, in
     /// one place. Archiving a media save in the Downloader and archiving it in
@@ -250,6 +262,10 @@ extension CardKindPresenting {
     func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement] { [] }
     func shareMenu(for item: ReadingListItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu? { nil }
+    @discardableResult
+    func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView) -> Bool {
+        false
+    }
     func setArchived(_ archived: Bool, for item: ReadingListItem) {
         ReadingListStore.shared.setArchived(archived, for: item.id)
     }

@@ -180,7 +180,7 @@ final class NewSaveCenteringTests: XCTestCase {
     @MainActor
     func testPriceDeckMovesToATrackerSavedElsewhere() {
         let seeded = UITestSupport.seedSharedStore(.priceTracking)
-        let deck = PriceTrackerCardsViewController()
+        let deck = ProductCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 

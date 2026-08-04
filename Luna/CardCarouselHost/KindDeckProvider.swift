@@ -488,7 +488,12 @@ final class KindDeckProvider: CardDeckProviding {
 
     func deckShare(slot: Int, sourceView: UIView) {
         guard let item = item(atSlot: slot) else { return }
-        // The fallback path when the menu could not be built: the link verb.
+        // The path taken when the kind offers no MENU. It may still have a single
+        // verb of its own — a product shares its seller's page, which is not this
+        // row's URL — and only failing that does the deck share the link.
+        if presenter(for: item)?.share(item, host: host, sourceView: sourceView) == true {
+            return
+        }
         SendToFriendSheet.shareLink(
             urlString: item.urlString, from: host, sourceView: sourceView)
     }

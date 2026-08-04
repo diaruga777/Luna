@@ -1414,6 +1414,11 @@ extension CardCarouselHostViewController: CardPresenterHost {
 
     func reloadDeck() { reload() }
 
+    /// Slots are keyed by the reading-list row, so an item id IS a slot id; the
+    /// presenter-facing name is the item one because a presenter never sees a
+    /// slot.
+    func requestCentering(onItemID id: UUID) { requestCentering(onSlotID: id) }
+
     func cardView(forItemID id: UUID) -> UIView? {
         guard let slot = slots.firstIndex(where: { $0.id == id }) else { return nil }
         return carousel.cardView(at: carouselIndex(forSlot: slot))

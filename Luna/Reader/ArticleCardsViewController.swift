@@ -38,16 +38,10 @@ import UIKit
 final class ArticleCardsViewController: CardCarouselHostViewController {
 
     /// The central Luna app's card deck shows EVERY content kind, not just
-    /// reader articles: media and price-tracker items get their own kind's
-    /// card through its kind's presenter, or a title/badge card whose tap routes
-    /// through `nonArticleOpener` when that kind has nothing to render yet.
+    /// reader articles: media and price-tracker items get their own kind's card,
+    /// verbs and tap from that kind's presenter, or the title/badge card below
+    /// when the kind has nothing to render yet.
     private let includesAllKinds = LunaApp.current == .luna
-
-    /// Opens a non-article item (price tracker / platform post) from its card,
-    /// mirroring the list rows' tap routing. Installed at launch by the app
-    /// shell's kind wiring — only apps that surface those kinds install it, so
-    /// the card deck stays article-only elsewhere (`includesAllKinds`).
-    static var nonArticleOpener: ((ReadingListItem, UIViewController) -> Void)?
 
     /// The kind that owns a save, resolved once in `CardKindPresenters`. Nil for
     /// a FAILED save, which carries no kind at all and keeps the deck's own error
@@ -1105,26 +1099,19 @@ extension ArticleCardsViewController: CardDeckProviding {
         store.markReadState(.opened, for: items[slot].id)
     }
 
-    /// A non-article card (central Luna app only) routes to its own screen — the
-    /// price editor or the platform open ladder — never the reader. A media save
-    /// rendered as a REAL Downloader card is the exception: its own content owns
-    /// the tap (play/pause, the download button), exactly as in the Downloader, so
-    /// the ladder is only for the link-style card that stands in when there is
-    /// nothing downloaded to show.
+    /// The kind that owns this save gets first refusal on its own tap: a media
+    /// card plays or pauses, a product card is already its editor, and a
+    /// link-style stand-in runs the platform's native-app -> embed -> browser
+    /// ladder. Only a save whose kind declines the tap — an article — falls
+    /// through to the reader's immersion toggle and the locked-save unlock flow.
     func deckSlotWasTapped(_ slot: Int) {
         let index = carouselIndex(forSlot: slot)
         let item = items[slot]
-        if item.isPriceTracker {
-            Self.nonArticleOpener?(item, self)
+        let content = carousel.contentController(at: index)
+        if presenter(for: item)?.itemWasTapped(item, cardContent: content, host: self) == true {
             return
         }
-        if item.contentPlatform != nil {
-            if carousel.contentController(at: index) is ReaderCardContentViewController {
-                Self.nonArticleOpener?(item, self)
-            }
-            return
-        }
-        guard let card = carousel.contentController(at: index) as? ReaderCardContentViewController,
+        guard let card = content as? ReaderCardContentViewController,
               card.rabbitHoleReader != nil
         else {
             unlockCurrentCardIfNeeded()

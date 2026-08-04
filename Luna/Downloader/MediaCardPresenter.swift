@@ -294,11 +294,15 @@ final class MediaCardPresenter: CardKindPresenting {
     /// Downloader used to archive only its media row and the central deck only
     /// the reading-list row, so archiving in one app left the save live (or
     /// demoted to a link card) in the other.
+    /// Unarchiving also bumps the row's date, which is how the ONE ordering rule
+    /// resurfaces a restored save — the same thing `markUnread` does for an
+    /// article. It is the only date this kind ever writes.
     func setArchived(_ archived: Bool, for item: ReadingListItem) {
         if let media = media(for: item) {
             store.setArchived(archived, for: media.id)
         }
         ReadingListStore.shared.setArchived(archived, for: item.id)
+        if !archived { ReadingListStore.shared.bump(item.id) }
     }
 
     /// The whole save goes when the card does: the downloaded file, its Photos

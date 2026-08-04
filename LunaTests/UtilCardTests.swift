@@ -257,7 +257,7 @@ final class UtilCardTests: XCTestCase {
 
     /// A retired lesson's slot goes to email — on the completed card, which is
     /// where a three-save user actually is.
-    func testEmailTakesTheSlotACompletedLessonGivesUp() {
+    func testEmailTakesTheSlotACompletedLessonGivesUp() throws {
         let store = makeStore()
         store.markSafariSetupHandled()
         store.retireCompletedSetupButtons()
@@ -278,6 +278,11 @@ final class UtilCardTests: XCTestCase {
                 OnboardingStrings.Intro.emailAction.value(),
             ])
         XCTAssertNotNil(buttons.last?.configuration?.image)
+        // Still stacked up from the paste row, headline or no headline.
+        let paste = try XCTUnwrap(card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introPaste.value()))
+        XCTAssertLessThan(buttons[1].frame.maxY, paste.frame.minY)
+        XCTAssertLessThan(buttons[0].frame.maxY, buttons[1].frame.minY)
     }
 
     /// Skipping is not finishing: the button stays, and it keeps outranking the

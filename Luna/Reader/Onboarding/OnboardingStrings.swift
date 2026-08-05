@@ -14,16 +14,9 @@ import LunaModels
 /// changing copy should never require hunting through a view or a test.
 enum OnboardingStrings {
     static func introCopy(for app: LunaApp) -> OnboardingIntroCopy {
-        switch app {
-        case .reader:
-            return .growingLine(
-                stem: Intro.headlineStem.value(for: app),
-                tail: Intro.headlineTail.value(for: app))
-        case .luna, .downloader, .priceTracker:
-            return .twoLines(
-                first: Intro.headlineStem.value(for: app),
-                second: Intro.headlineTail.value(for: app))
-        }
+        OnboardingIntroCopy(
+            initialText: Intro.headlineInitial.value(for: app),
+            finalText: Intro.headlineFinal.value(for: app))
     }
 
     struct Definition: Equatable {
@@ -119,18 +112,22 @@ enum OnboardingStrings {
         static let articleURLsOnly = Definition(shared: "article URLs only")
         static let unableToLoadPage = Definition(shared: "unable to load page")
         static let completed = Definition(shared: "Completed")
-        static let growingLinePeriod = Definition(shared: ".")
 
-        static let headlineStem = Definition(
-            core: "All your Luna saves.",
-            reader: "Read",
-            downloader: "App signup required? So annoying.",
-            priceTracker: "Overpaid? Missed a sale?")
-        static let headlineTail = Definition(
-            core: "In a single app.",
-            reader: " more.",
-            downloader: "Watch and share instantly instead.",
-            priceTracker: "Never miss out again.")
+        /// The headline's two states. They are ONE sentence in two beats: what
+        /// the two share is a single continuous run of characters that never
+        /// moves, so write them as a claim being corrected rather than as two
+        /// unrelated lines (`OnboardingHeadlineTransition` finds the run, and
+        /// copy that shares nothing simply replaces itself outright).
+        static let headlineInitial = Definition(
+            core: "All your Luna apps.",
+            reader: "Read.",
+            downloader: "Sign in to watch.",
+            priceTracker: "Miss a sale")
+        static let headlineFinal = Definition(
+            core: "One Luna app.",
+            reader: "Read more.",
+            downloader: "No Sign in to download.",
+            priceTracker: "Never miss a sale")
         static let supportingText = Definition(
             core: "Save any link on your screen\nwith one click.",
             reader: "Save onscreen links with one click.\nUnlock or read offline later.",
@@ -553,11 +550,13 @@ enum OnboardingStrings {
     }
 }
 
-/// How an app's headline is staged. Both shapes take exactly two beats of the
-/// same lunar sweep, so the journey's timing is identical either way.
-enum OnboardingIntroCopy: Equatable {
-    case twoLines(first: String, second: String)
-    case growingLine(stem: String, tail: String)
+/// An app's headline: what it says first, and what it settles on. Every app's
+/// copy takes the same two beats of the same lunar sweep, and the difference
+/// between the two states is what the second beat animates — see
+/// `OnboardingHeadlineTransition`.
+struct OnboardingIntroCopy: Equatable {
+    let initialText: String
+    let finalText: String
 }
 
 /// Compatibility façade for the article surfaces. The values themselves live

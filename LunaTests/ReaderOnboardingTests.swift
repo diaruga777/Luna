@@ -405,26 +405,25 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     @MainActor
-    func testIntroStagesTheSameRevealAcrossBothLines() throws {
+    func testIntroStagesTheSameRevealAcrossEveryFragment() throws {
         let intro = OnboardingIntroCardContentViewController(
-            introCopy: .twoLines(
-                first: "You want to read more.",
-                second: "Let’s make that happen."),
+            introCopy: OnboardingIntroCopy(
+                initialText: "You want to read.",
+                finalText: "You want to read more."),
             supportingText: OnboardingStrings.Intro.supportingText.value(for: .reader))
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
         intro.view.layoutIfNeeded()
 
+        // Both sides of the difference plus the run they share, every one of
+        // them waiting behind the same front.
         let lines = intro.view.descendants(of: MoonRevealLineView.self)
-        XCTAssertEqual(lines.count, 2)
-        XCTAssertFalse(lines[0].isFullyRevealed)
-        XCTAssertFalse(lines[1].isFullyRevealed)
-        XCTAssertFalse(lines[0].occluderHasVisibleChrome)
-        XCTAssertTrue(lines[0].occluderIsFullyOpaque)
-        XCTAssertTrue(lines[0].usesGlyphEdgeIllumination)
-        XCTAssertFalse(lines[1].occluderHasVisibleChrome)
-        XCTAssertTrue(lines[1].occluderIsFullyOpaque)
-        XCTAssertTrue(lines[1].usesGlyphEdgeIllumination)
+        XCTAssertEqual(lines.count, 3)
+        for line in lines {
+            XCTAssertFalse(line.isFullyRevealed)
+            XCTAssertFalse(line.occluderHasVisibleChrome)
+            XCTAssertTrue(line.usesGlyphEdgeIllumination)
+        }
 
         let buttons = intro.view.descendants(of: UIButton.self)
         XCTAssertEqual(intro.view.backgroundColor, .black)
@@ -484,7 +483,8 @@ final class ReaderOnboardingTests: XCTestCase {
     @MainActor
     func testPasteRowShowsWhatWasPastedAndResolvesItsSpinnerInPlace() throws {
         let intro = OnboardingIntroCardContentViewController(
-            introCopy: .growingLine(stem: "Read", tail: " more."),
+            introCopy: OnboardingIntroCopy(
+                initialText: "Read.", finalText: "Read more."),
             supportingText: "")
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
@@ -608,8 +608,93 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(handedOver)
     }
 
+    // MARK: - The headline's two states, and the run between them
+
+    func testHeadlineTransitionKeepsTheLongestRunTheTwoStatesShare() {
+        // Growth on the right: the whole first state is the anchor.
+        let reader = OnboardingHeadlineTransition(from: "Read.", to: "Read more.")
+        XCTAssertEqual(reader.shared, "Read")
+        XCTAssertEqual(reader.initialPrefix, "")
+        XCTAssertEqual(reader.initialSuffix, ".")
+        XCTAssertEqual(reader.finalPrefix, "")
+        XCTAssertEqual(reader.finalSuffix, " more.")
+
+        // Growth on the LEFT, with a letter changing case at the seam: the
+        // capital leaves with the words in front of it.
+        let price = OnboardingHeadlineTransition(
+            from: "Miss a sale", to: "Never miss a sale")
+        XCTAssertEqual(price.shared, "iss a sale")
+        XCTAssertEqual(price.initialPrefix, "M")
+        XCTAssertEqual(price.initialSuffix, "")
+        XCTAssertEqual(price.finalPrefix, "Never m")
+        XCTAssertEqual(price.finalSuffix, "")
+
+        // Both sides at once, and the anchor carries its trailing space.
+        let downloader = OnboardingHeadlineTransition(
+            from: "Sign in to watch.", to: "No Sign in to download.")
+        XCTAssertEqual(downloader.shared, "Sign in to ")
+        XCTAssertEqual(downloader.initialPrefix, "")
+        XCTAssertEqual(downloader.initialSuffix, "watch.")
+        XCTAssertEqual(downloader.finalPrefix, "No ")
+        XCTAssertEqual(downloader.finalSuffix, "download.")
+
+        // The anchor is a run, not a word: it may start mid-word on both sides.
+        let luna = OnboardingHeadlineTransition(
+            from: "All your Luna apps.", to: "One Luna app.")
+        XCTAssertEqual(luna.shared, " Luna app")
+        XCTAssertEqual(luna.initialPrefix, "All your")
+        XCTAssertEqual(luna.initialSuffix, "s.")
+        XCTAssertEqual(luna.finalPrefix, "One")
+        XCTAssertEqual(luna.finalSuffix, ".")
+
+        for transition in [reader, price, downloader, luna] {
+            XCTAssertFalse(transition.isFullReplacement)
+            XCTAssertEqual(
+                transition.initialText,
+                transition.initialPrefix + transition.shared
+                    + transition.initialSuffix)
+            XCTAssertEqual(
+                transition.finalText,
+                transition.finalPrefix + transition.shared + transition.finalSuffix)
+        }
+    }
+
+    func testHeadlineTransitionReplacesItselfWhenNoRunIsWorthStandingStillFor() {
+        for (initial, final) in [
+            ("Read.", "Watch."),          // nothing in common at all
+            ("Miss a sale", "Never!"),    // one letter, and a coincidence
+            ("Hi!", "Ho!"),               // two characters, neither a word
+        ] {
+            let transition = OnboardingHeadlineTransition(from: initial, to: final)
+            XCTAssertTrue(
+                transition.isFullReplacement,
+                "\(initial) → \(final) should replace itself outright")
+            XCTAssertEqual(transition.initialPrefix, initial)
+            XCTAssertEqual(transition.finalPrefix, final)
+            XCTAssertEqual(transition.initialSuffix, "")
+            XCTAssertEqual(transition.finalSuffix, "")
+            XCTAssertEqual(transition.departingFragments, [initial])
+            XCTAssertEqual(transition.arrivingFragments, [final])
+        }
+    }
+
+    func testEveryAppsHeadlineHoldsSomethingStillAcrossItsTwoBeats() {
+        for app in LunaApp.allCases {
+            let copy = OnboardingStrings.introCopy(for: app)
+            let transition = OnboardingHeadlineTransition(
+                from: copy.initialText, to: copy.finalText)
+            XCTAssertFalse(
+                transition.isFullReplacement,
+                "\(app)'s headline animates a difference, not a replacement")
+            XCTAssertFalse(
+                transition.arrivingFragments.isEmpty
+                    && transition.departingFragments.isEmpty,
+                "\(app)'s second beat has to have something to say")
+        }
+    }
+
     @MainActor
-    func testGrowingIntroCentresTheFinishedSentenceAndNeverMovesItsStem() throws {
+    func testIntroCentresTheFinishedSentenceAndNeverMovesWhatBothStatesShare() throws {
         let intro = OnboardingIntroCardContentViewController(
             introCopy: OnboardingStrings.introCopy(for: .reader),
             supportingText: "")
@@ -621,8 +706,12 @@ final class ReaderOnboardingTests: XCTestCase {
             intro.view.subviews.compactMap {
                 $0 as? OnboardingIntroHeadlineView
             }.first)
-        let growing = try XCTUnwrap(headline.growingLine)
-        let (stem, period, tail) = growing.fragments
+        let fragments = headline.fragments
+        let shared = try XCTUnwrap(fragments.shared)
+        let departing = try XCTUnwrap(fragments.initialSuffix)
+        let arriving = try XCTUnwrap(fragments.finalSuffix)
+        XCTAssertNil(fragments.initialPrefix, "Reader's copy grows on the right")
+        XCTAssertNil(fragments.finalPrefix)
 
         XCTAssertEqual(
             headline.frame.minY,
@@ -631,85 +720,187 @@ final class ReaderOnboardingTests: XCTestCase {
             "One line keeps the vertical position the first of two lines had")
         XCTAssertEqual(headline.frame.height, 44, accuracy: 0.01)
 
-        // One frame and one typesetting for all three fragments: the second
-        // beat has nothing to translate.
-        XCTAssertEqual(stem.frame, period.frame)
-        XCTAssertEqual(stem.frame, tail.frame)
+        // One typesetting per sentence, and here they start at the same place:
+        // the anchor is at the head of both.
+        XCTAssertEqual(departing.frame.minX, shared.frame.minX, accuracy: 0.01)
+        XCTAssertEqual(arriving.frame.minX, shared.frame.minX, accuracy: 0.01)
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 25, weight: .semibold),
-            .kern: 0,
-        ]
-        func width(_ string: String) -> CGFloat {
-            NSAttributedString(string: string, attributes: attributes).size().width
-        }
-        let origin = stem.frame.minX
-        let stemText = OnboardingStrings.Intro.headlineStem.value(for: .reader)
-        let periodText = OnboardingStrings.Intro.growingLinePeriod.value()
-        let tailText = OnboardingStrings.Intro.headlineTail.value(for: .reader)
+        let font = try XCTUnwrap(headline.font)
+        XCTAssertEqual(font.pointSize, 25, "This card has room for the full size")
         XCTAssertEqual(
-            origin + width(stemText + tailText) / 2, growing.bounds.midX, accuracy: 1,
+            shared.frame.minX + width(headline.finalText, font: font) / 2,
+            headline.bounds.midX,
+            accuracy: 1,
             "The finished sentence is what is centred")
         XCTAssertLessThan(
-            origin + width(stemText + periodText) / 2, growing.bounds.midX - 20,
+            shared.frame.minX + width(headline.initialText, font: font) / 2,
+            headline.bounds.midX - 20,
             "The first beat therefore lands left of centre, which is the point")
 
-        for fragment in [stem, period, tail] {
+        for fragment in fragments.all {
             XCTAssertFalse(fragment.isFullyRevealed)
             XCTAssertTrue(fragment.usesGlyphEdgeIllumination)
             XCTAssertFalse(fragment.occluderHasVisibleChrome)
         }
 
-        let firstBeat = expectation(description: "stem and its period arrive")
-        growing.revealFirstBeat(duration: 0.02) { firstBeat.fulfill() }
+        let firstBeat = expectation(description: "the initial sentence arrives")
+        headline.revealFirstBeat(duration: 0.02) { firstBeat.fulfill() }
         wait(for: [firstBeat], timeout: 5)
-        XCTAssertTrue(stem.isFullyRevealed)
-        XCTAssertTrue(period.isFullyRevealed)
-        XCTAssertFalse(tail.isFullyRevealed)
-        XCTAssertEqual(growing.accessibilityLabel, stemText + periodText)
+        XCTAssertTrue(shared.isFullyRevealed)
+        XCTAssertTrue(departing.isFullyRevealed)
+        XCTAssertFalse(arriving.isFullyRevealed)
+        XCTAssertEqual(headline.accessibilityLabel, headline.initialText)
 
-        let stemFrame = stem.frame
-        let secondBeat = expectation(description: "the tail replaces the period")
-        growing.revealSecondBeat(duration: 0.02) { secondBeat.fulfill() }
+        let anchorFrame = shared.frame
+        let secondBeat = expectation(description: "the difference plays")
+        headline.revealSecondBeat(duration: 0.02) { secondBeat.fulfill() }
         wait(for: [secondBeat], timeout: 5)
-        XCTAssertTrue(tail.isFullyRevealed)
-        XCTAssertTrue(period.isFullyConcealed)
-        XCTAssertFalse(period.isFullyRevealed)
+        XCTAssertTrue(arriving.isFullyRevealed)
+        XCTAssertTrue(departing.isFullyConcealed)
+        XCTAssertFalse(departing.isFullyRevealed)
         XCTAssertTrue(
-            stem.isFullyRevealed, "The second beat does not touch the stem")
-        XCTAssertEqual(stem.frame, stemFrame)
-        XCTAssertEqual(growing.accessibilityLabel, stemText + tailText)
-        XCTAssertTrue(growing.isAccessibilityElement)
-        XCTAssertFalse(stem.isAccessibilityElement)
+            shared.isFullyRevealed, "The second beat does not touch the anchor")
+        XCTAssertEqual(shared.frame, anchorFrame)
+        XCTAssertEqual(headline.accessibilityLabel, headline.finalText)
+        XCTAssertTrue(headline.isAccessibilityElement)
+        XCTAssertFalse(shared.isAccessibilityElement)
     }
 
     @MainActor
-    func testGrowingIntroStartsThePeriodsExitWithTheTailsArrival() {
-        let font = UIFont.systemFont(ofSize: 25, weight: .semibold)
-        let growing = MoonRevealGrowingLineView(
-            stem: OnboardingStrings.Intro.headlineStem.value(for: .reader),
-            tail: OnboardingStrings.Intro.headlineTail.value(for: .reader),
-            font: font)
+    func testIntroShiftsTheInitialSentenceRightWhenTheCopyGrowsOnTheLeft() throws {
+        let headline = OnboardingIntroHeadlineView(
+            copy: OnboardingStrings.introCopy(for: .priceTracker))
+        headline.frame = CGRect(x: 0, y: 0, width: 306, height: 44)
+        headline.setNeedsLayout()
+        headline.layoutIfNeeded()
+
+        let font = try XCTUnwrap(headline.font)
+        let departing = try XCTUnwrap(headline.fragments.initialPrefix)
+        let arriving = try XCTUnwrap(headline.fragments.finalPrefix)
+        let shared = try XCTUnwrap(headline.fragments.shared)
+        XCTAssertNil(headline.fragments.initialSuffix, "Nothing changes at the end")
+        XCTAssertNil(headline.fragments.finalSuffix)
+
+        // “Miss a sale” has to sit RIGHT of centre for “iss a sale” to land
+        // where the finished “Never miss a sale” puts it.
+        XCTAssertGreaterThan(departing.frame.minX, shared.frame.minX + 20)
+        XCTAssertEqual(
+            departing.frame.minX + width(headline.transition.initialPrefix, font: font),
+            shared.frame.minX + width(headline.transition.finalPrefix, font: font),
+            accuracy: 0.01,
+            "The anchor occupies one position, whichever state is on screen")
+        XCTAssertEqual(arriving.frame.minX, shared.frame.minX, accuracy: 0.01)
+        XCTAssertEqual(
+            shared.frame.minX + width(headline.finalText, font: font) / 2,
+            headline.bounds.midX,
+            accuracy: 1,
+            "The finished sentence is still the centred one")
+    }
+
+    @MainActor
+    func testIntroAnimatesBothSidesOfTheAnchorInOneBeat() throws {
+        let headline = OnboardingIntroHeadlineView(
+            copy: OnboardingStrings.introCopy(for: .downloader))
+        headline.frame = CGRect(x: 0, y: 0, width: 306, height: 44)
+        headline.setNeedsLayout()
+        headline.layoutIfNeeded()
+
+        let shared = try XCTUnwrap(headline.fragments.shared)
+        let departingSuffix = try XCTUnwrap(headline.fragments.initialSuffix)
+        let arrivingPrefix = try XCTUnwrap(headline.fragments.finalPrefix)
+        let arrivingSuffix = try XCTUnwrap(headline.fragments.finalSuffix)
+        XCTAssertNil(
+            headline.fragments.initialPrefix,
+            "Downloader's first state says nothing before the anchor")
+
+        let firstBeat = expectation(description: "the claim arrives")
+        headline.revealFirstBeat(duration: 0.02) { firstBeat.fulfill() }
+        wait(for: [firstBeat], timeout: 5)
+        XCTAssertTrue(shared.isFullyRevealed)
+        XCTAssertTrue(departingSuffix.isFullyRevealed)
+        XCTAssertFalse(arrivingPrefix.isFullyRevealed)
+        XCTAssertFalse(arrivingSuffix.isFullyRevealed)
+
+        let secondBeat = expectation(description: "the correction plays")
+        headline.revealSecondBeat(duration: 0.02) { secondBeat.fulfill() }
+        wait(for: [secondBeat], timeout: 5)
+        XCTAssertTrue(arrivingPrefix.isFullyRevealed)
+        XCTAssertTrue(arrivingSuffix.isFullyRevealed)
+        XCTAssertTrue(departingSuffix.isFullyConcealed)
+        XCTAssertTrue(shared.isFullyRevealed)
+        XCTAssertEqual(headline.accessibilityLabel, headline.finalText)
+    }
+
+    @MainActor
+    func testIntroStartsADepartureWithTheArrivalsItStandsBeside() {
+        let headline = OnboardingIntroHeadlineView(
+            copy: OnboardingStrings.introCopy(for: .reader))
+        headline.frame = CGRect(x: 0, y: 0, width: 306, height: 44)
+        headline.setNeedsLayout()
+        headline.layoutIfNeeded()
 
         // A period's ink sits about an x-height below “more”'s, and one front
         // descending through the shared frame would reach it that much later —
         // uncovering the top of the “m” while the period still stood beside it.
         // The period's own front starts that far ahead so both tops go at once.
-        let xHeight = font.xHeight
+        let xHeight = (headline.font ?? .systemFont(ofSize: 25)).xHeight
+        let lead = headline.frontLead(forDeparting: ".")
         XCTAssertGreaterThan(
-            growing.periodFrontLead, xHeight * 0.4,
+            lead, xHeight * 0.4,
             "Without a real lead the period outlives the tail's first glyph")
         XCTAssertLessThan(
-            growing.periodFrontLead, xHeight,
+            lead, xHeight,
             "The lead is a drop between two inks, not a whole glyph height")
+        // Type as tall as what arrives beside it needs no lead at all.
+        XCTAssertEqual(headline.frontLead(forDeparting: "Read"), 0, accuracy: 0.01)
+    }
+
+    @MainActor
+    func testIntroShrinksItsCopyToFitANarrowCardWithoutLosingTheAnchor() throws {
+        let copy = OnboardingStrings.introCopy(for: .downloader)
+        let roomy = OnboardingIntroHeadlineView(copy: copy)
+        roomy.frame = CGRect(x: 0, y: 0, width: 306, height: 44)
+        roomy.setNeedsLayout()
+        roomy.layoutIfNeeded()
+        let narrow = OnboardingIntroHeadlineView(copy: copy)
+        narrow.frame = CGRect(x: 0, y: 0, width: 190, height: 44)
+        narrow.setNeedsLayout()
+        narrow.layoutIfNeeded()
+
+        let roomyFont = try XCTUnwrap(roomy.font)
+        let narrowFont = try XCTUnwrap(narrow.font)
+        XCTAssertEqual(roomyFont.pointSize, 25)
+        XCTAssertLessThan(
+            narrowFont.pointSize, roomyFont.pointSize,
+            "A card this narrow cannot hold the copy at full size")
+
+        // Both states still fit, and the anchor is still one position.
+        let shared = try XCTUnwrap(narrow.fragments.shared)
+        let departing = try XCTUnwrap(narrow.fragments.initialSuffix)
+        XCTAssertEqual(
+            departing.frame.minX
+                + width(narrow.transition.initialPrefix, font: narrowFont),
+            shared.frame.minX
+                + width(narrow.transition.finalPrefix, font: narrowFont),
+            accuracy: 0.01)
+        for text in [narrow.initialText, narrow.finalText] {
+            XCTAssertLessThanOrEqual(
+                width(text, font: narrowFont), narrow.bounds.width + 0.5,
+                "\(text) still overflows the card")
+        }
+    }
+
+    private func width(_ string: String, font: UIFont) -> CGFloat {
+        NSAttributedString(
+            string: string,
+            attributes: [.font: font, .kern: 0, .ligature: 0]
+        ).size().width
     }
 
     @MainActor
     func testIntroRestoresCompletedSetupArtworkBeforeItsViewLoads() throws {
         let intro = OnboardingIntroCardContentViewController(
-            introCopy: .twoLines(
-                first: "You want to read more.",
-                second: "Let’s make that happen."),
+            introCopy: OnboardingStrings.introCopy(for: .reader),
             supportingText: "")
         intro.setState(safari: .completed, shortcut: .completed)
         intro.loadViewIfNeeded()

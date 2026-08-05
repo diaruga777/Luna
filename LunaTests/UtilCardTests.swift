@@ -146,10 +146,14 @@ final class UtilCardTests: XCTestCase {
 
         let headline = try XCTUnwrap(
             card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
-        let fragments = try XCTUnwrap(headline.growingLine?.fragments)
-        XCTAssertTrue(fragments.stem.isFullyRevealed)
-        XCTAssertTrue(fragments.tail.isFullyRevealed)
-        XCTAssertTrue(fragments.period.isFullyConcealed)
+        let fragments = headline.fragments
+        // The finished sentence stands: what both states share, plus whatever
+        // only the second one says. The first state's own words are gone.
+        for line in [fragments.shared] + fragments.arriving.map(Optional.some) {
+            XCTAssertTrue(try XCTUnwrap(line).isFullyRevealed)
+        }
+        XCTAssertFalse(fragments.departing.isEmpty)
+        for line in fragments.departing { XCTAssertTrue(line.isFullyConcealed) }
     }
 
     func testIntroHeadlineWaitsBehindItsFrontOnTheLaunchItBelongsTo() throws {
@@ -160,9 +164,9 @@ final class UtilCardTests: XCTestCase {
 
         let headline = try XCTUnwrap(
             card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
-        let fragments = try XCTUnwrap(headline.growingLine?.fragments)
-        XCTAssertFalse(fragments.stem.isFullyRevealed)
-        XCTAssertFalse(fragments.tail.isFullyRevealed)
+        let fragments = headline.fragments
+        XCTAssertFalse(fragments.all.isEmpty)
+        for line in fragments.all { XCTAssertFalse(line.isFullyRevealed) }
     }
 
     // MARK: - The headline speaks first

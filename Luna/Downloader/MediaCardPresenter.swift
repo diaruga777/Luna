@@ -289,15 +289,17 @@ final class MediaCardPresenter: CardKindPresenting {
     /// alone, and only the file row ever shares a file (a video Luna holds just
     /// a thumbnail for shares its link, never the thumbnail).
     ///
-    /// No `contentPlatform` guard, for the same reason `media(for:)` has none:
-    /// the registry has already routed this item here, and an UNBACKED media
-    /// row's stand-in carries whatever platform its media row recorded — which
-    /// is nil for a row saved before platform capture, and was silently costing
-    /// those cards their entire share ladder.
+    /// Two ways to be this kind's, and it takes EITHER: a recognized platform,
+    /// or a media row Luna actually holds. A plain article is neither and gets
+    /// nil, which is what keeps its pill hidden. The second half matters because
+    /// an UNBACKED media row's stand-in carries whatever platform its media row
+    /// recorded, and that is nil for a row saved before platform capture — a
+    /// `contentPlatform`-only test cost those cards their entire share ladder.
     func shareMenu(for item: ReadingListItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu?
     {
         guard let media = media(for: item) else {
+            guard item.contentPlatform != nil else { return nil }
             return MediaItemActions.linkShareMenu(
                 urlString: item.urlString, presenter: host.presentingController,
                 sourceView: sourceView)

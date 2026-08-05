@@ -591,18 +591,21 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         muteButton.sendActions(for: .touchUpInside)
 
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        let centered = source.previews[1]
         scrubber.delegate?.scrubber(scrubber, didPreview: 1)
         XCTAssertEqual(delegate.targets, [1])
-        XCTAssertTrue(source.preview.isPlaying)
-        XCTAssertFalse(source.preview.isMuted)
-        XCTAssertEqual(source.preview.pauseCount, 0)
+        XCTAssertTrue(centered.isPlaying)
+        XCTAssertFalse(centered.isMuted)
+        XCTAssertEqual(centered.pauseCount, 0)
 
         scrubber.delegate?.scrubber(scrubber, didCommit: 1)
 
         XCTAssertEqual(carousel.currentIndex, 1)
-        XCTAssertTrue(source.preview.parent === carousel)
-        XCTAssertTrue(source.preview.isPlaying)
-        XCTAssertEqual(source.preview.pauseCount, 0)
+        XCTAssertTrue(centered.parent === carousel)
+        XCTAssertTrue(centered.isPlaying)
+        XCTAssertEqual(
+            centered.pauseCount, 0,
+            "promotion must hand the playing preview over, not pause and rebuild it")
         XCTAssertEqual(source.normalRequestCounts[1], 1)
     }
 
@@ -753,10 +756,20 @@ private final class CenteringSpyCardContentViewController: CardContentViewContro
 
 @MainActor
 private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSource {
-    let preview = PlaybackSpyCardContentViewController()
+    /// One preview controller PER CARD, which is what a real data source
+    /// supplies. A single shared instance used to work here only because the
+    /// deck-level `.thumbnails` scrubber prepared nothing, so the peeks never
+    /// mounted anything: once the strip prepares its visible window for every
+    /// deck, a shared instance lets a PEEK's "peeks never play" pause land on
+    /// the centre's own player and the spy can no longer tell the two apart.
+    let previews = [
+        PlaybackSpyCardContentViewController(),
+        PlaybackSpyCardContentViewController(),
+        PlaybackSpyCardContentViewController(),
+    ]
     var normalRequestCounts: [Int: Int] = [:]
 
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 3 }
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { previews.count }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -769,7 +782,7 @@ private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSo
     func carousel(
         _ carousel: CardCarouselViewController,
         previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? { preview }
+    ) -> CardContentViewController? { previews[index] }
 
     func carousel(
         _ carousel: CardCarouselViewController,

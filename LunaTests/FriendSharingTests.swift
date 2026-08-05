@@ -144,7 +144,7 @@ final class FriendSharingTests: XCTestCase {
         item.incomingSenderEmail = "sender@example.com"
 
         XCTAssertEqual(
-            ArticleCardsViewController.resolvedSenderName(for: item) { email in
+            ArticleCardPresenter.resolvedSenderName(for: item) { email in
                 email == "sender@example.com" ? "Renamed Contact" : nil
             },
             "Renamed Contact")
@@ -157,7 +157,7 @@ final class FriendSharingTests: XCTestCase {
         item.incomingSenderEmail = "news@example.com"
 
         XCTAssertEqual(
-            ArticleCardsViewController.resolvedSenderName(for: item) { _ in nil },
+            ArticleCardPresenter.resolvedSenderName(for: item) { _ in nil },
             "Newsletter Name")
     }
 
@@ -166,6 +166,6 @@ final class FriendSharingTests: XCTestCase {
         item.captureSource = .shareSheet
         item.channelName = "Publisher"
 
-        XCTAssertNil(ArticleCardsViewController.resolvedSenderName(for: item) { _ in "Contact" })
+        XCTAssertNil(ArticleCardPresenter.resolvedSenderName(for: item) { _ in "Contact" })
     }
 }

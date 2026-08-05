@@ -60,6 +60,19 @@ protocol CardPresenterHost: AnyObject {
     /// item has no card mounted right now (it is offstage, or archived).
     func cardView(forItemID id: UUID) -> UIView?
 
+    /// Unarchive this save and bring it back onto the deck, with whatever
+    /// choreography this deck has (the Reader's cross-dissolves the tray cell
+    /// into the destination card). The store write is still the KIND's —
+    /// `setArchived(false:)` — so every companion flag and the row's bump date
+    /// move together.
+    func unarchive(_ item: ReadingListItem, from sourceView: UIView?)
+
+    /// Delete this save WHOLE: the kind's companion storage — a downloaded file,
+    /// its Photos asset, its auto-download bookkeeping — and then the row.
+    /// Reachable from a card's menu and from an archive-tray cell, which is the
+    /// point: the tray's delete used to skip the companion half.
+    func deleteSave(_ item: ReadingListItem)
+
     /// A presenter's archive-tray download bars changed. Progress ticks arrive
     /// several times a second, so the tray updates its visible cells in place
     /// rather than reloading the deck.
@@ -266,8 +279,14 @@ extension CardKindPresenting {
     func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView) -> Bool {
         false
     }
+    /// The row, and — on the way BACK — its sort date. Every deck orders on
+    /// `bumpDate ?? dateAdded`, so a kind that unarchives without bumping
+    /// returns the save to wherever it was originally buried. A kind with a
+    /// companion store overrides this to write that too, and calls the bump for
+    /// the same reason.
     func setArchived(_ archived: Bool, for item: ReadingListItem) {
         ReadingListStore.shared.setArchived(archived, for: item.id)
+        if !archived { ReadingListStore.shared.bump(item.id) }
     }
     func deleteCompanionStorage(for item: ReadingListItem, host: CardPresenterHost?) {}
     func itemDidCenter(_ item: ReadingListItem, host: CardPresenterHost) {}

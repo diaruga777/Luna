@@ -526,6 +526,11 @@ class CardCarouselHostViewController: UIViewController {
     /// at all.
     final func configure(style: CardCarouselStyle, provider: (CardCarouselHostViewController) -> CardDeckProviding) {
         configuredStyle = style
+        // Applied here, not only from `viewDidLoad`: a SUBCLASS with chrome of
+        // its own configures itself after `super.viewDidLoad()` has already
+        // early-returned, and a carousel left on the default style lays out on
+        // geometry that is not merely wrong but NaN.
+        carousel.style = style
         configuredProvider = provider(self)
     }
 
@@ -706,6 +711,25 @@ class CardCarouselHostViewController: UIViewController {
             openStateChanged: { [weak self] open in
                 self?.deckArchiveTrayOpenStateDidChange(open)
             })
+    }
+
+    /// The archive choreography, overridable because it is CHROME. The default
+    /// persists and reloads; the Reader's deck drifts the outgoing card up and
+    /// springs its successor in. Either way the write itself is the kind's.
+    func performArchive(ofItemID id: UUID, commit: @escaping () -> Void) {
+        commit()
+        reload()
+    }
+
+    /// As `performArchive`, for the return trip. The default just asks for the
+    /// row to take the centre; the Reader's deck cross-dissolves the pressed
+    /// tray cell into the destination card.
+    func performUnarchive(
+        ofItemID id: UUID, from sourceView: UIView?, commit: @escaping () -> Void
+    ) {
+        requestCentering(onSlotID: id)
+        commit()
+        reload()
     }
 
     /// Whether the tray may be pulled at all right now. Reader says no while a
@@ -1419,9 +1443,46 @@ extension CardCarouselHostViewController: CardPresenterHost {
     /// slot.
     func requestCentering(onItemID id: UUID) { requestCentering(onSlotID: id) }
 
+    /// The save on the centered card, or nil on the util card.
+    var centeredItem: ReadingListItem? {
+        guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return nil }
+        return deckProvider?.deckItem(forSlot: slot)
+    }
+
     func cardView(forItemID id: UUID) -> UIView? {
         guard let slot = slots.firstIndex(where: { $0.id == id }) else { return nil }
         return carousel.cardView(at: carouselIndex(forSlot: slot))
+    }
+
+    /// The kind that owns a save, asked of the PROVIDER rather than the registry
+    /// so a stand-in for an unbacked row reaches the presenter that supplied it.
+    func presenter(forItem item: ReadingListItem) -> CardKindPresenting? {
+        deckProvider?.deckPresenter(forItemID: item.id)
+            ?? CardKindPresenters.presenter(for: item)
+    }
+
+    /// Unarchive, with this deck's choreography around the kind's store write.
+    /// One implementation for all three kinds: the tray rows used to each carry
+    /// their own, and only the article one bumped the row's date.
+    func unarchive(_ item: ReadingListItem, from sourceView: UIView?) {
+        performUnarchive(ofItemID: item.id, from: sourceView) { [weak self] in
+            guard let self else { return }
+            if let presenter = self.presenter(forItem: item) {
+                presenter.setArchived(false, for: item)
+            } else {
+                ReadingListStore.shared.setArchived(false, for: item.id)
+            }
+        }
+    }
+
+    /// Delete a save whole. The companion half is the reason this is one method:
+    /// the archive tray's delete released only the row, so an archived media
+    /// save deleted from the tray left its file, its Photos asset and its
+    /// auto-download bookkeeping behind.
+    func deleteSave(_ item: ReadingListItem) {
+        presenter(forItem: item)?.deleteCompanionStorage(for: item, host: self)
+        ReadingListStore.shared.delete(item)
+        reload()
     }
 
     /// Ticks arrive several times a second, so the tray updates its visible

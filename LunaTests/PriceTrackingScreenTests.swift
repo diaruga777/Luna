@@ -67,6 +67,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     /// is the shared carousel (util card at zero, mini-card scrubber, archive
     /// tray), and its newest card — a tracker with no history points — still owns
     /// the graph and its editable absolute threshold.
+    @MainActor
     func testPriceTrackerRootIsTheSharedCarouselAndKeepsThresholdOnZeroPointGraph() {
         UITestSupport.seedSharedStore(.priceTracking)
         let deck = ProductCardDeck.makeRoot()
@@ -260,6 +261,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     }
 
     /// Opening an alerting tracker marks its alert viewed, so it stops floating.
+    @MainActor
     func testOpeningAlertingTrackerMarksAlertViewed() {
         UITestSupport.seedSharedStore(.mixed)
         guard let alerting = ReadingListStore.shared.items().first(where: {
@@ -286,6 +288,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     /// A product tracked before the notification prompt was ever answered has no
     /// threshold, so the card's graph has no line to drag: it offers to set one, and
     /// that tap is what creates the default alert (and raises the prompt).
+    @MainActor
     func testPriceTrackerCardOffersToSetAnAlertWhenNoneIsSet() {
         UITestSupport.seedSharedStore(.priceTracking)
         clearEverySeededThreshold()

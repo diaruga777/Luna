@@ -12,10 +12,10 @@
 //  `CardKindPresenters.presenter(for:)` instead of switched on here.
 //
 //  What stays per-app is genuinely per-app and lives in `CardDeckConfiguration`:
-//  the ordering strategy (Reader groups finished articles last, everyone else is
-//  newest-first), whether the app has a generic link card for a save its kind
-//  holds nothing for, and how its trailing circle reads. Those are properties of
-//  a home screen, not of a save.
+//  whether the app has a generic link card for a save its kind holds nothing
+//  for, and how its trailing circle reads. Those are properties of a home
+//  screen, not of a save. ORDERING is not among them — every deck in every app
+//  sorts by `bumpDate ?? dateAdded`, descending, and nothing else.
 //
 //  This file is compiled into ALL FOUR targets, so it may not name a kind
 //  module's symbols. Everything kind-shaped arrives through the presenter
@@ -35,18 +35,6 @@ import UIKit
 // MARK: - What is per-app about a deck
 
 struct CardDeckConfiguration {
-
-    /// How the deck's cards are ordered.
-    enum Ordering {
-        /// Most recent first. Every app but Reader — "read" is an article-only
-        /// notion and would file a just-watched video behind everything else.
-        case newestFirst
-        /// Reader's: finished articles kept as ordinary cards but grouped after
-        /// every unopened/in-progress one, each group newest-first.
-        case readUnreadGrouped
-    }
-
-    var ordering: Ordering = .newestFirst
 
     /// Whether a save whose kind holds nothing to draw yet still earns a card.
     ///
@@ -105,9 +93,20 @@ final class KindDeckProvider: CardDeckProviding {
         unbackedOwners[item.id] ?? CardKindPresenters.presenter(for: item)
     }
 
+    /// The same resolution, for the host — which owns unarchive and delete and
+    /// must reach a stand-in row's presenter the same way.
+    func deckPresenter(forItemID id: UUID) -> CardKindPresenting? {
+        if let owner = unbackedOwners[id] { return owner }
+        guard let item = (items + archivedItems).first(where: { $0.id == id })
+        else { return nil }
+        return CardKindPresenters.presenter(for: item)
+    }
+
     private func item(atSlot slot: Int) -> ReadingListItem? {
         items.indices.contains(slot) ? items[slot] : nil
     }
+
+    func deckItem(forSlot slot: Int) -> ReadingListItem? { item(atSlot: slot) }
 
     // MARK: - Store observation
 
@@ -163,7 +162,7 @@ final class KindDeckProvider: CardDeckProviding {
         let archived = visible.filter { isArchived($0, owners: owners) }
         let active = visible.filter { !isArchived($0, owners: owners) }
 
-        preparedItems = Self.ordered(active, by: configuration.ordering)
+        preparedItems = Self.ordered(active)
         preparedArchivedItems = archived.sorted {
             ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
@@ -202,17 +201,24 @@ final class KindDeckProvider: CardDeckProviding {
         return presenter.isArchived(item)
     }
 
-    static func ordered(
-        _ items: [ReadingListItem], by ordering: CardDeckConfiguration.Ordering
-    ) -> [ReadingListItem] {
+    /// THE ordering, for every kind in every app: sort date descending, ties
+    /// broken by id so the result is stable.
+    ///
+    /// There is deliberately no read/unread grouping and no per-kind sort key.
+    /// The Reader used to file finished articles after unopened ones, which the
+    /// central app could not adopt — "read" is an article-only notion and would
+    /// have shuffled a just-watched video behind everything else — so the two
+    /// decks ordered differently and the same save moved when you switched apps.
+    /// Finished reads leave the deck on their own anyway, via
+    /// `ReadingListStore.archivePendingFinishedItems()` at launch/background, so
+    /// the grouping was buying an ordering divergence for something already
+    /// handled.
+    ///
+    /// The sort date is `bumpDate ?? dateAdded`, and exactly three things set a
+    /// bump: unarchiving any save, a price alert firing, and the existing
+    /// article completion path. Nothing else has one.
+    nonisolated static func ordered(_ items: [ReadingListItem]) -> [ReadingListItem] {
         items.sorted { lhs, rhs in
-            if ordering == .readUnreadGrouped {
-                // A just-finished card keeps its current foreground-session
-                // position until the pending archive is committed on background.
-                let lhsIsRead = lhs.readState == .read && lhs.pendingArchiveAt == nil
-                let rhsIsRead = rhs.readState == .read && rhs.pendingArchiveAt == nil
-                if lhsIsRead != rhsIsRead { return !lhsIsRead }
-            }
             let lhsDate = lhs.bumpDate ?? lhs.dateAdded
             let rhsDate = rhs.bumpDate ?? rhs.dateAdded
             if lhsDate != rhsDate { return lhsDate > rhsDate }
@@ -355,15 +361,26 @@ final class KindDeckProvider: CardDeckProviding {
     /// used to write three different flags, so a save archived in one app stayed
     /// live in another.
     private func archive(_ item: ReadingListItem) {
-        // Persist first. The manual reload consumes the new truth in this same
-        // event turn; the queued notification becomes a no-op because its
-        // fingerprint has already been applied.
-        if let presenter = presenter(for: item) {
-            presenter.setArchived(true, for: item)
-        } else {
-            store.setArchived(true, for: item.id)
+        // The successor is resolved BEFORE the write, so a deck that animates
+        // the swap knows where it is going. Persist inside the choreography:
+        // the manual reload consumes the new truth in the same event turn and
+        // the queued notification becomes a no-op, its fingerprint already
+        // applied.
+        if let index = items.firstIndex(where: { $0.id == item.id }),
+           host.carouselIndex(forSlot: index) == host.carousel.currentIndex {
+            let successor = items.indices.contains(index + 1)
+                ? items[index + 1]
+                : (index > 0 ? items[index - 1] : nil)
+            host.pendingTransitionCenteredID = successor?.id
         }
-        host.reload()
+        host.performArchive(ofItemID: item.id) { [weak self] in
+            guard let self else { return }
+            if let presenter = self.presenter(for: item) {
+                presenter.setArchived(true, for: item)
+            } else {
+                self.store.setArchived(true, for: item.id)
+            }
+        }
     }
 
     /// Deleting a card deletes the save WHOLE: the kind's companion storage — a
@@ -377,9 +394,7 @@ final class KindDeckProvider: CardDeckProviding {
                 : (index > 0 ? items[index - 1] : nil)
             host.pendingTransitionCenteredID = successor?.id
         }
-        presenter(for: item)?.deleteCompanionStorage(for: item, host: host)
-        store.delete(item)
-        host.reload()
+        host.deleteSave(item)
     }
 
     // MARK: - Lifecycle
@@ -410,64 +425,13 @@ final class KindDeckProvider: CardDeckProviding {
 
     // MARK: - The archive tray
 
+    /// Every archived row is its kind's own tray cell. There is no generic
+    /// fallback left: a FAILED save is the only kind-less card, its menu offers
+    /// no Archive, and so it can never reach the tray.
     func deckArchiveTrayItems() -> [ArchiveTrayItem] {
-        archivedItems.map { item in
+        archivedItems.compactMap { item in
             presenter(for: item)?.archiveTrayItem(for: item, host: host)
-                ?? genericArchiveTrayItem(for: item)
         }
-    }
-
-    /// The tray row for a save whose kind supplies none — an article, or a
-    /// failed one: favicon, title, original save date.
-    private func genericArchiveTrayItem(for item: ReadingListItem) -> ArchiveTrayItem {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return ArchiveTrayItem(
-            id: item.id,
-            title: item.title ?? item.url?.host ?? item.urlString,
-            footer: formatter.string(from: item.dateAdded),
-            showsMetadata: true,
-            isAvailable: true,
-            loadImage: { completion in
-                guard let url = item.url else {
-                    completion(UIImage(systemName: item.isDocument ? "doc" : "globe"))
-                    return
-                }
-                completion(UIImage(systemName: "globe"))
-                SourceIconCache.shared.icon(forPageURL: url) { image in
-                    if let image { completion(image) }
-                }
-            },
-            tap: { [weak self] in
-                guard let self else { return }
-                _ = self.presenter(for: item)?.openExternally(item, host: self.host)
-            },
-            share: { [weak self] sourceView in
-                guard let self else { return }
-                SendToFriendSheet.shareLink(
-                    urlString: item.urlString, from: self.host, sourceView: sourceView)
-            },
-            unarchive: { [weak self] _ in
-                guard let self else { return }
-                self.host.requestCentering(onSlotID: item.id)
-                if let presenter = self.presenter(for: item) {
-                    presenter.setArchived(false, for: item)
-                } else {
-                    self.store.setArchived(false, for: item.id)
-                }
-                self.host.reload()
-            },
-            delete: { [weak self] in
-                guard let self else { return }
-                // The archived delete releases companion storage too. It did not,
-                // which is how deleting an archived media save from the central
-                // tray left its file, its Photos asset and its auto-download
-                // bookkeeping behind.
-                self.presenter(for: item)?.deleteCompanionStorage(for: item, host: self.host)
-                self.store.delete(item)
-                self.host.reload()
-            })
     }
 
     // MARK: - The trailing bottom circle

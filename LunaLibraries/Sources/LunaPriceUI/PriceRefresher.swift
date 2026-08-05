@@ -16,6 +16,10 @@ public protocol PriceTrackerPersisting: AnyObject {
     func priceTrackersStalestFirst() -> [ReadingListItem]
     /// Persists an updated tracker payload for an item.
     func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem?
+    /// Stamps the row's sort date to now. Every deck orders on
+    /// `bumpDate ?? dateAdded`, so this is what resurfaces a product whose alert
+    /// has just fired.
+    func bump(_ itemID: UUID)
 }
 
 extension ReadingListStore: PriceTrackerPersisting {}
@@ -105,6 +109,12 @@ public struct PriceRefresher {
               let finalTracker = persisted.priceTracker else { return nil }
 
         let isAlerting = finalTracker.isAlerting
+        // An alert FIRING resurfaces the product: the deck sorts on
+        // `bumpDate ?? dateAdded` and nothing else, so this is how a price drop
+        // reaches the front instead of staying wherever the save happened to
+        // sit. Only the transition bumps — a tracker that is still alerting on
+        // the next refresh must not climb again every hour.
+        if isAlerting && !wasAlerting { store.bump(itemID) }
         return PriceRefreshOutcome(
             itemID: itemID,
             productName: finalTracker.productName,

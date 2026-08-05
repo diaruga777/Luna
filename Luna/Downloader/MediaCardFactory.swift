@@ -40,14 +40,6 @@ enum MediaCardRescue {
     }
 }
 
-/// Newest first — the order every deck shows media rows in. It is a property of
-/// the media store's own rows, so it lives beside the cards they become.
-enum SavedMediaCardOrdering {
-    static func newestFirst(_ items: [SavedMediaItem]) -> [SavedMediaItem] {
-        items.sorted { $0.dateSaved > $1.dateSaved }
-    }
-}
-
 enum MediaCardFactory {
 
     /// The card content for one saved media item. `download` is invoked by the
@@ -702,7 +694,6 @@ enum MediaCardDeck {
         style.showsCardBorder = true
         deck.configure(style: style) { host in
             var configuration = CardDeckConfiguration()
-            configuration.ordering = .newestFirst
             // This app has no generic link card, so a platform save with nothing
             // downloaded behind it is not a slot here — the same set of rows it
             // showed when it read the media store directly.

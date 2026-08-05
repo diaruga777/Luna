@@ -182,6 +182,17 @@ protocol CardDeckProviding: AnyObject {
 
     func deckArchiveTrayItems() -> [ArchiveTrayItem]
 
+    /// The kind that owns a save, as THIS deck resolves it. Normally the
+    /// registry's answer, but a stand-in for an unbacked row (see
+    /// `CardKindPresenting.unbackedItems`) has no reading-list row to resolve
+    /// from and goes back to the presenter that supplied it.
+    func deckPresenter(forItemID id: UUID) -> CardKindPresenting?
+
+    /// The save behind a slot. The host keeps only `CardDeckSlot`s — id, URL,
+    /// fingerprint — so chrome that needs the whole row (the Reader's share
+    /// pill asking what the centered card IS) asks the provider for it.
+    func deckItem(forSlot slot: Int) -> ReadingListItem?
+
     // MARK: - The trailing bottom circle
 
     /// nil for a deck that dresses its trailing circle itself (Reader's reader
@@ -222,6 +233,8 @@ extension CardDeckProviding {
     func deckUtilCardDidCenter() {}
     func deckSlotWasTapped(_ slot: Int) {}
     func deckArchiveTrayItems() -> [ArchiveTrayItem] { [] }
+    func deckPresenter(forItemID id: UUID) -> CardKindPresenting? { nil }
+    func deckItem(forSlot slot: Int) -> ReadingListItem? { nil }
     var deckShareButton: CardDeckShareButton? { nil }
     func deckCanShare(slot: Int?) -> Bool { slot != nil }
     func deckShareMenu(slot: Int, sourceView: UIView) -> UIMenu? { nil }

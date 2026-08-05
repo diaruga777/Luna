@@ -410,7 +410,6 @@ enum ProductCardDeck {
         style.showsCardBorder = true
         deck.configure(style: style) { host in
             var configuration = CardDeckConfiguration()
-            configuration.ordering = .newestFirst
             // This app has no generic link card: a product row with no tracker
             // payload behind it is not a slot here, which is the same set of rows
             // it showed when it read the reading list for `priceTracker != nil`.

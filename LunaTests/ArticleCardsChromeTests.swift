@@ -488,11 +488,16 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(tray.trayAlphaForTesting, 1, accuracy: 0.001)
     }
 
+    @MainActor
     func testReaderCardContextMenuOffersArchiveAndDestructiveDelete() throws {
         let controller = makeArticleController(seed: "reader-card-menu", title: "Reader menu")
         let item = try XCTUnwrap(ReadingListStore.shared.items().first)
-        let menu = try XCTUnwrap(
-            controller.cardContextMenuForTesting(at: controller.carousel.currentIndex))
+        // The menu comes from the ONE provider now, not from a per-deck shim —
+        // which is the point: this is the same code path the Downloader and
+        // Price Tracker roots take for their own cards.
+        let slot = try XCTUnwrap(
+            controller.slotIndex(forCarouselIndex: controller.carousel.currentIndex))
+        let menu = try XCTUnwrap(controller.deckProvider?.deckMenu(forSlot: slot))
         let actions = menu.children.compactMap { $0 as? UIAction }
 
         // A device without the curator's key gets the propose verb, above the

@@ -7,6 +7,7 @@
 
 import AppIntents
 import Foundation
+import LunaModels
 
 enum ProvideContextOutcome: String, AppEnum {
     case done
@@ -32,10 +33,10 @@ struct ProvideContextResultEntity: TransientAppEntity {
 
     var displayRepresentation: DisplayRepresentation {
         switch outcome {
-        case .done: return "Done"
-        case .screenshot: return "Screenshot"
-        case .download: return "Download"
-        case .unhandled: return "Unhandled"
+        case .done: return DisplayRepresentation(title: L10n.resource("Done"))
+        case .screenshot: return DisplayRepresentation(title: L10n.resource("Screenshot"))
+        case .download: return DisplayRepresentation(title: L10n.resource("Download"))
+        case .unhandled: return DisplayRepresentation(title: L10n.resource("Unhandled"))
         }
     }
 
@@ -69,7 +70,9 @@ struct SaveResultEntity: TransientAppEntity {
     @Property(title: "Media") var media: IntentFile?
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Save Result"
-    var displayRepresentation: DisplayRepresentation { "Saved to Luna" }
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: L10n.resource("Saved to Luna"))
+    }
 
     init() {
         media = nil

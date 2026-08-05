@@ -55,15 +55,15 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .noTrackedPage:
-                return "No Safari page tracked yet. Is the Luna extension enabled?"
+                return L10n.resource("No Safari page tracked yet. Is the Luna extension enabled?")
             case .unsupportedKind(let message):
                 return "\(message)"
             case .multipleURLs:
-                return "Several different links are on screen. Open the one you want and try again."
+                return L10n.resource("Several different links are on screen. Open the one you want and try again.")
             case .saveFailed:
-                return "Luna couldn't save this link."
+                return L10n.resource("Luna couldn't save this link.")
             case .contentUnavailable:
-                return "Luna saved this link but couldn't fetch the page. Try again from the app."
+                return L10n.resource("Luna saved this link but couldn't fetch the page. Try again from the app.")
             }
         }
 

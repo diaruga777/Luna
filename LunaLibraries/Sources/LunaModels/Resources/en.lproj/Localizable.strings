@@ -95,8 +95,8 @@
 "Open Link" = "Open Link";
 "Open Luna in the App Store" = "Open Luna in the App Store";
 "Open Settings" = "Open Settings";
-"Or" = "Or";
 "or" = "or";
+"Or" = "Or";
 "Other Actions" = "Other Actions";
 "Paste a link" = "Paste a link";
 "Press the action button to finish" = "Press the action button to finish";
@@ -126,8 +126,8 @@
 "Sign in to watch." = "Sign in to watch.";
 "Sign up to keep watching" = "Sign up to keep watching";
 "Skip" = "Skip";
-"Skip setup" = "Skip setup";
 "skip setup" = "skip setup";
+"Skip setup" = "Skip setup";
 "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on." = "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on.";
 "Stop popups & access gates" = "Stop popups & access gates";
 "Subscribe" = "Subscribe";
@@ -202,8 +202,8 @@
 "Pausing when you look away" = "Pausing when you look away";
 "Preview unavailable" = "Preview unavailable";
 "Read" = "Read";
-"Read Aloud" = "Read Aloud";
 "Read aloud" = "Read aloud";
+"Read Aloud" = "Read Aloud";
 "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings." = "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings.";
 "Resuming: %@" = "Resuming: %@";
 "Return to %@" = "Return to %@";
@@ -300,7 +300,6 @@
 "Save to %@ Photos" = "Save to %@ Photos";
 "Save to Photos" = "Save to Photos";
 "Saved to %@ Photos" = "Saved to %@ Photos";
-"Saved to Luna" = "Saved to Luna";
 "Saved to Photos" = "Saved to Photos";
 "Saving to Luna" = "Saving to Luna";
 "Saving to Photos" = "Saving to Photos";
@@ -367,6 +366,8 @@
 "App password" = "App password";
 "At appleid.apple.com, under Sign-In and Security → App-Specific Passwords, create one and paste it here." = "At appleid.apple.com, under Sign-In and Security → App-Specific Passwords, create one and paste it here.";
 "Check the address and app password and try again." = "Check the address and app password and try again.";
+"Couldn't find a matching post or page to save." = "Couldn't find a matching post or page to save.";
+"Couldn't identify anything to save on this screen." = "Couldn't identify anything to save on this screen.";
 "Couldn't reach the mail servers. Check your connection and try again." = "Couldn't reach the mail servers. Check your connection and try again.";
 "Couldn't sign in" = "Couldn't sign in";
 "Couldn't start Outlook sign-in." = "Couldn't start Outlook sign-in.";
@@ -380,19 +381,38 @@
 "In iCloud Mail → Settings → Rules → Add a Rule that matches the Subject containing \"%@\" and moves it to a folder / marks it as read." = "In iCloud Mail → Settings → Rules → Add a Rule that matches the Subject containing \"%@\" and moves it to a folder / marks it as read.";
 "In Yahoo Account Security, generate an app password and paste it here." = "In Yahoo Account Security, generate an app password and paste it here.";
 "In Yahoo Mail → Settings → Filters → Add, %@" = "In Yahoo Mail → Settings → Filters → Add, %@";
+"Luna can't save from this app." = "Luna can't save from this app.";
+"Luna couldn't save this link." = "Luna couldn't save this link.";
+"Luna found this on screen but couldn't save it." = "Luna found this on screen but couldn't save it.";
+"Luna needs permission to save media to your photo library." = "Luna needs permission to save media to your photo library.";
+"Luna saved the link but couldn't download its media." = "Luna saved the link but couldn't download its media.";
+"Luna saved this but couldn't fetch its content. Try again from the app." = "Luna saved this but couldn't fetch its content. Try again from the app.";
+"Luna saved this link but couldn't fetch the page. Try again from the app." = "Luna saved this link but couldn't fetch the page. Try again from the app.";
 "Luna sets this up automatically for Outlook." = "Luna sets this up automatically for Outlook.";
 "match the Subject containing \"%@\" and mark it as read / skip the inbox." = "match the Subject containing \"%@\" and mark it as read / skip the inbox.";
+"No Safari page tracked yet. Is the Luna extension enabled?" = "No Safari page tracked yet. Is the Luna extension enabled?";
 "Open the original →" = "Open the original →";
 "Other (IMAP)" = "Other (IMAP)";
 "Outlook" = "Outlook";
 "Outlook isn't configured in this build." = "Outlook isn't configured in this build.";
 "Outlook sign-in failed. Please try again." = "Outlook sign-in failed. Please try again.";
+"Reading articles aloud isn't available in this app." = "Reading articles aloud isn't available in this app.";
+"Saved to Luna" = "Saved to Luna";
+"Screen analysis is temporarily unavailable. Try again in a moment." = "Screen analysis is temporarily unavailable. Try again in a moment.";
+"Screen analysis isn't available on this device." = "Screen analysis isn't available on this device.";
+"Screen analysis needs a network connection. Try again when you're back online." = "Screen analysis needs a network connection. Try again when you're back online.";
+"Screenshot" = "Screenshot";
+"Several different links are on screen. Open the one you want and try again." = "Several different links are on screen. Open the one you want and try again.";
 "Shared with you via Luna" = "Shared with you via Luna";
 "Shared with you via Luna\n\n%@\n%@\n\n%@\n" = "Shared with you via Luna\n\n%1$@\n%2$@\n\n%3$@\n";
 "Sign In" = "Sign In";
 "Sign-in failed" = "Sign-in failed";
+"That article isn't ready to read yet." = "That article isn't ready to read yet.";
 "Turn on 2-Step Verification, then create an app password for \"Mail\" and paste the 16-character code here." = "Turn on 2-Step Verification, then create an app password for \"Mail\" and paste the 16-character code here.";
+"Unhandled" = "Unhandled";
 "Yahoo" = "Yahoo";
+"You don't have any unread articles to read." = "You don't have any unread articles to read.";
+"You've hit the screen-analysis limit for now. Try again later." = "You've hit the screen-analysis limit for now. Try again later.";
 
 /* ===================== Sharing with Friends ===================== */
 "%@ shared an article" = "%@ shared an article";

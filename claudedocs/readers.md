@@ -716,6 +716,42 @@ Regression tests: `ArticleExtractorTests.testArchivedArticleBeatsSubscriptionGat
 
 **A paywall is a property of the site at a MOMENT, not of the article (`.waybackPrePaywall`).** Newest-first is the wrong end of the capture history for an article the publisher metered years after publishing it. The Paris Review put its interview archive online free and walled it later, so every recent Wayback capture of a 1969 interview carries the same truncated preview the live page serves, while the 2010–2016 captures hold the whole ~50k-character piece. `.waybackPrePaywall` takes the OLDEST non-trivial 200 capture and is ranked AFTER `.waybackRaw` — newest is right for an article walled from publication, where the oldest capture is just an older wall, and the ranking costs nothing because the readability gate (now including `TruncationGateDetector`) discards whichever capture still carries the wall. **It is only SCHEDULED when that era could exist.** A story published this week was walled the day it went out, so its oldest capture is the identical wall and the lookup provably cannot help: `BypassStrategySelector` reads the page's own `article:published_time` / schema.org `datePublished` / `<time datetime>` (`PublicationDate`, zero network, no per-host knowledge) and omits the strategy when the page dates itself inside `ArticleFetcher.prePaywallCaptureMinimumAge` (180 days). An UNDATED page keeps it — absence of a date is not evidence of youth — and so does a page that never arrived at all (WSJ's 401 leaves no markup to date), where `ArticleFetcher.captureCouldPredateAWall` applies the same age test to the resolved capture timestamp as a backstop. That is what stops a save of today's paywalled news from paying for yesterday's long shot. This is the ONLY technique that can beat a server-side truncation: the rest of the body was never sent, so nothing done to the live page — crawler UA, referer, trailing dot, script blocking, `.directUnlock` — can recover it (verified against this page: a Googlebot UA gets a Cloudflare block, a Google referer gets the identical truncation). Tests: `WaybackCDXTests`, `PublicationDateTests`, `ArticleResolverTests.testPrePaywallCaptureBeatsATruncatedPreview`.
 
+**A refused CLIENT is not a verdict on the PAGE (`directFailure` / `silentTierExhausted`).** A free
+piratewires.com article was unsaveable, and nothing about it was paywalled: the host sits behind
+Vercel bot mitigation, which answers `x-vercel-mitigated: challenge` + **HTTP 429** and a "Vercel
+Security Checkpoint" body to every silent strategy — plain Safari UA, Googlebot, cookieless, and the
+jina reader, which faithfully relays the 429. A WKWebView loading the identical URL gets **200 and
+all 57 paragraphs on the first try**, because the mitigation keys on the CLIENT (TLS fingerprint,
+challenge JS actually executed) and not on volume or on the page. `ArticleIngestProcessor` already
+had the instinct — its comment names anti-bot front doors that reject URLSession while the browser
+leg still renders — but `.directUnlock` was reachable ONLY through a per-host unlock rule, and the
+hosts that need it most are exactly the ones the upstream table gives up on (piratewires.com is on
+its `noFix` list, which is why `SiteUnlockRules.isNoFix` is defined and deliberately never
+consulted). So `webPreStages` was empty and the page died as a terminal `.failed` before any browser
+was asked. Two SEPARATE flags now, because they answer different questions: **`directFailure`**
+decides whether a page has earned browser recovery at all, and is narrow on purpose —
+`SaveFailureReason.browserMayRecover` is true only for the client-refusal codes 401/403/429 (the
+same set whose failed-card copy already said "opening it in the browser often works"), so a 404
+still fails honestly instead of parking and a 5xx, Cloudflare's 503 interstitial included, stays a
+server fault rather than a recoverable one. **`silentTierExhausted`** is what the archive reader IS:
+it only ever opens for a page nothing silent could read, so the live page is the last untried
+authority and earns one browser load ahead of the archive CAPTCHA — skipped for a hard-paywall host
+(the wall is certain, so it would only delay the archive) and for a URL that is already a snapshot.
+Tests: `BypassTests.testClientRefusedRulelessHostEarnsTheBrowserLeg`,
+`.testNonRefusalFailuresDoNotEarnTheBrowserLeg`, `.testBrowserTier*`,
+`IngestPipelineBrowserFallbackTests.testBotMitigatedRulelessHostParksForBrowserRecovery`.
+
+**A comment deep link is not a different article.** The same save carried
+`?comment=308157614`, and `comment`/`commentId` were not in
+`URLClassification.trackingParameterNames` — so the archive tier, which is keyed on the exact URL,
+asked for a URL nobody has ever captured: archive.today's TimeMap holds two snapshots of the bare
+article and 404s ("no Mementos") for the comment-suffixed form, and Wayback's CDX returns `[]`. A
+link copied out of a comment thread could therefore never reach a snapshot sitting right there.
+They are in the noise list now — the same class of thing as the fragment `canonicalURL` already
+drops — which also dedupes two saves of one article differing only by comment id, and because
+`URLUnwrapper` strips on ingest it fixes every archive lookup at once rather than the archive path
+alone.
+
 **A wall that REDIRECTS instead of gating: the `?amp` unlock (`AMPQueryBypass`).** News
 Corp Australia (`theaustralian.com.au` + 13 sibling mastheads) doesn't serve a teaser
 at the article URL — it 302s the request onto `…/subscribe/news/1/?dest=<article>`

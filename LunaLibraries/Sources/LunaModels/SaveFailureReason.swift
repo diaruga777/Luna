@@ -168,6 +168,29 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
         }
     }
 
+    /// Whether a REAL BROWSER is a plausible way in where the background fetch was
+    /// turned away — the machine-readable form of the advice `suggestion` already
+    /// gives for these codes ("Opening it in the browser often works where a
+    /// background fetch can't").
+    ///
+    /// True only for the client-refusal codes 401/403/429: those say "not you", which
+    /// on a bot-mitigated front door (Vercel's `x-vercel-mitigated: challenge` answers
+    /// 429, DataDome/Cloudflare 403) is a statement about the CLIENT, not the page.
+    /// A WKWebView presents a real browser's TLS fingerprint and runs the challenge
+    /// JS, so it routinely gets a 200 and the full article for a page URLSession
+    /// cannot touch at all — measured on a free piratewires.com article that answered
+    /// 429 to every silent strategy (plain, Googlebot UA, cookieless, jina) and 200
+    /// on the first WKWebView load.
+    ///
+    /// Deliberately EXCLUDES 404/410 (the page is gone — no client can conjure it),
+    /// 5xx (the site's own fault, including Cloudflare's 503 interstitial, which
+    /// would otherwise park every real outage as recoverable), and every transport
+    /// failure (offline/timeout/DNS is not a refusal).
+    public var browserMayRecover: Bool {
+        guard case let .httpStatus(code) = self else { return false }
+        return code == 401 || code == 403 || code == 429
+    }
+
     /// Whether the LLM rescue has anything to work with. False for `.notContent`
     /// alone: every other failure is "we couldn't GET the article", which a model
     /// reading the page can sometimes fix, whereas a search-results or index page

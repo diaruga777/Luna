@@ -239,7 +239,6 @@
 		C100000000000000000000056 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		C100000000000000000000057 /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
 		C1666BA7FC1EAE467E0165F4 /* LunaSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LunaSocialUI */; };
-		C1C100000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1C100000000000000000002 /* Localizable.xcstrings */; };
 		C1W0000000000000000000011 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
 		C1W0000000000000000000012 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
 		C1W0000000000000000000013 /* LunaWeekly in Frameworks */ = {isa = PBXBuildFile; productRef = C1W0000000000000000000001 /* LunaWeekly */; };
@@ -549,7 +548,6 @@
 		B59B827071F5B3640BB31428 /* LunaDownloaderShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaDownloaderShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B676E100375CAF10250CA16F /* ClipReaderViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipReaderViewController.swift; sourceTree = "<group>"; };
 		BB94D412ABEBAB217EB72608 /* LunaDownloaderSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaDownloaderSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		C1C100000000000000000002 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; name = Localizable.xcstrings; path = LunaDownloaderLiveActivity/Localizable.xcstrings; sourceTree = "<group>"; };
 		D0CF5C3F55AB115AA260177F /* LunaReaderClip.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = LunaReaderClip.entitlements; sourceTree = "<group>"; };
 		D3B0961D49B070035B3E0FD1 /* LunaDownloaderAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaDownloaderAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D90FE9B094CA527A09D21E73 /* LunaReaderClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaReaderClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1304,7 +1302,6 @@
 			children = (
 				2DCB0B589CD5F645564BBD14 /* LunaDownloaderLiveActivityWidget.swift */,
 				8CFBE7B0FE2FDF0DD3C246B2 /* LunaDownloaderLiveActivityBundle.swift */,
-				C1C100000000000000000002 /* Localizable.xcstrings */,
 			);
 			name = "Shared Live Activity Sources";
 			sourceTree = "<group>";
@@ -2168,7 +2165,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C1C100000000000000000001 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -48,9 +48,9 @@ struct ReadArticleIntent: AudioPlaybackIntent {
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
-            case .noArticles: return "You don't have any unread articles to read."
-            case .contentMissing: return "That article isn't ready to read yet."
-            case .notSupported: return "Reading articles aloud isn't available in this app."
+            case .noArticles: return L10n.resource("You don't have any unread articles to read.")
+            case .contentMissing: return L10n.resource("That article isn't ready to read yet.")
+            case .notSupported: return L10n.resource("Reading articles aloud isn't available in this app.")
             }
         }
     }

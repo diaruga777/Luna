@@ -1,0 +1,52 @@
+/*
+ * Luna — the Shortcuts and Siri strings.
+ *
+ * These are NOT in the main strings file, and they are the only user-visible
+ * copy that isn't. App Intents metadata is extracted by Xcode at BUILD time and
+ * read from the app's own bundle, so the Swift side has to stay a literal —
+ * `static let title: LocalizedStringResource = "Save"` cannot become a lookup
+ * without failing the App Intents metadata processor. What it CAN do is resolve
+ * that literal against this table at runtime, which is what this file is.
+ *
+ * So: edit the right-hand side here to change what the Shortcuts app, the
+ * Action Button picker and Siri show. Same rules as the main file — keep the
+ * left side, the quotes and the trailing semicolon.
+ *
+ * The main file, with everything shown INSIDE the apps, is
+ * LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings
+ *
+ * Two things deliberately absent, because they live in a third mechanism
+ * (AppShortcuts.strings) and are Siri grammar rather than copy: the spoken
+ * `phrases` and the `shortTitle` of each AppShortcut in LunaShortcuts.swift.
+ * The two Live Activity intent titles are absent too — they belong to the
+ * widget's own bundle, not this one.
+ */
+
+/* ===================== Intent names ===================== */
+"Save" = "Save";
+"Provide Context" = "Provide Context";
+"Read Article" = "Read Article";
+
+/* ===================== Intent descriptions ===================== */
+"Long-running step of the Action Button shortcut. Pass the current app, optional screenshot, and optional Metadata from Provide Context. Luna resumes prepared work when possible, or reads the screenshot and saves from the top." = "Long-running step of the Action Button shortcut. Pass the current app, optional screenshot, and optional Metadata from Provide Context. Luna resumes prepared work when possible, or reads the screenshot and saves from the top.";
+"First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, needs a screenshot, or must continue in Save." = "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, needs a screenshot, or must continue in Save.";
+"Starts reading a saved article out loud in the background." = "Starts reading a saved article out loud in the background.";
+
+/* ===================== Intent parameters ===================== */
+"CurrentApp" = "CurrentApp";
+"The current app, from Get Current App." = "The current app, from Get Current App.";
+"Screenshot" = "Screenshot";
+"An optional screenshot of the current app's screen." = "An optional screenshot of the current app's screen.";
+"Metadata" = "Metadata";
+"Optional opaque state returned by Provide Context." = "Optional opaque state returned by Provide Context.";
+
+/* ===================== Result types shown in Shortcuts ===================== */
+"Article" = "Article";
+"Capture Outcome" = "Capture Outcome";
+"Context Result" = "Context Result";
+"Save Result" = "Save Result";
+"Media" = "Media";
+"Outcome" = "Outcome";
+"Saved" = "Saved";
+"Source" = "Source";
+"Title" = "Title";

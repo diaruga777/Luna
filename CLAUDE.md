@@ -186,6 +186,33 @@ stable Xcode 26.2.
 > the screen edges. Phone-shaped containers are left byte-identical throughout, which is why
 > the existing snapshot references still hold.
 
+> **Strings: one flat file, and the key is the English.** Every user-visible
+> string in all four apps is an entry in
+> `LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings`,
+> written `"the original English" = "what Luna shows";`. The KEY is the literal
+> that sits in the Swift and never changes; the VALUE is the copy, so wording is
+> edited in a text editor — on a phone, off-machine — with no Swift change and no
+> build step. An unknown or broken key falls back to itself, i.e. to the original
+> English. `L10n.string` / `L10n.resource` (`LunaModels/Localization.swift`) are
+> the only lookup points, resolving against `Bundle.module`, which ships in every
+> app, extension, clip and widget that links LunaModels. **`defaultLocalization:
+> "en"` in `Package.swift` is load-bearing**: without it the table is silently
+> dropped from the resource bundle and every lookup falls back — which is exactly
+> the state the codebase was in before this existed (two `.xcstrings` catalogs,
+> neither ever read, ~580 dead call sites that looked fine because key == English).
+> `LocalizableStringsTests` therefore reads the table out of the BUILT bundle, not
+> the working tree. Adding a string: call `L10n.string("…")`, then
+> `scripts/strings_sync.py --write` (it parses the Swift, matches interpolation to
+> the format key, adopts new keys and drops dead ones; `--check` reports drift and
+> is not a unit test because the suite can't see the source tree). NOT copy and
+> deliberately unwrapped: `OnboardingStrings.Accessibility` (UI-test identifiers)
+> and `.AnimationKeys` (CALayer keys), markup assembly, and matcher hostnames.
+> App Intents metadata — intent titles, descriptions, parameter names — must stay
+> Swift literals for the metadata processor, and resolves instead against the
+> small second file `Luna/en.lproj/Localizable.strings`; `AppShortcut` phrases and
+> `shortTitle`s stay in code (they are `AppShortcuts.strings`, and are Siri
+> grammar). Full detail in `claudedocs/strings.md`.
+
 ## Agent workflow
 
 - Always commit completed work in small, logical chunks as you go — don't wait for

@@ -16,7 +16,13 @@ enum BundledShortcut {
     /// The shortcut's name as it appears in the Shortcuts app and the Action
     /// Button picker after import. Must match the bundled `.shortcut` file's name.
     private static let resourceName = "Send To Luna"
-    static var displayName: String { L10n.string("Send To Luna") }
+
+    /// Deliberately NOT an `L10n` lookup, and the one piece of user-visible text
+    /// that isn't. iOS takes this name from the imported `.shortcut` file, so the
+    /// two have to agree; editing the copy on its own would rename the button in
+    /// Luna's own prose while the Action Button picker went on showing the old
+    /// name. Rename the bundled resource and this constant together, or neither.
+    static var displayName: String { resourceName }
 
     /// Presents the system share sheet to import the bundled shortcut into the
     /// Shortcuts app. (`shortcuts://import-workflow?url=` rejects local file URLs,

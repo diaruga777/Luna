@@ -73,26 +73,26 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .unsupportedApp:
-                return "Luna can't save from this app."
+                return L10n.resource("Luna can't save from this app.")
             case .unsupportedKind(let message):
                 return "\(message)"
             case .saveFailed:
-                return "Luna found this on screen but couldn't save it."
+                return L10n.resource("Luna found this on screen but couldn't save it.")
             case .contentUnavailable:
-                return "Luna saved this but couldn't fetch its content. Try again from the app."
+                return L10n.resource("Luna saved this but couldn't fetch its content. Try again from the app.")
             case .modelUnavailable:
                 // ITMS-90626: never mention Apple/Siri in intent-visible strings.
-                return "Screen analysis isn't available on this device."
+                return L10n.resource("Screen analysis isn't available on this device.")
             case .networkUnavailable:
-                return "Screen analysis needs a network connection. Try again when you're back online."
+                return L10n.resource("Screen analysis needs a network connection. Try again when you're back online.")
             case .quotaLimitReached:
-                return "You've hit the screen-analysis limit for now. Try again later."
+                return L10n.resource("You've hit the screen-analysis limit for now. Try again later.")
             case .serviceUnavailable:
-                return "Screen analysis is temporarily unavailable. Try again in a moment."
+                return L10n.resource("Screen analysis is temporarily unavailable. Try again in a moment.")
             case .nothingIdentifiable:
-                return "Couldn't identify anything to save on this screen."
+                return L10n.resource("Couldn't identify anything to save on this screen.")
             case .notFound:
-                return "Couldn't find a matching post or page to save."
+                return L10n.resource("Couldn't find a matching post or page to save.")
             }
         }
 

@@ -136,6 +136,9 @@
     "Context Result" : {
 
     },
+    "Copy link" : {
+
+    },
     "Couldn't Delete" : {
 
     },
@@ -654,6 +657,9 @@
     "Share" : {
 
     },
+    "Share audio" : {
+
+    },
     "Share Current Media" : {
 
     },
@@ -663,10 +669,22 @@
     "Share Failed" : {
 
     },
+    "Share GIF" : {
+
+    },
+    "Share image" : {
+
+    },
+    "Share link" : {
+
+    },
     "Share Link…" : {
 
     },
     "Share Sheet & Paste" : {
+
+    },
+    "Share video" : {
 
     },
     "Sharing Account" : {

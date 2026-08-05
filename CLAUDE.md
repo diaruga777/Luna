@@ -361,7 +361,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 2235 tests, 21 skipped, 0 failures**
+- **Current suite state on the iOS 26.x sim: 2244 tests, 21 skipped, 0 failures**
   (measured 2026-08-05 after the card-presenter refactor and the test-suite trim,
   on a FRESH simulator, with **no `-skip-testing:` flags** — the plain recipe above
   is the whole of it). 91s of test execution, ~128s wall on a warm
@@ -389,8 +389,10 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   run in the same family, was a Phase-1 spike and is deleted; its finding lives in a
   doc comment.)
 - **A run that dies with "Test crashed with signal kill before establishing
-  connection" is the simulator, not the code** — create a FRESH simulator and re-run
-  (a reboot is not enough). Same for a run where WKWebView-backed suites mass-fail at
+  connection" — or hangs with "the test runner hung before establishing
+  connection" — is the simulator, not the code**: create a FRESH simulator with
+  `simctl create` and re-run. A reboot is not enough, and neither is `pkill
+  dtpasteboardd`; the long-lived sim has produced the hang twice after both. Same for a run where WKWebView-backed suites mass-fail at
   ~10s each, and for a wedged pasteboard daemon deadlocking `UIPasteControl` at
   launch (`pkill dtpasteboardd`).
 - **Snapshots**: 10 reference PNGs remain, all of views rather than decks

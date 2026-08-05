@@ -146,7 +146,9 @@ email. The outcome is persisted per leg, so the distinction survives relaunches.
 `AppOnboardingStore.isCompleted == false` selects this state when the carousel
 host is constructed. The card shows, top to bottom:
 
-1. the surface-specific two-beat intro headline;
+1. the surface-specific two-beat intro headline — ONE line in every app, its
+   second beat animating the difference between two states of the same sentence
+   (`claudedocs/reader-onboarding.md`, "Surface headlines");
 2. Save of the Week, when there is one;
 3. the setup block (above);
 4. the “or” separator, when it applies (see below);

@@ -764,6 +764,34 @@ the HTML-aware predicate without first fixing the detector: it would reject a pa
 article is in hand. (It also means the silent tier would have rejected this page had the fetch ever
 succeeded — which is a second, independent reason the browser leg is what saves this host.)
 
+**One wait must LOOK like one wait (`LoadingStatusLayout`).** Saving through the action extension
+runs two loading surfaces back to back in the same sheet — the extension's own wait, then the archive
+reader's cover — and every difference between them read as the UI glitching rather than as one wait
+continuing. Three of them, each with its own cause, all fixed together: **(1)** the header used to
+appear PARTWAY THROUGH, because the wait was views dropped onto `ShareViewController` and the reader
+became the first navigation root the sheet ever had; the wait is now a real root
+(`ExtensionLoadingViewController`) hosted through the same `hostInNavigation` path as every later
+screen, so one bar stands from the first frame, its button an `xmark` while the outcome is unknown and
+a `checkmark` once the article is actually saved (the reader's leading item was a permanent "Done",
+promising an outcome it did not have). **(2)** The spinner used to HOP UPWARDS: the reader centred a
+STACK of [spinner, label, button] while the extension centred the SPINNER, putting the reader's ~28pt
+higher. Both now call `LoadingStatusLayout` — spinner centred, copy beneath — so text can come and go
+without moving it. **(3)** The spinner used to CHANGE COLOUR, because the reader forced
+`GlassStyle.readingAccent` (the user's reader highlight, usually a bright blue) over
+`HorizonSpinnerView`'s horizon default. Don't reintroduce a per-surface tint or a per-surface layout
+here; the whole point is that neither surface owns the answer. Tests:
+`ExtensionLoadingContinuityTests`.
+
+**The cover covers: there is no translucent state and no setting for one.** The cover is
+`LunaColors.background` at 0.99 — a hair off opaque only so the loading controls composite crisply —
+and the page beneath is otherwise either hidden or, when a CAPTCHA needs solving, revealed outright
+via `isHidden`. It used to have one more state: a five-tap gesture dropped it to 0.1, which is
+trivially triggered by tapping at something that looks stuck, and produced exactly the report of "the
+overlay went transparent, spinner still on it, page showing through, no CAPTCHA". That gesture is
+gone. Worth knowing for the next such report: `LunaArchiveReader` reads **no** `UserDefaults` at all,
+and no alpha/opacity setting exists anywhere in the codebase, so a translucent cover is never a
+stale preference — it can only be code.
+
 **A comment deep link is not a different article.** The same save carried
 `?comment=308157614`, and `comment`/`commentId` were not in
 `URLClassification.trackingParameterNames` — so the archive tier, which is keyed on the exact URL,

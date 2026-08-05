@@ -271,10 +271,15 @@ final class MediaCardPresenter: CardKindPresenting {
     /// that card IS a link and nothing else — so it gets the two link verbs
     /// alone, and only the file row ever shares a file (a video Luna holds just
     /// a thumbnail for shares its link, never the thumbnail).
+    ///
+    /// No `contentPlatform` guard, for the same reason `media(for:)` has none:
+    /// the registry has already routed this item here, and an UNBACKED media
+    /// row's stand-in carries whatever platform its media row recorded — which
+    /// is nil for a row saved before platform capture, and was silently costing
+    /// those cards their entire share ladder.
     func shareMenu(for item: ReadingListItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu?
     {
-        guard item.contentPlatform != nil else { return nil }
         guard let media = media(for: item) else {
             return MediaItemActions.linkShareMenu(
                 urlString: item.urlString, presenter: host.presentingController,

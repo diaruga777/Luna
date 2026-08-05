@@ -741,6 +741,29 @@ Tests: `BypassTests.testClientRefusedRulelessHostEarnsTheBrowserLeg`,
 `.testNonRefusalFailuresDoNotEarnTheBrowserLeg`, `.testBrowserTier*`,
 `IngestPipelineBrowserFallbackTests.testBotMitigatedRulelessHostParksForBrowserRecovery`.
 
+Measured end to end against the live page with the shipped code, because every link in that chain
+was worth proving rather than assuming: the WKWebView load answers **200** (the `?comment=` intact),
+`directBypassStageProbeJavaScript` returns **`content-root` on the FIRST 0.35s tick** — via its
+`<h1>` + paragraph-prose fallback, since the page exposes no recognized article container — the
+whole-document extraction yields **9002 body chars** under the title "Inside the Coke-Fueled Rise and
+Fall of VICE", and `extractAndSave`'s gate passes, so the overlay is never revealed and the CAPTCHA
+flow is never reached. In an extension this needs no user action at all: `.needsArchive` →
+`ShareSurfaceDriver` → `ExtensionArticlePresenter.presentArchive` presents the reader immediately, so
+the recovery happens behind the 0.99 cover inside the share/action sheet and finishes on
+`onExtracted`. In the APP the item still parks as `.needsCaptcha` and the recovery runs when the card
+is opened (`ArchiveUnlockFlow`) — the pre-existing parked-card pattern, not something this changed.
+
+**The gate `extractAndSave` uses is `hasReadableBody`, and on this page that is load-bearing.**
+`ArticleExtraction.isReadableArticle(content, html:)` is **false** for the successfully-loaded Pirate
+Wires article: body 9002 (over the 1200 threshold) and the text alone doesn't read as walled, but
+`TruncationGateDetector` **false-positives** on the Substack subscribe furniture around the finished
+article, so the HTML-aware verdict says "truncated preview behind a gate". The reader survives that
+only because `extractAndSave` checks `content.hasReadableBody` — the text-only reading, which applies
+neither the truncation gate nor the declared-lock signal. So do NOT "strengthen" that call site to
+the HTML-aware predicate without first fixing the detector: it would reject a page whose entire
+article is in hand. (It also means the silent tier would have rejected this page had the fetch ever
+succeeded — which is a second, independent reason the browser leg is what saves this host.)
+
 **A comment deep link is not a different article.** The same save carried
 `?comment=308157614`, and `comment`/`commentId` were not in
 `URLClassification.trackingParameterNames` — so the archive tier, which is keyed on the exact URL,

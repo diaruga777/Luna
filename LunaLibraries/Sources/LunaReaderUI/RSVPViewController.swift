@@ -136,6 +136,28 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         }
     }
 
+    /// Top of the playback controls, for a host that floats a control above them
+    /// (the reader's share circle). An ANCHOR rather than a measurement: the
+    /// controls now lift off the bottom safe area by an amount only this reader
+    /// computes, and a host reading that distance during its own
+    /// `viewDidLayoutSubviews` would be reading it a pass late. Nil until the
+    /// view loads.
+    public var controlsClearanceAnchor: NSLayoutYAxisAnchor? {
+        isViewLoaded ? controlsStack.topAnchor : nil
+    }
+
+    /// Frame — in THIS reader's coordinate space — of a control the host floats
+    /// over the reader rather than beside it: the reader's bottom-right share
+    /// circle, which lands in the trailing-context lane. The lane gives up the
+    /// width the control covers (see `contextWidth(forLane:fullWidth:)`) instead of
+    /// running its prose underneath it. `.null` (the default) reserves nothing.
+    public var hostOverlayFrame: CGRect = .null {
+        didSet {
+            guard isViewLoaded, !hostOverlayFrame.equalTo(oldValue) else { return }
+            view.setNeedsLayout()
+        }
+    }
+
     private let wordLabel = UILabel()
     /// Multi-line phrase text shown in the focus panel in Phrases mode.
     private let phraseLabel = UILabel()
@@ -209,20 +231,34 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
     private static let contextWordCount = 55
-    /// Vertical center of the focal word / phrase. It is derived from the actual
-    /// space between the host chrome standing over the reader and the playback
-    /// controls, so a tall title header can never cover the reticule and the
-    /// controls can never be overrun. `topContentInset` is load-bearing here:
-    /// inside a card it is the (possibly multi-line) title header's real
-    /// height, and a focal band measured from the view's own top sat under it.
-    /// The resting target is slightly BELOW the view's midpoint — the freed
-    /// top of the screen belongs to the paused preceding-context lane, which
-    /// needs the room far more than the lane under the word does.
-    private var focalCenterY: CGFloat {
-        let top = view.safeAreaInsets.top + topContentInset + 18
-        let controlsTop = controlsStack.frame.minY > 0
+    /// First line the reader owns: below the host chrome standing over it.
+    /// `topContentInset` is load-bearing — inside a card it is the (possibly
+    /// multi-line) title header's real height, and a band measured from the
+    /// view's own top sat under it.
+    private var readingBandTop: CGFloat {
+        view.safeAreaInsets.top + topContentInset + 18
+    }
+    /// Bottom of the reading band: the top of the playback controls.
+    private var readingBandBottom: CGFloat {
+        controlsStack.frame.minY > 0
             ? controlsStack.frame.minY
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
+    }
+    /// Vertical center of the focal word / phrase: the MIDPOINT of the reading
+    /// band — the space actually between the host chrome and the playback
+    /// controls — so a tall title header can never cover the reticule and the
+    /// controls can never be overrun.
+    ///
+    /// It used to rest at the VIEW's midpoint, which is only the band's midpoint
+    /// when the chrome above and the controls below happen to be equally tall.
+    /// They rarely are: in the action extension the navigation bar takes ~140pt
+    /// off the top, and the word sat ~100pt below the middle of its own space
+    /// with a void above it. `focalCenterBias` keeps the small downward lean the
+    /// view-midpoint target used to give for free — the preceding-context lane
+    /// grows taller than the trailing one, so the room above is worth more.
+    private var focalCenterY: CGFloat {
+        let top = readingBandTop
+        let controlsTop = readingBandBottom
         // Keep the link/completion lane below the focused content and leave the
         // focused type clear of the title header above.
         let lowerClearance: CGFloat = displayMode == .phrases ? 104 : 106
@@ -232,7 +268,51 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         guard maximumCenter >= minimumCenter else {
             return (top + controlsTop) / 2
         }
-        return min(max(view.bounds.midY + 24, minimumCenter), maximumCenter)
+        let bandCenter = (top + controlsTop) / 2 + Self.focalCenterBias
+        return min(max(bandCenter, minimumCenter), maximumCenter)
+    }
+
+    /// How far below the reading band's midpoint the focal word rests.
+    private static let focalCenterBias: CGFloat = 16
+
+    /// Gap the controls always keep from the bottom safe area.
+    private static let controlsBaseBottomInset: CGFloat = 24
+    /// Extra lift granted on a container tall enough that the reading band has
+    /// height to spare — the controls unglue from the bottom edge and the whole
+    /// reading group (which is centered on the band, so it follows them up)
+    /// stops sitting in the lower third of an action-extension sheet.
+    private static let controlsMaximumLift: CGFloat = 40
+    /// Band height below which the lift is refused outright: everything from the
+    /// preceding-context prose to the trailing lane already wants this much, so
+    /// on a short container the controls stay put rather than crowd the word.
+    private static let comfortableReadingBandHeight: CGFloat = 340
+    /// Height the controls stack occupies before it has been laid out once
+    /// (scrubber + status + 64pt button row + two 12pt gaps).
+    private static let estimatedControlsHeight: CGFloat = 138
+
+    private var controlsBottomConstraint: NSLayoutConstraint?
+
+    /// Negative inset from the bottom safe area for the controls stack: the base
+    /// gap, plus the lift a roomy band can afford. Measured from the UNLIFTED
+    /// geometry so the result can't feed back into itself.
+    private var controlsBottomInset: CGFloat {
+        let controlsHeight = controlsStack.bounds.height > 0
+            ? controlsStack.bounds.height
+            : Self.estimatedControlsHeight
+        let bandBottom = view.safeAreaLayoutGuide.layoutFrame.maxY
+            - Self.controlsBaseBottomInset - controlsHeight
+        let band = bandBottom - readingBandTop
+        let lift = min(
+            Self.controlsMaximumLift, max(0, band - Self.comfortableReadingBandHeight))
+        return -(Self.controlsBaseBottomInset + lift)
+    }
+
+    private func updateControlsBottomInset() {
+        guard let controlsBottomConstraint else { return }
+        let target = controlsBottomInset
+        guard abs(controlsBottomConstraint.constant - target) > 0.5 else { return }
+        controlsBottomConstraint.constant = target
+        view.layoutIfNeeded()
     }
 
     /// Sized at init from the device width so `targetCharactersAcross`
@@ -470,6 +550,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // Before anything measures the reading band: the lift moves its floor.
+        updateControlsBottomInset()
         layoutEyeTrackingButton()
         layoutFocusReticule()
         layoutPhrasePanel()
@@ -702,27 +784,63 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // anchored to the focal band — the word and everything below don't move).
         let upperHeight: CGFloat = displayMode == .phrases ? 120 : 220
         let upperBottom = centerY - bandHalf
+        // Each lane is sized to the PROSE it holds, not to the lane it may grow
+        // into: a label given the full lane centers a short passage inside it,
+        // which reads as a hole between the chrome and the text and a second
+        // hole between the text and the word. The preceding lane keeps its
+        // bottom against the focal band and grows upward (truncating its oldest
+        // words off the top once it fills); the trailing lane keeps its top
+        // against the band and grows downward.
+        let upperLaneHeight = max(0, min(upperHeight, upperBottom - topLimit))
+        let upperTextHeight = min(
+            upperLaneHeight, textHeight(of: previousContextLabel, width: width))
         previousContextLabel.frame = CGRect(
-            x: contextX,
-            y: max(topLimit, upperBottom - upperHeight),
-            width: width,
-            height: max(0, min(upperHeight, upperBottom - topLimit)))
+            x: contextX, y: upperBottom - upperTextHeight,
+            width: width, height: upperTextHeight)
 
-        let controlsTop = controlsStack.frame.minY > 0
-            ? controlsStack.frame.minY
-            : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
+        let controlsTop = readingBandBottom
         // In Phrases mode the link pill lives in the gap just below the panel, so the
         // lower context must start beneath it (panel half + pill gap + pill + 12).
         let lowerY: CGFloat = displayMode == .phrases
             ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap + Self.phrasePillHeight + 12
             : centerY + bandHalf + 32
         let lowerHeight: CGFloat = displayMode == .phrases ? 120 : 96
+        let lowerLaneHeight = max(0, min(lowerHeight, controlsTop - lowerY - 12))
+        // A control the HOST floats over this reader (the reader's bottom-right
+        // share circle) sits inside the trailing lane's rectangle. The prose
+        // gives up the width the circle covers rather than running under it.
+        let lowerWidth = contextWidth(
+            forLane: CGRect(x: contextX, y: lowerY, width: width, height: lowerLaneHeight),
+            fullWidth: width)
+        let lowerTextHeight = min(
+            lowerLaneHeight, textHeight(of: nextContextLabel, width: lowerWidth))
         nextContextLabel.frame = CGRect(
-            x: contextX,
-            y: lowerY,
-            width: width,
-            height: max(0, min(lowerHeight, controlsTop - lowerY - 12)))
+            x: contextX, y: lowerY, width: lowerWidth, height: lowerTextHeight)
     }
+
+    /// Height the label's current text needs at `width`, unbounded by lines —
+    /// the caller clamps it to the lane, which is where truncation happens.
+    private func textHeight(of label: UILabel, width: CGFloat) -> CGFloat {
+        guard let text = label.text, !text.isEmpty, width > 0 else { return 0 }
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: label.font ?? UIFont.systemFont(ofSize: 15)],
+            context: nil)
+        return ceil(bounds.height)
+    }
+
+    /// The lane's width less whatever a host-floated control covers of it.
+    private func contextWidth(forLane lane: CGRect, fullWidth: CGFloat) -> CGFloat {
+        guard !hostOverlayFrame.isNull, hostOverlayFrame.intersects(lane) else {
+            return fullWidth
+        }
+        return max(Self.minimumContextWidth, hostOverlayFrame.minX - 12 - lane.minX)
+    }
+
+    /// A lane never narrows past this: below it the prose would read as a column
+    /// of fragments, which is worse than letting the host's circle graze it.
+    private static let minimumContextWidth: CGFloat = 140
 
     private func configureLinkPill() {
         var config = UIButton.Configuration.gray()
@@ -936,6 +1054,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 button.widthAnchor.constraint(equalTo: skipBackButton.widthAnchor))
         }
 
+        let controlsBottom = controlsStack.bottomAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+            constant: -Self.controlsBaseBottomInset)
+        controlsBottomConstraint = controlsBottom
+
         NSLayoutConstraint.activate([
             controlsStack.leadingAnchor.constraint(
                 greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
@@ -943,7 +1066,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 lessThanOrEqualTo: view.trailingAnchor, constant: -16),
             preferredLeading,
             preferredTrailing,
-            controlsStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+            controlsBottom,
             speedRow.heightAnchor.constraint(equalToConstant: 64),
             buttonRow.leadingAnchor.constraint(greaterThanOrEqualTo: speedRow.leadingAnchor, constant: 8),
             buttonRow.trailingAnchor.constraint(lessThanOrEqualTo: speedRow.trailingAnchor, constant: -8),
@@ -1694,6 +1817,39 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         updateStatus()
         speakCurrentSentence()
     }
+}
+
+// MARK: - Layout seam
+
+extension RSVPViewController {
+
+    /// Where the reader put itself: the band it lays out inside (host chrome
+    /// above, playback controls below) and what landed where within it. Read by
+    /// the layout tests so they assert on the geometry the reader actually
+    /// computed rather than re-deriving it from private constants.
+    public struct LayoutGeometry {
+        public let bandTop: CGFloat
+        public let bandBottom: CGFloat
+        public let focalCenterY: CGFloat
+        public let precedingContext: CGRect
+        public let trailingContext: CGRect
+        public let controls: CGRect
+        /// Midpoint of the band — where the focal word rests, plus its bias.
+        public var bandCenterY: CGFloat { (bandTop + bandBottom) / 2 }
+    }
+
+    public var layoutGeometryForTesting: LayoutGeometry {
+        LayoutGeometry(
+            bandTop: readingBandTop,
+            bandBottom: readingBandBottom,
+            focalCenterY: focalCenterY,
+            precedingContext: previousContextLabel.frame,
+            trailingContext: nextContextLabel.frame,
+            controls: controlsStack.frame)
+    }
+
+    /// The focal word's downward lean off the band midpoint, for the tests.
+    public static var focalCenterBiasForTesting: CGFloat { focalCenterBias }
 }
 
 extension RSVPViewController: UIGestureRecognizerDelegate {

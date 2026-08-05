@@ -539,6 +539,85 @@ final class BypassTests: XCTestCase {
             [])
     }
 
+    // MARK: - Bot-refused front doors (browser recovery without a site rule)
+
+    /// A free article behind a bot-mitigation front door: Vercel answers 429 with a
+    /// "Security Checkpoint" to every silent strategy, so the direct read yields no HTML
+    /// at all. That refusal is about the CLIENT, not the page, and a real browser gets a
+    /// 200 with the whole article — so the browser leg must be scheduled even though
+    /// piratewires.com has no unlock rule (it is on the upstream `noFix` list).
+    func testClientRefusedRulelessHostEarnsTheBrowserLeg() {
+        let article = url("https://www.piratewires.com/p/inside-the-coke-fueled-rise-and-fall")
+        for refusal: SaveFailureReason in [.httpStatus(429), .httpStatus(403), .httpStatus(401)] {
+            XCTAssertEqual(
+                BypassStrategySelector.strategies(
+                    for: article, directHTML: nil, directFailure: refusal),
+                [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday],
+                "\(refusal)")
+        }
+    }
+
+    /// The refusal gate must stay narrow, or every unreachable page would park itself as
+    /// "needs archive" instead of failing honestly. A page that is GONE, a server fault
+    /// and a transport failure all keep the plain archive plan — no browser leg.
+    func testNonRefusalFailuresDoNotEarnTheBrowserLeg() {
+        let article = url("https://www.piratewires.com/p/story")
+        let notRefusals: [SaveFailureReason?] = [
+            .httpStatus(404), .httpStatus(410), .httpStatus(503), .httpStatus(500),
+            .offline, .timedOut, .network("DNS failed"), .notReadable, nil,
+        ]
+        for reason in notRefusals {
+            XCTAssertEqual(
+                BypassStrategySelector.strategies(
+                    for: article, directHTML: nil, directFailure: reason),
+                [.waybackRaw, .waybackPrePaywall, .archiveToday],
+                "\(String(describing: reason))")
+        }
+    }
+
+    /// `browserMayRecover` is the whole policy, so pin it directly.
+    func testBrowserMayRecoverOnlyForClientRefusalCodes() {
+        for code in [401, 403, 429] {
+            XCTAssertTrue(SaveFailureReason.httpStatus(code).browserMayRecover, "\(code)")
+        }
+        for code in [200, 404, 410, 500, 502, 503] {
+            XCTAssertFalse(SaveFailureReason.httpStatus(code).browserMayRecover, "\(code)")
+        }
+        for reason: SaveFailureReason in [.offline, .timedOut, .notReadable, .notContent,
+                                          .notHTML, .tooLarge, .subscribeRedirect, .unknown] {
+            XCTAssertFalse(reason.browserMayRecover, "\(reason)")
+        }
+    }
+
+    /// The archive reader IS the browser tier and only opens for a page nothing silent
+    /// could read, so it tries the live page once before the archive CAPTCHA — for any
+    /// ruleless host, not just a refused one. This is a different question from whether
+    /// the page earned parking, which is why it is a separate flag.
+    func testBrowserTierTriesTheLivePageBeforeTheArchive() {
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(
+                for: url("https://unknown.example/story"), directHTML: locked,
+                silentTierExhausted: true),
+            [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
+    }
+
+    /// …but not for a hard-paywall host (the wall is certain, so a live load would only
+    /// delay the archive flow) nor for a URL that is already a snapshot.
+    func testBrowserTierSkipsTheLivePageWhereItCannotHelp() {
+        // theinformation.com is a hard-paywall host with NO unlock rule — so this asserts
+        // the hard-paywall skip itself, not a rule path that would emit the leg anyway.
+        XCTAssertFalse(
+            BypassStrategySelector.strategies(
+                for: url("https://www.theinformation.com/articles/abc"), directHTML: locked,
+                silentTierExhausted: true)
+                .contains(.directUnlock))
+        XCTAssertFalse(
+            BypassStrategySelector.strategies(
+                for: url("https://archive.is/newest/https://example.com/x"),
+                directHTML: locked, silentTierExhausted: true)
+                .contains(.directUnlock))
+    }
+
     // MARK: - TrailingDotBypass
 
     // Covers the pure trailing-dot URL transform. Generalized from the former

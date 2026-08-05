@@ -165,8 +165,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         self.itemID = itemID
         self.store = store
         // Build the plan once so we know both the pre-stage URLs and whether the
-        // `.directUnlock` WKWebView technique is in play.
-        let plan = BypassPlan.make(for: articleURL, directHTML: nil)
+        // `.directUnlock` WKWebView technique is in play. `silentTierExhausted` is what
+        // this reader IS: it only ever opens for a page the background tier could not
+        // read, so the live page in a real browser is the last untried authority and is
+        // worth one load before the archive CAPTCHA (see the selector).
+        let plan = BypassPlan.make(
+            for: articleURL, directHTML: nil, silentTierExhausted: true)
         self.usesDirectUnlock = plan.webPreStages.contains(.directUnlock)
         self.directUnlockReferer = Self.directUnlockReferer(for: articleURL)
         self.webPreStageURLs = plan.webPreStages.compactMap {
@@ -467,7 +471,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     public static func webPreStageURLs(for articleURL: URL) -> [URL] {
         // A URL already on archive.today goes straight to the snapshot flow.
         guard !ArticleFetcher.isArchiveTodayURL(articleURL) else { return [] }
-        let plan = BypassPlan.make(for: articleURL, directHTML: nil)
+        let plan = BypassPlan.make(
+            for: articleURL, directHTML: nil, silentTierExhausted: true)
         return plan.webPreStages.compactMap { BypassURLs.loadURL(for: $0, article: articleURL) }
     }
 

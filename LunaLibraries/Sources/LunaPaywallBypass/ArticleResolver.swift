@@ -116,7 +116,7 @@ public enum ArticleResolver {
         let floor = trustedCapture?.content.bodyTextLength ?? 0
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
         let directHTML = direct?.sourceHTML
-        let plan = BypassPlan.make(for: url, directHTML: directHTML)
+        let plan = BypassPlan.make(for: url, directHTML: directHTML, directFailure: directFailure)
 
         var attempts: [@Sendable () async -> ExtractedArticle?] = []
         if let rule = siteRule {

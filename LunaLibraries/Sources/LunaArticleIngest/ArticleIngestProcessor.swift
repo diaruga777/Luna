@@ -47,8 +47,13 @@ public final class ArticleIngestProcessor: ArticleIngestProcessing {
             // WKWebView leg (the same script-blocking path used by the Safari extension)
             // can still render the article. Preserve that route instead of marking the
             // item failed before the browser tier gets a chance to run.
+            //
+            // `reason` is passed on because it is what earns a RULELESS host the same
+            // route: a 401/403/429 refusal turned the client away without saying anything
+            // about the page, and a WKWebView is a different client. Nothing else about
+            // this decision changed — a plain unreachable page still fails.
             let hasBrowserRecovery = !BypassPlan.make(
-                for: url, directHTML: directHTML
+                for: url, directHTML: directHTML, directFailure: reason
             ).webPreStages.isEmpty
             // A hard-paywall host or already-archived URL is likewise still readable
             // behind a user-solved CAPTCHA. Only a truly unreachable ordinary page

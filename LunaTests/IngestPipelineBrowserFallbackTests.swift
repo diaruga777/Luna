@@ -7,6 +7,7 @@ import LunaArticleIngest
 import LunaPriceIngest
 import LunaIngest
 import LunaHTMLClassification
+import LunaModels
 import LunaPaywallBypass
 import XCTest
 @testable import Luna
@@ -107,6 +108,37 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
             [.directUnlock],
             "Reuters must still have the direct-unlock browser stage that this outcome opens"
         )
+    }
+
+    /// A FREE article on a ruleless host behind Vercel's bot mitigation: every silent
+    /// strategy gets HTTP 429 and a "Vercel Security Checkpoint" body, so nothing is
+    /// learned about the page — only that URLSession was not welcome. A real WKWebView
+    /// loads the same URL with a 200 and all 57 paragraphs, so this must park for the
+    /// browser leg rather than becoming a terminal failed item. This is the reported
+    /// piratewires.com defect: the host has no unlock rule (it is on the upstream
+    /// `noFix` list), which used to be the only way to reach `.directUnlock`.
+    func testBotMitigatedRulelessHostParksForBrowserRecovery() async {
+        let url = URL(string:
+            "https://www.piratewires.com/p/inside-the-coke-fueled-rise-and-fall")!
+        let fetcher = MockArticleFetcher()
+        fetcher.fetchErrorsByURL[url.absoluteString] = .badResponse(status: 429)
+
+        let outcome = await IngestPipeline.process(
+            IngestInput(url: url, source: .paste),
+            timeout: 1,
+            fetcher: fetcher,
+            articleProcessor: ArticleIngestProcessor(),
+            productProcessor: ProductIngestProcessor()
+        )
+
+        XCTAssertEqual(
+            outcome,
+            .needsArchive(title: "Inside The Coke Fueled Rise And Fall"))
+        XCTAssertEqual(
+            BypassPlan.make(for: url, directHTML: nil,
+                            directFailure: .httpStatus(429)).webPreStages,
+            [.directUnlock],
+            "the 429 refusal is what opens the browser leg for a host with no rule")
     }
 
     /// Keep the other side of the routing boundary explicit: an ordinary host with

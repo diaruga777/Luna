@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import LunaModels
 import Foundation
 
 /// A bypass strategy that runs in the background URLSession path — provably silent
@@ -93,8 +94,18 @@ public struct BypassPlan: Equatable {
     ///   here even if it ran silently, because the trick only takes effect in a real
     ///   browser (the silent fetch sees the same wall).
     /// - `allowsArchiveToday` = whether `.archiveToday` is in the selected list.
-    public static func make(for url: URL, directHTML: String?) -> BypassPlan {
-        let strategies = BypassStrategySelector.strategies(for: url, directHTML: directHTML)
+    ///
+    /// `directFailure` carries WHY the direct read failed, when it did. It is what makes
+    /// a browser pre-stage reachable on a host with no unlock rule: a 401/403/429 refusal
+    /// is a verdict on the client, and a WKWebView is a different client
+    /// (`SaveFailureReason.browserMayRecover`).
+    public static func make(
+        for url: URL, directHTML: String?, directFailure: SaveFailureReason? = nil,
+        silentTierExhausted: Bool = false
+    ) -> BypassPlan {
+        let strategies = BypassStrategySelector.strategies(
+            for: url, directHTML: directHTML, directFailure: directFailure,
+            silentTierExhausted: silentTierExhausted)
 
         let silent: [SilentStrategy] = strategies.compactMap(Self.silentStrategy)
 

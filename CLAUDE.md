@@ -361,8 +361,10 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 2398 tests, 9 skipped, 0 failures**
-  (measured 2026-08-05 after Import & Export landed, on a FRESH simulator, with
+- **Current suite state on the iOS 26.x sim: 2443 tests, 9 skipped, 0 failures**
+  (measured 2026-08-05 after the headline transition landed, on a FRESH simulator
+  — a `simctl create`d one; the long-lived sim gave "the test runner hung before
+  establishing connection" twice, including after `pkill dtpasteboardd` — with
   `-skip-testing:LunaTests/ArticleAudioEngineTests
   -skip-testing:LunaTests/SpeechRendererSpikeTests`). Both excluded classes drive a
   real audio engine: on this machine `SpeechRendererSpikeTests`

@@ -361,45 +361,48 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 2398 tests, 9 skipped, 0 failures**
-  (measured 2026-08-05 after Import & Export landed, on a FRESH simulator, with
-  `-skip-testing:LunaTests/ArticleAudioEngineTests
-  -skip-testing:LunaTests/SpeechRendererSpikeTests`). Both excluded classes drive a
-  real audio engine: on this machine `SpeechRendererSpikeTests`
-  `testRenderedSegmentIsAlwaysPlayableRegardlessOfMarkerAvailability` hangs
-  indefinitely, the same mediaserverd-deadlock family already documented below for
-  `ArticleAudioEngineTests` — run them alone or on another Mac. A first attempt on
-  the pre-existing booted sim died with "Test crashed with signal kill before
-  establishing connection"; a fresh simulator fixed it, as the note below says. The
-  long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
-  snapshot set was re-recorded for the predawn palette, and the harness now pins the
-  same appearance the app does (dark style + `lunaSky = .predawn`, over
-  `LunaColors.background`) instead of forcing a light style. The 9 skips are
-  intentional `XCTSkip`s —
-  `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot`, two
+- **Current suite state on the iOS 26.x sim: 2235 tests, 21 skipped, 0 failures**
+  (measured 2026-08-05 after the card-presenter refactor and the test-suite trim,
+  on a FRESH simulator, with **no `-skip-testing:` flags** — the plain recipe above
+  is the whole of it). 91s of test execution, ~128s wall on a warm
+  `-derivedDataPath`. The suite was 2453/9/0 at 261s before the trim; roughly 220
+  method fixtures were folded into table-driven rows or merged area files, the
+  Safari/JS suites went from ~159 WebContent spin-ups to 1, and ~5.4s of fixed
+  sleeps became injected seams.
+- **The 21 skips are all intentional `XCTSkip`s, and all of them are env-gated
+  tooling or on-demand coverage** — nothing is skipped because it is broken:
+  `ArticleAudioEngineTests` (14, `RUN_AUDIO_ENGINE_TESTS=1`), the four
+  `EclipsePreviewRecorderTests` corona/starfield/flare recorders
+  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`), two
   `SocialMediaResolverTests` live-YouTube transfers
-  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), the four
-  `EclipsePreviewRecorderTests` corona/starfield preview recorders
-  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`), and
-  `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested`
-  (the wave-probe recorder this list used to name is gone from the tree). One class,
-  `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
-  rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
-  test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a
-  simulator reboot and a sandbox toggle, ruling out a code regression (the class hasn't
-  changed since it first landed). If you hit this, verify the rest of the suite with
-  `-skip-testing:LunaTests/ArticleAudioEngineTests` and run that class alone/on another
-  Mac. `SpeechRendererSpikeTests` belongs to the same family and fails differently:
-  `testRenderedSegmentIsAlwaysPlayableRegardlessOfMarkerAvailability` HANGS rather than
-  aborting, so the run never ends and looks like a slow suite rather than a failure —
-  if progress stops with no new `Test Case … started` line for minutes, check which
-  case started last before assuming anything about your own changes. The ~36 failures previously documented here were all stale test data, not the
-  environment, and have been fixed: snapshot reference PNGs are device-specific and
-  were re-recorded on this sim with `RECORD_SNAPSHOTS=1` (re-record after intentional
-  UI changes via `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …` — the build-setting
-  form does NOT reach the runner's environment); and the two extraction tests were
-  aligned to the 1200 threshold. If snapshots fail again on a *different* device,
-  re-record there rather than treating it as a regression.
+  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), and
+  `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested`.
+- **`ArticleAudioEngineTests` is gated rather than excluded on the command line.**
+  It starts a real `AVAudioEngine` even in manual/offline rendering mode, and on at
+  least one Mac it reproducibly aborts every test with a mediaserverd "RPC timeout,
+  apparently deadlocked" — reproduced across a simulator reboot and a sandbox
+  toggle, so not a code regression. Rather than everyone remembering a
+  `-skip-testing:` flag, the class now `XCTSkipUnless`es on
+  `RUN_AUDIO_ENGINE_TESTS=1` in `setUp`. Run `RUN_AUDIO_ENGINE_TESTS=1 xcodebuild
+  test -only-testing:LunaTests/ArticleAudioEngineTests …` to exercise it, ideally
+  alone or on another Mac. (`SpeechRendererSpikeTests`, which used to hang the whole
+  run in the same family, was a Phase-1 spike and is deleted; its finding lives in a
+  doc comment.)
+- **A run that dies with "Test crashed with signal kill before establishing
+  connection" is the simulator, not the code** — create a FRESH simulator and re-run
+  (a reboot is not enough). Same for a run where WKWebView-backed suites mass-fail at
+  ~10s each, and for a wedged pasteboard daemon deadlocking `UIPasteControl` at
+  launch (`pkill dtpasteboardd`).
+- **Snapshots**: 10 reference PNGs remain, all of views rather than decks
+  (`LockedCardOverlayViewTests`, `UnsupportedSaveCardTests`, `ReaderScreenTests`,
+  `AudioMiniPlayerTests`); 28 orphans with no test reading them were deleted. The
+  long-standing `AudioMiniPlayerTests` drifts are gone: the set was re-recorded for
+  the predawn palette and the harness now pins the same appearance the app does
+  (dark style + `lunaSky = .predawn`, over `LunaColors.background`) instead of
+  forcing a light style. References are device-specific — re-record after
+  intentional UI changes with `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …`
+  (the build-setting form does NOT reach the runner's environment), and if they fail
+  on a *different* device re-record there rather than treating it as a regression.
 - For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Luna
   -destination 'generic/platform=iOS Simulator' DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO`.
 - **A target with an EMPTY Sources phase breaks `xcodebuild test` while plain builds

@@ -7,6 +7,28 @@
     "%@ Button" : {
 
     },
+    "%@ handles this kind of link." : {
+
+    },
+    "%lld already saved" : {
+
+    },
+    "%lld couldn't be downloaded yet" : {
+
+    },
+    "%lld imported" : {
+
+    },
+    "%lld of %lld finished" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld finished"
+          }
+        }
+      }
+    },
     "%lld wpm" : {
 
     },
@@ -55,6 +77,9 @@
     "An optional screenshot of the current app's screen." : {
 
     },
+    "Another Luna app handles this kind of link." : {
+
+    },
     "App password" : {
 
     },
@@ -68,6 +93,9 @@
 
     },
     "Archive" : {
+
+    },
+    "Archive (%lld)" : {
 
     },
     "Article" : {
@@ -142,6 +170,9 @@
     "Couldn't Delete" : {
 
     },
+    "Couldn't Export Links" : {
+
+    },
     "Couldn't fetch this article" : {
 
     },
@@ -161,6 +192,9 @@
 
     },
     "Couldn't reach the mail servers. Check your connection and try again." : {
+
+    },
+    "Couldn't Read That File" : {
 
     },
     "Couldn't save this media to Photos." : {
@@ -211,6 +245,9 @@
     "Downloading" : {
 
     },
+    "Downloading content…" : {
+
+    },
     "Downloads" : {
 
     },
@@ -247,10 +284,22 @@
     "Export Failed" : {
 
     },
+    "Export Links" : {
+
+    },
+    "Export writes every saved link, with the archive kept as its own list. Import reads a Luna export, another app's CSV, or any text file with links in it — you choose which ones to keep before anything is saved." : {
+
+    },
     "Fetching…" : {
 
     },
     "Filter Active" : {
+
+    },
+    "Finishing the links already started…" : {
+
+    },
+    "Finishing up…" : {
 
     },
     "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, needs a screenshot, or must continue in Save." : {
@@ -277,7 +326,25 @@
     "Highlight Color" : {
 
     },
+    "Import" : {
+
+    },
+    "Import & Export" : {
+
+    },
+    "Import Finished" : {
+
+    },
     "Import from Email" : {
+
+    },
+    "Import Links" : {
+
+    },
+    "Import Stopped" : {
+
+    },
+    "Importing…" : {
 
     },
     "Inbox Filter" : {
@@ -317,6 +384,12 @@
         }
       }
     },
+    "Left exactly as they were." : {
+
+    },
+    "Links (%lld)" : {
+
+    },
     "Listening" : {
 
     },
@@ -333,6 +406,9 @@
 
     },
     "Luna can't save from this app." : {
+
+    },
+    "Luna couldn't open it as text. Pick a CSV or plain-text file." : {
 
     },
     "Luna couldn't save this link." : {
@@ -389,6 +465,9 @@
     "No diagnostics recorded yet." : {
 
     },
+    "No Links Found" : {
+
+    },
     "No proposals right now." : {
 
     },
@@ -398,6 +477,9 @@
     "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page." : {
 
     },
+    "Not a link Luna can open." : {
+
+    },
     "Not Configured" : {
 
     },
@@ -405,6 +487,12 @@
 
     },
     "Not Now" : {
+
+    },
+    "Not Saved (%lld)" : {
+
+    },
+    "Nothing to Export" : {
 
     },
     "Nothing to save from another Luna app." : {
@@ -563,6 +651,12 @@
     "Reset Onboarding?" : {
 
     },
+    "Result" : {
+
+    },
+    "Retrying what failed with Apple Intelligence…" : {
+
+    },
     "S" : {
 
     },
@@ -603,6 +697,9 @@
     "Saved" : {
 
     },
+    "Saved anyway — Luna keeps retrying these on its own." : {
+
+    },
     "Saved to Luna" : {
 
     },
@@ -612,7 +709,13 @@
     "Saved to Photos" : {
 
     },
+    "Saved, with their content ready." : {
+
+    },
     "Saves as a full card" : {
+
+    },
+    "Saving links…" : {
 
     },
     "Screen analysis is temporarily unavailable. Try again in a moment." : {
@@ -729,6 +832,9 @@
     "Starts reading a saved article out loud in the background." : {
 
     },
+    "Stop" : {
+
+    },
     "Storage" : {
 
     },
@@ -739,9 +845,6 @@
 
     },
     "Tap to open" : {
-
-    },
-    "Tap to see price history" : {
 
     },
     "Test Failed" : {
@@ -759,6 +862,9 @@
     "That article isn't ready to read yet." : {
 
     },
+    "That file didn't contain any links Luna could read." : {
+
+    },
     "That key doesn't match this build. Nothing was stored." : {
 
     },
@@ -766,6 +872,12 @@
 
     },
     "The current app, from Get Current App." : {
+
+    },
+    "The export file couldn't be written. Try again." : {
+
+    },
+    "The links you stopped before are saved too — Luna finishes them in the background." : {
 
     },
     "The media was added to your photo library." : {
@@ -783,6 +895,12 @@
     "Theme" : {
 
     },
+    "There are no links in this app's list to export yet." : {
+
+    },
+    "These aren't a kind this app handles, so nothing was saved for them." : {
+
+    },
     "This device can now promote Saves of the Week." : {
 
     },
@@ -790,6 +908,9 @@
 
     },
     "This erases the saved log." : {
+
+    },
+    "This file didn't say which links were archived, so they'll all be saved as ordinary links." : {
 
     },
     "Title" : {

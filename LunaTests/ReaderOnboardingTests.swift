@@ -288,9 +288,6 @@ final class ReaderOnboardingTests: XCTestCase {
         let reader = OnboardingSurfaceConfiguration.configuration(for: .reader)
         XCTAssertEqual(reader.introCopy, OnboardingStrings.introCopy(for: .reader))
         XCTAssertEqual(
-            reader.supportingText,
-            OnboardingStrings.Intro.supportingText.value(for: .reader))
-        XCTAssertEqual(
             reader.saveBenefit,
             OnboardingStrings.Intro.saveBenefit.value(for: .reader))
         XCTAssertEqual(reader.demoPages, [.lunaPage])
@@ -302,9 +299,6 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             downloader.introCopy,
             OnboardingStrings.introCopy(for: .downloader))
-        XCTAssertEqual(
-            downloader.supportingText,
-            OnboardingStrings.Intro.supportingText.value(for: .downloader))
         XCTAssertEqual(
             downloader.saveBenefit,
             OnboardingStrings.Intro.saveBenefit.value(for: .downloader))
@@ -318,9 +312,6 @@ final class ReaderOnboardingTests: XCTestCase {
         let price = OnboardingSurfaceConfiguration.configuration(for: .priceTracker)
         XCTAssertEqual(price.introCopy, OnboardingStrings.introCopy(for: .priceTracker))
         XCTAssertEqual(
-            price.supportingText,
-            OnboardingStrings.Intro.supportingText.value(for: .priceTracker))
-        XCTAssertEqual(
             price.saveBenefit,
             OnboardingStrings.Intro.saveBenefit.value(for: .priceTracker))
         XCTAssertEqual(price.demoPages, [.lunaPage, .amayzon])
@@ -330,9 +321,6 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let luna = OnboardingSurfaceConfiguration.configuration(for: .luna)
         XCTAssertEqual(luna.introCopy, OnboardingStrings.introCopy(for: .luna))
-        XCTAssertEqual(
-            luna.supportingText,
-            OnboardingStrings.Intro.supportingText.value(for: .luna))
         XCTAssertEqual(
             luna.saveBenefit,
             OnboardingStrings.Intro.saveBenefit.value(for: .luna))
@@ -409,8 +397,7 @@ final class ReaderOnboardingTests: XCTestCase {
         let intro = OnboardingIntroCardContentViewController(
             introCopy: OnboardingIntroCopy(
                 initialText: "You want to read.",
-                finalText: "You want to read more."),
-            supportingText: OnboardingStrings.Intro.supportingText.value(for: .reader))
+                finalText: "You want to read more."))
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
         intro.view.layoutIfNeeded()
@@ -431,11 +418,6 @@ final class ReaderOnboardingTests: XCTestCase {
             $0.accessibilityIdentifier
                 == OnboardingStrings.Accessibility.introIconCluster.value()
         })
-        XCTAssertTrue(
-            intro.view.subviews.compactMap { $0 as? UILabel }.allSatisfy {
-                $0.accessibilityIdentifier
-                    != OnboardingStrings.Accessibility.introSupportingText.value()
-            })
         XCTAssertTrue(buttons.contains {
             $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
                 && $0.configuration?.image != nil
@@ -484,8 +466,7 @@ final class ReaderOnboardingTests: XCTestCase {
     func testPasteRowShowsWhatWasPastedAndResolvesItsSpinnerInPlace() throws {
         let intro = OnboardingIntroCardContentViewController(
             introCopy: OnboardingIntroCopy(
-                initialText: "Read.", finalText: "Read more."),
-            supportingText: "")
+                initialText: "Read.", finalText: "Read more."))
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
         intro.view.layoutIfNeeded()
@@ -696,8 +677,7 @@ final class ReaderOnboardingTests: XCTestCase {
     @MainActor
     func testIntroCentresTheFinishedSentenceAndNeverMovesWhatBothStatesShare() throws {
         let intro = OnboardingIntroCardContentViewController(
-            introCopy: OnboardingStrings.introCopy(for: .reader),
-            supportingText: "")
+            introCopy: OnboardingStrings.introCopy(for: .reader))
         intro.loadViewIfNeeded()
         intro.view.frame = CGRect(x: 0, y: 0, width: 354, height: 629)
         intro.view.layoutIfNeeded()
@@ -900,8 +880,7 @@ final class ReaderOnboardingTests: XCTestCase {
     @MainActor
     func testIntroRestoresCompletedSetupArtworkBeforeItsViewLoads() throws {
         let intro = OnboardingIntroCardContentViewController(
-            introCopy: OnboardingStrings.introCopy(for: .reader),
-            supportingText: "")
+            introCopy: OnboardingStrings.introCopy(for: .reader))
         intro.setState(safari: .completed, shortcut: .completed)
         intro.loadViewIfNeeded()
 

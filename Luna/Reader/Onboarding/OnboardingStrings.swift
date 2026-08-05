@@ -100,17 +100,17 @@ enum OnboardingStrings {
     }
 
     enum Intro {
-        static let safariAction = Definition(shared: "Stop popups and paywalls")
+        static let safariAction = Definition(shared: "Stop popups & access gates")
         static let shortcutAction = Definition(shared: "Show me one click save")
         /// The util card's third, lowest-priority action: connect an account so
         /// the newsletters already in a mailbox arrive here as saves.
-        static let emailAction = Definition(shared: "Read your newsletters in Luna")
+        static let emailAction = Definition(shared: "Get your newsletters in Luna")
         /// The paste row's placeholder, and the paste control's own label.
         static let paste = Definition(shared: "Paste a link")
         /// The seam between the two setup lessons and the paste row.
         static let orSeparator = Definition(shared: "or")
         static let articleURLsOnly = Definition(shared: "article URLs only")
-        static let unableToLoadPage = Definition(shared: "unable to load page")
+        static let unableToLoadPage = Definition(shared: "unable to load site")
         static let completed = Definition(shared: "Completed")
 
         /// The headline's two states. They are ONE sentence in two beats: what
@@ -128,11 +128,6 @@ enum OnboardingStrings {
             reader: "Read more.",
             downloader: "No Sign in to download.",
             priceTracker: "Never miss a sale")
-        static let supportingText = Definition(
-            core: "Save any link on your screen\nwith one click.",
-            reader: "Save onscreen links with one click.\nUnlock or read offline later.",
-            downloader: "Download any video link in one click,\nno signup required.",
-            priceTracker: "Track sales for any link\nin one click.")
         static let saveBenefit = Definition(
             core: "Read, watch, track, anything",
             reader: "Read offline later",
@@ -145,8 +140,8 @@ enum OnboardingStrings {
         static let amayzonResourceName = Definition(shared: "Amayzon")
 
         static let lunaHost = Definition(shared: "luna.app")
-        static let instaTokHost = Definition(shared: "instatok.local")
-        static let amayzonHost = Definition(shared: "amayzon.local")
+        static let instaTokHost = Definition(shared: "instatok.web")
+        static let amayzonHost = Definition(shared: "amayzon.web")
 
         static let lunaURL = Definition(shared: ShareSetupPractice.lunaURLString)
         static let instaTokURL = Definition(
@@ -451,7 +446,6 @@ enum OnboardingStrings {
 
     enum Accessibility {
         static let introIconCluster = Definition(shared: "onboarding.intro.iconCluster")
-        static let introSupportingText = Definition(shared: "onboarding.intro.supportingText")
         static let introPaste = Definition(shared: "onboarding.intro.paste")
         static let introPasteField = Definition(shared: "onboarding.intro.pasteField")
         static let introOr = Definition(shared: "onboarding.intro.or")

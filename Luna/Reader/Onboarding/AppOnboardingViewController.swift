@@ -166,8 +166,7 @@ final class AppOnboardingViewController: UIViewController {
         self.setupReplayOriginSnapshot = setupReplayOriginSnapshot
         self.completion = completion
         self.intro = OnboardingIntroCardContentViewController(
-            introCopy: configuration.introCopy,
-            supportingText: configuration.supportingText)
+            introCopy: configuration.introCopy)
         super.init(nibName: nil, bundle: nil)
     }
 

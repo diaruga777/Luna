@@ -103,10 +103,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     private var safariState = OnboardingSetupButtonState.pending
     private var shortcutState = OnboardingSetupButtonState.pending
 
-    init(
-        introCopy: OnboardingIntroCopy,
-        supportingText _: String
-    ) {
+    init(introCopy: OnboardingIntroCopy) {
         headline = OnboardingIntroHeadlineView(copy: introCopy)
         super.init()
     }

@@ -95,8 +95,8 @@
 "Open Link" = "Open Link";
 "Open Luna in the App Store" = "Open Luna in the App Store";
 "Open Settings" = "Open Settings";
-"or" = "or";
 "Or" = "Or";
+"or" = "or";
 "Other Actions" = "Other Actions";
 "Paste a link" = "Paste a link";
 "Press the action button to finish" = "Press the action button to finish";
@@ -160,8 +160,8 @@
 "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥" = "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥";
 
 /* ===================== Card Deck ===================== */
-"Archive" = "Archive";
 "archive" = "archive";
+"Archive" = "Archive";
 "Ask Every Time" = "Ask Every Time";
 "Best price: %@" = "Best price: %@";
 "Choose at least one recipient." = "Choose at least one recipient.";
@@ -202,8 +202,8 @@
 "Pausing when you look away" = "Pausing when you look away";
 "Preview unavailable" = "Preview unavailable";
 "Read" = "Read";
-"Read aloud" = "Read aloud";
 "Read Aloud" = "Read Aloud";
+"Read aloud" = "Read aloud";
 "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings." = "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings.";
 "Resuming: %@" = "Resuming: %@";
 "Return to %@" = "Return to %@";
@@ -363,17 +363,23 @@
 "We couldn't read a price on that page. Apple Intelligence can try to find it." = "We couldn't read a price on that page. Apple Intelligence can try to find it.";
 
 /* ===================== Email & Sending ===================== */
+"An optional screenshot of the current app's screen." = "An optional screenshot of the current app's screen.";
 "App password" = "App password";
+"Article" = "Article";
 "At appleid.apple.com, under Sign-In and Security → App-Specific Passwords, create one and paste it here." = "At appleid.apple.com, under Sign-In and Security → App-Specific Passwords, create one and paste it here.";
+"Capture Outcome" = "Capture Outcome";
 "Check the address and app password and try again." = "Check the address and app password and try again.";
+"Context Result" = "Context Result";
 "Couldn't find a matching post or page to save." = "Couldn't find a matching post or page to save.";
 "Couldn't identify anything to save on this screen." = "Couldn't identify anything to save on this screen.";
 "Couldn't reach the mail servers. Check your connection and try again." = "Couldn't reach the mail servers. Check your connection and try again.";
 "Couldn't sign in" = "Couldn't sign in";
 "Couldn't start Outlook sign-in." = "Couldn't start Outlook sign-in.";
 "Create an app password…" = "Create an app password…";
+"CurrentApp" = "CurrentApp";
 "Enter an app-specific password for this account." = "Enter an app-specific password for this account.";
 "Enter your mail server settings and password. If your provider requires an app password, create one first." = "Enter your mail server settings and password. If your provider requires an app password, create one first.";
+"First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, needs a screenshot, or must continue in Save." = "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, needs a screenshot, or must continue in Save.";
 "Gmail" = "Gmail";
 "iCloud" = "iCloud";
 "If your provider supports filters (Sieve), add a rule to %@\n\n%@" = "If your provider supports filters (Sieve), add a rule to %1$@\n\n%2$@";
@@ -381,6 +387,7 @@
 "In iCloud Mail → Settings → Rules → Add a Rule that matches the Subject containing \"%@\" and moves it to a folder / marks it as read." = "In iCloud Mail → Settings → Rules → Add a Rule that matches the Subject containing \"%@\" and moves it to a folder / marks it as read.";
 "In Yahoo Account Security, generate an app password and paste it here." = "In Yahoo Account Security, generate an app password and paste it here.";
 "In Yahoo Mail → Settings → Filters → Add, %@" = "In Yahoo Mail → Settings → Filters → Add, %@";
+"Long-running step of the Action Button shortcut. Pass the current app, optional screenshot, and optional Metadata from Provide Context. Luna resumes prepared work when possible, or reads the screenshot and saves from the top." = "Long-running step of the Action Button shortcut. Pass the current app, optional screenshot, and optional Metadata from Provide Context. Luna resumes prepared work when possible, or reads the screenshot and saves from the top.";
 "Luna can't save from this app." = "Luna can't save from this app.";
 "Luna couldn't save this link." = "Luna couldn't save this link.";
 "Luna found this on screen but couldn't save it." = "Luna found this on screen but couldn't save it.";
@@ -390,13 +397,22 @@
 "Luna saved this link but couldn't fetch the page. Try again from the app." = "Luna saved this link but couldn't fetch the page. Try again from the app.";
 "Luna sets this up automatically for Outlook." = "Luna sets this up automatically for Outlook.";
 "match the Subject containing \"%@\" and mark it as read / skip the inbox." = "match the Subject containing \"%@\" and mark it as read / skip the inbox.";
+"Media" = "Media";
+"Metadata" = "Metadata";
 "No Safari page tracked yet. Is the Luna extension enabled?" = "No Safari page tracked yet. Is the Luna extension enabled?";
+"OnScreenURLs" = "OnScreenURLs";
 "Open the original →" = "Open the original →";
+"Optional opaque state returned by Provide Context." = "Optional opaque state returned by Provide Context.";
 "Other (IMAP)" = "Other (IMAP)";
+"Outcome" = "Outcome";
 "Outlook" = "Outlook";
 "Outlook isn't configured in this build." = "Outlook isn't configured in this build.";
 "Outlook sign-in failed. Please try again." = "Outlook sign-in failed. Please try again.";
+"Provide Context" = "Provide Context";
+"Read Article" = "Read Article";
 "Reading articles aloud isn't available in this app." = "Reading articles aloud isn't available in this app.";
+"Save" = "Save";
+"Save Result" = "Save Result";
 "Saved to Luna" = "Saved to Luna";
 "Screen analysis is temporarily unavailable. Try again in a moment." = "Screen analysis is temporarily unavailable. Try again in a moment.";
 "Screen analysis isn't available on this device." = "Screen analysis isn't available on this device.";
@@ -407,7 +423,13 @@
 "Shared with you via Luna\n\n%@\n%@\n\n%@\n" = "Shared with you via Luna\n\n%1$@\n%2$@\n\n%3$@\n";
 "Sign In" = "Sign In";
 "Sign-in failed" = "Sign-in failed";
+"Source" = "Source";
+"Starts reading a saved article out loud in the background." = "Starts reading a saved article out loud in the background.";
 "That article isn't ready to read yet." = "That article isn't ready to read yet.";
+"The article to read. Leave blank for your latest unread article." = "The article to read. Leave blank for your latest unread article.";
+"The current app, from Get Current App." = "The current app, from Get Current App.";
+"The output from Get On-Screen URLs. Compatible complete values may be saved directly." = "The output from Get On-Screen URLs. Compatible complete values may be saved directly.";
+"Title" = "Title";
 "Turn on 2-Step Verification, then create an app password for \"Mail\" and paste the 16-character code here." = "Turn on 2-Step Verification, then create an app password for \"Mail\" and paste the 16-character code here.";
 "Unhandled" = "Unhandled";
 "Yahoo" = "Yahoo";
@@ -509,11 +531,15 @@
 
 /* ===================== Live Activity ===================== */
 "Cancel download" = "Cancel download";
+"Cancel Download" = "Cancel Download";
+"Download ID" = "Download ID";
 "Open Photos Settings" = "Open Photos Settings";
+"Pauses the active Luna download briefly before canceling it." = "Pauses the active Luna download briefly before canceling it.";
 "Resume download" = "Resume download";
+"Resume Download" = "Resume Download";
+"Resumes a paused Luna download." = "Resumes a paused Luna download.";
 
 /* ===================== Save Failures ===================== */
-"Article" = "Article";
 "Product" = "Product";
 
 /* ===================== Settings ===================== */
@@ -698,7 +724,6 @@
 "Reset" = "Reset";
 "Reset Onboarding" = "Reset Onboarding";
 "Reset Onboarding?" = "Reset Onboarding?";
-"Save" = "Save";
 "Save of the Week Key" = "Save of the Week Key";
 "That key doesn't match this build. Nothing was stored." = "That key doesn't match this build. Nothing was stored.";
 "This device can now promote Saves of the Week." = "This device can now promote Saves of the Week.";

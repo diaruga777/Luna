@@ -125,6 +125,25 @@ INTERP = "\x00INTERP\x00"  # stands in for `\(…)` while a literal is parsed
 
 CALL_RE = re.compile(r"\bL10n\.(?:string|resource)\(")
 
+# App Intents metadata is the one family of copy that cannot be an L10n call:
+# Xcode extracts it at BUILD time and the metadata processor rejects anything
+# that isn't a string literal. The literals still resolve against a strings
+# table at runtime, so they belong in the same file — they just have to be
+# found by shape instead of by call. Only these files are searched this way,
+# because `title:` and `description:` are far too common to match globally.
+INTENT_SOURCES = ("Luna/Mail/Intents/", "LiveActivityWidget.swift")
+
+INTENT_RES = [
+    # static let title: LocalizedStringResource = "…"
+    re.compile(r"\bstatic\s+(?:let|var)\s+\w+\s*:\s*LocalizedStringResource\s*=\s*"),
+    # static let typeDisplayRepresentation: TypeDisplayRepresentation = "…"
+    re.compile(r"\bstatic\s+(?:let|var)\s+\w+\s*:\s*TypeDisplayRepresentation\s*=\s*"),
+    # IntentDescription("…") — often a multi-line literal
+    re.compile(r"\bIntentDescription\(\s*"),
+    # @Parameter(title: "…", description: "…") / @Property(title: "…")
+    re.compile(r"(?<=[(,\s])(?:title|description)\s*:\s*(?=\")"),
+]
+
 
 # --------------------------------------------------------------------------
 # Swift literal parsing
@@ -209,18 +228,71 @@ def parse_swift_literal(text: str, start: int):
     return None
 
 
+def parse_swift_multiline(text: str, start: int):
+    """Read the `\"\"\"`-delimited literal beginning at `start`.
+
+    Swift strips the indentation of the CLOSING delimiter from every line, and
+    a trailing backslash joins a line to the next without a break — which is
+    how the long intent descriptions are written. Returns
+    `(resolved, had_interpolation, index_after_literal)`.
+    """
+    body_start = text.find("\n", start + 3)
+    if body_start == -1:
+        return None
+    close = text.find('"""', body_start)
+    if close == -1:
+        return None
+
+    # The closing delimiter's own indentation is the margin to strip.
+    line_start = text.rfind("\n", 0, close) + 1
+    margin = text[line_start:close]
+    if margin.strip():
+        return None  # closing quotes share a line with content: not our shape
+
+    raw_lines = text[body_start + 1:line_start].split("\n")
+    # The newline before the closing delimiter is Swift's, not the string's.
+    if raw_lines and raw_lines[-1] == "":
+        raw_lines.pop()
+    out, had_interp = [], False
+    for raw in raw_lines:
+        line = raw[len(margin):] if raw.startswith(margin) else raw.lstrip()
+        joins = line.endswith("\\")
+        if joins:
+            line = line[:-1]
+        if "\\(" in line:
+            had_interp = True
+            line = re.sub(r"\\\([^)]*\)", INTERP, line)
+        out.append(line + ("" if joins else "\n"))
+
+    resolved = "".join(out)
+    if resolved.endswith("\n"):
+        resolved = resolved[:-1]  # the final newline belongs to the delimiter
+    return resolved, had_interp, close + 3
+
+
+def _literal_at(text: str, i: int):
+    """Parse whichever literal shape starts at `i`, skipping leading space."""
+    while i < len(text) and text[i] in " \t\n":
+        i += 1
+    if text.startswith('"""', i):
+        return parse_swift_multiline(text, i)
+    return parse_swift_literal(text, i)
+
+
 def scan_source(path: str, rel: str):
-    """Yield (pattern, had_interpolation, line_number) for each L10n literal."""
+    """Yield (pattern, had_interpolation, line_number) for each literal."""
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
 
-    for match in CALL_RE.finditer(text):
-        i = match.end()
-        # Allow the literal to sit on a following line, as it does when the
-        # call is wrapped for line length.
-        while i < len(text) and text[i] in " \t\n":
-            i += 1
-        parsed = parse_swift_literal(text, i)
+    matchers = list(CALL_RE.finditer(text))
+    if any(marker in rel for marker in INTENT_SOURCES):
+        for regex in INTENT_RES:
+            matchers.extend(regex.finditer(text))
+
+    for match in sorted(matchers, key=lambda m: m.start()):
+        # The literal may sit on a following line, as it does when a call is
+        # wrapped for line length.
+        parsed = _literal_at(text, match.end())
         if parsed is None:
             continue
         pattern, had_interp, _ = parsed

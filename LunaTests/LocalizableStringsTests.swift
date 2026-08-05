@@ -125,19 +125,40 @@ final class LocalizableStringsTests: XCTestCase {
             : positioned.sorted { $0.index < $1.index }.map(\.token)
     }
 
-    /// The Shortcuts/Siri table is a separate file for a real reason (App
-    /// Intents metadata is baked in at build time and read from the app's own
-    /// bundle), so it gets the same parse guarantee.
-    func testShortcutsTableParses() throws {
+    /// The app's own bundle must carry the same table, because App Intents
+    /// metadata resolves against the HOST bundle rather than LunaModels'.
+    ///
+    /// There is still only one file — the app targets copy it (see
+    /// `scripts/add_strings_to_app_bundles.rb`). This asserts the copy is
+    /// actually there and actually identical, since a target added later
+    /// without that step would leave Shortcuts showing stale wording while
+    /// everything inside the app updated correctly.
+    func testAppBundleCarriesTheSameTable() throws {
+        let (_, shipped) = try shippedTable()
         let url = try XCTUnwrap(
             Bundle.main.url(forResource: "Localizable", withExtension: "strings"),
-            "the app's own Localizable.strings (the Shortcuts/Siri copy) is missing")
-        let entries = try XCTUnwrap(
+            "the app bundle has no Localizable.strings — run "
+                + "scripts/add_strings_to_app_bundles.rb")
+        let appCopy = try XCTUnwrap(
             NSDictionary(contentsOf: url) as? [String: String],
-            "the Shortcuts/Siri strings file did not parse")
-        // The intent names Shortcuts shows in its action list.
-        for key in ["Save", "Provide Context", "Read Article"] {
-            XCTAssertNotNil(entries[key], "\(key) is missing from the Shortcuts strings")
+            "the app bundle's Localizable.strings did not parse")
+        XCTAssertEqual(
+            appCopy, shipped,
+            "the app bundle's copy has drifted from LunaModels' — they must be "
+                + "the same file, not two files kept in step")
+    }
+
+    /// The App Intents metadata that has to be in the table to be editable.
+    ///
+    /// These are the literals Xcode bakes in at build time; they resolve
+    /// against the table at runtime, which is the only reason their wording can
+    /// be changed without a code edit. If the sync script ever stops finding
+    /// them, they silently become uneditable and nothing else notices.
+    func testShortcutsMetadataIsInTheTable() throws {
+        let (_, entries) = try shippedTable()
+        for key in ["Save", "Provide Context", "Read Article", "Capture Outcome",
+                    "Context Result", "Save Result", "Article"] {
+            XCTAssertNotNil(entries[key], "intent string '\(key)' is missing")
         }
     }
 }

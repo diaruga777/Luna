@@ -686,11 +686,12 @@ enum MediaCardDeck {
         let deck = CardCarouselHostViewController()
         var style = CardCarouselStyle()
         style.pageSwipeMovementMultiplier = 1.5
-        style.autoplaysScrubPreviewContent = true
-        // Keep the strip inside the inner edges of the 44pt footer buttons. A
-        // bounded strip needs no blur veil (which reads as a dark band on black).
-        style.scrubberHorizontalInset = 64
-        style.scrubberEdgeFadeWidth = 0
+        // The same strip geometry as every other app: the viewport begins and
+        // ends at the inner edges of the flanking 44pt circles, and chips
+        // alpha-fade before they reach them. This app used 64/0 — a wider inset
+        // and no fade — purely because its strip was a different implementation.
+        style.scrubberHorizontalInset = 56
+        style.scrubberEdgeFadeWidth = 28
         style.showsCardBorder = true
         deck.configure(style: style) { host in
             var configuration = CardDeckConfiguration()

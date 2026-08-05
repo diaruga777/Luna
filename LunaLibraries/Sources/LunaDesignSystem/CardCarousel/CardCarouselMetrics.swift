@@ -17,7 +17,7 @@ public struct CardCarouselMetrics: Equatable {
     public static let cardAspectRatio: CGFloat = 9.0 / 16.0
 
     /// How a card's size comes out of the room the container leaves it.
-    public enum CardFit: Equatable {
+    public enum CardFit: Hashable {
         /// The 9:16 card, as large as fits, centered in the container.
         case aspectCentered
         /// All available width AND height — the aspect is ignored, for content

@@ -76,16 +76,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
         var style = CardCarouselStyle()
         style.edgeGap = 10
-        // Cards are phone-shaped: exactly the 9:16 portrait aspect, at the full
-        // width the peeks leave. That's taller than the room between the header
-        // row and the scrub strip, so the extra height is added at the TOP — the
-        // card's bottom edge stays put and its top slides up under the floating
-        // header row, never past the safe area (see `carouselTopInset`).
-        style.cardFit = .aspectFromBottom
-        style.cardTopOverflow = Self.carouselTopInset
-        style.pagesOnInCardSwipes = true
         style.pageSwipeMovementMultiplier = 1.5
-        style.scrubberStyle = .miniCards
+        // No card shape here: an article card's shape is the ARTICLE kind's
+        // answer (`ArticleCardPresenter.cardStyle`), and in this app — the
+        // central one — a media or product card beside it gets its own.
         // The strip's actual viewport begins/ends at the inner edges of the
         // flanking 44pt Settings/Share circles (12pt outer margin). Its chips
         // alpha-fade as they approach those bounds.
@@ -95,9 +89,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // mode) read against a same-tone background; fades with the chrome on
         // immersion.
         style.showsCardBorder = true
-        // Scrolled reader content dissolves at the card's top and bottom edges
-        // instead of hitting a hard clip (or any blur bar).
-        style.contentEdgeFadeHeight = Self.contentEdgeFade
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         // The cards themselves come from the ONE provider, exactly as the other
         // three apps' roots do. This class contributes screen chrome and nothing

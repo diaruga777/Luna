@@ -238,6 +238,23 @@ final class MediaCardPresenter: CardKindPresenting {
         return !media.isArchived
     }
 
+    /// Exactly 9:16, centered in the room, hard-clipped, and played by the
+    /// scrub strip under the finger — in EVERY app. The central app used to
+    /// stretch this card to the reader's `.aspectFromBottom`, dissolve its
+    /// video edges over 28pt, and preview it as a still.
+    ///
+    /// `pagesOnInCardSwipes` stays false: a playable card's whole width is a
+    /// timeline, so a horizontal drag scrubs it. That was already true of a
+    /// PLAYING card everywhere (the carousel vetoes paging for playable
+    /// content), but a DOWNLOADING card is not playable yet, and it paged in
+    /// the central app while staying put in the Downloader.
+    func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
+        var style = CardCarouselCardStyle()
+        style.fit = .aspectCentered
+        style.autoplaysScrubPreview = true
+        return style
+    }
+
     /// Only media cards are expensive to build — each one is an AVPlayer, and
     /// the mini-card strip prepares its whole visible window at once.
     func allowsPreparedPreviewContent(for item: ReadingListItem) -> Bool {

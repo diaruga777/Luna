@@ -401,10 +401,7 @@ enum ProductCardDeck {
         let deck = CardCarouselHostViewController()
         var style = CardCarouselStyle()
         style.edgeGap = 10
-        style.cardFit = .fill
-        style.pagesOnInCardSwipes = true
         style.pageSwipeMovementMultiplier = 1.5
-        style.scrubberStyle = .miniCards
         style.scrubberHorizontalInset = 56
         style.scrubberEdgeFadeWidth = 28
         style.showsCardBorder = true

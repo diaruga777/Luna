@@ -15,13 +15,15 @@
 //  and alpha-fade as they approach either end, so hosts can flank the strip
 //  with controls and let chips disappear without drawing an edge veil.
 //
-//  Two styles: `.thumbnails` (small 9:16 image chips — Downloader) and
-//  `.miniCards` (miniature article cards — Reader): each chip is a tiny card
-//  surface with the save's source badge (favicon / sender initials / symbol)
-//  as a mini masthead over skeleton text lines. A `.miniCards` chip whose save
-//  is a PICTURE rather than text — a Downloader video or image in the central
-//  app's all-kinds deck — shows that still full-bleed instead, so the chip
-//  keeps reading as a shrunken copy of the card above it.
+//  ONE strip, in every app. Each chip is a tiny card surface with the save's
+//  source badge (favicon / sender initials / symbol) as a mini masthead over
+//  skeleton text lines — a shrunken copy of the card above it. A chip whose
+//  save is a PICTURE rather than text shows that still full-bleed instead.
+//  Which of the two a chip is, is the CARD's answer (`prefersThumbnailChip`),
+//  never the deck's: the Downloader's strip is this strip, with every chip
+//  happening to be a still. There used to be a second, deck-level `.thumbnails`
+//  style, and it is why the same video was a 46pt image chip in one app and a
+//  64pt mini card in another.
 //
 
 import UIKit
@@ -51,17 +53,7 @@ public extension CarouselScrubberViewDelegate {
 
 public final class CarouselScrubberView: UIView {
 
-    /// What each strip item shows.
-    public enum Style {
-        /// Small 9:16 image chips (media thumbnails).
-        case thumbnails
-        /// Miniature article cards: a source badge over skeleton text lines.
-        case miniCards
-    }
-
     public weak var delegate: CarouselScrubberViewDelegate?
-
-    public let style: Style
 
     /// Width of the alpha-fade zone at each end of the strip. Chips dissolve
     /// across this zone as they approach the bounds, so flanking controls
@@ -70,37 +62,18 @@ public final class CarouselScrubberView: UIView {
         didSet { setNeedsLayout() }
     }
 
-    private var itemSize: CGSize {
-        switch style {
-        case .thumbnails:
-            return CGSize(width: 46 * CardCarouselMetrics.cardAspectRatio, height: 46)
-        case .miniCards:
-            return CGSize(width: 44, height: 64)
-        }
-    }
+    private var itemSize: CGSize { CGSize(width: 44, height: 64) }
 
     public var preferredHeight: CGFloat {
-        switch style {
-        case .thumbnails:
-            itemSize.height + 22
-        case .miniCards:
-            // The selected mini-card scales to 1.1× and casts a 5pt shadow.
-            // Leave enough vertical runway for both instead of clipping the
-            // shadow against the scroll view's bottom edge.
-            itemSize.height + 32
-        }
+        // The selected mini-card scales to 1.1× and casts a 5pt shadow. Leave
+        // enough vertical runway for both instead of clipping the shadow
+        // against the scroll view's bottom edge.
+        itemSize.height + 32
     }
 
-    private var spacing: CGFloat {
-        switch style {
-        case .thumbnails:
-            20
-        case .miniCards:
-            // At 1.1× the 44pt selected card is 48.4pt wide. A 12pt pitch gap
-            // keeps it visibly separate from both unselected neighbors.
-            12
-        }
-    }
+    /// At 1.1× the 44pt selected card is 48.4pt wide. A 12pt pitch gap keeps it
+    /// visibly separate from both unselected neighbors.
+    private var spacing: CGFloat { 12 }
 
     /// Hosts the scroll view and carries the edge fade mask. The mask must
     /// live on a non-scrolling ancestor (a mask on the scroll view's own layer
@@ -121,8 +94,7 @@ public final class CarouselScrubberView: UIView {
         scrollView.isDragging || scrollView.isDecelerating
     }
 
-    public init(style: Style = .thumbnails) {
-        self.style = style
+    public init() {
         super.init(frame: .zero)
         backgroundColor = .clear
 
@@ -198,7 +170,7 @@ public final class CarouselScrubberView: UIView {
             view.removeFromSuperview()
         }
         while itemViews.count < count {
-            let view = ScrubberItemView(style: style, size: itemSize)
+            let view = ScrubberItemView(size: itemSize)
             stack.addArrangedSubview(view)
             itemViews.append(view)
         }
@@ -408,15 +380,14 @@ private final class GradientMaskView: UIView {
     required init?(coder: NSCoder) { nil }
 }
 
-/// One strip chip: an image (thumbnail style) or a miniature article card
-/// (mini-cards style) — a tiny card surface with a source badge as its
-/// masthead, two headline bars, and fainter body bars, so the chip reads as a
-/// shrunken version of the card above it. Selection reads as elevation — the
+/// One strip chip: a miniature card — a tiny surface with a source badge as
+/// its masthead, two headline bars, and fainter body bars, so the chip reads as
+/// a shrunken version of the card above it — or, when the save is a picture,
+/// that picture full-bleed over the same surface. Selection reads as elevation — the
 /// selected chip lifts with a soft shadow; its siblings recede — instead of a
 /// drawn border.
 private final class ScrubberItemView: UIView {
-    /// The util chip's mark and its button pill, as fractions of the chip so the
-    /// two styles' different chip sizes both read the same.
+    /// The util chip's mark and its button pill, as fractions of the chip.
     private enum UtilityChipMetrics {
         /// The mark matches a mini card's source badge exactly — the util card
         /// carries an identity, not a picture.
@@ -432,19 +403,17 @@ private final class ScrubberItemView: UIView {
     let imageView = UIImageView()
     private let badgeView = CarouselSourceBadgeView()
     private let accessoryImageView = UIImageView()
-    private let style: CarouselScrubberView.Style
     /// The mini card's own furniture (badge + skeleton bars), hidden while the
-    /// chip shows a full-bleed still instead. Empty in `.thumbnails`.
+    /// chip shows a full-bleed still instead.
     private var miniCardFurniture: [UIView] = []
     /// The util chip's own furniture, built on demand and laid out from bounds
     /// (the chip is sized by Auto Layout after init).
     private var utilityMark: UIImageView?
     private var utilityPill: UIView?
 
-    init(style: CarouselScrubberView.Style, size: CGSize) {
-        self.style = style
+    init(size: CGSize) {
         super.init(frame: .zero)
-        layer.cornerRadius = style == .miniCards ? 9 : 6
+        layer.cornerRadius = 9
         layer.cornerCurve = .continuous
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOffset = CGSize(width: 0, height: 2)
@@ -455,10 +424,7 @@ private final class ScrubberItemView: UIView {
             widthAnchor.constraint(equalToConstant: size.width),
             heightAnchor.constraint(equalToConstant: size.height),
         ])
-        switch style {
-        case .thumbnails:
-            installImageView(cornerRadius: 6)
-        case .miniCards:
+        do {
             buildMiniCard(size: size)
             // Added over the mini card, not instead of it: a save with a still
             // covers the furniture, one without keeps showing it.
@@ -566,7 +532,7 @@ private final class ScrubberItemView: UIView {
         utilityPill?.removeFromSuperview()
         utilityMark = nil
         utilityPill = nil
-        backgroundColor = style == .miniCards ? LunaColors.background : nil
+        backgroundColor = LunaColors.background
     }
 
     override func layoutSubviews() {
@@ -591,7 +557,6 @@ private final class ScrubberItemView: UIView {
     func setImage(_ image: UIImage?) {
         discardUtilityFurniture()
         imageView.image = image
-        guard style == .miniCards else { return }
         imageView.isHidden = image == nil
         for view in miniCardFurniture { view.isHidden = image != nil }
     }
@@ -605,14 +570,9 @@ private final class ScrubberItemView: UIView {
     func setSelected(_ selected: Bool) {
         transform = selected ? CGAffineTransform(scaleX: 1.1, y: 1.1) : .identity
         layer.shadowOpacity = selected ? 0.22 : 0
-        switch style {
-        case .thumbnails:
-            imageView.alpha = selected ? 1 : 0.55
-        case .miniCards:
-            // The whole mini card recedes when unselected (its shadow is
-            // already off, so dimming the view itself is safe).
-            alpha = selected ? 1 : 0.62
-        }
+        // The whole mini card recedes when unselected (its shadow is already
+        // off, so dimming the view itself is safe).
+        alpha = selected ? 1 : 0.62
     }
 
     @available(*, unavailable)

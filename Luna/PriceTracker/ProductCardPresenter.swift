@@ -71,6 +71,16 @@ final class ProductCardPresenter: CardKindPresenting {
 
     // MARK: - Strip and scrub preview
 
+    /// The editor fills the card — it is a scrolling column of controls, not a
+    /// picture with an aspect to honour — with hard edges, and a horizontal
+    /// swipe pages the deck because nothing in it scrubs.
+    func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
+        var style = CardCarouselCardStyle()
+        style.fit = .fill
+        style.pagesOnInCardSwipes = true
+        return style
+    }
+
     func title(for item: ReadingListItem) -> String? {
         item.priceTracker?.productName
     }

@@ -1351,6 +1351,16 @@ extension CardCarouselHostViewController: CardCarouselDataSource {
         return deckProvider?.deckPrefersThumbnailChip(forSlot: slot) ?? false
     }
 
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        cardStyleForCardAt index: Int
+    ) -> CardCarouselCardStyle {
+        guard let slot = slotIndex(forCarouselIndex: index),
+              let style = deckProvider?.deckCardStyle(forSlot: slot)
+        else { return carousel.style.card }
+        return style
+    }
+
     /// The util card holds no save, so its chip is neither a still nor a
     /// favicon-and-skeleton mini card: it is the app's own mark over a button.
     func carousel(

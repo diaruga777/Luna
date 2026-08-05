@@ -168,6 +168,10 @@ protocol CardDeckProviding: AnyObject {
     /// Whether this slot's strip chip is its own full-bleed still rather than a
     /// mini card with a source badge.
     func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool
+    /// This card's own shape (fit, edge fade, scrub-preview autoplay, in-card
+    /// paging). Nil leaves the deck's own default — which is what the util
+    /// card, having no kind, always gets.
+    func deckCardStyle(forSlot slot: Int) -> CardCarouselCardStyle?
     func deckTopLeadingAccessory(forSlot slot: Int) -> UIView?
     func deckEdgeGlowColor(forSlot slot: Int) -> UIColor?
     func deckMenu(forSlot slot: Int) -> UIMenu?
@@ -226,6 +230,7 @@ extension CardDeckProviding {
         forSlot slot: Int, completion: @escaping (UIImage?) -> Void
     ) { completion(nil) }
     func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool { false }
+    func deckCardStyle(forSlot slot: Int) -> CardCarouselCardStyle? { nil }
     func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? { nil }
     func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? { nil }
     func deckMenu(forSlot slot: Int) -> UIMenu? { nil }

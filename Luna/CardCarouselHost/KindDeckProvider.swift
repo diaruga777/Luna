@@ -320,6 +320,13 @@ final class KindDeckProvider: CardDeckProviding {
         return presenter(for: item)?.prefersThumbnailChip(for: item) ?? false
     }
 
+    /// A card's shape is its KIND's answer. A failed save has no kind, so it
+    /// keeps the deck's default — an error card is the same shape everywhere.
+    func deckCardStyle(forSlot slot: Int) -> CardCarouselCardStyle? {
+        guard let item = item(atSlot: slot) else { return nil }
+        return presenter(for: item)?.cardStyle(for: item)
+    }
+
     func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? {
         guard let item = item(atSlot: slot) else { return nil }
         return presenter(for: item)?.topLeadingAccessory(for: item)

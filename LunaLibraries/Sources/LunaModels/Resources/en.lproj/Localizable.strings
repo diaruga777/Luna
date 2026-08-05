@@ -126,8 +126,8 @@
 "Sign in to watch." = "Sign in to watch.";
 "Sign up to keep watching" = "Sign up to keep watching";
 "Skip" = "Skip";
-"skip setup" = "skip setup";
 "Skip setup" = "Skip setup";
+"skip setup" = "skip setup";
 "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on." = "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on.";
 "Stop popups & access gates" = "Stop popups & access gates";
 "Subscribe" = "Subscribe";
@@ -160,8 +160,8 @@
 "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥" = "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥";
 
 /* ===================== Card Deck ===================== */
-"archive" = "archive";
 "Archive" = "Archive";
+"archive" = "archive";
 "Ask Every Time" = "Ask Every Time";
 "Best price: %@" = "Best price: %@";
 "Choose at least one recipient." = "Choose at least one recipient.";
@@ -810,6 +810,3 @@
 "Yellow" = "Yellow";
 "You can get the %@ app for this type of link" = "You can get the %@ app for this type of link";
 "YouTube" = "YouTube";
-
-/* ===================== Other ===================== */
-"Send To Luna" = "Send To Luna";

@@ -16,8 +16,10 @@ The **key never changes**; the **value** is the copy. That split is the whole
 point: copy can be rewritten in any text editor, on any device, without opening
 Xcode and without touching a line of Swift.
 
-A second, much smaller file holds the Shortcuts/Siri strings — see
-[Shortcuts and Siri](#shortcuts-and-siri) for why it has to be separate.
+That is the only file. It reaches every surface two ways: LunaModels' resource
+bundle (which every app, extension, clip and widget links) and a copy in each
+app's own bundle for the App Intents strings — see
+[Shortcuts and Siri](#shortcuts-and-siri).
 
 ## Editing on a phone
 
@@ -84,25 +86,56 @@ onboarding practice flow reads better when its wording can be tuned.
 
 ## Shortcuts and Siri
 
-`Luna/en.lproj/Localizable.strings` holds the App Intents metadata: intent
-names, descriptions, parameter titles, and the result types Shortcuts displays.
+App Intents metadata — intent names, descriptions, parameter titles, the result
+types Shortcuts displays — is in the same file as everything else, but it gets
+there differently.
 
-It is separate because App Intents metadata is extracted by Xcode at **build
-time** and read from the app's own bundle. `static let title:
-LocalizedStringResource = "Save"` cannot become a lookup — the App Intents
-metadata processor requires a literal — but it *can* resolve that literal
-against this table at runtime. So the Swift stays a literal and the copy is
-still editable here.
+Xcode extracts that metadata at **build time**, and the metadata processor
+rejects anything that isn't a string literal: `static let title:
+LocalizedStringResource = "Save"` cannot become an `L10n` call. At runtime
+though, the literal resolves against a strings table in the **host** bundle —
+the app's own, not LunaModels'. So two things bridge the gap:
 
-Two things are in neither file, and stay in Swift:
+- `strings_sync.py` finds these literals by SHAPE rather than by call
+  (`static let … : LocalizedStringResource =`, `IntentDescription(…)`,
+  `@Parameter(title:description:)`, `typeDisplayRepresentation`), and only in
+  `Luna/Mail/Intents/` and the Live Activity widget, because `title:` is far too
+  common a label to match everywhere. Multi-line `"""` descriptions are joined
+  the way Swift joins them, backslash continuations and all.
+- **The app targets copy the one file into their own bundles**, via a plain
+  resource reference added by `scripts/add_strings_to_app_bundles.rb`. Re-run it
+  after adding an app or widget target; it is idempotent, and
+  `LocalizableStringsTests.testAppBundleCarriesTheSameTable` fails if a host is
+  missing its copy or the copies have drifted.
+
+Two things stay in Swift and are not editable this way:
 
 - **`AppShortcut` phrases and `shortTitle`s** (`Luna/Mail/Intents/LunaShortcuts.swift`).
   These belong to a third mechanism (`AppShortcuts.strings`) and are Siri
   grammar rather than copy — `"Save this screen with \(.applicationName)"` is a
   spoken trigger, and rewording it changes what Siri responds to.
-- **The two Live Activity intent titles** ("Cancel Download", "Resume
-  Download"). They resolve against the widget's own bundle, not the app's. Their
-  accessibility labels — the part actually read aloud — *are* in the main file.
+- **`BundledShortcut.displayName`.** iOS takes that name from the imported
+  `Send To Luna.shortcut` file, so the constant and the filename have to agree;
+  editing the copy alone would rename it in Luna's prose while the Action Button
+  picker kept the old name. Rename the resource and the constant together.
+
+## Info.plist strings
+
+There is no `InfoPlist.xcstrings`. There used to be three (`Luna/`, `LunaShare/`,
+`LunaAction/`) and they were pure churn: each was shared by four targets through
+a synchronized group, and every build rewrote `CFBundleDisplayName` /
+`CFBundleName` with whichever target built last — so an `AllLunaApps` build left
+the central app's catalog claiming it was called "Luna Price Tracker". Nothing
+shipped wrong (untranslated entries are dropped from the emitted table, and each
+app's real name comes from its own `Info.plist`), but every full build dirtied
+the tree.
+
+The usage descriptions those catalogs held are already in the `Info.plist`s
+verbatim, and the display names come from `Config/Luna.xcconfig` per target,
+which is where per-target values belong. Deleting the catalogs lost nothing —
+there were no translations — and Xcode does not recreate one that isn't in the
+project. If Luna ever ships a second language, add per-TARGET catalogs rather
+than one shared file, for the same reason each app has its own entitlements.
 
 ## How the copy reaches the screen
 

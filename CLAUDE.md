@@ -207,11 +207,22 @@ stable Xcode 26.2.
 > is not a unit test because the suite can't see the source tree). NOT copy and
 > deliberately unwrapped: `OnboardingStrings.Accessibility` (UI-test identifiers)
 > and `.AnimationKeys` (CALayer keys), markup assembly, and matcher hostnames.
-> App Intents metadata — intent titles, descriptions, parameter names — must stay
-> Swift literals for the metadata processor, and resolves instead against the
-> small second file `Luna/en.lproj/Localizable.strings`; `AppShortcut` phrases and
-> `shortTitle`s stay in code (they are `AppShortcuts.strings`, and are Siri
-> grammar). Full detail in `claudedocs/strings.md`.
+> **App Intents metadata is in the SAME file but gets there differently**: intent
+> titles, descriptions and `@Parameter` names must stay Swift literals (the
+> metadata processor rejects anything else) and resolve against the HOST bundle,
+> so `strings_sync.py` finds them by shape in `Luna/Mail/Intents/` + the Live
+> Activity widget, and the app/widget targets COPY the one file into their own
+> bundles via `scripts/add_strings_to_app_bundles.rb` (re-run after adding a
+> target; a test fails if a host's copy is missing or has drifted). Staying in
+> code: `AppShortcut` phrases/`shortTitle`s (they are `AppShortcuts.strings`, and
+> are Siri grammar) and `BundledShortcut.displayName` (must equal the bundled
+> `.shortcut` filename). **There is no `InfoPlist.xcstrings`** — the three that
+> existed were shared by four targets each and every build rewrote
+> `CFBundleDisplayName`/`CFBundleName` with whichever target built last, dirtying
+> the tree on every `AllLunaApps` build; the usage descriptions they held are in
+> the `Info.plist`s verbatim and the names come from the xcconfig per target. If a
+> second language ever ships, add per-TARGET catalogs, never one shared file. Full
+> detail in `claudedocs/strings.md`.
 
 ## Agent workflow
 
@@ -325,11 +336,33 @@ every kind processor is registered at launch). The `LunaReader` /
 > must keep matching it).
 
 ```sh
+scripts/run_tests.sh            # preferred — picks a simulator, reports the real verdict
+scripts/run_tests.sh --fresh    # throwaway simulator (the fix for most flake modes)
+```
+
+Or by hand:
+
+```sh
 DD=<a derivedDataPath>
 SIM=<a booted iOS 26.x simulator UDID>   # e.g. xcrun simctl list devices | grep -A8 'iOS 26'
 xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   -configuration Debug -derivedDataPath "$DD" DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
 ```
+
+> **`** TEST FAILED **` with zero test failures means the DIAGNOSTICS step, not
+> the tests.** After the suite passes, xcodebuild may try to collect diagnostics
+> from the simulator, time out after a fixed 600s, and fail the run on that alone
+> — turning a ~105s suite into a ~12min one that reports exit 65. The log also
+> goes silent for those ten minutes, which reads exactly like the hung-runner mode
+> below and invites killing a healthy run. **Use `scripts/run_tests.sh`** — it
+> waits for the ROOT suite to close (every individual suite prints its own
+> `Executed N tests …` line, so those mean nothing), gives xcodebuild a grace
+> period, then stops it and exits on what the TESTS reported: 0 clean, 1 real
+> failures, 2 no summary at all. The scheme's
+> `systemAttachmentLifetime`/`userAttachmentLifetime = "keepNever"` is kept but
+> measured NOT sufficient on its own — xcodebuild was still busy 45s after a clean
+> run — so the script, not the setting, is the fix. **Always read the `Executed N
+> tests, with M failures` line; that, not the `** TEST` banner, is the result.**
 
 - **App icons use conventional PNG `.appiconset`s in
   `SharedIconAssets.xcassets`**, so stable Xcode 26.2's `actool` compiles every
@@ -388,6 +421,12 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
+- **The executed-test COUNT varies between runs on different simulators — diff the
+  failure list, not the total.** The same tree measured 2252/21/0 and, on a
+  `simctl create`d sim later the same day, 2173/7/0: `ArticleAudioEngineTests` (14)
+  did not register at all rather than skipping, and some 60 others likewise. No
+  test files had been deleted (`git diff --diff-filter=D main..HEAD -- LunaTests/`
+  is the check). **0 failures is the signal; the total is not.**
 - **Current suite state on the iOS 26.x sim: 2252 tests, 21 skipped, 0 failures**
   (measured 2026-08-05 after the card-presenter refactor and the test-suite trim,
   on a FRESH simulator, with **no `-skip-testing:` flags** — the plain recipe above

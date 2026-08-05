@@ -47,7 +47,6 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// Five deliberate taps reveal the archive page for troubleshooting without
     /// exposing a user-facing experimental setting. Once revealed, disabling the
     /// overlay's interaction lets scroll gestures reach the web view below.
-    private var archiveCoverTapCount = 0
     private let overlaySpinner = HorizonSpinnerView(side: 36)
     private let overlayLabel = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
@@ -254,11 +253,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { [weak self] _ in
-                guard let self else { return }
-                if let onClose = self.onClose { onClose() } else { self.dismiss(animated: true) }
-            })
+        setExitButton(symbol: "xmark")
         if onOpenInBrowser != nil {
             navigationItem.rightBarButtonItem = UIBarButtonItem(
                 image: UIImage(systemName: "safari"),
@@ -378,21 +373,18 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// view; visible from the start so the user never sees the raw archive page
     /// except when a CAPTCHA is up (`checkStage` reveals it then).
     private func setUpLoadingOverlay() {
-        // The cover is effectively opaque until its five-tap escape hatch is used.
-        // Only its background is translucent so the loading controls stay crisp.
+        // The cover COVERS. Its background is a hair off opaque only so the loading
+        // controls composite crisply over it; there is no translucent state and no
+        // way to ask for one — the page underneath is either hidden or, when a CAPTCHA
+        // needs solving, revealed outright by `isHidden`.
         loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
-        let revealGesture = UITapGestureRecognizer(
-            target: self, action: #selector(archiveCoverTapped(_:)))
-        loadingOverlay.addGestureRecognizer(revealGesture)
 
-        overlaySpinner.color = GlassStyle.readingAccent
+        // Tint deliberately left at `HorizonSpinnerView`'s own horizon palette. It used
+        // to be forced to `GlassStyle.readingAccent` — the user's reader highlight,
+        // usually a bright blue — which made the spinner appear to change colour at the
+        // handover from the extension's wait, since that one uses the default.
         overlaySpinner.startAnimating()
-
-        overlayLabel.textColor = LunaColors.secondaryText
-        overlayLabel.font = .preferredFont(forTextStyle: .callout)
-        overlayLabel.textAlignment = .center
-        overlayLabel.numberOfLines = 0
 
         var safariConfig = UIButton.Configuration.borderedProminent()
         safariConfig.title = L10n.string("Open in Safari")
@@ -403,38 +395,39 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         overlaySafariButton.isHidden = true   // only shown with a terminal message
         overlaySafariButton.addAction(UIAction { [weak self] _ in self?.openInBrowser() }, for: .touchUpInside)
 
-        // A centered stack: hiding the spinner (and showing the button) recenters
-        // the message cleanly, since stacks ignore hidden arranged subviews.
-        let stack = UIStackView(arrangedSubviews: [overlaySpinner, overlayLabel, overlaySafariButton])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        loadingOverlay.addSubview(stack)
         view.addSubview(loadingOverlay)
         NSLayoutConstraint.activate([
             loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
             loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingOverlay.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
-            overlayLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
         ])
+        // The SPINNER is centred and the copy hangs below it — the shared
+        // `LoadingStatusLayout`, identical to the extension's wait screen. The old
+        // centred STACK put the spinner ~28pt higher than the wait it was continuing,
+        // so the spinner appeared to jump upwards at the handover.
+        LoadingStatusLayout.install(
+            spinner: overlaySpinner, label: overlayLabel,
+            action: overlaySafariButton, in: loadingOverlay)
         articleLoadingStatus = ArticleLoadingStatusCycler(
             label: overlayLabel, initialText: L10n.string("Unlocking article…"))
         articleLoadingStatus?.start()
     }
 
-    @objc private func archiveCoverTapped(_ gesture: UITapGestureRecognizer) {
-        archiveCoverTapCount += 1
-        guard archiveCoverTapCount == 5 else { return }
-
-        loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.1)
-        loadingOverlay.isUserInteractionEnabled = false
+    /// The header's leading button. An `xmark` while the outcome is still unknown —
+    /// leaving now abandons the unlock and the item stays parked — and a `checkmark`
+    /// once the article has actually been extracted and saved, so the button says which
+    /// of the two it is. Both do the same thing; only the promise differs.
+    private func setExitButton(symbol: String) {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: symbol),
+            primaryAction: UIAction { [weak self] _ in
+                guard let self else { return }
+                if let onClose = self.onClose { onClose() } else { self.dismiss(animated: true) }
+            })
+        item.accessibilityLabel = symbol == "checkmark"
+            ? L10n.string("Done") : L10n.string("Close")
+        navigationItem.leftBarButtonItem = item
     }
 
     private static let archiveHomepage = URL(string: "https://archive.is/")! // valid constant
@@ -968,6 +961,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     }
                     self.didExtract = true
                     self.pollTimer?.invalidate()
+                    // There IS something to affirm now: the article is saved.
+                    self.setExitButton(symbol: "checkmark")
                     // Reveal the unlocked page so the user reads it (the main app keeps
                     // the loaded article up; extensions finish via `onExtracted`).
                     self.loadingOverlay.isHidden = true

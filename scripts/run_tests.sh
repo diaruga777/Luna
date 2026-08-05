@@ -16,11 +16,12 @@
 # completely silent for ten of them — which reads exactly like the hung-runner
 # mode that a fresh simulator fixes, so it invites killing healthy runs.
 #
-# The scheme now sets systemAttachmentLifetime/userAttachmentLifetime to
-# keepNever, which stops the collection being requested in the common case.
-# This script is the backstop for when it is requested anyway: it watches for
-# the summary line, gives xcodebuild a short grace period to exit on its own,
-# and otherwise stops it and reports what the tests said.
+# The scheme also sets systemAttachmentLifetime/userAttachmentLifetime to
+# keepNever. Measured, that did NOT stop the stall on its own — xcodebuild was
+# still busy 45s after a clean run — so this script, not the scheme setting, is
+# what makes the verdict correct. It waits for the ROOT suite to close, gives
+# xcodebuild a grace period to exit by itself, and otherwise stops it and
+# reports what the tests said.
 #
 # Usage:
 #   scripts/run_tests.sh                       # pick/create a simulator
@@ -89,16 +90,25 @@ xcodebuild test \
   -configuration Debug \
   -derivedDataPath "${LUNA_TEST_DD:-$REPO/.build-dd-tests}" \
   DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO \
-  "${EXTRA[@]}" > "$LOG" 2>&1 &
+  ${EXTRA[@]+"${EXTRA[@]}"} > "$LOG" 2>&1 &
 XCB=$!
 
+# xcodebuild prints an "Executed N tests…" line for EVERY suite as it goes, so
+# the presence of one means nothing. The run is over only once the ROOT suite
+# closes; its summary is then the last such line in the log.
+root_finished() {
+  grep -qE "Test Suite '(All tests|Selected tests|.*\.xctest)' (passed|failed) at" \
+    "$LOG" 2>/dev/null
+}
+
 summary_line() {
-  grep -oE "Executed [0-9]+ tests?, with ([0-9]+ tests? skipped and )?[0-9]+ failures?" "$LOG" 2>/dev/null | tail -1
+  grep -oE "Executed [0-9]+ tests?, with ([0-9]+ tests? skipped and )?[0-9]+ failures?" \
+    "$LOG" 2>/dev/null | tail -1
 }
 
 SEEN=""
 while kill -0 "$XCB" 2>/dev/null; do
-  if [[ -z "$SEEN" ]]; then
+  if [[ -z "$SEEN" ]] && root_finished; then
     SEEN="$(summary_line)"
     if [[ -n "$SEEN" ]]; then
       echo "suite finished: $SEEN"
@@ -106,7 +116,7 @@ while kill -0 "$XCB" 2>/dev/null; do
       DEADLINE=$((SECONDS + GRACE))
       while kill -0 "$XCB" 2>/dev/null && (( SECONDS < DEADLINE )); do sleep 2; done
       if kill -0 "$XCB" 2>/dev/null; then
-        echo "still busy after ${GRACE}s (diagnostics collection) — stopping it"
+        echo "xcodebuild still busy ${GRACE}s after the suite closed — stopping it"
         kill -TERM "$XCB" 2>/dev/null
         sleep 3
         kill -9 "$XCB" 2>/dev/null
@@ -130,7 +140,9 @@ if [[ -z "$SUMMARY" ]]; then
   exit 2
 fi
 
-FAILURES=$(sed -E 's/.*and ([0-9]+) failures?.*/\1/' <<<"$SUMMARY")
+# "…with 0 failures" and "…with 7 tests skipped and 1 failure" both end in the
+# count we want, so take the last "<n> failure(s)" in the line.
+FAILURES=$(grep -oE "[0-9]+ failures?" <<<"$SUMMARY" | tail -1 | cut -d' ' -f1)
 echo
 echo "================ $SUMMARY ================"
 if [[ "$FAILURES" != "0" ]]; then
@@ -146,7 +158,7 @@ fi
 if grep -q "^\*\* TEST SUCCEEDED \*\*" "$LOG"; then
   echo "xcodebuild agreed: TEST SUCCEEDED"
 elif [[ $XCB_STATUS -ne 0 ]]; then
-  echo "xcodebuild exited $XCB_STATUS after the suite passed — post-test step only:"
+  echo "xcodebuild exited $XCB_STATUS after the suite passed — a post-test step, not the tests:"
   grep -E "Failure collecting diagnostics|Timed out after" "$LOG" | sed 's/^/  /' | head -3
 fi
 echo "full log: $LOG"

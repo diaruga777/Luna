@@ -354,12 +354,15 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
 > from the simulator, time out after a fixed 600s, and fail the run on that alone
 > — turning a ~105s suite into a ~12min one that reports exit 65. The log also
 > goes silent for those ten minutes, which reads exactly like the hung-runner mode
-> below and invites killing a healthy run. The scheme now sets
-> `systemAttachmentLifetime`/`userAttachmentLifetime = "keepNever"` so collection
-> is not requested; `scripts/run_tests.sh` is the backstop, watching for the
-> `Executed N tests …` summary, allowing a grace period, then stopping xcodebuild
-> and exiting on what the TESTS said. **Always read the `Executed N tests, with M
-> failures` line — that, not the `** TEST` banner, is the result.**
+> below and invites killing a healthy run. **Use `scripts/run_tests.sh`** — it
+> waits for the ROOT suite to close (every individual suite prints its own
+> `Executed N tests …` line, so those mean nothing), gives xcodebuild a grace
+> period, then stops it and exits on what the TESTS reported: 0 clean, 1 real
+> failures, 2 no summary at all. The scheme's
+> `systemAttachmentLifetime`/`userAttachmentLifetime = "keepNever"` is kept but
+> measured NOT sufficient on its own — xcodebuild was still busy 45s after a clean
+> run — so the script, not the setting, is the fix. **Always read the `Executed N
+> tests, with M failures` line; that, not the `** TEST` banner, is the result.**
 
 - **App icons use conventional PNG `.appiconset`s in
   `SharedIconAssets.xcassets`**, so stable Xcode 26.2's `actool` compiles every
@@ -418,6 +421,12 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
+- **The executed-test COUNT varies between runs on different simulators — diff the
+  failure list, not the total.** The same tree measured 2252/21/0 and, on a
+  `simctl create`d sim later the same day, 2173/7/0: `ArticleAudioEngineTests` (14)
+  did not register at all rather than skipping, and some 60 others likewise. No
+  test files had been deleted (`git diff --diff-filter=D main..HEAD -- LunaTests/`
+  is the check). **0 failures is the signal; the total is not.**
 - **Current suite state on the iOS 26.x sim: 2252 tests, 21 skipped, 0 failures**
   (measured 2026-08-05 after the card-presenter refactor and the test-suite trim,
   on a FRESH simulator, with **no `-skip-testing:` flags** — the plain recipe above

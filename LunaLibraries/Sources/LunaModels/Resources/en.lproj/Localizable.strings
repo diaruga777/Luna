@@ -525,7 +525,7 @@
 "%lld imported" = "%lld imported";
 "%lld of %lld finished" = "%1$lld of %2$lld finished";
 "%lld wpm" = "%lld wpm";
-"Action Button Shortcut" = "SPIKE-OVERRIDE-WORKED";
+"Action Button Shortcut" = "Action Button Shortcut";
 "Add" = "Add";
 "Add Sender" = "Add Sender";
 "Add Sender…" = "Add Sender…";

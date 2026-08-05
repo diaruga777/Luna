@@ -386,6 +386,20 @@ no nav bar of its own beyond Done.
   to controls plus the home-indicator inset against 18pt at the top, so the word
   sat ~110pt low under a void, and the trailing-context lane was squeezed to a
   single truncated line. Three consequences:
+  - **The prose sits a third as far from the word as it used to, and the gap is
+    measured from the word's OWN edge.** `focalHalfHeight` is the greater of the
+    word label's line box and the reticule's reach (both scale with `wordFont`,
+    which is sized from the screen width — a fixed clearance crowds the glyph on
+    a wide screen); Phrases measures from the glass panel instead. On top of that
+    sit `focalProseGaps`: 20pt above / 31pt below in Words (a third of the ~60 /
+    ~92 the old flat 84 / 116 offsets left around a 30pt word), and Phrases keeps
+    its own tighter 14/14. **The pill row — link preview or completion badge — is
+    reserved only while something occupies it** (`FocalLanes.trailingTop`):
+    holding an empty 36pt row open under every word is most of what made the
+    lower gap large, and the row is nearly always empty (a link pill needs a
+    linkified word; the badge only appears at the end, where the trailing prose is
+    empty anyway). When a pill does appear the prose steps down inside the pill's
+    own fade, so it slides rather than jumps.
   - **Each context lane is sized to its prose, not to the lane it may grow
     into** (`textHeight(of:width:)`). The preceding lane keeps its bottom against
     the focal band and grows upward (oldest words truncating off the top —
@@ -409,6 +423,7 @@ no nav bar of its own beyond Done.
     `testRSVPFocalWordRestsAtTheMidpointOfItsReadingBand`,
     `…ContextLanesAreSizedToTheirProse…`,
     `…ControlsLiftOffTheBottomOnlyWhenTheBandCanSpareIt`,
+    `…TrailingProseYieldsTheRowOnlyWhileAPillOccupiesIt`,
     `…ShareButtonClearsRSVPControlsAndTrailingContext`.
 - **Shared chrome carries a subtle per-app tint.** `LunaSurfacePalette` resolves
   Reader (173/181/246), Downloader (204/118/9), or Price Tracker (7/255/157)

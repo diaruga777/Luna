@@ -427,7 +427,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   did not register at all rather than skipping, and some 60 others likewise. No
   test files had been deleted (`git diff --diff-filter=D main..HEAD -- LunaTests/`
   is the check). **0 failures is the signal; the total is not.**
-- **Current suite state on the iOS 26.x sim: 2252 tests, 21 skipped, 0 failures**
+- **Current suite state on the iOS 26.x sim: 2253 tests, 21 skipped, 0 failures**
   (measured 2026-08-05 after the card-presenter refactor and the test-suite trim,
   on a FRESH simulator, with **no `-skip-testing:` flags** — the plain recipe above
   is the whole of it). 91s of test execution, ~128s wall on a warm

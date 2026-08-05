@@ -777,13 +777,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             ? max(chromeFloor, eyeTrackingButton.frame.maxY + 12)
             : chromeFloor
 
-        let bandHalf: CGFloat = displayMode == .phrases
-            ? phrasePanel.bounds.height / 2 + 14 : 84
+        let lanes = focalLanes
         // Words mode: the removed sub-mode switcher freed the top of the screen,
         // so the preceding-context label grows upward into it (its bottom stays
         // anchored to the focal band — the word and everything below don't move).
         let upperHeight: CGFloat = displayMode == .phrases ? 120 : 220
-        let upperBottom = centerY - bandHalf
+        let upperBottom = lanes.precedingBottom
         // Each lane is sized to the PROSE it holds, not to the lane it may grow
         // into: a label given the full lane centers a short passage inside it,
         // which reads as a hole between the chrome and the text and a second
@@ -799,11 +798,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             width: width, height: upperTextHeight)
 
         let controlsTop = readingBandBottom
-        // In Phrases mode the link pill lives in the gap just below the panel, so the
-        // lower context must start beneath it (panel half + pill gap + pill + 12).
-        let lowerY: CGFloat = displayMode == .phrases
-            ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap + Self.phrasePillHeight + 12
-            : centerY + bandHalf + 32
+        let lowerY = lanes.trailingTop
         let lowerHeight: CGFloat = displayMode == .phrases ? 120 : 96
         let lowerLaneHeight = max(0, min(lowerHeight, controlsTop - lowerY - 12))
         // A control the HOST floats over this reader (the reader's bottom-right
@@ -816,6 +811,67 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             lowerLaneHeight, textHeight(of: nextContextLabel, width: lowerWidth))
         nextContextLabel.frame = CGRect(
             x: contextX, y: lowerY, width: lowerWidth, height: lowerTextHeight)
+    }
+
+    /// The three edges everything around the focal display measures from: where
+    /// the preceding prose stops, where the pill row (link preview / completion
+    /// badge) sits, and where the trailing prose starts.
+    private struct FocalLanes {
+        let precedingBottom: CGFloat
+        let pillTop: CGFloat
+        let trailingTop: CGFloat
+    }
+
+    /// Half-height of the focal display measured from `focalCenterY`: in Words
+    /// mode the greater of the word label's own line box and the reticule's reach
+    /// (both scale with `wordFont`, which is sized from the screen width — a
+    /// fixed clearance would crowd the glyph on a wide screen); in Phrases mode
+    /// the glass panel's half-height.
+    private var focalHalfHeight: CGFloat {
+        guard displayMode != .phrases else { return phrasePanel.bounds.height / 2 }
+        let lineHalf = wordFont.lineHeight / 2
+        let padding = RSVPFocusReticuleMetrics.verticalPadding
+        // Mirrors `layoutFocusReticule`, relative to the focal centre.
+        let baseline = wordFont.ascender - lineHalf
+        let reticuleAbove = wordFont.capHeight + padding - baseline
+        let reticuleBelow = baseline + padding
+        return max(lineHalf, max(reticuleAbove, reticuleBelow))
+    }
+
+    /// The prose lanes and the pill row, all measured off the focal display's
+    /// own half-height rather than a fixed band.
+    ///
+    /// The gaps used to be a flat 84pt above the centre and 116pt below it —
+    /// ~60pt and ~92pt of air around a 30pt word, which read as the word
+    /// floating alone between two paragraphs. They are now a third of that
+    /// (`focalProseGaps`).
+    ///
+    /// **The pill row is only reserved while something occupies it.** Holding an
+    /// empty 36pt row open under every word is what made the lower gap so large,
+    /// and the row is nearly always empty: a link pill shows only on a linkified
+    /// word, and the completion badge only at the end of the article — where the
+    /// trailing prose is empty anyway. When a pill does appear the trailing prose
+    /// steps down for it (animated with the pill's own fade, see `updateLinkPill`).
+    private var focalLanes: FocalLanes {
+        let centerY = focalCenterY
+        let half = focalHalfHeight
+        let gaps = focalProseGaps
+        let pillTop = centerY + half + gaps.below
+        let occupied = linkPill.alpha > 0 || !finishedBadge.isHidden
+        return FocalLanes(
+            precedingBottom: centerY - half - gaps.above,
+            pillTop: pillTop,
+            trailingTop: occupied ? pillTop + Self.phrasePillHeight + 10 : pillTop)
+    }
+
+    /// Air between the focal display and the prose above / below it. Words mode
+    /// keeps a third of the gap it used to leave, still roomier below because the
+    /// pill row lands there. Phrases keeps its own tighter pair unchanged — the
+    /// glass panel already separates the phrase from the prose, so 14pt was never
+    /// the problem there; it only gains a matching bottom (it was holding the
+    /// empty pill row open too, at 56).
+    private var focalProseGaps: (above: CGFloat, below: CGFloat) {
+        displayMode == .phrases ? (14, 14) : (20, 31)
     }
 
     /// Height the label's current text needs at `width`, unbounded by lines —
@@ -864,22 +920,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// In Words mode it sits in the clear lane below the focused word and above
     /// the lower context text.
     private func layoutLinkPill() {
-        let centerY = focalCenterY
         let maxWidth = contentColumn.width - 64
         let fitted = linkPill.systemLayoutSizeFitting(
             CGSize(width: maxWidth, height: 40),
             withHorizontalFittingPriority: .fittingSizeLevel,
             verticalFittingPriority: .required)
         let width = min(max(fitted.width, 80), maxWidth)
-        let y = displayMode == .phrases
-            ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap
-            : centerY + 88 - Self.phrasePillHeight / 2
         linkPill.frame = CGRect(
-            x: (view.bounds.width - width) / 2, y: y, width: width, height: Self.phrasePillHeight)
+            x: (view.bounds.width - width) / 2, y: focalLanes.pillTop,
+            width: width, height: Self.phrasePillHeight)
     }
 
     /// Link-pill geometry shared with `layoutContext` so the lower context clears it.
-    private static let phrasePillGap: CGFloat = 8
     private static let phrasePillHeight: CGFloat = 36
 
     /// Shows/refreshes the pill for a linkified word, or starts the post-link
@@ -895,7 +947,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 view.setNeedsLayout()
             }
             if linkPill.alpha < 1 {
-                UIView.animate(withDuration: 0.2) { self.linkPill.alpha = 1 }
+                // The trailing prose gives the pill row its 36pt back — inside the
+                // same animation, so the paragraph slides rather than jumps.
+                UIView.animate(withDuration: 0.2) {
+                    self.linkPill.alpha = 1
+                    self.view.layoutIfNeeded()
+                }
             }
         } else if linkPillURL != nil, linkPillHideTimer == nil {
             linkPillHideTimer = Timer.scheduledTimer(withTimeInterval: 1.4, repeats: false) {
@@ -908,7 +965,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         linkPillHideTimer?.invalidate()
         linkPillHideTimer = nil
         linkPillURL = nil
-        UIView.animate(withDuration: 0.25) { self.linkPill.alpha = 0 }
+        UIView.animate(withDuration: 0.25) {
+            self.linkPill.alpha = 0
+            self.view.layoutIfNeeded()
+        }
     }
 
     @objc private func linkPillTapped() {
@@ -1831,11 +1891,22 @@ extension RSVPViewController {
         public let bandTop: CGFloat
         public let bandBottom: CGFloat
         public let focalCenterY: CGFloat
+        /// Half-height of the focal display (word line box / reticule reach, or
+        /// the phrase panel) — the edge the prose gaps are measured from.
+        public let focalHalfHeight: CGFloat
         public let precedingContext: CGRect
         public let trailingContext: CGRect
+        public let pillRow: CGRect
         public let controls: CGRect
         /// Midpoint of the band — where the focal word rests, plus its bias.
         public var bandCenterY: CGFloat { (bandTop + bandBottom) / 2 }
+        /// Air between the focal display and the prose above / below it.
+        public var gapAboveProse: CGFloat {
+            focalCenterY - focalHalfHeight - precedingContext.maxY
+        }
+        public var gapBelowProse: CGFloat {
+            trailingContext.minY - focalCenterY - focalHalfHeight
+        }
     }
 
     public var layoutGeometryForTesting: LayoutGeometry {
@@ -1843,8 +1914,10 @@ extension RSVPViewController {
             bandTop: readingBandTop,
             bandBottom: readingBandBottom,
             focalCenterY: focalCenterY,
+            focalHalfHeight: focalHalfHeight,
             precedingContext: previousContextLabel.frame,
             trailingContext: nextContextLabel.frame,
+            pillRow: linkPill.frame,
             controls: controlsStack.frame)
     }
 

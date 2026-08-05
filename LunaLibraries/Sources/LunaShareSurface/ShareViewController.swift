@@ -71,12 +71,10 @@ open class ShareViewController: UIViewController {
         hostedFinish = onFinish
     }
 
-    private let spinner = HorizonSpinnerView(side: 36)
-    private let statusLabel = EclipseBloomStatusLabel()
-    private var articleLoadingStatus: ArticleLoadingStatusCycler?
-    private lazy var closeButton = ExtensionExitButton.make(
-        symbol: "xmark", accessibilityLabel: L10n.string("Close")
-    ) { [weak self] in self?.complete() }
+    /// The action extension's wait screen (nil in the zero-UI share extension), kept
+    /// so a terminal message can be shown on the SAME screen the wait happened on
+    /// rather than on a second one that swaps the header out from under it.
+    private var loadingScreen: ExtensionLoadingViewController?
     /// The action extension owns one navigation context for its entire lifetime.
     /// Replacing its root avoids stacking a second modal over the extension sheet.
     private var actionNavigationController: UINavigationController?
@@ -174,45 +172,17 @@ open class ShareViewController: UIViewController {
 
     // MARK: - Status / error UI (action extension)
 
+    /// The action extension's wait, as a navigation ROOT rather than views on this
+    /// controller — so the header (and the way out of it) is on screen from the first
+    /// frame instead of appearing partway through, when the archive reader used to
+    /// become the first navigation root the sheet ever had.
     private func setUpStatusUI() {
         view.backgroundColor = LunaColors.background
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.startAnimating()
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.textColor = LunaColors.secondaryText
-        statusLabel.font = .preferredFont(forTextStyle: .body)
-        statusLabel.textAlignment = .center
-        statusLabel.numberOfLines = 0
-        // The same floating glass exit every other extension screen uses, in the
-        // same corner — an `xmark` rather than a checkmark, because this button
-        // only ever appears under an error (nothing to affirm).
-        closeButton.isHidden = true
-        view.addSubview(spinner)
-        view.addSubview(statusLabel)
-        view.addSubview(closeButton)
-        NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
-            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            statusLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            statusLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: view.trailingAnchor, constant: -32),
-            // A wide extension sheet would otherwise draw one line of status copy
-            // right across it.
-            statusLabel.widthAnchor.constraint(
-                lessThanOrEqualToConstant: LunaLayout.readableWidth),
-            closeButton.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -ExtensionExitButton.edgeInset),
-            closeButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -ExtensionExitButton.edgeInset),
-        ])
-        articleLoadingStatus = ArticleLoadingStatusCycler(
-            label: statusLabel, initialText: L10n.string("Opening in Luna…"))
-        articleLoadingStatus?.start()
+        let loading = ExtensionLoadingViewController(
+            initialText: L10n.string("Opening in Luna…")
+        ) { [weak self] in self?.complete() }
+        loadingScreen = loading
+        hostInNavigation(loading)
     }
 
     /// Action extension: surface a failure as visible error text (never a silent
@@ -223,11 +193,14 @@ open class ShareViewController: UIViewController {
         guard isActionExtension else { complete(); return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.articleLoadingStatus?.stop()
-            self.spinner.stopAnimating()
-            self.statusLabel.textColor = LunaColors.primaryText
-            self.statusLabel.setTextImmediately(message)
-            self.closeButton.isHidden = false
+            // The error lands on the wait screen itself, whose header already carries
+            // the exit — so there is no second close affordance to reveal, and the
+            // sheet's chrome doesn't change shape at the moment of bad news. A route
+            // that failed before the wait screen existed (an in-app host) gets one now.
+            if self.loadingScreen == nil {
+                self.setUpStatusUI()
+            }
+            self.loadingScreen?.showTerminal(message)
             // Visible error text IS a terminal state: nothing further will
             // happen until somebody taps Close, and an in-app host has no
             // finger to do it with.
@@ -831,31 +804,40 @@ extension ShareViewController: ExtensionHost {
             HostedShareSession.current?.onReachedTerminal?()
         }
         if isActionExtension {
-            articleLoadingStatus?.stop()
-            spinner.stopAnimating()
-            statusLabel.isHidden = true
-            closeButton.isHidden = true
-            if let navigationController = actionNavigationController {
-                navigationController.setViewControllers([viewController], animated: false)
-                return
-            }
-            let navigationController = ExtensionNavigationController(
-                rootViewController: viewController)
-            navigationController.view.translatesAutoresizingMaskIntoConstraints = false
-            addChild(navigationController)
-            view.addSubview(navigationController.view)
-            NSLayoutConstraint.activate([
-                navigationController.view.topAnchor.constraint(equalTo: view.topAnchor),
-                navigationController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                navigationController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                navigationController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            ])
-            navigationController.didMove(toParent: self)
-            actionNavigationController = navigationController
+            // The wait screen is being replaced, so retire it rather than leaving its
+            // spinner turning behind whatever comes next.
+            loadingScreen?.stopWaiting()
+            loadingScreen = nil
+            hostInNavigation(viewController)
             return
         }
         let nav = ExtensionNavigationController(rootViewController: viewController)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)
+    }
+
+    /// Puts `viewController` in the action extension's ONE navigation context —
+    /// creating it on first use, replacing its root after that. Every action-extension
+    /// screen goes through here, the wait screen included, which is what keeps a
+    /// single header standing from the first frame to the last instead of appearing
+    /// when the first "real" screen arrives.
+    private func hostInNavigation(_ viewController: UIViewController) {
+        if let navigationController = actionNavigationController {
+            navigationController.setViewControllers([viewController], animated: false)
+            return
+        }
+        let navigationController = ExtensionNavigationController(
+            rootViewController: viewController)
+        navigationController.view.translatesAutoresizingMaskIntoConstraints = false
+        addChild(navigationController)
+        view.addSubview(navigationController.view)
+        NSLayoutConstraint.activate([
+            navigationController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            navigationController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            navigationController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            navigationController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        navigationController.didMove(toParent: self)
+        actionNavigationController = navigationController
     }
 }

@@ -37,6 +37,20 @@ public final class ExtensionAudioScriptResolver {
     /// outlives the view controller that started it.
     private var refinementTask: Task<Void, Never>?
 
+    /// Testing seam. Holds the most recently STARTED refinement task, and —
+    /// unlike `refinementTask` — keeps holding it after
+    /// `cancelInFlightRefinement()` clears that one, so a test can await the
+    /// pass (cancelled or not) instead of sleeping on a fixed interval. Never
+    /// read in production.
+    private(set) var lastStartedRefinementTask: Task<Void, Never>?
+
+    /// Testing seam: awaits the most recently started refinement pass, if any.
+    /// Returns immediately when no pass was ever kicked off — which is itself
+    /// what several tests are asserting.
+    func awaitLastStartedRefinement() async {
+        await lastStartedRefinementTask?.value
+    }
+
     /// - Parameters:
     ///   - articlesDirectory: `ReadingListStore.articlesDirectory` in
     ///     production (App-Group-backed, readable from an extension); tests
@@ -121,6 +135,7 @@ public final class ExtensionAudioScriptResolver {
             self.applyRefinement(
                 refinement, content: content, contentFileName: contentFileName, heuristicResult: heuristicResult)
         }
+        lastStartedRefinementTask = refinementTask
     }
 
     private func applyRefinement(

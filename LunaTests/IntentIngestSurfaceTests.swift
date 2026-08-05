@@ -18,8 +18,11 @@ final class IntentIngestSurfaceTests: XCTestCase {
         return item
     }
 
-    // MARK: - Outcome mapping
+    // MARK: - The gate at this surface
 
+    /// The ONE call-site wiring proof for App Intents: the drop survives
+    /// verification as `.unsupportedKind`, carrying the owner the error dialog
+    /// names. Which (app, kind) pairs drop is `SurfaceSupportTests`' matrix.
     func testUnsupportedKindResultSurvivesIntentOutcomeMapping() {
         let mapped = IntentIngestHelper.verifiedOutcome(
             from: .unsupportedKind(owner: .downloader),
@@ -31,125 +34,88 @@ final class IntentIngestSurfaceTests: XCTestCase {
         XCTAssertEqual(owner, .downloader)
     }
 
-    func testTimeoutStillMapsToIndeterminateCompletion() {
-        let mapped = IntentIngestHelper.verifiedOutcome(
+    // MARK: - Outcome mapping (what the intent reports back)
+
+    func testVerifiedOutcomeMapping() {
+        // A timeout: the save may still be running, so completion is indeterminate.
+        guard case let .completed(timedOut) = IntentIngestHelper.verifiedOutcome(
             from: nil, pressedURLString: "https://example.com/post", storedItem: nil)
+        else { return XCTFail("expected completion for a timeout") }
+        XCTAssertNil(timedOut)
 
-        guard case let .completed(savedURLString) = mapped else {
-            return XCTFail("expected completion, got \(mapped)")
-        }
-        XCTAssertNil(savedURLString)
-    }
+        // A duplicate press on a healthy item completes with the stored URL.
+        let duplicate = "https://example.com/already-saved"
+        guard case let .completed(duplicateURL) = IntentIngestHelper.verifiedOutcome(
+            from: .ignored, pressedURLString: duplicate,
+            storedItem: item(duplicate, state: .ready))
+        else { return XCTFail("expected completion for a duplicate press") }
+        XCTAssertEqual(duplicateURL, duplicate)
 
-    func testIgnoredMapsToCompletedWithTheStoredURL() {
-        let url = "https://example.com/already-saved"
-        let mapped = IntentIngestHelper.verifiedOutcome(
-            from: .ignored, pressedURLString: url, storedItem: item(url, state: .ready))
+        // A friend prompt survives verification.
+        let shared = "https://example.com/post"
+        guard case let .friendPromptRequested(promptURL) = IntentIngestHelper.verifiedOutcome(
+            from: .friendPromptRequested(item(shared, state: .ready)),
+            pressedURLString: shared, storedItem: item(shared, state: .ready))
+        else { return XCTFail("expected friend prompt") }
+        XCTAssertEqual(promptURL, shared)
 
-        guard case let .completed(savedURLString) = mapped else {
-            return XCTFail("expected completion, got \(mapped)")
-        }
-        XCTAssertEqual(savedURLString, url)
-    }
-
-    func testFriendPromptSurvivesVerification() {
-        let url = "https://example.com/post"
-        let mapped = IntentIngestHelper.verifiedOutcome(
-            from: .friendPromptRequested(item(url, state: .ready)),
-            pressedURLString: url, storedItem: item(url, state: .ready))
-
-        guard case let .friendPromptRequested(savedURLString) = mapped else {
-            return XCTFail("expected friend prompt, got \(mapped)")
-        }
-        XCTAssertEqual(savedURLString, url)
+        // The placeholder carries the wrapper URL; ingest repointed the item at
+        // the publisher article, and the media/handoff legs must use THAT.
+        let wrapper = "https://apple.news/AbCdEf"
+        let resolved = "https://example.com/post/123"
+        guard case let .completed(resolvedURL) = IntentIngestHelper.verifiedOutcome(
+            from: .saved(item(wrapper, state: .pending)),
+            pressedURLString: wrapper, storedItem: item(resolved, state: .ready))
+        else { return XCTFail("expected completion for a resolved save") }
+        XCTAssertEqual(resolvedURL, resolved, "the store's resolved URL wins over the pressed one")
     }
 
     // MARK: - Verification (never report success over nothing)
 
-    func testPressThatSavedNothingAtAllIsAFailure() {
+    func testVerificationNeverReportsSuccessOverNothing() {
         // `.ignored` with no item anywhere: an unusable URL, or a duplicate
         // whose item is gone. Nothing is in the app — never report success.
-        let mapped = IntentIngestHelper.verifiedOutcome(
+        guard case .saveFailed(.nothingSaved) = IntentIngestHelper.verifiedOutcome(
             from: .ignored, pressedURLString: "https://example.com/post", storedItem: nil)
+        else { return XCTFail("expected nothingSaved failure") }
 
-        guard case .saveFailed(.nothingSaved) = mapped else {
-            return XCTFail("expected nothingSaved failure, got \(mapped)")
-        }
-    }
-
-    func testSavedPlaceholderDedupedIntoAnExistingItemIsASuccess() {
-        // An `apple.news` wrapper that resolved to an article already in the
-        // list (or a store URL merged into an existing tracker) deletes the
-        // placeholder — the content is in the app under the surviving item.
-        let wrapper = "https://apple.news/AbCdEf"
-        let mapped = IntentIngestHelper.verifiedOutcome(
-            from: .saved(item(wrapper, state: .pending)),
-            pressedURLString: wrapper, storedItem: nil)
-
-        guard case let .completed(savedURLString) = mapped else {
-            return XCTFail("expected completion for a deduped save, got \(mapped)")
-        }
-        XCTAssertEqual(savedURLString, wrapper)
-    }
-
-    func testSavedButFailedIngestIsAFailure() {
+        // Saved, but ingest failed — and the same for a duplicate press on a
+        // failed item: the content is not readable, so the intent must say so.
         let url = "https://example.com/post"
-        let mapped = IntentIngestHelper.verifiedOutcome(
+        guard case .saveFailed(.contentUnavailable) = IntentIngestHelper.verifiedOutcome(
             from: .saved(item(url, state: .pending)),
             pressedURLString: url, storedItem: item(url, state: .failed))
-
-        guard case .saveFailed(.contentUnavailable) = mapped else {
-            return XCTFail("expected contentUnavailable failure, got \(mapped)")
-        }
+        else { return XCTFail("expected contentUnavailable for a failed ingest") }
+        guard case .saveFailed(.contentUnavailable) = IntentIngestHelper.verifiedOutcome(
+            from: .ignored, pressedURLString: url, storedItem: item(url, state: .failed))
+        else { return XCTFail("expected contentUnavailable for a duplicate on a failed item") }
     }
 
-    func testDuplicatePressOnAFailedItemIsAFailure() {
-        let url = "https://example.com/post"
-        let mapped = IntentIngestHelper.verifiedOutcome(
-            from: .ignored, pressedURLString: url,
-            storedItem: item(url, state: .failed))
-
-        guard case .saveFailed(.contentUnavailable) = mapped else {
-            return XCTFail("expected contentUnavailable failure, got \(mapped)")
-        }
-    }
-
-    func testLockedArticleAwaitingUnlockIsASuccessfulSave() {
-        let url = "https://www.wsj.com/articles/locked"
-        let mapped = IntentIngestHelper.verifiedOutcome(
-            from: .saved(item(url, state: .pending)),
-            pressedURLString: url, storedItem: item(url, state: .needsCaptcha))
-
-        guard case let .completed(savedURLString) = mapped else {
-            return XCTFail("expected completion for a needs-unlock save, got \(mapped)")
-        }
-        XCTAssertEqual(savedURLString, url)
-    }
-
-    func testStillPendingSaveIsReportedAsHandled() {
-        let url = "https://example.com/post"
-        let mapped = IntentIngestHelper.verifiedOutcome(
-            from: .saved(item(url, state: .pending)),
-            pressedURLString: url, storedItem: item(url, state: .pending))
-
-        guard case .completed = mapped else {
-            return XCTFail("expected completion for a pending save, got \(mapped)")
-        }
-    }
-
-    func testResolvedURLFromTheStoreWinsOverThePressedWrapperURL() {
-        // The placeholder carries the wrapper URL; ingest repointed the item at
-        // the publisher article, and the media/handoff legs must use that.
+    func testVerificationAcceptsTheSavesThatReallyLanded() {
+        // An `apple.news` wrapper that resolved to an article already in the list
+        // (or a store URL merged into an existing tracker) deletes the placeholder
+        // — the content IS in the app, under the surviving item.
         let wrapper = "https://apple.news/AbCdEf"
-        let resolved = "https://example.com/post/123"
-        let mapped = IntentIngestHelper.verifiedOutcome(
+        guard case let .completed(dedupedURL) = IntentIngestHelper.verifiedOutcome(
             from: .saved(item(wrapper, state: .pending)),
-            pressedURLString: wrapper, storedItem: item(resolved, state: .ready))
+            pressedURLString: wrapper, storedItem: nil)
+        else { return XCTFail("expected completion for a deduped save") }
+        XCTAssertEqual(dedupedURL, wrapper)
 
-        guard case let .completed(savedURLString) = mapped else {
-            return XCTFail("expected completion, got \(mapped)")
-        }
-        XCTAssertEqual(savedURLString, resolved)
+        // A locked article awaiting unlock is saved, not failed.
+        let locked = "https://www.wsj.com/articles/locked"
+        guard case let .completed(lockedURL) = IntentIngestHelper.verifiedOutcome(
+            from: .saved(item(locked, state: .pending)),
+            pressedURLString: locked, storedItem: item(locked, state: .needsCaptcha))
+        else { return XCTFail("expected completion for a needs-unlock save") }
+        XCTAssertEqual(lockedURL, locked)
+
+        // So is one still being ingested.
+        let pending = "https://example.com/post"
+        guard case .completed = IntentIngestHelper.verifiedOutcome(
+            from: .saved(item(pending, state: .pending)),
+            pressedURLString: pending, storedItem: item(pending, state: .pending))
+        else { return XCTFail("expected completion for a pending save") }
     }
 
     // MARK: - The state table itself

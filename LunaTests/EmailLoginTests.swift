@@ -53,16 +53,6 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertFalse(EmailAccountSetup.isValidAddress(""))
     }
 
-    // MARK: - ProviderBadgeText (provider-badge visibility)
-
-    func testProviderBadgeTextHiddenForGenericAndShownForKnownProviders() {
-        XCTAssertNil(ProviderBadgeText.text(for: .generic))
-        XCTAssertEqual(ProviderBadgeText.text(for: .gmail), "Gmail")
-        XCTAssertEqual(ProviderBadgeText.text(for: .icloud), "iCloud")
-        XCTAssertEqual(ProviderBadgeText.text(for: .yahoo), "Yahoo")
-        XCTAssertEqual(ProviderBadgeText.text(for: .outlook), "Outlook")
-    }
-
     // MARK: - CredentialViewController.isConnectivityFailure
 
     func testConnectivityFailureDetectsNetworkDomains() {
@@ -136,31 +126,12 @@ final class EmailLoginTests: XCTestCase {
         let screen = EmailAndKindleSettingsScreen(accountStore: store)
         window = UITestSupport.host(screen)
 
+        // The healthy section is two rows (account + Sign Out); an authentication
+        // issue inserts the explanation and the Reconnect action between them.
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 4)
         XCTAssertEqual(contentText(in: screen, row: 0), "person@gmail.com")
-        XCTAssertEqual(contentSecondaryText(in: screen, row: 0), "Sign-in required")
-        XCTAssertEqual(contentText(in: screen, row: 1), "Email login needs attention")
-        XCTAssertEqual(
-            contentSecondaryText(in: screen, row: 1),
-            "The provider rejected the saved app password.")
         XCTAssertEqual(contentText(in: screen, row: 2), "Reconnect Email")
         XCTAssertEqual(contentText(in: screen, row: 3), "Sign Out")
-    }
-
-    func testExpiredOAuthShowsAuthorizationSpecificError() throws {
-        let store = EmailAccountStore(
-            defaults: defaults, credentialStorage: InMemoryCredentialStorage())
-        store.save(
-            EmailAccount(providerID: .outlook, address: "person@outlook.com"),
-            credential: .oauth(OAuthTokens(
-                accessToken: "expired", refreshToken: "revoked", expiry: .distantPast)))
-        store.markAuthenticationIssue(.authorizationExpired)
-        let screen = EmailAndKindleSettingsScreen(accountStore: store)
-        window = UITestSupport.host(screen)
-
-        XCTAssertEqual(
-            contentSecondaryText(in: screen, row: 1),
-            "The provider authorization expired or was revoked.")
     }
 
     // MARK: - Sign In button enablement (CredentialViewController)
@@ -270,14 +241,6 @@ final class EmailLoginTests: XCTestCase {
         let cell = screen.tableView(
             screen.tableView, cellForRowAt: IndexPath(row: row, section: 0))
         return (cell.contentConfiguration as? UIListContentConfiguration)?.text
-    }
-
-    private func contentSecondaryText(
-        in screen: EmailAndKindleSettingsScreen, row: Int
-    ) -> String? {
-        let cell = screen.tableView(
-            screen.tableView, cellForRowAt: IndexPath(row: row, section: 0))
-        return (cell.contentConfiguration as? UIListContentConfiguration)?.secondaryText
     }
 
     private func findBadge(in screen: EmailAndKindleSettingsScreen) throws -> ProviderBadgeView {

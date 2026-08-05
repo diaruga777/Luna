@@ -31,6 +31,9 @@ enum KindWiring {
         #endif
 
         ProductKindComposition.install()
+        // The product kind's CARD half, on the same principle — the one
+        // definition the central app installs too (`CardKindPresenter.swift`).
+        CardKindPresenters.product = ProductCardPresenter()
         IngestorKindHandlers.product = ProductKindHandler()
         // No price-graph email snapshot: Price Tracker shares a tracker as its
         // product link, never as a Luna email (see `LunaApp.sharesByEmail`).
@@ -54,16 +57,20 @@ enum KindWiring {
     // MARK: - Root UI shape
 
     /// The Price Tracker uses the same root card deck + archive tray as Reader
-    /// and Downloader, without the article app's audio mini-player host.
+    /// and Downloader, without the article app's audio mini-player host. The deck
+    /// is the shared host configured by `ProductCardDeck`; this app has no deck
+    /// subclass of its own.
+    @MainActor
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = PriceTrackerCardsViewController()
-        return UINavigationController(rootViewController: content)
+        UINavigationController(rootViewController: ProductCardDeck.makeRoot())
     }
 
+    @MainActor
     private static func makeCompletedRootViewController() -> UIViewController {
-        UINavigationController(rootViewController: PriceTrackerCardsViewController())
+        UINavigationController(rootViewController: ProductCardDeck.makeRoot())
     }
 
+    @MainActor
     static func makeSetupReplayRootViewController() -> UIViewController {
         makeCompletedRootViewController()
     }

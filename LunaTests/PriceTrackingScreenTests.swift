@@ -25,31 +25,58 @@ final class PriceTrackingScreenTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - The same product card in the central app
+
+    /// The central Luna app draws a tracked product with the REAL editor, not a
+    /// link card.
+    ///
+    /// This is the divergence the card-presenter refactor exists to close. The
+    /// all-kinds deck used to render a tracker as a generic title-and-link card
+    /// ("Tap to see price history") with a globe badge and no picture, and push a
+    /// fullscreen editor on tap — while `ProductCardContentViewController` was
+    /// compiled into this very binary, reachable only from the Price Tracker
+    /// app's own deck subclass. One presenter per kind is what makes the two
+    /// apps' answers the same answer.
+    @MainActor
+    func testCentralDeckBuildsTheRealProductCardNotALinkCard() {
+        XCTAssertEqual(LunaApp.current, .luna, "the test host is the central app")
+        UITestSupport.seedSharedStore(.priceTracking)
+        let installed = CardKindPresenters.product
+        defer { CardKindPresenters.product = installed }
+        CardKindPresenters.product = ProductCardPresenter()
+
+        let deck = ArticleCardsViewController()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+
+        let cards = (0..<deck.carousel.dataSource!.numberOfCards(in: deck.carousel))
+            .compactMap { deck.carousel.contentController(at: $0) }
+        XCTAssertTrue(
+            cards.contains { $0 is ProductCardContentViewController },
+            """
+            the central deck built \(cards.map { type(of: $0) }) for a seeded \
+            tracker — a product must get its own card here, not the reader \
+            deck's link stand-in
+            """)
+        _ = window
+    }
+
     // MARK: - Price Tracker card root
 
-    func testPriceTrackerRootUsesSharedCarouselUtilCardAndArchiveTray() {
+    /// One hosted deck answers both questions about the Price Tracker's root: it
+    /// is the shared carousel (util card at zero, mini-card scrubber, archive
+    /// tray), and its newest card — a tracker with no history points — still owns
+    /// the graph and its editable absolute threshold.
+    @MainActor
+    func testPriceTrackerRootIsTheSharedCarouselAndKeepsThresholdOnZeroPointGraph() {
         UITestSupport.seedSharedStore(.priceTracking)
-        let deck = PriceTrackerCardsViewController()
+        let deck = ProductCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
         XCTAssertEqual(deck.carousel.dataSource?.numberOfCards(in: deck.carousel), 4)
-        if case .miniCards = deck.carousel.style.scrubberStyle {
-            // expected
-        } else {
-            XCTFail("Price Tracker should use the same mini-card scrubber as Reader")
-        }
         XCTAssertTrue(deck.carousel.contentController(at: 0) is UtilCardContentViewController)
         XCTAssertNotNil(deck.archiveTray)
-        XCTAssertNotNil(deck.carousel.contentController(at: 1))
-        _ = window
-    }
-
-    func testPriceTrackerCardKeepsThresholdOnZeroPointGraph() {
-        UITestSupport.seedSharedStore(.priceTracking)
-        let deck = PriceTrackerCardsViewController()
-        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
-        deck.view.layoutIfNeeded()
 
         // Pending Keyboard is newest: it has no history points but still owns
         // the graph and its editable absolute threshold.
@@ -66,19 +93,6 @@ final class PriceTrackingScreenTests: XCTestCase {
     }
 
     // MARK: - Price tracking editor
-
-    // NOTE: The two PriceTrackingViewController snapshot tests are skipped — since the
-    // price-history graph was added, offscreen `layer.render(in:)` of this VC hangs in
-    // the snapshot harness (the live app renders it fine: see
-    // testPriceTrackingEditorLayoutHasStoreList, which hosts + asserts the VC, and
-    // manual/TestFlight verification). Snapshotting this VC isn't viable on-sim.
-    func testPriceTrackingEditorSnapshot() throws {
-        throw XCTSkip("PriceTrackingViewController hangs offscreen layer.render; covered by layout test.")
-    }
-
-    func testPriceTrackingAlertingEditorSnapshot() throws {
-        throw XCTSkip("PriceTrackingViewController hangs offscreen layer.render; covered by layout test.")
-    }
 
     func testPriceTrackingEditorLayoutHasStoreList() {
         UITestSupport.seedSharedStore(.priceTracking)
@@ -242,6 +256,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     }
 
     /// Opening an alerting tracker marks its alert viewed, so it stops floating.
+    @MainActor
     func testOpeningAlertingTrackerMarksAlertViewed() {
         UITestSupport.seedSharedStore(.mixed)
         guard let alerting = ReadingListStore.shared.items().first(where: {
@@ -249,15 +264,13 @@ final class PriceTrackingScreenTests: XCTestCase {
         }) else {
             XCTFail("no unviewed-alerting tracker seeded"); return
         }
-        // The behavior moved with the surface: the sectioned list's row tap is gone,
-        // and the central app's deck routes non-article cards through
-        // `NonArticleCardOpening` (the Price Tracker app's deck does the same in
-        // `PriceTrackerCardsViewController`). Drive the live seam.
-        NonArticleCardOpening.install()
-        let root = UIViewController()
-        let nav = UINavigationController(rootViewController: root)
-        let window = UITestSupport.host(nav)
-        ArticleCardsViewController.nonArticleOpener?(alerting, root)
+        // Acknowledging the alert is the product KIND's answer to "your card took
+        // the center", so it is the same code in both apps now — there is no
+        // per-deck tap seam left to drive.
+        let deck = ProductCardDeck.makeRoot()
+        let window = UITestSupport.host(UINavigationController(rootViewController: deck))
+        deck.view.layoutIfNeeded()
+        ProductCardPresenter().itemDidCenter(alerting, host: deck)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         let refreshed = ReadingListStore.shared.item(withID: alerting.id)?.priceTracker
         XCTAssertEqual(refreshed?.isAlerting, true, "still alerting after viewing")
@@ -270,10 +283,11 @@ final class PriceTrackingScreenTests: XCTestCase {
     /// A product tracked before the notification prompt was ever answered has no
     /// threshold, so the card's graph has no line to drag: it offers to set one, and
     /// that tap is what creates the default alert (and raises the prompt).
+    @MainActor
     func testPriceTrackerCardOffersToSetAnAlertWhenNoneIsSet() {
         UITestSupport.seedSharedStore(.priceTracking)
         clearEverySeededThreshold()
-        let deck = PriceTrackerCardsViewController()
+        let deck = ProductCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
@@ -281,7 +295,12 @@ final class PriceTrackingScreenTests: XCTestCase {
               let graph = findSubview(of: PriceGraphView.self, in: content.view),
               let setAlert = findButton(title: "Set price alert", in: graph)
         else {
-            XCTFail("an alert-less price card should offer to set an alert")
+            let content = deck.carousel.contentController(at: 1)
+            let graph = content.flatMap { findSubview(of: PriceGraphView.self, in: $0.view) }
+            XCTFail("""
+                an alert-less price card should offer to set an alert \
+                (content: \(String(describing: content)), graph: \(String(describing: graph)))
+                """)
             return
         }
         XCTAssertFalse(setAlert.isHidden)

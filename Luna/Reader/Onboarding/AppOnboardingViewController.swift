@@ -257,10 +257,10 @@ final class AppOnboardingViewController: UIViewController {
         carousel.chromeBackdrop = starfield
         var style = CardCarouselStyle()
         style.edgeGap = 10
-        style.cardFit = .aspectFromBottom
-        style.cardTopOverflow = 48
-        style.pagesOnInCardSwipes = false
-        style.scrubberStyle = .miniCards
+        // Onboarding is one hand-built card, not a deck over saves, so it
+        // states its own shape rather than asking a kind for one.
+        style.card.fit = .aspectFromBottom
+        style.card.topOverflow = 48
         style.scrubberHorizontalInset = 56
         style.scrubberEdgeFadeWidth = 28
         style.showsCardBorder = true

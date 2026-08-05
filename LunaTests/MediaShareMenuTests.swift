@@ -98,11 +98,17 @@ final class MediaShareMenuTests: XCTestCase {
     }
 }
 
-/// The central app's all-kinds deck reaches the same ladder through the
-/// `AllKindsCardProviding` seam, so a media save's pill offers exactly what
-/// the Downloader's own circle does — and a save with no media row offers
-/// nothing, which is what keeps its pill hidden.
+/// Every deck that shows media reaches this ladder through the ONE media
+/// presenter, so a media save's pill offers exactly the same thing in the
+/// central app as on the Downloader's own circle — and a save that isn't this
+/// kind's offers nothing, which is what keeps its pill hidden.
 final class AllKindsShareMenuTests: XCTestCase {
+
+    /// A bare deck host: `CardPresenterHost` is what a presenter is handed, and
+    /// the base class is the whole of that conformance.
+    @MainActor
+    private func makeHost() -> CardPresenterHost { CardCarouselHostViewController() }
+
 
     override func setUp() {
         super.setUp()
@@ -124,8 +130,8 @@ final class AllKindsShareMenuTests: XCTestCase {
             seed: "allkinds-share", urlString: url, title: "Clip",
             dateAdded: Date(), state: .ready, platform: .x)
 
-        let menu = AllKindsCardProvider().shareMenu(
-            for: item, presenter: UIViewController(), sourceView: UIView())
+        let menu = MediaCardPresenter().shareMenu(
+            for: item, host: makeHost(), sourceView: UIView())
 
         XCTAssertEqual(
             menu?.children.map(\.title), ["Copy link", "Share link"],
@@ -139,8 +145,8 @@ final class AllKindsShareMenuTests: XCTestCase {
             urlString: "https://example.com/article", title: "Article",
             dateAdded: Date(), state: .ready)
 
-        XCTAssertNil(AllKindsCardProvider().shareMenu(
-            for: item, presenter: UIViewController(), sourceView: UIView()))
+        XCTAssertNil(MediaCardPresenter().shareMenu(
+            for: item, host: makeHost(), sourceView: UIView()))
     }
 
     /// A platform save Luna never fetched media for is still a LINK — its card
@@ -153,8 +159,8 @@ final class AllKindsShareMenuTests: XCTestCase {
             urlString: "https://x.com/luna/status/272727", title: "Post",
             dateAdded: Date(), state: .ready, platform: .x)
 
-        let menu = AllKindsCardProvider().shareMenu(
-            for: item, presenter: UIViewController(), sourceView: UIView())
+        let menu = MediaCardPresenter().shareMenu(
+            for: item, host: makeHost(), sourceView: UIView())
 
         XCTAssertEqual(menu?.children.map(\.title), ["Copy link", "Share link"])
     }
@@ -180,7 +186,7 @@ final class SavedMediaDeckShareChromeTests: XCTestCase {
     func testTrailingCircleIsAMenuOverTheCenteredCard() {
         SavedMediaDeckFixtures.seedMedia(count: 1, prefix: "share-chrome")
 
-        let deck = SavedMediaCardsViewController()
+        let deck = MediaCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
         deck.carousel.reloadData(centeringAt: deck.cardOffset)
@@ -201,7 +207,7 @@ final class SavedMediaDeckShareChromeTests: XCTestCase {
     func testUtilCardOffersNoShareMenu() {
         SavedMediaDeckFixtures.seedMedia(count: 1, prefix: "share-chrome-util")
 
-        let deck = SavedMediaCardsViewController()
+        let deck = MediaCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
         deck.carousel.reloadData(centeringAt: deck.utilCardIndex)

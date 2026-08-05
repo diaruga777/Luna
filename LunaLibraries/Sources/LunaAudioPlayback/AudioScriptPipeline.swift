@@ -53,6 +53,11 @@ public final class AudioScriptPipeline {
     /// is never called there.
     private var isForeground = true
 
+    /// Testing seam: invoked on `workQueue` at the end of every sweep pass, so
+    /// a test can wait for the sweep to HAVE RUN instead of sleeping on a
+    /// fixed interval and hoping. Nil in production.
+    var didFinishSweepForTesting: (() -> Void)?
+
     public init(
         store: ReadingListScriptSource = ReadingListStore.shared,
         modelSessionFactory: @escaping () -> AudioTrimModelSession = AudioTrimModelSessionFactory.makeDefault,
@@ -141,7 +146,10 @@ public final class AudioScriptPipeline {
     private func runSweep() {
         guard !isSweeping else { return }
         isSweeping = true
-        defer { isSweeping = false }
+        defer {
+            isSweeping = false
+            didFinishSweepForTesting?()
+        }
 
         for item in store.items() {
             guard item.state == .ready, let contentFileName = item.contentFileName else { continue }

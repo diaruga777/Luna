@@ -40,6 +40,9 @@ enum KindWiring {
         // web-processing pipeline stage (platform recognition is URL-only
         // classification), which is stated there rather than re-derived here.
         MediaKindComposition.install()
+        // The media kind's CARD half, on the same principle — the one
+        // definition the central app installs too (`CardKindPresenter.swift`).
+        CardKindPresenters.media = MediaCardPresenter()
         // Post-save ingestion — metadata, thumbnail, auto-download handoff — is
         // the app-shell media ingestor handler.
         IngestorKindHandlers.media = MediaKindHandler()
@@ -62,16 +65,20 @@ enum KindWiring {
     // MARK: - Root UI shape
 
     /// The saved-media card deck in a bare nav controller — no audio
-    /// mini-player host (read-aloud is an article-app feature).
+    /// mini-player host (read-aloud is an article-app feature). The deck itself
+    /// is the shared host configured by `MediaCardDeck`; this app has no deck
+    /// subclass of its own.
+    @MainActor
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = SavedMediaCardsViewController()
-        return UINavigationController(rootViewController: content)
+        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
     }
 
+    @MainActor
     private static func makeCompletedRootViewController() -> UIViewController {
-        UINavigationController(rootViewController: SavedMediaCardsViewController())
+        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
     }
 
+    @MainActor
     static func makeSetupReplayRootViewController() -> UIViewController {
         makeCompletedRootViewController()
     }

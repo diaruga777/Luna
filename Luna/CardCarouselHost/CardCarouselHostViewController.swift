@@ -509,10 +509,30 @@ class CardCarouselHostViewController: UIViewController {
 
     let carousel = CardCarouselViewController()
 
-    /// The kind-specific half of this deck. Subclasses return themselves; the
-    /// base default leaves a deck with nothing but its util card, which is
-    /// exactly what a bare host is.
-    var deckProvider: CardDeckProviding? { nil }
+    /// The kind-specific half of this deck.
+    ///
+    /// A deck that is CONFIGURED rather than subclassed (`configure(style:
+    /// provider:)`) supplies it up front — that is every app whose root is just
+    /// a deck. A subclass with real screen chrome of its own overrides this and
+    /// returns itself.
+    var deckProvider: CardDeckProviding? { configuredProvider }
+
+    private var configuredProvider: CardDeckProviding?
+    private var configuredStyle: CardCarouselStyle?
+
+    /// Builds this deck without subclassing it: the carousel's style, and the
+    /// provider that fills it. `viewDidLoad` then brings the whole deck up
+    /// itself, so an app whose root has no chrome of its own needs no subclass
+    /// at all.
+    final func configure(style: CardCarouselStyle, provider: (CardCarouselHostViewController) -> CardDeckProviding) {
+        configuredStyle = style
+        // Applied here, not only from `viewDidLoad`: a SUBCLASS with chrome of
+        // its own configures itself after `super.viewDidLoad()` has already
+        // early-returned, and a carousel left on the default style lays out on
+        // geometry that is not merely wrong but NaN.
+        carousel.style = style
+        configuredProvider = provider(self)
+    }
 
     /// The cards past the util card, as the last APPLIED reload left them. The
     /// single source of truth for every count and every index the host resolves;
@@ -574,6 +594,19 @@ class CardCarouselHostViewController: UIViewController {
         completion(OnboardingActionExtensionIcon.image() ?? OnboardingAppIcon.image())
     }
 
+    /// A configured deck brings itself up; a subclassed one does it in its own
+    /// `viewDidLoad` (which is where its style and its chrome are set).
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        guard let configuredStyle else { return }
+        view.backgroundColor = LunaColors.background
+        // Handed to the carousel as chrome, so it fades away with the scrub strip
+        // and side cards when content takes over the screen.
+        carousel.chromeBackdrop = StarfieldView.install(behindContentsOf: view)
+        carousel.style = configuredStyle
+        mountDeck()
+    }
+
     // MARK: - Bringing the deck up
 
     /// Brings the whole deck up, in the one order every app's home screen uses:
@@ -617,9 +650,20 @@ class CardCarouselHostViewController: UIViewController {
     func configureTrailingBottomButton(_ button: UIButton) {
         guard let share = deckProvider?.deckShareButton else { return }
         configureBottomButton(
-            button, symbol: "square.and.arrow.up",
-            action: #selector(shareCenteredCardTapped),
+            button, symbol: "square.and.arrow.up", action: nil,
             accessibilityLabel: share.accessibilityLabel)
+        // Deferred, so a press always builds against whatever card is centered
+        // NOW: the provider offers a ladder (media's Copy link / Share link /
+        // Share video…) or, failing that, its single share verb.
+        ShareButtonMenu.install(
+            on: button, providesMenu: true,
+            build: { [weak self, weak button] in
+                guard let self, let button,
+                      let slot = self.slotIndex(forCarouselIndex: self.carousel.currentIndex)
+                else { return nil }
+                return self.deckProvider?.deckShareMenu(slot: slot, sourceView: button)
+            },
+            fallback: { [weak self] in self?.shareCenteredCardTapped() })
     }
 
     /// Reconciles the trailing circle with the centered card. Called from the two
@@ -635,6 +679,14 @@ class CardCarouselHostViewController: UIViewController {
         case .disables: trailingBottomButton.isEnabled = available
         }
     }
+
+    #if DEBUG
+    /// The menu the trailing circle would present right now, for tests.
+    var shareMenuForTesting: UIMenu? {
+        guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return nil }
+        return deckProvider?.deckShareMenu(slot: slot, sourceView: trailingBottomButton)
+    }
+    #endif
 
     @objc private func shareCenteredCardTapped() {
         guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return }
@@ -659,6 +711,25 @@ class CardCarouselHostViewController: UIViewController {
             openStateChanged: { [weak self] open in
                 self?.deckArchiveTrayOpenStateDidChange(open)
             })
+    }
+
+    /// The archive choreography, overridable because it is CHROME. The default
+    /// persists and reloads; the Reader's deck drifts the outgoing card up and
+    /// springs its successor in. Either way the write itself is the kind's.
+    func performArchive(ofItemID id: UUID, commit: @escaping () -> Void) {
+        commit()
+        reload()
+    }
+
+    /// As `performArchive`, for the return trip. The default just asks for the
+    /// row to take the centre; the Reader's deck cross-dissolves the pressed
+    /// tray cell into the destination card.
+    func performUnarchive(
+        ofItemID id: UUID, from sourceView: UIView?, commit: @escaping () -> Void
+    ) {
+        requestCentering(onSlotID: id)
+        commit()
+        reload()
     }
 
     /// Whether the tray may be pulled at all right now. Reader says no while a
@@ -777,6 +848,8 @@ class CardCarouselHostViewController: UIViewController {
         }
         carousel.view.isHidden = false
         archiveTray?.setItems(provider.deckArchiveTrayItems())
+        // The tray's own in-cell download bars, refreshed alongside its rows.
+        archiveDownloadProgressDidChange()
         deckDidApplyReload()
         if deckReconcilesArchivePullOnReload {
             refreshArchivePullAvailability(animated: false)
@@ -1278,6 +1351,16 @@ extension CardCarouselHostViewController: CardCarouselDataSource {
         return deckProvider?.deckPrefersThumbnailChip(forSlot: slot) ?? false
     }
 
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        cardStyleForCardAt index: Int
+    ) -> CardCarouselCardStyle {
+        guard let slot = slotIndex(forCarouselIndex: index),
+              let style = deckProvider?.deckCardStyle(forSlot: slot)
+        else { return carousel.style.card }
+        return style
+    }
+
     /// The util card holds no save, so its chip is neither a still nor a
     /// favicon-and-skeleton mini card: it is the app's own mark over a button.
     func carousel(
@@ -1342,6 +1425,84 @@ extension CardCarouselHostViewController: CardCarouselDelegate {
 
     func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {
         deckDidSurfaceForEdgePaging()
+    }
+}
+
+// MARK: - The deck, as a kind's presenter sees it
+
+// One conformance, on the base every app's root already is. A presenter is
+// handed this rather than a concrete deck, which is what lets the same
+// implementation of a kind draw into the Downloader's root and the central
+// app's without knowing which it is in.
+extension CardCarouselHostViewController: CardPresenterHost {
+
+    var presentingController: UIViewController { self }
+
+    /// The scale of the screen this deck is ACTUALLY on. The Downloader read it
+    /// from its window and the central app from `UIScreen.main`, so the same
+    /// media save was decoded at two different scales depending on which app
+    /// opened it.
+    var displayScale: CGFloat {
+        view.window?.screen.scale ?? UIScreen.main.scale
+    }
+
+    func reloadDeck() { reload() }
+
+    /// Slots are keyed by the reading-list row, so an item id IS a slot id; the
+    /// presenter-facing name is the item one because a presenter never sees a
+    /// slot.
+    func requestCentering(onItemID id: UUID) { requestCentering(onSlotID: id) }
+
+    /// The save on the centered card, or nil on the util card.
+    var centeredItem: ReadingListItem? {
+        guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return nil }
+        return deckProvider?.deckItem(forSlot: slot)
+    }
+
+    func cardView(forItemID id: UUID) -> UIView? {
+        guard let slot = slots.firstIndex(where: { $0.id == id }) else { return nil }
+        return carousel.cardView(at: carouselIndex(forSlot: slot))
+    }
+
+    /// The kind that owns a save, asked of the PROVIDER rather than the registry
+    /// so a stand-in for an unbacked row reaches the presenter that supplied it.
+    func presenter(forItem item: ReadingListItem) -> CardKindPresenting? {
+        deckProvider?.deckPresenter(forItemID: item.id)
+            ?? CardKindPresenters.presenter(for: item)
+    }
+
+    /// Unarchive, with this deck's choreography around the kind's store write.
+    /// One implementation for all three kinds: the tray rows used to each carry
+    /// their own, and only the article one bumped the row's date.
+    func unarchive(_ item: ReadingListItem, from sourceView: UIView?) {
+        performUnarchive(ofItemID: item.id, from: sourceView) { [weak self] in
+            guard let self else { return }
+            if let presenter = self.presenter(forItem: item) {
+                presenter.setArchived(false, for: item)
+            } else {
+                ReadingListStore.shared.setArchived(false, for: item.id)
+            }
+        }
+    }
+
+    /// Delete a save whole. The companion half is the reason this is one method:
+    /// the archive tray's delete released only the row, so an archived media
+    /// save deleted from the tray left its file, its Photos asset and its
+    /// auto-download bookkeeping behind.
+    func deleteSave(_ item: ReadingListItem) {
+        presenter(forItem: item)?.deleteCompanionStorage(for: item, host: self)
+        ReadingListStore.shared.delete(item)
+        reload()
+    }
+
+    /// Ticks arrive several times a second, so the tray updates its visible
+    /// cells in place rather than reloading the deck.
+    func archiveDownloadProgressDidChange() {
+        var merged: [UUID: Double] = [:]
+        for presenter in CardKindPresenters.installed {
+            merged.merge(presenter.archiveDownloadProgress) { _, new in new }
+        }
+        archiveTray?.setDownloadProgress(merged)
     }
 }
 

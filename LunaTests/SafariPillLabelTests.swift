@@ -3,7 +3,6 @@
 //  LunaTests
 //
 
-import WebKit
 import XCTest
 
 /// Guards the text of the in-page Safari pill ("Read in Luna" / "Download in
@@ -32,23 +31,13 @@ final class SafariPillLabelTests: XCTestCase {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
     }
 
-    private static let contentScriptSource: String = {
-        let url = repoRoot.appendingPathComponent("LunaSafari/Resources/content.js")
-        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-    }()
+    private static var contentScriptSource: String { SafariJSTestHarness.contentScript }
 
     /// The keys `content.js` renders (extensionName/Description are manifest-only).
     private static let renderedKeys = [
         "readInLuna", "downloadInLuna", "trackInLuna", "openingLuna", "unlockedWithLuna",
         "setupCompleteTitle", "returnToApp",
     ]
-
-    override func setUp() {
-        super.setUp()
-        XCTAssertFalse(
-            Self.contentScriptSource.isEmpty,
-            "content.js not found on disk -- check the path relative to #filePath")
-    }
 
     // MARK: - The fallback
 
@@ -175,43 +164,24 @@ final class SafariPillLabelTests: XCTestCase {
 
     // MARK: - Harness
 
-    /// Evaluates content.js in a bare `WKWebView` (no extension host, so no
-    /// `browser` global) and returns `expression` as a String.
+    private lazy var js = SafariJSTestHarness(self)
+    private var didLoadContentScript = false
+
+    /// Evaluates `expression` against content.js in the shared bare `WKWebView`
+    /// (no extension host, so no `browser` global). The fixture page is loaded
+    /// ONCE per test — every key in a sweep is answered from the same document.
     private func evaluate(_ expression: String) -> String {
-        let expectation = expectation(description: "expression evaluated")
-        var outcome = ""
-
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let delegate = LoadDelegate {
-            webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
-                if let error { XCTFail("content.js failed to evaluate: \(error)") }
-                webView.evaluateJavaScript(expression) { result, error in
-                    if let error { XCTFail("\(expression) failed to evaluate: \(error)") }
-                    outcome = result as? String ?? ""
-                    expectation.fulfill()
-                }
-            }
+        if !didLoadContentScript {
+            js.load(
+                html: "<html><body><p>fixture</p></body></html>",
+                urlString: "https://example.com/",
+                scripts: [SafariJSTestHarness.contentScript])
+            didLoadContentScript = true
         }
-        webView.navigationDelegate = delegate
-        webView.loadHTMLString(
-            "<html><body><p>fixture</p></body></html>", baseURL: URL(string: "https://example.com/"))
-
-        wait(for: [expectation], timeout: 10)
-        withExtendedLifetime(delegate) {}
-        return outcome
+        return js.string(expression) ?? ""
     }
 
     /// A JS string literal — the keys are identifiers, but quoting them through
     /// JSON keeps the interpolation honest.
-    private func jsString(_ value: String) -> String {
-        let data = try? JSONSerialization.data(withJSONObject: [value])
-        let array = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
-        return String(array.dropFirst().dropLast())
-    }
-
-    private final class LoadDelegate: NSObject, WKNavigationDelegate {
-        private let onFinish: () -> Void
-        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onFinish() }
-    }
+    private func jsString(_ value: String) -> String { SafariJSTestHarness.jsString(value) }
 }

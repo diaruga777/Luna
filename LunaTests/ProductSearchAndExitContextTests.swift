@@ -16,45 +16,45 @@ final class ProductSearchURLTests: XCTestCase {
 
     // MARK: - Google Shopping URL
 
-    func testGoogleShoppingURLEncodesProductName() {
-        let url = ProductSearchURL.googleShoppingURL(forProductName: "Sony WH-1000XM5")
-        XCTAssertEqual(
-            url?.absoluteString,
-            "https://www.google.com/search?tbm=shop&q=Sony+WH-1000XM5")
-    }
+    func testGoogleShoppingURL() {
+        let cases: [(name: String, productName: String, expected: String?)] = [
+            ("plain name", "Sony WH-1000XM5",
+             "https://www.google.com/search?tbm=shop&q=Sony+WH-1000XM5"),
+            // `&` and `#` must be escaped so they can't break out of the q= value.
+            ("reserved characters escaped", "Salt & Pepper #1",
+             "https://www.google.com/search?tbm=shop&q=Salt+%26+Pepper+%231"),
+            ("empty", "", nil),
+            ("whitespace only", "   \n ", nil),
+        ]
 
-    func testGoogleShoppingURLEscapesReservedCharacters() {
-        let url = ProductSearchURL.googleShoppingURL(forProductName: "Salt & Pepper #1")
-        // `&` and `#` must be escaped so they can't break out of the q= value.
-        XCTAssertEqual(
-            url?.absoluteString,
-            "https://www.google.com/search?tbm=shop&q=Salt+%26+Pepper+%231")
-    }
-
-    func testGoogleShoppingURLNilForEmptyOrWhitespace() {
-        XCTAssertNil(ProductSearchURL.googleShoppingURL(forProductName: ""))
-        XCTAssertNil(ProductSearchURL.googleShoppingURL(forProductName: "   \n "))
+        for testCase in cases {
+            XCTAssertEqual(
+                ProductSearchURL.googleShoppingURL(
+                    forProductName: testCase.productName)?.absoluteString,
+                testCase.expected,
+                testCase.name)
+        }
     }
 
     // MARK: - URL-bar navigation target
 
-    func testBarTextWithSchemeLoadsThatURL() {
-        let url = ProductSearchURL.navigationURL(fromBarText: "https://amazon.com/dp/B0XYZ")
-        XCTAssertEqual(url?.absoluteString, "https://amazon.com/dp/B0XYZ")
-    }
+    func testNavigationURLFromBarText() {
+        let cases: [(name: String, barText: String, expected: String?)] = [
+            ("explicit scheme loads that URL", "https://amazon.com/dp/B0XYZ",
+             "https://amazon.com/dp/B0XYZ"),
+            ("bare domain loads over HTTPS", "bestbuy.com/site/abc",
+             "https://bestbuy.com/site/abc"),
+            ("free text becomes a Google search", "wireless headphones",
+             "https://www.google.com/search?q=wireless+headphones"),
+            ("empty is nil", "   ", nil),
+        ]
 
-    func testBarTextBareDomainLoadsOverHTTPS() {
-        let url = ProductSearchURL.navigationURL(fromBarText: "bestbuy.com/site/abc")
-        XCTAssertEqual(url?.absoluteString, "https://bestbuy.com/site/abc")
-    }
-
-    func testBarTextFreeTextBecomesGoogleSearch() {
-        let url = ProductSearchURL.navigationURL(fromBarText: "wireless headphones")
-        XCTAssertEqual(url?.absoluteString, "https://www.google.com/search?q=wireless+headphones")
-    }
-
-    func testBarTextEmptyIsNil() {
-        XCTAssertNil(ProductSearchURL.navigationURL(fromBarText: "   "))
+        for testCase in cases {
+            XCTAssertEqual(
+                ProductSearchURL.navigationURL(fromBarText: testCase.barText)?.absoluteString,
+                testCase.expected,
+                testCase.name)
+        }
     }
 }
 
@@ -62,35 +62,40 @@ final class PriceTrackingExitContextTests: XCTestCase {
 
     // MARK: - Left button (host)
 
-    func testInAppHostShowsBack() {
-        let context = PriceTrackingExitContext(host: .inApp, entry: .existing)
-        XCTAssertEqual(context.leftButton, .back)
-    }
+    func testLeftButtonFollowsTheHost() {
+        let cases: [(name: String, context: PriceTrackingExitContext,
+                     expected: PriceTrackingLeftButton)] = [
+            ("in-app host shows Back",
+             PriceTrackingExitContext(host: .inApp, entry: .existing), .back),
+            ("extension host shows Done",
+             PriceTrackingExitContext(host: .extension, entry: .creation), .done),
+        ]
 
-    func testExtensionHostShowsDone() {
-        let context = PriceTrackingExitContext(host: .extension, entry: .creation)
-        XCTAssertEqual(context.leftButton, .done)
+        for testCase in cases {
+            XCTAssertEqual(testCase.context.leftButton, testCase.expected, testCase.name)
+        }
     }
 
     // MARK: - Read instead (entry)
 
-    func testCreationShowsDiscardTracker() {
-        let context = PriceTrackingExitContext(host: .inApp, entry: .creation)
-        XCTAssertEqual(context.readInsteadAction, .discardTracker)
-    }
-
-    func testMergeRevertsExactlyTheAddedURL() {
+    func testReadInsteadActionFollowsTheEntry() {
         let added = "https://store.example/p/123"
-        let context = PriceTrackingExitContext(
-            host: .inApp, entry: .merge(addedStoreURLString: added))
-        XCTAssertEqual(context.readInsteadAction, .revertAddedStore(urlString: added))
-    }
+        let cases: [(name: String, context: PriceTrackingExitContext,
+                     expected: PriceTrackingReadInsteadAction)] = [
+            ("creation discards the tracker",
+             PriceTrackingExitContext(host: .inApp, entry: .creation), .discardTracker),
+            ("merge reverts exactly the added URL",
+             PriceTrackingExitContext(host: .inApp, entry: .merge(addedStoreURLString: added)),
+             .revertAddedStore(urlString: added)),
+            // Hidden regardless of host — returning to a saved tracker is never save-time.
+            ("existing hides it (in-app)",
+             PriceTrackingExitContext(host: .inApp, entry: .existing), .hidden),
+            ("existing hides it (extension)",
+             PriceTrackingExitContext(host: .extension, entry: .existing), .hidden),
+        ]
 
-    func testExistingHidesReadInstead() {
-        let context = PriceTrackingExitContext(host: .inApp, entry: .existing)
-        XCTAssertEqual(context.readInsteadAction, .hidden)
-        // Hidden regardless of host — returning to a saved tracker is never save-time.
-        let extContext = PriceTrackingExitContext(host: .extension, entry: .existing)
-        XCTAssertEqual(extContext.readInsteadAction, .hidden)
+        for testCase in cases {
+            XCTAssertEqual(testCase.context.readInsteadAction, testCase.expected, testCase.name)
+        }
     }
 }

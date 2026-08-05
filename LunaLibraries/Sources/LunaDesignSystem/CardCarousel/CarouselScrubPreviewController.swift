@@ -146,19 +146,15 @@ final class CarouselScrubPreviewController {
         loadThumbnail(into: preview)
         preview.titleLabel?.text = carousel.dataSource?.carousel(
             carousel, titleForCardAt: preview.index)
-        switch carousel.style.scrubberStyle {
-        case .thumbnails:
-            if isCenter, carousel.style.autoplaysScrubPreviewContent {
-                mountContent(into: preview, isCenter: true)
-            }
-        case .miniCards:
-            mountContent(into: preview, isCenter: isCenter)
-        }
+        // Mount unconditionally: a peek only ever gets content the strip already
+        // PREPARED, and a kind whose card is an AVPlayer declines preparation,
+        // so the "no player per chip" invariant holds without a deck-level flag.
+        mountContent(into: preview, isCenter: isCenter)
         if let content = preview.content {
             if isCenter {
                 // A card scrubbed back to center resumes the preview it was
                 // already playing before it slid out to a peek.
-                if carousel.style.autoplaysScrubPreviewContent,
+                if carousel.cardStyle(at: preview.index).autoplaysScrubPreview,
                    content.isPlayable, !content.isPlaying {
                     content.cardDidBecomeCentered()
                 }
@@ -238,7 +234,8 @@ final class CarouselScrubPreviewController {
     /// Rests every preview at its slot's geometry, exactly like a mounted card.
     func layout() {
         for (offset, preview) in previews {
-            carousel.applyRestingLayout(to: preview.card, atSlotOffset: offset)
+            carousel.applyRestingLayout(
+                to: preview.card, atSlotOffset: offset, cardIndex: preview.index)
         }
     }
 

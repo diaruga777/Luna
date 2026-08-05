@@ -50,10 +50,18 @@ final class ReadingListStoreCacheTests: XCTestCase {
         return item
     }
 
-    func testExternalWriteWithADifferentSizeIsPickedUpOnTheNextRead() throws {
+    /// Both halves of the stat-token contract over one seeded store: an
+    /// external write with a different (mtime, size) invalidates the cache, and
+    /// an unchanged file keeps serving consistent reads.
+    func testStatTokenInvalidatesOnExternalWriteAndServesTheCacheOtherwise() throws {
         // Fills the cache with one item.
         addAndWaitForNotification("https://example.com/a")
         XCTAssertEqual(store.items().map(\.urlString), ["https://example.com/a"])
+
+        // No external write in between — the stat token is unchanged, so
+        // repeated reads must stay consistent with each other (same cached
+        // array; ReadingListItem is a value type, so this compares by value).
+        XCTAssertEqual(store.items(), store.items())
 
         // A second process (SaveLink intent, an extension) writes the shared file
         // directly — a different item count, so the byte size necessarily
@@ -71,50 +79,41 @@ final class ReadingListStoreCacheTests: XCTestCase {
                        "a changed (mtime, size) stat token must invalidate the in-process cache")
     }
 
-    func testUnchangedFileServesTheCachedArrayRatherThanReDecoding() {
-        addAndWaitForNotification("https://example.com/a")
-        let first = store.items()
-        // No external write in between — the stat token is unchanged, so this
-        // must be the SAME cached array, not a fresh decode (same identity by
-        // value equality here since ReadingListItem is a value type; the
-        // behavior under test is that no crash/emptying occurs and repeated
-        // reads stay consistent with each other).
-        let second = store.items()
-        XCTAssertEqual(first, second)
-    }
-
     // MARK: - Skip-write-when-unchanged
 
-    func testNoOpAddDoesNotPostReadingListChanged() {
+    /// The two no-op mutation paths — `coordinatedMutate` (a duplicate `add`)
+    /// and `coordinatedUpdate` (`markFailed` on an id that isn't there) — share
+    /// ONE inverted expectation, so proving "neither notifies" costs one 0.5s
+    /// window rather than two.
+    func testNoOpMutationsNeitherNotifyNorRewriteTheFile() throws {
         // The first add is a genuine change and must notify.
         addAndWaitForNotification("https://example.com/dup")
+        let sizeAfterFirstWrite = try FileManager.default
+            .attributesOfItem(atPath: listFileURL.path)[.size] as? Int
 
-        // A second add for the SAME url is a no-op (returns the existing item
-        // without mutating the array) and must NOT notify again.
-        let secondAddMustNotNotify = expectation(forNotification: .readingListChanged, object: nil)
-        secondAddMustNotNotify.isInverted = true
+        let mustNotNotify = expectation(forNotification: .readingListChanged, object: nil)
+        mustNotNotify.isInverted = true
+        // A second add for the SAME url returns the existing item without
+        // mutating the array; markFailed for a missing id is the same no-op on
+        // the coordinatedUpdate side.
         _ = store.add(urlString: "https://example.com/dup")
-        wait(for: [secondAddMustNotNotify], timeout: 0.5)
+        store.markFailed(UUID())
+        wait(for: [mustNotNotify], timeout: 0.5)
 
         XCTAssertEqual(store.items().count, 1, "the duplicate add must not have appended a second row")
-    }
-
-    func testNoOpAddDoesNotRewriteTheFileOnDisk() throws {
-        addAndWaitForNotification("https://example.com/dup")
-        let attributesAfterFirstWrite = try FileManager.default.attributesOfItem(atPath: listFileURL.path)
-        let sizeAfterFirstWrite = attributesAfterFirstWrite[.size] as? Int
-
-        _ = store.add(urlString: "https://example.com/dup") // no-op: same URL already saved
-
-        let attributesAfterNoOp = try FileManager.default.attributesOfItem(atPath: listFileURL.path)
-        let sizeAfterNoOp = attributesAfterNoOp[.size] as? Int
-        XCTAssertEqual(sizeAfterFirstWrite, sizeAfterNoOp,
+        let sizeAfterNoOps = try FileManager.default
+            .attributesOfItem(atPath: listFileURL.path)[.size] as? Int
+        XCTAssertEqual(sizeAfterFirstWrite, sizeAfterNoOps,
                        "a no-op mutation must skip the write entirely, not write identical bytes")
     }
 
     // MARK: - Atomic save-attempt reservation
 
-    func testSaveAttemptReservationWritesTheInitialTimingStateImmediately() {
+    /// The reservation's three timing rules in one pass: the initial state is
+    /// durable immediately, completion extends the window from the END (and a
+    /// late callback can't shorten it), and an overlapping run can't move the
+    /// marker backward.
+    func testSaveAttemptTimingIsDurableImmediatelyAndOnlyEverMovesForward() {
         let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
         let first = store.reserveSaveAttempt(
             urlString: "https://example.com/intent", source: .appIntent, at: startedAt)
@@ -126,37 +125,25 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertEqual(first.item.captureSource, .appIntent)
         XCTAssertEqual(store.item(withID: first.item.id)?.dateAdded, startedAt)
         XCTAssertEqual(store.item(withID: first.item.id)?.lastSaveAttemptDate, startedAt)
-    }
 
-    func testSaveAttemptCompletionExtendsTheDurableWindowFromTheEnd() {
-        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-        let reservation = store.reserveSaveAttempt(
-            urlString: "https://example.com/completion", source: .appIntent, at: startedAt)
-        let completedAt = startedAt.addingTimeInterval(18)
-
-        store.finishSaveAttempt(for: reservation.item.id, at: completedAt)
-        XCTAssertEqual(
-            store.item(withID: reservation.item.id)?.lastSaveAttemptDate, completedAt)
-
-        // A delayed callback carrying an older time cannot shorten the window.
-        store.finishSaveAttempt(
-            for: reservation.item.id, at: startedAt.addingTimeInterval(4))
-        XCTAssertEqual(
-            store.item(withID: reservation.item.id)?.lastSaveAttemptDate, completedAt)
-    }
-
-    func testSaveAttemptReservationDoesNotMoveMarkerBackwardForOverlappingRuns() {
-        let laterStart = Date(timeIntervalSince1970: 1_700_000_000.25)
-        let first = store.reserveSaveAttempt(
-            urlString: "https://example.com/overlap", source: .appIntent, at: laterStart)
-        let earlierStart = laterStart.addingTimeInterval(-0.25)
+        // An overlapping reservation of the SAME url, stamped earlier, reuses
+        // the row and leaves the marker where the later start put it.
+        let earlierStart = startedAt.addingTimeInterval(-0.25)
         let overlapping = store.reserveSaveAttempt(
             urlString: first.item.urlString, source: .appIntent, at: earlierStart)
-
         XCTAssertFalse(overlapping.wasAdded)
         XCTAssertEqual(overlapping.item.id, first.item.id)
-        XCTAssertEqual(overlapping.previousPressDate, laterStart)
-        XCTAssertEqual(store.item(withID: first.item.id)?.lastSaveAttemptDate, laterStart)
+        XCTAssertEqual(overlapping.previousPressDate, startedAt)
+        XCTAssertEqual(store.item(withID: first.item.id)?.lastSaveAttemptDate, startedAt)
+
+        // Completion extends the durable window from the end...
+        let completedAt = startedAt.addingTimeInterval(18)
+        store.finishSaveAttempt(for: first.item.id, at: completedAt)
+        XCTAssertEqual(store.item(withID: first.item.id)?.lastSaveAttemptDate, completedAt)
+
+        // ...and a delayed callback carrying an older time cannot shorten it.
+        store.finishSaveAttempt(for: first.item.id, at: startedAt.addingTimeInterval(4))
+        XCTAssertEqual(store.item(withID: first.item.id)?.lastSaveAttemptDate, completedAt)
     }
 
     func testConcurrentSaveAttemptReservationsAddOneItem() {
@@ -190,15 +177,6 @@ final class ReadingListStoreCacheTests: XCTestCase {
         wait(for: [notificationsDrained], timeout: 2)
     }
 
-    func testMarkFailedOnAMissingItemDoesNotPostReadingListChanged() {
-        // markFailed uses coordinatedUpdate (the "only write when body reports a
-        // change" sibling of coordinatedMutate) — a missing id is a no-op there too.
-        let missingIDNotifies = expectation(forNotification: .readingListChanged, object: nil)
-        missingIDNotifies.isInverted = true
-        store.markFailed(UUID())
-        wait(for: [missingIDNotifies], timeout: 0.5)
-    }
-
     func testArchivingRoundTripsAndReleasesRecursivePreloadOwnership() throws {
         let preloadStore = PreloadStore(containerURL: scratchDirectory)
         store = ReadingListStore(containerURL: scratchDirectory, preloadStore: preloadStore)
@@ -220,7 +198,10 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertNil(store.item(withID: item.id)?.archivedAt)
     }
 
-    func testFinishedItemRemainsActiveUntilPendingArchiveIsCommitted() {
+    /// The whole finish → pending → committed → unread lifecycle in one pass:
+    /// the two halves used to repeat the same finish-and-commit setup, one
+    /// notification round trip each.
+    func testFinishStaysActiveUntilCommittedAndMarkUnreadClearsBothArchiveMarks() {
         let item = addAndWaitForNotification("https://example.com/finish-later")
         let finishedAt = Date(timeIntervalSince1970: 456)
 
@@ -241,17 +222,8 @@ final class ReadingListStoreCacheTests: XCTestCase {
         let committed = store.item(withID: item.id)
         XCTAssertNil(committed?.pendingArchiveAt)
         XCTAssertEqual(committed?.archivedAt, finishedAt)
-    }
 
-    func testMarkUnreadClearsCommittedAndPendingArchiveState() {
-        let item = addAndWaitForNotification("https://example.com/unarchive")
-        let finished = expectation(forNotification: .readingListChanged, object: nil)
-        store.markFinishedReading(item.id, at: Date(timeIntervalSince1970: 456))
-        wait(for: [finished], timeout: 2)
-        let archived = expectation(forNotification: .readingListChanged, object: nil)
-        store.archivePendingFinishedItems()
-        wait(for: [archived], timeout: 2)
-
+        // Marking unread from the committed state clears BOTH marks and bumps.
         let unarchived = expectation(forNotification: .readingListChanged, object: nil)
         let unarchivedAt = Date(timeIntervalSince1970: 789)
         store.markUnread(item.id, at: unarchivedAt)

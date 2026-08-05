@@ -84,23 +84,33 @@ final class FriendsStoreTests: XCTestCase {
         XCTAssertTrue(store.blockedItems().isEmpty)
     }
 
-    func testNewestFirstOrdering() {
-        store.add(email: "first@example.com")
-        usleep(5000) // distinct dateAdded timestamps
-        store.add(email: "second@example.com")
+    /// `items()` sorts by `dateAdded` descending. Seeded through the file
+    /// rather than two `add` calls a `usleep` apart — `add` stamps `Date()`, so
+    /// the old form had to burn real time just to make the two stamps differ.
+    func testNewestFirstOrdering() throws {
+        let older = Friend(
+            email: "first@example.com", dateAdded: Date(timeIntervalSince1970: 1_000))
+        let newer = Friend(
+            email: "second@example.com", dateAdded: Date(timeIntervalSince1970: 2_000))
+        let data = try JSONEncoder().encode([older, newer])
+        try data.write(to: scratchDirectory.appendingPathComponent("friends.json"))
+
         XCTAssertEqual(store.items().map(\.email), ["second@example.com", "first@example.com"])
     }
 
     func testIndependentStoresDoNotLoseConcurrentAppGroupUpdates() {
         let firstProcess = FriendsStore(containerURL: scratchDirectory)
         let secondProcess = FriendsStore(containerURL: scratchDirectory)
+        // 16 rather than 40: enough interleaving to catch a lost coordinated
+        // update, without 40 serialized file-coordination round trips.
+        let iterations = 16
 
-        DispatchQueue.concurrentPerform(iterations: 40) { index in
+        DispatchQueue.concurrentPerform(iterations: iterations) { index in
             let process = index.isMultiple(of: 2) ? firstProcess : secondProcess
             process.add(email: "person\(index)@example.com")
         }
 
-        XCTAssertEqual(store.items().count, 40)
+        XCTAssertEqual(store.items().count, iterations)
     }
 
     func testEmailValidation() {

@@ -271,8 +271,10 @@ final class CardCarouselMetricsTests: XCTestCase {
 
 final class CarouselScrubberMathTests: XCTestCase {
 
+    /// A chip showing a still fills its whole item — the picture IS the chip,
+    /// over the mini card's furniture rather than inset within it.
     func testThumbnailImageKeepsItsItemBoundsAfterInitialLayout() throws {
-        let scrubber = CarouselScrubberView(style: .thumbnails)
+        let scrubber = CarouselScrubberView()
         scrubber.frame = CGRect(x: 0, y: 0, width: 390, height: scrubber.preferredHeight)
         scrubber.setThumbnailCount(3)
         scrubber.layoutIfNeeded()
@@ -283,7 +285,7 @@ final class CarouselScrubberMathTests: XCTestCase {
     }
 
     func testMiniCardsReserveSelectionAndShadowRunway() {
-        let scrubber = CarouselScrubberView(style: .miniCards)
+        let scrubber = CarouselScrubberView()
         XCTAssertEqual(scrubber.preferredHeight, 96)
     }
 
@@ -461,36 +463,32 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
     }
 
     func testReaderTapTwoCardsForwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
-        try await assertScrubberTapEclipse(style: .miniCards, from: 3, to: 5)
+        try await assertScrubberTapEclipse(from: 3, to: 5)
     }
 
     func testReaderTapTwoCardsBackwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
-        try await assertScrubberTapEclipse(style: .miniCards, from: 3, to: 1)
+        try await assertScrubberTapEclipse(from: 3, to: 1)
     }
 
     func testDownloaderTapOneCardUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 4)
+        try await assertScrubberTapEclipse(from: 3, to: 4)
     }
 
     func testDownloaderTapTwoCardsStagesTargetAndUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 5)
+        try await assertScrubberTapEclipse(from: 3, to: 5)
     }
 
     func testDownloaderTapTwoCardsBackwardStagesTargetAndUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 1)
+        try await assertScrubberTapEclipse(from: 3, to: 1)
     }
 
     private func assertScrubberTapEclipse(
-        style scrubberStyle: CarouselScrubberView.Style,
         from start: Int,
         to target: Int
     ) async throws {
         let source = MiniCardPagingDataSource()
         let delegate = NavigationTargetSpy()
         let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.scrubberStyle = scrubberStyle
-        carousel.style = style
         carousel.dataSource = source
         carousel.delegate = delegate
 
@@ -580,7 +578,7 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         let delegate = NavigationTargetSpy()
         let carousel = CardCarouselViewController()
         var style = CardCarouselStyle()
-        style.autoplaysScrubPreviewContent = true
+        style.card.autoplaysScrubPreview = true
         carousel.style = style
         carousel.dataSource = source
         carousel.delegate = delegate
@@ -593,27 +591,27 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         muteButton.sendActions(for: .touchUpInside)
 
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        let centered = source.previews[1]
         scrubber.delegate?.scrubber(scrubber, didPreview: 1)
         XCTAssertEqual(delegate.targets, [1])
-        XCTAssertTrue(source.preview.isPlaying)
-        XCTAssertFalse(source.preview.isMuted)
-        XCTAssertEqual(source.preview.pauseCount, 0)
+        XCTAssertTrue(centered.isPlaying)
+        XCTAssertFalse(centered.isMuted)
+        XCTAssertEqual(centered.pauseCount, 0)
 
         scrubber.delegate?.scrubber(scrubber, didCommit: 1)
 
         XCTAssertEqual(carousel.currentIndex, 1)
-        XCTAssertTrue(source.preview.parent === carousel)
-        XCTAssertTrue(source.preview.isPlaying)
-        XCTAssertEqual(source.preview.pauseCount, 0)
+        XCTAssertTrue(centered.parent === carousel)
+        XCTAssertTrue(centered.isPlaying)
+        XCTAssertEqual(
+            centered.pauseCount, 0,
+            "promotion must hand the playing preview over, not pause and rebuild it")
         XCTAssertEqual(source.normalRequestCounts[1], 1)
     }
 
     func testMiniCardScrubberPreparesOnlyVisibleWindowAndPromotesExactPreview() throws {
         let source = VisibleWindowScrubDataSource()
         let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.scrubberStyle = .miniCards
-        carousel.style = style
         carousel.dataSource = source
         carousel.loadViewIfNeeded()
         carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -646,9 +644,6 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
     func testScrubSettleOnAPosterOnlyCardHandsOverWithoutTheEclipse() throws {
         let source = PosterOnlyScrubDataSource()
         let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.scrubberStyle = .miniCards
-        carousel.style = style
         carousel.dataSource = source
 
         // On-window, so the eclipse is available to be wrongly chosen.
@@ -761,10 +756,20 @@ private final class CenteringSpyCardContentViewController: CardContentViewContro
 
 @MainActor
 private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSource {
-    let preview = PlaybackSpyCardContentViewController()
+    /// One preview controller PER CARD, which is what a real data source
+    /// supplies. A single shared instance used to work here only because the
+    /// deck-level `.thumbnails` scrubber prepared nothing, so the peeks never
+    /// mounted anything: once the strip prepares its visible window for every
+    /// deck, a shared instance lets a PEEK's "peeks never play" pause land on
+    /// the centre's own player and the spy can no longer tell the two apart.
+    let previews = [
+        PlaybackSpyCardContentViewController(),
+        PlaybackSpyCardContentViewController(),
+        PlaybackSpyCardContentViewController(),
+    ]
     var normalRequestCounts: [Int: Int] = [:]
 
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 3 }
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { previews.count }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -777,7 +782,7 @@ private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSo
     func carousel(
         _ carousel: CardCarouselViewController,
         previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? { preview }
+    ) -> CardContentViewController? { previews[index] }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -905,7 +910,7 @@ final class CardCarouselChromeBackdropTests: XCTestCase {
 final class CarouselScrubberUtilityChipTests: XCTestCase {
 
     func testUtilityChipCentersItsMarkAboveCenterWithAPillBeneathIt() throws {
-        let strip = CarouselScrubberView(style: .miniCards)
+        let strip = CarouselScrubberView()
         strip.frame = CGRect(x: 0, y: 0, width: 320, height: strip.preferredHeight)
         strip.setThumbnailCount(3)
         let icon = Self.solidImage(side: 40)
@@ -934,7 +939,7 @@ final class CarouselScrubberUtilityChipTests: XCTestCase {
     }
 
     func testASaveArtworkTakesTheChipBackFromTheUtilityLayout() throws {
-        let strip = CarouselScrubberView(style: .miniCards)
+        let strip = CarouselScrubberView()
         strip.frame = CGRect(x: 0, y: 0, width: 320, height: strip.preferredHeight)
         strip.setThumbnailCount(2)
         let icon = Self.solidImage(side: 40)

@@ -31,10 +31,10 @@ struct CardDeckSlot {
     let id: UUID
     /// The save's URL, when the slot has one.
     ///
-    /// A deck whose slots are keyed by a COMPANION store's id — the Downloader's
-    /// media rows carry `SavedMediaItem.id` — cannot be centered by the id of
-    /// the reading-list item a save produced, because the row does not share it.
-    /// It does share the URL, so the URL travels too and either key resolves.
+    /// A save's id is not always the key a centering request knows it by: an
+    /// ingest that reshapes the URL, or a companion store that wrote the row
+    /// under its OWN id (a media download keyed by `SavedMediaItem.id`), leaves
+    /// the two out of step. The URL travels alongside so either key resolves.
     let urlString: String?
     /// Everything about this slot that its card renders. Two reloads with equal
     /// fingerprints are the same deck, and the second one is abandoned rather
@@ -168,6 +168,10 @@ protocol CardDeckProviding: AnyObject {
     /// Whether this slot's strip chip is its own full-bleed still rather than a
     /// mini card with a source badge.
     func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool
+    /// This card's own shape (fit, edge fade, scrub-preview autoplay, in-card
+    /// paging). Nil leaves the deck's own default — which is what the util
+    /// card, having no kind, always gets.
+    func deckCardStyle(forSlot slot: Int) -> CardCarouselCardStyle?
     func deckTopLeadingAccessory(forSlot slot: Int) -> UIView?
     func deckEdgeGlowColor(forSlot slot: Int) -> UIColor?
     func deckMenu(forSlot slot: Int) -> UIMenu?
@@ -182,6 +186,17 @@ protocol CardDeckProviding: AnyObject {
 
     func deckArchiveTrayItems() -> [ArchiveTrayItem]
 
+    /// The kind that owns a save, as THIS deck resolves it. Normally the
+    /// registry's answer, but a stand-in for an unbacked row (see
+    /// `CardKindPresenting.unbackedItems`) has no reading-list row to resolve
+    /// from and goes back to the presenter that supplied it.
+    func deckPresenter(forItemID id: UUID) -> CardKindPresenting?
+
+    /// The save behind a slot. The host keeps only `CardDeckSlot`s — id, URL,
+    /// fingerprint — so chrome that needs the whole row (the Reader's share
+    /// pill asking what the centered card IS) asks the provider for it.
+    func deckItem(forSlot slot: Int) -> ReadingListItem?
+
     // MARK: - The trailing bottom circle
 
     /// nil for a deck that dresses its trailing circle itself (Reader's reader
@@ -190,6 +205,11 @@ protocol CardDeckProviding: AnyObject {
     /// Whether the circle's verb is available for the centered card. `slot` is
     /// nil on the util card.
     func deckCanShare(slot: Int?) -> Bool
+    /// The circle's MENU for the centered card, built fresh on each press. A
+    /// deck that offers a ladder (media's Copy link / Share link / Share video…)
+    /// answers here; one with a single verb leaves it nil and `deckShare` fires
+    /// on the tap instead.
+    func deckShareMenu(slot: Int, sourceView: UIView) -> UIMenu?
     func deckShare(slot: Int, sourceView: UIView)
 }
 
@@ -210,6 +230,7 @@ extension CardDeckProviding {
         forSlot slot: Int, completion: @escaping (UIImage?) -> Void
     ) { completion(nil) }
     func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool { false }
+    func deckCardStyle(forSlot slot: Int) -> CardCarouselCardStyle? { nil }
     func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? { nil }
     func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? { nil }
     func deckMenu(forSlot slot: Int) -> UIMenu? { nil }
@@ -217,7 +238,10 @@ extension CardDeckProviding {
     func deckUtilCardDidCenter() {}
     func deckSlotWasTapped(_ slot: Int) {}
     func deckArchiveTrayItems() -> [ArchiveTrayItem] { [] }
+    func deckPresenter(forItemID id: UUID) -> CardKindPresenting? { nil }
+    func deckItem(forSlot slot: Int) -> ReadingListItem? { nil }
     var deckShareButton: CardDeckShareButton? { nil }
     func deckCanShare(slot: Int?) -> Bool { slot != nil }
+    func deckShareMenu(slot: Int, sourceView: UIView) -> UIMenu? { nil }
     func deckShare(slot: Int, sourceView: UIView) {}
 }

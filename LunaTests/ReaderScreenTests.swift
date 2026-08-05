@@ -60,14 +60,6 @@ final class ReaderScreenTests: XCTestCase {
                                        named: "reader-rsvp")
     }
 
-    /// The former standalone "highlight" (chunking) view now lives as RSVP's
-    /// Phrases sub-mode; `forceMode: .highlight` resolves there.
-    func testPhraseReaderSnapshot() {
-        let reader = makeReader(forceMode: .highlight)
-        SnapshotTesting.assertSnapshot(of: UINavigationController(rootViewController: reader),
-                                       named: "reader-rsvp-phrases")
-    }
-
     func testInlineHeaderReaderSnapshot() {
         let reader = ReaderViewController(
             item: item, content: content, forceMode: .scroll,
@@ -76,18 +68,17 @@ final class ReaderScreenTests: XCTestCase {
         SnapshotTesting.assertSnapshot(of: reader, named: "reader-inline-header")
     }
 
-    // MARK: - Standalone scroll / RSVP children
-
-    func testStandaloneScrollReaderSnapshot() {
-        let scroll = ScrollReaderViewController(item: item, content: content)
-        SnapshotTesting.assertSnapshot(of: scroll, named: "reader-scroll-standalone")
-    }
-
-    func testStandaloneRSVPSnapshot() {
-        let rsvp = RSVPViewController(item: item, content: content)
-        SnapshotTesting.assertSnapshot(of: rsvp, named: "reader-rsvp-standalone")
-    }
-
+    // The standalone `ScrollReaderViewController` / `RSVPViewController`
+    // snapshots are gone: each was the same child the hosted scroll/rsvp
+    // snapshots above already render, minus the host chrome — a second
+    // reference image of the same pixels. Their non-snapshot behavior (finish
+    // on scroll end, skip-to-end, scrubber persistence, restored offsets) is
+    // asserted directly further down.
+    //
+    // The former standalone "highlight" (chunking) snapshot is gone too:
+    // Phrases is an RSVP sub-mode, and the sub-mode switch itself is covered by
+    // `testModeSwitcherChangesHostedChild`.
+    //
     // Note: SplitWebOverlayViewController is a transition overlay that requires a
     // live cut position + rendered top/bottom halves snapshotted from the host scroll
     // reader, plus a WKWebView (no network in tests). It isn't meaningful in
@@ -121,13 +112,13 @@ final class ReaderScreenTests: XCTestCase {
 
         control.selectedSegmentIndex = 1
         control.sendActions(for: .valueChanged)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         XCTAssertTrue(reader.children.contains { $0 is RSVPViewController },
                       "rsvp segment should host the RSVP reader")
 
         control.selectedSegmentIndex = 0
         control.sendActions(for: .valueChanged)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         XCTAssertTrue(reader.children.contains { $0 is ScrollReaderViewController },
                       "scroll segment should restore the scroll reader")
         _ = window
@@ -314,7 +305,7 @@ final class ReaderScreenTests: XCTestCase {
         let skipForward = findControl(in: reader.view, accessibilityLabel: "Skip forward 25 words")
         XCTAssertNotNil(skipForward)
         skipForward?.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
 
         XCTAssertTrue(delegate.didFinish, "Skipping onto the final RSVP word should mark the article read")
         let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view)
@@ -442,7 +433,7 @@ final class ReaderScreenTests: XCTestCase {
         }
 
         skipForward.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
 
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
@@ -469,9 +460,9 @@ final class ReaderScreenTests: XCTestCase {
         }
 
         skipForward.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         skipBack.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         // Skipping saves progress via the fire-and-forget saveReaderExitPosition
         // (WS-F1); flush before reading back so this isn't racing the store queue.
         ReadingListStore.shared.flushPendingUpdates()
@@ -507,12 +498,12 @@ final class ReaderScreenTests: XCTestCase {
 
         slider.value = 5
         slider.sendActions(for: .valueChanged)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, initialWordIndex,
                        "A continuous scrub tick must not persist to the store")
 
         slider.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         // saveReaderExitPosition is a fire-and-forget async write (WS-F1); flush
         // it before reading back so this assertion isn't racing the store queue.
         ReadingListStore.shared.flushPendingUpdates()

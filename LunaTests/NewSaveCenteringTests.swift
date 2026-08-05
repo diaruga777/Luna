@@ -180,7 +180,7 @@ final class NewSaveCenteringTests: XCTestCase {
     @MainActor
     func testPriceDeckMovesToATrackerSavedElsewhere() {
         let seeded = UITestSupport.seedSharedStore(.priceTracking)
-        let deck = PriceTrackerCardsViewController()
+        let deck = ProductCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
@@ -211,7 +211,7 @@ final class NewSaveCenteringTests: XCTestCase {
     @MainActor
     func testMediaDeckMovesToASaveMadeElsewhere() {
         seedMedia(count: 3)
-        let deck = SavedMediaCardsViewController()
+        let deck = MediaCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
@@ -232,7 +232,7 @@ final class NewSaveCenteringTests: XCTestCase {
     @MainActor
     func testMediaDeckMovesToAFailedSaveThatJustArrived() {
         seedMedia(count: 2)
-        let deck = SavedMediaCardsViewController()
+        let deck = MediaCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 

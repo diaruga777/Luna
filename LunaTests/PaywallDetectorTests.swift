@@ -18,6 +18,8 @@ final class PaywallDetectorTests: XCTestCase {
 
     /// theleader.com.au (ACM) failure case: a long body padded with subscription
     /// copy, but the "login or signup to continue reading" gate phrase is present.
+    /// The `looksPaywalled` / `hasReadableBody` pair is asserted on the content shape
+    /// here; the phrase table below covers the other gate wordings we've hit.
     func testGatePhraseFlaggedEvenWhenBodyIsLong() {
         let long = String(repeating: "Javid Ahmadi ran the 7-Eleven franchise for years before the dispute. ", count: 60)
         let article = content([
@@ -31,9 +33,26 @@ final class PaywallDetectorTests: XCTestCase {
         XCTAssertFalse(article.hasReadableBody)
     }
 
-    func testSubscribeToReadIsAGate() {
-        XCTAssertTrue(PaywallDetector.textLooksPaywalled(
-            "Headline. Subscribe to read the rest of this exclusive report.", bodyLength: 5000))
+    /// Gate markers fire at any length — a deliberate precision-over-recall trade, so a
+    /// long article that merely QUOTES one is flagged too. Locking the policy (and each
+    /// wording we've actually seen) so a future change is a conscious one.
+    func testGateMarkersFlagAWallAtAnyBodyLength() {
+        let long = String(repeating: "Substantive reporting continues across the piece. ", count: 80)
+        let phrases = [
+            "Subscribe to read the rest of this exclusive report.",
+            "The notice read: subscribe to continue.",
+            "Login or signup to continue reading",
+        ]
+        for phrase in phrases {
+            let text = long + " " + phrase
+            XCTAssertTrue(PaywallDetector.textLooksPaywalled(text, bodyLength: text.count),
+                          "gate phrase not flagged in a long body: \(phrase)")
+            // The consolidated predicate must agree: length alone never rescues a gate.
+            let article = content([text])
+            XCTAssertGreaterThan(article.bodyTextLength, PaywallDetector.shortBodyThreshold)
+            XCTAssertFalse(ArticleExtraction.isReadableArticle(article, html: nil),
+                           "a quoted gate phrase flags the wall regardless of length: \(phrase)")
+        }
     }
 
     // MARK: weak markers — only when the body is short
@@ -45,11 +64,6 @@ final class PaywallDetectorTests: XCTestCase {
         let long = String(repeating: "Substantive reporting continues across the piece. ", count: 80)
             + " Subscribe now to support local journalism."
         XCTAssertFalse(PaywallDetector.textLooksPaywalled(long, bodyLength: long.count))
-    }
-
-    func testRealLongArticleNotFlagged() {
-        let body = String(repeating: "The committee reviewed the budget and debated the proposal. ", count: 80)
-        XCTAssertFalse(PaywallDetector.textLooksPaywalled(body, bodyLength: body.count))
     }
 
     // MARK: publisher-declared (HTML) signal
@@ -70,17 +84,24 @@ final class PaywallDetectorTests: XCTestCase {
             #"{"isAccessibleForFree":true}"#))
     }
 
-    /// HTML signal flags a short wall even when the extractor stripped the CTA text.
+    /// HTML signal flags a short wall even when the extractor stripped the CTA text: a
+    /// clean body that only just clears the readable threshold can still be a teaser.
     func testLooksPaywalledUsesHTMLWhenShortBodyLooksClean() {
         let clean = content([String(repeating: "Clean prose with no subscription words at all here. ", count: 40)])
         XCTAssertLessThan(clean.bodyTextLength, PaywallDetector.shortBodyThreshold)
         XCTAssertFalse(clean.looksPaywalled)   // text alone: fine
         XCTAssertTrue(PaywallDetector.looksPaywalled(
             content: clean, html: #"{"isAccessibleForFree":false}"#))
+        // Same call through the consolidated predicate: readable text-only, NOT readable
+        // once the source HTML declares the lock.
+        XCTAssertTrue(ArticleExtraction.isReadableArticle(clean, html: nil))
+        XCTAssertFalse(ArticleExtraction.isReadableArticle(
+            clean, html: #"{"isAccessibleForFree":false}"#))
     }
 
     /// New Statesman-shaped pages can serve the full article while keeping subscriber
-    /// metadata in schema.org. A long, gate-free body should win over that stale lock.
+    /// metadata in schema.org. A long, gate-free body should win over that stale lock —
+    /// it must not force an unnecessary archive flow.
     func testLongCleanBodyBeatsPublisherLockSignal() {
         let article = content([
             String(repeating: "Reported article prose continues with enough concrete detail to read as the actual story. ", count: 70),
@@ -88,5 +109,7 @@ final class PaywallDetectorTests: XCTestCase {
         XCTAssertGreaterThan(article.bodyTextLength, PaywallDetector.shortBodyThreshold)
         XCTAssertFalse(PaywallDetector.looksPaywalled(
             content: article, html: #"{"isAccessibleForFree":false}"#))
+        XCTAssertTrue(ArticleExtraction.isReadableArticle(
+            article, html: #"{"isAccessibleForFree":false}"#))
     }
 }

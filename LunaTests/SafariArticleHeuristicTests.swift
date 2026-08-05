@@ -3,14 +3,14 @@
 //  LunaTests
 //
 
-import WebKit
 import XCTest
 
 /// Exercises `looksLikeArticle` (the Readability-style scorer in
 /// `LunaSafari/Resources/content.js`) against realistic fixtures by loading the raw
-/// script into a plain `WKWebView` (no extension host, no `browser` global -- the
-/// script itself guards every top-level `browser.*` reference so it can be
-/// evaluated standalone) and calling the test-only hook it exposes,
+/// script into the shared bare-`WKWebView` harness (`SafariJSTestHarness` — no
+/// extension host, no `browser` global; the script itself guards every top-level
+/// `browser.*` reference so it can be evaluated standalone) and calling the
+/// test-only hook it exposes,
 /// `window.__lunaLooksLikeArticle`. Positive fixtures cover a news article, a
 /// plain blog post, an old-school `<br>`-separated "book" page, and a
 /// multi-section essay; negative fixtures cover a company landing page, a
@@ -20,72 +20,17 @@ import XCTest
 @MainActor
 final class SafariArticleHeuristicTests: XCTestCase {
 
-    /// `LunaTests/SafariArticleHeuristicTests.swift` -> repo root -> `LunaSafari/Resources/content.js`.
-    private static let contentScriptSource: String = resource("LunaSafari/Resources/content.js")
-
-    /// The generated shared news-host list (`self.__LUNA_NEWS_HOSTS`); background.js
-    /// injects it before content.js in the real extension, so the host-gating tests
-    /// evaluate it first too.
-    private static let newsHostsSource: String = resource("LunaSafari/Resources/news_hosts.generated.js")
-    private static let productRulesSource: String = resource("LunaSafari/Resources/product_rules.generated.js")
-
-    private static func resource(_ relativePath: String) -> String {
-        let thisFile = URL(fileURLWithPath: #filePath)
-        let repoRoot = thisFile.deletingLastPathComponent().deletingLastPathComponent()
-        let url = repoRoot.appendingPathComponent(relativePath)
-        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-    }
-
-    override func setUp() {
-        super.setUp()
-        XCTAssertFalse(
-            Self.contentScriptSource.isEmpty,
-            "content.js not found on disk -- check the path relative to #filePath")
-        XCTAssertFalse(
-            Self.newsHostsSource.isEmpty,
-            "news_hosts.generated.js not found on disk -- generate with TEST_RUNNER_RECORD_NEWS_HOSTS=1")
-        XCTAssertFalse(
-            Self.productRulesSource.isEmpty,
-            "product_rules.generated.js not found -- generate with TEST_RUNNER_RECORD_PRODUCT_RULES=1")
-    }
+    /// The one shared web view every Safari JS test batches onto.
+    private lazy var js = SafariJSTestHarness(self)
 
     // MARK: - Harness
 
-    /// Loads `html` into a WKWebView at `urlString`, evaluates content.js, then
-    /// evaluates `window.__lunaLooksLikeArticle()` and returns the result.
-    @MainActor
+    /// Loads `html` at `urlString`, evaluates content.js ALONE (no generated
+    /// tables — this is the DOM scorer on its own), then returns
+    /// `window.__lunaLooksLikeArticle()`.
     private func evaluateHeuristic(html: String, urlString: String = "https://example.com/story") -> Bool {
-        let expectation = expectation(description: "heuristic evaluated")
-        var outcome: Bool?
-
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let delegate = LoadDelegate {
-            webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
-                if let error { XCTFail("content.js failed to evaluate: \(error)") }
-                webView.evaluateJavaScript("window.__lunaLooksLikeArticle()") { result, error in
-                    if let error { XCTFail("__lunaLooksLikeArticle() failed to evaluate: \(error)") }
-                    outcome = result as? Bool
-                    expectation.fulfill()
-                }
-            }
-        }
-        webView.navigationDelegate = delegate
-        webView.loadHTMLString(html, baseURL: URL(string: urlString))
-
-        wait(for: [expectation], timeout: 10)
-        withExtendedLifetime(delegate) {}
-        guard let outcome else {
-            XCTFail("heuristic never returned a Bool")
-            return false
-        }
-        return outcome
-    }
-
-    /// Bridges `WKNavigationDelegate`'s didFinish callback to the closure above.
-    private final class LoadDelegate: NSObject, WKNavigationDelegate {
-        private let onFinish: () -> Void
-        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onFinish() }
+        js.load(html: html, urlString: urlString, scripts: [SafariJSTestHarness.contentScript])
+        return js.bool("window.__lunaLooksLikeArticle()")
     }
 
     // MARK: - Fixture prose
@@ -110,88 +55,72 @@ final class SafariArticleHeuristicTests: XCTestCase {
         return html
     }
 
-    // MARK: - Positive fixtures
+    // MARK: - The scorer's fixture matrix
 
-    /// (1) News article: og:type=article meta + 5 paragraphs in one <article>.
-    func testNewsArticleWithMetadataIsArticle() {
-        let html = """
-        <html><head><meta property="og:type" content="article"></head>
-        <body><article><h1>A Long Investigation</h1>\(paragraphs(5, length: 400))</article></body></html>
-        """
-        XCTAssertTrue(evaluateHeuristic(html: html, urlString: "https://example.com/news/2026/07/story"))
+    private struct Fixture {
+        let name: String
+        let html: String
+        let url: String
     }
 
-    /// (2) Plain blog post, no metadata, 6 long paragraphs in a single div.post-body.
-    func testPlainBlogPostIsArticle() {
-        let body = paragraphs(6, length: 450)
-        let html = """
-        <html><body><div class="post-body">\(body)</div></body></html>
-        """
-        XCTAssertTrue(evaluateHeuristic(html: html, urlString: "https://example.com/blog/thoughts-on-things"))
-    }
-
-    /// (3) Book-style page: one big div, text separated by <br> instead of <p>.
-    func testBookStyleBrSeparatedPageIsArticle() {
-        var text = ""
-        for _ in 0..<10 { text += prose(400) + "<br>" }
-        let html = """
-        <html><body><div class="chapter">\(text)</div></body></html>
-        """
-        XCTAssertTrue(evaluateHeuristic(html: html, urlString: "https://example.com/library/book/chapter-1"))
-    }
-
-    /// (4) Multi-section essay, og:type=article, paragraphs spread across 3 <section>s
-    /// (passes via the metadata tier, not the cluster-concentration tier).
-    func testMultiSectionEssayWithMetadataIsArticle() {
+    /// Four page shapes the DOM scorer must accept.
+    private func positiveFixtures() -> [Fixture] {
+        var brSeparated = ""
+        for _ in 0..<10 { brSeparated += prose(400) + "<br>" }
         var sections = ""
-        for _ in 0..<3 {
-            sections += "<section>\(paragraphs(2, length: 400))</section>"
-        }
-        let html = """
-        <html><head><meta property="og:type" content="article"></head>
-        <body>\(sections)</body></html>
-        """
-        XCTAssertTrue(evaluateHeuristic(html: html, urlString: "https://example.com/essays/long-form-piece"))
+        for _ in 0..<3 { sections += "<section>\(paragraphs(2, length: 400))</section>" }
+        return [
+            // News article: og:type=article meta + 5 paragraphs in one <article>.
+            Fixture(name: "news article with metadata",
+                    html: """
+                    <html><head><meta property="og:type" content="article"></head>
+                    <body><article><h1>A Long Investigation</h1>\
+                    \(paragraphs(5, length: 400))</article></body></html>
+                    """,
+                    url: "https://example.com/news/2026/07/story"),
+            // Plain blog post, no metadata, 6 long paragraphs in one div.post-body.
+            Fixture(name: "plain blog post",
+                    html: "<html><body><div class=\"post-body\">\(paragraphs(6, length: 450))</div></body></html>",
+                    url: "https://example.com/blog/thoughts-on-things"),
+            // Book-style page: one big div, text separated by <br> instead of <p>.
+            Fixture(name: "book-style <br> page",
+                    html: "<html><body><div class=\"chapter\">\(brSeparated)</div></body></html>",
+                    url: "https://example.com/library/book/chapter-1"),
+            // Multi-section essay: paragraphs spread across 3 <section>s, so it
+            // passes via the metadata tier, not the cluster-concentration tier.
+            Fixture(name: "multi-section essay with metadata",
+                    html: """
+                    <html><head><meta property="og:type" content="article"></head>
+                    <body>\(sections)</body></html>
+                    """,
+                    url: "https://example.com/essays/long-form-piece"),
+        ]
     }
 
-    // MARK: - Negative fixtures
-
-    /// (5) Company landing page: hero + 6 short-blurb sections + heavy nav/footer
-    /// links. Well over 1500 total chars in <p> tags -- the OLD heuristic (text
-    /// length + <h1>) would have accepted this; the new scorer should not.
-    func testCompanyLandingPageIsNotArticle() {
+    /// Five page shapes it must reject — each tuned so the OLD (text-length-only)
+    /// heuristic would have gotten it wrong.
+    private func negativeFixtures() -> [Fixture] {
+        // Company landing page: hero + 6 short-blurb sections + heavy nav/footer
+        // links. Total <p> text alone clears the old 1500-char threshold.
         var nav = "<nav>"
-        for i in 0..<20 { nav += "<a href=\"/product-\(i)\">Product Category Link Number \(i) With Extra Words</a>" }
+        for i in 0..<20 {
+            nav += "<a href=\"/product-\(i)\">Product Category Link Number \(i) With Extra Words</a>"
+        }
         nav += "</nav>"
-        var sections = "<div class=\"hero\"><h1>Welcome to Acme</h1><p>\(prose(180))</p></div>"
-        for _ in 0..<6 {
-            sections += "<section class=\"feature\"><p>\(prose(180))</p></section>"
-        }
+        var landing = "<div class=\"hero\"><h1>Welcome to Acme</h1><p>\(prose(180))</p></div>"
+        for _ in 0..<6 { landing += "<section class=\"feature\"><p>\(prose(180))</p></section>" }
         var footer = "<footer>"
-        for i in 0..<20 { footer += "<a href=\"/footer-\(i)\">Footer Navigation Link Number \(i) More Words</a>" }
-        footer += "</footer>"
-        let html = "<html><body>\(nav)\(sections)\(footer)</body></html>"
-        // Sanity: total <p> text alone clears the old 1500-char threshold.
-        XCTAssertFalse(evaluateHeuristic(html: html, urlString: "https://example.com/"))
-    }
-
-    /// (6) Comment thread: an intro paragraph plus 10 comment blocks, each a
-    /// substantial <p> -- individually long enough to score, but disqualified by
-    /// their `.comment` container ancestry.
-    func testCommentThreadIsNotArticle() {
-        var comments = ""
-        for _ in 0..<10 {
-            comments += "<div class=\"comment\"><p>\(prose(300))</p></div>"
+        for i in 0..<20 {
+            footer += "<a href=\"/footer-\(i)\">Footer Navigation Link Number \(i) More Words</a>"
         }
-        let html = """
-        <html><body><p>\(prose(300))</p>\(comments)</body></html>
-        """
-        XCTAssertFalse(evaluateHeuristic(html: html, urlString: "https://example.com/thread/12345"))
-    }
+        footer += "</footer>"
 
-    /// (7) Docs page: prose plus large <pre> code blocks outweighing it, at a
-    /// `/docs/` URL (either signal alone would already disqualify it).
-    func testDocsPageIsNotArticle() {
+        // Comment thread: an intro paragraph plus 10 comment blocks, each a
+        // substantial <p> — long enough to score, disqualified by `.comment` ancestry.
+        var comments = ""
+        for _ in 0..<10 { comments += "<div class=\"comment\"><p>\(prose(300))</p></div>" }
+
+        // Docs page: prose plus larger <pre> code blocks, at a `/docs/` URL.
         var code = ""
         for i in 0..<8 {
             code += "<pre><code>function exampleHandler\(i)(request, response) {\n"
@@ -199,66 +128,70 @@ final class SafariArticleHeuristicTests: XCTestCase {
                 + "  return response.status(200).json(payload);\n"
                 + "}\n</code></pre>"
         }
-        let html = """
-        <html><body>\(paragraphs(2, length: 400))\(code)</body></html>
-        """
-        XCTAssertFalse(evaluateHeuristic(html: html, urlString: "https://example.com/docs/getting-started"))
-    }
 
-    /// (8) Listing page: 6 <article> teasers -- the >= 4 <article> hard negative.
-    func testTeaserListingPageIsNotArticle() {
+        // Listing page: 6 <article> teasers — the >= 4 <article> hard negative.
         var teasers = ""
-        for i in 0..<6 {
-            teasers += "<article><h2>Headline \(i)</h2><p>\(prose(150))</p></article>"
-        }
-        let html = "<html><body>\(teasers)</body></html>"
-        XCTAssertFalse(evaluateHeuristic(html: html, urlString: "https://example.com/section/latest"))
+        for i in 0..<6 { teasers += "<article><h2>Headline \(i)</h2><p>\(prose(150))</p></article>" }
+
+        return [
+            Fixture(name: "company landing page",
+                    html: "<html><body>\(nav)\(landing)\(footer)</body></html>",
+                    url: "https://example.com/"),
+            Fixture(name: "comment thread",
+                    html: "<html><body><p>\(prose(300))</p>\(comments)</body></html>",
+                    url: "https://example.com/thread/12345"),
+            Fixture(name: "docs page",
+                    html: "<html><body>\(paragraphs(2, length: 400))\(code)</body></html>",
+                    url: "https://example.com/docs/getting-started"),
+            Fixture(name: "teaser listing", html: "<html><body>\(teasers)</body></html>",
+                    url: "https://example.com/section/latest"),
+            Fixture(name: "near-empty page",
+                    html: "<html><body><p>Just a short line of text.</p></body></html>",
+                    url: "https://example.com/x"),
+        ]
     }
 
-    /// (9) Near-empty page: a single short paragraph, nowhere near the scoring bar.
-    func testNearEmptyPageIsNotArticle() {
-        let html = "<html><body><p>Just a short line of text.</p></body></html>"
-        XCTAssertFalse(evaluateHeuristic(html: html, urlString: "https://example.com/x"))
+    func testArticleShapedPagesScore() {
+        for fixture in positiveFixtures() {
+            XCTAssertTrue(
+                evaluateHeuristic(html: fixture.html, urlString: fixture.url), fixture.name)
+        }
+    }
+
+    func testNonArticleShapedPagesDoNotScore() {
+        for fixture in negativeFixtures() {
+            XCTAssertFalse(
+                evaluateHeuristic(html: fixture.html, urlString: fixture.url), fixture.name)
+        }
     }
 
     // MARK: - Shared news-host gating (extension <-> main-app parity)
 
-    /// Loads `news_hosts.generated.js` (the shared `NewsSites` list) THEN content.js
-    /// into a WKWebView at `urlString`, then evaluates `expression` -- so the host
-    /// gating sees `location.hostname` from the baseURL and the injected host set,
-    /// exactly as in the real extension.
-    @MainActor
+    /// Loads `news_hosts.generated.js` + `product_rules.generated.js` (the shared
+    /// data tables) THEN content.js at `urlString`, then evaluates `expression` --
+    /// so the host gating sees `location.hostname` from the baseURL and the
+    /// injected host set, exactly as in the real extension.
     private func evaluate(_ expression: String, html: String, urlString: String) -> Bool {
-        let expectation = expectation(description: "evaluated \(expression)")
-        var outcome: Bool?
+        loadPage(html: html, urlString: urlString)
+        return js.bool(expression)
+    }
 
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let delegate = LoadDelegate {
-            webView.evaluateJavaScript(Self.newsHostsSource) { _, error in
-                if let error { XCTFail("news_hosts.generated.js failed to evaluate: \(error)") }
-                webView.evaluateJavaScript(Self.productRulesSource) { _, error in
-                    if let error { XCTFail("product_rules.generated.js failed to evaluate: \(error)") }
-                    webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
-                        if let error { XCTFail("content.js failed to evaluate: \(error)") }
-                        webView.evaluateJavaScript(expression) { result, error in
-                            if let error { XCTFail("\(expression) failed to evaluate: \(error)") }
-                            outcome = result as? Bool
-                            expectation.fulfill()
-                        }
-                    }
-                }
-            }
-        }
-        webView.navigationDelegate = delegate
-        webView.loadHTMLString(html, baseURL: URL(string: urlString))
+    /// The page + full script set, loaded once so a test can ask several questions
+    /// of the SAME document (`evaluateAll` below) instead of reloading per probe.
+    private func loadPage(html: String, urlString: String) {
+        js.load(html: html, urlString: urlString, scripts: [
+            SafariJSTestHarness.newsHosts,
+            SafariJSTestHarness.productRules,
+            SafariJSTestHarness.contentScript,
+        ])
+    }
 
-        wait(for: [expectation], timeout: 10)
-        withExtendedLifetime(delegate) {}
-        guard let outcome else {
-            XCTFail("\(expression) never returned a Bool")
-            return false
-        }
-        return outcome
+    /// Several boolean probes against ONE loaded document.
+    private func evaluateAll(
+        _ expressions: [String], html: String, urlString: String
+    ) -> [Bool] {
+        loadPage(html: html, urlString: urlString)
+        return expressions.map { js.bool($0) }
     }
 
     /// A metered news site's server-rendered teaser: og:type=article + NewsArticle
@@ -284,14 +217,18 @@ final class SafariArticleHeuristicTests: XCTestCase {
     /// list classifies it as an article, exactly as the main app does. No afr-specific
     /// code: afr.com is just one of the ~450 entries in the shared list.
     func testKnownNewsHostWithThinTeaserIsArticle() {
-        let html = meteredTeaserHTML()
         let afrURL = "https://www.afr.com/companies/infrastructure/some-story-20260706-p60cwq"
+        let verdicts = evaluateAll([
+            "window.__lunaLooksLikeArticle()",
+            "window.__lunaIsArticlePage()",
+            "window.__lunaIsKnownHardPaywallHost()",
+        ], html: meteredTeaserHTML(), urlString: afrURL)
         // The scorer alone misses it (the original bug)...
-        XCTAssertFalse(evaluate("window.__lunaLooksLikeArticle()", html: html, urlString: afrURL))
+        XCTAssertFalse(verdicts[0])
         // ...but sharing the app's host list makes it an article.
-        XCTAssertTrue(evaluate("window.__lunaIsArticlePage()", html: html, urlString: afrURL))
+        XCTAssertTrue(verdicts[1])
         // ...and it's known-locked, so it also surfaces under the onlyLocked mode.
-        XCTAssertTrue(evaluate("window.__lunaIsKnownHardPaywallHost()", html: html, urlString: afrURL))
+        XCTAssertTrue(verdicts[2])
     }
 
     /// A publisher front page is not one readable work. It can live on a known-news
@@ -320,10 +257,11 @@ final class SafariArticleHeuristicTests: XCTestCase {
         </head><body><main>\(cards)</main></body></html>
         """
 
-        XCTAssertFalse(evaluate(
-            "window.__lunaLooksLikeArticle()", html: html, urlString: "https://edition.cnn.com/"))
-        XCTAssertFalse(evaluate(
-            "window.__lunaIsArticlePage()", html: html, urlString: "https://edition.cnn.com/"))
+        let verdicts = evaluateAll([
+            "window.__lunaLooksLikeArticle()", "window.__lunaIsArticlePage()",
+        ], html: html, urlString: "https://edition.cnn.com/")
+        XCTAssertFalse(verdicts[0])
+        XCTAssertFalse(verdicts[1])
     }
 
     /// (A2) The Business Insider bug: a real article on a known FREE/metered news host
@@ -360,12 +298,14 @@ final class SafariArticleHeuristicTests: XCTestCase {
         </body></html>
         """
         let biURL = "https://www.businessinsider.com/cyclospora-outbreak-berries-safe-kids-toddlers-2026-7"
+        let verdicts = evaluateAll([
+            "document.querySelectorAll('article').length >= 4",
+            "window.__lunaIsArticlePage()",
+        ], html: html, urlString: biURL)
         // Six <article> elements would trip the raw index veto (proving the repro)...
-        XCTAssertTrue(evaluate(
-            "document.querySelectorAll('article').length >= 4", html: html, urlString: biURL))
+        XCTAssertTrue(verdicts[0])
         // ...but a known news host declaring an article still shows the Read in Luna pill.
-        XCTAssertTrue(evaluate(
-            "window.__lunaIsArticlePage()", html: html, urlString: biURL))
+        XCTAssertTrue(verdicts[1])
     }
 
     /// A declared article on an UNKNOWN host, shaped like theparisreview.org: an
@@ -406,14 +346,18 @@ final class SafariArticleHeuristicTests: XCTestCase {
         """
         let url = "https://www.theparisreview.org/interviews/3810/the-art-of-fiction-no-45-john-steinbeck"
 
+        let verdicts = evaluateAll([
+            "document.querySelectorAll('article').length >= 4",
+            "!!document.querySelector('input[type=\"password\"]')",
+            "window.__lunaLooksLikeArticle()",
+            "window.__lunaIsArticlePage()",
+        ], html: html, urlString: url)
         // Both blockers are present in the fixture (proving the repro)...
-        XCTAssertTrue(evaluate(
-            "document.querySelectorAll('article').length >= 4", html: html, urlString: url))
-        XCTAssertTrue(evaluate(
-            "!!document.querySelector('input[type=\"password\"]')", html: html, urlString: url))
+        XCTAssertTrue(verdicts[0])
+        XCTAssertTrue(verdicts[1])
         // ...and the declared article still scores, and still gets the pill.
-        XCTAssertTrue(evaluate("window.__lunaLooksLikeArticle()", html: html, urlString: url))
-        XCTAssertTrue(evaluate("window.__lunaIsArticlePage()", html: html, urlString: url))
+        XCTAssertTrue(verdicts[2])
+        XCTAssertTrue(verdicts[3])
     }
 
     /// The exemption is only for a page that DECLARES an article: strip the metadata
@@ -437,8 +381,11 @@ final class SafariArticleHeuristicTests: XCTestCase {
         """
         let url = "https://randomblog.example/whatever"
 
-        XCTAssertFalse(evaluate("window.__lunaLooksLikeArticle()", html: html, urlString: url))
-        XCTAssertFalse(evaluate("window.__lunaIsArticlePage()", html: html, urlString: url))
+        let verdicts = evaluateAll([
+            "window.__lunaLooksLikeArticle()", "window.__lunaIsArticlePage()",
+        ], html: html, urlString: url)
+        XCTAssertFalse(verdicts[0])
+        XCTAssertFalse(verdicts[1])
     }
 
     /// A real sign-in page is still rejected — it carries the password field and no
@@ -495,18 +442,14 @@ final class SafariArticleHeuristicTests: XCTestCase {
 
     /// The bug: on an Amazon `/s?k=…` search page, the per-card add-to-cart + rating
     /// furniture made `looksLikeProductPage` true, so a "Track in Luna" pill appeared
-    /// over a page with no single primary product. The listing-URL veto rejects it.
-    func testAmazonSearchResultsIsNotAProductPage() {
+    /// over a page with no single primary product. The listing-URL veto rejects it —
+    /// and the IDENTICAL markup at a single-product `/dp/` URL still counts, proving
+    /// the veto keys on the listing URL, not on the presence of retail furniture.
+    func testProductPillKeysOnTheListingURLNotTheRetailFurniture() {
         XCTAssertFalse(evaluate(
             "window.__lunaLooksLikeProductPage()",
             html: productGridHTML(),
             urlString: "https://www.amazon.com/s?k=wireless+headphones"))
-    }
-
-    /// The identical grid markup served at a single-product `/dp/` URL still counts
-    /// (product URL anchor + add-to-cart) -- proving the veto keys on the listing URL,
-    /// not on the presence of retail furniture.
-    func testSameMarkupAtProductURLIsAProductPage() {
         XCTAssertTrue(evaluate(
             "window.__lunaLooksLikeProductPage()",
             html: productGridHTML(),
@@ -544,12 +487,14 @@ final class SafariArticleHeuristicTests: XCTestCase {
         let newYorkerURL =
             "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"
 
-        XCTAssertFalse(evaluate(
-            "window.__lunaLooksLikeProductPage()", html: html, urlString: newYorkerURL))
-        XCTAssertTrue(evaluate(
-            "window.__lunaIsArticlePage()", html: html, urlString: newYorkerURL))
-        XCTAssertTrue(evaluate(
-            "window.__lunaIsKnownHardPaywallHost()", html: html, urlString: newYorkerURL))
+        let verdicts = evaluateAll([
+            "window.__lunaLooksLikeProductPage()",
+            "window.__lunaIsArticlePage()",
+            "window.__lunaIsKnownHardPaywallHost()",
+        ], html: html, urlString: newYorkerURL)
+        XCTAssertFalse(verdicts[0])
+        XCTAssertTrue(verdicts[1])
+        XCTAssertTrue(verdicts[2])
 
         XCTAssertTrue(evaluate(
             "window.__lunaLooksLikeProductPage()",

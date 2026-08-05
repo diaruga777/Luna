@@ -7,6 +7,7 @@ import ActivityKit
 import AppIntents
 import LunaDesignSystem
 import LunaMediaDownload
+import LunaModels
 import SwiftUI
 import UIKit
 import WidgetKit
@@ -129,7 +130,7 @@ private struct DownloadActivityView: View {
                     if context.state.phase == .failed,
                        let actionURL = context.state.actionURLString.flatMap(URL.init(string:)) {
                         Link(destination: actionURL) {
-                            Label("Open Photos Settings", systemImage: "gearshape")
+                            Label(L10n.string("Open Photos Settings"), systemImage: "gearshape")
                                 .font(.caption.weight(.semibold))
                         }
                     }
@@ -162,7 +163,7 @@ private struct ActivityControlButton: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Cancel download")
+            .accessibilityLabel(L10n.string("Cancel download"))
         case .suspended, .waiting:
             Button(intent: ResumeLiveMediaDownloadIntent(jobID: context.attributes.jobID)) {
                 Image(systemName: "arrow.clockwise.circle.fill")
@@ -170,7 +171,7 @@ private struct ActivityControlButton: View {
                     .foregroundStyle(Color.accentColor)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Resume download")
+            .accessibilityLabel(L10n.string("Resume download"))
         default:
             EmptyView()
         }

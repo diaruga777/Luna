@@ -22,33 +22,33 @@ public enum ShareSetupPractice {
         amayzonURLString,
     ]
 
-    public static let title = "An article you want to read"
-    public static let byline = "A safari extension • by Luna"
-    public static let intro = "What you get, minus the pitch:"
+    public static let title = L10n.string("An article you want to read")
+    public static let byline = L10n.string("A safari extension • by Luna")
+    public static let intro = L10n.string("What you get, minus the pitch:")
     public static let features = [
-        "Ads, popups and subscription walls: gone.",
-        "Saved offline, ready on any flight.",
-        "Speed-read a word at a time.",
-        "Read aloud with the screen off.",
-        "Open links without losing your place.",
-        "Send to Kindle, or export anywhere.",
-        "EPUB, PDF, Markdown or plain text.",
-        "Long X threads read like articles.",
-        "Newsletters pulled from your inbox.",
-        "Share a save straight to a friend.",
-        "Read-aloud rolls into the next piece.",
-        "Eye tracking pauses when you glance away.",
-        "Walled-off pages, readable again.",
-        "PDFs and documents, same reader.",
-        "A card deck, not another inbox.",
-        "The Action Button saves from anywhere.",
-        "One share-sheet save in every app.",
-        "Track a product's price while you wait.",
-        "Videos and audio, kept for the plane.",
-        "Everything on device, searchable offline.",
-        "No account. No feed. No streaks.",
-        "Night-sky dark, down to the last pixel.",
-        "Built to disappear while you read.",
+        L10n.string("Ads, popups and subscription walls: gone."),
+        L10n.string("Saved offline, ready on any flight."),
+        L10n.string("Speed-read a word at a time."),
+        L10n.string("Read aloud with the screen off."),
+        L10n.string("Open links without losing your place."),
+        L10n.string("Send to Kindle, or export anywhere."),
+        L10n.string("EPUB, PDF, Markdown or plain text."),
+        L10n.string("Long X threads read like articles."),
+        L10n.string("Newsletters pulled from your inbox."),
+        L10n.string("Share a save straight to a friend."),
+        L10n.string("Read-aloud rolls into the next piece."),
+        L10n.string("Eye tracking pauses when you glance away."),
+        L10n.string("Walled-off pages, readable again."),
+        L10n.string("PDFs and documents, same reader."),
+        L10n.string("A card deck, not another inbox."),
+        L10n.string("The Action Button saves from anywhere."),
+        L10n.string("One share-sheet save in every app."),
+        L10n.string("Track a product's price while you wait."),
+        L10n.string("Videos and audio, kept for the plane."),
+        L10n.string("Everything on device, searchable offline."),
+        L10n.string("No account. No feed. No streaks."),
+        L10n.string("Night-sky dark, down to the last pixel."),
+        L10n.string("Built to disappear while you read."),
     ]
 
     public static var plainText: String {

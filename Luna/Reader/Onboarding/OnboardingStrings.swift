@@ -100,18 +100,18 @@ enum OnboardingStrings {
     }
 
     enum Intro {
-        static let safariAction = Definition(shared: "Stop popups & access gates")
-        static let shortcutAction = Definition(shared: "Show me one click save")
+        static let safariAction = Definition(shared: L10n.string("Stop popups & access gates"))
+        static let shortcutAction = Definition(shared: L10n.string("Show me one click save"))
         /// The util card's third, lowest-priority action: connect an account so
         /// the newsletters already in a mailbox arrive here as saves.
-        static let emailAction = Definition(shared: "Get your newsletters in Luna")
+        static let emailAction = Definition(shared: L10n.string("Get your newsletters in Luna"))
         /// The paste row's placeholder, and the paste control's own label.
-        static let paste = Definition(shared: "Paste a link")
+        static let paste = Definition(shared: L10n.string("Paste a link"))
         /// The seam between the two setup lessons and the paste row.
-        static let orSeparator = Definition(shared: "or")
-        static let articleURLsOnly = Definition(shared: "article URLs only")
-        static let unableToLoadPage = Definition(shared: "unable to load site")
-        static let completed = Definition(shared: "Completed")
+        static let orSeparator = Definition(shared: L10n.string("or"))
+        static let articleURLsOnly = Definition(shared: L10n.string("article URLs only"))
+        static let unableToLoadPage = Definition(shared: L10n.string("unable to load site"))
+        static let completed = Definition(shared: L10n.string("Completed"))
 
         /// The headline's two states. They are ONE sentence in two beats: what
         /// the two share is a single continuous run of characters that never
@@ -119,29 +119,29 @@ enum OnboardingStrings {
         /// unrelated lines (`OnboardingHeadlineTransition` finds the run, and
         /// copy that shares nothing simply replaces itself outright).
         static let headlineInitial = Definition(
-            core: "All your Luna apps.",
-            reader: "Read.",
-            downloader: "Sign in to watch.",
-            priceTracker: "Miss a sale")
+            core: L10n.string("All your Luna apps."),
+            reader: L10n.string("Read."),
+            downloader: L10n.string("Sign in to watch."),
+            priceTracker: L10n.string("Miss a sale"))
         static let headlineFinal = Definition(
-            core: "One Luna app.",
-            reader: "Read more.",
-            downloader: "No Sign in to download.",
-            priceTracker: "Never miss a sale")
+            core: L10n.string("One Luna app."),
+            reader: L10n.string("Read more."),
+            downloader: L10n.string("No Sign in to download."),
+            priceTracker: L10n.string("Never miss a sale"))
         static let saveBenefit = Definition(
-            core: "Read, watch, track, anything",
-            reader: "Read offline later",
-            downloader: "Watch or share",
-            priceTracker: "Never miss a sale")
+            core: L10n.string("Read, watch, track, anything"),
+            reader: L10n.string("Read offline later"),
+            downloader: L10n.string("Watch or share"),
+            priceTracker: L10n.string("Never miss a sale"))
     }
 
     enum Demo {
-        static let instaTokResourceName = Definition(shared: "InstaTok")
-        static let amayzonResourceName = Definition(shared: "Amayzon")
+        static let instaTokResourceName = Definition(shared: L10n.string("InstaTok"))
+        static let amayzonResourceName = Definition(shared: L10n.string("Amayzon"))
 
-        static let lunaHost = Definition(shared: "luna.app")
-        static let instaTokHost = Definition(shared: "instatok.web")
-        static let amayzonHost = Definition(shared: "amayzon.web")
+        static let lunaHost = Definition(shared: L10n.string("luna.app"))
+        static let instaTokHost = Definition(shared: L10n.string("instatok.web"))
+        static let amayzonHost = Definition(shared: L10n.string("amayzon.web"))
 
         static let lunaURL = Definition(shared: ShareSetupPractice.lunaURLString)
         static let instaTokURL = Definition(
@@ -149,46 +149,46 @@ enum OnboardingStrings {
         static let amayzonURL = Definition(
             shared: ShareSetupPractice.amayzonURLString)
 
-        static let lunaSeedTitle = Definition(shared: "Anything")
-        static let readerSeedTitle = Definition(shared: "Save anything in Safari")
-        static let instaTokSeedTitle = Definition(shared: "InstaTok")
-        static let amayzonSeedTitle = Definition(shared: "eyePhone")
+        static let lunaSeedTitle = Definition(shared: L10n.string("Anything"))
+        static let readerSeedTitle = Definition(shared: L10n.string("Save anything in Safari"))
+        static let instaTokSeedTitle = Definition(shared: L10n.string("InstaTok"))
+        static let amayzonSeedTitle = Definition(shared: L10n.string("eyePhone"))
 
         // Text rendered by the bundled InstaTok page.
-        static let instaTokBrand = Definition(shared: "InstaTok")
-        static let instaTokHandle = Definition(shared: "@moonwatch")
+        static let instaTokBrand = Definition(shared: L10n.string("InstaTok"))
+        static let instaTokHandle = Definition(shared: L10n.string("@moonwatch"))
         static let instaTokCaption = Definition(
-            shared: "Earth’s shadow crossing the Moon 🌘 #eclipse #night")
-        static let instaTokLikeCount = Definition(shared: "84K")
-        static let instaTokCommentCount = Definition(shared: "912")
-        static let instaTokShare = Definition(shared: "Share")
-        static let instaTokSignupTitle = Definition(shared: "Sign up to keep watching")
+            shared: L10n.string("Earth’s shadow crossing the Moon 🌘 #eclipse #night"))
+        static let instaTokLikeCount = Definition(shared: L10n.string("84K"))
+        static let instaTokCommentCount = Definition(shared: L10n.string("912"))
+        static let instaTokShare = Definition(shared: L10n.string("Share"))
+        static let instaTokSignupTitle = Definition(shared: L10n.string("Sign up to keep watching"))
         static let instaTokSignupBody = Definition(
-            shared: "Create an account to see the full video, follow creators, and share with friends.")
-        static let instaTokCreateAccount = Definition(shared: "Create account")
-        static let instaTokLogin = Definition(shared: "Already have an account? Log in")
+            shared: L10n.string("Create an account to see the full video, follow creators, and share with friends."))
+        static let instaTokCreateAccount = Definition(shared: L10n.string("Create account"))
+        static let instaTokLogin = Definition(shared: L10n.string("Already have an account? Log in"))
 
         // Text rendered by the bundled Amayzon page.
-        static let amayzonHTMLTitle = Definition(shared: "eyePhone — amayzon")
-        static let amayzonBrandPrefix = Definition(shared: "amay")
-        static let amayzonBrandSuffix = Definition(shared: "zon")
-        static let amayzonSearch = Definition(shared: "Search amayzon")
+        static let amayzonHTMLTitle = Definition(shared: L10n.string("eyePhone — amayzon"))
+        static let amayzonBrandPrefix = Definition(shared: L10n.string("amay"))
+        static let amayzonBrandSuffix = Definition(shared: L10n.string("zon"))
+        static let amayzonSearch = Definition(shared: L10n.string("Search amayzon"))
         static let amayzonNavigation = Definition(
-            shared: "☰ &nbsp; Today’s Deals &nbsp;&nbsp; Best Sellers &nbsp;&nbsp; Devices &nbsp;&nbsp; Help")
+            shared: L10n.string("☰ &nbsp; Today’s Deals &nbsp;&nbsp; Best Sellers &nbsp;&nbsp; Devices &nbsp;&nbsp; Help"))
         static let amayzonBreadcrumb = Definition(
-            shared: "Electronics › Pocket communicators › Unlocked")
-        static let amayzonRatingStars = Definition(shared: "★★★★☆")
-        static let amayzonRatingCount = Definition(shared: "4,128 ratings")
+            shared: L10n.string("Electronics › Pocket communicators › Unlocked"))
+        static let amayzonRatingStars = Definition(shared: L10n.string("★★★★☆"))
+        static let amayzonRatingCount = Definition(shared: L10n.string("4,128 ratings"))
         static let amayzonProductTitle = Definition(
-            shared: "eyePhone Air — 256 GB, Moonmist, unlocked pocket communicator")
-        static let amayzonStore = Definition(shared: "Visit the Pearless Devices Store")
-        static let amayzonDeal = Definition(shared: "Limited time deal")
-        static let amayzonCurrency = Definition(shared: "$")
-        static let amayzonPriceMajor = Definition(shared: "799")
-        static let amayzonPriceMinor = Definition(shared: "00")
-        static let amayzonListPrice = Definition(shared: "List price: $999.00")
-        static let amayzonStock = Definition(shared: "In stock")
-        static let amayzonAddToBasket = Definition(shared: "Add to basket")
+            shared: L10n.string("eyePhone Air — 256 GB, Moonmist, unlocked pocket communicator"))
+        static let amayzonStore = Definition(shared: L10n.string("Visit the Pearless Devices Store"))
+        static let amayzonDeal = Definition(shared: L10n.string("Limited time deal"))
+        static let amayzonCurrency = Definition(shared: L10n.string("$"))
+        static let amayzonPriceMajor = Definition(shared: L10n.string("799"))
+        static let amayzonPriceMinor = Definition(shared: L10n.string("00"))
+        static let amayzonListPrice = Definition(shared: L10n.string("List price: $999.00"))
+        static let amayzonStock = Definition(shared: L10n.string("In stock"))
+        static let amayzonAddToBasket = Definition(shared: L10n.string("Add to basket"))
 
         /// Replaces the copy tokens in a bundled mock page. The HTML keeps its
         /// layout and artwork, while every rendered word comes from this file.
@@ -249,8 +249,8 @@ enum OnboardingStrings {
     }
 
     enum Safari {
-        static let title = Definition(shared: "Read the page, not the popups")
-        static let bylineTemplate = Definition(shared: "A Safari extension • by %@")
+        static let title = Definition(shared: L10n.string("Read the page, not the popups"))
+        static let bylineTemplate = Definition(shared: L10n.string("A Safari extension • by %@"))
         /// The page's prose, per app, in the order it reads — and it is only
         /// ever shown as a PREFIX of this list. The page's own header, steps and
         /// actions are fixed furniture, so what is left over between them is the
@@ -262,56 +262,56 @@ enum OnboardingStrings {
         /// sub-topic, so no prefix ever cuts an idea in half.
         static let explainerChunks = ChunkedDefinition(
             core: [
-                "Ads, popups and subscription walls come off on their own, privately, on your device. Anything on the page saves to Luna in one tap.",
-                "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.",
-                "Articles arrive ready to read offline — scrolling, a word at a time, or aloud with the screen off.",
-                "The same tap keeps a video for the flight, or starts watching a product’s price for you.",
-                "One app, one deck: everything you saved from anywhere, in the order you saved it.",
+                L10n.string("Ads, popups and subscription walls come off on their own, privately, on your device. Anything on the page saves to Luna in one tap."),
+                L10n.string("None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere."),
+                L10n.string("Articles arrive ready to read offline — scrolling, a word at a time, or aloud with the screen off."),
+                L10n.string("The same tap keeps a video for the flight, or starts watching a product’s price for you."),
+                L10n.string("One app, one deck: everything you saved from anywhere, in the order you saved it."),
             ],
             reader: [
-                "Ads, popups and subscription walls come off on their own, privately, on your device. Anything you keep saves to Luna in one tap.",
-                "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.",
-                "A saved page is yours offline — on a plane, on the subway, next week.",
-                "Read it scrolling, a word at a time, or aloud with the screen off.",
-                "Send it to your Kindle, or export it as EPUB, PDF, Markdown or plain text.",
+                L10n.string("Ads, popups and subscription walls come off on their own, privately, on your device. Anything you keep saves to Luna in one tap."),
+                L10n.string("None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere."),
+                L10n.string("A saved page is yours offline — on a plane, on the subway, next week."),
+                L10n.string("Read it scrolling, a word at a time, or aloud with the screen off."),
+                L10n.string("Send it to your Kindle, or export it as EPUB, PDF, Markdown or plain text."),
             ],
             downloader: [
-                "Save the video, the clip or the audio straight from the page it lives on — one tap, no account, no signup wall.",
-                "Ads, popups and signup sheets come off first, privately, on your device.",
-                "Every download lands in your library on this phone, ready offline — on a plane, underground, anywhere.",
-                "Send one on to whoever you were going to send the link to instead.",
-                "None of what you watch leaves your phone.",
+                L10n.string("Save the video, the clip or the audio straight from the page it lives on — one tap, no account, no signup wall."),
+                L10n.string("Ads, popups and signup sheets come off first, privately, on your device."),
+                L10n.string("Every download lands in your library on this phone, ready offline — on a plane, underground, anywhere."),
+                L10n.string("Send one on to whoever you were going to send the link to instead."),
+                L10n.string("None of what you watch leaves your phone."),
             ],
             priceTracker: [
-                "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on.",
-                "Ads, popups and upsell sheets come off first, privately, on your device.",
-                "Luna checks back for you and tells you the moment the price drops.",
-                "Every check is kept, so the whole run of a price draws as a graph you can read.",
-                "None of what you shop for leaves your phone.",
+                L10n.string("Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on."),
+                L10n.string("Ads, popups and upsell sheets come off first, privately, on your device."),
+                L10n.string("Luna checks back for you and tells you the moment the price drops."),
+                L10n.string("Every check is kept, so the whole run of a price draws as a graph you can read."),
+                L10n.string("None of what you shop for leaves your phone."),
             ])
-        static let stepsHeading = Definition(shared: "Turn it on in Safari")
-        static let manageExtensionsTitle = Definition(shared: "Manage Extensions")
-        static let pageMenuStep = Definition(shared: "Tap the page menu in the address bar")
+        static let stepsHeading = Definition(shared: L10n.string("Turn it on in Safari"))
+        static let manageExtensionsTitle = Definition(shared: L10n.string("Manage Extensions"))
+        static let pageMenuStep = Definition(shared: L10n.string("Tap the page menu in the address bar"))
         static let manageExtensionsStepTemplate = Definition(
-            shared: "Choose “%@”")
-        static let appStepTemplate = Definition(shared: "Switch on %@")
-        static let activate = Definition(shared: "Activate Safari")
-        static let skip = Definition(shared: "Skip")
+            shared: L10n.string("Choose “%@”"))
+        static let appStepTemplate = Definition(shared: L10n.string("Switch on %@"))
+        static let activate = Definition(shared: L10n.string("Activate Safari"))
+        static let skip = Definition(shared: L10n.string("Skip"))
 
-        static let adSale = Definition(shared: "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥")
-        static let adTrick = Definition(shared: "You won't BELIEVE this one weird trick")
-        static let adCruise = Definition(shared: "WIN A FREE CRUISE 🚢 TAP NOW")
-        static let adDeals = Definition(shared: "HOT DEALS NEAR YOU ▸▸▸")
+        static let adSale = Definition(shared: L10n.string("🔥 80% OFF EVERYTHING — TODAY ONLY 🔥"))
+        static let adTrick = Definition(shared: L10n.string("You won't BELIEVE this one weird trick"))
+        static let adCruise = Definition(shared: L10n.string("WIN A FREE CRUISE 🚢 TAP NOW"))
+        static let adDeals = Definition(shared: L10n.string("HOT DEALS NEAR YOU ▸▸▸"))
 
-        static let newsletterTitle = Definition(shared: "Subscribe to our newsletter")
-        static let newsletterSubtitle = Definition(shared: "We promise to spam you")
-        static let newsletterEmail = Definition(shared: "you@example.com")
-        static let newsletterSubmit = Definition(shared: "Subscribe")
-        static let subscriptionTitle = Definition(shared: "Subscribe to keep reading")
+        static let newsletterTitle = Definition(shared: L10n.string("Subscribe to our newsletter"))
+        static let newsletterSubtitle = Definition(shared: L10n.string("We promise to spam you"))
+        static let newsletterEmail = Definition(shared: L10n.string("you@example.com"))
+        static let newsletterSubmit = Definition(shared: L10n.string("Subscribe"))
+        static let subscriptionTitle = Definition(shared: L10n.string("Subscribe to keep reading"))
         static let subscriptionBody = Definition(
-            shared: "You've reached your free article limit for this month. Get unlimited access to independent journalism.")
-        static let subscriptionSubmit = Definition(shared: "Subscribe for $4.99/month")
-        static let subscriptionSignIn = Definition(shared: "Already a subscriber? Sign in")
+            shared: L10n.string("You've reached your free article limit for this month. Get unlimited access to independent journalism."))
+        static let subscriptionSubmit = Definition(shared: L10n.string("Subscribe for $4.99/month"))
+        static let subscriptionSignIn = Definition(shared: L10n.string("Already a subscriber? Sign in"))
 
         static func byline(appName: String) -> String {
             bylineTemplate.value().replacingOccurrences(of: "%@", with: appName)
@@ -334,56 +334,56 @@ enum OnboardingStrings {
     }
 
     enum Messages {
-        static let senderName = Definition(shared: "Johnny Appleseed")
-        static let shortcutSetup = Definition(shared: "This saves on-screen links")
-        static let greeting = Definition(shared: "Yoooooo")
-        static let question = Definition(shared: "You use the Action Button at all?")
-        static let answer = Definition(shared: "Nah. Its kinda dead tbh.")
-        static let pitch = Definition(shared: "👀 watch this")
-        static let settingsSetup = Definition(shared: "Just set your action button to it in")
-        static let skipSetup = Definition(shared: "Or")
+        static let senderName = Definition(shared: L10n.string("Johnny Appleseed"))
+        static let shortcutSetup = Definition(shared: L10n.string("This saves on-screen links"))
+        static let greeting = Definition(shared: L10n.string("Yoooooo"))
+        static let question = Definition(shared: L10n.string("You use the Action Button at all?"))
+        static let answer = Definition(shared: L10n.string("Nah. Its kinda dead tbh."))
+        static let pitch = Definition(shared: L10n.string("👀 watch this"))
+        static let settingsSetup = Definition(shared: L10n.string("Just set your action button to it in"))
+        static let skipSetup = Definition(shared: L10n.string("Or"))
 
         static let previousSetupAnswer = Definition(
-            shared: "Yeah, I set it up at some point")
+            shared: L10n.string("Yeah, I set it up at some point"))
         static let facetedCoreOfferPrefix = Definition(
-            shared: "Nice. FYI if you buy the")
+            shared: L10n.string("Nice. FYI if you buy the"))
         static let facetedCoreOfferSuffix = Definition(
-            shared: ", it can do all Luna app links")
+            shared: L10n.string(", it can do all Luna app links"))
         static let centralCoreOffer = Definition(
-            shared: "Nice. FYI if you switch it to this app instead, it can handle all your Luna apps in one.")
-        static let keepCurrentAppQuestion = Definition(shared: "And if I don’t?")
+            shared: L10n.string("Nice. FYI if you switch it to this app instead, it can handle all your Luna apps in one."))
+        static let keepCurrentAppQuestion = Definition(shared: L10n.string("And if I don’t?"))
         static let chooseCurrentApp = Definition(
-            shared: "NP. You can pick one Luna app for your action button. For this one:")
+            shared: L10n.string("NP. You can pick one Luna app for your action button. For this one:"))
 
         static func previousSetupQuestion(appName: String) -> String {
-            "You’ve already got the \(appName) Action Button setup, huh?"
+            L10n.string("You’ve already got the \(appName) Action Button setup, huh?")
         }
 
-        static let shortcutPillTitle = Definition(shared: "Install Luna Shortcut")
+        static let shortcutPillTitle = Definition(shared: L10n.string("Install Luna Shortcut"))
         static let shortcutPillAccessibilityLabel = Definition(
-            shared: "Install the Luna shortcut")
+            shared: L10n.string("Install the Luna shortcut"))
         static let coreAppPillAccessibilityLabel = Definition(
-            shared: "Open Luna in the App Store")
-        static let settingsPillTitle = Definition(shared: "Settings")
-        static let settingsPillAccessibilityLabel = Definition(shared: "Open Settings")
-        static let skipPillTitle = Definition(shared: "skip setup")
-        static let skipPillAccessibilityLabel = Definition(shared: "Skip setup")
+            shared: L10n.string("Open Luna in the App Store"))
+        static let settingsPillTitle = Definition(shared: L10n.string("Settings"))
+        static let settingsPillAccessibilityLabel = Definition(shared: L10n.string("Open Settings"))
+        static let skipPillTitle = Definition(shared: L10n.string("skip setup"))
+        static let skipPillAccessibilityLabel = Definition(shared: L10n.string("Skip setup"))
     }
 
     enum Instruction {
         static let safariPromptTemplate = Definition(
-            shared: "Press the Action Button to save\n%@")
-        static let setUpSafari = Definition(shared: "Set up Safari")
-        static let installShortcut = Definition(shared: "Install Shortcut")
-        static let setActionButton = Definition(shared: "Set action button")
+            shared: L10n.string("Press the Action Button to save\n%@"))
+        static let setUpSafari = Definition(shared: L10n.string("Set up Safari"))
+        static let installShortcut = Definition(shared: L10n.string("Install Shortcut"))
+        static let setActionButton = Definition(shared: L10n.string("Set action button"))
         static let actionButtonPrompt = Definition(
-            shared: "Press the action button to finish")
-        static let setUpLater = Definition(shared: "Set up later")
+            shared: L10n.string("Press the action button to finish"))
+        static let setUpLater = Definition(shared: L10n.string("Set up later"))
         static let externalOpenFailureTemplate = Definition(
-            shared: "Couldn’t open %@. Try again.")
-        static let saveFailure = Definition(shared: "Couldn’t create the offline example")
-        static let tryAgain = Definition(shared: "Try again")
-        static let done = Definition(shared: "Done")
+            shared: L10n.string("Couldn’t open %@. Try again."))
+        static let saveFailure = Definition(shared: L10n.string("Couldn’t create the offline example"))
+        static let tryAgain = Definition(shared: L10n.string("Try again"))
+        static let done = Definition(shared: L10n.string("Done"))
 
         static func safariPrompt(saveBenefit: String) -> String {
             safariPromptTemplate.value().replacingOccurrences(of: "%@", with: saveBenefit)
@@ -396,8 +396,8 @@ enum OnboardingStrings {
     }
 
     enum Card {
-        static let saved = Definition(shared: "Saved")
-        static let savedArticle = Definition(shared: "Saved article")
+        static let saved = Definition(shared: L10n.string("Saved"))
+        static let savedArticle = Definition(shared: L10n.string("Saved article"))
     }
 
     enum Article {
@@ -505,22 +505,22 @@ enum OnboardingStrings {
     /// exactly as the OS does — and they are gathered here for the same reason
     /// all the other copy is: so a change is one edit, not a hunt through views.
     enum SystemUI {
-        static let openLink = Definition(shared: "Open Link")
-        static let copy = Definition(shared: "Copy")
-        static let share = Definition(shared: "Share…")
-        static let editActions = Definition(shared: "Edit Actions")
-        static let favorites = Definition(shared: "Favorites")
-        static let otherActions = Definition(shared: "Other Actions")
-        static let saveToFiles = Definition(shared: "Save to Files")
-        static let addToReadingList = Definition(shared: "Add to Reading List")
-        static let airDrop = Definition(shared: "AirDrop")
-        static let messages = Definition(shared: "Messages")
-        static let reminders = Definition(shared: "Reminders")
-        static let more = Definition(shared: "More")
+        static let openLink = Definition(shared: L10n.string("Open Link"))
+        static let copy = Definition(shared: L10n.string("Copy"))
+        static let share = Definition(shared: L10n.string("Share…"))
+        static let editActions = Definition(shared: L10n.string("Edit Actions"))
+        static let favorites = Definition(shared: L10n.string("Favorites"))
+        static let otherActions = Definition(shared: L10n.string("Other Actions"))
+        static let saveToFiles = Definition(shared: L10n.string("Save to Files"))
+        static let addToReadingList = Definition(shared: L10n.string("Add to Reading List"))
+        static let airDrop = Definition(shared: L10n.string("AirDrop"))
+        static let messages = Definition(shared: L10n.string("Messages"))
+        static let reminders = Definition(shared: L10n.string("Reminders"))
+        static let more = Definition(shared: L10n.string("More"))
         /// The two share targets the sheet always has: this user's own Mac and
         /// somebody in Contacts.
-        static let laptop = Definition(shared: "Laptop")
-        static let contact = Definition(shared: "Johnny\nAppleseed")
+        static let laptop = Definition(shared: L10n.string("Laptop"))
+        static let contact = Definition(shared: L10n.string("Johnny\nAppleseed"))
     }
 
     enum AnimationKeys {

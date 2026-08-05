@@ -39,19 +39,56 @@ intentional corona/rim/star changes, run
 
 ## Surface headlines
 
-| App | Util-card headline |
-|---|---|
-| Reader | “Read.” growing into “Read more.” |
-| Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” |
-| Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” |
-| Luna | “All your Luna saves.” / “In a single app.” |
+One sentence in two beats, in EVERY app: a headline is an initial state and a
+final one (`OnboardingStrings.Intro.headlineInitial` / `headlineFinal`), and the
+second beat animates the difference between them. There is no two-line variant;
+it was deleted once the diff generalized.
 
-`OnboardingIntroHeadlineView` retains the existing two-beat moon-reveal
-animation. Reader uses `growingLine`; the others use two lines. The util card
-starts that animation from `cardDidBecomeCentered`, so it does not spend the
-animation while mounted only as a side peek. On the launch that animates it,
-the card's other elements wait at alpha 0 and fade in together, in place, from
-the second beat's completion (`claudedocs/util-card.md`, "the headline speaks
+| App | Initial | Final | Anchor that never moves |
+|---|---|---|---|
+| Reader | “Read.” | “Read more.” | `Read` |
+| Luna | “All your Luna apps.” | “One Luna app.” | ` Luna app` |
+| Downloader | “Sign in to watch.” | “No Sign in to download.” | `Sign in to ` |
+| Price Tracker | “Miss a sale” | “Never miss a sale” | `iss a sale` |
+
+`OnboardingHeadlineTransition` (pure text, `OnboardingHeadlineTransition.swift`)
+finds the anchor: the LONGEST continuous run of characters both states carry,
+ties going to the run that appears earliest in the final text. Everything before
+it and everything after it belongs to one state or the other — whitespace,
+punctuation and a letter changing case are ordinary characters here, which is
+why Price Tracker's capital “M” leaves with “Never m” arriving in its place.
+Copy that shares no run worth standing still for — nothing in common, a single
+character, or punctuation only — replaces itself outright (`isFullReplacement`),
+each state centred on its own.
+
+`OnboardingIntroHeadlineView` renders that in the two-beat moon-reveal: beat one
+brings the initial sentence in whole; beat two blooms the arriving fragments in
+and the departing ones out, in the same turn, and never touches the anchor. Two
+consequences worth knowing before changing copy or layout:
+
+- **The FINAL sentence is what is centred.** The initial one is typeset wherever
+  the anchor's final position puts it, so it lands left of centre when the copy
+  grows on the right (Reader) and right of centre when it grows on the left
+  (Price Tracker). Nothing translates between beats, because nothing was ever
+  anywhere else. Each sentence is one composition with every character but the
+  fragment's own in clear ink, so a fragment's position is real typesetting
+  rather than a measured offset.
+- **A narrow card shrinks the font, not the layout.** Both states have to fit
+  side by side (`Metrics.unionWidth`), so the view picks a size from 25pt down to
+  a 13pt floor at layout time and rebuilds its fragments if that size changes —
+  which it will only do before a beat has begun.
+
+Departures get their own fronts rather than sharing the arrivals'. A period's
+ink sits a whole x-height below “more”'s, so one edge descending through the
+shared frame would uncover the top of the “m” a third of a second before
+reaching the period beside it — long enough to read the wrong sentence. Each
+departing fragment's front starts advanced by the drop from the highest arriving
+ink (`frontLead(forDeparting:)`), so it goes out as the arrivals come in.
+
+The util card starts the animation from `cardDidBecomeCentered`, so it does not
+spend it while mounted only as a side peek. On the launch that animates it, the
+card's other elements wait at alpha 0 and fade in together, in place, from the
+second beat's completion (`claudedocs/util-card.md`, "the headline speaks
 first"); a non-animating appearance shows them immediately.
 
 ## Completion model

@@ -560,16 +560,54 @@ final class ReaderScreenTests: XCTestCase {
 
         let geometry = reader.layoutGeometryForTesting
         XCTAssertEqual(
-            geometry.precedingContext.maxY, geometry.focalCenterY - 84, accuracy: 0.5,
-            "The preceding lane keeps its bottom against the focal band")
+            geometry.gapAboveProse, 20, accuracy: 0.5,
+            "The preceding lane keeps its bottom a third of the old 60pt off the "
+            + "word's own edge")
         XCTAssertLessThan(
             geometry.precedingContext.height, 100,
             "Six words of preceding prose take two lines, not the 220pt lane they "
             + "may grow into")
         XCTAssertEqual(
-            geometry.trailingContext.minY, geometry.focalCenterY + 116, accuracy: 0.5,
-            "The trailing lane keeps its top against the focal band")
+            geometry.gapBelowProse, 31, accuracy: 0.5,
+            "…and the trailing lane a third of the old 92pt — the empty pill row "
+            + "is no longer held open under every word")
         XCTAssertGreaterThan(geometry.trailingContext.height, 0)
+    }
+
+    /// The pill row is reserved only while something is in it. A link pill (or
+    /// the completion badge) pushes the trailing prose down by its own height
+    /// instead of every other word paying for an empty row.
+    func testRSVPTrailingProseYieldsTheRowOnlyWhileAPillOccupiesIt() {
+        let prose = "one two three four five six seven eight nine ten eleven "
+            + "twelve thirteen fourteen fifteen sixteen seventeen"
+        let seven = (prose as NSString).range(of: "seven")
+        let linked = ArticleContent(title: "Linked RSVP Fixture", blocks: [
+            .init(kind: .paragraph, text: prose,
+                  links: [.init(start: seven.location, length: seven.length,
+                                urlString: "https://example.com/link")]),
+        ])
+        let reader = RSVPViewController(item: item, content: linked, resumeWordIndex: 3)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let quiet = reader.layoutGeometryForTesting
+        XCTAssertEqual(quiet.trailingContext.minY, quiet.pillRow.minY, accuracy: 0.5,
+                       "With no pill showing, the prose starts on the pill's row")
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber"); return
+        }
+        slider.value = 6                                    // the linkified word
+        slider.sendActions(for: .valueChanged)
+        reader.view.layoutIfNeeded()
+
+        let withPill = reader.layoutGeometryForTesting
+        XCTAssertGreaterThan(
+            withPill.trailingContext.minY, withPill.pillRow.maxY,
+            "A visible pill pushes the prose clear of the whole row")
+        XCTAssertEqual(withPill.pillRow.minY, quiet.pillRow.minY, accuracy: 0.5,
+                       "The row itself doesn't move — only the prose below it")
     }
 
     /// A roomy container lets the controls unglue from the bottom safe area (the

@@ -24,6 +24,14 @@ private final class RecordingReaderCompletionDelegate: ReaderCompletionDelegate 
     func readerDidMoveAwayFromEnd(_ reader: UIViewController) { didMoveAway = true }
 }
 
+/// A share provider that only has to EXIST — the reader shows its floating share
+/// button whenever one is installed, and the layout tests never tap it.
+private final class StubReaderShareProvider: ReaderShareProviding {
+    func presentShareSheet(
+        urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView) {}
+    func saveLink(urlString: String) {}
+}
+
 final class ReaderScreenTests: XCTestCase {
 
     private let content = UITestFixtures.sampleArticleContent(title: "Reader Fixture Article")
@@ -511,6 +519,121 @@ final class ReaderScreenTests: XCTestCase {
                        "Ending the scrub gesture should persist the new word index")
     }
 
+    // MARK: - Speed-reader vertical layout
+
+    /// The action extension hands the speed reader a view that already starts
+    /// below the navigation bar, so its own chrome inset is zero while the bottom
+    /// ~200pt go to the playback controls and the home-indicator inset. The focal
+    /// word rests at the midpoint of what is left. It used to rest at the
+    /// midpoint of the VIEW — which is only the same point when the chrome above
+    /// and the controls below are equally tall — and sat ~110pt low, with a void
+    /// between the extension's chrome and the preceding prose.
+    func testRSVPFocalWordRestsAtTheMidpointOfItsReadingBand() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 60)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let geometry = reader.layoutGeometryForTesting
+        XCTAssertEqual(
+            geometry.focalCenterY,
+            geometry.bandCenterY + RSVPViewController.focalCenterBiasForTesting,
+            accuracy: 0.5,
+            "The focal word rests on the midpoint of the band between the host "
+            + "chrome and the playback controls")
+        XCTAssertLessThan(
+            geometry.focalCenterY, reader.view.bounds.midY,
+            "The band's midpoint is above the view's whenever the controls take "
+            + "more room below than the chrome takes above")
+    }
+
+    /// Each context lane is sized to the prose it holds and pinned to the focal
+    /// band. Given the whole lane, a short passage centers inside it — which is
+    /// the hole that used to open between the chrome and the preceding text.
+    func testRSVPContextLanesAreSizedToTheirProseAndHugTheFocalBand() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 6)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let geometry = reader.layoutGeometryForTesting
+        XCTAssertEqual(
+            geometry.precedingContext.maxY, geometry.focalCenterY - 84, accuracy: 0.5,
+            "The preceding lane keeps its bottom against the focal band")
+        XCTAssertLessThan(
+            geometry.precedingContext.height, 100,
+            "Six words of preceding prose take two lines, not the 220pt lane they "
+            + "may grow into")
+        XCTAssertEqual(
+            geometry.trailingContext.minY, geometry.focalCenterY + 116, accuracy: 0.5,
+            "The trailing lane keeps its top against the focal band")
+        XCTAssertGreaterThan(geometry.trailingContext.height, 0)
+    }
+
+    /// A roomy container lets the controls unglue from the bottom safe area (the
+    /// reading group is centered on the band, so it rises with them); a container
+    /// with no height to spare keeps them where they were.
+    func testRSVPControlsLiftOffTheBottomOnlyWhenTheBandCanSpareIt() {
+        let roomy = RSVPViewController(item: item, content: longContextContent())
+        roomy.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        roomy.loadViewIfNeeded()
+        roomy.view.layoutIfNeeded()
+        XCTAssertEqual(
+            roomy.layoutGeometryForTesting.controls.maxY, 732 - 64, accuracy: 0.5,
+            "24pt base gap plus the 40pt lift")
+
+        let tight = RSVPViewController(item: item, content: longContextContent())
+        tight.topContentInset = 150
+        tight.view.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
+        tight.loadViewIfNeeded()
+        tight.view.layoutIfNeeded()
+        XCTAssertEqual(
+            tight.layoutGeometryForTesting.controls.maxY, 650 - 24, accuracy: 0.5,
+            "A band this short owes the reading group every point it has")
+    }
+
+    /// The host's floating share circle hovers over the speed reader. It has to
+    /// clear the playback controls (whose top now moves with the lift) and the
+    /// trailing-context prose has to clear IT — in the extension the circle sat
+    /// on top of the trailing line.
+    func testReaderShareButtonClearsRSVPControlsAndTrailingContext() {
+        let share = StubReaderShareProvider()
+        let reader = ReaderViewController(
+            item: item, content: longContextContent(), forceMode: .rsvp,
+            shareProvider: share, persistsModePreference: false,
+            marksOpenedOnLoad: false, inlineControlsHeader: true)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let rsvp = reader.children.compactMap({ $0 as? RSVPViewController }).first,
+              let shareButton = reader.view.subviews.compactMap({ $0 as? UIButton }).first
+        else {
+            XCTFail("The RSVP host should float a share button over the speed reader")
+            return
+        }
+        // Mid-article, so both context lanes carry their full 55 words.
+        if let slider = findSlider(in: rsvp.view) {
+            slider.value = 60
+            slider.sendActions(for: .valueChanged)
+        }
+        reader.view.layoutIfNeeded()
+
+        let geometry = rsvp.layoutGeometryForTesting
+        let shareInReader = reader.view.convert(shareButton.frame, to: rsvp.view)
+        XCTAssertLessThanOrEqual(
+            shareInReader.maxY, geometry.controls.minY,
+            "The share circle hangs above the playback controls")
+        XCTAssertFalse(
+            shareInReader.intersects(geometry.trailingContext),
+            "The trailing-context lane gives up the width the share circle covers")
+        XCTAssertGreaterThan(
+            geometry.trailingContext.width, 140,
+            "…without narrowing into a column of fragments")
+    }
+
     // MARK: - Helpers
 
     private func findSlider(in view: UIView) -> UISlider? {
@@ -547,6 +670,17 @@ final class ReaderScreenTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    /// Enough prose for both context lanes to fill at any position.
+    private func longContextContent() -> ArticleContent {
+        let sentence = "There has been a weird debate over the last few months about "
+            + "whether the United States is better off than Western Europe and the "
+            + "participants of this debate tend to operate under a shared premise "
+            + "that people know what they mean by better off in the first place. "
+        return ArticleContent(title: "Long RSVP Fixture", blocks: [
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 6), links: []),
+        ])
     }
 
     private func shortArticleContent() -> ArticleContent {

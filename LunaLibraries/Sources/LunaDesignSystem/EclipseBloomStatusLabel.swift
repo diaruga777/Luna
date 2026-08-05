@@ -16,6 +16,9 @@ public final class EclipseBloomStatusLabel: UIView {
     private let revealMask = CAShapeLayer()
     private var isRevealing = false
     private var requestedText: String?
+    /// Set when `reveal` was asked for before this view had a size: the words are
+    /// already applied, and this is the sweep still owed once layout provides bounds.
+    private var pendingRevealDuration: TimeInterval?
 
     public var text: String? { finalLabel.text }
     public var textColor: UIColor = LunaColors.secondaryText {
@@ -56,28 +59,57 @@ public final class EclipseBloomStatusLabel: UIView {
     public required init?(coder: NSCoder) { nil }
 
     /// Sets the text plainly, for terminal errors and other non-loading states.
+    ///
+    /// Also CANCELS any parked reveal. A terminal message arrives exactly when the
+    /// loading copy is being abandoned (rate-limited, un-archivable), and a reveal
+    /// still owed from before layout would otherwise fire on the next pass and put
+    /// "Unlocking article…" back over the error.
     public func setTextImmediately(_ text: String?) {
         layer.removeAllAnimations()
         finalLabel.layer.removeAllAnimations()
         bloomLabel.layer.removeAllAnimations()
         finalLabel.layer.mask = nil
         finalLabel.text = text
+        bloomLabel.text = text
         finalLabel.alpha = 1
         bloomLabel.alpha = 0
         isRevealing = false
+        requestedText = text
+        pendingRevealDuration = nil
     }
 
     /// Uses the same top-down eclipse pacing as the onboarding intro's first line.
+    ///
+    /// The TEXT is applied before the size check, and that ordering is load-bearing.
+    /// This view has no intrinsic size of its own — it takes the size of the labels
+    /// pinned inside it — so a `reveal` that returned early WITHOUT setting the text
+    /// (which is what the bounds guard used to do) left a view whose labels were
+    /// empty, whose width was therefore zero, and whose bounds could never become
+    /// non-zero: `layoutSubviews`' retry re-entered the same guard forever and the
+    /// caller's status copy never appeared at all. Every loading surface that starts
+    /// its cycler in view setup — the action extension, the archive reader — was
+    /// asking for text before its first layout pass, so none of them ever showed a
+    /// word, including the rotating "Still going…" reassurance.
+    ///
+    /// So: set the text first (that alone gives the view a size), then either animate
+    /// now or park the reveal for `layoutSubviews` to run once there are bounds to
+    /// animate within.
     public func reveal(_ text: String, duration: TimeInterval = 1.55) {
         requestedText = text
-        guard bounds.width > 0, bounds.height > 0 else {
-            setNeedsLayout()
-            return
-        }
         finalLabel.text = text
         bloomLabel.text = text
         finalLabel.alpha = 1
         bloomLabel.alpha = 0
+        guard bounds.width > 0, bounds.height > 0 else {
+            // No bounds yet: the words are already on screen-bound labels, and the
+            // eclipse sweep runs as soon as layout gives them a rect.
+            pendingRevealDuration = duration
+            finalLabel.layer.mask = nil
+            isRevealing = false
+            setNeedsLayout()
+            return
+        }
+        pendingRevealDuration = nil
         isRevealing = true
 
         let rect = finalLabel.bounds
@@ -133,9 +165,13 @@ public final class EclipseBloomStatusLabel: UIView {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-        if let requestedText, !isRevealing, finalLabel.text != requestedText {
-            reveal(requestedText)
-        }
+        // Run a reveal that was asked for before there were bounds to sweep. Keyed on
+        // the parked duration rather than on `finalLabel.text != requestedText`, which
+        // can no longer be the signal now that the text is applied up front.
+        guard let duration = pendingRevealDuration, let requestedText,
+              !isRevealing, bounds.width > 0, bounds.height > 0
+        else { return }
+        reveal(requestedText, duration: duration)
     }
 
     private func revealPath(excluding circle: CGRect, in rect: CGRect) -> CGPath {

@@ -351,9 +351,12 @@ every kind processor is registered at launch). The `LunaReader` /
 > **No spaces in paths.** Build inputs are all space-free (`LunaAction/`, not the
 > old `Luna Action Extension/`; `AllLunaApps.xcscheme`, not `All Luna Apps`) —
 > quoting bugs in build scripts are otherwise silent. The one deliberate exception
-> is the bundled resource `Luna/Resources/Send To Luna.shortcut`, whose filename IS
-> the user-visible name in the Action Button picker (`BundledShortcut.displayName`
-> must keep matching it).
+> is the four bundled shortcuts (`Luna/Resources/Luna.shortcut`, `Luna Reader
+> .shortcut`, `Luna Downloader.shortcut`, `Luna Price Tracker.shortcut` — one per
+> app, the other three excluded from each app target by membership exception),
+> whose filename IS the user-visible name in the Action Button picker
+> (`BundledShortcut.displayName` switches on `LunaApp.current` and must keep
+> matching it).
 
 ```sh
 scripts/run_tests.sh            # preferred — picks a simulator, reports the real verdict

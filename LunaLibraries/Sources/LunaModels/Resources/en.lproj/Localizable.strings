@@ -160,8 +160,8 @@
 "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥" = "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥";
 
 /* ===================== Card Deck ===================== */
-"archive" = "archive";
 "Archive" = "Archive";
+"archive" = "archive";
 "Ask Every Time" = "Ask Every Time";
 "Best price: %@" = "Best price: %@";
 "Choose at least one recipient." = "Choose at least one recipient.";
@@ -710,21 +710,22 @@
 /* ===================== Settings · Diagnostics ===================== */
 "Clear" = "Clear";
 "Clear Diagnostics?" = "Clear Diagnostics?";
-"Clears onboarding completion and the Safari extension and Shortcut run evidence. Full onboarding will show again on the next launch." = "Clears onboarding completion and the Safari extension and Shortcut run evidence. Full onboarding will show again on the next launch.";
 "Couldn't write the log file." = "Couldn't write the log file.";
+"Deletes everything on this device: saves, articles, downloads, settings, email and Kindle credentials, and onboarding. This is shared with the other Luna apps, so they are erased too. Luna quits afterwards and starts over from scratch. This can't be undone." = "Deletes everything on this device: saves, articles, downloads, settings, email and Kindle credentials, and onboarding. This is shared with the other Luna apps, so they are erased too. Luna quits afterwards and starts over from scratch. This can't be undone.";
 "Diagnostics" = "Diagnostics";
 "Enter Weekly Key" = "Enter Weekly Key";
+"Erase All Data" = "Erase All Data";
+"Erase All Data?" = "Erase All Data?";
+"Erase Everything" = "Erase Everything";
+"Erased" = "Erased";
 "Export Failed" = "Export Failed";
 "Key Accepted" = "Key Accepted";
+"Luna will now quit. Open it again to start over." = "Luna will now quit. Open it again to start over.";
 "No diagnostics recorded yet." = "No diagnostics recorded yet.";
-"Onboarding Reset" = "Onboarding Reset";
 "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored." = "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored.";
-"Quit and relaunch the app to see the full onboarding." = "Quit and relaunch the app to see the full onboarding.";
+"Quit Luna" = "Quit Luna";
 "Remove" = "Remove";
 "Replace" = "Replace";
-"Reset" = "Reset";
-"Reset Onboarding" = "Reset Onboarding";
-"Reset Onboarding?" = "Reset Onboarding?";
 "Save of the Week Key" = "Save of the Week Key";
 "That key doesn't match this build. Nothing was stored." = "That key doesn't match this build. Nothing was stored.";
 "This device can now promote Saves of the Week." = "This device can now promote Saves of the Week.";

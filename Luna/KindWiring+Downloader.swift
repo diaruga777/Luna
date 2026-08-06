@@ -59,6 +59,11 @@ enum KindWiring {
             await LiveMediaDownloadManager.shared.startWithResolvedAssets(
                 sourceURLString: sourceURLString, title: title, assets: assets)
         }
+        // The factory reset's media leg: a Live Activity outlives the process
+        // that started it, so the wipe has to end them itself.
+        FactoryReset.additionalErasers.append {
+            await LiveMediaDownloadManager.shared.endAllActivities()
+        }
         LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
         // A bulk import runs its own progress bar; the per-transfer Live
         // Activity alerts (banner + sound + haptic) would buzz twice per link

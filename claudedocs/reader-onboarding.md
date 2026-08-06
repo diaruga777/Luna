@@ -362,7 +362,11 @@ same deck and preserves its current card.
 
 Debug launches accept `-resetOnboarding` (`-resetReaderOnboarding` remains the
 Reader alias). The reset clears explicit completion, both handled markers, and
-all setup run evidence, so the next host construction is deterministic.
+all setup run evidence, so the next host construction is deterministic. It is
+the only caller of `AppOnboardingStore.resetCompletion` left: Diagnostics used
+to offer an onboarding-only reset and now erases the install outright
+(`settings.md`), which reaches these markers by deleting the domain they live
+in.
 
 The older lesson inspection arguments remain available for the transient setup
 controller: `-onboardingStage`, `-forceActionButtonSetup`,

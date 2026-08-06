@@ -158,6 +158,20 @@ extension LiveMediaDownloadManager {
         #endif
     }
 
+    /// Tears every Live Activity down at once, immediately and without an alert
+    /// — the factory reset's media leg, installed on `FactoryReset` by the media
+    /// composition roots. An activity outlives the process that started it, so a
+    /// wiped install would otherwise leave a lock-screen card describing a
+    /// download whose job file is gone.
+    public func endAllActivities() async {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return }
+        for activity in Activity<LiveMediaDownloadAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        #endif
+    }
+
     #if canImport(ActivityKit)
     @available(iOS 16.1, *)
     func activityState(for job: LiveMediaDownloadJob) -> LiveMediaDownloadAttributes.ContentState {

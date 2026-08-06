@@ -394,8 +394,8 @@ the two mechanisms on the same intent type. Used for: the double-save
 ## Action Button setup
 
 The Action Button — iOS 27 **and** hardware that has one — is set up from the
-permanent util card and can be replayed from Settings. Its first state imports the bundled
-`Send To Luna.shortcut`; once opened, the setup action assumes installation and
+permanent util card and can be replayed from Settings. Its first state imports the app's own
+bundled shortcut; once opened, the setup action assumes installation and
 becomes “One more step! Set your action button to {App Name}.” Open Settings
 starts the per-surface PiP guide and opens Settings at its root. The action remains
 until either Action Button App Intent records completion, at
@@ -410,8 +410,20 @@ sibling Luna surfaces.
 
 ## Bundled shortcut + user setup
 
-`Luna/Resources/Send To Luna.shortcut` is an AEA1-signed `.shortcut` bundle
-(display name = `BundledShortcut.displayName`). Settings → "Install Shortcut"
+**Each app ships its own signed shortcut, named after the app.** All four live in
+`Luna/Resources/` — `Luna.shortcut`, `Luna Reader.shortcut`,
+`Luna Downloader.shortcut`, `Luna Price Tracker.shortcut` — and every app target
+excludes the other three through a synchronized-group membership exception, so
+exactly one is in any bundle (deleting or renaming one means editing
+`project.pbxproj` too, per CLAUDE.md). They cannot be one shared file: a
+shortcut's Save / Provide Context actions name a specific app, and a device with
+two Luna apps installed would otherwise show two identically named entries in
+the Action Button picker. `BundledShortcut.resourceName` switches on
+`LunaApp.current` and must keep matching the filenames — iOS names an imported
+signed shortcut after the file it came from, which is what
+`BundledShortcut.displayName` reports to the setup copy.
+
+Each is an AEA1-signed `.shortcut` bundle. Settings → "Install Shortcut"
 (`BundledShortcut.presentInstaller`) shares the bundled file to the Shortcuts
 app (`shortcuts://import-workflow?url=` REJECTS local file URLs, so install
 stays share-sheet based).
@@ -423,8 +435,8 @@ stays share-sheet based).
 > Screenshot, Take Screenshot and call Save(CurrentApp, screenshot,
 > result.Metadata); for Download, call Save(CurrentApp, no screenshot,
 > result.Metadata); for Done or Unhandled, stop (using `result.Media` only on
-> Done) — exported, renamed to `Send To Luna.shortcut`, and dropped into
-> `Luna/Resources/`. This is a
+> Done) — exported once per app, renamed to that app's name
+> (`Luna Reader.shortcut`, …), and dropped into `Luna/Resources/`. This is a
 > **clean break**: old installs (the Screen Analysis Prompt / Save from App
 > chain) reference deleted intents and must be reinstalled via Settings →
 > Install Shortcut.
@@ -434,7 +446,8 @@ User setup:
    `SafariURLStore` for the no-screenshot Safari save.
 2. Settings → Install Shortcut → share to Shortcuts → Add Shortcut. First run
    prompts to allow sharing app info with Luna; choose Always Allow.
-3. Settings → Action Button → Shortcut → pick "Send To Luna".
+3. Settings → Action Button → Shortcut → pick the app's own shortcut ("Luna",
+   "Luna Reader", "Luna Downloader" or "Luna Price Tracker").
 
 Settings' Action Button shortcut sections (the install rows, On-Screen URLs, Double
 Save) are hidden unless `ShortcutSettingsScreen.deviceHasShortcutSetup` — iOS 27 AND

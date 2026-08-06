@@ -615,6 +615,9 @@
 				Reader/ArticleCardPresenter.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
+				"Resources/Luna Price Tracker.shortcut",
+				"Resources/Luna Reader.shortcut",
+				Resources/Luna.shortcut,
 				Settings/AudioSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
 				Settings/EmailAndKindleSettingsScreen.swift,
@@ -644,6 +647,9 @@
 				Reader/ArticleCardPresenter.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
+				"Resources/Luna Downloader.shortcut",
+				"Resources/Luna Reader.shortcut",
+				Resources/Luna.shortcut,
 				Settings/AudioSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
 				Settings/DownloadsSettingsScreen.swift,
@@ -704,6 +710,9 @@
 				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
 				PriceTracker/ProductCardContent.swift,
 				PriceTracker/ProductCardPresenter.swift,
+				"Resources/Luna Downloader.shortcut",
+				"Resources/Luna Price Tracker.shortcut",
+				Resources/Luna.shortcut,
 				Settings/DownloadsSettingsScreen.swift,
 				UITestScreen.swift,
 			);
@@ -762,6 +771,9 @@
 				"KindWiring+PriceTracker.swift",
 				"KindWiring+Reader.swift",
 				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
+				"Resources/Luna Downloader.shortcut",
+				"Resources/Luna Price Tracker.shortcut",
+				"Resources/Luna Reader.shortcut",
 			);
 			target = F73C67777995F8F752A0056A /* Luna */;
 		};

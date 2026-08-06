@@ -115,9 +115,12 @@ Two things stay in Swift and are not editable this way:
   grammar rather than copy — `"Save this screen with \(.applicationName)"` is a
   spoken trigger, and rewording it changes what Siri responds to.
 - **`BundledShortcut.displayName`.** iOS takes that name from the imported
-  `Send To Luna.shortcut` file, so the constant and the filename have to agree;
-  editing the copy alone would rename it in Luna's prose while the Action Button
-  picker kept the old name. Rename the resource and the constant together.
+  `.shortcut` file (one per app: `Luna.shortcut`, `Luna Reader.shortcut`, …), so
+  the constant and the filename have to agree; editing the copy alone would
+  rename it in Luna's prose while the Action Button picker kept the old name.
+  Rename the resource and the constant together. It reads the same words as
+  `LunaApp.displayName` and deliberately does not share its lookup — that one is
+  copy and may be reworded, this one is a filename.
 
 ## Info.plist strings
 

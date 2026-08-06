@@ -31,11 +31,43 @@ save at index one; only an empty store starts on the util card.
 deck for its real resting frame, holds the launch layer briefly, and crossfades
 into the laid-out deck. There is no onboarding-root swap after the reveal.
 
-The launch composite is generated from production views. To re-record it after
-intentional corona/rim/star changes, run
+**The storyboard is CONSTRAINTS over two rasters, not one composite.** It used to
+be a single 402×874 image pinned to all four edges with `scaleToFill`, so the
+card inside it was the right size on the recorder's phone and a non-uniform
+stretch of it everywhere else. It now reproduces `CardDeckGeometry` in Interface
+Builder constants — safe area + 48pt clearance, 104pt strip runway, the largest
+exact-9:16 card centered in what is left, capped at half the width on a
+regular-width screen — and scales the corona artwork to `1.84 ×` that card's
+width. `LaunchScreenGeometryTests` loads the storyboard at six screen sizes and
+checks both frames against the Swift geometry, which is the only thing keeping
+IB constants and Swift constants in step.
+
+Two single-scale rasters, loose in the bundle (the launch screen needs them
+before the app has started) rather than in the asset catalog, and single-scale so
+one generously-sized file downscales to every device instead of a 2× variant
+being upscaled on the largest iPad:
+
+| Asset | Canvas |
+| --- | --- |
+| `LunaLaunchStarfield.png` | the whole reference screen; drawn `scaleToFill` so stars land where the live `AppLaunchStarfieldView` (which places them at fractions of its bounds) puts them |
+| `LunaLaunchCoronaCard.png` | exactly `AppLaunchGeometry.coronaFrame` — the card grown by `0.42 × cardWidth` on all sides — holding the corona, the black card body and its rim |
+
+The corona's throw is a fixed FRACTION of the card width here
+(`AppLaunchGeometry.coronaReachFraction`) rather than `EclipseCorona.reach`'s
+clamped formula: a ratio that changes with the card size cannot be carried by one
+uniformly scaled raster. On a phone the clamp does not bind, so the throw is
+unchanged.
+
+`AppLaunchTransition` draws the SAME two rasters in the app's first live frame,
+and onboarding's intro corona and the util card's corona draw the corona raster
+too, so all four surfaces are identical by construction rather than by agreement
+— and none of them re-renders a corona at launch (~80ms each at 1× on a
+simulator, three times over).
+
+To re-record after intentional corona/rim/star changes, run
 `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested` with
-`TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then replace the
-`LunaLaunchComposite` and diagnostic assets.
+`TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then copy both PNGs into
+`Luna/`.
 
 ## Surface headlines
 

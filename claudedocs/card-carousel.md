@@ -113,13 +113,33 @@ The date moves in exactly three ways, and no others:
 
 ## Layout
 
+- **There is ONE card frame.** `CardCarouselMetrics.resolve` returns the largest
+  exact-9:16 rectangle that fits the card area, centered in it — for every kind,
+  every deck and every app. A card's size used to be its KIND's answer (`cardFit`
+  / `topOverflow`): an article card took every point of width and hung its extra
+  height above the card area, a product card ignored the aspect and filled the
+  room, only a media card was this. Three rectangles at two vertical centers in
+  one deck is what resized and re-centered the card underneath a page
+  transition. `edgeGap` was per-deck too, and three of four decks overrode it to
+  the same value while the Downloader kept the default, so the same video card
+  was 40pt narrower there. All four inputs (`peek` 14, `edgeGap` 10, `sideScale`
+  0.92, `verticalPadding` 12) are constants on `CardCarouselMetrics` now.
+- **And the frame is a function of the SCREEN**, not of a live layout pass:
+  `CardDeckGeometry.cardFrame(inScreenSize:safeAreaInsets:)` computes it from the
+  safe area plus `topClearance` (48 — the Reader's floating control row, reserved
+  by every deck so the answer cannot depend on which app opened) and
+  `bottomChromeHeight` (the 96pt scrub strip plus its 8pt gap). That is what lets
+  the launch splash be drawn before any deck exists; `CardDeckGeometryTests` pins
+  the two answers together against a live carousel at six screen shapes.
 - Cards are portrait 9:16 (`CardCarouselMetrics.cardAspectRatio`), rounded
   (`CarouselCardView.cornerRadius`, continuous), filled `.secondarySystemBackground`
   so a letterboxed (aspect-fit) frame still reads as a card against
   `.systemBackground`.
-- The centered card rests at scale 1, inset `peek + edgeGap` (14 + 30pt) from each
-  screen edge — the `edgeGap` insets only the centered card, giving the areas
-  beside it enough width for paging swipes. Each neighbor rests at `sideScale`
+- The centered card rests at scale 1, at least `peek + edgeGap` (14 + 10pt) in
+  from each screen edge — the `edgeGap` insets only the centered card, giving the
+  areas beside it enough width for paging swipes. On every phone Luna ships to
+  the card is HEIGHT-limited, so that inset is a floor rather than the binding
+  constraint. Each neighbor rests at `sideScale`
   (0.92) with exactly `peek` (14pt) of its edge visible inside the screen edge,
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
@@ -162,13 +182,11 @@ threshold is 700pt: above every iPhone (widest 440), below every iPad in portrai
 
 Consequences for the deck:
 
-- The card is capped at half the width minus padding, for **every** `CardFit`.
-- That cap makes an `.aspectFromBottom` card SHORTER than the room instead of
-  taller, so the overflow-upward branch has nothing to do and would strand the
-  card under a band of dead space. It grows into the room and centers instead,
-  bounded at `LunaLayout.tallestCardAspectRatio` (1:2) so it never becomes a
-  sliver. `.aspectCentered` (media) is deliberately excluded — its content IS
-  9:16, and a taller frame would only letterbox it.
+- The card is capped at half the width minus padding. It keeps the exact 9:16
+  either way: capping the width must not start letterboxing a video.
+  `LunaLayout.tallestCardAspectRatio` is gone with the fit that used it — a card
+  allowed to grow past 9:16 into an iPad's spare height was, by definition, a
+  card of a different size than the one beside it.
 - Everything pinned to the screen edges came loose from the card, so it follows
   the card's column instead: the scrub strip
   (`CardCarouselViewController.alignScrubberToCardColumn`, keeping the exact
@@ -521,32 +539,24 @@ override the host's persist-and-reload default). That is what lets the Reader's
 drift-and-spring animation stay Reader-only without the store write staying
 there too.
 
-**A card's shape is its KIND's answer, not this screen's.** `cardFit`,
-`cardTopOverflow`, `contentEdgeFadeHeight` and scrub-preview autoplay come from
-the presenter per card (`CardKindStyle`), so a deck holding an article and a
-video gives each its own shape — and a media card is the same shape in the
-central app as in the Downloader, which it was not when these were deck-level
+**How a card PRESENTS its content is its KIND's answer, not this screen's.**
+`contentEdgeFadeHeight`, scrub-preview autoplay and in-card paging come from the
+presenter per card (`CardKindStyle`), so a media card behaves the same in the
+central app as in the Downloader, which it did not when these were deck-level
 fields. `style.card` survives only as the default for the util card and for
-onboarding, neither of which has a kind.
+onboarding, neither of which has a kind. Card GEOMETRY went the other way: `fit`
+and `topOverflow` were per-kind, and that is precisely what made paging between
+kinds relayout the card, so there is now one frame and no kind can state one.
 
 The article kind's own answers:
 
-- `cardFit = .aspectFromBottom` (the card is exactly 9:16 — the
-  Shorts/Reels/TikTok portrait shape the media cards already use — at the full
-  width the peeks leave, which is TALLER than the room between the header row
-  and the scrub strip: the card's bottom edge stays on the strip and the extra
-  height is added at the top, growing up through `cardTopOverflow` points of
-  header-row clearance to the safe-area top and no further. On a 402×874pt
-  screen that's a 354×629 card whose top sits at y≈95, so the header row's
-  buttons float over the card's (fade-masked) top edge. A container too wide for
-  the allowance — iPad — keeps the aspect exact by narrowing instead), `edgeGap` 10
-  (card closer to the screen edges), `pagesOnInCardSwipes` (horizontal swipes
-  inside the card page — readers have no timeline to scrub; the page pan
-  recognizes simultaneously with the reader's own gestures, gated to
-  strongly-horizontal drags — EXCEPT over a `UISlider`: a drag that starts on
-  a horizontal control (the RSVP scrubber) is a scrub, and near the track's
-  ends it reads exactly like a page-worthy swipe, so `pagePan` refuses to
-  begin there rather than paging the card out from under the thumb.
+- `contentEdgeFadeHeight` 28 and `pagesOnInCardSwipes` (horizontal swipes inside
+  the card page — readers have no timeline to scrub; the page pan recognizes
+  simultaneously with the reader's own gestures, gated to strongly-horizontal
+  drags — EXCEPT over a `UISlider`: a drag that starts on a horizontal control
+  (the RSVP scrubber) is a scrub, and near the track's ends it reads exactly like
+  a page-worthy swipe, so `pagePan` refuses to begin there rather than paging the
+  card out from under the thumb.
   **A swipe that BECOMES a page stops being anything else.** Simultaneous
   recognition is what keeps links, taps and scrolling alive on a card that is
   not being paged, so by the time the horizontal gate opens, the reader under
@@ -561,7 +571,11 @@ The article kind's own answers:
   `CardCarouselPagePanSimultaneityPolicy` refuses a scroll view that asks to
   start *after* the pan is already tracking. The reverse case is untouched: a
   drag that starts vertical fails the horizontal gate, so `pagePan` never
-  begins and the article scrolls as before). Its strip chips: an article
+  begins and the article scrolls as before). The article card is the same 9:16
+  rectangle as every other card, and the Reader's floating control row follows
+  it rather than the screen: the row is framed from the resting card's own top
+  corners (`layoutReaderChromeRow`), so it sits inside the card's fade-masked
+  top edge wherever the card lands. Its strip chips: an article
   declines `prefersThumbnailChip`, so each chip is a miniature
   article card — a tiny `.systemBackground` surface with skeleton headline/body
   bars and a source badge as its masthead. The badge (`CarouselSourceBadge` in
@@ -736,10 +750,10 @@ central app gets the real in-card price editor rather than the
 
 The three questions that used to be per-deck and are now per-kind, everywhere:
 
-- **What a card looks like** — including its SHAPE. `cardFit`,
-  `contentEdgeFadeHeight` and scrub-preview autoplay are answers the presenter
-  gives per card, not fields the screen sets, so a media card cannot be one
-  shape in one app and another shape next door.
+- **What a card looks like** — `contentEdgeFadeHeight`, scrub-preview autoplay
+  and in-card paging are answers the presenter gives per card, not fields the
+  screen sets, so a media card cannot behave one way in one app and another way
+  next door. Its SIZE is nobody's answer but the deck's.
 - **What archiving and deleting mean.** One `setArchived` per kind writing every
   store that kind owns, and one delete path releasing companion storage — from a
   card menu or from a tray cell, in any app.

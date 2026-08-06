@@ -568,7 +568,7 @@ class CardCarouselHostViewController: UIViewController {
     /// the util card while onboarding is unanswered — the same condition as the
     /// intro headline — so an incomplete first run keeps the light the splash
     /// handed it instead of losing it to the crossfade.
-    private var utilCardCorona: EclipseCoronaView?
+    private var utilCardCorona: UIView?
     private var isUtilCardCentered = true
 
     final var utilCardIndex: Int { 0 }
@@ -971,7 +971,7 @@ class CardCarouselHostViewController: UIViewController {
         else { return }
         if utilCardCorona?.bounds.size != cardFrame.size {
             utilCardCorona?.removeFromSuperview()
-            let corona = AppLaunchTransition.makePeakCoronaView(cardFrame: cardFrame)
+            let corona = AppLaunchTransition.makeCoronaCardView(cardFrame: cardFrame)
             isUtilCardCentered = isUtilCard(carousel.currentIndex)
             corona.alpha = isUtilCardCentered ? 1 : 0
             view.insertSubview(corona, belowSubview: carousel.view)

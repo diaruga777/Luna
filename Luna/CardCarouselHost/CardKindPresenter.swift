@@ -158,15 +158,20 @@ protocol CardKindPresenting: AnyObject {
     /// mini card with a source badge.
     func prefersThumbnailChip(for item: ReadingListItem) -> Bool
 
-    /// This card's SHAPE — how it fills the room, whether its content
-    /// dissolves at the edges, whether the scrub strip plays it, and whether a
-    /// horizontal swipe across it pages the deck.
+    /// How this card PRESENTS its content — whether it dissolves at the edges,
+    /// whether the scrub strip plays it, and whether a horizontal swipe across
+    /// it pages the deck.
     ///
     /// A property of what the card SHOWS, not of the screen it is on: a
-    /// downloaded video is 9:16 with hard edges whether you opened it in the
-    /// Downloader or in the central app. It used to be a deck-level style, and
-    /// the central app consequently stretched every media card to the reader's
-    /// `.aspectFromBottom` and dissolved its edges with a 28pt reader fade.
+    /// downloaded video has hard edges whether you opened it in the Downloader
+    /// or in the central app. It used to be a deck-level style, and the central
+    /// app consequently dissolved every media card's video edges with the
+    /// reader's 28pt fade.
+    ///
+    /// Its SIZE is deliberately NOT here. A kind used to state that too, so an
+    /// article, a video and a product in one deck were three different
+    /// rectangles and paging between them relayouted the card. Every card is the
+    /// one frame `CardDeckGeometry` describes.
     func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle
     /// Whether the scrub strip may build this card's real content ahead of the
     /// finger. A card backed by a video player answers false — sweeping the

@@ -95,7 +95,7 @@ resolves as "a save this deck has never shown" — the top rung
 store's ids (the Downloader's media rows) resolves it by URL instead; both keys
 travel with the request. The growing shell is a card from its first frame: it wears the
 card rim (whose radius follows the shell's own, 16 → 22) and carries Luna's own
-waiting — `HorizonSpinnerView` for an article or product, `EclipseProgressBar`
+waiting — `HorizonSpinnerView` for an article or product, `MoonHorizonProgressBar`
 for a media transfer — until the real content crossfades in.
 
 **Only a `UtilURLRow` gets that handoff.** The transition is built from artwork

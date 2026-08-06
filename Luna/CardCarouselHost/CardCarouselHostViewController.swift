@@ -344,7 +344,7 @@ private final class UtilCardSaveTransition {
     }
 
     /// The app's own waiting, inside the growing shell: a horizon spinner for a
-    /// page still being read, the eclipse progress bar for a media transfer
+    /// page still being read, the horizon progress bar for a media transfer
     /// (which mounts at zero and hands off to the real card's own bar). Faded in
     /// after a beat so a save that resolves at once never flashes it.
     private func installLoadingIndicator(
@@ -353,7 +353,7 @@ private final class UtilCardSaveTransition {
         let indicator: UIView
         switch kind {
         case .media:
-            let bar = EclipseProgressBar()
+            let bar = MoonHorizonProgressBar()
             bar.setProgress(0, animated: false)
             let width = max(80, shell.bounds.width * 0.6)
             bar.frame = CGRect(

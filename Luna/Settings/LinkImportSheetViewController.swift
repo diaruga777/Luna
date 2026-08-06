@@ -52,7 +52,7 @@ final class LinkImportSheetViewController: UIViewController {
     // MARK: - Views
 
     let table = UITableView(frame: .zero, style: .insetGrouped)
-    let progressBar = EclipseProgressBar()
+    let progressBar = MoonHorizonProgressBar()
     private let statusLabel = UILabel()
     private let countLabel = UILabel()
     private let progressStack = UIStackView()
@@ -61,7 +61,7 @@ final class LinkImportSheetViewController: UIViewController {
     private let buttonRow = UIStackView()
     /// Holds the progress block above the buttons. A stack, so hiding the block
     /// COLLAPSES it: `isHidden` on a plain subview leaves its frame (and the
-    /// progress bar's 24pt intrinsic height) behind as a gap above the buttons.
+    /// progress bar's 20pt intrinsic height) behind as a gap above the buttons.
     private let footerStack = UIStackView()
     private let titleLabel = UILabel()
 

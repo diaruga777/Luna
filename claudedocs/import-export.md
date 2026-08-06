@@ -141,6 +141,13 @@ memory cost make more workers pure contention.
 
 ### Progress
 
+The bar is `MoonHorizonProgressBar` — the shared horizon arc every other
+progress surface in the four apps uses (media cards, the mini player, the clip
+download screen, the Live Activity's SwiftUI twin). There is no import-specific
+bar: the flat `EclipseProgressBar` this sheet used to carry is deleted, and its
+two other call sites (the failed-save card's rescue bar, the carousel host's
+media loading shell) moved to the arc with it.
+
 Each link owns an equal `1/N` slice. Within a slice: the ingest owns up to 0.55,
 a media download or a rescue carries it to 0.95, and the last sliver lands when
 the item is scored — so a finished slice always looks finished. A slice never

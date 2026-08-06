@@ -48,6 +48,8 @@ final class LinkImportPreviewLoader {
 
     /// Called on the main actor whenever one URL's state changes, so the sheet can
     /// refresh just that row instead of reloading the table under the user's thumb.
+    ///
+    /// Always on a LATER turn than the change itself — see `notifyChange`.
     var onChange: ((String) -> Void)?
 
     /// How many page reads are in flight at once. Three is enough to keep a
@@ -118,6 +120,18 @@ final class LinkImportPreviewLoader {
 
     // MARK: - The window
 
+    /// Reports a state change one main-actor turn later, never inline.
+    ///
+    /// `enterWindow` is called from `tableView(_:willDisplay:)`, and its handler
+    /// reloads the row that changed. Reporting synchronously would therefore reload
+    /// a cell in the middle of UIKit displaying it — which is at best ignored and
+    /// at worst reentrant. A hop costs nothing here: the row is already on screen
+    /// showing its URL, and one turn later it shows its spinner.
+    private func notifyChange(_ urlString: String) {
+        guard onChange != nil else { return }
+        Task { @MainActor [weak self] in self?.onChange?(urlString) }
+    }
+
     /// These rows are on screen (or about to be). Anything not answered yet joins
     /// the queue.
     func enterWindow(_ urlStrings: [String]) {
@@ -131,11 +145,11 @@ final class LinkImportPreviewLoader {
             // "this is all there is", not "still loading".
             guard isOnline() else {
                 failed.insert(urlString)
-                onChange?(urlString)
+                notifyChange(urlString)
                 continue
             }
             queue.append(urlString)
-            onChange?(urlString)
+            notifyChange(urlString)
         }
         pump()
     }
@@ -167,7 +181,7 @@ final class LinkImportPreviewLoader {
             let urlString = queue.removeFirst()
             guard let url = Self.fetchableURL(urlString) else {
                 failed.insert(urlString)
-                onChange?(urlString)
+                notifyChange(urlString)
                 continue
             }
             inFlight.insert(urlString)
@@ -185,7 +199,7 @@ final class LinkImportPreviewLoader {
         guard let preview else {
             inFlight.remove(urlString)
             failed.insert(urlString)
-            onChange?(urlString)
+            notifyChange(urlString)
             pump()
             return
         }
@@ -194,13 +208,13 @@ final class LinkImportPreviewLoader {
         // should appear without waiting on an image download that may not land.
         previews[urlString] = Preview(title: preview.title, siteName: preview.siteName)
         inFlight.remove(urlString)
-        onChange?(urlString)
+        notifyChange(urlString)
         pump()
 
         guard let imageURL = preview.imageURL,
               let image = await thumbnail(from: imageURL) else { return }
         images.setObject(image, forKey: urlString as NSString)
-        onChange?(urlString)
+        notifyChange(urlString)
     }
 
     private func thumbnail(from url: URL) async -> UIImage? {

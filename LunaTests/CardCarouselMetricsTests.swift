@@ -37,10 +37,34 @@ final class CardCarouselMetricsTests: XCTestCase {
             accuracy: 0.01)
     }
 
-    func testCardIsAlwaysTallerThanWide() {
-        for size in [CGSize(width: 320, height: 600), CGSize(width: 1200, height: 700)] {
+    /// **One shape, every container.** A reader card used to take every point of
+    /// width and hang its extra height ABOVE the container's top; a product card
+    /// ignored the aspect and filled the room; only a video card was this. Three
+    /// rectangles at two different centers in one deck is what jumped when
+    /// paging between kinds, so the rule is pinned as an invariant rather than
+    /// per case.
+    func testEveryContainerYieldsAnExact9By16CardCenteredInTheRoom() {
+        for size in [
+            CGSize(width: 320, height: 600),
+            CGSize(width: 402, height: 626),
+            CGSize(width: 440, height: 708),
+            CGSize(width: 744, height: 1_000),
+            CGSize(width: 1_200, height: 700),
+        ] {
             let metrics = CardCarouselMetrics.resolve(containerSize: size)
-            XCTAssertGreaterThan(metrics.cardSize.height, metrics.cardSize.width)
+            let frame = metrics.centeredCardFrame()
+            XCTAssertEqual(
+                frame.width / frame.height,
+                CardCarouselMetrics.cardAspectRatio,
+                accuracy: 0.0001, "\(size)")
+            XCTAssertGreaterThan(frame.height, frame.width, "\(size)")
+            XCTAssertEqual(frame.midY, size.height / 2, accuracy: 0.01, "\(size)")
+            XCTAssertEqual(frame.midX, size.width / 2, accuracy: 0.01, "\(size)")
+            XCTAssertGreaterThanOrEqual(
+                frame.minY, CardCarouselMetrics.verticalPadding - 0.01,
+                "\(size) overflowed its own padding")
+            XCTAssertLessThanOrEqual(
+                frame.maxY, size.height - CardCarouselMetrics.verticalPadding + 0.01, "\(size)")
         }
     }
 
@@ -95,85 +119,22 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertTrue(cardFrame.contains(progressFrame))
     }
 
-    func testFillIgnoresAspectAndTakesEveryPoint() {
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: CGSize(width: 400, height: 600),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
-        XCTAssertEqual(metrics.cardSize.width, 400 - 2 * (14 + 10), accuracy: 0.01)
-        XCTAssertEqual(metrics.cardSize.height, 600 - 24, accuracy: 0.01)
-        XCTAssertEqual(metrics.centerY(), 300, accuracy: 0.01)
-    }
-
-    func testAspectFromBottomAddsItsExtraHeightAtTheTop() {
-        // The article deck's container: too SHORT for a 9:16 card at its width,
-        // so the card overflows the container's top — and only its top. Compared
-        // against `.fill`, which is what the same container used to yield.
-        let container = CGSize(width: 402, height: 626)
-        let filled = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-
-        // Same width; exactly 9:16, so taller than the container's usable height.
-        XCTAssertEqual(metrics.cardSize.width, filled.cardSize.width, accuracy: 0.01)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertGreaterThan(metrics.cardSize.height, filled.cardSize.height)
-
-        // Bottom edge unmoved; the whole gain is above the old top edge.
-        let frame = metrics.centeredCardFrame()
-        let filledFrame = filled.centeredCardFrame()
-        XCTAssertEqual(frame.maxY, filledFrame.maxY, accuracy: 0.01)
-        XCTAssertEqual(
-            filledFrame.minY - frame.minY,
-            metrics.cardSize.height - filled.cardSize.height,
-            accuracy: 0.01)
-        XCTAssertLessThan(frame.minY, 0)   // above the container's own top
-    }
-
-    func testAspectFromBottomNeverOverflowsMoreThanAllowed() {
-        // A container too wide for its height, but still phone-shaped enough to
-        // escape the wide-container width cap (a landscape phone): the card
-        // can't have the full width at 9:16 within the overflow allowance, so it
-        // narrows — the aspect stays exact and the overflow stops at the
-        // allowance.
-        let container = CGSize(width: LunaLayout.wideThreshold - 10, height: 400)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertLessThan(metrics.cardSize.width, container.width - 2 * (14 + 10))
-        XCTAssertEqual(metrics.cardSize.height, 400 - 24 + 48, accuracy: 0.01)
-        // Clamped: the card's top stops one `verticalPadding` inside the
-        // allowance — 36pt above the container, not the full 48.
-        XCTAssertEqual(metrics.centeredCardFrame().minY, -(48 - 12), accuracy: 0.01)
-    }
-
     // MARK: - Wide containers (iPad)
 
     /// The half-width cap, which is the whole reason two reader columns fit.
-    func testWideContainerCapsEveryFitAtHalfTheWidthMinusPadding() throws {
+    /// Capping the width must not start letterboxing the card vertically: the
+    /// aspect is exact on an iPad exactly as it is on a phone.
+    func testWideContainerCapsTheCardAtHalfTheWidthMinusPadding() throws {
         let container = CGSize(width: 1024, height: 1200)
         let cap = try XCTUnwrap(LunaLayout.cardWidthCap(forContainerWidth: container.width))
         XCTAssertEqual(cap, 1024 / 2 - 36, accuracy: 0.01)
 
-        for fit in [CardCarouselMetrics.CardFit.aspectCentered, .fill, .aspectFromBottom] {
-            let metrics = CardCarouselMetrics.resolve(
-                containerSize: container,
-                peek: 14, edgeGap: 10, verticalPadding: 12,
-                fit: fit, topOverflow: 48)
-            XCTAssertLessThanOrEqual(
-                metrics.cardSize.width, cap + 0.01, "\(fit) ignored the wide width cap")
-        }
+        let metrics = CardCarouselMetrics.resolve(containerSize: container)
+        XCTAssertEqual(metrics.cardSize.width, cap, accuracy: 0.01)
+        XCTAssertEqual(
+            metrics.cardSize.width / metrics.cardSize.height,
+            CardCarouselMetrics.cardAspectRatio,
+            accuracy: 0.0001)
     }
 
     /// Two capped cards plus the gap between them span exactly the container
@@ -193,55 +154,6 @@ final class CardCarouselMetricsTests: XCTestCase {
         }
     }
 
-    /// A capped card is shorter than an iPad's card area, so anchoring its
-    /// bottom would strand it under a band of dead space. It grows into the room
-    /// and centers instead — bounded so it never becomes a sliver.
-    func testWideAspectFromBottomGrowsIntoTheRoomAndCenters() {
-        let container = CGSize(width: 834, height: 1100)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-
-        XCTAssertEqual(metrics.centerY(), container.height / 2, accuracy: 0.01)
-        XCTAssertGreaterThan(
-            metrics.cardSize.height, metrics.cardSize.width / CardCarouselMetrics.cardAspectRatio,
-            "the card should claim more than its 9:16 height")
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            LunaLayout.tallestCardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertGreaterThanOrEqual(metrics.centeredCardFrame().minY, 0)
-    }
-
-    /// A landscape iPad is short enough that the exact-aspect card is still
-    /// taller than the room, so it keeps the phone behaviour: bottom-anchored,
-    /// overflowing up through the allowance.
-    func testWideButShortContainerKeepsTheBottomAnchoredOverflow() {
-        let container = CGSize(width: 1194, height: 700)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertEqual(metrics.centeredCardFrame().minY, -(48 - 12), accuracy: 0.01)
-    }
-
-    /// Media cards are 9:16 because their CONTENT is: capping the width must not
-    /// start letterboxing them vertically.
-    func testWideAspectCenteredStaysExactly9By16() {
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: CGSize(width: 1024, height: 1200),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .aspectCentered)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-    }
-
     /// The threshold is a cliff, so pin both sides of it: one point below, the
     /// card still takes every point the peeks leave.
     func testJustBelowTheThresholdNothingIsCapped() {
@@ -249,17 +161,8 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertNil(LunaLayout.cardWidthCap(forContainerWidth: width))
         let metrics = CardCarouselMetrics.resolve(
             containerSize: CGSize(width: width, height: 2000),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
+            peek: 14, edgeGap: 10, verticalPadding: 12)
         XCTAssertEqual(metrics.cardSize.width, width - 2 * (14 + 10), accuracy: 0.01)
-    }
-
-    func testAspectFromBottomWithNoAllowanceStaysInsideTheContainer() {
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: CGSize(width: 402, height: 626),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .aspectFromBottom)
-        let frame = metrics.centeredCardFrame()
-        XCTAssertEqual(frame.minY, 12, accuracy: 0.01)
-        XCTAssertEqual(frame.maxY, 614, accuracy: 0.01)
     }
 
     func testTinyContainerDegradesGracefully() {

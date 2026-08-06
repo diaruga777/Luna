@@ -238,10 +238,11 @@ final class MediaCardPresenter: CardKindPresenting {
         return !media.isArchived
     }
 
-    /// Exactly 9:16, centered in the room, hard-clipped, and played by the
-    /// scrub strip under the finger — in EVERY app. The central app used to
-    /// stretch this card to the reader's `.aspectFromBottom`, dissolve its
-    /// video edges over 28pt, and preview it as a still.
+    /// Hard-clipped, and played by the scrub strip under the finger — in EVERY
+    /// app. The central app used to dissolve this card's video edges over the
+    /// reader's 28pt fade and preview it as a still. Its 9:16 frame is now the
+    /// whole deck's frame rather than this kind's answer: video is what that
+    /// shape was chosen FOR, and every other card matches it.
     ///
     /// `pagesOnInCardSwipes` stays false: a playable card's whole width is a
     /// timeline, so a horizontal drag scrubs it. That was already true of a
@@ -250,7 +251,6 @@ final class MediaCardPresenter: CardKindPresenting {
     /// the central app while staying put in the Downloader.
     func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
-        style.fit = .aspectCentered
         style.autoplaysScrubPreview = true
         return style
     }

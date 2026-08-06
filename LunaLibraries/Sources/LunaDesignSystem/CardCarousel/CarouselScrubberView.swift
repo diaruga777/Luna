@@ -64,12 +64,15 @@ public final class CarouselScrubberView: UIView {
 
     private var itemSize: CGSize { CGSize(width: 44, height: 64) }
 
-    public var preferredHeight: CGFloat {
-        // The selected mini-card scales to 1.1× and casts a 5pt shadow. Leave
-        // enough vertical runway for both instead of clipping the shadow
-        // against the scroll view's bottom edge.
-        itemSize.height + 32
-    }
+    /// The selected mini-card scales to 1.1× and casts a 5pt shadow. Leave
+    /// enough vertical runway for both instead of clipping the shadow against
+    /// the scroll view's bottom edge.
+    ///
+    /// Static because it is one of the two chrome measurements that decide the
+    /// card area, and `CardDeckGeometry` has to know it without a strip to ask.
+    public static let preferredHeight: CGFloat = 64 + 32
+
+    public var preferredHeight: CGFloat { Self.preferredHeight }
 
     /// At 1.1× the 44pt selected card is 48.4pt wide. A 12pt pitch gap keeps it
     /// visibly separate from both unselected neighbors.

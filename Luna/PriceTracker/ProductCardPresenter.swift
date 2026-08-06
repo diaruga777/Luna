@@ -71,12 +71,14 @@ final class ProductCardPresenter: CardKindPresenting {
 
     // MARK: - Strip and scrub preview
 
-    /// The editor fills the card — it is a scrolling column of controls, not a
-    /// picture with an aspect to honour — with hard edges, and a horizontal
-    /// swipe pages the deck because nothing in it scrubs.
+    /// The editor is a scrolling column of controls with hard edges, and a
+    /// horizontal swipe pages the deck because nothing in it scrubs. It used to
+    /// take every point of the room (`.fill`) on the grounds that it has no
+    /// aspect to honour — but sitting beside a 9:16 video card in the central
+    /// app, "no aspect to honour" just meant "a different rectangle", so the
+    /// column now scrolls inside the deck's one card frame.
     func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
-        style.fit = .fill
         style.pagesOnInCardSwipes = true
         return style
     }

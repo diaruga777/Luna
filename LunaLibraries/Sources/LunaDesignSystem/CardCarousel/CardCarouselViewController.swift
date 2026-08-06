@@ -154,25 +154,20 @@ public extension CardCarouselDataSource {
     ) -> UIColor? { nil }
 }
 
-/// The shape of ONE card — everything about a card's geometry and preview
-/// behavior that is a property of WHAT IT SHOWS rather than of the screen it
-/// is on.
+/// How ONE card PRESENTS what it shows — the properties that are a fact about
+/// the content rather than about the screen it is on.
 ///
-/// These four used to be deck-level `CardCarouselStyle` fields, which is why
-/// the same media save was a different shape in the Downloader (9:16, centered,
-/// hard-clipped, autoplaying under the finger) than in the central app
-/// (stretched to a reader's `.aspectFromBottom`, its video edges dissolved by a
+/// These used to be deck-level `CardCarouselStyle` fields, which is why the same
+/// media save behaved differently in the Downloader (hard-clipped, autoplaying
+/// under the finger) than in the central app (its video edges dissolved by a
 /// 28pt reader fade, previewing as a still). Nothing about a downloaded video
-/// changes when you open a different app, so nothing about its card does
-/// either.
+/// changes when you open a different app, so nothing about its card does either.
+///
+/// **Card GEOMETRY is deliberately not in here.** `fit` and `topOverflow` were,
+/// and that is what made paging between kinds resize and re-center the card
+/// mid-transition. Every card in every deck is the one rectangle
+/// `CardCarouselMetrics.resolve` returns.
 public struct CardCarouselCardStyle: Hashable {
-    /// How this card's size comes out of the room between the host's top inset
-    /// and the scrub strip.
-    public var fit: CardCarouselMetrics.CardFit = .aspectCentered
-    /// `.aspectFromBottom` only: points of floating host chrome above the card
-    /// area that the card may grow up into for its exact aspect. Hosts pass
-    /// their own top-inset clearance, which keeps the card below the safe area.
-    public var topOverflow: CGFloat = 0
     /// Content dissolves over this many points at the card's top and bottom
     /// edges instead of hitting a hard clip — scrolled reader text fades away
     /// as it approaches an edge. 0 keeps the hard clip, which is what a video
@@ -193,15 +188,16 @@ public struct CardCarouselCardStyle: Hashable {
 }
 
 /// Per-surface tuning, set BEFORE the carousel's view loads.
+///
+/// **Nothing that decides the card's frame is per-surface.** `peek`, `edgeGap`,
+/// `sideScale` and `verticalPadding` were fields here, and three of the four
+/// decks overrode `edgeGap` to the same value while the fourth kept the default
+/// — so the same video card was 40pt narrower in the Downloader than in the
+/// central app. They are constants on `CardCarouselMetrics` now, so one card
+/// frame serves every deck, every app, and the launch splash.
 public struct CardCarouselStyle {
-    /// Points of a neighboring card visible inside the screen edge.
-    public var peek: CGFloat = 14
-    /// Extra horizontal inset applied only to the centered card.
-    public var edgeGap: CGFloat = 30
-    public var sideScale: CGFloat = 0.92
-    public var verticalPadding: CGFloat = 12
-    /// The shape EVERY card takes unless its own kind says otherwise. A deck
-    /// whose cards are all one kind sets this and nothing else; a deck that
+    /// The presentation EVERY card takes unless its own kind says otherwise. A
+    /// deck whose cards are all one kind sets this and nothing else; a deck that
     /// mixes kinds leaves it and lets each card answer
     /// (`CardCarouselDataSource.carousel(_:cardStyleForCardAt:)`).
     public var card = CardCarouselCardStyle()
@@ -377,44 +373,29 @@ public final class CardCarouselViewController: UIViewController {
 
     private var slots: [Int: Slot] = [:]
     private var count = 0
-    /// Metrics per CARD SHAPE, all at the current container size. Cards in one
-    /// deck can differ in fit — a reader card grows up into the header
-    /// clearance, a video card stays exactly 9:16 — so there is no single
-    /// answer. Widths agree across fits (both aspect fits clamp to the same
-    /// available width), which is what keeps one set of peek positions valid
-    /// for a deck of mixed shapes.
-    private var metricsByShape: [CardCarouselCardStyle: CardCarouselMetrics] = [:]
+    /// ONE resolved geometry for the current container size, shared by every
+    /// card in the deck. There used to be one per card SHAPE, because a card's
+    /// size came from its kind — so paging from an article to a video resized
+    /// and re-centered the card underneath the transition. Every card is now the
+    /// same rectangle (`CardCarouselMetrics.resolve`), which is also the
+    /// rectangle the launch splash is drawn at (`CardDeckGeometry`).
+    private var resolvedMetrics: CardCarouselMetrics?
     private var metricsContainerSize: CGSize = .zero
 
-    /// The resolved metrics for a card shape, computed on first sight.
-    private func metrics(for card: CardCarouselCardStyle) -> CardCarouselMetrics? {
+    /// The card geometry at the current container size, computed on first sight.
+    private var metrics: CardCarouselMetrics? {
         guard metricsContainerSize.width > 0, metricsContainerSize.height > 0 else { return nil }
-        if let existing = metricsByShape[card] { return existing }
-        let resolved = CardCarouselMetrics.resolve(
-            containerSize: metricsContainerSize,
-            peek: style.peek,
-            edgeGap: style.edgeGap,
-            sideScale: style.sideScale,
-            verticalPadding: style.verticalPadding,
-            fit: card.fit,
-            topOverflow: card.topOverflow)
-        metricsByShape[card] = resolved
+        if let resolvedMetrics { return resolvedMetrics }
+        let resolved = CardCarouselMetrics.resolve(containerSize: metricsContainerSize)
+        resolvedMetrics = resolved
         return resolved
     }
 
-    /// The shape of card `index`, as its kind describes it.
+    /// The per-card presentation style of card `index`, as its kind describes
+    /// it. Its GEOMETRY is not in here — that is the deck's, and it is one
+    /// answer for every card.
     func cardStyle(at index: Int) -> CardCarouselCardStyle {
         dataSource?.carousel(self, cardStyleForCardAt: index) ?? style.card
-    }
-
-    private func metrics(at index: Int) -> CardCarouselMetrics? {
-        metrics(for: cardStyle(at: index))
-    }
-
-    /// The centered card's metrics — the answer to every question the deck asks
-    /// about "the card", as opposed to "card N".
-    private var metrics: CardCarouselMetrics? {
-        count > 0 ? metrics(at: currentIndex) : metrics(for: style.card)
     }
     private var isTransitioning = false
     private var isViewVisible = false
@@ -552,7 +533,7 @@ public final class CardCarouselViewController: UIViewController {
         guard size.width > 0, size.height > 0 else { return }
         if metricsContainerSize != size {
             metricsContainerSize = size
-            metricsByShape.removeAll()
+            resolvedMetrics = nil
         }
         alignScrubberToCardColumn()
         // Render the eclipse corona for this exact card geometry now, in the
@@ -639,8 +620,8 @@ public final class CardCarouselViewController: UIViewController {
             // already this view's x — and deliberately WITHOUT the column-aside
             // shift, which the strip carries as its own transform instead. Going
             // through `restingCenteredCardFrame` here would apply it twice.
-            let clearanceInsideCard =
-                style.scrubberHorizontalInset - (style.peek + style.edgeGap)
+            let clearanceInsideCard = style.scrubberHorizontalInset
+                - (CardCarouselMetrics.peek + CardCarouselMetrics.edgeGap)
             inset = max(0, metrics.centeredCardFrame().minX + clearanceInsideCard)
         } else {
             inset = style.scrubberHorizontalInset
@@ -931,13 +912,13 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     private func applyRestingLayout(to slot: Slot, atSlotOffset stagedOffset: Int? = nil) {
-        guard metrics(at: slot.index) != nil else { return }
+        guard metrics != nil else { return }
         if slot.index == currentIndex, isImmersed {
             applyImmersionLayout()
             return
         }
         let offset = stagedOffset ?? (slot.index - currentIndex)
-        applyRestingLayout(to: slot.card, atSlotOffset: offset, cardIndex: slot.index)
+        applyRestingLayout(to: slot.card, atSlotOffset: offset)
         // A live scrub preview draws the whole deck itself; the real cards
         // stand aside for it rather than showing the committed card's window.
         // A deck stepped aside for a second column keeps only its centered card:
@@ -950,13 +931,12 @@ public final class CardCarouselViewController: UIViewController {
     /// The resting geometry of the card `offset` slots from center — shared by
     /// the mounted slots and the scrub preview's stand-in cards.
     ///
-    /// The card's own shape decides its height and vertical placement;
-    /// horizontal placement comes from the deck, which is why a deck of mixed
-    /// shapes still has one set of peek positions.
+    /// Size and vertical placement are the deck's single answer for every card;
+    /// only the horizontal step depends on which slot this is.
     func applyRestingLayout(
-        to card: CarouselCardView, atSlotOffset offset: Int, cardIndex: Int
+        to card: CarouselCardView, atSlotOffset offset: Int
     ) {
-        guard let metrics = metrics(at: cardIndex) else { return }
+        guard let metrics else { return }
         card.layer.cornerRadius = CarouselCardView.cornerRadius
         card.borderAlpha = 1
         card.setSurfaceHidden(false)

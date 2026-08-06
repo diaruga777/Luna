@@ -235,7 +235,7 @@ final class CarouselScrubPreviewController {
     func layout() {
         for (offset, preview) in previews {
             carousel.applyRestingLayout(
-                to: preview.card, atSlotOffset: offset, cardIndex: preview.index)
+                to: preview.card, atSlotOffset: offset)
         }
     }
 

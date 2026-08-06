@@ -75,7 +75,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         carousel.chromeBackdrop = StarfieldView.install(behindContentsOf: view)
 
         var style = CardCarouselStyle()
-        style.edgeGap = 10
         style.pageSwipeMovementMultiplier = 1.5
         // No card shape here: an article card's shape is the ARTICLE kind's
         // answer (`ArticleCardPresenter.cardStyle`), and in this app — the
@@ -142,12 +141,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
     override var deckReconcilesArchivePullOnReload: Bool { !isAnimatingFromArchiveTray }
 
-    /// The card AREA rests below the header row; the phone-shaped card then grows
-    /// back up into that clearance for its exact aspect (`cardFit`), so the row's
-    /// buttons float over the card's faded top edge rather than over the screen
-    /// background.
-    override class var carouselTopClearance: CGFloat { carouselTopInset }
-
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reconcileFooterContentFade()
@@ -171,9 +164,12 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         footerContentFade.alpha = 0
     }
 
-    /// The height of the screen-level chrome row: it spans safeTop+4 …
-    /// safeTop+48.
-    private static let topChromeClearance: CGFloat = 44
+    /// The height of the screen-level chrome row. It spans safeTop+4 …
+    /// safeTop+48, and the 48 is `CardDeckGeometry.topClearance` — the clearance
+    /// EVERY deck reserves above the card area is precisely this row, which is
+    /// why the row's height is derived from it rather than agreeing with it by
+    /// coincidence.
+    private static let topChromeClearance: CGFloat = CardDeckGeometry.topClearance - 4
 
     /// Diameter of the row's circular chrome buttons. Pinned on BOTH axes: the
     /// glass configuration is a capsule, so a width free to follow the glyph's
@@ -184,11 +180,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// How far inside the centered card's top corners the row's circles sit —
     /// the same corner inset the carousel's own card chrome uses.
     private static let chromeCardCornerInset: CGFloat = 12
-
-    /// The carousel's own top inset: the header row plus the 4pt gap above it.
-    /// Doubles as the card's upward overflow allowance — growing by exactly this
-    /// much puts the card's top edge at the safe-area top, never above it.
-    private static var carouselTopInset: CGFloat { topChromeClearance + 4 }
 
     /// The depth of the dissolve at the card's top and bottom edges: scrolled
     /// content fades out over this run instead of hitting a hard clip. The

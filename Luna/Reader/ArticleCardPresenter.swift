@@ -71,16 +71,12 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// A renamed contact changes what an emailed card's header says.
     var changeNotificationNames: [Notification.Name] { [.friendsListChanged] }
 
-    /// The card is exactly 9:16 at the full width the peeks leave — TALLER
-    /// than the room between the header row and the strip — so the extra height
-    /// is added at the top and the card slides up under the floating header
-    /// row, never past the safe area. Scrolled text dissolves at both edges
-    /// rather than hitting a hard clip, and a horizontal swipe pages the deck
-    /// because a reader has no timeline of its own to scrub.
+    /// The card's SIZE is the deck's, not the article's (`CardDeckGeometry`).
+    /// What an article does state: scrolled text dissolves at both edges rather
+    /// than hitting a hard clip, and a horizontal swipe pages the deck because a
+    /// reader has no timeline of its own to scrub.
     func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
-        style.fit = .aspectFromBottom
-        style.topOverflow = ArticleCardsViewController.carouselTopClearance
         style.contentEdgeFadeHeight = Self.contentEdgeFade
         style.pagesOnInCardSwipes = true
         return style

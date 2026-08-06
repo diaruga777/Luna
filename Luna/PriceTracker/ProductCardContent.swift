@@ -400,7 +400,6 @@ enum ProductCardDeck {
     static func makeRoot() -> CardCarouselHostViewController {
         let deck = CardCarouselHostViewController()
         var style = CardCarouselStyle()
-        style.edgeGap = 10
         style.pageSwipeMovementMultiplier = 1.5
         style.scrubberHorizontalInset = 56
         style.scrubberEdgeFadeWidth = 28

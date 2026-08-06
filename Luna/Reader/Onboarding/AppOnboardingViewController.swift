@@ -256,11 +256,6 @@ final class AppOnboardingViewController: UIViewController {
         let starfield = StarfieldView.install(behindContentsOf: view)
         carousel.chromeBackdrop = starfield
         var style = CardCarouselStyle()
-        style.edgeGap = 10
-        // Onboarding is one hand-built card, not a deck over saves, so it
-        // states its own shape rather than asking a kind for one.
-        style.card.fit = .aspectFromBottom
-        style.card.topOverflow = 48
         style.scrubberHorizontalInset = 56
         style.scrubberEdgeFadeWidth = 28
         style.showsCardBorder = true
@@ -320,7 +315,7 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func applyTopInset() {
-        carousel.setTopInset(view.safeAreaInsets.top + 48)
+        carousel.setTopInset(view.safeAreaInsets.top + CardDeckGeometry.topClearance)
     }
 
     private func layoutIntroCorona() {

@@ -16,21 +16,15 @@ public struct CardCarouselMetrics: Equatable {
     /// Width : height of a card. Cards are portrait ("16:9 taller than wide").
     public static let cardAspectRatio: CGFloat = 9.0 / 16.0
 
-    /// How a card's size comes out of the room the container leaves it.
-    public enum CardFit: Hashable {
-        /// The 9:16 card, as large as fits, centered in the container.
-        case aspectCentered
-        /// All available width AND height — the aspect is ignored, for content
-        /// that wants every vertical point (the Price Tracker's graph card).
-        case fill
-        /// All available width at the exact 9:16 aspect, anchored to the
-        /// container's bottom padding. The card comes out TALLER than the
-        /// container's usable height, so the extra height extends ABOVE the
-        /// container's top — through at most `topOverflow` points of host chrome
-        /// floating there, never past it. A container too wide for that
-        /// allowance (iPad) keeps the aspect exact by narrowing instead.
-        case aspectFromBottom
-    }
+    /// Points of a neighboring card visible inside the container edge.
+    public static let peek: CGFloat = 14
+    /// Extra horizontal inset applied only to the centered card, giving the
+    /// insets beside it enough width for paging swipes.
+    public static let edgeGap: CGFloat = 10
+    /// Resting scale of the non-centered (peeking) cards.
+    public static let sideScale: CGFloat = 0.92
+    /// Room kept above and below the card inside the card area.
+    public static let verticalPadding: CGFloat = 12
 
     public var containerSize: CGSize
     public var cardSize: CGSize
@@ -38,53 +32,48 @@ public struct CardCarouselMetrics: Equatable {
     public var peek: CGFloat
     /// Resting scale of the non-centered (peeking) cards.
     public var sideScale: CGFloat
-    /// Vertical center shared by every slot. The container's midpoint for the
-    /// centered fits; below it for `.aspectFromBottom`, whose card overflows the
-    /// container's top.
-    public var cardCenterY: CGFloat
 
     public init(
         containerSize: CGSize,
         cardSize: CGSize,
         peek: CGFloat,
-        sideScale: CGFloat,
-        cardCenterY: CGFloat? = nil
+        sideScale: CGFloat
     ) {
         self.containerSize = containerSize
         self.cardSize = cardSize
         self.peek = peek
         self.sideScale = sideScale
-        self.cardCenterY = cardCenterY ?? containerSize.height / 2
     }
 
-    /// Fits a card into `containerSize`, leaving at least `peek + edgeGap`
-    /// horizontal room on each side and `verticalPadding` above/below.
-    /// `edgeGap` insets only the centered card (the peeking neighbors stay
-    /// `peek` points inside the screen edge regardless), giving the insets
-    /// beside the card enough width for paging swipes.
+    /// Fits **the** card into `containerSize`: the largest exact-9:16 rectangle
+    /// that leaves at least `peek + edgeGap` horizontal room on each side and
+    /// `verticalPadding` above/below, centered in what remains. `edgeGap` insets
+    /// only the centered card (the peeking neighbors stay `peek` points inside
+    /// the screen edge regardless), giving the insets beside the card enough
+    /// width for paging swipes. Small containers degrade gracefully (never a
+    /// negative/zero size).
     ///
-    /// `fit` decides how the card fills that room — see `CardFit`. Small
-    /// containers degrade gracefully (never a negative/zero size).
-    ///
-    /// `topOverflow` applies to `.aspectFromBottom` only: how much extra height
-    /// above the container's usable height the card may claim for its exact
-    /// aspect. Since that height is spent from the card's own bottom padding
-    /// upward, a clamped card's top edge stops `verticalPadding` short of the
-    /// allowance rather than flush against it.
+    /// **There is exactly one card shape, and this is it.** A card used to get
+    /// its shape from its KIND — a reader card took every point of width and
+    /// grew UP out of the container through an overflow allowance, a product
+    /// card ignored the aspect and filled the room, only a media card was this
+    /// centered 9:16 — so paging between two kinds resized and re-centered the
+    /// card mid-transition, and the launch splash could only ever match the one
+    /// kind whose geometry it had been hand-copied from. Nothing about a save
+    /// justifies a different frame: the frame is the deck's, and the deck's
+    /// frame is a function of the screen (`CardDeckGeometry`).
     ///
     /// On a container wide enough to have room to spare (`LunaLayout.isWide`),
     /// the card is additionally capped at `LunaLayout.cardWidthCap` — half the
-    /// container minus padding — for EVERY fit. A card stretched across an iPad
-    /// reads as a blown-up phone layout, and the cap is what leaves room for the
+    /// container minus padding. A card stretched across an iPad reads as a
+    /// blown-up phone layout, and the cap is what leaves room for the
     /// side-by-side reader's second column at the identical width.
     public static func resolve(
         containerSize: CGSize,
-        peek: CGFloat = 14,
-        edgeGap: CGFloat = 30,
-        sideScale: CGFloat = 0.92,
-        verticalPadding: CGFloat = 12,
-        fit: CardFit = .aspectCentered,
-        topOverflow: CGFloat = 0
+        peek: CGFloat = Self.peek,
+        edgeGap: CGFloat = Self.edgeGap,
+        sideScale: CGFloat = Self.sideScale,
+        verticalPadding: CGFloat = Self.verticalPadding
     ) -> CardCarouselMetrics {
         let availableHeight = max(40, containerSize.height - verticalPadding * 2)
         let widthCap = LunaLayout.cardWidthCap(forContainerWidth: containerSize.width)
@@ -92,45 +81,16 @@ public struct CardCarouselMetrics: Equatable {
             max(40, containerSize.width - (peek + edgeGap) * 2),
             widthCap ?? .greatestFiniteMagnitude)
         var height = availableHeight
-        var width: CGFloat
-        var centerY = containerSize.height / 2
-        switch fit {
-        case .fill:
-            width = availableWidth
-        case .aspectCentered:
-            width = height * cardAspectRatio
-            if width > availableWidth {
-                width = availableWidth
-                height = width / cardAspectRatio
-            }
-        case .aspectFromBottom:
+        var width = height * cardAspectRatio
+        if width > availableWidth {
             width = availableWidth
             height = width / cardAspectRatio
-            let maxHeight = availableHeight + max(0, topOverflow)
-            if height > maxHeight {
-                height = maxHeight
-                width = height * cardAspectRatio
-            }
-            if height < availableHeight {
-                // Only reachable on a wide container, where the width cap makes
-                // the exact-aspect card SHORTER than the room instead of taller.
-                // Anchoring its bottom would strand it under a band of empty
-                // space, so it grows into the room (bounded by
-                // `tallestCardAspectRatio`) and centers in what's left.
-                height = min(availableHeight, width / LunaLayout.tallestCardAspectRatio)
-                centerY = containerSize.height / 2
-            } else {
-                // The bottom edge stays exactly where a `.fill` card's was:
-                // every extra point of height is added at the TOP.
-                centerY = containerSize.height - verticalPadding - height / 2
-            }
         }
         return CardCarouselMetrics(
             containerSize: containerSize,
             cardSize: CGSize(width: width, height: height),
             peek: peek,
-            sideScale: sideScale,
-            cardCenterY: centerY)
+            sideScale: sideScale)
     }
 
     /// Resting scale for the slot `offset` cards away from center (0 = centered).
@@ -152,9 +112,12 @@ public struct CardCarouselMetrics: Equatable {
         return peek - scaledWidth / 2 - step
     }
 
-    /// Vertical center shared by every slot.
+    /// Vertical center shared by every slot: the container's midpoint. Every
+    /// card is the same rectangle, so there is nothing else it could be — a
+    /// bottom-anchored reader card used to sit lower than the video card beside
+    /// it, which is half of what jumped when paging between kinds.
     public func centerY() -> CGFloat {
-        cardCenterY
+        containerSize.height / 2
     }
 
     /// The centered card's frame at rest (scale 1).

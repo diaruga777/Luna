@@ -610,6 +610,83 @@ final class ReaderScreenTests: XCTestCase {
                        "The row itself doesn't move — only the prose below it")
     }
 
+    /// The preceding lane is laid out from the prose it is GIVEN, not from the
+    /// prose it held a word ago. It used to be sized only in `viewDidLayoutSubviews`
+    /// — and nothing marked the view dirty when the word advanced — so the opening
+    /// words of an article arrived into the zero-height lane left by word 0, which
+    /// has no preceding prose at all, and never appeared.
+    func testRSVPPrecedingProseAppearsAsSoonAsThereIsAnyOfIt() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 0)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber"); return
+        }
+        slider.value = 3                                    // three words of context
+        slider.sendActions(for: .valueChanged)
+
+        XCTAssertEqual(reader.contextProseForTesting.preceding, "There has been",
+                       "The lane shows every word it has")
+        XCTAssertGreaterThan(
+            reader.layoutGeometryForTesting.precedingContext.height, 0,
+            "…and is tall enough to draw them, without waiting for another "
+            + "layout pass to be triggered by something else")
+    }
+
+    /// A window too long for the lane loses its OLDEST words. UILabel's own
+    /// `.byTruncatingHead` ellipsises the last visible line only, which kept the
+    /// oldest words and cut a hole out of the middle of the passage.
+    func testRSVPPrecedingProseDropsItsOldestWordsWhenTheLaneOverflows() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 120)
+        // Inside a card the title header stands over the reader, and the lane it
+        // leaves is where the whole window stopped fitting — which is where the
+        // hole used to open.
+        reader.topContentInset = 300
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let words = longContextContent().blocks[0].text
+            .split(separator: " ").map(String.init)
+        let window = words[(120 - 55)..<120].joined(separator: " ")
+        let shown = reader.contextProseForTesting.preceding
+
+        XCTAssertFalse(shown.isEmpty)
+        XCTAssertLessThan(shown.count, window.count,
+                          "55 words don't fit the lane — this test needs an overflow")
+        XCTAssertTrue(window.hasSuffix(shown),
+                      "What's shown is an unbroken run of the words nearest the "
+                      + "focal word, not the start of the window with its middle "
+                      + "missing. Shown: \(shown)")
+    }
+
+    /// Before there is any preceding prose the lane carries the article's own
+    /// masthead rather than standing empty through the opening words.
+    func testRSVPPrecedingLaneShowsTheMastheadAtTheStartOfTheArticle() {
+        var content = longContextContent()
+        content.author = "Ada Lovelace"
+        let reader = RSVPViewController(item: item, content: content, resumeWordIndex: 0)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        XCTAssertEqual(reader.contextProseForTesting.preceding,
+                       "Long RSVP Fixture\nAda Lovelace")
+        XCTAssertGreaterThan(reader.layoutGeometryForTesting.precedingContext.height, 0)
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber"); return
+        }
+        slider.value = 4
+        slider.sendActions(for: .valueChanged)
+        XCTAssertEqual(reader.contextProseForTesting.preceding, "There has been a",
+                       "Once there is prose to show, the prose takes the lane")
+    }
+
     /// A roomy container lets the controls unglue from the bottom safe area (the
     /// reading group is centered on the band, so it rises with them); a container
     /// with no height to spare keeps them where they were.

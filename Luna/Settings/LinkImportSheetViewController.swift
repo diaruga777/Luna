@@ -25,8 +25,9 @@ final class LinkImportSheetViewController: UIViewController {
         case summary(LinkImportRunner.Summary)
     }
 
-    /// One reviewable row.
-    private struct Entry {
+    /// One reviewable row. Internal, not private: the row-copy helpers below are
+    /// pure functions of it, and the tests exercise them directly.
+    struct Entry {
         let urlString: String
         /// The title the FILE carried, when it did — a Luna markdown export writes
         /// `[Title](url)`, so a re-import can read the headline straight off the
@@ -50,6 +51,9 @@ final class LinkImportSheetViewController: UIViewController {
     private let isStructured: Bool
 
     private let runner: LinkImportRunner
+    /// Titles and thumbnails for the rows the user can see, fetched in a rolling
+    /// window (`LinkImportPreviewLoader`).
+    private let previews: LinkImportPreviewLoader
     private var progressTimer: Timer?
     private var runTask: Task<Void, Never>?
 
@@ -74,9 +78,22 @@ final class LinkImportSheetViewController: UIViewController {
     /// sum over the slice array.
     private static let progressTick: TimeInterval = 1.0 / 12.0
 
+    /// A review row's height before anything is measured: the thumbnail box plus
+    /// the usual cell padding, so the first layout doesn't have to guess low and
+    /// then grow every row when the pictures arrive.
+    private static let previewRowHeight: CGFloat =
+        LinkImportPreviewLoader.thumbnailSize.height + 22
+
     // MARK: - Init
 
-    init(document: LinkListDocument, runner: LinkImportRunner = LinkImportRunner()) {
+    /// `@MainActor` for the preview loader's sake — it owns UIKit state and its
+    /// default here constructs one.
+    @MainActor
+    init(
+        document: LinkListDocument,
+        runner: LinkImportRunner = LinkImportRunner(),
+        previews: LinkImportPreviewLoader = LinkImportPreviewLoader()
+    ) {
         self.links = document.links.map {
             Entry(urlString: $0, fileTitle: document.titles[$0])
         }
@@ -85,6 +102,7 @@ final class LinkImportSheetViewController: UIViewController {
         }
         self.isStructured = document.isStructured
         self.runner = runner
+        self.previews = previews
         super.init(nibName: nil, bundle: nil)
         // Most of the screen, and not dismissable by a swipe once links are
         // being saved — see `presentationControllerShouldDismiss`.
@@ -125,7 +143,14 @@ final class LinkImportSheetViewController: UIViewController {
 
         table.dataSource = self
         table.delegate = self
+        table.prefetchDataSource = self
         table.backgroundColor = .clear
+        // A row's picture arrives after the row does, so the table has to be able
+        // to grow for it; a fixed estimate keeps the first layout cheap.
+        table.estimatedRowHeight = Self.previewRowHeight
+        previews.onChange = { [weak self] urlString in
+            self?.refreshRows(showing: urlString)
+        }
 
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
         statusLabel.adjustsFontForContentSizeCategory = true
@@ -438,9 +463,10 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         let entry = entries(for: section)[indexPath.row]
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
-        content.text = entry.fileTitle ?? Self.displayTitle(for: entry.urlString)
-        content.textProperties.numberOfLines = 1
-        content.secondaryText = Self.displaySubtitle(for: entry.urlString)
+        let preview = previews.state(for: entry.urlString)
+        content.text = Self.rowTitle(for: entry, preview: preview)
+        content.textProperties.numberOfLines = 2
+        content.secondaryText = Self.rowSubtitle(for: entry, preview: preview)
         content.secondaryTextProperties.numberOfLines = 1
         content.secondaryTextProperties.color = LunaColors.tertiaryText
         // A leading circle that fills when chosen — the selection control sits
@@ -452,8 +478,37 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         content.imageProperties.tintColor = entry.isSelected
             ? (view.tintColor ?? .systemBlue) : LunaColors.tertiaryText
         cell.contentConfiguration = content
+        // The thumbnail (and the spinner that stands in for it) go TRAILING, so
+        // the leading selection circle keeps the place the thumb already knows.
+        cell.accessoryView = accessoryView(for: preview)
         cell.accessibilityTraits = entry.isSelected ? [.button, .selected] : [.button]
         return cell
+    }
+
+    /// The row's trailing slot: the thumbnail once it lands, a horizon spinner
+    /// while the preview is being fetched, and nothing at all otherwise — an
+    /// unreachable page leaves the row exactly as it was rather than parking a
+    /// broken-image placeholder in it.
+    private func accessoryView(for state: LinkImportPreviewLoader.State) -> UIView? {
+        switch state {
+        case .loading:
+            let spinner = HorizonSpinnerView(side: 20)
+            spinner.startAnimating()
+            return spinner
+        case let .loaded(preview):
+            guard let image = preview.image else { return nil }
+            let size = LinkImportPreviewLoader.thumbnailSize
+            let view = UIImageView(frame: CGRect(origin: .zero, size: size))
+            view.image = image
+            view.contentMode = .scaleAspectFill
+            view.clipsToBounds = true
+            view.layer.cornerRadius = 6
+            view.layer.cornerCurve = .continuous
+            view.isAccessibilityElement = false
+            return view
+        case .idle, .unavailable:
+            return nil
+        }
     }
 
     private func summaryCell(
@@ -478,6 +533,54 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         return cell
     }
 
+    // MARK: - The preview window
+
+    /// The rolling window is exactly what the table says is on screen (plus its own
+    /// prefetch lead), so nothing is fetched speculatively.
+    func tableView(
+        _ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath
+    ) {
+        previews.enterWindow(reviewURLStrings(at: [indexPath]))
+    }
+
+    func tableView(
+        _ tableView: UITableView, didEndDisplaying cell: UITableViewCell,
+        forRowAt indexPath: IndexPath
+    ) {
+        previews.leaveWindow(reviewURLStrings(at: [indexPath]))
+    }
+
+    /// The URLs of the review rows at these index paths, and nothing else: the
+    /// summary stage's rows are not links to preview, and an index path can arrive
+    /// for a table whose content has since been replaced.
+    private func reviewURLStrings(at indexPaths: [IndexPath]) -> [String] {
+        guard case .summary = stage else {
+            return indexPaths.compactMap { indexPath in
+                guard indexPath.section < visibleSections.count else { return nil }
+                let rows = entries(for: visibleSections[indexPath.section])
+                guard indexPath.row < rows.count else { return nil }
+                return rows[indexPath.row].urlString
+            }
+        }
+        return []
+    }
+
+    /// Re-renders the visible rows for one URL after its preview landed. Just those
+    /// rows: a `reloadData` mid-scroll would fight the user's thumb, and the same
+    /// URL can't be in both sections (the parser dedupes) but is cheap to look for
+    /// in either.
+    private func refreshRows(showing urlString: String) {
+        guard case .review = stage, let visible = table.indexPathsForVisibleRows
+        else { return }
+        let affected = visible.filter { indexPath in
+            reviewURLStrings(at: [indexPath]).first == urlString
+        }
+        guard !affected.isEmpty else { return }
+        UIView.performWithoutAnimation {
+            table.reloadRows(at: affected, with: .none)
+        }
+    }
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         guard case .review = stage else { return }
         tableView.deselectRow(at: indexPath, animated: true)
@@ -491,6 +594,31 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
     }
 
     // MARK: - Row copy
+
+    /// The row's headline, best answer first: what the page calls itself, then the
+    /// title the FILE carried (a Luna markdown export writes one), then the URL's
+    /// own path. The last is always available, which is why a preview can arrive
+    /// late — or never — without the row ever being blank.
+    static func rowTitle(
+        for entry: Entry, preview: LinkImportPreviewLoader.State
+    ) -> String {
+        if case let .loaded(loaded) = preview, let title = loaded.title, !title.isEmpty {
+            return title
+        }
+        return entry.fileTitle ?? displayTitle(for: entry.urlString)
+    }
+
+    /// The row's second line: the publisher when the page names one, else the host.
+    /// Either way the site is visible, so two links with the same headline are
+    /// still tellable apart.
+    static func rowSubtitle(
+        for entry: Entry, preview: LinkImportPreviewLoader.State
+    ) -> String? {
+        if case let .loaded(loaded) = preview, let site = loaded.siteName, !site.isEmpty {
+            return site
+        }
+        return displaySubtitle(for: entry.urlString)
+    }
 
     /// The row's first line: the path, which is the part that differs between two
     /// links from the same site and so the part worth reading. Falls back to the
@@ -521,6 +649,22 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         case .unusableURL:
             return L10n.string("Not a link Luna can open.")
         }
+    }
+}
+
+// MARK: - Prefetching
+
+/// The table's own lead: rows just past the edge of the screen enter the window
+/// early, so a steady scroll finds its titles already there — and a fast flick
+/// hands them straight back through `cancelPrefetching`, which drops them from the
+/// queue before they cost anything.
+extension LinkImportSheetViewController: UITableViewDataSourcePrefetching {
+    func tableView(_ tableView: UITableView, prefetchRowsAt indexPaths: [IndexPath]) {
+        previews.enterWindow(reviewURLStrings(at: indexPaths))
+    }
+
+    func tableView(_ tableView: UITableView, cancelPrefetchingForRowsAt indexPaths: [IndexPath]) {
+        previews.leaveWindow(reviewURLStrings(at: indexPaths))
     }
 }
 

@@ -131,10 +131,49 @@ sheet never blinks out from under the user mid-import. A large detent, and it
 otherwise carry on with nothing on screen showing it.
 
 Review lists the found links in two sections (Links / Archive; an empty one is
-not rendered), each row a path over its host, all selected by default. The
-selection control is a LEADING circle that fills when chosen, so it sits where
-the eye and thumb already are; a trailing checkmark would read as "just tapped"
-rather than "included". Import and Cancel sit at the bottom.
+not rendered), all selected by default. The selection control is a LEADING circle
+that fills when chosen, so it sits where the eye and thumb already are; a
+trailing checkmark would read as "just tapped" rather than "included". Import and
+Cancel sit at the bottom.
+
+### The rows, and their previews
+
+A row's headline is the best answer available, in this order: what the PAGE calls
+itself, then the title the FILE carried (a Luna markdown export writes one), then
+the URL's path — which always exists, so a row is never blank and a preview is
+only ever an upgrade. Its second line is the publisher when the page names one,
+else the host, so two pieces with the same headline stay tellable apart.
+
+`LinkImportPreviewLoader` (app shell) fetches those previews in a **rolling
+window** around what is on screen. A file can hold a thousand links and each
+preview is a real page read, so fetching the file would be minutes of cellular
+data for rows the user scrolls straight past. The window is exactly the table's
+own `willDisplay` plus its `UITableViewDataSourcePrefetching` lead; a row that
+leaves before its turn comes up is dropped from the queue unfetched, which is the
+whole point, while one already in flight is left to finish (the bytes are spent
+either way, and scrolling back is likely). Three reads at a time — enough to keep
+a scrolling window filled, few enough not to starve the import itself, which
+shares the connection and matters more.
+
+- One request per row: `LinkPreviewFetcher` (LunaFetch) reads the page once and
+  runs both pure parses over the same HTML — `PageMetadataFetcher`'s title/site
+  and `LeadImageExtractor`'s `og:image`. Its homepage fallback is deliberately
+  NOT used here: that exists to *name* a failed save, and a review row headed by
+  the publisher's homepage title would be a wrong answer dressed as a right one.
+- **Text lands before the picture.** The headline is the useful half and doesn't
+  wait on an image download that may not arrive.
+- Thumbnails are decoded to the 56×40pt box off the main actor
+  (`ImageDownsampling.decode(data:…)`) and held in an `NSCache`, so a
+  fully-scrolled thousand-link file can't hold a thousand bitmaps. Losing one to
+  eviction costs the row its picture, not another fetch.
+- **Offline fails fast, with no spinner at all**: `NetworkReachability.isOnline`
+  is checked before a row is queued, so a row on a plane reads as "this is all
+  there is" rather than "still loading". Same for a page that doesn't answer, and
+  for a URL that isn't fetchable — which is tested by scheme and host, because
+  modern Foundation parses `"not a url"` into a schemeless `URL` that only fails
+  later, at request time.
+- A row is asked once. A page with nothing usable is *answered* with an empty
+  preview rather than retried every time it scrolls back into view.
 
 The list stays up during the import, frozen and non-interactive — its filled
 circles are the record of what was chosen, and hiding it would leave the sheet's
@@ -279,4 +318,5 @@ finishes it. Those count as recoverable, and the summary says so.
 `LinkListCSVTests.swift` (the foreign-CSV and scrape tiers),
 `LinkListExportTests.swift` (what
 leaves and what is accepted back), `LinkImportRunnerTests.swift` (orchestration,
-with both real operations stubbed).
+with both real operations stubbed), `LinkImportPreviewLoaderTests.swift` (the
+rolling window and the row copy).

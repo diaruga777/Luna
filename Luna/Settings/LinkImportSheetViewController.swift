@@ -339,6 +339,7 @@ final class LinkImportSheetViewController: UIViewController {
         switch progress.phase {
         case .saving: return L10n.string("Saving links…")
         case .fetching: return L10n.string("Downloading content…")
+        case .unlocking: return L10n.string("Unlocking paywalled articles…")
         case .rescuing: return L10n.string("Retrying what failed with Apple Intelligence…")
         case .done: return L10n.string("Finishing up…")
         }

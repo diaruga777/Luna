@@ -86,6 +86,8 @@ public final class LinkImportRunner {
         public enum Phase: Equatable, Sendable {
             case saving
             case fetching
+            /// Opening the locked articles in a real browser, out of sight.
+            case unlocking
             /// Retrying failures with Apple Intelligence.
             case rescuing
             case done
@@ -140,6 +142,20 @@ public final class LinkImportRunner {
     /// `.photosPermission` while the user reads it.
     public static var mediaStoragePreflight: (@Sendable ([String]) async -> Void)?
 
+    /// Tries to unlock a hard-paywalled save in a real (off-screen) `WKWebView`,
+    /// returning whether the article's content ended up saved. Installed by the
+    /// article `KindWiring`s over `UnattendedArticleUnlock` (nil in the Downloader
+    /// and Price Tracker, where no article save exists to unlock).
+    ///
+    /// The silent tier can't pass a JS paywall or a bot gate, so those saves land
+    /// `.needsCaptcha` — titled, tappable, and unread. Doing that pass HERE, while
+    /// the user is already waiting on the import, is worth a lot more than leaving
+    /// two hundred of them to be tapped one at a time later. It gives up the moment
+    /// it meets a CAPTCHA: an unattended flow cannot solve one, and stopping for it
+    /// would mean either a stalled bar or a modal thrown over the top of it. The
+    /// save stays exactly as it was, for the user to open when they choose.
+    public static var articleUnlocker: (@Sendable (UUID, String) async -> Bool)?
+
     // MARK: - Tunables
 
     /// The share of an item's slice its ingest owns; the rest belongs to whatever
@@ -154,6 +170,9 @@ public final class LinkImportRunner {
     private static let downloadPoll: TimeInterval = 0.25
     /// How long an ingest is assumed to take, for the clock-based creep.
     private static let expectedIngestDuration: TimeInterval = 6
+    /// The same, for a web unlock — a real page load plus an archive round trip,
+    /// so several times an ingest.
+    private static let expectedUnlockDuration: TimeInterval = 20
 
     /// How many links are ingested at once.
     ///
@@ -192,8 +211,17 @@ public final class LinkImportRunner {
     /// Per-slice progress, one slice per link that was really inserted.
     private var slices: [Double] = []
     private var sliceIndexByItem: [UUID: Int] = [:]
-    /// When an in-flight ingest started, for the clock-based creep.
-    private var ingestStarts: [Int: Date] = [:]
+    /// A leg that reports nothing until it lands, and so has to be estimated from
+    /// the clock: which stretch of the slice it owns, when it started, and how long
+    /// its kind of work usually takes.
+    private struct Creep {
+        let started: Date
+        let from: Double
+        let to: Double
+        let expected: TimeInterval
+    }
+    /// The in-flight clock-estimated leg per slice, if any.
+    private var creeps: [Int: Creep] = [:]
     /// The slice whose rescue is running, so its fraction can come from the
     /// rescue's own reported stage.
     private var rescuingSlice: (index: Int, itemID: UUID)?
@@ -268,16 +296,17 @@ public final class LinkImportRunner {
             finished: finished, total: total, phase: phase)
     }
 
-    /// The clock-based estimate for a slice that is mid-ingest. A page fetch and
-    /// extraction report nothing until they land, and a frozen bar reads as a hung
-    /// import — so an open slice eases toward the end of its ingest share.
-    /// Easing, never linear: an overrunning fetch slows down instead of stalling
-    /// at a wall or claiming ground it hasn't earned. Caller holds `lock`.
+    /// The clock-based estimate for a slice whose current leg reports nothing until
+    /// it lands — an ingest's page fetch and extraction, or a web unlock. A frozen
+    /// bar reads as a hung import, so an open slice eases toward the end of that
+    /// leg's stretch. Easing, never linear: an overrunning fetch slows down instead
+    /// of stalling at a wall or claiming ground it hasn't earned. Caller holds
+    /// `lock`.
     private func estimate(forSlice index: Int, floor: Double) -> Double {
-        guard let started = ingestStarts[index] else { return floor }
-        let elapsed = max(0, clock().timeIntervalSince(started))
-        let eased = 1 - exp(-elapsed / Self.expectedIngestDuration)
-        return max(floor, Self.ingestShare * eased * 0.9)
+        guard let creep = creeps[index] else { return floor }
+        let elapsed = max(0, clock().timeIntervalSince(creep.started))
+        let eased = 1 - exp(-elapsed / creep.expected)
+        return max(floor, creep.from + (creep.to - creep.from) * eased * 0.9)
     }
 
     /// Stops the run. In-flight links finish; unreached ones stay saved and
@@ -359,6 +388,7 @@ public final class LinkImportRunner {
 
         // 2. Ingest, `concurrency` at a time, in order.
         var failures: [Unit] = []
+        var locked: [Unit] = []
         var scoredUnits = 0
         await withTaskGroup(of: (Int, ItemFate).self) { group in
             var next = 0
@@ -386,6 +416,12 @@ public final class LinkImportRunner {
                             urlString: work[slice].candidate.urlString,
                             reason: .foreignKind(owner: owner)))
                     complete(slice: slice)
+                case .locked:
+                    // A working save already (titled, tappable) — held open so the
+                    // web-unlock phase can try to fill it in. Scored there either
+                    // way, as imported.
+                    locked.append(work[slice])
+                    setSlice(slice, to: Self.ingestShare)
                 case .failed:
                     // Held open — its slice is finished by the rescue phase.
                     failures.append(work[slice])
@@ -401,13 +437,40 @@ public final class LinkImportRunner {
         // finishes it: recoverable, not lost.
         if isCancelled {
             summary.wasCancelled = true
+            summary.imported += locked.count
             summary.recoverableFailures += failures.count + (work.count - scoredUnits)
             for slice in 0..<work.count { complete(slice: slice) }
             setPhase(.done)
             return summary
         }
 
-        // 3. The LLM rescue, one at a time, before anything is called a failure.
+        // 3. The locked articles, in a real browser, one at a time and out of
+        // sight. Serial because it is a WKWebView per attempt, and because two of
+        // them racing archive.today is the fastest way to be rate-limited.
+        if let unlock = Self.articleUnlocker, !locked.isEmpty {
+            setPhase(.unlocking)
+            for unit in locked {
+                guard !isCancelled else {
+                    summary.imported += 1
+                    complete(slice: unit.slice)
+                    continue
+                }
+                beginUnlock(slice: unit.slice)
+                // The outcome doesn't change the score: a locked save counts as
+                // imported either way — it is titled and it opens. Unlocking now
+                // just means the user doesn't have to tap it later.
+                _ = await unlock(unit.item.id, unit.candidate.urlString)
+                summary.imported += 1
+                complete(slice: unit.slice)
+            }
+        } else {
+            for unit in locked {
+                summary.imported += 1
+                complete(slice: unit.slice)
+            }
+        }
+
+        // 4. The LLM rescue, one at a time, before anything is called a failure.
         if !failures.isEmpty { setPhase(.rescuing) }
         for failure in failures {
             guard !isCancelled else {
@@ -419,7 +482,7 @@ public final class LinkImportRunner {
             let recovered = await rescue(failure.item.id)
             endRescue()
             if let fresh = store.item(withID: failure.item.id) {
-                if recovered, case .imported = fate(of: fresh) {
+                if recovered, fate(of: fresh).isSaved {
                     summary.imported += 1
                 } else {
                     summary.recoverableFailures += 1
@@ -451,10 +514,22 @@ public final class LinkImportRunner {
 
     private enum ItemFate: Sendable {
         case imported
+        /// Saved and titled, but hard-paywalled — worth one web-unlock attempt
+        /// before the run ends. Only reported when an unlocker is installed;
+        /// otherwise this is `.imported`, which is what it has always been.
+        case locked
         case rejected(owner: LunaApp)
         case failed
         /// The runner went away mid-flight: saved, not fetched.
         case abandoned
+
+        /// Whether the item ended up usable, however it got there.
+        var isSaved: Bool {
+            switch self {
+            case .imported, .locked: return true
+            case .rejected, .failed, .abandoned: return false
+            }
+        }
     }
 
     private func ingestOne(_ item: ReadingListItem) async -> ItemFate {
@@ -478,12 +553,14 @@ public final class LinkImportRunner {
         return fate(of: settled)
     }
 
-    /// The stored state read as an import outcome. `.needsCaptcha` counts as
-    /// imported: it's a titled save the user unlocks by tapping it — a working
-    /// item, not a failure to retry.
+    /// The stored state read as an import outcome. `.needsCaptcha` is never a
+    /// failure: it's a titled save the user unlocks by tapping it — a working item,
+    /// not something to retry. It comes back `.locked` when there's an unlocker to
+    /// try it with, and `.imported` when there isn't.
     private func fate(of item: ReadingListItem) -> ItemFate {
         switch item.state {
-        case .ready, .needsCaptcha: return .imported
+        case .ready: return .imported
+        case .needsCaptcha: return Self.articleUnlocker == nil ? .imported : .locked
         case .failed, .pending: return .failed
         }
     }
@@ -520,13 +597,26 @@ public final class LinkImportRunner {
 
     private func beginIngest(slice: Int) {
         lock.lock()
-        ingestStarts[slice] = clock()
+        creeps[slice] = Creep(
+            started: clock(), from: 0, to: Self.ingestShare,
+            expected: Self.expectedIngestDuration)
+        lock.unlock()
+    }
+
+    /// The web-unlock leg takes the same stretch a download or a rescue would, and
+    /// reports nothing while it runs — a page load, an archive round trip, a DOM
+    /// probe — so it is estimated on the clock like an ingest.
+    private func beginUnlock(slice: Int) {
+        lock.lock()
+        creeps[slice] = Creep(
+            started: clock(), from: Self.ingestShare, to: Self.followUpShare,
+            expected: Self.expectedUnlockDuration)
         lock.unlock()
     }
 
     private func beginRescue(slice: Int, itemID: UUID) {
         lock.lock()
-        ingestStarts[slice] = nil
+        creeps[slice] = nil
         rescuingSlice = (slice, itemID)
         lock.unlock()
     }
@@ -542,7 +632,7 @@ public final class LinkImportRunner {
         if slices.indices.contains(index) {
             slices[index] = max(slices[index], value) // Never backward.
         }
-        ingestStarts[index] = nil
+        creeps[index] = nil
         lock.unlock()
     }
 
@@ -552,7 +642,7 @@ public final class LinkImportRunner {
             slices[index] = 1
             finishedCount += 1
         }
-        ingestStarts[index] = nil
+        creeps[index] = nil
         lock.unlock()
     }
 

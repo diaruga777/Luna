@@ -200,21 +200,54 @@ Kindle. **An import is not a save press** — which is also why it goes through
 new-save automation (auto-share to always-friends, semantic suggestions) fires
 several hundred times.
 
-**Two phases.** Phase one ingests `defaultConcurrency()` links at a time through
-the ordinary `ReadingListIngestor.ingest`, so an imported link is classified,
-gated, fetched and stored exactly like any other save. Phase two retries the
-failures with Apple Intelligence, ONE at a time — a model call is the one
-resource on the device that gains nothing from being asked twice at once, which
-is why `URLRescueCoordinator`'s own background sweep serializes too. Splitting
-them also keeps the arithmetic honest: a link that never failed is simply
-finished at the end of phase one.
+**The web-unlock pass.** Between the ingest and the model retry, every save that
+came back `.needsCaptcha` — hard-paywalled, which the silent tier can't read by
+construction — gets ONE attempt through the real browser flow a tap would run:
+`LinkImportRunner.articleUnlocker` → `UnattendedArticleUnlock` (LunaArchiveReader,
+installed by the article `KindWiring`s; nil in the Downloader and Price Tracker,
+where no article save exists). Doing it here, while the user is already waiting,
+beats leaving two hundred locked saves to be tapped one at a time.
+
+- **It gives up on a CAPTCHA, immediately.** `ArchiveWebReaderViewController`
+  gains a `.unattended` mode: where the interactive flow uncovers the page for the
+  user to solve a challenge, or shows a rate-limit message with a Safari escape,
+  the unattended one reports `onGaveUp` and stops. Nothing is written, so the save
+  stays exactly as it was — titled, tappable, `.needsCaptcha` — for the user to
+  open when they choose. There is no failure here to report, which is why the
+  summary has no bucket for it: a locked save counts as **imported** whether or
+  not the unlock worked, exactly as it did before this pass existed.
+- **The web view is out of sight, not hidden.** It is installed full-size at the
+  BOTTOM of the key window, behind the app's own opaque UI, and
+  non-interactive. That distinction is load-bearing: WebKit throttles and
+  eventually stops JS and navigation in a view that is hidden, zero-sized or out
+  of a window, and this flow is entirely JS-driven (a DOM probe every 0.35s, a
+  form submit, a DOM extraction). Occluded is fine. It also means the progress
+  sheet is never interrupted — no modal, no reveal, nothing to dismiss.
+- **Serial, with a deadline.** One `WKWebView` at a time, both because each is
+  expensive and because two racing archive.today is the quickest way to be
+  rate-limited; 45s each (`UnattendedArticleUnlock.defaultTimeout`), after which
+  the attempt is abandoned rather than failed. Stopping the run skips the
+  remaining unlocks and costs nothing.
+- Its slice takes the same `ingestShare`→`followUpShare` stretch a download or a
+  rescue would, eased on the clock (`expectedUnlockDuration`) because the flow
+  reports nothing while it runs.
+
+**Three passes, in order.** The ingest runs `defaultConcurrency()` links at a
+time through the ordinary `ReadingListIngestor.ingest`, so an imported link is
+classified, gated, fetched and stored exactly like any other save. Then the
+web-unlock pass above, serially. Then the failures are retried with Apple
+Intelligence, ONE at a time — a model call is the one resource on the device that
+gains nothing from being asked twice at once, which is why
+`URLRescueCoordinator`'s own background sweep serializes too. Splitting them also
+keeps the arithmetic honest: a link that neither locked nor failed is simply
+finished at the end of the ingest.
 
 `allowsInteractivePrompt: false` is load-bearing twice over. It suppresses the
 unsupported-kind modal — `.manual` is an interactive source, so a batch of
 foreign links would otherwise stack one alert per dropped link on top of the
 progress sheet — and it makes the ingestor's own `rescueTrigger`
 non-interactive, so a failure is left alone instead of starting an inline rescue
-that would race phase two's awaited one over the same item.
+that would race the model pass's awaited one over the same item.
 `URLRescueCoordinator.rescueAndWait` is the awaited form of the consented
 one-shot rescue; the import can't use the fire-and-forget one because it has to
 know each item's fate to score the run.

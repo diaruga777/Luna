@@ -147,6 +147,14 @@ enum KindWiring {
                 KindleSettingsScreen(), animated: true)
         }
 
+        // A bulk import's pass over the saves that came back hard-paywalled:
+        // the same web unlock a tap would run, off-screen and giving up on any
+        // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there is
+        // no article save to unlock anywhere else.
+        LinkImportRunner.articleUnlocker = { itemID, urlString in
+            await UnattendedArticleUnlock.unlock(itemID: itemID, urlString: urlString)
+        }
+
         // Voice status and installation now live on the Audio settings page.
         VoiceFirstRunPrompt.openVoiceSettings = { presenter in
             let audio = AudioSettingsScreen()

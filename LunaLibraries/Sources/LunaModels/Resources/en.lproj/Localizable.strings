@@ -95,8 +95,8 @@
 "Open Link" = "Open Link";
 "Open Luna in the App Store" = "Open Luna in the App Store";
 "Open Settings" = "Open Settings";
-"Or" = "Or";
 "or" = "or";
+"Or" = "Or";
 "Other Actions" = "Other Actions";
 "Paste a link" = "Paste a link";
 "Press the action button to finish" = "Press the action button to finish";
@@ -203,8 +203,8 @@
 "Pausing when you look away" = "Pausing when you look away";
 "Preview unavailable" = "Preview unavailable";
 "Read" = "Read";
-"Read aloud" = "Read aloud";
 "Read Aloud" = "Read Aloud";
+"Read aloud" = "Read aloud";
 "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings." = "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings.";
 "Resuming: %@" = "Resuming: %@";
 "Return to %@" = "Return to %@";
@@ -530,8 +530,8 @@
 "Try Again" = "Try Again";
 
 /* ===================== Live Activity ===================== */
-"Cancel Download" = "Cancel Download";
 "Cancel download" = "Cancel download";
+"Cancel Download" = "Cancel Download";
 "Download ID" = "Download ID";
 "Open Photos Settings" = "Open Photos Settings";
 "Pauses the active Luna download briefly before canceling it." = "Pauses the active Luna download briefly before canceling it.";
@@ -698,6 +698,7 @@
 "This file didn't say which links were archived, so they'll all be saved as ordinary links." = "This file didn't say which links were archived, so they'll all be saved as ordinary links.";
 "Track in Luna" = "Track in Luna";
 "unknown time" = "unknown time";
+"Unlocking paywalled articles…" = "Unlocking paywalled articles…";
 "When an article finishes, mark it read and continue with the next unread article — after a chime and a short “Now Reading” announcement." = "When an article finishes, mark it read and continue with the next unread article — after a chime and a short “Now Reading” announcement.";
 "When browsing in Safari (with the Luna extension enabled), show the \"%@\" button when it applies. Choose when it appears." = "When browsing in Safari (with the Luna extension enabled), show the \"%@\" button when it applies. Choose when it appears.";
 "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling." = "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling.";

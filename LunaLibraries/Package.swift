@@ -79,7 +79,10 @@ let package = Package(
         .target(name: "LunaPriceIngest", dependencies: [
             "LunaIngest", "LunaHTMLClassification", "LunaPriceMetadata", "LunaURLClassification", "LunaModels", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaStorage", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
-        .target(name: "LunaDocuments", dependencies: ["LunaModels"]),
+        // SwiftSoup: EPUB and `.docx` are markup in a zip, and the `.html`
+        // import is markup outright. Adds no link edge in practice — every
+        // target that links LunaDocuments already links SwiftSoup.
+        .target(name: "LunaDocuments", dependencies: ["LunaModels", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
         .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub", "LunaMailAccount", "LunaAppConfig", "LunaURLClassification"]),
         .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),

@@ -10,18 +10,21 @@ import LunaStorage
 import XCTest
 @testable import Luna
 
-/// A card's SHAPE is a property of what it shows, not of the screen it is on.
+/// How a card PRESENTS its content is a property of what it shows; how big it is
+/// is not.
 ///
-/// These four values — fit, edge fade, scrub-preview autoplay, in-card paging —
+/// The presentation values — edge fade, scrub-preview autoplay, in-card paging —
 /// used to be deck-level `CardCarouselStyle` fields, so the one deck that mixes
 /// kinds had to pick ONE answer for all of them. It picked the article's: the
-/// central app stretched every media card to the reader's `.aspectFromBottom`,
-/// dissolved its video edges over the reader's 28pt fade, and previewed it as a
-/// still. The same download in the Downloader was 9:16, hard-clipped, and
-/// played under the finger.
+/// central app dissolved every media card's video edges over the reader's 28pt
+/// fade and previewed it as a still, while the same download in the Downloader
+/// was hard-clipped and played under the finger. Those stay per-kind.
 ///
-/// So the test that matters is not "a media card is 9:16" — it is that a media
-/// card and an article card IN THE SAME DECK get different answers.
+/// GEOMETRY went the other way. `fit`/`topOverflow` were per-kind too, so an
+/// article card, a video card and a product card in one deck were three
+/// different rectangles at three different centers — and paging between two
+/// kinds resized and re-centered the card underneath the transition. There is
+/// one card frame now, so the geometry test is that no kind can state one.
 @MainActor
 final class CardKindStyleTests: XCTestCase {
 
@@ -43,9 +46,37 @@ final class CardKindStyleTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - The point: one deck, two shapes
+    // MARK: - The point: one deck, one frame, two presentations
 
-    func testAMediaCardAndAnArticleCardInOneDeckGetDifferentShapes() throws {
+    /// Every kind, at one container size, resolving to the identical rectangle.
+    /// The deck asks `CardCarouselMetrics` once and hands the answer to every
+    /// slot, so this is really a statement about what a kind is no longer able
+    /// to say — but it is the regression that was visible, so it is pinned by
+    /// the numbers rather than by the absence of an API.
+    func testEveryKindGetsTheSameCardFrame() {
+        let containers = [
+            CGSize(width: 402, height: 626),    // iPhone 16 Pro card area
+            CGSize(width: 440, height: 708),    // iPhone 16 Pro Max
+            CGSize(width: 375, height: 519),    // iPhone SE
+            CGSize(width: 834, height: 1_050),  // iPad portrait
+            CGSize(width: 1_366, height: 906),  // 13" iPad landscape
+        ]
+        for container in containers {
+            let frame = CardCarouselMetrics.resolve(containerSize: container).centeredCardFrame()
+            XCTAssertEqual(
+                frame.width / frame.height,
+                CardCarouselMetrics.cardAspectRatio,
+                accuracy: 0.0001,
+                "every card is exactly 9:16 at \(container)")
+            XCTAssertEqual(
+                frame.midY, container.height / 2, accuracy: 0.01,
+                "every card is centered in the card area at \(container)")
+            XCTAssertEqual(
+                frame.midX, container.width / 2, accuracy: 0.01)
+        }
+    }
+
+    func testAMediaCardAndAnArticleCardInOneDeckDifferOnlyInPresentation() throws {
         CardKindPresenters.article = ArticleCardPresenter()
         CardKindPresenters.media = MediaCardPresenter()
 
@@ -57,12 +88,6 @@ final class CardKindStyleTests: XCTestCase {
         let articleStyle = try style(for: article)
         let mediaStyle = try style(for: mediaRow)
 
-        XCTAssertEqual(
-            articleStyle.fit, .aspectFromBottom,
-            "a reader card grows up into the header clearance")
-        XCTAssertEqual(
-            mediaStyle.fit, .aspectCentered,
-            "a video is 9:16 and letterboxing it into a reader's frame is the bug")
         XCTAssertGreaterThan(
             articleStyle.contentEdgeFadeHeight, 0,
             "scrolled text must dissolve at the card's edges")
@@ -95,7 +120,7 @@ final class CardKindStyleTests: XCTestCase {
             "a media card's width belongs to its timeline in every app, downloaded or not")
     }
 
-    func testAProductCardFillsItsRoomAndPages() throws {
+    func testAProductCardScrollsInsideTheOneCardFrameAndPages() throws {
         CardKindPresenters.product = ProductCardPresenter()
         var item = ReadingListItem(urlString: "https://shop.example/widget")
         item.priceTracker = PriceTracker(
@@ -105,7 +130,6 @@ final class CardKindStyleTests: XCTestCase {
             currency: "USD")
 
         let style = try style(for: item)
-        XCTAssertEqual(style.fit, .fill, "the editor is a column of controls, not a picture")
         XCTAssertEqual(style.contentEdgeFadeHeight, 0)
         XCTAssertTrue(style.pagesOnInCardSwipes, "nothing in the editor scrubs")
     }

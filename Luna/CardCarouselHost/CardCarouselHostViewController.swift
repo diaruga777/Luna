@@ -552,7 +552,7 @@ class CardCarouselHostViewController: UIViewController {
     /// the util card while onboarding is unanswered — the same condition as the
     /// intro headline — so an incomplete first run keeps the light the splash
     /// handed it instead of losing it to the crossfade.
-    private var utilCardCorona: EclipseCoronaView?
+    private var utilCardCorona: UIView?
     private var isUtilCardCentered = true
 
     final var utilCardIndex: Int { 0 }
@@ -955,7 +955,7 @@ class CardCarouselHostViewController: UIViewController {
         else { return }
         if utilCardCorona?.bounds.size != cardFrame.size {
             utilCardCorona?.removeFromSuperview()
-            let corona = AppLaunchTransition.makePeakCoronaView(cardFrame: cardFrame)
+            let corona = AppLaunchTransition.makeCoronaCardView(cardFrame: cardFrame)
             isUtilCardCentered = isUtilCard(carousel.currentIndex)
             corona.alpha = isUtilCardCentered ? 1 : 0
             view.insertSubview(corona, belowSubview: carousel.view)
@@ -1037,10 +1037,12 @@ class CardCarouselHostViewController: UIViewController {
         archiveTray?.setPullAvailable(false, animated: animated)
     }
 
-    /// Extra chrome-row clearance this deck floats above the carousel, on top of
-    /// the safe area (Reader's top control row; the other decks have none and
-    /// keep the shared 4pt breathing room).
-    class var carouselTopClearance: CGFloat { 4 }
+    /// Chrome clearance every deck reserves above the card area, on top of the
+    /// safe area. One value, shared — it is `CardDeckGeometry.topClearance`, and
+    /// the reason it is not a per-deck override any more is that the card frame
+    /// has to be a function of the SCREEN: the launch splash draws the card
+    /// before it knows which app it is launching.
+    static var carouselTopClearance: CGFloat { CardDeckGeometry.topClearance }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)

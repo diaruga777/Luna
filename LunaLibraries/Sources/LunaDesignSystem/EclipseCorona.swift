@@ -109,12 +109,24 @@ public enum EclipseCorona {
 
     private static func exteriorKey(
         silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor,
-        reach: CGFloat
+        reach: CGFloat, scale: CGFloat
     ) -> String {
         cacheKey(
             "ext", silhouetteSize.width, silhouetteSize.height, cornerRadius,
-            reach, tint: tint)
+            reach, scale, tint: tint)
     }
+
+    /// Rasterisation scale for a corona that is only ever composited live, at
+    /// the size it was rendered for: the in-app eclipse transition. Below screen
+    /// scale on purpose — see `renderExterior`.
+    public static let transitionScale: CGFloat = 1
+
+    /// Rasterisation scale for a corona that is **magnified**: baked into launch
+    /// artwork that a launch screen then scales to the device, or standing on
+    /// the first-run card for as long as onboarding goes unanswered. At 1x the
+    /// upscale is what it looks like — blocky streamer wedges and stepped halo
+    /// banding, both plainly visible in the recorded splash.
+    public static let artworkScale: CGFloat = 3
 
     /// The corona around an opaque rounded-rect silhouette, as an image whose
     /// bounds are `silhouetteSize` grown by `reach` on all sides. The silhouette
@@ -133,17 +145,18 @@ public enum EclipseCorona {
         silhouetteSize: CGSize,
         cornerRadius: CGFloat,
         tint: UIColor,
-        reach: CGFloat? = nil
+        reach: CGFloat? = nil,
+        scale: CGFloat = transitionScale
     ) -> UIImage? {
         guard silhouetteSize.width > 1, silhouetteSize.height > 1 else { return nil }
         let throwDistance = reach ?? EclipseCorona.reach(for: silhouetteSize)
         let key = exteriorKey(
             silhouetteSize: silhouetteSize, cornerRadius: cornerRadius,
-            tint: tint, reach: throwDistance)
+            tint: tint, reach: throwDistance, scale: scale)
         if let cached = exteriorCache[key] { return cached }
         let image = renderExterior(
             silhouetteSize: silhouetteSize, cornerRadius: cornerRadius,
-            tint: tint, reach: throwDistance)
+            tint: tint, reach: throwDistance, scale: scale)
         if let image { exteriorCache[key] = image }
         return image
     }
@@ -159,18 +172,19 @@ public enum EclipseCorona {
     @MainActor
     public static func prewarm(
         bodySize: CGSize, cornerRadius: CGFloat, tint: UIColor,
-        reach: CGFloat? = nil
+        reach: CGFloat? = nil,
+        scale: CGFloat = transitionScale
     ) {
         guard bodySize.width > 1, bodySize.height > 1 else { return }
         let throwDistance = reach ?? EclipseCorona.reach(for: bodySize)
         let key = exteriorKey(
             silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint,
-            reach: throwDistance)
+            reach: throwDistance, scale: scale)
         guard exteriorCache[key] == nil, prewarming.insert(key).inserted else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             let image = renderExterior(
                 silhouetteSize: bodySize, cornerRadius: cornerRadius,
-                tint: tint, reach: throwDistance)
+                tint: tint, reach: throwDistance, scale: scale)
             Task { @MainActor in
                 prewarming.remove(key)
                 if let image, exteriorCache[key] == nil { exteriorCache[key] = image }
@@ -184,7 +198,7 @@ public enum EclipseCorona {
     /// `UIColor` needing trait resolution).
     private static func renderExterior(
         silhouetteSize: CGSize, cornerRadius: CGFloat, tint: UIColor,
-        reach: CGFloat
+        reach: CGFloat, scale: CGFloat
     ) -> UIImage? {
         let size = CGSize(
             width: silhouetteSize.width + reach * 2,
@@ -194,12 +208,19 @@ public enum EclipseCorona {
 
         let format = UIGraphicsImageRendererFormat()
         format.opaque = false
-        // 1x on purpose. Core Graphics defers rasterisation to image creation, so
-        // cost tracks pixel count almost exactly — 2x here is 4x the work — and
-        // everything in this pass is smooth and low-frequency, where the upscale
-        // is invisible. The one detail that needs real resolution, the
-        // chromosphere hairline, is a vector layer in `EclipseCoronaView` instead.
-        format.scale = 1
+        // `transitionScale` (1x) for a corona composited at the size it was
+        // rendered for. Core Graphics defers rasterisation to image creation, so
+        // cost tracks pixel count almost exactly — 2x is 4x the work — and
+        // everything in this pass is smooth and low-frequency, where displaying
+        // 1:1 hides the coarseness. The one detail that needs real resolution
+        // even then, the chromosphere hairline, is a vector layer in
+        // `EclipseCoronaView` instead.
+        //
+        // A corona that will be MAGNIFIED is a different problem, and 1x was the
+        // wrong answer for it: the launch artwork is baked at 3x from a 1x
+        // corona, so its streamer wedges arrive as 3x3 blocks. Those callers
+        // pass `artworkScale`.
+        format.scale = scale
         return UIGraphicsImageRenderer(size: size, format: format).image { rendererContext in
             let context = rendererContext.cgContext
             // Clip away the silhouette interior so nothing leaks over the body.
@@ -214,9 +235,10 @@ public enum EclipseCorona {
 
             drawHalo(
                 context: context, silhouette: silhouette,
-                cornerRadius: cornerRadius, reach: reach, tint: tint)
+                cornerRadius: cornerRadius, reach: reach, tint: tint, scale: scale)
             drawStreamers(
-                context: context, silhouette: silhouette, reach: reach, tint: tint)
+                context: context, silhouette: silhouette, reach: reach, tint: tint,
+                scale: scale)
             context.restoreGState()
         }
     }
@@ -237,11 +259,15 @@ public enum EclipseCorona {
     /// weighted by a power law so the profile has a bright edge and a long tail.
     private static func drawHalo(
         context: CGContext, silhouette: CGRect,
-        cornerRadius: CGFloat, reach: CGFloat, tint: UIColor
+        cornerRadius: CGFloat, reach: CGFloat, tint: UIColor, scale: CGFloat
     ) {
         let outerColor = outerColor(tint: tint)
-        let step: CGFloat = 1
-        var distance: CGFloat = 0.5
+        // One ring per rasterised pixel. The profile is a piecewise-constant
+        // stack of rings, so at 1x-per-point it bands wherever the falloff is
+        // steepest — right at the limb, and visibly so once magnified. Stepping
+        // with the raster keeps every ring one pixel wide whatever the scale.
+        let step: CGFloat = 1 / max(1, scale)
+        var distance = step / 2
         context.setLineWidth(step * 1.7)
         while distance < reach {
             let progress = distance / reach
@@ -272,11 +298,16 @@ public enum EclipseCorona {
     /// no arc where the gradient began. (A single circular start radius across the
     /// whole ray is what produced visible arcs against a non-circular silhouette.)
     private static func drawStreamers(
-        context: CGContext, silhouette: CGRect, reach: CGFloat, tint: UIColor
+        context: CGContext, silhouette: CGRect, reach: CGFloat, tint: UIColor,
+        scale: CGFloat
     ) {
         let center = CGPoint(x: silhouette.midX, y: silhouette.midY)
         let outerColor = outerColor(tint: tint)
-        let slices = 15
+        // Slices with the raster, for the same reason the halo steps with it: a
+        // fixed count leaves the raised cosine quantised into that many flat
+        // wedges, and the wedge edges are the diagonal banding visible in
+        // magnified artwork.
+        let slices = Int(15 * max(1, scale))
         for (rayIndex, streamer) in streamers.enumerated() {
             let length = reach * streamer.extent
             guard length > 2 else { continue }
@@ -503,12 +534,16 @@ public final class EclipseCoronaView: UIView {
     ///     colour is, taken from the render's own alpha.
     ///   - reach: How far the light throws past the limb, overriding the
     ///     card-sized default.
+    ///   - scale: Rasterisation scale for the smooth passes. The default suits a
+    ///     corona composited at the size it was rendered for; artwork that will
+    ///     be scaled afterwards passes `EclipseCorona.artworkScale`.
     public init(
         bodySize: CGSize,
         cornerRadius: CGFloat,
         tint: UIColor,
         light: UIColor? = nil,
-        reach: CGFloat? = nil
+        reach: CGFloat? = nil,
+        scale: CGFloat = EclipseCorona.transitionScale
     ) {
         self.cornerRadius = cornerRadius
         super.init(frame: CGRect(origin: .zero, size: bodySize))
@@ -524,7 +559,7 @@ public final class EclipseCoronaView: UIView {
         halo.contentMode = .scaleToFill
         let image = EclipseCorona.exteriorImage(
             silhouetteSize: bodySize, cornerRadius: cornerRadius, tint: tint,
-            reach: reach)
+            reach: reach, scale: scale)
         if let light {
             halo.image = image?.withRenderingMode(.alwaysTemplate)
             halo.tintColor = light

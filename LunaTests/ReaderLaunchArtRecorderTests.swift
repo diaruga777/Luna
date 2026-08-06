@@ -3,14 +3,21 @@
 //  LunaTests
 //
 
+import LunaDesignSystem
 import UIKit
 import XCTest
 @testable import Luna
 
-/// Records the standalone composite used by LunaLaunchScreen.storyboard, plus
-/// its two source layers, from the same production views that draw the first
-/// live frame. The test skips in normal runs; opt in with
-/// READER_LAUNCH_ART_DIR when the corona or rim changes.
+/// Records the two rasters the launch screen is built from, from the same
+/// production views that draw the app's first live frame. The test skips in
+/// normal runs; opt in with READER_LAUNCH_ART_DIR when the corona or rim
+/// changes.
+///
+/// Both are **single-scale** images: the launch storyboard scales them to the
+/// card frame it computes for the device, so one generously-sized raster serves
+/// every screen. The corona canvas is exactly `AppLaunchGeometry.coronaFrame` —
+/// the card grown by its proportional reach — and nothing else, so scaling it to
+/// that frame is the whole placement rule.
 @MainActor
 final class ReaderLaunchArtRecorderTests: XCTestCase {
     func testRecordReaderLaunchArtworkWhenRequested() throws {
@@ -25,39 +32,37 @@ final class ReaderLaunchArtRecorderTests: XCTestCase {
             at: outputURL, withIntermediateDirectories: true)
 
         let reference = AppLaunchGeometry.referenceSize
-        let referenceBounds = CGRect(origin: .zero, size: reference)
+        let cardFrame = AppLaunchGeometry.referenceRootCardFrame
         let starfield = AppLaunchTransition.makeStaticStarfieldView(
-            frame: referenceBounds)
-        let coronaCard = AppLaunchTransition.makeStaticCoronaCardView(
-            frame: referenceBounds,
-            cardFrame: AppLaunchGeometry.referenceRootCardFrame)
-        let composite = AppLaunchTransition.makeLaunchView(
-            frame: referenceBounds,
-            cardFrame: AppLaunchGeometry.referenceRootCardFrame)
+            frame: CGRect(origin: .zero, size: reference))
+        let coronaCard = AppLaunchTransition.makeCoronaCardArtworkView(
+            cardFrame: cardFrame)
 
-        for scale in [1, 2, 3] {
-            try render(starfield, opaque: true, scale: CGFloat(scale)).pngData()?.write(
-                to: outputURL.appendingPathComponent(
-                    "ReaderLaunchStarfield@\(scale)x.png"))
-            try render(coronaCard, opaque: false, scale: CGFloat(scale)).pngData()?.write(
-                to: outputURL.appendingPathComponent(
-                    "ReaderLaunchCoronaCard@\(scale)x.png"))
-            let compositeName = scale == 1
-                ? "LunaLaunchComposite.png"
-                : "LunaLaunchComposite@\(scale)x.png"
-            try render(composite, opaque: true, scale: CGFloat(scale)).pngData()?.write(
-                to: outputURL.appendingPathComponent(compositeName))
-        }
+        try render(starfield, opaque: true).pngData()?.write(
+            to: outputURL.appendingPathComponent(
+                "\(AppLaunchTransition.starfieldArtworkName).png"))
+        try render(coronaCard, opaque: false).pngData()?.write(
+            to: outputURL.appendingPathComponent(
+                "\(AppLaunchTransition.coronaCardArtworkName).png"))
     }
 
-    private func render(_ view: UIView, opaque: Bool, scale: CGFloat) -> UIImage {
+    /// Rasterises at `EclipseCorona.artworkScale` and hands the result back as a
+    /// 1x image: a single-scale asset's point size IS its pixel size, which is
+    /// what lets one file serve @2x iPads and @3x phones without either being
+    /// upscaled.
+    private func render(_ view: UIView, opaque: Bool) -> UIImage {
         view.setNeedsLayout()
         view.layoutIfNeeded()
+        let scale = EclipseCorona.artworkScale
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         format.opaque = opaque
-        return UIGraphicsImageRenderer(size: view.bounds.size, format: format).image { context in
-            view.layer.render(in: context.cgContext)
-        }
+        let image = UIGraphicsImageRenderer(size: view.bounds.size, format: format)
+            .image { context in
+                context.cgContext.interpolationQuality = .high
+                view.layer.render(in: context.cgContext)
+            }
+        guard let cgImage = image.cgImage else { return image }
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 }

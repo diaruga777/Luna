@@ -183,8 +183,28 @@ stable Xcode 26.2.
 > frame, which is exactly the touches the card next door needs (`claudedocs/readers.md`).
 > **(3)** Everything else that was a full-width band keeps a readable column instead
 > (`LunaLayout.readableWidth`); the decks' own chrome follows the CARD's column rather than
-> the screen edges. Phone-shaped containers are left byte-identical throughout, which is why
-> the existing snapshot references still hold.
+> the screen edges.
+
+> **One card frame, and it is a function of the SCREEN.** Every carousel card — article,
+> media, product, failed save, util, onboarding — is the same rectangle: the largest exact
+> 9:16 that fits the card area, centered (`CardCarouselMetrics.resolve`, one fit). A card's
+> size used to be its KIND's answer (`CardFit`/`topOverflow`: a reader card took every point
+> of width and hung its extra height above the card area; a product card filled the room),
+> so paging between kinds resized and re-centered the card mid-transition; `edgeGap` was
+> per-deck too, so the same video card was 40pt narrower in the Downloader. `peek`/`edgeGap`/
+> `sideScale`/`verticalPadding` are constants now, and the 48pt top clearance is reserved by
+> EVERY deck (`CardCarouselHostViewController.carouselTopClearance` = `CardDeckGeometry
+> .topClearance`) rather than by the Reader alone. The point of all that:
+> **`CardDeckGeometry.cardFrame(inScreenSize:safeAreaInsets:)` is pure arithmetic**, so the
+> launch splash can be drawn at the deck's exact card before any deck exists — which is what
+> `LunaLaunchScreen.storyboard` reproduces in Interface Builder constants (its one
+> conditional, the iPad width cap, rides a regular-width variation because a launch
+> storyboard has no step function). `CardDeckGeometryTests` and `LaunchScreenGeometryTests`
+> pin the deck, the pure function and the storyboard to each other at six screen shapes;
+> nothing else can. Corona rasterisation is per-purpose — `EclipseCorona.transitionScale`
+> (1×) for a corona composited at its render size, `artworkScale` (3×) for the launch art,
+> which is why the splash corona is no longer 3×3 blocks. See
+> `claudedocs/card-carousel.md` and `claudedocs/reader-onboarding.md`.
 
 > **Strings: one flat file, and the key is the English.** Every user-visible
 > string in all four apps is an entry in
@@ -434,7 +454,12 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `-derivedDataPath`. The suite was 2453/9/0 at 261s before the trim; roughly 220
   method fixtures were folded into table-driven rows or merged area files, the
   Safari/JS suites went from ~159 WebContent spin-ups to 1, and ~5.4s of fixed
-  sleeps became injected seams.
+  sleeps became injected seams. Re-measured 2026-08-06 after the one-card-frame
+  change on a warm existing sim: **2259/7/0** with
+  `-skip-testing:LunaTests/ArticleAudioEngineTests` (its 14 env-gated skips are
+  what the 21 becomes 7), i.e. 0 failures and ~20 more registered tests than the
+  fresh-sim run — the registration variance the bullet below describes, not new
+  coverage.
 - **The 21 skips are all intentional `XCTSkip`s, and all of them are env-gated
   tooling or on-demand coverage** — nothing is skipped because it is broken:
   `ArticleAudioEngineTests` (14, `RUN_AUDIO_ENGINE_TESTS=1`), the four

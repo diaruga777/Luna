@@ -60,6 +60,21 @@ enum KindWiring {
                 sourceURLString: sourceURLString, title: title, assets: assets)
         }
         LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
+        // A bulk import runs its own progress bar; the per-transfer Live
+        // Activity alerts (banner + sound + haptic) would buzz twice per link
+        // over the top of it.
+        // Photos access asked for at the START of an import, not when the first
+        // transfer wants it (`claudedocs/import-export.md`).
+        LinkImportRunner.mediaStoragePreflight = { urlStrings in
+            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
+        }
+        LinkImportRunner.mediaAlertSuspension = { suspended in
+            if suspended {
+                LiveMediaDownloadManager.suspendActivityAlerts()
+            } else {
+                LiveMediaDownloadManager.resumeActivityAlerts()
+            }
+        }
     }
 
     // MARK: - Root UI shape

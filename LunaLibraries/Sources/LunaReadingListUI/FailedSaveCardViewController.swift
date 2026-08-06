@@ -129,7 +129,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// Covers ONLY the web view while a rescue runs — the URL bar and its share
     /// button stay lit and usable underneath, per the card's contract.
     private let dimmingView = UIView()
-    private let progressBar = EclipseProgressBar()
+    private let progressBar = MoonHorizonProgressBar()
 
     private let urlBar = UIView()
     private let reloadButton = UIButton(type: .system)

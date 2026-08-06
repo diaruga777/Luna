@@ -147,6 +147,14 @@ enum KindWiring {
                 KindleSettingsScreen(), animated: true)
         }
 
+        // A bulk import's pass over the saves that came back hard-paywalled:
+        // the same web unlock a tap would run, off-screen and giving up on any
+        // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there is
+        // no article save to unlock anywhere else.
+        LinkImportRunner.articleUnlocker = { itemID, urlString in
+            await UnattendedArticleUnlock.unlock(itemID: itemID, urlString: urlString)
+        }
+
         // Voice status and installation now live on the Audio settings page.
         VoiceFirstRunPrompt.openVoiceSettings = { presenter in
             let audio = AudioSettingsScreen()
@@ -170,6 +178,21 @@ enum KindWiring {
                 sourceURLString: sourceURLString, title: title, assets: assets)
         }
         LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
+        // A bulk import runs its own progress bar; the per-transfer Live
+        // Activity alerts (banner + sound + haptic) would buzz twice per link
+        // over the top of it.
+        // Photos access asked for at the START of an import, not when the first
+        // transfer wants it (`claudedocs/import-export.md`).
+        LinkImportRunner.mediaStoragePreflight = { urlStrings in
+            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
+        }
+        LinkImportRunner.mediaAlertSuspension = { suspended in
+            if suspended {
+                LiveMediaDownloadManager.suspendActivityAlerts()
+            } else {
+                LiveMediaDownloadManager.resumeActivityAlerts()
+            }
+        }
     }
 
     /// Product-kind launch wiring (identical in the Price Tracker variant).

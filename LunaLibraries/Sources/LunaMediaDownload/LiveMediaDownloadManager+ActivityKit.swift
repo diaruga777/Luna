@@ -41,7 +41,8 @@ extension LiveMediaDownloadManager {
     /// Activity appears, so a download starting reads as more than a silent
     /// Dynamic Island update. Suppressed for `startFailedActivity`, which
     /// never actually starts a download — only its (single) end-of-life alert
-    /// should fire there.
+    /// should fire there, and while alerts are suspended altogether
+    /// (`areActivityAlertsSuspended` — a bulk import).
     func startActivity(for job: LiveMediaDownloadJob, announce: Bool = true) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -61,7 +62,7 @@ extension LiveMediaDownloadManager {
         let state = activityState(for: job)
         do {
             let activity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
-            if announce {
+            if announce, !Self.areActivityAlertsSuspended {
                 await activity.update(
                     using: state,
                     alertConfiguration: AlertConfiguration(
@@ -132,11 +133,13 @@ extension LiveMediaDownloadManager {
         // is easy to miss, so both a successful finish and a failure surface
         // as a system alert (banner + sound), matching the one at start. Not
         // for a user-canceled (still `.suspended` when torn down) job — that's
-        // an intentional dismissal, not a result worth alerting about.
+        // an intentional dismissal, not a result worth alerting about — and not
+        // while alerts are suspended (a bulk import, where every transfer's
+        // start and finish would buzz over the import's own progress bar).
         var alert: AlertConfiguration?
         switch job.phase {
         case .finished, .failed:
-            alert = AlertConfiguration(
+            alert = Self.areActivityAlertsSuspended ? nil : AlertConfiguration(
                 title: job.phase == .failed
                     ? L10n.resource("Download failed")
                     : L10n.resource("Download finished"),

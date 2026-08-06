@@ -12,8 +12,11 @@ import XCTest
 /// (`claudedocs/import-export.md`).
 final class LinkListExportTests: XCTestCase {
 
-    private func item(_ urlString: String, archived: Bool = false) -> ReadingListItem {
+    private func item(
+        _ urlString: String, archived: Bool = false, title: String? = nil
+    ) -> ReadingListItem {
         var item = ReadingListItem(urlString: urlString)
+        item.title = title
         if archived { item.archivedAt = Date() }
         return item
     }
@@ -48,9 +51,17 @@ final class LinkListExportTests: XCTestCase {
         XCTAssertEqual(document.links, ["https://a.example/1"])
     }
 
+    func testExportCarriesEachSavesTitleSoAReimportNeedsNoFetch() {
+        let document = LinkListExport.document(for: [
+            item("https://a.example/1", title: "First Piece"),
+            item("https://b.example/2"),
+        ])
+        XCTAssertEqual(document.titles, ["https://a.example/1": "First Piece"])
+    }
+
     func testAnExportedFileReadsBackIdentically() throws {
         let document = LinkListExport.document(for: [
-            item("https://a.example/1?ids=1,2"),
+            item("https://a.example/1?ids=1,2", title: "Commas, and more"),
             item("https://b.example/2", archived: true),
         ])
         let url = try LinkListExport.writeTemporaryFile(document)
@@ -59,6 +70,7 @@ final class LinkListExportTests: XCTestCase {
         let reread = LinkListExport.readDocument(at: url)
         XCTAssertEqual(reread?.links, document.links)
         XCTAssertEqual(reread?.archived, document.archived)
+        XCTAssertEqual(reread?.titles, document.titles)
         XCTAssertEqual(reread?.isStructured, true)
     }
 
@@ -72,7 +84,7 @@ final class LinkListExportTests: XCTestCase {
             LinkListDocument(links: ["https://a.example/1"], isStructured: true), now: date)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        XCTAssertTrue(url.lastPathComponent.hasSuffix("-2026-08-05.csv"), url.lastPathComponent)
+        XCTAssertTrue(url.lastPathComponent.hasSuffix("-2026-08-05.md"), url.lastPathComponent)
         XCTAssertTrue(url.lastPathComponent.hasPrefix("Luna"), url.lastPathComponent)
     }
 
@@ -98,7 +110,7 @@ final class LinkListExportTests: XCTestCase {
 
     func testAMissingFileIsReportedRatherThanCrashing() {
         let missing = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(UUID().uuidString).csv")
+            .appendingPathComponent("\(UUID().uuidString).md")
         XCTAssertNil(LinkListExport.readDocument(at: missing))
     }
 }

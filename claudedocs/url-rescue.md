@@ -99,7 +99,7 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   each internal boundary, always opening `.queued` and closing `.finished`.
   `URLRescueCoordinator.reportProgress`/`rescueProgress` turn that into a
   fraction (interpolated within a stage) and post `.rescueProgressChanged`, which
-  drives the failed card's `EclipseProgressBar`.
+  drives the failed card's `MoonHorizonProgressBar`.
 - **Consent** — automatic rescue is always on (there is no setting; the former
   Settings ▸ "Failed Saves" toggle and `RescueSettings` store are gone). Its real
   gates are an available engine, an interactive failure, and the 2-attempts/24h

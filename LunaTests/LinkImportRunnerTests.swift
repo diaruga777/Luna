@@ -18,8 +18,11 @@ final class LinkImportRunnerTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        // A process-wide seam: another suite may have installed one.
+        // Process-wide seams: the app this suite hosts on installs the real ones at
+        // launch, so every test starts from none.
         LinkImportRunner.mediaDownloadProgress = nil
+        LinkImportRunner.mediaStoragePreflight = nil
+        LinkImportRunner.articleUnlocker = nil
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(
@@ -29,6 +32,8 @@ final class LinkImportRunnerTests: XCTestCase {
 
     override func tearDown() {
         LinkImportRunner.mediaDownloadProgress = nil
+        LinkImportRunner.mediaStoragePreflight = nil
+        LinkImportRunner.articleUnlocker = nil
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
     }
@@ -155,6 +160,120 @@ final class LinkImportRunnerTests: XCTestCase {
         XCTAssertEqual(summary.imported, 2)
         XCTAssertEqual(summary.recoverableFailures, 0)
         XCTAssertTrue(summary.rejected.isEmpty)
+    }
+
+    // MARK: - The web-unlock pass
+
+    func testEveryPaywalledSaveGetsOneUnlockAttempt() async {
+        let attempted = Attempts()
+        LinkImportRunner.articleUnlocker = { _, urlString in
+            await attempted.record(urlString)
+            return true
+        }
+        let summary = await makeRunner(
+            outcomes: [
+                "https://example.com/locked-1": .needsCaptcha,
+                "https://example.com/locked-2": .needsCaptcha,
+            ]
+        ).run(candidates([
+            "https://example.com/free", "https://example.com/locked-1",
+            "https://example.com/locked-2",
+        ]))
+
+        let requested = await attempted.urlStrings
+        XCTAssertEqual(
+            requested.sorted(),
+            ["https://example.com/locked-1", "https://example.com/locked-2"])
+        XCTAssertEqual(summary.imported, 3)
+    }
+
+    func testAPaywalledSaveTheUnlockCouldNotOpenIsStillImportedNotAFailure() async {
+        // It is titled and it opens; the user solves the CAPTCHA when they choose.
+        LinkImportRunner.articleUnlocker = { _, _ in false }
+        let summary = await makeRunner(
+            outcomes: ["https://example.com/locked": .needsCaptcha]
+        ).run(candidates(["https://example.com/locked"]))
+
+        XCTAssertEqual(summary.imported, 1)
+        XCTAssertEqual(summary.recoverableFailures, 0)
+        XCTAssertTrue(summary.rejected.isEmpty)
+        XCTAssertEqual(store.items().first?.state, .needsCaptcha)
+    }
+
+    func testTheUnlockPassRunsOneArticleAtATime() async {
+        // Each attempt is a whole WKWebView, and two of them racing archive.today
+        // is the fastest way to be rate-limited.
+        let concurrent = PeakConcurrency()
+        LinkImportRunner.articleUnlocker = { _, _ in
+            await concurrent.begin()
+            await Task.yield()
+            await concurrent.end()
+            return true
+        }
+        _ = await makeRunner(
+            outcomes: [
+                "https://example.com/a": .needsCaptcha,
+                "https://example.com/b": .needsCaptcha,
+                "https://example.com/c": .needsCaptcha,
+            ]
+        ).run(candidates(["https://example.com/a", "https://example.com/b", "https://example.com/c"]))
+
+        let peak = await concurrent.peak
+        XCTAssertEqual(peak, 1)
+    }
+
+    func testWithNoUnlockerInstalledAPaywalledSaveIsSimplyImported() async {
+        // The Downloader and Price Tracker install none — there is no article save
+        // to unlock there — and the pass is skipped rather than stalling the run.
+        LinkImportRunner.articleUnlocker = nil
+        let summary = await makeRunner(
+            outcomes: ["https://example.com/locked": .needsCaptcha]
+        ).run(candidates(["https://example.com/locked"]))
+
+        XCTAssertEqual(summary.imported, 1)
+    }
+
+    func testStoppingTheRunSkipsTheRemainingUnlocksWithoutLosingTheSaves() async {
+        let attempted = Attempts()
+        let runner = makeRunner(
+            outcomes: [
+                "https://example.com/a": .needsCaptcha,
+                "https://example.com/b": .needsCaptcha,
+            ], concurrency: 1)
+        LinkImportRunner.articleUnlocker = { [weak runner] _, urlString in
+            await attempted.record(urlString)
+            runner?.cancel()   // Stopped during the first unlock.
+            return true
+        }
+        let summary = await runner.run(
+            candidates(["https://example.com/a", "https://example.com/b"]))
+
+        let requested = await attempted.urlStrings
+        XCTAssertEqual(requested.count, 1)
+        XCTAssertTrue(summary.wasCancelled)
+        // Both are still saved and both still count — a skipped unlock costs the
+        // article nothing.
+        XCTAssertEqual(summary.imported, 2)
+        XCTAssertEqual(store.items().count, 2)
+    }
+
+    /// Records which URLs the unlock seam was asked about.
+    private actor Attempts {
+        var urlStrings: [String] = []
+        func record(_ urlString: String) { urlStrings.append(urlString) }
+    }
+
+    /// Watches how many unlocks are in flight at once.
+    private actor PeakConcurrency {
+        private var current = 0
+        var peak = 0
+
+        func begin() {
+            current += 1
+            peak = max(peak, current)
+        }
+
+        func end() { current -= 1 }
     }
 
     func testForeignKindsAreRejectedAndNamed() async {

@@ -47,7 +47,7 @@ so a light head-only metadata read is still worth doing.
 ## Retrying: overlay, progress, terminal state
 
 Tapping **Retry with AI** immediately covers the web view with a 40%-opacity black
-overlay carrying an `EclipseProgressBar` — on the tap, not on the first progress
+overlay carrying a `MoonHorizonProgressBar` — on the tap, not on the first progress
 report, because the coordinator's work starts on a background executor and the
 press has to land visibly. Under the overlay:
 

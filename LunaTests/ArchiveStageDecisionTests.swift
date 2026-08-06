@@ -117,4 +117,22 @@ final class ArchiveStageDecisionTests: XCTestCase {
                 testCase.name)
         }
     }
+
+    // MARK: - What the cover does when the unlock lands
+
+    /// The regression: a successful unlock uncovered the page and then fired
+    /// `onExtracted`, whose handler dismisses the modal — so the raw
+    /// archive/publisher page played underneath the whole dismissal animation.
+    /// A controller someone is about to take away keeps its cover on.
+    func testTheCoverOnlyComesOffForAControllerThatIsStayingUp() {
+        XCTAssertFalse(
+            ArchiveWebReaderViewController.uncoversPageAfterExtraction(
+                hasExtractedHandler: true),
+            "An onExtracted handler dismisses or replaces this controller; "
+                + "uncovering first shows the raw page through that animation")
+        XCTAssertTrue(
+            ArchiveWebReaderViewController.uncoversPageAfterExtraction(
+                hasExtractedHandler: false),
+            "With nowhere to go, the unlocked page is what the user reads")
+    }
 }

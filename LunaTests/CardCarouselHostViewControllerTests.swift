@@ -9,6 +9,7 @@
 //  store.
 //
 
+import UIKit
 import XCTest
 @testable import Luna
 
@@ -36,6 +37,50 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
     }
 
     private final class TestHost: CardCarouselHostViewController {}
+
+    // MARK: - Only a row with artwork grows into a card
+
+    /// The paste row is 40pt tall and holds a live system paste control; grown
+    /// into the card frame as one flat snapshot it filled the screen with a
+    /// smeared copy of itself. A source that cannot hand over real artwork gets
+    /// no handoff at all — it says what it is doing in place instead.
+    @MainActor
+    func testASourceWithoutRowArtworkStartsNoGrowTransition() {
+        let host = TestHost()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let pasteRow = OnboardingPasteRow()
+        pasteRow.frame = CGRect(x: 20, y: 780, width: 350, height: 40)
+        host.view.addSubview(pasteRow)
+
+        host.beginUtilCardSaveTransition(
+            for: "https://example.com/a", from: pasteRow)
+
+        XCTAssertNil(
+            host.pendingUtilCardSaveURLString,
+            "A 40pt paste row must never be stretched into the card frame")
+    }
+
+    @MainActor
+    func testAUtilURLRowStillGrowsIntoItsCard() {
+        let host = TestHost()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let row = UtilURLRow(style: .recent)
+        row.configure(RecentURLPreview(
+            urlString: "https://recent.example/a",
+            title: "Recent a",
+            subtitle: "recent.example",
+            kind: .article,
+            imageData: nil))
+        row.frame = CGRect(x: 20, y: 200, width: 350, height: 74)
+        host.view.addSubview(row)
+
+        host.beginUtilCardSaveTransition(for: "https://recent.example/a", from: row)
+
+        XCTAssertEqual(host.pendingUtilCardSaveURLString, "https://recent.example/a")
+        host.cancelUtilCardSaveTransition()
+    }
 
     @MainActor
     func testPagingTowardLastCardWaitsUntilCenterToRevealArchiveTab() {

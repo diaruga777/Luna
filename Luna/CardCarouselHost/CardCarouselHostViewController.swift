@@ -115,14 +115,21 @@ struct UtilCardSaveTransitionGeometry {
 /// card. Only the recent's empty shell expands to the full card frame. Its
 /// favicon and title travel independently into the normal header geometry;
 /// after ingest mounts the real card, that artwork is replaced by a crossfade.
-/// A source view that supplies no artwork falls back to one flat snapshot of
-/// itself.
+///
+/// A source that supplies no artwork gets NO handoff — the initialiser fails and
+/// the save runs without one. There is deliberately no flat-snapshot fallback:
+/// growing one raster of the source into the card frame stretches it by whatever
+/// the two shapes differ by, and the one source that ever took that path — the
+/// 40pt paste row — was scaled some fifteen times its own height, filling the
+/// card with a smeared copy of itself. The paste row says what it is doing in
+/// place instead (`OnboardingPasteRow.State`: the pasted URL, a spinner, then the
+/// mark), which is the whole of its feedback.
 @MainActor
 private final class UtilCardSaveTransition {
     let urlString: String
     private weak var host: CardCarouselHostViewController?
     private let sourceSnapshot: UIView
-    private let artwork: UtilCardSaveTransitionArtwork?
+    private let artwork: UtilCardSaveTransitionArtwork
     /// The shell's own card rim, kept in step with its animating corner radius.
     private var shellRim: UtilURLRowGlassBorder?
     /// Luna's own waiting: the horizon spinner for a page being read, the
@@ -138,44 +145,34 @@ private final class UtilCardSaveTransition {
     init?(host: CardCarouselHostViewController, urlString: String, sourceView: UIView) {
         self.urlString = urlString
         self.host = host
-        if let provider = sourceView as? UtilCardSaveTransitionArtworkProviding,
-           let artwork = provider.makeUtilCardSaveTransitionArtwork(in: host.view) {
-            self.artwork = artwork
-            let shell = UIView(frame: artwork.sourceFrame)
-            shell.backgroundColor = artwork.backgroundColor
-            shell.layer.cornerRadius = artwork.cornerRadius
-            shell.layer.cornerCurve = .continuous
-            shell.clipsToBounds = true
-            shell.isUserInteractionEnabled = false
-            sourceSnapshot = shell
-            // The growing shell IS the destination card from the first frame:
-            // it wears the deck's own rim (following its radius as it opens) and
-            // carries the app's loading indicator until real content lands —
-            // never a black rectangle with nothing happening in it.
-            let rim = UtilURLRowGlassBorder()
-            rim.rimTint = artwork.rimTint
-            rim.cornerRadius = artwork.cornerRadius
-            rim.frame = shell.bounds
-            rim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            shell.addSubview(rim)
-            shellRim = rim
-            host.view.addSubview(shell)
-            for view in [artwork.thumbnail, artwork.title] + [artwork.subtitle].compactMap({ $0 }) {
-                view.isUserInteractionEnabled = false
-                host.view.addSubview(view)
-            }
-            installLoadingIndicator(for: artwork.kind, in: shell)
-        } else {
-            guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
-            artwork = nil
-            sourceSnapshot = snapshot
-            snapshot.frame = sourceView.convert(sourceView.bounds, to: host.view)
-            snapshot.layer.cornerRadius = Self.cornerRadius(of: sourceView)
-            snapshot.layer.cornerCurve = .continuous
-            snapshot.clipsToBounds = true
-            snapshot.isUserInteractionEnabled = false
-            host.view.addSubview(snapshot)
+        guard let provider = sourceView as? UtilCardSaveTransitionArtworkProviding,
+              let artwork = provider.makeUtilCardSaveTransitionArtwork(in: host.view)
+        else { return nil }
+        self.artwork = artwork
+        let shell = UIView(frame: artwork.sourceFrame)
+        shell.backgroundColor = artwork.backgroundColor
+        shell.layer.cornerRadius = artwork.cornerRadius
+        shell.layer.cornerCurve = .continuous
+        shell.clipsToBounds = true
+        shell.isUserInteractionEnabled = false
+        sourceSnapshot = shell
+        // The growing shell IS the destination card from the first frame:
+        // it wears the deck's own rim (following its radius as it opens) and
+        // carries the app's loading indicator until real content lands —
+        // never a black rectangle with nothing happening in it.
+        let rim = UtilURLRowGlassBorder()
+        rim.rimTint = artwork.rimTint
+        rim.cornerRadius = artwork.cornerRadius
+        rim.frame = shell.bounds
+        rim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        shell.addSubview(rim)
+        shellRim = rim
+        host.view.addSubview(shell)
+        for view in [artwork.thumbnail, artwork.title] + [artwork.subtitle].compactMap({ $0 }) {
+            view.isUserInteractionEnabled = false
+            host.view.addSubview(view)
         }
+        installLoadingIndicator(for: artwork.kind, in: shell)
 
         // Defer one turn so the target uses the card's final resting frame while
         // the source frame above remains the exact on-screen row that was tapped.
@@ -221,27 +218,23 @@ private final class UtilCardSaveTransition {
         let currentCornerRadius = sourceSnapshot.layer.presentation()?.cornerRadius
             ?? sourceSnapshot.layer.cornerRadius
         let remainingFraction = max(0, 1 - (movementAnimator?.fractionComplete ?? 0))
-        let artworkFrames = artwork.map { artwork in
-            (
-                thumbnail: Self.presentationFrame(of: artwork.thumbnail),
-                title: Self.presentationFrame(of: artwork.title),
-                subtitle: artwork.subtitle.map(Self.presentationFrame(of:))
-            )
-        }
+        let artworkFrames = (
+            thumbnail: Self.presentationFrame(of: artwork.thumbnail),
+            title: Self.presentationFrame(of: artwork.title),
+            subtitle: artwork.subtitle.map(Self.presentationFrame(of:))
+        )
         movementAnimator?.stopAnimation(true)
         movementAnimator = nil
         sourceSnapshot.layer.removeAllAnimations()
         sourceSnapshot.frame = currentFrame
         sourceSnapshot.layer.cornerRadius = currentCornerRadius
         shellRim?.cornerRadius = currentCornerRadius
-        if let artwork, let artworkFrames {
-            artwork.thumbnail.layer.removeAllAnimations()
-            artwork.title.layer.removeAllAnimations()
-            artwork.subtitle?.layer.removeAllAnimations()
-            artwork.thumbnail.frame = artworkFrames.thumbnail
-            artwork.title.frame = artworkFrames.title
-            if let subtitleFrame = artworkFrames.subtitle { artwork.subtitle?.frame = subtitleFrame }
-        }
+        artwork.thumbnail.layer.removeAllAnimations()
+        artwork.title.layer.removeAllAnimations()
+        artwork.subtitle?.layer.removeAllAnimations()
+        artwork.thumbnail.frame = artworkFrames.thumbnail
+        artwork.title.frame = artworkFrames.title
+        if let subtitleFrame = artworkFrames.subtitle { artwork.subtitle?.frame = subtitleFrame }
 
         destinationSnapshot.frame = targetFrame
         destinationSnapshot.alpha = 0
@@ -251,29 +244,26 @@ private final class UtilCardSaveTransition {
         destinationSnapshot.isUserInteractionEnabled = false
         host.view.addSubview(destinationSnapshot)
 
-        let targetArtwork = artwork.map {
-            self.targetArtworkGeometry(for: $0, cardFrame: targetFrame, destination: destination)
-        }
+        let targetArtwork = targetArtworkGeometry(
+            for: artwork, cardFrame: targetFrame, destination: destination)
         let settle = { [weak self] in
             guard let self else { return }
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
             self.shellRim?.cornerRadius = CardSurfaceView.cornerRadius
-            if let artwork = self.artwork, let targetArtwork {
-                artwork.thumbnail.frame = targetArtwork.thumbnail
-                artwork.thumbnail.layer.cornerRadius = min(
-                    targetArtwork.thumbnail.width, targetArtwork.thumbnail.height) * 0.2
-                artwork.title.frame = targetArtwork.title
-                artwork.subtitle?.alpha = 0
-            }
+            self.artwork.thumbnail.frame = targetArtwork.thumbnail
+            self.artwork.thumbnail.layer.cornerRadius = min(
+                targetArtwork.thumbnail.width, targetArtwork.thumbnail.height) * 0.2
+            self.artwork.title.frame = targetArtwork.title
+            self.artwork.subtitle?.alpha = 0
         }
         let crossfade = { [weak self] in
             guard let self else { return }
             let changes = {
                 self.sourceSnapshot.alpha = 0
-                self.artwork?.thumbnail.alpha = 0
-                self.artwork?.title.alpha = 0
-                self.artwork?.subtitle?.alpha = 0
+                self.artwork.thumbnail.alpha = 0
+                self.artwork.title.alpha = 0
+                self.artwork.subtitle?.alpha = 0
                 destinationSnapshot.alpha = 1
             }
             guard UIView.areAnimationsEnabled, !UIAccessibility.isReduceMotionEnabled else {
@@ -309,11 +299,11 @@ private final class UtilCardSaveTransition {
         destination?.alpha = 1
         destinationSnapshot?.removeFromSuperview()
         destinationSnapshot = nil
-        let finish = { [sourceSnapshot] in
+        let finish = { [sourceSnapshot, artwork] in
             sourceSnapshot.alpha = 0
-            self.artwork?.thumbnail.alpha = 0
-            self.artwork?.title.alpha = 0
-            self.artwork?.subtitle?.alpha = 0
+            artwork.thumbnail.alpha = 0
+            artwork.title.alpha = 0
+            artwork.subtitle?.alpha = 0
         }
         let completed = { [weak self] in
             self?.removeTransitionViews()
@@ -340,16 +330,14 @@ private final class UtilCardSaveTransition {
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
             self.shellRim?.cornerRadius = CardSurfaceView.cornerRadius
-            if let artwork = self.artwork {
-                let target = UtilCardSaveTransitionGeometry.fallback(
-                    in: targetFrame, kind: artwork.kind,
-                    sourceTitleHeight: artwork.title.bounds.height)
-                artwork.thumbnail.frame = target.thumbnail
-                artwork.thumbnail.layer.cornerRadius = min(
-                    target.thumbnail.width, target.thumbnail.height) * 0.2
-                artwork.title.frame = target.title
-                artwork.subtitle?.alpha = 0
-            }
+            let target = UtilCardSaveTransitionGeometry.fallback(
+                in: targetFrame, kind: self.artwork.kind,
+                sourceTitleHeight: self.artwork.title.bounds.height)
+            self.artwork.thumbnail.frame = target.thumbnail
+            self.artwork.thumbnail.layer.cornerRadius = min(
+                target.thumbnail.width, target.thumbnail.height) * 0.2
+            self.artwork.title.frame = target.title
+            self.artwork.subtitle?.alpha = 0
         }
         movementAnimator = animator
         animator.startAnimation()
@@ -417,9 +405,9 @@ private final class UtilCardSaveTransition {
     private func removeTransitionViews() {
         retireLoadingIndicator()
         sourceSnapshot.removeFromSuperview()
-        artwork?.thumbnail.removeFromSuperview()
-        artwork?.title.removeFromSuperview()
-        artwork?.subtitle?.removeFromSuperview()
+        artwork.thumbnail.removeFromSuperview()
+        artwork.title.removeFromSuperview()
+        artwork.subtitle?.removeFromSuperview()
     }
 
     private func targetArtworkGeometry(
@@ -443,10 +431,6 @@ private final class UtilCardSaveTransition {
 
     private static func presentationFrame(of view: UIView) -> CGRect {
         view.layer.presentation()?.frame ?? view.frame
-    }
-
-    private static func cornerRadius(of view: UIView) -> CGFloat {
-        CardTransitionSnapshot.cornerRadius(of: view)
     }
 }
 

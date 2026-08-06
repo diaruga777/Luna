@@ -36,9 +36,10 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private let webView: WKWebView
     private let progress = HorizonSpinnerView()
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
-    /// archive.today navigation (home page, form fill/submit, snapshot load). It's
-    /// removed only while a CAPTCHA is up — the one moment the user must see and
-    /// touch the page. The web view stays un-hidden and full-size beneath it
+    /// archive.today navigation (home page, form fill/submit, snapshot load). It
+    /// comes off for a CAPTCHA — the one moment the user must see and touch the
+    /// page — and, at the end, only for a controller that is staying up
+    /// (`onExtracted` nil). The web view stays un-hidden and full-size beneath it
     /// (covered, not hidden — so iOS never throttles its JS/navigation), which is
     /// what keeps the automated flow running while it's visually concealed. When the
     /// flow can't proceed (rate-limited, or the page can't be archived) the cover
@@ -134,9 +135,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// dismissing the presentation when nil.
     public var onClose: (() -> Void)?
     /// Called once the article has been extracted and saved (the CAPTCHA was
-    /// solved and a real snapshot loaded). Extensions use this to show their
-    /// success checkmark and finish; the main app leaves it nil and lets the user
-    /// keep reading the loaded snapshot.
+    /// solved and a real snapshot loaded). Setting it means this controller is
+    /// about to be TAKEN AWAY by whoever set it — the app dismisses the modal and
+    /// opens the item's own reader, the extensions swap it out of their nav stack
+    /// — which is also what decides whether the cover comes off at the end of the
+    /// unlock (see `extractAndSave`). Left nil only where the controller is a root
+    /// with nowhere to go: there the unlocked page is uncovered and stays up.
     public var onExtracted: (() -> Void)?
     /// Escape hatch for when archive.today keeps CAPTCHA-looping in the embedded
     /// web view: opens the same archive URL in real Safari (which may already hold
@@ -963,9 +967,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     self.pollTimer?.invalidate()
                     // There IS something to affirm now: the article is saved.
                     self.setExitButton(symbol: "checkmark")
-                    // Reveal the unlocked page so the user reads it (the main app keeps
-                    // the loaded article up; extensions finish via `onExtracted`).
-                    self.loadingOverlay.isHidden = true
+                    if Self.uncoversPageAfterExtraction(
+                        hasExtractedHandler: self.onExtracted != nil)
+                    {
+                        self.loadingOverlay.isHidden = true
+                    } else {
+                        // The cover is staying up through the dismissal, so it is
+                        // frozen on its current wording rather than cycling to
+                        // another phrase halfway through the animation.
+                        self.articleLoadingStatus?.stop()
+                    }
                     _ = self.store.saveContent(content, for: item)
                     // The unlocked snapshot this reader extracted from. If the
                     // web-view capture below fails, the app's backfill must still
@@ -979,6 +990,20 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                 }
             }
         }
+    }
+
+    /// Whether a successful unlock takes the cover off the page.
+    ///
+    /// Only for a controller that is STAYING. An `onExtracted` handler means the
+    /// opposite: the very next thing that happens is whoever set it taking this
+    /// controller away — the app dismisses the modal and opens the item's own
+    /// reader, the extensions swap it out of their nav stack — and uncovering
+    /// first plays the raw archive/publisher page under the whole of that
+    /// animation. Whatever the cover is showing when the unlock lands (its own
+    /// spinner, or the page the user just solved a CAPTCHA on) is simply what
+    /// leaves with it.
+    public static func uncoversPageAfterExtraction(hasExtractedHandler: Bool) -> Bool {
+        !hasExtractedHandler
     }
 
     /// Captures the fully-loaded, unlocked page now on screen as the item's

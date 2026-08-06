@@ -36,14 +36,29 @@ public enum ShareAttachmentRoute: Equatable {
 /// and action extensions, which share one `ShareViewController`.
 public enum ShareAttachmentRouter {
 
-    /// Document file types accepted from the share sheet. `.text` (public.text)
-    /// covers .txt, .md/.markdown, and most source/plain formats.
-    public static let documentTypes: [UTType] = [.pdf, .rtf, .plainText, .text]
+    /// Word Open XML — the `.docx` Luna itself exports. No `UTType` constant.
+    public static let docx = UTType("org.openxmlformats.wordprocessingml.document")
+
+    /// Document file types accepted from the share sheet, MOST SPECIFIC FIRST:
+    /// the first match wins, and `.html` conforms to `.text`, so an order that
+    /// put the supertype first would import a saved web page as a wall of raw
+    /// markup. `.text` (public.text) still catches the tail — .txt,
+    /// .md/.markdown, and most source/plain formats.
+    ///
+    /// EPUB and `.docx` are the two formats Luna already EXPORTS, so a piece
+    /// that left Luna to be read or edited elsewhere can be shared back in.
+    public static let documentTypes: [UTType] =
+        ([.pdf, .epub, docx, .rtf, .html, .plainText, .text] as [UTType?]).compactMap { $0 }
 
     /// The document types that are just TEXT, so an in-memory payload of one is a
     /// text share rather than a file (`.rtf` stays a document either way — rich
     /// text carries formatting a link extraction would throw away).
-    private static let textTypes: [UTType] = [.plainText, .text]
+    ///
+    /// `.html` is here for the in-memory case ONLY, and that is the whole reason
+    /// the list exists separately: a host that hands over an HTML rendering of a
+    /// link is sharing the link, while an HTML FILE is a saved page and imports
+    /// as one.
+    private static let textTypes: [UTType] = [.html, .plainText, .text]
 
     /// The route for `providerTypes` — each provider's registered type
     /// identifiers, in the order the host delivered them.

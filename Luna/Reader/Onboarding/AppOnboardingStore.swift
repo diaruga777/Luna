@@ -184,8 +184,11 @@ final class AppOnboardingStore {
         }
     }
 
-    /// The diagnostics onboarding reset: the full first-run journey plays
-    /// again on this app's next launch.
+    /// Takes the first-run journey back to its start, so the whole thing plays
+    /// again on this app's next launch. Diagnostics no longer has an
+    /// onboarding-only reset — its button erases the install outright
+    /// (`FactoryReset`), which reaches these markers by deleting the domain they
+    /// live in — so the one caller left is the `-resetOnboarding` launch flag.
     func resetCompletion(now: Date = Date()) {
         for key in setupMarkerKeys { defaults.removeObject(forKey: key) }
         // A fresh journey starts here, so the saves already in the store are
@@ -284,8 +287,7 @@ final class AppOnboardingStore {
         guard arguments.contains("-resetOnboarding")
                 || (app == .reader && arguments.contains("-resetReaderOnboarding"))
         else { return }
-        for key in setupMarkerKeys { defaults.removeObject(forKey: key) }
-        defaults.set(Date(), forKey: onboardingStartKey)
+        resetCompletion()
         setupStatusStore.resetAllRunEvidence()
     }
     #endif

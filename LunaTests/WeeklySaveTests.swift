@@ -162,9 +162,9 @@ final class WeeklySaveTests: XCTestCase {
         let diagnostics = DiagnosticsViewController()
         diagnostics.loadViewIfNeeded()
         XCTAssertNotNil(diagnostics.view.firstDescendant(identifier: "diagnostics.weeklyKey"))
-        // The reset button keeps its identifier and its place beside it.
+        // The erase button keeps its place beside it.
         XCTAssertNotNil(
-            diagnostics.view.firstDescendant(identifier: "diagnostics.resetOnboarding"))
+            diagnostics.view.firstDescendant(identifier: "diagnostics.eraseAllData"))
 
         let settings = SettingsViewController(emailIsConfigured: { true })
         settings.loadViewIfNeeded()

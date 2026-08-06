@@ -18,9 +18,9 @@ public enum ArticleSendMode: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .off: return L10n.string("Off")
-        case .allSaves: return L10n.string("All Saved Articles")
-        case .doubleSave: return L10n.string("Double Save")
+        case .off: return L10n.string("Reader_export_sendModeOffTitle")
+        case .allSaves: return L10n.string("Reader_export_sendModeAllSavesTitle")
+        case .doubleSave: return L10n.string("Reader_export_sendModeDoubleSaveTitle")
         }
     }
 }

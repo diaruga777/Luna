@@ -428,15 +428,16 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
     private func contextMenu(for item: ArchiveTrayItem, sourceView: UIView) -> UIMenu {
         var actions: [UIAction] = [
             UIAction(
-                title: L10n.string("Unarchive"), image: UIImage(systemName: "tray.and.arrow.up")
+                title: L10n.string("CardDeck_archiveTray_unarchiveAction"),
+                image: UIImage(systemName: "tray.and.arrow.up")
             ) { _ in item.unarchive(sourceView) },
             UIAction(
-                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
+                title: L10n.string("Common_share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in item.share(sourceView) },
         ]
         if let delete = item.delete {
             actions.append(UIAction(
-                title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
+                title: L10n.string("Common_delete"), image: UIImage(systemName: "trash"),
                 attributes: .destructive
             ) { _ in delete() })
         }
@@ -449,14 +450,14 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
 /// by the same arc math as the item cells so it scrolls with them.
 private final class ArchiveArcHeaderCell: UICollectionViewCell {
     static let reuseID = "ArchiveArcHeaderCell"
-    static let title = L10n.string("archive")
+    static let title = L10n.string("CardDeck_archiveTray_header_title")
     private let label = UILabel()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isAccessibilityElement = true
         accessibilityTraits = .header
-        accessibilityLabel = L10n.string("Archive")
+        accessibilityLabel = L10n.string("CardDeck_archiveTray_header_accessibilityLabel")
         label.text = Self.title
         label.font = UIFontMetrics(forTextStyle: .title3)
             .scaledFont(for: .systemFont(ofSize: 20, weight: .semibold))
@@ -567,10 +568,10 @@ private final class ArchiveTrayCell: UICollectionViewCell {
         setDownloadProgress(downloadProgress, animated: false)
         accessibilityLabel = [item.title, item.footer].compactMap { $0 }.joined(separator: ", ")
         accessibilityHint = item.isAvailable
-            ? L10n.string("Opens item")
-            : L10n.string("Downloads item")
+            ? L10n.string("CardDeck_archiveTray_item_openHint")
+            : L10n.string("CardDeck_archiveTray_item_downloadHint")
         accessibilityCustomActions = [UIAccessibilityCustomAction(
-            name: L10n.string("Unarchive"), target: self,
+            name: L10n.string("CardDeck_archiveTray_unarchiveAction"), target: self,
             selector: #selector(performAccessibilityUnarchive))]
         item.loadImage { [weak self] image in
             DispatchQueue.main.async {

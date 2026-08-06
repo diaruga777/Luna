@@ -124,7 +124,7 @@ open class ShareViewController: UIViewController {
         guard !providers.isEmpty else {
             SharedDiagnosticLog.record(
                 "\(host) extension: no attachments (\(items.count) item(s))", category: "share")
-            failOrComplete(L10n.string("Nothing to read was shared."))
+            failOrComplete(L10n.string("ShareExtension_share_noAttachmentsMessage"))
             return
         }
         // The route is decided from what the providers ADVERTISE, by the pure
@@ -166,7 +166,7 @@ open class ShareViewController: UIViewController {
             // out of it.
             handleText(providers[index])
         case .unsupported:
-            failOrComplete(L10n.string("This type of content can't be read in Luna."))
+            failOrComplete(L10n.string("ShareExtension_share_unsupportedContentMessage"))
         }
     }
 
@@ -179,7 +179,7 @@ open class ShareViewController: UIViewController {
     private func setUpStatusUI() {
         view.backgroundColor = LunaColors.background
         let loading = ExtensionLoadingViewController(
-            initialText: L10n.string("Opening in Luna…")
+            initialText: L10n.string("Common_openingInLuna")
         ) { [weak self] in self?.complete() }
         loadingScreen = loading
         hostInNavigation(loading)
@@ -331,7 +331,7 @@ open class ShareViewController: UIViewController {
                 SharedDiagnosticLog.record("saved url (js) \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url, prefetchedHTML: prefetchedHTML)
             } else {
-                self.failOrComplete(L10n.string("Couldn't read the shared page's address."))
+                self.failOrComplete(L10n.string("ShareExtension_share_missingPageAddressMessage"))
             }
         }
     }
@@ -350,7 +350,7 @@ open class ShareViewController: UIViewController {
                 self.presentSavedOrReader(url: url)
             } else {
                 SharedDiagnosticLog.record("url attachment had no URL value", category: "share")
-                self.failOrComplete(L10n.string("Couldn't read the shared link."))
+                self.failOrComplete(L10n.string("ShareExtension_share_missingLinkMessage"))
             }
         }
     }
@@ -426,7 +426,7 @@ open class ShareViewController: UIViewController {
     /// article merely to avoid a fetch.
     private static func articleSnapshotHTML(title: String?, text: String?) -> String? {
         guard let text, text.count >= ArticleContent.readableBodyThreshold else { return nil }
-        let escapedTitle = escapeHTML(title ?? L10n.string("Untitled"))
+        let escapedTitle = escapeHTML(title ?? L10n.string("Common_untitled"))
         let escapedText = escapeHTML(text).replacingOccurrences(of: "\n", with: "<br>")
         return "<html><head><title>\(escapedTitle)</title></head>"
             + "<body><article><p>\(escapedText)"
@@ -458,7 +458,7 @@ open class ShareViewController: UIViewController {
                 ?? (value as? NSAttributedString)?.string
                 ?? (value as? Data).flatMap { String(data: $0, encoding: .utf8) }
             guard let text else {
-                self.failOrComplete(L10n.string("No link found to save."))
+                self.failOrComplete(L10n.string("ShareExtension_share_noLinkFoundMessage"))
                 return
             }
             // A Facebook deep link (`fbrpc://…&target_url=…`) shared as text isn't a
@@ -491,7 +491,7 @@ open class ShareViewController: UIViewController {
         } catch {
             SharedDiagnosticLog.record(
                 "share: couldn't stage shared text as a document", category: "share")
-            failOrComplete(L10n.string("No link found to save."))
+            failOrComplete(L10n.string("ShareExtension_share_noLinkFoundMessage"))
             return
         }
         saveDocumentDirectly(sourceURL: temporaryURL)
@@ -530,7 +530,7 @@ open class ShareViewController: UIViewController {
             .filter { $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" || $0 == "_" }
             .trimmingCharacters(in: .whitespaces)
             .prefix(60)
-        return "\(title.isEmpty ? L10n.string("Shared Text") : String(title)).txt"
+        return "\(title.isEmpty ? L10n.string("ShareExtension_share_sharedTextFallbackTitle") : String(title)).txt"
     }
 
     /// The http article inside a Facebook deep link when the shared text IS such a
@@ -549,7 +549,7 @@ open class ShareViewController: UIViewController {
             // The system deletes `url` when this callback returns, so the
             // appender copies it synchronously here.
             guard let url else {
-                self.failOrComplete(L10n.string("Couldn't read the shared file."))
+                self.failOrComplete(L10n.string("ShareExtension_share_missingFileMessage"))
                 return
             }
             // A text file that's essentially just a link → import the link, not
@@ -665,7 +665,8 @@ open class ShareViewController: UIViewController {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let downloading = self.showDownloadingBadge(text: L10n.string("Starting download…"))
+            let downloading = self.showDownloadingBadge(
+                text: L10n.string("ShareExtension_share_startingDownloadStatus"))
             Task {
                 await media.startAutoDownload(urlString: urlString)
                 await MainActor.run {
@@ -685,7 +686,7 @@ open class ShareViewController: UIViewController {
     /// for the saved checkmark once the in-flight work finishes).
     @discardableResult
     private func showDownloadingBadge(
-        text: String = L10n.string("Saving media…")
+        text: String = L10n.string("ShareExtension_share_savingMediaStatus")
     ) -> UIVisualEffectView {
         let badge = UIVisualEffectView(effect: GlassStyle.barEffect())
         badge.translatesAutoresizingMaskIntoConstraints = false
@@ -722,7 +723,7 @@ open class ShareViewController: UIViewController {
     private func armLoadWatchdog() {
         let work = DispatchWorkItem { [weak self] in
             SharedDiagnosticLog.record("share extension: attachment load timed out", category: "share")
-            self?.failOrComplete(L10n.string("Couldn't read the shared content in time."))
+            self?.failOrComplete(L10n.string("ShareExtension_share_loadTimeoutMessage"))
         }
         loadWatchdog = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadTimeout, execute: work)
@@ -746,7 +747,7 @@ open class ShareViewController: UIViewController {
         check.tintColor = GlassStyle.readingAccent
         check.contentMode = .center
         let label = UILabel()
-        label.text = L10n.string("Saved")
+        label.text = L10n.string("Common_saved")
         label.font = .systemFont(ofSize: 16, weight: .semibold)
         label.textColor = LunaColors.primaryText
         let stack = UIStackView(arrangedSubviews: [check, label])

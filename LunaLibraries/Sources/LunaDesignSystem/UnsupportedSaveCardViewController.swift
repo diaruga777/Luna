@@ -133,7 +133,7 @@ public final class UnsupportedSaveCardViewController: UIViewController {
         }
 
         doneButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Done"), symbol: "checkmark", prominent: true)
+            title: L10n.string("Common_done"), symbol: "checkmark", prominent: true)
         doneButton.addAction(
             UIAction { [weak self] _ in self?.onDone?() }, for: .touchUpInside)
         doneButton.translatesAutoresizingMaskIntoConstraints = false

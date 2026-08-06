@@ -344,7 +344,8 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         } else {
             audioButton.setImage(symbol, for: .normal)
         }
-        audioButton.accessibilityLabel = activeAudio ? L10n.string("Turn off read aloud") : L10n.string("Read aloud")
+        audioButton.accessibilityLabel = activeAudio
+            ? L10n.string("Reader_turnOffReadAloudAccessibilityLabel") : L10n.string("Reader_readAloudAccessibilityLabel")
     }
 
     private func syncControlsToCurrentReader() {

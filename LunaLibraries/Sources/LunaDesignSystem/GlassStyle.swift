@@ -201,7 +201,7 @@ public enum GlassStyle {
     /// and two icons; a user who sees the offer in two places should not have to
     /// work out whether it's the same offer.
     public static func retryWithAIConfiguration(
-        title: String = L10n.string("Retry with AI"),
+        title: String = L10n.string("Common_retryWithAI"),
         prominent: Bool = true,
         compact: Bool = false
     ) -> UIButton.Configuration {

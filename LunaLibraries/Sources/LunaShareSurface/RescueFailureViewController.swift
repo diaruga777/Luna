@@ -138,11 +138,11 @@ public final class RescueFailureViewController: UIViewController {
         bar.translatesAutoresizingMaskIntoConstraints = false
 
         configureBarButton(reloadButton, symbol: "arrow.clockwise",
-                           label: L10n.string("Reload page"))
+                           label: L10n.string("CardDeck_failedSave_reloadPageAccessibilityLabel"))
         reloadButton.addAction(UIAction { [weak self] _ in self?.webView?.reload() },
                                for: .touchUpInside)
         configureBarButton(shareButton, symbol: "square.and.arrow.up",
-                           label: L10n.string("Share link"))
+                           label: L10n.string("Common_shareLink"))
         shareButton.addAction(UIAction { [weak self] _ in self?.shareTapped() },
                               for: .touchUpInside)
 
@@ -174,7 +174,7 @@ public final class RescueFailureViewController: UIViewController {
         rescueButton.addTarget(self, action: #selector(finishTapped), for: .touchUpInside)
         rescueButton.isHidden = rescueURL == nil
 
-        manualLabel.text = L10n.string("Open Luna to finish saving this.")
+        manualLabel.text = L10n.string("ShareExtension_rescueFailure_manualInstructionMessage")
         manualLabel.textColor = LunaColors.secondaryText
         manualLabel.font = .preferredFont(forTextStyle: .footnote)
         manualLabel.textAlignment = .center
@@ -182,7 +182,7 @@ public final class RescueFailureViewController: UIViewController {
         manualLabel.isHidden = true
 
         doneButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Done"), symbol: "checkmark", compact: true)
+            title: L10n.string("Common_done"), symbol: "checkmark", compact: true)
         doneButton.contentHorizontalAlignment = .center
         doneButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         doneButton.isHidden = true

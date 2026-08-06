@@ -15,32 +15,20 @@ public enum WeeklySaveLabels {
     public static func subtitle(
         for app: LunaApp = .current, monthTier: Bool
     ) -> String {
-        switch (app, monthTier) {
-        case (.luna, false): return L10n.string("Save of the week")
-        case (.luna, true): return L10n.string("Save of the month")
-        case (.reader, false): return L10n.string("Read of the week")
-        case (.reader, true): return L10n.string("Read of the month")
-        case (.downloader, false): return L10n.string("Download of the week")
-        case (.downloader, true): return L10n.string("Download of the month")
-        case (.priceTracker, false): return L10n.string("Deal of the week")
-        case (.priceTracker, true): return L10n.string("Deal of the month")
-        }
+        monthTier
+            ? L10n.string("Weekly_subtitle_month", for: app)
+            : L10n.string("Weekly_subtitle_week", for: app)
     }
 
     /// The key-holder's long-press verb.
     public static func promoteMenuTitle(for app: LunaApp = .current) -> String {
-        switch app {
-        case .luna: return L10n.string("Promote to Save of the Week")
-        case .reader: return L10n.string("Promote to Read of the Week")
-        case .downloader: return L10n.string("Promote to Download of the Week")
-        case .priceTracker: return L10n.string("Promote to Deal of the Week")
-        }
+        L10n.string("Weekly_promoteMenuTitle", for: app)
     }
 
     /// The long-press verb everyone gets, key-holder included. Deliberately
     /// app-neutral: a proposal travels to the curator, who may be running a
     /// different app.
     public static var proposeMenuTitle: String {
-        L10n.string("Propose Save of the Week")
+        L10n.string("Weekly_proposeMenuTitle")
     }
 }

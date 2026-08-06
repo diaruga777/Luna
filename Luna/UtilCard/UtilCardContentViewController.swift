@@ -474,7 +474,7 @@ final class UtilCardContentViewController: CardContentViewController {
         guard let provider = itemProviders.first(where: {
             $0.canLoadObject(ofClass: NSString.self)
         }) else {
-            pasteRow.setState(.failure(L10n.string("Invalid URL")))
+            pasteRow.setState(.failure(L10n.string("Onboarding_Util_invalidURL")))
             return
         }
         _ = provider.loadObject(ofClass: NSString.self) { [weak self] value, _ in
@@ -486,13 +486,13 @@ final class UtilCardContentViewController: CardContentViewController {
     private func handlePastedValue(_ value: String) {
         pasteRow.showPastedValue(value)
         guard let url = URLUnwrapper.ingestURL(from: value, allowBareHost: true) else {
-            pasteRow.setState(.failure(L10n.string("Invalid URL")))
+            pasteRow.setState(.failure(L10n.string("Onboarding_Util_invalidURL")))
             return
         }
         pasteRow.setState(.loading)
         saveHandler(url.absoluteString, .paste, pasteRow) { [weak self] succeeded in
             self?.pasteRow.setState(
-                succeeded ? .success : .failure(L10n.string("Unable to save URL")))
+                succeeded ? .success : .failure(L10n.string("Onboarding_Util_unableToSaveURL")))
         }
     }
 
@@ -802,7 +802,7 @@ final class UtilURLRow: UIControl {
         subtitleLabel.isAccessibilityElement = false
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
         accessibilityTraits = .button
-        accessibilityHint = L10n.string("Saves as a full card")
+        accessibilityHint = L10n.string("Onboarding_Util_recentRowAccessibilityHint")
     }
 
     @available(*, unavailable)
@@ -869,7 +869,7 @@ final class UtilURLRow: UIControl {
         isShownAsSaved = saved
         savedOverlay.isHidden = !saved
         alpha = saved ? 0.55 : 1
-        accessibilityValue = saved ? L10n.string("Saved") : nil
+        accessibilityValue = saved ? L10n.string("Common_saved") : nil
     }
 
     override func layoutSubviews() {

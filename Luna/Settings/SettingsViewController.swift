@@ -31,7 +31,7 @@ extension UITableViewController {
 
     func presentInfoAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
         present(alert, animated: true)
     }
 }
@@ -60,11 +60,11 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         // email sharing's address book, so it appears only where email exists.
         KindWiring.settingsCategories()
         + (LunaApp.current.sharesByEmail
-            ? [SettingsCategory(title: L10n.string("Contacts"), symbol: "person.2") { FriendsViewController() }]
+            ? [SettingsCategory(title: L10n.string("Common_contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
         + [
             SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() },
-            SettingsCategory(title: L10n.string("Appearance"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
+            SettingsCategory(title: L10n.string("Settings_appearance_title"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
             // Universal: every app can hand its own links out and take a file
             // back, and each keeps only its own kinds either way.
             SettingsCategory(
@@ -74,7 +74,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         // The curator's proposal inbox. Settings is rebuilt on every visit, so
         // pasting the key in diagnostics and coming back is enough to reveal it.
         + (WeeklyPromotionKeyStore.isKeyHolder
-            ? [SettingsCategory(title: L10n.string("Save of the Week"), symbol: "crown") { WeeklyProposalsScreen() }]
+            ? [SettingsCategory(title: L10n.string("Settings_weeklyProposals_title"), symbol: "crown") { WeeklyProposalsScreen() }]
             : [])
 
     init(emailIsConfigured: @escaping () -> Bool = {
@@ -86,7 +86,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = L10n.string("Settings")
+        headerTitle = L10n.string("Common_settings")
         super.viewDidLoad()
         let diagnosticsGesture = UITapGestureRecognizer(
             target: self, action: #selector(openDiagnostics))
@@ -165,9 +165,9 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
 
     private func presentEmailRequiredAlert(for category: SettingsCategory) {
         let alert = UIAlertController(
-            title: L10n.string("Set up email first"), message: nil, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default) {
+            title: L10n.string("Common_setUpEmailFirst"), message: nil, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default) {
             [weak self] _ in
             guard let self, let prerequisite = category.makePrerequisite?() else { return }
             self.navigationController?.pushViewController(prerequisite, animated: true)
@@ -217,12 +217,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         }
     }()
     private var safariButtonName: String {
-        switch LunaApp.current {
-        case .luna: return L10n.string("Luna")
-        case .reader: return L10n.string("Read in Luna")
-        case .downloader: return L10n.string("Download")
-        case .priceTracker: return L10n.string("Track in Luna")
-        }
+        L10n.string("Settings_shortcut_safariButtonName")
     }
     /// Whether THIS device has an Action Button shortcut to set up: it needs the
     /// OS that can run the bundled shortcut AND hardware with an Action Button to
@@ -240,7 +235,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Settings' row title, and this screen's own header: with no shortcut to set
     /// up, this screen IS the Safari extension's settings and says so.
     static func screenTitle(showsShortcutSetup: Bool = deviceHasShortcutSetup) -> String {
-        showsShortcutSetup ? L10n.string("Shortcut & Safari") : L10n.string("Safari")
+        showsShortcutSetup ? L10n.string("Settings_shortcut_titleWithSetup") : L10n.string("Settings_shortcut_titleSafariOnly")
     }
 
     private let showsShortcutSetup: Bool
@@ -282,24 +277,23 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch visibleSections[section] {
-        case .suggestionButton: return L10n.string("\(safariButtonName) Button")
-        case .onScreenURLs: return L10n.string("On-Screen URLs")
-        case .doubleSave: return L10n.string("Double Save Articles")
-        case .shortcut: return L10n.string("Action Button Shortcut")
+        case .suggestionButton: return L10n.string("Settings_shortcut_suggestionButtonSectionHeader", safariButtonName)
+        case .onScreenURLs: return L10n.string("Settings_shortcut_onScreenURLsSectionHeader")
+        case .doubleSave: return L10n.string("Settings_shortcut_doubleSaveSectionHeader")
+        case .shortcut: return L10n.string("Settings_shortcut_shortcutSectionHeader")
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .suggestionButton:
-            return L10n.string("When browsing in Safari (with the Luna extension enabled), show the \"\(safariButtonName)\" button when it applies. Choose when it appears.")
+            return L10n.string("Settings_shortcut_suggestionButtonFooter", safariButtonName)
         case .onScreenURLs:
-            return L10n.string("When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling.")
+            return L10n.string("Settings_shortcut_onScreenURLsFooter")
         case .doubleSave:
-            return L10n.string("For saved articles only: press the Action Button twice on the same article within 7 seconds. Send to Kindle emails the article; View immediately returns a self-contained Word document to the shortcut. Videos, posts, products, and imported documents ignore the second press.")
+            return L10n.string("Settings_shortcut_doubleSaveFooter")
         case .shortcut:
-            let base = L10n.string("Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)")
-            return base
+            return L10n.string("Settings_shortcut_installFooter", BundledShortcut.displayName, safariStatusText)
         }
     }
 
@@ -336,7 +330,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             cell.selectionStyle = .none
             var content = cell.defaultContentConfiguration()
-            content.text = L10n.string("Handle On-Screen URLs")
+            content.text = L10n.string("Settings_shortcut_onScreenURLsToggleLabel")
             content.image = UIImage(systemName: "link")
             cell.contentConfiguration = content
             cell.accessoryView = makeToggle(
@@ -350,13 +344,13 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         content.textProperties.color = view.tintColor ?? .systemBlue
         switch Row(rawValue: indexPath.row)! {
         case .install:
-            content.text = L10n.string("Install Shortcut")
+            content.text = L10n.string("Common_installShortcut")
             content.image = UIImage(systemName: "square.and.arrow.down")
         case .openShortcuts:
-            content.text = L10n.string("Open Shortcuts")
+            content.text = L10n.string("Settings_shortcut_openShortcutsRow")
             content.image = UIImage(systemName: "arrow.up.forward.app")
         case .refreshStatus:
-            content.text = L10n.string("Refresh Last Visited Website")
+            content.text = L10n.string("Settings_shortcut_refreshStatusRow")
             content.image = UIImage(systemName: "arrow.clockwise")
         }
         cell.contentConfiguration = content
@@ -382,14 +376,14 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
-        content.text = L10n.string("Second article save")
+        content.text = L10n.string("Settings_shortcut_doubleSaveActionLabel")
         content.image = UIImage(systemName: "hand.tap")
         cell.contentConfiguration = content
 
         let button = UIButton(type: .system)
         button.setTitle(current.displayName, for: .normal)
         button.accessibilityIdentifier = "doubleSaveActionPicker"
-        button.accessibilityLabel = L10n.string("Second article save")
+        button.accessibilityLabel = L10n.string("Settings_shortcut_doubleSaveActionLabel")
         button.showsMenuAsPrimaryAction = true
         button.menu = menu
         button.sizeToFit()
@@ -415,11 +409,11 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
 
     private func presentKindleSetupPrompt() {
         let alert = UIAlertController(
-            title: L10n.string("Set up Kindle first"),
-            message: L10n.string("Double Save Articles can't email an article until your Luna email account and Kindle address are set up."),
+            title: L10n.string("Settings_shortcut_kindleSetupPromptTitle"),
+            message: L10n.string("Settings_shortcut_kindleSetupPromptMessage"),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
-        alert.addAction(UIAlertAction(title: L10n.string("Set Up"), style: .default) {
+        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Settings_shortcut_kindleSetupPromptButton"), style: .default) {
             [weak self] _ in
             guard let self else { return }
             DoubleSaveSettingsSupport.kindleSetupLauncher?(self)
@@ -456,11 +450,10 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         if let url = SafariURLStore.lastURL {
             let when = SafariURLStore.lastDate.map {
                 RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date())
-            } ?? L10n.string("unknown time")
-            safariStatusText = L10n.string("Last visited Safari URL (\(when)): \(url)")
+            } ?? L10n.string("Settings_shortcut_unknownTimeFallback")
+            safariStatusText = L10n.string("Settings_shortcut_lastVisitedStatus", when, url)
         } else {
-            safariStatusText = L10n.string(
-                "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page.")
+            safariStatusText = L10n.string("Settings_shortcut_noSafariURLStatus")
         }
     }
 }

@@ -72,8 +72,8 @@ final class RSVPEyeTrackingTests: XCTestCase {
     private func playButton(in reader: RSVPViewController) throws -> UIButton {
         try XCTUnwrap(
             allSubviews(of: reader.view).compactMap { $0 as? UIButton }.first {
-                $0.accessibilityLabel == L10n.string("Play")
-                    || $0.accessibilityLabel == L10n.string("Pause")
+                $0.accessibilityLabel == L10n.string("Reader_rsvp_playAccessibilityLabel")
+                    || $0.accessibilityLabel == L10n.string("Reader_rsvp_pauseAccessibilityLabel")
             })
     }
 

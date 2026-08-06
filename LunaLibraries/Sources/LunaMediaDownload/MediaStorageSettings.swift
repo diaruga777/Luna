@@ -24,8 +24,10 @@ public enum MediaStorageOption: Equatable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .photos: return L10n.string("Save to Photos")
-        case .deleteAfter(let retention): return L10n.string("Delete after \(retention.displayName)")
+        case .photos: return L10n.string("Settings_autoDownload_storageOption_photosTitle")
+        case .deleteAfter(let retention):
+            return L10n.string(
+                "Settings_autoDownload_storageOption_deleteAfterTitle", retention.displayName)
         }
     }
 }

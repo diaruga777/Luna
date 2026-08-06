@@ -183,7 +183,7 @@ public final class MoonHorizonProgressBar: UIView {
         isUserInteractionEnabled = false
         isAccessibilityElement = true
         accessibilityTraits = .updatesFrequently
-        accessibilityLabel = L10n.string("Progress")
+        accessibilityLabel = L10n.string("CardDeck_progressAccessibilityLabel")
 
         surfaceLayer.strokeColor = nil
         layer.addSublayer(surfaceLayer)
@@ -576,7 +576,7 @@ public struct MoonHorizonProgressView: View {
             }
         }
         .accessibilityElement()
-        .accessibilityLabel(L10n.string("Progress"))
+        .accessibilityLabel(L10n.string("CardDeck_progressAccessibilityLabel"))
         .accessibilityValue("\(Int(progress * 100))%")
     }
 

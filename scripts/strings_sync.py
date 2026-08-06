@@ -3,41 +3,46 @@
 
 Luna's user-facing copy lives in ONE hand-editable file,
 `LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings`.
-Every entry reads
+A call site names a bare, descriptive KEY — never the English text —
+e.g. `L10n.string("Onboarding_Util_headline")`. Every base key the code
+references must have at least one entry
 
-    "the original English" = "what Luna actually shows";
+    "<key>_Luna" = "what Luna shows";
 
-The KEY is the literal that sits in the Swift source and never changes; the
-VALUE is the copy, and is the only half anyone edits. A key with no entry —
-or an entry someone truncated mid-edit — falls back to the key, so the worst
-case is the original English rather than a blank or a raw identifier.
+which is the universal default `L10n` falls back to. Any app can override it
+by adding one more line for its own suffix — `_Core` (the central Luna app),
+`_Reader`, `_Downloader`, or `_PriceTracker` — with NO Swift change at all.
 
-This script is the bridge between the two. It parses every `L10n.string(…)` /
-`L10n.resource(…)` literal out of the Swift sources and compares that set with
-the file's keys.
+Grouping and the comments above each group are HAND-AUTHORED — that is the
+point of the file being organized by screen and reading order — so this
+script never re-sorts or re-groups on `--write`. Its only jobs:
 
-    strings_sync.py --check    report drift, exit 1 if any     (what CI/tests run)
-    strings_sync.py --write    add missing keys, re-group, re-sort
+    strings_sync.py --check    report drift; exit 1 if any     (what CI runs)
+    strings_sync.py --write    append missing keys as placeholders,
+                                drop lines for keys no code references
     strings_sync.py --list     print the scanned keys and where they come from
 
-Interpolated copy needs a decision a script cannot make: `"Links (\\(count))"`
-could be `%lld` or `%@`. Those are reported for a human to add once, by hand.
-`--seed` takes the format-correct keys out of the old .xcstrings catalogs, which
-is how the file was first populated.
+A handful of App Intents literals (`static let title: LocalizedStringResource
+= "…"`, `IntentDescription(...)`, `@Parameter`/`@Property` `title:`/
+`description:`) can't be `L10n` calls at all — Xcode's metadata processor
+extracts them at BUILD time and rejects anything that isn't a literal, so they
+carry a concrete, already-suffixed key (usually `..._Luna`) baked directly
+into the Swift literal instead of a bare key `L10n` resolves at runtime. This
+script still finds them, by shape, so `--check`/`--write` cover them too.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import sys
-from collections import defaultdict
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRINGS_PATH = os.path.join(
     REPO, "LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings")
+
+SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker")
 
 # Directories holding shipping code. Tests are deliberately absent: a test may
 # reference copy, but it never DEFINES any.
@@ -53,8 +58,8 @@ SOURCE_ROOTS = [
     "LunaLiveActivity",
 ]
 
-# Where a key's section header comes from. First match wins, so the specific
-# app-shell paths are listed ahead of the catch-all module names.
+# Where a key most likely belongs, for a human fixing up a --check/--write
+# report. Purely descriptive now — nothing auto-groups by this anymore.
 SECTIONS = [
     ("Luna/Reader/Onboarding", "Onboarding"),
     ("Luna/UtilCard/WeeklyPromotionMenu.swift", "Save of the Week"),
@@ -100,37 +105,14 @@ SECTIONS = [
 ]
 FALLBACK_SECTION = "Other"
 
-SECTION_ORDER = [
-    "Onboarding",
-    "Card Deck",
-    "Reader",
-    "Reader · Audio",
-    "Reader · Export & Send",
-    "Downloads & Media",
-    "Price Tracker",
-    "Email & Sending",
-    "Sharing with Friends",
-    "Save of the Week",
-    "Share & Action Extensions",
-    "App Clips",
-    "Live Activity",
-    "Save Failures",
-    "Settings",
-    "Settings · Diagnostics",
-    "Shared UI",
-    FALLBACK_SECTION,
-]
-
-INTERP = "\x00INTERP\x00"  # stands in for `\(…)` while a literal is parsed
-
 CALL_RE = re.compile(r"\bL10n\.(?:string|resource)\(")
 
 # App Intents metadata is the one family of copy that cannot be an L10n call:
 # Xcode extracts it at BUILD time and the metadata processor rejects anything
-# that isn't a string literal. The literals still resolve against a strings
-# table at runtime, so they belong in the same file — they just have to be
-# found by shape instead of by call. Only these files are searched this way,
-# because `title:` and `description:` are far too common to match globally.
+# that isn't a string literal. Only these files are searched this way, and
+# only for shapes the AppIntents build plugin actually treats as metadata —
+# a plain `DisplayRepresentation(title: "\(x)")` VALUE at a normal call site
+# is runtime content, not build-time metadata, and must not match here.
 INTENT_SOURCES = ("Luna/Mail/Intents/", "LiveActivityWidget.swift")
 
 INTENT_RES = [
@@ -140,9 +122,26 @@ INTENT_RES = [
     re.compile(r"\bstatic\s+(?:let|var)\s+\w+\s*:\s*TypeDisplayRepresentation\s*=\s*"),
     # IntentDescription("…") — often a multi-line literal
     re.compile(r"\bIntentDescription\(\s*"),
-    # @Parameter(title: "…", description: "…") / @Property(title: "…")
-    re.compile(r"(?<=[(,\s])(?:title|description)\s*:\s*(?=\")"),
+    # @Parameter(title: "…", description: "…") / @Property(title: "…") — matches
+    # each `title:`/`description:` independently (not anchored to one
+    # `@Parameter(`/`@Property(` match) so a multi-line call with both fields
+    # is fully covered, not just its first field. Excludes `title:` right
+    # after `DisplayRepresentation(` — that's a per-INSTANCE value built at
+    # runtime (e.g. `DisplayRepresentation(title: "\(article.title)")`), not
+    # build-time metadata, even though it sits in an intent-source file.
+    re.compile(r"(?<!DisplayRepresentation\()(?<=[(,\s])(?:title|description)\s*:\s*(?=\")"),
 ]
+
+# `OnboardingStrings.Definition`/`ChunkedDefinition` (LunaLibraries/…/Luna/Reader
+# /Onboarding/OnboardingStrings.swift) resolve their key at `value(for:)` time via
+# a stored variable — `L10n.string(key, for: app)` — so the literal key never
+# appears at an `L10n` call site; it only appears at construction:
+# `Definition(key: "…")` / `ChunkedDefinition(keyPrefix: "…")`. These need their
+# own patterns so the scanner still sees them as referenced. A `ChunkedDefinition`
+# only requires its FIRST chunk (`"<prefix>1"`) — later indices are optional and
+# read until missing, so `..2`/`..3`/… are never "required".
+DEFINITION_RE = re.compile(r"\bDefinition\(\s*key:\s*")
+CHUNKED_DEFINITION_RE = re.compile(r"\bChunkedDefinition\(\s*keyPrefix:\s*")
 
 
 # --------------------------------------------------------------------------
@@ -153,10 +152,9 @@ def parse_swift_literal(text: str, start: int):
     """Read the Swift string literal beginning at `text[start] == '"'`.
 
     Returns `(resolved, had_interpolation, index_after_literal)`, where escapes
-    are resolved to the characters they stand for (so the result compares equal
-    to a key read out of the file) and each `\\(…)` becomes one INTERP marker.
-    Returns None if this is not a plain single-line literal — a triple-quoted
-    block or an unterminated run — which the caller skips rather than guesses at.
+    are resolved to the characters they stand for. Returns None if this is not
+    a plain single-line literal — a triple-quoted block or an unterminated
+    run — which the caller skips rather than guesses at.
     """
     if text.startswith('"""', start):
         return None
@@ -179,15 +177,11 @@ def parse_swift_literal(text: str, start: int):
             i += 1
             continue
 
-        # An escape sequence.
         if i + 1 >= len(text):
             return None
         nxt = text[i + 1]
         if nxt == "(":
-            # Interpolation. Balance parens, ignoring anything inside a nested
-            # string literal so that `\(a ?? "b)c")` does not end early.
             had_interp = True
-            out.append(INTERP)
             depth = 0
             j = i + 1
             in_str = False
@@ -231,10 +225,7 @@ def parse_swift_literal(text: str, start: int):
 def parse_swift_multiline(text: str, start: int):
     """Read the `\"\"\"`-delimited literal beginning at `start`.
 
-    Swift strips the indentation of the CLOSING delimiter from every line, and
-    a trailing backslash joins a line to the next without a break — which is
-    how the long intent descriptions are written. Returns
-    `(resolved, had_interpolation, index_after_literal)`.
+    Returns `(resolved, had_interpolation, index_after_literal)`.
     """
     body_start = text.find("\n", start + 3)
     if body_start == -1:
@@ -243,14 +234,12 @@ def parse_swift_multiline(text: str, start: int):
     if close == -1:
         return None
 
-    # The closing delimiter's own indentation is the margin to strip.
     line_start = text.rfind("\n", 0, close) + 1
     margin = text[line_start:close]
     if margin.strip():
-        return None  # closing quotes share a line with content: not our shape
+        return None
 
     raw_lines = text[body_start + 1:line_start].split("\n")
-    # The newline before the closing delimiter is Swift's, not the string's.
     if raw_lines and raw_lines[-1] == "":
         raw_lines.pop()
     out, had_interp = [], False
@@ -261,17 +250,15 @@ def parse_swift_multiline(text: str, start: int):
             line = line[:-1]
         if "\\(" in line:
             had_interp = True
-            line = re.sub(r"\\\([^)]*\)", INTERP, line)
         out.append(line + ("" if joins else "\n"))
 
     resolved = "".join(out)
     if resolved.endswith("\n"):
-        resolved = resolved[:-1]  # the final newline belongs to the delimiter
+        resolved = resolved[:-1]
     return resolved, had_interp, close + 3
 
 
 def _literal_at(text: str, i: int):
-    """Parse whichever literal shape starts at `i`, skipping leading space."""
     while i < len(text) and text[i] in " \t\n":
         i += 1
     if text.startswith('"""', i):
@@ -280,29 +267,52 @@ def _literal_at(text: str, i: int):
 
 
 def scan_source(path: str, rel: str):
-    """Yield (pattern, had_interpolation, line_number) for each literal."""
+    """Yield (key, had_interpolation, line_number, is_intent_literal, chunk_prefix).
+
+    `chunk_prefix` is the raw `ChunkedDefinition(keyPrefix: …)` literal (before
+    `"1"` is appended to make it a required key) when this match is one, else
+    `None`.
+    """
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
 
-    matchers = list(CALL_RE.finditer(text))
+    # (end-of-match index, is_intent_literal, is_chunked_prefix)
+    matchers = [(m.end(), False, False) for m in CALL_RE.finditer(text)]
+    matchers += [(m.end(), False, False) for m in DEFINITION_RE.finditer(text)]
+    matchers += [(m.end(), False, True) for m in CHUNKED_DEFINITION_RE.finditer(text)]
     if any(marker in rel for marker in INTENT_SOURCES):
         for regex in INTENT_RES:
-            matchers.extend(regex.finditer(text))
+            matchers.extend((m.end(), True, False) for m in regex.finditer(text))
 
-    for match in sorted(matchers, key=lambda m: m.start()):
-        # The literal may sit on a following line, as it does when a call is
-        # wrapped for line length.
-        parsed = _literal_at(text, match.end())
+    for end, is_intent, is_chunked in sorted(matchers, key=lambda m: m[0]):
+        parsed = _literal_at(text, end)
         if parsed is None:
             continue
-        pattern, had_interp, _ = parsed
-        line = text.count("\n", 0, match.start()) + 1
-        yield pattern, had_interp, line
+        key, had_interp, _ = parsed
+        chunk_prefix = key if is_chunked else None
+        if is_chunked:
+            key = key + "1"  # only the first chunk is ever required
+        line = text.count("\n", 0, end) + 1
+        yield key, had_interp, line, is_intent, chunk_prefix
 
 
 def scan_sources(repo: str):
-    """Map pattern -> {"interp": bool, "sites": [(relpath, line), …]}."""
+    """Map base-key -> {"interp": bool, "intent": bool, "sites": [(rel, line), …]}.
+
+    For a normal `L10n` call the base key is the literal itself (no suffix
+    yet — that's resolved at runtime). For an intent-metadata literal the key
+    already IS the full, concrete, suffixed key (there is no runtime
+    resolution for these), so it is stored and checked the same way a
+    `"<key>_Luna"` entry would be, just under its own literal name.
+
+    Also returns the set of `ChunkedDefinition` key prefixes found, so a
+    caller can recognize `"<prefix>2"`, `"<prefix>3"`, … as legitimately
+    referenced even though only `"<prefix>1"` is ever a REQUIRED entry — a
+    later chunk is read at runtime until one is missing, so it's real, just
+    not statically countable.
+    """
     found = {}
+    chunk_prefixes = set()
     for root in SOURCE_ROOTS:
         base = os.path.join(repo, root)
         if not os.path.isdir(base):
@@ -314,14 +324,17 @@ def scan_sources(repo: str):
                     continue
                 full = os.path.join(dirpath, name)
                 rel = os.path.relpath(full, repo)
-                for pattern, interp, line in scan_source(full, rel):
-                    entry = found.setdefault(pattern, {"interp": interp, "sites": []})
+                for key, interp, line, is_intent, chunk_prefix in scan_source(full, rel):
+                    entry = found.setdefault(
+                        key, {"interp": interp, "intent": is_intent, "sites": []})
                     entry["sites"].append((rel, line))
-    return found
+                    if chunk_prefix is not None:
+                        chunk_prefixes.add(chunk_prefix)
+    return found, chunk_prefixes
 
 
 # --------------------------------------------------------------------------
-# .strings reading and writing
+# .strings reading
 
 
 STRINGS_ENTRY_RE = re.compile(
@@ -356,12 +369,21 @@ def read_strings(path: str):
         return {}
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
-    # Strip block comments so a commented-out example is never read as an entry.
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     entries = {}
     for match in STRINGS_ENTRY_RE.finditer(text):
         entries[unescape(match.group(1))] = unescape(match.group(2))
     return entries
+
+
+def base_key_and_suffix(entry_key: str):
+    """Split `"Foo_Reader"` into `("Foo", "Reader")`, or `(entry_key, None)`
+    if it doesn't end in a known suffix."""
+    for suffix in SUFFIXES:
+        tail = "_" + suffix
+        if entry_key.endswith(tail) and len(entry_key) > len(tail):
+            return entry_key[:-len(tail)], suffix
+    return entry_key, None
 
 
 def section_for(sites) -> str:
@@ -372,80 +394,6 @@ def section_for(sites) -> str:
     return FALLBACK_SECTION
 
 
-def write_strings(path: str, entries: dict, sites_by_key: dict):
-    grouped = defaultdict(list)
-    for key, value in entries.items():
-        grouped[section_for(sites_by_key.get(key, []))].append((key, value))
-
-    order = [s for s in SECTION_ORDER if s in grouped]
-    order += sorted(s for s in grouped if s not in SECTION_ORDER)
-
-    out = [
-        "/*",
-        " * Luna — every user-visible string, in one file.",
-        " *",
-        " * Each line is:   \"original English\" = \"what Luna shows\";",
-        " *",
-        " * EDIT ONLY THE RIGHT-HAND SIDE. The left-hand side is the key the code",
-        " * looks up; changing it just detaches the line and the app falls back to",
-        " * showing the key. Keep every  %@  %lld  %1$@  marker present and in the",
-        " * same order — they are where names, counts and dates get substituted.",
-        " *",
-        " * Keep the surrounding  \"  =  \"  ;  punctuation intact. A line that loses",
-        " * its trailing  ;  takes the rest of its section down with it.",
-        " *",
-        " * Regenerate the grouping with:  scripts/strings_sync.py --write",
-        " */",
-        "",
-    ]
-    for section in order:
-        out.append(f"/* ===================== {section} ===================== */")
-        for key, value in sorted(grouped[section], key=lambda kv: kv[0].lower()):
-            out.append(f'"{escape(key)}" = "{escape(value)}";')
-        out.append("")
-
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(out))
-
-
-# --------------------------------------------------------------------------
-# Matching interpolated call sites to keys
-
-
-def pattern_to_regex(pattern: str) -> re.Pattern:
-    # A percent sign written literally in the source is doubled in the format
-    # string the compiler derives, so accept either spelling.
-    parts = [re.escape(p).replace("%", "%%?") for p in pattern.split(INTERP)]
-    # A substituted value is a format specifier: %@, %lld, %1$@, %.2f…
-    return re.compile("^" + r"%[0-9]*\$?[0-9.]*(?:ll)?[@dfsu]".join(parts) + "$")
-
-
-def resolve(found: dict, keys) -> tuple[dict, list]:
-    """Map each scanned pattern to a concrete key, where one exists."""
-    keys = list(keys)
-    literal = {k: k for k in keys}
-    resolved, unresolved = {}, []
-    for pattern, meta in found.items():
-        if not meta["interp"]:
-            if pattern in literal:
-                resolved[pattern] = pattern
-            else:
-                unresolved.append((pattern, meta, None))
-            continue
-        rx = pattern_to_regex(pattern)
-        hits = [k for k in keys if rx.match(k)]
-        if len(hits) == 1:
-            resolved[pattern] = hits[0]
-        else:
-            unresolved.append((pattern, meta, hits))
-    return resolved, unresolved
-
-
-def placeholder_key(pattern: str) -> str:
-    """A best-guess key for an interpolated string, for the report only."""
-    return pattern.replace(INTERP, "%@")
-
-
 # --------------------------------------------------------------------------
 
 
@@ -454,85 +402,116 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="report drift; exit 1 if any")
-    mode.add_argument("--write", action="store_true", help="add missing keys and re-sort")
+    mode.add_argument("--write", action="store_true",
+                       help="append missing keys as placeholders; drop unreferenced lines")
     mode.add_argument("--list", action="store_true", help="print scanned keys and sites")
-    ap.add_argument("--seed", nargs="*", metavar="XCSTRINGS",
-                    help="seed keys/values from .xcstrings catalogs (migration only)")
     ap.add_argument("--repo", default=REPO)
     args = ap.parse_args()
 
-    found = scan_sources(args.repo)
+    found, chunk_prefixes = scan_sources(args.repo)
     entries = read_strings(STRINGS_PATH)
 
-    seeded = {}
-    if args.seed:
-        for path in args.seed:
-            with open(path, encoding="utf-8") as handle:
-                catalog = json.load(handle)
-            for key, body in catalog.get("strings", {}).items():
-                unit = body.get("localizations", {}).get("en", {}).get("stringUnit", {})
-                seeded[key] = unit.get("value") or key
-
-    known = set(entries) | set(seeded)
-    resolved, unresolved = resolve(found, known)
-
     if args.list:
-        for pattern, meta in sorted(found.items()):
+        for key, meta in sorted(found.items()):
             rel, line = meta["sites"][0]
-            key = resolved.get(pattern, placeholder_key(pattern))
-            print(f"{rel}:{line}\t{key!r}")
-        print(f"\n{len(found)} literals, {len(resolved)} resolved to a key")
+            print(f"{rel}:{line}\t{key!r}"
+                  + ("\t[interpolated key — invalid]" if meta["interp"] else "")
+                  + ("\t[intent literal]" if meta["intent"] else ""))
+        print(f"\n{len(found)} distinct keys scanned")
         return 0
 
-    used_keys = set(resolved.values())
-    sites_by_key = {resolved[p]: found[p]["sites"] for p in resolved}
+    # A key with `had_interp` means the LITERAL passed to L10n.string/resource
+    # (or found by intent shape) itself contains `\(...)` — under the new
+    # system that is always wrong: a key must be static text, with any
+    # substitution passed as a separate arg.
+    interpolated_keys = [(k, m) for k, m in found.items() if m["interp"]]
 
-    orphans = sorted(k for k in entries if k not in used_keys)
-    missing = [(p, m) for p, m, _ in unresolved]
+    # For a normal call, the required entry is "<key>_Luna". For an intent
+    # literal, the key IS already the full entry name (no _Luna appended).
+    required = {}
+    for key, meta in found.items():
+        if meta["interp"]:
+            continue
+        required[key if meta["intent"] else f"{key}_Luna"] = (key, meta)
+
+    missing = [(entry, key, meta) for entry, (key, meta) in required.items()
+               if entry not in entries]
+
+    referenced_bases = {key for key, meta in found.items() if not meta["intent"]}
+
+    def is_later_chunk(base: str) -> bool:
+        """`"<prefix>2"`, `"<prefix>3"`, … for a known `ChunkedDefinition`
+        prefix — real at runtime, never provably "referenced" beyond chunk 1
+        (see `scan_sources`), so never an orphan."""
+        stripped = base.rstrip("0123456789")
+        return stripped != base and stripped in chunk_prefixes
+
+    orphans = []
+    for entry_key in entries:
+        base, suffix = base_key_and_suffix(entry_key)
+        if suffix is None:
+            orphans.append((entry_key, "unrecognized suffix"))
+        elif base not in referenced_bases and entry_key not in found and not is_later_chunk(base):
+            orphans.append((entry_key, "no code references it"))
 
     if args.write:
-        merged = {}
-        for key in used_keys:
-            merged[key] = entries.get(key, seeded.get(key, key))
-        # Literal (non-interpolated) call sites with no entry yet: adopt them,
-        # with the source literal as both key and value.
-        for pattern, meta in missing:
-            if not meta["interp"]:
-                merged[pattern] = seeded.get(pattern, pattern)
-                sites_by_key[pattern] = meta["sites"]
-        write_strings(STRINGS_PATH, merged, sites_by_key)
-        print(f"wrote {len(merged)} entries to "
-              f"{os.path.relpath(STRINGS_PATH, args.repo)}")
-        left = [(p, m) for p, m in missing if m["interp"]]
-        if left:
-            print(f"\n{len(left)} interpolated literal(s) still need a key by hand:")
-            for pattern, meta in sorted(left, key=lambda x: x[1]["sites"][0]):
+        if missing:
+            with open(STRINGS_PATH, "a", encoding="utf-8") as handle:
+                handle.write("\n/* ===================== NEEDS REVIEW "
+                              "(added by --write; write the real copy and move "
+                              "this into its proper section) ===================== */\n")
+                for entry, key, meta in sorted(missing):
+                    handle.write(f'"{escape(entry)}" = "{escape(entry)}";\n')
+            print(f"appended {len(missing)} placeholder entry(ies) — "
+                  f"fill in real copy and move each into its section:")
+            for entry, key, meta in sorted(missing):
                 rel, line = meta["sites"][0]
-                print(f"  {rel}:{line}\n    suggested: \"{placeholder_key(pattern)}\"")
+                print(f"  {entry!r}  ({rel}:{line}, section guess: {section_for(meta['sites'])})")
         if orphans:
-            print(f"\n{len(orphans)} entry(ies) no longer referenced by any code:")
-            for key in orphans[:20]:
-                print(f"  {key!r}")
+            text = open(STRINGS_PATH, encoding="utf-8").read()
+            for entry_key, _ in orphans:
+                pattern = re.compile(
+                    r'\n?"' + re.escape(escape(entry_key)) + r'"\s*=\s*"(?:[^"\\]|\\.)*"\s*;\n?')
+                text = pattern.sub("\n", text, count=1)
+            with open(STRINGS_PATH, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            print(f"removed {len(orphans)} unreferenced entry(ies)")
+        if interpolated_keys:
+            print(f"\n{len(interpolated_keys)} call site(s) pass an interpolated literal as "
+                  f"the KEY — not written, fix by hand:")
+            for key, meta in sorted(interpolated_keys, key=lambda x: x[1]["sites"][0]):
+                rel, line = meta["sites"][0]
+                print(f"  {rel}:{line}")
+        if not missing and not orphans and not interpolated_keys:
+            print("nothing to do — already in sync")
         return 0
 
     # --check
     problems = 0
+    if interpolated_keys:
+        problems += len(interpolated_keys)
+        print(f"{len(interpolated_keys)} call site(s) pass an interpolated literal as the KEY "
+              f"(pass a static key and separate args instead):")
+        for key, meta in sorted(interpolated_keys, key=lambda x: x[1]["sites"][0]):
+            rel, line = meta["sites"][0]
+            print(f"  {rel}:{line}")
     if missing:
         problems += len(missing)
-        print(f"{len(missing)} string(s) in code with no entry in "
+        print(f"\n{len(missing)} required entry(ies) missing from "
               f"{os.path.relpath(STRINGS_PATH, args.repo)}:")
-        for pattern, meta in sorted(missing, key=lambda x: x[1]["sites"][0]):
+        for entry, key, meta in sorted(missing):
             rel, line = meta["sites"][0]
-            print(f"  {rel}:{line}  \"{placeholder_key(pattern)}\"")
+            print(f"  {entry!r}  ({rel}:{line})")
     if orphans:
         problems += len(orphans)
         print(f"\n{len(orphans)} entry(ies) with no code referencing them:")
-        for key in orphans:
-            print(f"  {key!r}")
+        for entry_key, why in orphans:
+            print(f"  {entry_key!r}  ({why})")
     if problems:
-        print("\nRun  scripts/strings_sync.py --write  to reconcile.")
+        print("\nRun  scripts/strings_sync.py --write  to reconcile "
+              "(missing entries still need real copy written by hand).")
         return 1
-    print(f"in sync — {len(entries)} entries, {len(found)} call sites")
+    print(f"in sync — {len(entries)} entries, {len(found)} scanned keys")
     return 0
 
 

@@ -98,21 +98,21 @@ enum WeeklyPromotionMenu {
             title: WeeklySaveLabels.promoteMenuTitle(for: app),
             message: title ?? urlString,
             preferredStyle: .alert)
-        confirm.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        confirm.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         confirm.addAction(UIAlertAction(
-            title: L10n.string("Promote"), style: .default
+            title: L10n.string("Common_promote"), style: .default
         ) { _ in
             Task { @MainActor in
                 do {
                     try await refresher.promote(kind: kind, urlString: urlString)
                     alert(
                         on: presenter,
-                        title: L10n.string("Promoted"),
-                        message: L10n.string("Every Luna will show it on its next check."))
+                        title: L10n.string("SaveOfWeek_promote_successTitle"),
+                        message: L10n.string("SaveOfWeek_promote_successMessage"))
                 } catch {
                     alert(
                         on: presenter,
-                        title: L10n.string("Couldn't Promote"),
+                        title: L10n.string("Common_couldntPromote"),
                         message: error.localizedDescription)
                 }
             }
@@ -132,28 +132,26 @@ enum WeeklyPromotionMenu {
             guard await refresher.isSignedIntoICloud() else {
                 alert(
                     on: presenter,
-                    title: L10n.string("Sign in to iCloud"),
-                    message: L10n.string(
-                        "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again."))
+                    title: L10n.string("SaveOfWeek_propose_needsICloudTitle"),
+                    message: L10n.string("SaveOfWeek_propose_needsICloudMessage"))
                 return
             }
             do {
                 try await refresher.createProposal(kind: kind, urlString: urlString)
                 alert(
                     on: presenter,
-                    title: L10n.string("Proposal Sent"),
-                    message: L10n.string("Thanks — it's in the queue."))
+                    title: L10n.string("SaveOfWeek_propose_sentTitle"),
+                    message: L10n.string("SaveOfWeek_propose_sentMessage"))
             } catch {
                 if weeklyCloudErrorIsNotAuthenticated(error) {
                     alert(
                         on: presenter,
-                        title: L10n.string("Sign in to iCloud"),
-                        message: L10n.string(
-                            "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again."))
+                        title: L10n.string("SaveOfWeek_propose_needsICloudTitle"),
+                        message: L10n.string("SaveOfWeek_propose_needsICloudMessage"))
                 } else {
                     alert(
                         on: presenter,
-                        title: L10n.string("Couldn't Propose"),
+                        title: L10n.string("SaveOfWeek_propose_couldntProposeTitle"),
                         message: error.localizedDescription)
                 }
             }
@@ -164,7 +162,7 @@ enum WeeklyPromotionMenu {
         guard presenter.view.window != nil else { return }
         let alert = UIAlertController(
             title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
         presenter.present(alert, animated: true)
     }
 }

@@ -596,7 +596,7 @@ public final class ReadingListStore {
                         destinationID: destination,
                         title: all[index].title ?? all[index].urlString,
                         errorMessage: all[index].sendLastErrors[destination]
-                            ?? L10n.string("Unknown error")))
+                            ?? L10n.string("ReadingList_store_unknownSendErrorMessage")))
                     all[index].pendingSendFailureNotices[destination] = nil
                 }
             }

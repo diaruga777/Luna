@@ -25,9 +25,9 @@ import Foundation
 /// article (newest saved).
 struct ReadArticleIntent: AudioPlaybackIntent {
     init() {}
-    static let title: LocalizedStringResource = "Read Article"
+    static let title: LocalizedStringResource = "Intents_readArticle_title_Luna"
     static let description = IntentDescription(
-        "Starts reading a saved article out loud in the background.")
+        "Intents_readArticle_description_Luna")
     static let openAppWhenRun: Bool = false
 
     /// Article-audio playback, installed by the article apps' `KindWiring`
@@ -37,8 +37,8 @@ struct ReadArticleIntent: AudioPlaybackIntent {
     static var playArticle: (@MainActor (ReadingListItem, ArticleContent) -> Void)?
 
     @Parameter(
-        title: "Article",
-        description: "The article to read. Leave blank for your latest unread article.")
+        title: "Intents_readArticle_articleParam_title_Luna",
+        description: "Intents_readArticle_articleParam_description_Luna")
     var article: ArticleEntity?
 
     enum ReadArticleError: Error, CustomLocalizedStringResourceConvertible {
@@ -48,9 +48,9 @@ struct ReadArticleIntent: AudioPlaybackIntent {
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
-            case .noArticles: return L10n.resource("You don't have any unread articles to read.")
-            case .contentMissing: return L10n.resource("That article isn't ready to read yet.")
-            case .notSupported: return L10n.resource("Reading articles aloud isn't available in this app.")
+            case .noArticles: return L10n.resource("Intents_readArticle_noArticlesError")
+            case .contentMissing: return L10n.resource("Intents_readArticle_contentMissingError")
+            case .notSupported: return L10n.resource("Intents_readArticle_notSupportedError")
             }
         }
     }

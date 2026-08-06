@@ -196,10 +196,10 @@ public final class ArticleLoadingStatusCycler {
         label: EclipseBloomStatusLabel,
         initialText: String,
         alternatives: [String] = [
-            L10n.string("Still going…"),
-            L10n.string("Just a bit longer…"),
-            L10n.string("Finding the good part…"),
-            L10n.string("Nearly there…"),
+            L10n.string("LoadingStatus_stage1_stillGoing"),
+            L10n.string("LoadingStatus_stage2_justABitLonger"),
+            L10n.string("LoadingStatus_stage3_findingTheGoodPart"),
+            L10n.string("LoadingStatus_stage4_nearlyThere"),
         ]
     ) {
         self.label = label

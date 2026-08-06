@@ -47,27 +47,27 @@ final class DiagnosticsViewController: UIViewController {
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView)
 
-        header.title = L10n.string("Diagnostics")
+        header.title = L10n.string("Settings_diagnostics_title")
         // The way out: a back chevron when pushed; Done when the root (modal). Mirrors the
         // old conditional left bar button. The trailing actions (share / clear)
         // sit on the right, as before.
         let isRoot = navigationController?.viewControllers.first === self || navigationController == nil
         if isRoot {
             header.setLeadingControls([NavHeaderBar.textButton(
-                title: L10n.string("Done"), target: self, action: #selector(headerBack), bold: true)])
+                title: L10n.string("Common_done"), target: self, action: #selector(headerBack), bold: true)])
         } else {
             header.setLeadingControls([NavHeaderBar.backButton(target: self, action: #selector(headerBack))])
         }
         header.setTrailingControls([
             NavHeaderBar.imageButton(
                 systemName: "square.and.arrow.up", target: self, action: #selector(share),
-                accessibilityLabel: L10n.string("Share")),
-            NavHeaderBar.textButton(title: L10n.string("Clear"), target: self, action: #selector(clear)),
+                accessibilityLabel: L10n.string("Common_share")),
+            NavHeaderBar.textButton(title: L10n.string("Settings_diagnostics_clearButton"), target: self, action: #selector(clear)),
         ])
         let headerBottom = header.mount(in: self)
 
         var eraseConfiguration = UIButton.Configuration.plain()
-        eraseConfiguration.title = L10n.string("Erase All Data")
+        eraseConfiguration.title = L10n.string("Settings_diagnostics_eraseAllDataButton")
         eraseConfiguration.baseForegroundColor = .systemRed
         eraseButton.configuration = eraseConfiguration
         eraseButton.accessibilityIdentifier = "diagnostics.eraseAllData"
@@ -108,8 +108,8 @@ final class DiagnosticsViewController: UIViewController {
         var configuration = UIButton.Configuration.plain()
         let hasKey = WeeklyPromotionKeyStore.isKeyHolder
         configuration.title = hasKey
-            ? L10n.string("Weekly Key ✓")
-            : L10n.string("Enter Weekly Key")
+            ? L10n.string("Settings_diagnostics_weeklyKeyActiveButton")
+            : L10n.string("Settings_diagnostics_weeklyKeyEnterLabel")
         configuration.baseForegroundColor = hasKey
             ? .systemGreen : LunaColors.secondaryText
         weeklyKeyButton.configuration = configuration
@@ -122,29 +122,28 @@ final class DiagnosticsViewController: UIViewController {
             return
         }
         let sheet = UIAlertController(
-            title: L10n.string("Save of the Week Key"),
-            message: L10n.string("This device can promote Saves of the Week."),
+            title: L10n.string("Settings_diagnostics_weeklyKeySheetTitle"),
+            message: L10n.string("Settings_diagnostics_weeklyKeyCanPromote"),
             preferredStyle: .actionSheet)
         sheet.addAction(UIAlertAction(
-            title: L10n.string("Replace"), style: .default
+            title: L10n.string("Settings_diagnostics_weeklyKeyReplaceButton"), style: .default
         ) { [weak self] _ in self?.presentKeyEntry() })
         sheet.addAction(UIAlertAction(
-            title: L10n.string("Remove"), style: .destructive
+            title: L10n.string("Common_remove"), style: .destructive
         ) { [weak self] _ in
             WeeklyPromotionKeyStore.removeKey()
             DiagnosticLog.shared.record("weekly key removed", category: "weekly")
             self?.updateWeeklyKeyButton()
         })
-        sheet.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        sheet.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         sheet.popoverPresentationController?.sourceView = weeklyKeyButton
         present(sheet, animated: true)
     }
 
     private func presentKeyEntry() {
         let prompt = UIAlertController(
-            title: L10n.string("Enter Weekly Key"),
-            message: L10n.string(
-                "Paste the Ed25519 private key. It is checked against the key built into this app; a wrong key is not stored."),
+            title: L10n.string("Settings_diagnostics_weeklyKeyEnterLabel"),
+            message: L10n.string("Settings_diagnostics_weeklyKeyPasteInstructions"),
             preferredStyle: .alert)
         prompt.addTextField { field in
             field.isSecureTextEntry = true
@@ -152,9 +151,9 @@ final class DiagnosticsViewController: UIViewController {
             field.autocapitalizationType = .none
             field.accessibilityIdentifier = "diagnostics.weeklyKeyField"
         }
-        prompt.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        prompt.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         prompt.addAction(UIAlertAction(
-            title: L10n.string("Save"), style: .default
+            title: L10n.string("Common_save"), style: .default
         ) { [weak self, weak prompt] _ in
             self?.storeWeeklyKey(prompt?.textFields?.first?.text ?? "")
         })
@@ -167,9 +166,8 @@ final class DiagnosticsViewController: UIViewController {
         guard WeeklyPromotionKeyStore.store(base64: pasted) else {
             DiagnosticLog.shared.record("weekly key rejected", category: "weekly")
             presentAlert(
-                title: L10n.string("Wrong Key"),
-                message: L10n.string(
-                    "That key doesn't match this build. Nothing was stored."))
+                title: L10n.string("Settings_diagnostics_weeklyKeyWrongTitle"),
+                message: L10n.string("Settings_diagnostics_weeklyKeyWrongMessage"))
             return false
         }
         DiagnosticLog.shared.record("weekly key accepted", category: "weekly")
@@ -179,8 +177,8 @@ final class DiagnosticsViewController: UIViewController {
         NotificationManager.requestAuthorization()
         WeeklyProposalBackgroundCheck.schedule(reason: "key pasted")
         presentAlert(
-            title: L10n.string("Key Accepted"),
-            message: L10n.string("This device can now promote Saves of the Week."))
+            title: L10n.string("Settings_diagnostics_weeklyKeyAcceptedTitle"),
+            message: L10n.string("Settings_diagnostics_weeklyKeyAcceptedMessage"))
         return true
     }
 
@@ -210,7 +208,7 @@ final class DiagnosticsViewController: UIViewController {
 
     private func reload() {
         let text = log.contents()
-        textView.text = text.isEmpty ? L10n.string("No diagnostics recorded yet.") : text
+        textView.text = text.isEmpty ? L10n.string("Settings_diagnostics_emptyLogPlaceholder") : text
         // Show the most recent lines.
         textView.layoutIfNeeded()
         let end = NSRange(location: (textView.text as NSString).length, length: 0)
@@ -219,7 +217,7 @@ final class DiagnosticsViewController: UIViewController {
 
     @objc private func share() {
         guard let url = try? log.exportFile() else {
-            presentAlert(title: L10n.string("Export Failed"), message: L10n.string("Couldn't write the log file."))
+            presentAlert(title: L10n.string("Settings_diagnostics_exportFailedTitle"), message: L10n.string("Settings_diagnostics_exportFailedMessage"))
             return
         }
         let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
@@ -229,10 +227,10 @@ final class DiagnosticsViewController: UIViewController {
 
     @objc private func clear() {
         let confirm = UIAlertController(
-            title: L10n.string("Clear Diagnostics?"),
-            message: L10n.string("This erases the saved log."), preferredStyle: .alert)
-        confirm.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
-        confirm.addAction(UIAlertAction(title: L10n.string("Clear"), style: .destructive) { [weak self] _ in
+            title: L10n.string("Settings_diagnostics_clearConfirmTitle"),
+            message: L10n.string("Settings_diagnostics_clearConfirmMessage"), preferredStyle: .alert)
+        confirm.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        confirm.addAction(UIAlertAction(title: L10n.string("Settings_diagnostics_clearButton"), style: .destructive) { [weak self] _ in
             self?.log.clear()
             self?.reload()
         })
@@ -250,13 +248,12 @@ final class DiagnosticsViewController: UIViewController {
     /// itself back would undo part of the wipe.
     @objc private func confirmEraseEverything() {
         let confirm = UIAlertController(
-            title: L10n.string("Erase All Data?"),
-            message: L10n.string(
-                "Deletes everything on this device: saves, articles, downloads, settings, email and Kindle credentials, and onboarding. This is shared with the other Luna apps, so they are erased too. Luna quits afterwards and starts over from scratch. This can't be undone."),
+            title: L10n.string("Settings_diagnostics_eraseConfirmTitle"),
+            message: L10n.string("Settings_diagnostics_eraseConfirmMessage"),
             preferredStyle: .alert)
-        confirm.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        confirm.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         confirm.addAction(UIAlertAction(
-            title: L10n.string("Erase Everything"), style: .destructive
+            title: L10n.string("Settings_diagnostics_eraseEverythingButton"), style: .destructive
         ) { [weak self] _ in self?.eraseEverything() })
         present(confirm, animated: true)
     }
@@ -268,11 +265,11 @@ final class DiagnosticsViewController: UIViewController {
                 await FactoryReset.eraseEverything()
             }.value
             let done = UIAlertController(
-                title: L10n.string("Erased"),
-                message: L10n.string("Luna will now quit. Open it again to start over."),
+                title: L10n.string("Settings_diagnostics_erasedTitle"),
+                message: L10n.string("Settings_diagnostics_erasedMessage"),
                 preferredStyle: .alert)
             done.addAction(UIAlertAction(
-                title: L10n.string("Quit Luna"), style: .default
+                title: L10n.string("Settings_diagnostics_quitLunaButton"), style: .default
             ) { _ in exit(0) })
             self.present(done, animated: true)
         }
@@ -280,7 +277,7 @@ final class DiagnosticsViewController: UIViewController {
 
     private func presentAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
         present(alert, animated: true)
     }
 }

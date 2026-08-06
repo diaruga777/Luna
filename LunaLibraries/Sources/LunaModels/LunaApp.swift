@@ -38,14 +38,12 @@ public enum LunaApp: CaseIterable, Equatable {
         }
     }
 
-    /// The user-visible app name.
+    /// The user-visible app name. `self` names WHICH app to show the name of —
+    /// not necessarily the running one (`UnsupportedSaveCopy` shows a foreign
+    /// app's name) — so this resolves through the suffix table for `self`
+    /// rather than reading `L10n.string`'s own `.current` default.
     public var displayName: String {
-        switch self {
-        case .luna: return L10n.string("Luna")
-        case .reader: return L10n.string("Luna Reader")
-        case .downloader: return L10n.string("Luna Downloader")
-        case .priceTracker: return L10n.string("Luna Price Tracker")
-        }
+        L10n.string("LunaApp_displayName", for: self)
     }
 
     /// Per-kind capability. The central Luna app handles everything; each
@@ -69,5 +67,18 @@ public enum LunaApp: CaseIterable, Equatable {
     /// contract: `lunaInstalled.<storageIdentifier>`.
     public var installedMarkerKey: String {
         "lunaInstalled." + storageIdentifier
+    }
+
+    /// The suffix `L10n` appends to a base key for THIS app's own override,
+    /// e.g. `"Foo_Reader"`. The central Luna app's own tier is `"Core"` rather
+    /// than `"Luna"` because `"_Luna"` is reserved for the universal fallback
+    /// every base key must define — see `L10n.string`.
+    public var ownLocalizationSuffix: String {
+        switch self {
+        case .luna: return "Core"
+        case .reader: return "Reader"
+        case .downloader: return "Downloader"
+        case .priceTracker: return "PriceTracker"
+        }
     }
 }

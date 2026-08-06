@@ -458,7 +458,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// with `isPlaying`, from wherever it's set.
     private func updatePlayPauseGlyph() {
         playPauseButton.configuration?.image = UIImage(systemName: isPlaying ? "pause.fill" : "play.fill")
-        playPauseButton.accessibilityLabel = isPlaying ? L10n.string("Pause") : L10n.string("Play")
+        playPauseButton.accessibilityLabel = isPlaying
+            ? L10n.string("Reader_rsvp_pauseAccessibilityLabel") : L10n.string("Reader_rsvp_playAccessibilityLabel")
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -1064,7 +1065,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         playConfig.cornerStyle = .fixed
         playConfig.background.cornerRadius = 30
         playPauseButton.configuration = playConfig
-        playPauseButton.accessibilityLabel = L10n.string("Play")
+        playPauseButton.accessibilityLabel = L10n.string("Reader_rsvp_playAccessibilityLabel")
         // Pin the control layer too, so both the glass and its clipping mask stay
         // circular through highlighted/disabled configuration updates.
         playPauseButton.clipsToBounds = true
@@ -1088,10 +1089,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let paceSymbolSize = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
         wpmDownButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
         wpmUpButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
-        wpmDownButton.accessibilityLabel = L10n.string("Slow down")
-        wpmDownButton.accessibilityHint = L10n.string("Decreases reading speed by 25 words per minute")
-        wpmUpButton.accessibilityLabel = L10n.string("Speed up")
-        wpmUpButton.accessibilityHint = L10n.string("Increases reading speed by 25 words per minute")
+        wpmDownButton.accessibilityLabel = L10n.string("Reader_rsvp_slowDownAccessibilityLabel")
+        wpmDownButton.accessibilityHint = L10n.string("Reader_rsvp_slowDownAccessibilityHint")
+        wpmUpButton.accessibilityLabel = L10n.string("Reader_rsvp_speedUpAccessibilityLabel")
+        wpmUpButton.accessibilityHint = L10n.string("Reader_rsvp_speedUpAccessibilityHint")
         wpmDownButton.addTarget(self, action: #selector(wpmDown), for: .touchUpInside)
         wpmUpButton.addTarget(self, action: #selector(wpmUp), for: .touchUpInside)
 
@@ -1101,8 +1102,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         var skipForwardConfig = GlassStyle.circularButtonConfiguration(symbol: "forward.fill", padding: 12)
         skipForwardConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 19)
         skipForwardButton.configuration = skipForwardConfig
-        skipBackButton.accessibilityLabel = L10n.string("Skip back 25 words")
-        skipForwardButton.accessibilityLabel = L10n.string("Skip forward 25 words")
+        skipBackButton.accessibilityLabel = L10n.string("Reader_rsvp_skipBackAccessibilityLabel")
+        skipForwardButton.accessibilityLabel = L10n.string("Reader_rsvp_skipForwardAccessibilityLabel")
         skipBackButton.addTarget(self, action: #selector(skipBack), for: .touchUpInside)
         skipForwardButton.addTarget(self, action: #selector(skipForward), for: .touchUpInside)
 
@@ -1809,7 +1810,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func updateStatus() {
         let percent = engine.words.isEmpty
             ? 0 : Int((Double(currentIndex + 1) / Double(engine.words.count)) * 100)
-        statusLabel.text = L10n.string("\(percent)% · \(Int(wpm)) wpm")
+        statusLabel.text = L10n.string("Reader_rsvp_statusPercentWpm", percent, Int(wpm))
     }
 
     /// Seeks the center to the currently displayed focal word — used after a

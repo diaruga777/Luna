@@ -479,7 +479,7 @@ public final class CardCarouselViewController: UIViewController {
         // The traveling activity pulse belongs to download progress, not
         // deterministic media playback position.
         playbackScrubProgress.showsActivityPulse = false
-        playbackScrubProgress.accessibilityLabel = L10n.string("Video position")
+        playbackScrubProgress.accessibilityLabel = L10n.string("CardDeck_videoPositionAccessibilityLabel")
         cardArea.addSubview(playbackScrubProgress)
         playbackSpeedPill.alpha = 0
         playbackSpeedPill.isHidden = true

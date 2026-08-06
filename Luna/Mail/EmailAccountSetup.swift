@@ -147,13 +147,13 @@ final class EmailAccountSetup {
         guard let presenter else { return }
         let clientID = MicrosoftOAuth.clientID
         guard !clientID.isEmpty else {
-            presentError(L10n.string("Outlook isn't configured in this build."))
+            presentError(L10n.string("Settings_email_setup_outlookNotConfiguredMessage"))
             return
         }
         let pkce = MicrosoftOAuth.makePKCE()
         guard let url = MicrosoftOAuth.authorizationURL(
             clientID: clientID, challenge: pkce.challenge, loginHint: address)
-        else { presentError(L10n.string("Couldn't start Outlook sign-in.")); return }
+        else { presentError(L10n.string("Settings_email_setup_outlookStartFailedMessage")); return }
 
         let context = AuthPresentationContext(anchor: presenter.view.window)
         contextProvider = context
@@ -173,7 +173,7 @@ final class EmailAccountSetup {
                         self.completion(false)
                         return
                     }
-                    self.presentError(L10n.string("Outlook sign-in failed. Please try again."))
+                    self.presentError(L10n.string("Settings_email_setup_outlookSignInFailedMessage"))
                     return
                 }
                 guard let callback,
@@ -182,7 +182,7 @@ final class EmailAccountSetup {
                 else {
                     // A callback without a `code` item is a real failure, not a
                     // cancellation — it must not fail silently.
-                    self.presentError(L10n.string("Outlook sign-in failed. Please try again."))
+                    self.presentError(L10n.string("Settings_email_setup_outlookSignInFailedMessage"))
                     return
                 }
                 // The webview is gone but the token exchange + inbox-filter setup
@@ -240,14 +240,14 @@ final class EmailAccountSetup {
         } catch {
             cover.hide()
             loadingCover = nil
-            presentError(L10n.string("Outlook sign-in failed. Please try again."))
+            presentError(L10n.string("Settings_email_setup_outlookSignInFailedMessage"))
         }
     }
 
     private func presentError(_ message: String) {
         completion(false)
-        let alert = UIAlertController(title: L10n.string("Sign-in failed"), message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        let alert = UIAlertController(title: L10n.string("Settings_email_setup_signInFailedTitle"), message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
         presenter?.present(alert, animated: true)
     }
 }

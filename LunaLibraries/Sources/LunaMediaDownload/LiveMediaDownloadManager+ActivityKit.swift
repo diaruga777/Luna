@@ -66,7 +66,7 @@ extension LiveMediaDownloadManager {
                 await activity.update(
                     using: state,
                     alertConfiguration: AlertConfiguration(
-                        title: L10n.resource("Download started"),
+                        title: L10n.resource("Downloader_liveActivity_alert_downloadStartedTitle"),
                         body: "\(job.title)",
                         sound: .default))
             }
@@ -88,7 +88,7 @@ extension LiveMediaDownloadManager {
             sourceURLString: urlString,
             assetURLString: nil,
             mediaKind: "unknown",
-            title: title ?? L10n.string("Media download"),
+            title: title ?? L10n.string("Downloader_liveActivity_defaultTitle"),
             creator: nil,
             resolveKind: nil,
             phase: .failed,
@@ -141,8 +141,8 @@ extension LiveMediaDownloadManager {
         case .finished, .failed:
             alert = Self.areActivityAlertsSuspended ? nil : AlertConfiguration(
                 title: job.phase == .failed
-                    ? L10n.resource("Download failed")
-                    : L10n.resource("Download finished"),
+                    ? L10n.resource("Downloader_liveActivity_status_downloadFailed")
+                    : L10n.resource("Downloader_liveActivity_alert_downloadFinishedTitle"),
                 body: "\(job.title)",
                 sound: .default)
         default:

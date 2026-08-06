@@ -201,10 +201,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
         configureChromeButton(
             readerBackButton, symbol: "chevron.backward", action: #selector(readerBackTapped),
-            label: L10n.string("Back"))
+            label: L10n.string("Common_back"))
         configureChromeButton(
             readerAudioButton, symbol: "speaker.slash", action: #selector(readerAudioTapped),
-            label: L10n.string("Read Aloud"))
+            label: L10n.string("Reader_readAloudChromeAccessibilityLabel"))
         for control in [readerBackButton, readerAudioButton] {
             readerChromeRow.addSubview(control)
         }
@@ -410,7 +410,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         }
         readerAudioButton.setImage(
             UIImage(systemName: state.isAudioOn ? "speaker.wave.2" : "speaker.slash"), for: .normal)
-        readerAudioButton.accessibilityValue = state.isAudioOn ? L10n.string("On") : L10n.string("Off")
+        readerAudioButton.accessibilityValue = state.isAudioOn
+            ? L10n.string("Reader_audioOnAccessibilityValue") : L10n.string("Reader_audioOffAccessibilityValue")
 
         if chromeModes != state.modes {
             chromeModes = state.modes
@@ -446,7 +447,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         guard lockedShareURLString != nil else { return nil }
         return UIMenu(children: [
             UIAction(
-                title: L10n.string("Share Link…"),
+                title: L10n.string("Common_shareLinkEllipsis"),
                 image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.shareLockedCardLink() },
         ])
@@ -478,7 +479,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     override func configureTrailingBottomButton(_ button: UIButton) {
         configureBottomButton(
             button, symbol: "square.and.arrow.up", action: nil,
-            accessibilityLabel: L10n.string("Share"))
+            accessibilityLabel: L10n.string("Common_share"))
         ShareButtonMenu.install(
             on: button,
             providesMenu: true,
@@ -1155,12 +1156,12 @@ final class ReaderCardContentViewController: CardContentViewController,
         self.knownContent = knownContent
         let senderSubtitle = senderName.flatMap { name -> String? in
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : L10n.string("From \(trimmed)")
+            return trimmed.isEmpty ? nil : L10n.string("Reader_senderFromSubtitle", trimmed)
         }
         self.titleHeader = ReaderCardTitleHeaderView(
-            title: item.title ?? L10n.string("Untitled"), subtitle: senderSubtitle)
+            title: item.title ?? L10n.string("Common_untitled"), subtitle: senderSubtitle)
         self.scrollTitleHeader = ReaderCardTitleHeaderView(
-            title: item.title ?? L10n.string("Untitled"), subtitle: senderSubtitle)
+            title: item.title ?? L10n.string("Common_untitled"), subtitle: senderSubtitle)
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
@@ -1241,7 +1242,7 @@ final class ReaderCardContentViewController: CardContentViewController,
         // so the card's tap (unlock flow) and long-press (Archive / Delete) are
         // untouched — see `LockedCardOverlayView`.
         if reader == nil, isLockedSave {
-            let overlay = LockedCardOverlayView(caption: L10n.string("Locked — tap to unlock"))
+            let overlay = LockedCardOverlayView(caption: L10n.string("Reader_lockedCardCaption"))
             overlay.translatesAutoresizingMaskIntoConstraints = false
             // Below the title header, so the article's title still crowns the card.
             view.insertSubview(overlay, belowSubview: titleHeader)
@@ -1262,11 +1263,11 @@ final class ReaderCardContentViewController: CardContentViewController,
             // longer reaches here at all: its presenter always has the real
             // in-card editor to give, in every app that shows one.)
             if CardKindPresenters.presenter(for: item) !== CardKindPresenters.article {
-                statusLabel.text = L10n.string("Tap to open")
+                statusLabel.text = L10n.string("Reader_cardTapToOpenStatus")
             } else {
                 switch item.state {
-                case .pending: statusLabel.text = L10n.string("Fetching…")
-                case .failed: statusLabel.text = L10n.string("Couldn't fetch this article")
+                case .pending: statusLabel.text = L10n.string("Reader_cardFetchingStatus")
+                case .failed: statusLabel.text = L10n.string("Reader_cardCouldntFetchStatus")
                 // Unreachable for an article — `isLockedSave` took that above and
                 // the card wears `LockedCardOverlayView` instead of a line of text.
                 case .needsCaptcha: statusLabel.text = nil

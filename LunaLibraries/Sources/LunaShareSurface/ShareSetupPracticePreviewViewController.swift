@@ -31,7 +31,7 @@ final class ShareSetupPracticePreviewViewController: UIViewController {
         view.backgroundColor = LunaColors.background
         title = app.displayName
         navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: L10n.string("Done"),
+            title: L10n.string("Common_done"),
             style: .done,
             target: self,
             action: #selector(doneTapped))

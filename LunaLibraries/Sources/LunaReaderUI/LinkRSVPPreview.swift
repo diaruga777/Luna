@@ -72,7 +72,7 @@ public enum LinkRSVPPreviewGesturePolicy {
     }
 
     public static func titleText(title: String, resumeIndex: Int) -> String {
-        resumeIndex > 0 ? L10n.string("Resuming: \(title)") : title
+        resumeIndex > 0 ? L10n.string("Reader_rsvp_preview_resumingTitle", title) : title
     }
 }
 
@@ -82,9 +82,9 @@ private enum LinkPreviewAction: CaseIterable {
 
     var title: String {
         switch self {
-        case .share: return L10n.string("Share Link")
-        case .copy: return L10n.string("Copy Link")
-        case .open: return L10n.string("Open Link")
+        case .share: return L10n.string("Reader_rsvp_preview_shareLinkActionTitle")
+        case .copy: return L10n.string("Reader_rsvp_preview_copyLinkActionTitle")
+        case .open: return L10n.string("Common_openLink")
         }
     }
 
@@ -318,7 +318,7 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
         spinner.frame = CGRect(x: 24, y: 30, width: 32, height: 32)
         spinner.tag = 1
         let label = UILabel(frame: CGRect(x: 65, y: 0, width: 135, height: 92))
-        label.text = L10n.string("Loading preview…")
+        label.text = L10n.string("Reader_rsvp_preview_loadingStatus")
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.tag = 2
         panel.contentView.addSubview(spinner)
@@ -333,7 +333,7 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
         let label = panel.contentView.viewWithTag(2) as? UILabel
         label?.frame = panel.contentView.bounds.insetBy(dx: 18, dy: 0)
         label?.textAlignment = .center
-        label?.text = L10n.string("Preview unavailable")
+        label?.text = L10n.string("Reader_rsvp_preview_unavailableStatus")
     }
 
     private func updateDirectionalHaptics(translationY: CGFloat) {
@@ -531,7 +531,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         view.layoutIfNeeded()
         focusLabel.text = LinkRSVPPreviewGesturePolicy.titleText(
             title: article.content.title, resumeIndex: article.resumeIndex)
-        speedLabel.text = L10n.string("\(Int(currentWPM.rounded())) wpm")
+        speedLabel.text = L10n.string("Common_wpm", Int(currentWPM.rounded()))
         animateAppearance()
         scheduleTitleTransition()
     }
@@ -715,7 +715,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     }
 
     private func updateSpeedLabel() {
-        speedLabel.text = L10n.string("\(Int(currentWPM.rounded())) wpm")
+        speedLabel.text = L10n.string("Common_wpm", Int(currentWPM.rounded()))
     }
 
     private func scheduleNext() {
@@ -770,12 +770,12 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         card.contentView.addSubview(chin)
 
         let buttons: [(UIButton, String, String)] = [
-            (skipBackButton, "backward.fill", L10n.string("Skip back 25 words")),
-            (slowButton, "tortoise.fill", L10n.string("Slow down")),
-            (playPauseButton, "pause.fill", L10n.string("Pause")),
-            (fastButton, "hare.fill", L10n.string("Speed up")),
-            (skipForwardButton, "forward.fill", L10n.string("Skip forward 25 words")),
-            (audioButton, "speaker.slash", L10n.string("Read aloud")),
+            (skipBackButton, "backward.fill", L10n.string("Reader_rsvp_skipBackAccessibilityLabel")),
+            (slowButton, "tortoise.fill", L10n.string("Reader_rsvp_slowDownAccessibilityLabel")),
+            (playPauseButton, "pause.fill", L10n.string("Reader_rsvp_pauseAccessibilityLabel")),
+            (fastButton, "hare.fill", L10n.string("Reader_rsvp_speedUpAccessibilityLabel")),
+            (skipForwardButton, "forward.fill", L10n.string("Reader_rsvp_skipForwardAccessibilityLabel")),
+            (audioButton, "speaker.slash", L10n.string("Reader_readAloudAccessibilityLabel")),
         ]
         for (button, symbol, label) in buttons {
             button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 10)
@@ -863,7 +863,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             }
             setContextVisible(true)
             playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
-            playPauseButton.accessibilityLabel = L10n.string("Play")
+            playPauseButton.accessibilityLabel = L10n.string("Reader_rsvp_playAccessibilityLabel")
         }
     }
 
@@ -877,7 +877,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             isAudioMode = false
             isPausedByControl = true
             audioButton.configuration?.image = UIImage(systemName: "speaker.slash")
-            audioButton.accessibilityLabel = L10n.string("Read aloud")
+            audioButton.accessibilityLabel = L10n.string("Reader_readAloudAccessibilityLabel")
             playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
             setContextVisible(true)
         } else {
@@ -891,7 +891,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             let token = engine.tokenIndex(forFrameIndex: index) ?? index
             center.play(item: article.item, content: article.content, fromWordIndex: token)
             audioButton.configuration?.image = UIImage(systemName: "speaker.wave.2.fill")
-            audioButton.accessibilityLabel = L10n.string("Turn off read aloud")
+            audioButton.accessibilityLabel = L10n.string("Reader_turnOffReadAloudAccessibilityLabel")
             playPauseButton.configuration?.image = UIImage(systemName: "pause.fill")
         }
     }
@@ -900,7 +900,8 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         guard isAudioMode, center.currentItemInfo?.itemID == article.item.id else { return }
         let playing = center.currentSnapshot.isAudiblyPlaying
         playPauseButton.configuration?.image = UIImage(systemName: playing ? "pause.fill" : "play.fill")
-        playPauseButton.accessibilityLabel = playing ? L10n.string("Pause") : L10n.string("Play")
+        playPauseButton.accessibilityLabel = playing
+            ? L10n.string("Reader_rsvp_pauseAccessibilityLabel") : L10n.string("Reader_rsvp_playAccessibilityLabel")
     }
 
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didEmitWordEvent event: AudioWordEvent) {
@@ -927,7 +928,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         arrow.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
             pointSize: 12, weight: .semibold)
         let label = UILabel()
-        label.text = L10n.string("More actions")
+        label.text = L10n.string("Reader_rsvp_preview_moreActionsLabel")
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.textColor = LunaColors.secondaryText
         label.textAlignment = .center

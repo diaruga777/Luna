@@ -735,7 +735,7 @@ public final class AudioPlaybackCenter {
         setState(.announcing(nextItemID: candidate.item.id))
         let title = Self.displayTitle(item: candidate.item, content: candidate.content)
         let announcementBlock = AudioScript.SpokenBlock(
-            blockIndex: -1, text: L10n.string("Now Reading — \(title)"))
+            blockIndex: -1, text: L10n.string("Reader_audio_nowReadingAnnouncement", title))
         let token = sessionToken
         Task { [weak self] in
             guard let self else { return }

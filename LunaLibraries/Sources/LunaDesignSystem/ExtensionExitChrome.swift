@@ -57,7 +57,7 @@ public enum ExtensionExitButton {
         let button = UIButton(type: .system)
         ExtensionFloatingGlassButton.style(
             button, symbol: symbol,
-            accessibilityLabel: accessibilityLabel ?? L10n.string("Done"))
+            accessibilityLabel: accessibilityLabel ?? L10n.string("Common_done"))
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
     }

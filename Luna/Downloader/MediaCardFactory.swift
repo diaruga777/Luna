@@ -230,22 +230,22 @@ enum MediaItemActions {
         switch item.storageState {
         case .undownloaded:
             return [UIAction(
-                title: L10n.string("Download"), image: UIImage(systemName: "arrow.down.circle")
+                title: L10n.string("Common_download"), image: UIImage(systemName: "arrow.down.circle")
             ) { _ in download() }]
         case .localFile:
             var actions: [UIMenuElement] = [UIAction(
-                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
+                title: L10n.string("Common_share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in share() }]
             if item.kind?.canSaveToPhotos == true {
                 actions.append(UIAction(
-                    title: L10n.string("Save to Photos"),
+                    title: L10n.string("Downloader_mediaCard_menu_saveToPhotos"),
                     image: UIImage(systemName: "photo.badge.plus")
                 ) { _ in saveToPhotos() })
             }
             return actions
         case .photosReference:
             return [UIAction(
-                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
+                title: L10n.string("Common_share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in share() }]
         }
     }
@@ -279,9 +279,9 @@ enum MediaItemActions {
         shareLink: @escaping () -> Void
     ) -> [ReaderShareSheet.Row] {
         [
-            .init(title: L10n.string("Copy link"), systemImage: "doc.on.doc",
+            .init(title: L10n.string("Common_copyLink"), systemImage: "doc.on.doc",
                   isPrimary: false, action: copyLink),
-            .init(title: L10n.string("Share link"), systemImage: "square.and.arrow.up",
+            .init(title: L10n.string("Common_shareLink"), systemImage: "square.and.arrow.up",
                   isPrimary: false, action: shareLink),
         ]
     }
@@ -290,10 +290,10 @@ enum MediaItemActions {
     /// its share row says the same.
     static func shareFileTitle(for kind: MediaAsset.Kind?) -> String {
         switch kind {
-        case .video: return L10n.string("Share video")
-        case .gif: return L10n.string("Share GIF")
-        case .audio: return L10n.string("Share audio")
-        case .image, nil: return L10n.string("Share image")
+        case .video: return L10n.string("Downloader_mediaCard_shareFile_videoTitle")
+        case .gif: return L10n.string("Downloader_mediaCard_shareFile_gifTitle")
+        case .audio: return L10n.string("Downloader_mediaCard_shareFile_audioTitle")
+        case .image, nil: return L10n.string("Downloader_mediaCard_shareFile_imageTitle")
         }
     }
 
@@ -391,8 +391,8 @@ enum MediaItemActions {
                 else { return }
                 guard await saver.requestReadAuthorization() else {
                     presentAlert(
-                        title: L10n.string("Photos Access Needed"),
-                        message: L10n.string("Allow photo library access in Settings to save media."),
+                        title: L10n.string("Downloader_mediaCard_photosAccess_title"),
+                        message: L10n.string("Downloader_mediaCard_photosAccess_saveMessage"),
                         from: presenter)
                     return
                 }
@@ -403,13 +403,13 @@ enum MediaItemActions {
                     itemID: item.id, fileURL: tempURL, kind: kind, shouldMoveFile: true,
                     saver: saver, store: SavedMediaStore.shared)
                 presentAlert(
-                    title: L10n.string("Saved to Photos"),
-                    message: L10n.string("The media was added to your photo library."),
+                    title: L10n.string("Downloader_mediaCard_savedToPhotosAlert_title"),
+                    message: L10n.string("Downloader_mediaCard_savedToPhotosAlert_message"),
                     from: presenter)
             } catch {
                 presentAlert(
-                    title: L10n.string("Save Failed"),
-                    message: L10n.string("Couldn't save this media to Photos."), from: presenter)
+                    title: L10n.string("Downloader_mediaCard_saveFailedAlert_title"),
+                    message: L10n.string("Downloader_mediaCard_saveFailedAlert_message"), from: presenter)
             }
         }
     }
@@ -451,7 +451,7 @@ enum MediaItemActions {
 
     static func presentAlert(title: String, message: String, from presenter: UIViewController) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
         presenter.present(alert, animated: true)
     }
 }
@@ -516,7 +516,7 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
             pointSize: 52, weight: .regular)
         configuration.baseForegroundColor = LunaColors.secondaryText
         button.configuration = configuration
-        button.accessibilityLabel = L10n.string("Download media")
+        button.accessibilityLabel = L10n.string("Downloader_mediaCard_downloadAccessibilityLabel")
         button.addAction(UIAction { [weak self] _ in self?.download() }, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
@@ -530,13 +530,13 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         rescueButton.isHidden = true
         rescueButton.addAction(UIAction { [weak self] _ in
             self?.rescueButton.isHidden = true
-            self?.statusLabel.text = L10n.string("Trying harder with Apple Intelligence…")
+            self?.statusLabel.text = L10n.string("Downloader_mediaCard_rescueInProgressLabel")
             self?.rescue?()
         }, for: .touchUpInside)
         rescueButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(rescueButton)
 
-        statusLabel.text = L10n.string("Downloading")
+        statusLabel.text = L10n.string("Common_downloading")
         statusLabel.textColor = LunaColors.primaryText
         statusLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         statusLabel.numberOfLines = 2
@@ -703,7 +703,7 @@ enum MediaCardDeck {
             // the menu waits for a download — so the circle shows for any media
             // card and hides on the util and failed-save ones.
             configuration.shareButton = CardDeckShareButton(
-                accessibilityLabel: L10n.string("Share Current Media"),
+                accessibilityLabel: L10n.string("Downloader_mediaCard_shareCircleAccessibilityLabel"),
                 unavailability: .hides)
             return KindDeckProvider(host: host, configuration: configuration)
         }

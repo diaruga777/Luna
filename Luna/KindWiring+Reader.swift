@@ -160,18 +160,18 @@ enum KindWiring {
 
     static func settingsCategories() -> [SettingsCategory] {
         [
-            SettingsCategory(title: L10n.string("Reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
-            SettingsCategory(title: L10n.string("Audio"), symbol: "headphones") { AudioSettingsScreen() },
+            SettingsCategory(title: L10n.string("Common_reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
+            SettingsCategory(title: L10n.string("Common_audio"), symbol: "headphones") { AudioSettingsScreen() },
             SettingsCategory(
-                title: L10n.string("Email"),
+                title: L10n.string("Common_email"),
                 symbol: "envelope",
                 detail: {
                     EmailAccountStore.shared.authenticationIssue == nil
-                        ? nil : L10n.string("Sign-in required")
+                        ? nil : L10n.string("Common_signInRequired")
                 }
             ) { EmailAndKindleSettingsScreen() },
             SettingsCategory(
-                title: L10n.string("Kindle"), symbol: "book.closed",
+                title: L10n.string("Common_kindle"), symbol: "book.closed",
                 requiresEmail: true,
                 makePrerequisite: {
                     let email = EmailAndKindleSettingsScreen()

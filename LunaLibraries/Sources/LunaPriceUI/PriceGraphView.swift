@@ -235,7 +235,7 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     }
 
     private func drawEmptyCaption(in plot: CGRect) {
-        let caption = L10n.string("No price history yet")
+        let caption = L10n.string("PriceTracker_graph_emptyCaption")
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: LunaColors.tertiaryText,
@@ -254,8 +254,8 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         thresholdHandle.layer.cornerCurve = .continuous
         thresholdHandle.layer.borderWidth = 2
         thresholdHandle.layer.borderColor = LunaColors.background.cgColor
-        thresholdHandle.accessibilityLabel = L10n.string("Alert threshold")
-        thresholdHandle.accessibilityHint = L10n.string("Drag vertically to edit the alert price")
+        thresholdHandle.accessibilityLabel = L10n.string("PriceTracker_alertThreshold_title")
+        thresholdHandle.accessibilityHint = L10n.string("PriceTracker_graph_thresholdHandleHint")
         addSubview(thresholdHandle)
 
         thresholdPan.addTarget(self, action: #selector(thresholdDragged(_:)))
@@ -273,7 +273,7 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         addSubview(thresholdLabel)
 
         var setConfiguration = UIButton.Configuration.plain()
-        setConfiguration.title = L10n.string("Set price alert")
+        setConfiguration.title = L10n.string("PriceTracker_alertThreshold_setButtonTitle")
         setConfiguration.image = UIImage(
             systemName: "bell.badge",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
@@ -288,8 +288,7 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         setThresholdButton.configuration = setConfiguration
         setThresholdButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .bold)
         setThresholdButton.isHidden = true
-        setThresholdButton.accessibilityHint = L10n.string(
-            "Starts watching for a price drop and asks to send notifications")
+        setThresholdButton.accessibilityHint = L10n.string("PriceTracker_graph_setButtonHint")
         setThresholdButton.addTarget(
             self, action: #selector(setThresholdTapped), for: .touchUpInside)
         addSubview(setThresholdButton)
@@ -306,7 +305,7 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         thresholdField.keyboardType = .decimalPad
         thresholdField.returnKeyType = .done
         thresholdField.delegate = self
-        thresholdField.accessibilityLabel = L10n.string("Alert threshold price")
+        thresholdField.accessibilityLabel = L10n.string("PriceTracker_graph_thresholdFieldLabel")
         thresholdField.addTarget(self, action: #selector(thresholdFieldChanged), for: .editingChanged)
 
         configureEditorButton(commitButton, symbol: "checkmark", action: #selector(commitThreshold))
@@ -325,7 +324,9 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         configuration.baseForegroundColor = thresholdColor
         button.configuration = configuration
         button.addTarget(self, action: action, for: .touchUpInside)
-        button.accessibilityLabel = symbol == "checkmark" ? L10n.string("Save threshold") : L10n.string("Cancel threshold edit")
+        button.accessibilityLabel = symbol == "checkmark"
+            ? L10n.string("PriceTracker_graph_saveThresholdLabel")
+            : L10n.string("PriceTracker_graph_cancelThresholdLabel")
     }
 
     private func layoutThresholdControls() {

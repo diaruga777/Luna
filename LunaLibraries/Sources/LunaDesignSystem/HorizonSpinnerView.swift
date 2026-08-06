@@ -116,7 +116,7 @@ public final class HorizonSpinnerView: UIView {
         // The bloom is wider than the ring by design; never clip it.
         clipsToBounds = false
         accessibilityTraits = .updatesFrequently
-        accessibilityLabel = L10n.string("Loading")
+        accessibilityLabel = L10n.string("Common_loading")
 
         trackLayer.fillColor = nil
         trackLayer.lineCap = .round

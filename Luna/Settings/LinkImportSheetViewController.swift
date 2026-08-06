@@ -230,20 +230,20 @@ final class LinkImportSheetViewController: UIViewController {
     private func applyStage() {
         switch stage {
         case .review:
-            titleLabel.text = L10n.string("Import Links")
+            titleLabel.text = L10n.string("Settings_linkImport_reviewTitle")
             table.isHidden = false
             table.allowsSelection = true
             progressStack.isHidden = true
             secondaryButton.isHidden = false
-            secondaryButton.setTitle(L10n.string("Cancel"), for: .normal)
-            primaryButton.setTitle(L10n.string("Import"), for: .normal)
+            secondaryButton.setTitle(L10n.string("Common_cancel"), for: .normal)
+            primaryButton.setTitle(L10n.string("Settings_linkImport_importButton"), for: .normal)
             primaryButton.isEnabled = !selectedCandidates.isEmpty
             statusLabel.text = nil
             countLabel.text = nil
             table.reloadData()
 
         case .importing:
-            titleLabel.text = L10n.string("Importing…")
+            titleLabel.text = L10n.string("Settings_linkImport_importingTitle")
             // The list stays up, frozen: its checkmarks are the record of what
             // the user chose, and hiding it would leave the sheet's middle blank
             // with the bar stranded at the bottom.
@@ -251,17 +251,17 @@ final class LinkImportSheetViewController: UIViewController {
             table.allowsSelection = false
             progressStack.isHidden = false
             secondaryButton.isHidden = true
-            primaryButton.setTitle(L10n.string("Stop"), for: .normal)
+            primaryButton.setTitle(L10n.string("Settings_linkImport_stopButton"), for: .normal)
             primaryButton.isEnabled = true
 
         case let .summary(summary):
             titleLabel.text = summary.wasCancelled
-                ? L10n.string("Import Stopped") : L10n.string("Import Finished")
+                ? L10n.string("Settings_linkImport_stoppedTitle") : L10n.string("Settings_linkImport_finishedTitle")
             table.isHidden = false
             table.allowsSelection = false
             progressStack.isHidden = true
             secondaryButton.isHidden = true
-            primaryButton.setTitle(L10n.string("Done"), for: .normal)
+            primaryButton.setTitle(L10n.string("Common_done"), for: .normal)
             primaryButton.isEnabled = true
             table.reloadData()
         }
@@ -331,17 +331,17 @@ final class LinkImportSheetViewController: UIViewController {
         }
         let done = progress.finished
         let total = progress.total
-        countLabel.text = L10n.string("\(done) of \(total) finished")
+        countLabel.text = L10n.string("Settings_linkImport_progressCount", done, total)
     }
 
     private func statusText(for progress: LinkImportRunner.Progress) -> String {
-        if runner.isCancelled { return L10n.string("Finishing the links already started…") }
+        if runner.isCancelled { return L10n.string("Settings_linkImport_finishingStartedStatus") }
         switch progress.phase {
-        case .saving: return L10n.string("Saving links…")
-        case .fetching: return L10n.string("Downloading content…")
-        case .unlocking: return L10n.string("Unlocking paywalled articles…")
-        case .rescuing: return L10n.string("Retrying what failed with Apple Intelligence…")
-        case .done: return L10n.string("Finishing up…")
+        case .saving: return L10n.string("Settings_linkImport_savingStatus")
+        case .fetching: return L10n.string("Settings_linkImport_downloadingStatus")
+        case .unlocking: return L10n.string("Settings_linkImport_unlockingStatus")
+        case .rescuing: return L10n.string("Settings_linkImport_rescuingStatus")
+        case .done: return L10n.string("Settings_linkImport_doneStatus")
         }
     }
 
@@ -361,21 +361,21 @@ final class LinkImportSheetViewController: UIViewController {
         let imported = summary.imported
         var lines: [(String, String?)] = [
             (
-                L10n.string("\(imported) imported"),
-                L10n.string("Saved, with their content ready.")
+                L10n.string("Settings_linkImport_importedCount", imported),
+                L10n.string("Settings_linkImport_importedSubtitle")
             ),
         ]
         if summary.recoverableFailures > 0 {
             let failures = summary.recoverableFailures
             lines.append((
-                L10n.string("\(failures) couldn't be downloaded yet"),
-                L10n.string("Saved anyway — Luna keeps retrying these on its own.")))
+                L10n.string("Settings_linkImport_failuresCount", failures),
+                L10n.string("Settings_linkImport_failuresSubtitle")))
         }
         if summary.duplicates > 0 {
             let duplicates = summary.duplicates
             lines.append((
-                L10n.string("\(duplicates) already saved"),
-                L10n.string("Left exactly as they were.")))
+                L10n.string("Settings_linkImport_duplicatesCount", duplicates),
+                L10n.string("Settings_linkImport_duplicatesSubtitle")))
         }
         return lines
     }
@@ -424,16 +424,16 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         switch visibleSections[section] {
         case .links:
             let count = links.count
-            return L10n.string("Links (\(count))")
+            return L10n.string("Settings_linkImport_linksSectionHeader", count)
         case .archive:
             let count = archived.count
-            return L10n.string("Archive (\(count))")
+            return L10n.string("Settings_linkImport_archiveSectionHeader", count)
         case .result:
-            return L10n.string("Result")
+            return L10n.string("Settings_linkImport_resultSectionHeader")
         case .rejected:
             guard case let .summary(summary) = stage else { return nil }
             let count = summary.rejected.count
-            return L10n.string("Not Saved (\(count))")
+            return L10n.string("Settings_linkImport_notSavedSectionHeader", count)
         }
     }
 
@@ -443,14 +443,12 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
             // Once, under the last section, and only when the file couldn't tell
             // us about an archive.
             guard section == visibleSections.count - 1, !isStructured else { return nil }
-            return L10n.string(
-                "This file didn't say which links were archived, so they'll all be saved as ordinary links.")
+            return L10n.string("Settings_linkImport_unstructuredFooter")
         case .result:
             guard case let .summary(summary) = stage, summary.wasCancelled else { return nil }
-            return L10n.string(
-                "The links you stopped before are saved too — Luna finishes them in the background.")
+            return L10n.string("Settings_linkImport_cancelledFooter")
         case .rejected:
-            return L10n.string("These aren't a kind this app handles, so nothing was saved for them.")
+            return L10n.string("Settings_linkImport_rejectedFooter")
         }
     }
 
@@ -643,12 +641,11 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         switch reason {
         case let .foreignKind(owner):
             guard let owner else {
-                return L10n.string("Another Luna app handles this kind of link.")
+                return L10n.string("Settings_linkImport_rejectedForeignKindGeneric")
             }
-            return String(
-                format: L10n.string("%@ handles this kind of link."), owner.displayName)
+            return L10n.string("Settings_linkImport_rejectedForeignKindNamed", owner.displayName)
         case .unusableURL:
-            return L10n.string("Not a link Luna can open.")
+            return L10n.string("Settings_linkImport_rejectedUnusableURL")
         }
     }
 }

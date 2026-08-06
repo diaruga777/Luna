@@ -57,11 +57,11 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     /// The row/menu-item title, e.g. "PDF".
     public var displayName: String {
         switch self {
-        case .epub: return L10n.string("EPUB")
-        case .pdf: return L10n.string("PDF")
-        case .markdown: return L10n.string("Markdown")
-        case .plainText: return L10n.string("Text")
-        case .document: return L10n.string("Word Document")
+        case .epub: return L10n.string("ExportFormat_epub")
+        case .pdf: return L10n.string("ExportFormat_pdf")
+        case .markdown: return L10n.string("ExportFormat_markdown")
+        case .plainText: return L10n.string("ExportFormat_text")
+        case .document: return L10n.string("ExportFormat_wordDocument")
         }
     }
 

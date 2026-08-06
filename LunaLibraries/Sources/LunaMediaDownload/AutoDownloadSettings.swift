@@ -125,9 +125,9 @@ public enum AutoDownloadPolicy: CaseIterable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .never: return L10n.string("Never")
-        case .always: return L10n.string("Always")
-        case .wifiOnly: return L10n.string("On Wi-Fi Only")
+        case .never: return L10n.string("Common_never")
+        case .always: return L10n.string("Settings_autoDownload_policy_always")
+        case .wifiOnly: return L10n.string("Settings_autoDownload_policy_wifiOnly")
         }
     }
 }

@@ -28,7 +28,7 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
 
     private let store: ReadingListStore
 
-    static func screenTitle() -> String { L10n.string("Import & Export") }
+    static func screenTitle() -> String { L10n.string("Settings_importExport_title") }
 
     init(store: ReadingListStore = .shared) {
         self.store = store
@@ -53,8 +53,7 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
     override func tableView(
         _ tableView: UITableView, titleForFooterInSection _: Int
     ) -> String? {
-        L10n.string(
-            "Export writes every saved link as a Markdown file, with the archive kept as its own list. Import reads that file back, another app's CSV, or any text with links in it — you choose which ones to keep before anything is saved.")
+        L10n.string("Settings_importExport_footer")
     }
 
     override func tableView(
@@ -65,10 +64,10 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
         content.textProperties.color = view.tintColor ?? .systemBlue
         switch Row(rawValue: indexPath.row) ?? .export {
         case .export:
-            content.text = L10n.string("Export Links")
+            content.text = L10n.string("Settings_importExport_exportRow")
             content.image = UIImage(systemName: "square.and.arrow.up")
         case .importFile:
-            content.text = L10n.string("Import Links")
+            content.text = L10n.string("Settings_importExport_importRow")
             content.image = UIImage(systemName: "square.and.arrow.down")
         }
         cell.contentConfiguration = content
@@ -92,17 +91,17 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
         let document = LinkListExport.document(for: store.items())
         guard !document.isEmpty else {
             presentInfoAlert(
-                title: L10n.string("Nothing to Export"),
+                title: L10n.string("Settings_importExport_nothingToExportTitle"),
                 // Not "your list is empty": the store is shared, so a sibling
                 // app's saves may well be in it — there is just nothing here that
                 // belongs to this one.
-                message: L10n.string("There are no links in this app's list to export yet."))
+                message: L10n.string("Settings_importExport_nothingToExportMessage"))
             return
         }
         guard let fileURL = try? LinkListExport.writeTemporaryFile(document) else {
             presentInfoAlert(
-                title: L10n.string("Couldn't Export Links"),
-                message: L10n.string("The export file couldn't be written. Try again."))
+                title: L10n.string("Settings_importExport_exportFailedTitle"),
+                message: L10n.string("Settings_importExport_exportFailedMessage"))
             return
         }
         let activity = UIActivityViewController(
@@ -127,8 +126,8 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
         guard !document.isEmpty else {
             presentWhenClear(
                 infoAlert(
-                    title: L10n.string("No Links Found"),
-                    message: L10n.string("That file didn't contain any links Luna could read.")))
+                    title: L10n.string("Settings_importExport_noLinksFoundTitle"),
+                    message: L10n.string("Settings_importExport_noLinksFoundMessage")))
             return
         }
         presentWhenClear(LinkImportSheetViewController(document: document))
@@ -152,7 +151,7 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
 
     private func infoAlert(title: String, message: String) -> UIAlertController {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
         return alert
     }
 }
@@ -173,9 +172,8 @@ extension ImportExportSettingsScreen: UIDocumentPickerDelegate {
                 guard let document else {
                     self.presentWhenClear(
                         self.infoAlert(
-                            title: L10n.string("Couldn't Read That File"),
-                            message: L10n.string(
-                                "Luna couldn't open it as text. Pick a Markdown, CSV or plain-text file.")))
+                            title: L10n.string("Settings_importExport_readFailedTitle"),
+                            message: L10n.string("Settings_importExport_readFailedMessage")))
                     return
                 }
                 self.presentReview(for: document)

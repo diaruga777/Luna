@@ -166,7 +166,7 @@ public final class SavedNonTextualViewController: UIViewController {
         // to be a 44pt checkmark, the word "Saved", AND a navigation title
         // hard-coded to "Luna Downloader" (wrong in the three other apps that
         // present this screen) — three pieces of chrome for one sentence.
-        let savedBadge = GlassConfirmationBadge(title: L10n.string("Saved to Luna"))
+        let savedBadge = GlassConfirmationBadge(title: L10n.string("Common_savedToLuna"))
 
         // Confirmation + the media + the media's own action sit at the TOP.
         // All platforms use the same confirmation header. Downloadable media,
@@ -269,7 +269,7 @@ public final class SavedNonTextualViewController: UIViewController {
         Self.styleAsSystemPlayButton(playOverlay, diameter: 60)
         previewContainer.addSubview(playOverlay)
 
-        previewPlaceholder.text = L10n.string("Unable to preview media")
+        previewPlaceholder.text = L10n.string("Downloader_media_preview_unavailableMessage")
         previewPlaceholder.font = .preferredFont(forTextStyle: .subheadline)
         previewPlaceholder.textColor = LunaColors.secondaryText
         previewPlaceholder.textAlignment = .center
@@ -316,7 +316,7 @@ public final class SavedNonTextualViewController: UIViewController {
         ])
 
         downloadButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Download media"), symbol: "arrow.down.circle",
+            title: L10n.string("Downloader_media_preview_downloadButtonTitle"), symbol: "arrow.down.circle",
             prominent: true, tint: Self.tint)
         downloadButton.addAction(
             UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
@@ -376,7 +376,7 @@ public final class SavedNonTextualViewController: UIViewController {
     private func configureDeleteButton() {
         guard deleteButton.configuration == nil else { return }
         var config = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Delete"), symbol: "trash", tint: Self.tint)
+            title: L10n.string("Common_delete"), symbol: "trash", tint: Self.tint)
         // Quiet glass, but the label and glyph stay unmistakably destructive.
         config.baseForegroundColor = LunaColors.errorAccent
         deleteButton.configuration = config
@@ -387,7 +387,7 @@ public final class SavedNonTextualViewController: UIViewController {
     private func configureDoneButton() {
         guard doneButton.configuration == nil else { return }
         doneButton.configuration = GlassStyle.primaryActionButtonConfiguration(
-            title: L10n.string("Done"), symbol: "checkmark", tint: Self.tint)
+            title: L10n.string("Common_done"), symbol: "checkmark", tint: Self.tint)
         doneButton.addAction(UIAction { [weak self] _ in self?.onDone() }, for: .touchUpInside)
     }
 
@@ -398,7 +398,7 @@ public final class SavedNonTextualViewController: UIViewController {
         shareButton.isEnabled = false
         ExtensionFloatingGlassButton.style(
             shareButton, symbol: "square.and.arrow.up",
-            accessibilityLabel: L10n.string("Share"))
+            accessibilityLabel: L10n.string("Common_share"))
         shareButton.addAction(
             UIAction { [weak self] _ in self?.shareDownloadedMedia() }, for: .touchUpInside)
 
@@ -591,7 +591,7 @@ public final class SavedNonTextualViewController: UIViewController {
             // it holds its space and says nothing.
             saveButton.isHidden = true
             saveButton.isEnabled = false
-            downloadStatus.text = L10n.string("Downloading…")
+            downloadStatus.text = L10n.string("Downloader_media_preview_downloadingStatus")
             downloadStatus.textColor = LunaColors.secondaryText
             downloadStatus.isHidden = false
 
@@ -668,7 +668,8 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.applyResolvedMediaState(.ready(media))
                 }
             } catch {
-                let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't download the media.")
+                let message = (error as? MediaDownloadError)?.message
+                    ?? L10n.string("Downloader_media_error_downloadFailed")
                 await MainActor.run {
                     guard !self.isDeleting else { return }
                     self.applyMediaState(.failed(message: message))
@@ -915,7 +916,8 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.markItemRead()
                     await MainActor.run { self.finishSave(success: true) }
                 } catch {
-                    let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't save the media.")
+                    let message = (error as? MediaDownloadError)?.message
+                        ?? L10n.string("Downloader_media_error_saveMediaFailed")
                     await MainActor.run { self.finishSave(message: message, success: false) }
                 }
             }
@@ -934,7 +936,8 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.markItemRead()
                     await MainActor.run { self.finishSave(success: true) }
                 } catch {
-                    let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't save the media.")
+                    let message = (error as? MediaDownloadError)?.message
+                        ?? L10n.string("Downloader_media_error_saveMediaFailed")
                     await MainActor.run { self.finishSave(message: message, success: false) }
                 }
             }
@@ -944,7 +947,7 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     private func showSavingStatus() {
-        downloadStatus.text = L10n.string("Saving to Photos…")
+        downloadStatus.text = L10n.string("Downloader_media_preview_savingStatus")
         downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
     }
@@ -982,7 +985,8 @@ public final class SavedNonTextualViewController: UIViewController {
         // The title carries an image attachment in place of a word, so spell the
         // label out rather than letting VoiceOver read around the glyph.
         saveButton.accessibilityLabel = savedToPhotos
-            ? L10n.string("Saved to Photos") : L10n.string("Save to Photos")
+            ? L10n.string("Downloader_media_preview_savedAccessibilityLabel")
+            : L10n.string("Downloader_media_preview_saveAccessibilityLabel")
     }
 
     /// "Save to 🌸 Photos" — the Photos mark placed inline, at the position the
@@ -992,8 +996,8 @@ public final class SavedNonTextualViewController: UIViewController {
     private static func photosTitle(savedToPhotos: Bool) -> AttributedString {
         let marker = "\u{FFFC}"   // OBJECT REPLACEMENT CHARACTER
         let text = savedToPhotos
-            ? L10n.string("Saved to \(marker) Photos")
-            : L10n.string("Save to \(marker) Photos")
+            ? L10n.string("Downloader_media_preview_savedButtonTitleFormat", marker)
+            : L10n.string("Downloader_media_preview_saveButtonTitleFormat", marker)
         let font = UIFont.systemFont(ofSize: 15, weight: .semibold)
         let string = NSMutableAttributedString(string: text, attributes: [.font: font])
         guard let range = text.range(of: marker) else { return AttributedString(string) }
@@ -1016,7 +1020,7 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadButton.isEnabled = false
         shareButton.isEnabled = false
         saveButton.isEnabled = false
-        downloadStatus.text = L10n.string("Deleting…")
+        downloadStatus.text = L10n.string("Downloader_media_preview_deletingStatus")
         downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
 
@@ -1038,7 +1042,7 @@ public final class SavedNonTextualViewController: UIViewController {
                 await MainActor.run { self.onDone() }
             } catch {
                 let message = (error as? MediaDownloadError)?.message
-                    ?? L10n.string("Couldn't delete this media.")
+                    ?? L10n.string("Downloader_media_error_deleteFailed")
                 await MainActor.run {
                     self.isDeleting = false
                     self.deleteButton.isEnabled = true

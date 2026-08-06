@@ -176,14 +176,13 @@ final class RSVPGazeCoordinator {
 
     private func presentPermissionDenied(from presenter: UIViewController) {
         let alert = UIAlertController(
-            title: L10n.string("Camera Access Needed"),
-            message: L10n.string(
-                "Luna tracks your eyes to pause playback automatically when you look away. Turn on camera access in Settings to use it."),
+            title: L10n.string("Reader_rsvp_gaze_cameraAccessDeniedTitle"),
+            message: L10n.string("Reader_rsvp_gaze_cameraAccessDeniedMessage"),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
         if let settings = URL(string: UIApplication.openSettingsURLString) {
             alert.addAction(UIAlertAction(
-                title: L10n.string("Open Settings"), style: .default,
+                title: L10n.string("Common_openSettings"), style: .default,
                 handler: { _ in UIApplication.shared.open(settings) }))
         }
         presenter.present(alert, animated: true)

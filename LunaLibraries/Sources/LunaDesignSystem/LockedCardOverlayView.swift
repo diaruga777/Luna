@@ -73,7 +73,7 @@ public final class LockedCardOverlayView: UIView {
         ])
 
         isAccessibilityElement = true
-        accessibilityLabel = captionText ?? L10n.string("Locked")
+        accessibilityLabel = captionText ?? L10n.string("CardDeck_lockedBadge")
         accessibilityTraits = .staticText
     }
 

@@ -19,7 +19,14 @@ import XCTest
 /// meant to be opened in a text editor away from Xcode, so a dropped `;`, a
 /// stray quote or a `%@` deleted out of a format string all have to fail here
 /// rather than at the point some screen tries to draw itself.
+///
+/// A key here is `"<base>_<suffix>"` — `Luna`, `Core`, `Reader`, `Downloader`
+/// or `PriceTracker` (see `Localization.swift`) — never the English text.
+/// `L10n.string("<base>")` tries `"<base>_<app's own suffix>"` first, then
+/// `"<base>_Luna"`, so every base key referenced from code MUST have a
+/// `_Luna` entry — that's the fallback with nowhere further to go.
 final class LocalizableStringsTests: XCTestCase {
+    static let suffixes = ["Luna", "Core", "Reader", "Downloader", "PriceTracker"]
 
     /// The compiled `Localizable.strings` from LunaModels' resource bundle,
     /// as it sits inside the test host app.
@@ -40,6 +47,18 @@ final class LocalizableStringsTests: XCTestCase {
             "Localizable.strings did not parse. This is what a bad hand edit looks like: "
                 + "a missing trailing ';', an unescaped '\"', or a line that lost its '='.")
         return (bundle, entries)
+    }
+
+    /// Splits `"Foo_Reader"` into `("Foo", "Reader")`. `nil` if `key` doesn't
+    /// end in one of the five recognized suffixes.
+    private static func baseAndSuffix(_ key: String) -> (base: String, suffix: String)? {
+        for suffix in suffixes {
+            let tail = "_" + suffix
+            if key.hasSuffix(tail), key.count > tail.count {
+                return (String(key.dropLast(tail.count)), suffix)
+            }
+        }
+        return nil
     }
 
     func testShippedTableParsesAndIsPopulated() throws {
@@ -66,24 +85,67 @@ final class LocalizableStringsTests: XCTestCase {
                 + unresolved.prefix(5).joined(separator: " | "))
     }
 
-    /// A value has to substitute exactly what its key substitutes.
+    /// Every entry's key must end in one of the five recognized suffixes —
+    /// `L10n` only ever looks up `"<base>_<suffix>"`, so a key that doesn't
+    /// end this way is unreachable dead weight (or a typo one keystroke away
+    /// from being unreachable).
+    func testEveryEntryKeyHasARecognizedSuffix() throws {
+        let (_, entries) = try shippedTable()
+        let unrecognized = entries.keys.filter { Self.baseAndSuffix($0) == nil }
+        XCTAssertTrue(
+            unrecognized.isEmpty,
+            "\(unrecognized.count) key(s) don't end in _Luna/_Core/_Reader/_Downloader/"
+                + "_PriceTracker: " + unrecognized.prefix(5).joined(separator: " | "))
+    }
+
+    /// Every base key needs a `_Luna` line — the universal fallback `L10n`
+    /// reaches for when the running app has no override of its own. Without
+    /// it, a per-app override with no `_Luna` sibling works fine for that one
+    /// app and then shows a raw key the moment anyone else calls it.
+    func testEveryBaseKeyHasALunaFallback() throws {
+        let (_, entries) = try shippedTable()
+        var basesNeedingLuna: Set<String> = []
+        var basesWithLuna: Set<String> = []
+        for key in entries.keys {
+            guard let (base, suffix) = Self.baseAndSuffix(key) else { continue }
+            if suffix == "Luna" {
+                basesWithLuna.insert(base)
+            } else {
+                basesNeedingLuna.insert(base)
+            }
+        }
+        let missing = basesNeedingLuna.subtracting(basesWithLuna)
+        XCTAssertTrue(
+            missing.isEmpty,
+            "\(missing.count) base key(s) have an app override but no \"<base>_Luna\" "
+                + "fallback: " + missing.prefix(5).joined(separator: " | "))
+    }
+
+    /// A value has to substitute exactly what its sibling suffix variants do.
     ///
     /// This is the edit most likely to get through review and crash in the
-    /// field: dropping a `%@` from a value leaves an argument with nowhere to
-    /// go, and adding one invents an argument the call site never passed.
-    func testFormatSpecifiersMatchBetweenKeyAndValue() throws {
+    /// field: a `_Reader` override that drops a `%@` its `_Luna` sibling has
+    /// leaves an argument the call site still passes with nowhere to go, and
+    /// one that adds a `%@` invents an argument that was never passed.
+    func testFormatSpecifiersMatchAcrossSuffixVariants() throws {
         let (_, entries) = try shippedTable()
-        var mismatches: [String] = []
+        var byBase: [String: [(suffix: String, value: String)]] = [:]
         for (key, value) in entries {
-            let inKey = Self.specifiers(in: key)
-            let inValue = Self.specifiers(in: value)
-            if inKey != inValue {
-                mismatches.append("\(key)\n     key: \(inKey)  value: \(inValue)")
+            guard let (base, suffix) = Self.baseAndSuffix(key) else { continue }
+            byBase[base, default: []].append((suffix, value))
+        }
+        var mismatches: [String] = []
+        for (base, variants) in byBase where variants.count > 1 {
+            let specifierSets = variants.map { ($0.suffix, Self.specifiers(in: $0.value)) }
+            let first = specifierSets[0].1
+            if specifierSets.dropFirst().contains(where: { $0.1 != first }) {
+                let detail = specifierSets.map { "\($0.0): \($0.1)" }.joined(separator: ", ")
+                mismatches.append("\(base) — \(detail)")
             }
         }
         XCTAssertTrue(
             mismatches.isEmpty,
-            "\(mismatches.count) entry(ies) substitute differently from their key:\n  "
+            "\(mismatches.count) base key(s) substitute differently between suffix variants:\n  "
                 + mismatches.prefix(5).joined(separator: "\n  "))
     }
 
@@ -152,12 +214,22 @@ final class LocalizableStringsTests: XCTestCase {
     ///
     /// These are the literals Xcode bakes in at build time; they resolve
     /// against the table at runtime, which is the only reason their wording can
-    /// be changed without a code edit. If the sync script ever stops finding
-    /// them, they silently become uneditable and nothing else notices.
+    /// be changed without a code edit. Unlike an `L10n` call, an intent literal
+    /// has no runtime fallback — the Swift source carries the exact, already-
+    /// suffixed key it needs, so this checks those concrete keys directly. If
+    /// the sync script ever stops finding them, they silently become
+    /// uneditable and nothing else notices.
     func testShortcutsMetadataIsInTheTable() throws {
         let (_, entries) = try shippedTable()
-        for key in ["Save", "Provide Context", "Read Article", "Capture Outcome",
-                    "Context Result", "Save Result", "Article"] {
+        for key in [
+            "Intents_save_title_Luna",
+            "Intents_provideContext_title_Luna",
+            "Intents_readArticle_title_Luna",
+            "Intents_provideContextOutcome_typeName_Luna",
+            "Intents_provideContextResultEntity_typeName_Luna",
+            "Intents_saveResultEntity_typeName_Luna",
+            "Intents_articleEntity_typeName_Luna",
+        ] {
             XCTAssertNotNil(entries[key], "intent string '\(key)' is missing")
         }
     }

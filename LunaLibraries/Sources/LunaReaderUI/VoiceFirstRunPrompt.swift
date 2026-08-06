@@ -30,13 +30,13 @@ public enum VoiceFirstRunPrompt {
         VoiceModelStore.hasSeenVoicePrompt = true
 
         let alert = UIAlertController(
-            title: L10n.string("Better Voices Available"),
-            message: L10n.string("Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings."),
+            title: L10n.string("Reader_audio_voicePromptTitle"),
+            message: L10n.string("Reader_audio_voicePromptMessage"),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Open Settings"), style: .default) { _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Common_openSettings"), style: .default) { _ in
             openVoiceSettings(presenter)
         })
-        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
         presenter.present(alert, animated: true)
     }
 }

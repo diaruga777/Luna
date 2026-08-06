@@ -21,9 +21,9 @@ enum SafariSuggestionMode: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .never: return L10n.string("Never")
-        case .all: return L10n.string("All Articles")
-        case .onlyLocked: return L10n.string("Locked Only")
+        case .never: return L10n.string("Common_never")
+        case .all: return L10n.string("Settings_safariSuggestion_allArticlesOption")
+        case .onlyLocked: return L10n.string("Settings_safariSuggestion_onlyLockedOption")
         }
     }
 }

@@ -182,7 +182,7 @@ public struct ArticleFetcher: HTMLFetching {
         if words.count >= 2 {
             return words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
         }
-        return (article.host ?? L10n.string("Article"))
+        return (article.host ?? L10n.string("Common_article"))
             .replacingOccurrences(of: "www.", with: "")
     }
 

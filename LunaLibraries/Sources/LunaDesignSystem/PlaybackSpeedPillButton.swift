@@ -54,12 +54,12 @@ public final class PlaybackSpeedPillButton: UIButton {
         attributes.font = .systemFont(ofSize: 13, weight: .semibold)
         configuration?.attributedTitle = AttributedString(
             PlaybackSpeed.label(for: speed), attributes: attributes)
-        accessibilityLabel = L10n.string("Playback speed")
+        accessibilityLabel = L10n.string("Common_playbackSpeed")
         accessibilityValue = PlaybackSpeed.accessibilityLabel(for: speed)
         // The menu carries the checkmark, so it is rebuilt whenever the speed
         // changes rather than mutating actions in place.
         menu = UIMenu(
-            title: L10n.string("Playback Speed"),
+            title: L10n.string("Common_playbackSpeedMenuTitle"),
             children: PlaybackSpeed.options.map { option in
                 let action = UIAction(title: PlaybackSpeed.label(for: option)) {
                     [weak self] _ in

@@ -341,9 +341,9 @@ final class MediaCardPresenter: CardKindPresenting {
             onPhotosDeletionFailure: { [weak host] in
                 guard let host else { return }
                 MediaItemActions.presentAlert(
-                    title: L10n.string("Photos Access Needed"),
+                    title: L10n.string("Downloader_mediaCard_photosAccess_title"),
                     message: L10n.string(
-                        "Allow Photos access in Settings to delete this media from Photos."),
+                        "Downloader_mediaCard_photosAccess_deleteMessage"),
                     from: host.presentingController)
             })
     }
@@ -479,9 +479,9 @@ final class MediaCardPresenter: CardKindPresenting {
                                 MediaItemActions.startManualDownload(item)
                             } else {
                                 MediaItemActions.presentAlert(
-                                    title: L10n.string("Photos Access Needed"),
+                                    title: L10n.string("Downloader_mediaCard_photosAccess_title"),
                                     message: L10n.string(
-                                        "Allow Photos access to play this archived item."),
+                                        "Downloader_mediaCard_photosAccess_playMessage"),
                                     from: host.presentingController)
                             }
                             return
@@ -552,8 +552,8 @@ final class MediaCardPresenter: CardKindPresenting {
             guard let self, let host else { return }
             guard let fileURL = await self.prepareShareFile(for: media) else {
                 MediaItemActions.presentAlert(
-                    title: L10n.string("Share Failed"),
-                    message: L10n.string("Couldn't prepare this media for sharing."),
+                    title: L10n.string("Downloader_mediaCard_shareFailedAlert_title"),
+                    message: L10n.string("Downloader_mediaCard_shareFailedAlert_message"),
                     from: host.presentingController)
                 return
             }
@@ -675,9 +675,9 @@ final class MediaCardPresenter: CardKindPresenting {
                         onPhotosDeletionFailure: { [weak host] in
                             guard let host else { return }
                             MediaItemActions.presentAlert(
-                                title: L10n.string("Photos Access Needed"),
+                                title: L10n.string("Downloader_mediaCard_photosAccess_title"),
                                 message: L10n.string(
-                                    "Allow Photos access in Settings to delete this media from Photos."),
+                                    "Downloader_mediaCard_photosAccess_deleteMessage"),
                                 from: host.presentingController)
                         })
                 }

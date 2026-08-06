@@ -337,7 +337,7 @@ final class KindDeckProvider: CardDeckProviding {
     func deckMenu(forSlot slot: Int) -> UIMenu? {
         guard let item = item(atSlot: slot) else { return nil }
         let delete = UIAction(
-            title: L10n.string("Delete"), image: UIImage(systemName: "trash"),
+            title: L10n.string("Common_delete"), image: UIImage(systemName: "trash"),
             attributes: .destructive
         ) { [weak self] _ in self?.delete(item) }
 
@@ -358,7 +358,7 @@ final class KindDeckProvider: CardDeckProviding {
         let weekly = WeeklyPromotionMenu.actions(for: item, presenter: host)
         return UIMenu(children: kindActions + weekly + [
             UIAction(
-                title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
+                title: L10n.string("CardDeck_host_archiveAction"), image: UIImage(systemName: "archivebox")
             ) { [weak self] _ in self?.archive(item) },
             delete,
         ])

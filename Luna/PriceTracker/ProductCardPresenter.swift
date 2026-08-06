@@ -120,7 +120,7 @@ final class ProductCardPresenter: CardKindPresenting {
     func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement] {
         [
             UIAction(
-                title: L10n.string("Share"), image: UIImage(systemName: "square.and.arrow.up")
+                title: L10n.string("Common_share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self, weak host] _ in
                 guard let self, let host else { return }
                 self.share(

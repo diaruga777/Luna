@@ -20,9 +20,9 @@ public enum AppearanceSettings {
 
         public var displayName: String {
             switch self {
-            case .system: return L10n.string("System")
-            case .light: return L10n.string("Light")
-            case .dark: return L10n.string("Dark")
+            case .system: return L10n.string("Settings_appearance_system")
+            case .light: return L10n.string("Settings_appearance_light")
+            case .dark: return L10n.string("Settings_appearance_dark")
             }
         }
     }

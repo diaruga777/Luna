@@ -12,13 +12,13 @@ public enum FailedSaveCopy {
     /// The terminal line: the rescue is spent for this app version and there is
     /// nothing left to offer but Delete.
     public static var terminal: String {
-        L10n.string("Sorry, Luna was unable to save this page.")
+        L10n.string("SaveFailure_genericTitle")
     }
 
     /// The headline a surface uses when it has to name the failure in words
     /// (the card doesn't — it shows the page).
     public static var couldNotLoad: String {
-        L10n.string("Couldn't load this page.")
+        L10n.string("SaveFailure_couldntLoadPage")
     }
 
     /// The URL as the error card's URL bar shows it: scheme stripped, path and
@@ -87,40 +87,40 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     public var headline: String {
         switch self {
         case .offline:
-            return L10n.string("No internet connection")
+            return L10n.string("SaveFailure_noInternet")
         case .timedOut:
-            return L10n.string("The site took too long to respond")
+            return L10n.string("SaveFailure_timedOut")
         case let .httpStatus(code):
             switch code {
-            case 401, 403: return L10n.string("The site refused the request (\(code))")
-            case 404, 410: return L10n.string("The page is gone (\(code))")
-            case 429: return L10n.string("The site is rate-limiting Luna (429)")
-            case 500...599: return L10n.string("The site had a server error (\(code))")
-            default: return L10n.string("The site answered with HTTP \(code)")
+            case 401, 403: return L10n.string("SaveFailure_refused", code)
+            case 404, 410: return L10n.string("SaveFailure_gone", code)
+            case 429: return L10n.string("SaveFailure_rateLimited")
+            case 500...599: return L10n.string("SaveFailure_serverError", code)
+            default: return L10n.string("SaveFailure_httpStatus", code)
             }
         case let .network(detail):
             return detail
         case .notReadable:
-            return L10n.string("Nothing readable was found on the page")
+            return L10n.string("SaveFailure_nothingReadable")
         case .notContent:
-            return L10n.string("There's nothing on this page to save")
+            return L10n.string("SaveFailure_nothingToSave")
         case .notHTML:
-            return L10n.string("The link isn't a readable web page")
+            return L10n.string("SaveFailure_notReadableWebPage")
         case .tooLarge:
-            return L10n.string("The page is too large to read")
+            return L10n.string("SaveFailure_tooLarge")
         case let .unsupportedDocument(type):
             let trimmed = type.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty
                 ? "Luna can't read this document"
                 : "Luna can't read .\(trimmed) documents"
         case .noMediaFound:
-            return L10n.string("No downloadable media was found")
+            return L10n.string("SaveFailure_noMediaFound")
         case .couldNotSave:
-            return L10n.string("Luna couldn't store the download")
+            return L10n.string("SaveFailure_couldntStoreDownload")
         case .subscribeRedirect:
-            return L10n.string("The site sent Luna to its subscribe page")
+            return L10n.string("SaveFailure_sentToSubscribePage")
         case .unknown:
-            return L10n.string("Luna couldn't fetch this link")
+            return L10n.string("SaveFailure_couldntFetchLink")
         }
     }
 
@@ -129,26 +129,26 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     public var suggestion: String? {
         switch self {
         case .offline:
-            return L10n.string("It will retry automatically once you're back online.")
+            return L10n.string("SaveFailure_willRetryHint")
         case .timedOut, .network:
-            return L10n.string("Pull to retry, or open it in the browser below.")
+            return L10n.string("SaveFailure_pullToRetryHint")
         case let .httpStatus(code):
             switch code {
             case 401, 403, 429:
-                return L10n.string("Opening it in the browser often works where a background fetch can't.")
+                return L10n.string("SaveFailure_openInBrowserHint")
             case 404, 410:
-                return L10n.string("The page may have moved — try the browser to check.")
+                return L10n.string("SaveFailure_mayHaveMovedHint")
             case 500...599:
-                return L10n.string("The site's problem, not yours. Retry in a little while.")
+                return L10n.string("SaveFailure_sitesProblemHint")
             default:
-                return L10n.string("Pull to retry, or open it in the browser below.")
+                return L10n.string("SaveFailure_pullToRetryHint")
             }
         case .notReadable, .notHTML:
-            return L10n.string("Apple Intelligence can sometimes pull an article out anyway.")
+            return L10n.string("SaveFailure_appleIntelligenceHint")
         case .notContent:
-            return L10n.string("Search results and index pages hold no single item — open one from the page and save that instead.")
+            return L10n.string("SaveFailure_searchResultsHint")
         case .subscribeRedirect:
-            return L10n.string("Open it in the browser below to read it there.")
+            return L10n.string("SaveFailure_openInBrowserToReadHint")
         case .tooLarge, .unsupportedDocument, .noMediaFound, .couldNotSave, .unknown:
             return nil
         }

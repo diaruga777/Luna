@@ -205,7 +205,7 @@ public enum WeeklyPromotionError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notKeyHolder:
-            return L10n.string("This device doesn't have the Save of the Week key.")
+            return L10n.string("SaveOfWeek_refresher_notKeyHolderError")
         }
     }
 }
@@ -217,11 +217,11 @@ public enum WeeklyProposalNotifier {
     public static func post(count: Int, host: String?) {
         let content = UNMutableNotificationContent()
         if count == 1 {
-            content.title = L10n.string("New Save of the Week proposal")
-            content.body = host ?? L10n.string("Open Settings to review it.")
+            content.title = L10n.string("SaveOfWeek_refresher_proposalNotification_singularHeadline")
+            content.body = host ?? L10n.string("SaveOfWeek_refresher_proposalNotification_singularMessage")
         } else {
-            content.title = L10n.string("\(count) new Save of the Week proposals")
-            content.body = L10n.string("Open Settings to review them.")
+            content.title = L10n.string("SaveOfWeek_refresher_proposalNotification_pluralHeadline", count)
+            content.body = L10n.string("SaveOfWeek_refresher_proposalNotification_pluralMessage")
         }
         content.sound = .default
         // The literal key is `NotificationManager.typeKey`; LunaWeekly sits

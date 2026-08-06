@@ -144,7 +144,7 @@ final class ProductCardContentViewController: CardContentViewController {
 
     private func configureGraph() {
         let label = UILabel()
-        label.text = L10n.string("Price History")
+        label.text = L10n.string("PriceTracker_graph_historyTitle")
         label.font = .systemFont(ofSize: 13, weight: .semibold)
         label.textColor = LunaColors.secondaryText
         contentStack.addArrangedSubview(label)
@@ -178,7 +178,7 @@ final class ProductCardContentViewController: CardContentViewController {
 
     private func configureStores() {
         let heading = UILabel()
-        heading.text = L10n.string("Tracked Sites")
+        heading.text = L10n.string("PriceTracker_productCard_trackedSitesTitle")
         heading.font = .systemFont(ofSize: 13, weight: .semibold)
         heading.textColor = LunaColors.secondaryText
 
@@ -187,7 +187,7 @@ final class ProductCardContentViewController: CardContentViewController {
         addConfiguration.baseForegroundColor = LunaSurfacePalette.baseColor(for: .priceTracker)
         addConfiguration.contentInsets = .zero
         addButton.configuration = addConfiguration
-        addButton.accessibilityLabel = L10n.string("Add tracked site")
+        addButton.accessibilityLabel = L10n.string("PriceTracker_productCard_addTrackedSiteTitle")
         addButton.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
         addButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -248,14 +248,14 @@ final class ProductCardContentViewController: CardContentViewController {
             ?? listing.urlString
         configuration.subtitle = listing.lastPrice.map {
             PriceFormatting.string(amount: $0, currency: listing.currency)
-        } ?? L10n.string("Price unavailable")
+        } ?? L10n.string("PriceTracker_productCard_priceUnavailableTitle")
         configuration.titleAlignment = .leading
         configuration.image = UIImage(systemName: "safari")
         configuration.imagePadding = 8
         configuration.baseForegroundColor = LunaColors.primaryText
         open.configuration = configuration
         open.contentHorizontalAlignment = .leading
-        open.accessibilityHint = L10n.string("Opens this tracked site")
+        open.accessibilityHint = L10n.string("PriceTracker_productCard_openSiteHint")
         open.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             InAppBrowser.present(urlString: listing.urlString, from: self)
@@ -270,7 +270,8 @@ final class ProductCardContentViewController: CardContentViewController {
             removeConfiguration.image = UIImage(systemName: "minus.circle")
             removeConfiguration.baseForegroundColor = LunaColors.secondaryText
             remove.configuration = removeConfiguration
-            remove.accessibilityLabel = L10n.string("Remove \(configuration.title ?? "site")")
+            remove.accessibilityLabel = L10n.string(
+                "PriceTracker_productCard_removeSiteLabel", configuration.title ?? "site")
             remove.addAction(UIAction { [weak self] _ in
                 guard let self, var tracker = self.tracker,
                       tracker.removeStore(urlString: listing.urlString) else { return }
@@ -414,7 +415,7 @@ enum ProductCardDeck {
             // fixture of this deck's chrome, and a gap beside the scrub strip
             // reads as a layout fault.
             configuration.shareButton = CardDeckShareButton(
-                accessibilityLabel: L10n.string("Share Current Product"),
+                accessibilityLabel: L10n.string("PriceTracker_productCard_shareCurrentProductLabel"),
                 unavailability: .disables)
             return KindDeckProvider(host: host, configuration: configuration)
         }

@@ -32,7 +32,7 @@ public enum PlaybackSpeed {
     /// A speech-friendly form for accessibility labels ("0.5× speed").
     public static func accessibilityLabel(for speed: Double) -> String {
         let formatted = String(format: "%g", speed)
-        return L10n.string("\(formatted)× speed")
+        return L10n.string("Common_playbackSpeedAccessibilityLabel", formatted)
     }
 
     /// Whether two speeds are the same choice, tolerating float representation.

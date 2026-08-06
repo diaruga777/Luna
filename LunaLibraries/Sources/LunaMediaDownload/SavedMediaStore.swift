@@ -930,11 +930,11 @@ public enum MediaRetentionOption: Int, CaseIterable, Sendable {
     /// `MediaStorageOption.displayName`.
     public var displayName: String {
         switch self {
-        case .never: return L10n.string("Never")
-        case .oneDay: return L10n.string("1 day")
-        case .threeDays: return L10n.string("3 days")
-        case .twoWeeks: return L10n.string("2 weeks")
-        case .oneMonth: return L10n.string("1 month")
+        case .never: return L10n.string("Common_never")
+        case .oneDay: return L10n.string("Downloader_media_retention_oneDay")
+        case .threeDays: return L10n.string("Downloader_media_retention_threeDays")
+        case .twoWeeks: return L10n.string("Downloader_media_retention_twoWeeks")
+        case .oneMonth: return L10n.string("Downloader_media_retention_oneMonth")
         }
     }
 

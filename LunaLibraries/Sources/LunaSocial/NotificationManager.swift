@@ -95,8 +95,8 @@ public enum NotificationManager {
     /// reaches the reading list.
     public static func postShareReceived(fromName name: String, title: String?) {
         let content = UNMutableNotificationContent()
-        content.title = L10n.string("\(name) shared an article")
-        content.body = title ?? L10n.string("Open Luna to read it.")
+        content.title = L10n.string("Sharing_notification_shareReceived_headline", name)
+        content.body = title ?? L10n.string("Sharing_notification_shareReceived_message")
         content.sound = .default
         content.userInfo = [typeKey: typeShareReceived]
         post(content, identifier: receivedIdentifierPrefix + UUID().uuidString)
@@ -119,8 +119,8 @@ public enum NotificationManager {
     /// threshold during a background refresh.
     public static func postPriceDrop(productName: String, newPrice: String, discountPercent: Int) {
         let content = UNMutableNotificationContent()
-        content.title = L10n.string("Price drop: \(productName)")
-        content.body = L10n.string("Now \(newPrice) — \(discountPercent)% off what you were watching.")
+        content.title = L10n.string("Sharing_notification_priceDrop_headline", productName)
+        content.body = L10n.string("Sharing_notification_priceDrop_message", newPrice, discountPercent)
         content.sound = .default
         post(content)
     }

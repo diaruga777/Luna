@@ -46,7 +46,7 @@ public final class ExtensionLoadingViewController: UIViewController {
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "xmark"),
             primaryAction: UIAction { [weak self] _ in self?.onExit() })
-        navigationItem.leftBarButtonItem?.accessibilityLabel = L10n.string("Close")
+        navigationItem.leftBarButtonItem?.accessibilityLabel = L10n.string("Common_close")
 
         spinner.startAnimating()
         LoadingStatusLayout.install(spinner: spinner, label: statusLabel, in: view)

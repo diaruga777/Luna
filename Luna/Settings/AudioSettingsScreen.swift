@@ -21,7 +21,7 @@ final class AudioSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = L10n.string("Audio")
+        headerTitle = L10n.string("Common_audio")
         super.viewDidLoad()
     }
 
@@ -38,20 +38,20 @@ final class AudioSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .autoplay: return L10n.string("Listening")
+        case .autoplay: return L10n.string("Settings_audio_listeningSectionHeader")
         case .cleanup: return nil
-        case .voice: return L10n.string("Read-Aloud Voice")
+        case .voice: return L10n.string("Settings_audio_voiceSectionHeader")
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .autoplay:
-            return L10n.string("When an article finishes, mark it read and continue with the next unread article — after a chime and a short \u{201C}Now Reading\u{201D} announcement.")
+            return L10n.string("Settings_audio_autoplayFooter")
         case .cleanup:
-            return L10n.string("Skip photo captions, bylines, related-link lists, and other non-article text when reading aloud. Uses Apple Intelligence on this device — nothing leaves your iPhone — and falls back to Luna's built-in cleanup automatically when it isn't available.")
+            return L10n.string("Settings_audio_cleanupFooter")
         case .voice:
-            return L10n.string("Luna reads aloud with enhanced Apple voices when they're installed, otherwise the built-in system voice. Install enhanced voices in iOS Settings → Accessibility → Spoken Content → Voices.")
+            return L10n.string("Settings_audio_voiceFooter")
         }
     }
 
@@ -63,13 +63,13 @@ final class AudioSettingsScreen: NavHeaderTableController {
 
         switch Section(rawValue: indexPath.section)! {
         case .autoplay:
-            content.text = L10n.string("Autoplay Next Article")
+            content.text = L10n.string("Settings_audio_autoplayToggleLabel")
             cell.selectionStyle = .none
             cell.accessoryView = makeToggle(
                 isOn: AudioSettings.isAutoplayEnabled, action: #selector(autoplayToggled(_:)))
         case .cleanup:
-            content.text = L10n.string("Clean Up Articles for Listening")
-            content.secondaryText = L10n.string("Apple Intelligence")
+            content.text = L10n.string("Settings_audio_cleanupToggleLabel")
+            content.secondaryText = L10n.string("Settings_audio_cleanupToggleSecondary")
             content.secondaryTextProperties.color = LunaColors.secondaryText
             content.secondaryTextProperties.font = .systemFont(ofSize: 12)
             cell.selectionStyle = .none
@@ -79,15 +79,15 @@ final class AudioSettingsScreen: NavHeaderTableController {
             if indexPath.row == 0 {
                 let installed = VoiceModelStore.isAppleEnhancedInstalled
                 content.text = installed
-                    ? L10n.string("Enhanced voices installed")
-                    : L10n.string("Not installed")
+                    ? L10n.string("Settings_audio_voiceInstalledStatus")
+                    : L10n.string("Settings_audio_voiceNotInstalledStatus")
                 content.image = UIImage(
                     systemName: installed ? "checkmark.circle.fill" : "xmark.circle")
                 content.imageProperties.tintColor =
                     installed ? .systemGreen : LunaColors.secondaryText
                 cell.selectionStyle = .none
             } else {
-                content.text = L10n.string("Install Enhanced Voices")
+                content.text = L10n.string("Settings_audio_installVoicesButton")
                 content.textProperties.color = view.tintColor
                 cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default

@@ -32,7 +32,7 @@ final class WeeklyProposalsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = L10n.string("Save of the Week")
+        headerTitle = L10n.string("Settings_weeklyProposals_title")
         super.viewDidLoad()
         tableView.accessibilityIdentifier = "settings.weeklyProposals"
         reload()
@@ -61,9 +61,9 @@ final class WeeklyProposalsScreen: NavHeaderTableController {
     override func tableView(
         _ tableView: UITableView, titleForFooterInSection section: Int
     ) -> String? {
-        if isLoading { return L10n.string("Checking…") }
+        if isLoading { return L10n.string("Settings_weeklyProposals_checkingFooter") }
         if let loadError { return loadError }
-        return proposals.isEmpty ? L10n.string("No proposals right now.") : nil
+        return proposals.isEmpty ? L10n.string("Settings_weeklyProposals_emptyFooter") : nil
     }
 
     override func tableView(
@@ -90,12 +90,12 @@ final class WeeklyProposalsScreen: NavHeaderTableController {
             message: proposal.urlString,
             preferredStyle: .actionSheet)
         sheet.addAction(UIAlertAction(
-            title: L10n.string("Promote"), style: .default
+            title: L10n.string("Common_promote"), style: .default
         ) { [weak self] _ in self?.promote(proposal) })
         sheet.addAction(UIAlertAction(
-            title: L10n.string("Delete"), style: .destructive
+            title: L10n.string("Common_delete"), style: .destructive
         ) { [weak self] _ in self?.delete(proposal) })
-        sheet.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        sheet.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         sheet.popoverPresentationController?.sourceView =
             tableView.cellForRow(at: indexPath) ?? tableView
         present(sheet, animated: true)
@@ -126,7 +126,7 @@ final class WeeklyProposalsScreen: NavHeaderTableController {
                 reload()
             } catch {
                 presentInfoAlert(
-                    title: L10n.string("Couldn't Promote"),
+                    title: L10n.string("Common_couldntPromote"),
                     message: error.localizedDescription)
             }
         }
@@ -139,7 +139,7 @@ final class WeeklyProposalsScreen: NavHeaderTableController {
                 reload()
             } catch {
                 presentInfoAlert(
-                    title: L10n.string("Couldn't Delete"),
+                    title: L10n.string("Settings_weeklyProposals_deleteFailedTitle"),
                     message: error.localizedDescription)
             }
         }

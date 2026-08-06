@@ -623,7 +623,7 @@ class CardCarouselHostViewController: UIViewController {
     private func mountDeckBottomControls() {
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: L10n.string("Settings"))
+            accessibilityLabel: L10n.string("Common_settings"))
         configureTrailingBottomButton(trailingBottomButton)
         mountBottomControls(leading: settingsButton, trailing: trailingBottomButton)
     }

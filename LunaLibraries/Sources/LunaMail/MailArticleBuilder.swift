@@ -52,7 +52,7 @@ public enum MailArticleBuilder {
         guard blocks.contains(where: { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty })
         else { return nil }
         return ArticleContent(
-            title: title.isEmpty ? (author ?? L10n.string("Email")) : title,
+            title: title.isEmpty ? (author ?? L10n.string("Common_email")) : title,
             author: author,
             blocks: blocks)
     }

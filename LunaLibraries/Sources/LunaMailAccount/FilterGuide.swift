@@ -45,18 +45,18 @@ public enum FilterGuide {
 
     /// Step-by-step instructions for adding the filter manually.
     public static func instructions(for id: MailProvider.ID) -> String {
-        let markRead = L10n.string("match the Subject containing \"\(subjectMatch)\" and mark it as read / skip the inbox.")
+        let markRead = L10n.string("MailAccount_filterGuide_matchSubjectInstruction", subjectMatch)
         switch id {
         case .gmail:
-            return L10n.string("In Gmail settings → Filters and Blocked Addresses → Create a new filter, set Subject to \"\(subjectMatch)\", then choose \"Skip the Inbox\" and \"Mark as read\".")
+            return L10n.string("MailAccount_filterGuide_gmailInstructions", subjectMatch)
         case .icloud:
-            return L10n.string("In iCloud Mail → Settings → Rules → Add a Rule that matches the Subject containing \"\(subjectMatch)\" and moves it to a folder / marks it as read.")
+            return L10n.string("MailAccount_filterGuide_icloudInstructions", subjectMatch)
         case .yahoo:
-            return L10n.string("In Yahoo Mail → Settings → Filters → Add, \(markRead)")
+            return L10n.string("MailAccount_filterGuide_yahooInstructions", markRead)
         case .outlook:
-            return L10n.string("Luna sets this up automatically for Outlook.")
+            return L10n.string("MailAccount_filterGuide_outlookInstructions")
         case .generic:
-            return L10n.string("If your provider supports filters (Sieve), add a rule to \(markRead)\n\n\(sieveScript)")
+            return "\(L10n.string("MailAccount_filterGuide_genericInstructions", markRead))\n\n\(sieveScript)"
         }
     }
 

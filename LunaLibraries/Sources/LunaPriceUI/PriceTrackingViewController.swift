@@ -124,7 +124,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     private lazy var sellersHeaderView: UIView = {
         let container = UIView()
         let label = UILabel()
-        label.text = L10n.string("Sellers")
+        label.text = L10n.string("PriceTracker_tracking_sellersHeaderTitle")
         label.font = .preferredFont(forTextStyle: .footnote)
         label.adjustsFontForContentSizeCategory = true
         label.textColor = LunaColors.secondaryText
@@ -174,7 +174,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         super.viewDidLoad()
         view.backgroundColor = LunaColors.groupedBackground
 
-        navHeader.title = L10n.string("Price Tracker")
+        navHeader.title = L10n.string("PriceTracker_tracking_screenTitle")
         navHeader.mount(in: self)
 
         productHeader.backgroundColor = LunaColors.groupedBackground
@@ -196,7 +196,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         addSellerButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSellerButton.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
         addSellerButton.translatesAutoresizingMaskIntoConstraints = false
-        addSellerButton.accessibilityLabel = L10n.string("Add seller")
+        addSellerButton.accessibilityLabel = L10n.string("PriceTracker_tracking_addSellerButtonLabel")
         view.addSubview(productHeader)
 
         tableView.dataSource = self
@@ -326,7 +326,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             // and the editor is the same object in-app, where the header control
             // is the one the user already knows.
             leftControl = NavHeaderBar.textButton(
-                title: L10n.string("Done"), target: self, action: #selector(leftButtonTapped), bold: true)
+                title: L10n.string("Common_done"), target: self, action: #selector(leftButtonTapped), bold: true)
         }
         navHeader.setLeadingControls([leftControl])
 
@@ -340,7 +340,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
              .revertAddedStore where readInsteadSupported:
             navHeader.setTrailingControls([
                 NavHeaderBar.textButton(
-                    title: L10n.string("Read instead"), target: self, action: #selector(readInsteadTapped)),
+                    title: L10n.string("PriceTracker_tracking_readInsteadButtonTitle"), target: self,
+                    action: #selector(readInsteadTapped)),
             ])
         case .hidden, .discardTracker, .revertAddedStore:
             navHeader.setTrailingControls([])
@@ -362,7 +363,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         graphContainer.backgroundColor = LunaColors.groupedBackground
         graphContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        graphTitleLabel.text = L10n.string("Price History")
+        graphTitleLabel.text = L10n.string("PriceTracker_graph_historyTitle")
         graphTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         graphTitleLabel.textColor = LunaColors.secondaryText
         graphTitleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -441,18 +442,21 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// actions — Add (paste a URL), Search (browse to one), Cancel.
     @objc private func addSellerTapped() {
         let alert = UIAlertController(
-            title: L10n.string("Add a seller"),
-            message: L10n.string("Track this product's price at another store."),
+            title: L10n.string("PriceTracker_tracking_addSellerAlertTitle"),
+            message: L10n.string("PriceTracker_tracking_addSellerAlertMessage"),
             preferredStyle: .alert)
-        alert.addTextField { $0.placeholder = L10n.string("https://…"); $0.keyboardType = .URL }
-        alert.addAction(UIAlertAction(title: L10n.string("Add"), style: .default) { [weak self, weak alert] _ in
+        alert.addTextField {
+            $0.placeholder = L10n.string("PriceTracker_tracking_urlFieldPlaceholder")
+            $0.keyboardType = .URL
+        }
+        alert.addAction(UIAlertAction(title: L10n.string("Common_add"), style: .default) { [weak self, weak alert] _ in
             guard let urlString = alert?.textFields?.first?.text, !urlString.isEmpty else { return }
             self?.addSeller(urlString: urlString)
         })
-        alert.addAction(UIAlertAction(title: L10n.string("Search"), style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("PriceTracker_tracking_searchActionTitle"), style: .default) { [weak self] _ in
             self?.presentSearchOverlay()
         })
-        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         present(alert, animated: true)
     }
 
@@ -478,7 +482,9 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             if let report {
                 report(.duplicate)
             } else {
-                presentPriceMessage(title: L10n.string("Already tracked"), message: L10n.string("This page is already a seller."))
+                presentPriceMessage(
+                    title: L10n.string("PriceTracker_addSeller_alreadyTrackedTitle"),
+                    message: L10n.string("PriceTracker_tracking_alreadyTrackedMessage"))
             }
             return
         }
@@ -499,8 +505,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
                         self.presentNoPriceWithRescueOption(urlString: urlString)
                     } else {
                         self.presentPriceMessage(
-                            title: L10n.string("No price found"),
-                            message: L10n.string("We couldn't read a price on that page, so it wasn't added."))
+                            title: L10n.string("PriceTracker_tracking_noPriceFoundTitle"),
+                            message: L10n.string("PriceTracker_tracking_noPriceMessage"))
                     }
                     return
                 }
@@ -521,13 +527,13 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// card's chrome, but it can at least call the same thing the same name.
     private func presentNoPriceWithRescueOption(urlString: String) {
         let alert = UIAlertController(
-            title: L10n.string("No price found"),
-            message: L10n.string("We couldn't read a price on that page. Apple Intelligence can try to find it."),
+            title: L10n.string("PriceTracker_tracking_noPriceFoundTitle"),
+            message: L10n.string("PriceTracker_tracking_noPriceRescueMessage"),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Retry with AI"), style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("Common_retryWithAI"), style: .default) { [weak self] _ in
             self?.askIntelligenceForPrice(urlString: urlString)
         })
-        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
         present(alert, animated: true)
     }
 
@@ -540,8 +546,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             guard let self, var current = self.tracker else { return }
             guard let resolved else {
                 self.presentPriceMessage(
-                    title: L10n.string("Still no price"),
-                    message: L10n.string("Apple Intelligence couldn't find a price on this page either."))
+                    title: L10n.string("PriceTracker_tracking_stillNoPriceTitle"),
+                    message: L10n.string("PriceTracker_tracking_stillNoPriceMessage"))
                 return
             }
             current.upsertStore(PriceTrackerStore(
@@ -689,7 +695,7 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
     ) -> UISwipeActionsConfiguration? {
         guard let tracker, tracker.stores.count > 1 else { return nil }
         let urlString = tracker.stores[indexPath.row].urlString
-        let delete = UIContextualAction(style: .destructive, title: L10n.string("Remove")) { [weak self] _, _, done in
+        let delete = UIContextualAction(style: .destructive, title: L10n.string("Common_remove")) { [weak self] _, _, done in
             guard let self, var current = self.tracker else { return done(false) }
             let removed = current.removeStore(urlString: urlString)
             if removed { self.store.updatePriceTracker(current, for: self.itemID) }
@@ -710,8 +716,9 @@ private extension PriceTrackingViewController {
 
     public func refreshDescription(for store: PriceTrackerStore) -> String {
         guard let refreshed = store.lastRefreshed else {
-            return L10n.string("Not yet refreshed")
+            return L10n.string("PriceTracker_tracking_notYetRefreshed")
         }
-        return L10n.string("Refreshed \(Self.refreshedFormatter.string(from: refreshed))")
+        return L10n.string(
+            "PriceTracker_tracking_refreshedFormat", Self.refreshedFormatter.string(from: refreshed))
     }
 }

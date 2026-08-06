@@ -30,27 +30,23 @@ import Foundation
 /// runtime in every app; stable-SDK builds retain the ordinary-runtime fallback.
 struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
-    static let title: LocalizedStringResource = "Save"
-    static let description = IntentDescription("""
-        Long-running step of the Action Button shortcut. Pass the current app, \
-        optional screenshot, and optional Metadata from Provide Context. Luna \
-        resumes prepared work when possible, or reads the screenshot and saves \
-        from the top.
-        """)
+    static let title: LocalizedStringResource = "Intents_save_title_Luna"
+    static let description = IntentDescription("Intents_save_description_Luna")
     static let openAppWhenRun: Bool = false
 
-    @Parameter(title: "CurrentApp", description: "The current app, from Get Current App.")
+    @Parameter(title: "Intents_save_currentAppParam_title_Luna",
+               description: "Intents_save_currentAppParam_description_Luna")
     var currentApp: String
 
     @Parameter(
-        title: "Screenshot",
-        description: "An optional screenshot of the current app's screen.",
+        title: "Intents_save_screenshotParam_title_Luna",
+        description: "Intents_save_screenshotParam_description_Luna",
         supportedContentTypes: [.image])
     var screenshot: IntentFile?
 
     @Parameter(
-        title: "Metadata",
-        description: "Optional opaque state returned by Provide Context.")
+        title: "Intents_save_metadataParam_title_Luna",
+        description: "Intents_save_metadataParam_description_Luna")
     var metadata: String?
 
     enum SaveError: Error, CustomLocalizedStringResourceConvertible {
@@ -73,26 +69,26 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .unsupportedApp:
-                return L10n.resource("Luna can't save from this app.")
+                return L10n.resource("Intents_save_unsupportedAppError")
             case .unsupportedKind(let message):
                 return "\(message)"
             case .saveFailed:
-                return L10n.resource("Luna found this on screen but couldn't save it.")
+                return L10n.resource("Intents_save_saveFailedError")
             case .contentUnavailable:
-                return L10n.resource("Luna saved this but couldn't fetch its content. Try again from the app.")
+                return L10n.resource("Intents_save_contentUnavailableError")
             case .modelUnavailable:
                 // ITMS-90626: never mention Apple/Siri in intent-visible strings.
-                return L10n.resource("Screen analysis isn't available on this device.")
+                return L10n.resource("Intents_save_modelUnavailableError")
             case .networkUnavailable:
-                return L10n.resource("Screen analysis needs a network connection. Try again when you're back online.")
+                return L10n.resource("Intents_save_networkUnavailableError")
             case .quotaLimitReached:
-                return L10n.resource("You've hit the screen-analysis limit for now. Try again later.")
+                return L10n.resource("Intents_save_quotaLimitReachedError")
             case .serviceUnavailable:
-                return L10n.resource("Screen analysis is temporarily unavailable. Try again in a moment.")
+                return L10n.resource("Intents_save_serviceUnavailableError")
             case .nothingIdentifiable:
-                return L10n.resource("Couldn't identify anything to save on this screen.")
+                return L10n.resource("Intents_save_nothingIdentifiableError")
             case .notFound:
-                return L10n.resource("Couldn't find a matching post or page to save.")
+                return L10n.resource("Intents_save_notFoundError")
             }
         }
 

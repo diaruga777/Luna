@@ -15,7 +15,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = L10n.string("Downloads")
+        headerTitle = L10n.string("Common_downloads")
         super.viewDidLoad()
     }
 
@@ -37,9 +37,9 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch DownloaderSection(rawValue: section)! {
         case .autoDownload:
-            return L10n.string("Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away.")
+            return L10n.string("Settings_downloads_autoDownloadFooter")
         case .storage:
-            return L10n.string("Save to Photos puts every finished download in your photo library and keeps it there. Otherwise all downloads stay in Luna and are deleted automatically once they reach the age you pick.")
+            return L10n.string("Settings_downloads_storageFooter")
         }
     }
 
@@ -62,7 +62,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             }
         })
         return pickerCell(
-            title: L10n.string("Download Automatically"), symbol: "arrow.down.circle",
+            title: L10n.string("Settings_downloads_autoDownloadLabel"), symbol: "arrow.down.circle",
             identifier: "downloadAutomaticallyPicker", value: current.displayName, menu: menu)
     }
 
@@ -75,7 +75,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             }
         })
         return pickerCell(
-            title: L10n.string("Storage"), symbol: "internaldrive",
+            title: L10n.string("Settings_downloads_storageLabel"), symbol: "internaldrive",
             identifier: "storagePicker", value: current.displayName, menu: menu)
     }
 

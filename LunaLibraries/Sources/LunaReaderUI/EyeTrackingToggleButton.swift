@@ -89,15 +89,16 @@ public final class EyeTrackingToggleButton: UIButton {
 
     private static func accessibilityLabel(for state: EyeTrackingDisplayState) -> String {
         state == .disabled
-            ? L10n.string("Turn on eye tracking") : L10n.string("Turn off eye tracking")
+            ? L10n.string("Reader_rsvp_eyeTracking_turnOnAccessibilityLabel")
+            : L10n.string("Reader_rsvp_eyeTracking_turnOffAccessibilityLabel")
     }
 
     private static func accessibilityValue(for state: EyeTrackingDisplayState) -> String {
         switch state {
-        case .disabled: return L10n.string("Off")
-        case .enabled: return L10n.string("Watching")
-        case .active: return L10n.string("Pausing when you look away")
-        case .unavailable: return L10n.string("Gaze unavailable")
+        case .disabled: return L10n.string("Reader_rsvp_eyeTracking_offAccessibilityValue")
+        case .enabled: return L10n.string("Reader_rsvp_eyeTracking_watchingAccessibilityValue")
+        case .active: return L10n.string("Reader_rsvp_eyeTracking_pausingAccessibilityValue")
+        case .unavailable: return L10n.string("Reader_rsvp_eyeTracking_unavailableAccessibilityValue")
         }
     }
 }

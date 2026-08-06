@@ -455,11 +455,9 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   method fixtures were folded into table-driven rows or merged area files, the
   Safari/JS suites went from ~159 WebContent spin-ups to 1, and ~5.4s of fixed
   sleeps became injected seams. Re-measured 2026-08-06 after the one-card-frame
-  change on a warm existing sim: **2259/7/0** with
-  `-skip-testing:LunaTests/ArticleAudioEngineTests` (its 14 env-gated skips are
-  what the 21 becomes 7), i.e. 0 failures and ~20 more registered tests than the
-  fresh-sim run — the registration variance the bullet below describes, not new
-  coverage.
+  change, plain recipe on a warm existing sim: **2279/21/0** — 0 failures, and the
+  ~20 extra registered tests over the fresh-sim run are the registration variance
+  the bullet below describes rather than new coverage.
 - **The 21 skips are all intentional `XCTSkip`s, and all of them are env-gated
   tooling or on-demand coverage** — nothing is skipped because it is broken:
   `ArticleAudioEngineTests` (14, `RUN_AUDIO_ENGINE_TESTS=1`), the four

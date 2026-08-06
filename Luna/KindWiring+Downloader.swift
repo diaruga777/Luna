@@ -60,6 +60,16 @@ enum KindWiring {
                 sourceURLString: sourceURLString, title: title, assets: assets)
         }
         LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
+        // A bulk import runs its own progress bar; the per-transfer Live
+        // Activity alerts (banner + sound + haptic) would buzz twice per link
+        // over the top of it.
+        LinkImportRunner.mediaAlertSuspension = { suspended in
+            if suspended {
+                LiveMediaDownloadManager.suspendActivityAlerts()
+            } else {
+                LiveMediaDownloadManager.resumeActivityAlerts()
+            }
+        }
     }
 
     // MARK: - Root UI shape

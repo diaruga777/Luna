@@ -134,6 +134,19 @@ that would race phase two's awaited one over the same item.
 one-shot rescue; the import can't use the fire-and-forget one because it has to
 know each item's fate to score the run.
 
+**The run is silent.** `LinkImportRunner.mediaAlertSuspension` (installed by the
+media `KindWiring`s over `LiveMediaDownloadManager.suspend/resumeActivityAlerts`,
+counted so overlapping runs can't un-suspend each other) drops the download Live
+Activity's start and finish `AlertConfiguration`s — banner, sound and **haptic** —
+for the length of the run, restored in a `defer` so a stopped run restores them
+too. The activities themselves still appear and still update; only the alerts go.
+A file of two hundred social links otherwise buzzed the device four hundred times
+while the sheet's own progress bar was already reporting each one. The suspension
+is process-wide rather than a `@TaskLocal` like `systemProvidesProgressUI`,
+because the finish alert fires from the background `URLSession`'s delegate
+callback — a task tree with no relation to whoever started the transfer, so a
+task-scoped binding would silence every start and let every finish through.
+
 **Concurrency** is `min(6, max(2, activeProcessorCount / 2))`, halved again in
 Low Power Mode. The floor of 2 exists because most of an ingest is network wait;
 the ceiling because past it `URLSession`'s per-host limit and the extractor's

@@ -119,6 +119,15 @@ public final class LinkImportRunner {
     /// there is nothing to watch.
     public static var mediaDownloadProgress: (@Sendable (String) -> MediaDownloadState?)?
 
+    /// Silences the media Live Activity's start/finish ALERTS — banner, sound and
+    /// **haptic** — for the length of a run, called with `true` when it begins and
+    /// `false` when it ends. An import of a few hundred social links otherwise
+    /// buzzes the device twice per link while the user is watching this sheet's own
+    /// progress bar report the same thing. Installed by the media `KindWiring`s
+    /// (nil elsewhere: no media link can pass those apps' content gate, so there
+    /// is no transfer to alert about).
+    public static var mediaAlertSuspension: (@Sendable (Bool) -> Void)?
+
     // MARK: - Tunables
 
     /// The share of an item's slice its ingest owns; the rest belongs to whatever
@@ -288,6 +297,12 @@ public final class LinkImportRunner {
             setPhase(.done)
             return summary
         }
+
+        // Quiet for the whole run, restored however it ends (finished, stopped, or
+        // the caller's task cancelled). An import is one operation with one
+        // progress bar; it does not need a system alert per link.
+        Self.mediaAlertSuspension?(true)
+        defer { Self.mediaAlertSuspension?(false) }
 
         // 1. One coordinated write for the whole batch, in the file's order.
         let placements = store.insertImported(

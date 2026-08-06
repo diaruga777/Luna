@@ -355,8 +355,8 @@ final class KindDeckProvider: CardDeckProviding {
         }
 
         let kindActions = presenter.menuActions(for: item, host: host)
-        let weekly = WeeklyPromotionMenu.action(for: item, presenter: host)
-        return UIMenu(children: kindActions + [weekly].compactMap { $0 } + [
+        let weekly = WeeklyPromotionMenu.actions(for: item, presenter: host)
+        return UIMenu(children: kindActions + weekly + [
             UIAction(
                 title: L10n.string("Archive"), image: UIImage(systemName: "archivebox")
             ) { [weak self] _ in self?.archive(item) },

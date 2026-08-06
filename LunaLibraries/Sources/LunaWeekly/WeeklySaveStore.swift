@@ -101,6 +101,16 @@ public final class WeeklySaveStore {
         return Set(payload.seenProposalIDs)
     }
 
+    /// Marks ONE record name announced, leaving the rest of the set alone —
+    /// the proposal this device just wrote, which its own curator does not
+    /// need telling about. The next full check prunes it like any other.
+    public func markProposalSeen(_ id: String) {
+        lock.lock(); defer { lock.unlock() }
+        guard !payload.seenProposalIDs.contains(id) else { return }
+        payload.seenProposalIDs = (payload.seenProposalIDs + [id]).sorted()
+        persistLocked()
+    }
+
     /// Marks these record names announced and forgets any that are no longer
     /// present, so the set can't grow without bound.
     public func markProposalsSeen(_ ids: Set<String>) {

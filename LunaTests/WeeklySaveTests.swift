@@ -251,25 +251,32 @@ final class WeeklySaveTests: XCTestCase {
 
     // MARK: - WeeklyPromotionMenuTests
 
-    func testANonKeyHolderIsOfferedTheProposeVerb() throws {
-        let action = try XCTUnwrap(WeeklyPromotionMenu.action(
-            for: readySave(), presenter: UIViewController(), isKeyHolder: false))
-        XCTAssertEqual(action.title, "Propose Save of the Week")
+    func testANonKeyHolderIsOfferedTheProposeVerbAlone() {
+        let actions = WeeklyPromotionMenu.actions(
+            for: readySave(), presenter: UIViewController(), isKeyHolder: false)
+        XCTAssertEqual(actions.map(\.title), ["Propose Save of the Week"])
     }
 
-    func testAKeyHolderIsOfferedTheAppsOwnPromoteVerb() throws {
-        let promote = try XCTUnwrap(WeeklyPromotionMenu.action(
-            for: readySave(), presenter: UIViewController(),
-            isKeyHolder: true, app: .reader))
-        XCTAssertEqual(promote.title, "Promote to Read of the Week")
+    /// Holding the key ADDS the promote verb; it never takes the propose one
+    /// away. A curator who wants to queue a link rather than publish it today
+    /// would otherwise have to remove their own key to do it.
+    func testAKeyHolderIsOfferedPromoteAndStillPropose() {
+        XCTAssertEqual(
+            WeeklyPromotionMenu.actions(
+                for: readySave(), presenter: UIViewController(),
+                isKeyHolder: true, app: .reader
+            ).map(\.title),
+            ["Promote to Read of the Week", "Propose Save of the Week"])
 
-        let central = try XCTUnwrap(WeeklyPromotionMenu.action(
-            for: readySave(), presenter: UIViewController(),
-            isKeyHolder: true, app: .luna))
-        XCTAssertEqual(central.title, "Promote to Save of the Week")
+        XCTAssertEqual(
+            WeeklyPromotionMenu.actions(
+                for: readySave(), presenter: UIViewController(),
+                isKeyHolder: true, app: .luna
+            ).map(\.title),
+            ["Promote to Save of the Week", "Propose Save of the Week"])
     }
 
-    /// A failed save has nothing behind it to recommend, so neither verb
+    /// A failed save has nothing behind it to recommend, so no verb at all
     /// appears — for a key-holder or anyone else.
     func testAFailedSaveIsNeverACandidate() {
         var failed = ReadingListItem(
@@ -277,10 +284,10 @@ final class WeeklySaveTests: XCTestCase {
             title: nil, dateAdded: Date(), state: .failed)
         failed.platform = nil
         XCTAssertNil(WeeklyPromotionMenu.weeklyKind(for: failed))
-        XCTAssertNil(WeeklyPromotionMenu.action(
-            for: failed, presenter: UIViewController(), isKeyHolder: false))
-        XCTAssertNil(WeeklyPromotionMenu.action(
-            for: failed, presenter: UIViewController(), isKeyHolder: true))
+        XCTAssertTrue(WeeklyPromotionMenu.actions(
+            for: failed, presenter: UIViewController(), isKeyHolder: false).isEmpty)
+        XCTAssertTrue(WeeklyPromotionMenu.actions(
+            for: failed, presenter: UIViewController(), isKeyHolder: true).isEmpty)
     }
 
     func testTheItemsOwnKindDecidesTheWeeklyKind() {
@@ -650,6 +657,23 @@ final class WeeklySaveTests: XCTestCase {
         try await refresher.createProposal(kind: .article, urlString: "https://x.example/1")
         XCTAssertEqual(database.proposals.count, 1)
         XCTAssertEqual(database.proposals.first?.urlString, "https://x.example/1")
+    }
+
+    /// The curator can propose as well as promote, so the inbox check must not
+    /// hand them a notification about their own submission.
+    func testACuratorsOwnProposalNeverNotifiesThem() async throws {
+        var notifications: [(Int, String?)] = []
+        let refresher = makeRefresher(
+            app: .luna, isKeyHolder: true,
+            notify: { count, host in notifications.append((count, host)) })
+        try await refresher.createProposal(kind: .article, urlString: "https://mine.example/1")
+        database.proposals.append(
+            WeeklyProposal(kind: .media, urlString: "https://theirs.example/2", date: clock))
+
+        let found = await refresher.checkProposalsIfKeyHolder()
+        XCTAssertEqual(found, 1, "Only the proposal this device didn't write is new")
+        XCTAssertEqual(notifications.map(\.0), [1])
+        XCTAssertEqual(notifications.first?.1, "theirs.example")
     }
 
     func testPromotingWithoutTheKeyThrowsAndWritesNothing() async {

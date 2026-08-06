@@ -8,35 +8,42 @@ import LunaReadingListUI
 import LunaWeekly
 import UIKit
 
-/// The long-press verb every deck grows: promote this save, if you hold the
-/// key, or propose it if you don't.
+/// The long-press verbs every deck grows: propose this save, and — if you hold
+/// the key — promote it outright.
 ///
 /// One factory, three call sites (the article, media and product decks), so the
 /// wording, the kind mapping and the "a failed save is not a candidate" rule
 /// can't drift apart.
+///
+/// Propose is offered to EVERYONE, key-holder included. Holding the key is a
+/// capability, not a mode: the curator still reads the proposal queue, and a
+/// pick they want to sit on rather than publish today belongs in it like any
+/// other. Hiding the verb from the one device that can also promote would mean
+/// the only way to queue a link is to remove your own key.
 @MainActor
 enum WeeklyPromotionMenu {
 
-    /// The action to append above Archive/Delete, or nil when this item can
-    /// never be a Save of the Week.
-    static func action(
+    /// The actions to append above Archive/Delete — propose, preceded by
+    /// promote for a key-holder. Empty when this item can never be a Save of
+    /// the Week.
+    static func actions(
         for item: ReadingListItem,
         presenter: UIViewController,
         refresher: WeeklySaveRefresher = .shared,
         isKeyHolder: Bool = WeeklyPromotionKeyStore.isKeyHolder,
         app: LunaApp = .current
-    ) -> UIAction? {
-        guard let kind = weeklyKind(for: item) else { return nil }
-        return action(
+    ) -> [UIAction] {
+        guard let kind = weeklyKind(for: item) else { return [] }
+        return actions(
             kind: kind, urlString: item.urlString, title: item.title,
             presenter: presenter, refresher: refresher,
             isKeyHolder: isKeyHolder, app: app)
     }
 
-    /// The same verb for a surface whose saves aren't `ReadingListItem`s (the
+    /// The same verbs for a surface whose saves aren't `ReadingListItem`s (the
     /// Downloader deck keeps its own `SavedMediaItem` — a type this shared
     /// shell file must not import, since it compiles into all four apps).
-    static func action(
+    static func actions(
         kind: WeeklySaveKind,
         urlString: String,
         title: String?,
@@ -44,25 +51,27 @@ enum WeeklyPromotionMenu {
         refresher: WeeklySaveRefresher = .shared,
         isKeyHolder: Bool = WeeklyPromotionKeyStore.isKeyHolder,
         app: LunaApp = .current
-    ) -> UIAction {
+    ) -> [UIAction] {
+        var actions: [UIAction] = []
         if isKeyHolder {
-            return UIAction(
+            actions.append(UIAction(
                 title: WeeklySaveLabels.promoteMenuTitle(for: app),
                 image: UIImage(systemName: "crown")
             ) { _ in
                 confirmPromotion(
                     kind: kind, urlString: urlString, title: title,
                     presenter: presenter, refresher: refresher, app: app)
-            }
+            })
         }
-        return UIAction(
+        actions.append(UIAction(
             title: WeeklySaveLabels.proposeMenuTitle,
             image: UIImage(systemName: "star.circle")
         ) { _ in
             propose(
                 kind: kind, urlString: urlString,
                 presenter: presenter, refresher: refresher)
-        }
+        })
+        return actions
     }
 
     /// A save's kind, in weekly terms. A failed save has no content to stand
@@ -111,7 +120,7 @@ enum WeeklyPromotionMenu {
         presenter.present(confirm, animated: true)
     }
 
-    // MARK: - Everyone else
+    // MARK: - Anyone, key-holder included
 
     private static func propose(
         kind: WeeklySaveKind,

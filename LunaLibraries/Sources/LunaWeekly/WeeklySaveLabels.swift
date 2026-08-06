@@ -37,8 +37,9 @@ public enum WeeklySaveLabels {
         }
     }
 
-    /// Everyone else's long-press verb. Deliberately app-neutral: a proposal
-    /// travels to the curator, who may be running a different app.
+    /// The long-press verb everyone gets, key-holder included. Deliberately
+    /// app-neutral: a proposal travels to the curator, who may be running a
+    /// different app.
     public static var proposeMenuTitle: String {
         L10n.string("Propose Save of the Week")
     }

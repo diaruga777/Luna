@@ -153,6 +153,9 @@ public final class WeeklySaveRefresher {
     public func createProposal(kind: WeeklySaveKind, urlString: String) async throws {
         let proposal = WeeklyProposal(kind: kind, urlString: urlString, date: now())
         try await database.createProposal(proposal)
+        // A key-holder may propose too, and the inbox check would otherwise
+        // notify them about their own submission.
+        store.markProposalSeen(proposal.recordName)
         weeklyCloudLog("proposed \(kind.rawValue): \(proposal.urlString)")
     }
 

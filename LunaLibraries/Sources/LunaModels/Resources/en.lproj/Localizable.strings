@@ -277,41 +277,6 @@
 "ShareSetupPractice_feature22_Luna" = "Night-sky dark, down to the last pixel.";
 "ShareSetupPractice_feature23_Luna" = "Built to disappear while you read.";
 
-/* ===================== Onboarding ===================== */
-
-/* ===================== Card Deck ===================== */
-
-/* ===================== Reader ===================== */
-
-/* ===================== Reader · Audio ===================== */
-
-/* ===================== Reader · Export & Send ===================== */
-
-/* ===================== Downloads & Media ===================== */
-
-/* ===================== Price Tracker ===================== */
-
-/* ===================== Email & Sending ===================== */
-
-/* ===================== Sharing with Friends ===================== */
-
-/* ===================== Save of the Week ===================== */
-
-/* ===================== Share & Action Extensions ===================== */
-
-/* ===================== App Clips ===================== */
-
-/* ===================== Live Activity ===================== */
-
-/* ===================== Save Failures ===================== */
-
-/* ===================== Settings ===================== */
-
-/* ===================== Settings · Diagnostics ===================== */
-
-/* ===================== Shared UI ===================== */
-
-
 /* ===== Onboarding_Intro — util card intro headline, setup actions, paste row (Luna/UtilCard, OnboardingStrings.Intro) ===== */
 "Onboarding_Intro_articleURLsOnly_Luna" = "article URLs only";
 "Onboarding_Intro_completed_Luna" = "Completed";

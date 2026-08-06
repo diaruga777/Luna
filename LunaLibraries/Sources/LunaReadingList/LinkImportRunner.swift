@@ -128,6 +128,18 @@ public final class LinkImportRunner {
     /// is no transfer to alert about).
     public static var mediaAlertSuspension: (@Sendable (Bool) -> Void)?
 
+    /// Asks for whatever system permission this batch's downloads will need, ONCE,
+    /// before the run starts. Installed by the media `KindWiring`s over
+    /// `MediaPhotosPreflight` (Photos access, when downloads are set to land
+    /// there and the file holds at least one downloadable link).
+    ///
+    /// It belongs at the top of the run rather than in the pipeline: the media
+    /// path's own prompts arrive either at a transfer's start gate or — in the
+    /// Downloader — when the FIRST transfer finishes, i.e. a system alert over the
+    /// progress bar minutes in, with a queue behind it that fails as
+    /// `.photosPermission` while the user reads it.
+    public static var mediaStoragePreflight: (@Sendable ([String]) async -> Void)?
+
     // MARK: - Tunables
 
     /// The share of an item's slice its ingest owns; the rest belongs to whatever
@@ -303,6 +315,12 @@ public final class LinkImportRunner {
         // progress bar; it does not need a system alert per link.
         Self.mediaAlertSuspension?(true)
         defer { Self.mediaAlertSuspension?(false) }
+
+        // Every permission this batch could need, asked for here and nowhere else.
+        // Before the first write, so the answer is in hand by the time a transfer
+        // wants it — and before the progress bar starts moving, so the alert isn't
+        // an interruption of something already underway.
+        await Self.mediaStoragePreflight?(candidates.map(\.urlString))
 
         // 1. One coordinated write for the whole batch, in the file's order.
         let placements = store.insertImported(

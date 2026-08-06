@@ -134,6 +134,22 @@ that would race phase two's awaited one over the same item.
 one-shot rescue; the import can't use the fire-and-forget one because it has to
 know each item's fate to score the run.
 
+**Permissions are asked for at the top, not mid-run.**
+`LinkImportRunner.mediaStoragePreflight` (installed by the media `KindWiring`s
+over `MediaPhotosPreflight`) runs before the first write. The media path's own
+prompts land at the worst possible moment during a batch: a non-Downloader save
+asks for add-only access in the transfer's start gate, and a Downloader save
+skips that and asks for read/write when the FIRST transfer *finishes* — a system
+alert over a moving progress bar, with a queue behind it that fails as
+`.photosPermission` while the user reads it. The preflight asks for **read/write**
+(the superset both paths end up needing, and granting it also answers the
+add-only status, so one prompt replaces two) and only when it could matter:
+storage is set to Photos AND at least one candidate URL is downloadable by the
+PURE test — the platform table or a direct-media path extension — so an
+articles-only file imported through the central app never sees a Photos prompt.
+A refusal doesn't stop the import; the media leg reports its own permission
+failures as before.
+
 **The run is silent.** `LinkImportRunner.mediaAlertSuspension` (installed by the
 media `KindWiring`s over `LiveMediaDownloadManager.suspend/resumeActivityAlerts`,
 counted so overlapping runs can't un-suspend each other) drops the download Live

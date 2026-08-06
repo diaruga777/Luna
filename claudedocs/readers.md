@@ -402,10 +402,26 @@ no nav bar of its own beyond Done.
     own fade, so it slides rather than jumps.
   - **Each context lane is sized to its prose, not to the lane it may grow
     into** (`textHeight(of:width:)`). The preceding lane keeps its bottom against
-    the focal band and grows upward (oldest words truncating off the top —
-    `.byTruncatingHead`); the trailing lane keeps its top against the band and
-    grows down. A label given the whole lane centres a short passage inside it,
-    which read as a hole above the prose and a second hole below it.
+    the focal band and grows upward; the trailing lane keeps its top against the
+    band and grows down. A label given the whole lane centres a short passage
+    inside it, which read as a hole above the prose and a second hole below it.
+    The sizing happens in `layoutContext`, which `updateContextText` CALLS —
+    that method only refreshes the source text (`precedingContextText` /
+    `followingContextText`). Without the call each lane kept the frame of the
+    prose it held one word ago, and since word zero has no preceding prose at
+    all, the opening words of an article arrived into a zero-height lane and
+    never appeared.
+  - **The preceding lane drops its OLDEST words word-wise**
+    (`fittedPrecedingProse`, a binary search over the drop count) rather than
+    asking UILabel for `.byTruncatingHead`, which ellipsises only the last
+    visible LINE: an overlong window then read as the article's oldest words, a
+    gap, and the words just before the focus — a hole cut out of the middle. It
+    overflows wherever the lane is short, i.e. inside a card, where the title
+    header stands over the reader. The trailing lane keeps `.byTruncatingTail`,
+    which drops its furthest words, which is what it wants.
+  - **Before there is any preceding prose the lane carries the article's
+    masthead** — title over byline (`mastheadContextText`) — instead of standing
+    empty through the opening words.
   - **The controls lift off the bottom safe area on a roomy container** — 24pt
     base gap plus up to 40pt more, granted only while the band still clears
     `comfortableReadingBandHeight` (340pt) without it, so a short container keeps
@@ -422,6 +438,9 @@ no nav bar of its own beyond Done.
     its prose underneath. Tests, all in `ReaderScreenTests`:
     `testRSVPFocalWordRestsAtTheMidpointOfItsReadingBand`,
     `…ContextLanesAreSizedToTheirProse…`,
+    `…PrecedingProseAppearsAsSoonAsThereIsAnyOfIt`,
+    `…PrecedingProseDropsItsOldestWordsWhenTheLaneOverflows`,
+    `…PrecedingLaneShowsTheMastheadAtTheStartOfTheArticle`,
     `…ControlsLiftOffTheBottomOnlyWhenTheBandCanSpareIt`,
     `…TrailingProseYieldsTheRowOnlyWhileAPillOccupiesIt`,
     `…ShareButtonClearsRSVPControlsAndTrailingContext`.

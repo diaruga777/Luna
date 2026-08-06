@@ -167,6 +167,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// thread of the sentence.
     private let previousContextLabel = UILabel()
     private let nextContextLabel = UILabel()
+    /// The surrounding prose for the current position as the context window
+    /// produced it. The LABELS hold what fits their lanes (`layoutContext`); these
+    /// hold the whole window, so a relayout can re-fit it against a lane that has
+    /// changed height without going back to the engine.
+    private var precedingContextText = ""
+    private var followingContextText = ""
     /// A compact accent-to-neutral reticule around the ORP letter (Words mode).
     /// Its only vertical elements are two tiny inward ticks; nothing crosses
     /// behind the highlighted glyph.
@@ -231,6 +237,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
     private static let contextWordCount = 55
+    /// The surrounding prose's own font — also the one the lane-fitting
+    /// measurements run against, so they must not drift apart.
+    private static let contextFont = UIFont.systemFont(ofSize: 15, weight: .regular)
     /// First line the reader owns: below the host chrome standing over it.
     /// `topContentInset` is load-bearing — inside a card it is the (possibly
     /// multi-line) title header's real height, and a band measured from the
@@ -739,7 +748,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func configureContext() {
         for label in [previousContextLabel, nextContextLabel] {
-            label.font = .systemFont(ofSize: 15, weight: .regular)
+            label.font = Self.contextFont
             label.textColor = LunaColors.tertiaryText
             // As many lines as the (frame-clamped) height allows, so the taller
             // preceding-context lane fills with real surrounding prose.
@@ -750,9 +759,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         }
         previousContextLabel.textAlignment = .natural
         nextContextLabel.textAlignment = .natural
-        // Preceding context should keep the words closest to the focal word: when
-        // it overflows the (now taller) lane, drop the oldest text off the top.
-        previousContextLabel.lineBreakMode = .byTruncatingHead
+        // NB: the preceding lane keeps the words closest to the focal word by
+        // DROPPING leading words (`fittedPrecedingProse`), not by asking UILabel
+        // for head truncation. `.byTruncatingHead` ellipsises only the LAST
+        // visible line, so an overlong passage rendered as "the article's oldest
+        // words … the words just before the focus" — a hole cut out of the middle.
     }
 
     /// Lays out the surrounding-prose labels above and below the focal band. In
@@ -791,8 +802,13 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // words off the top once it fills); the trailing lane keeps its top
         // against the band and grows downward.
         let upperLaneHeight = max(0, min(upperHeight, upperBottom - topLimit))
-        let upperTextHeight = min(
-            upperLaneHeight, textHeight(of: previousContextLabel, width: width))
+        // The preceding lane's text is FITTED to the lane here rather than set in
+        // `updateContextText`: how much of the window survives depends on the lane
+        // this pass produced, and a label sized to text it can't hold truncates in
+        // the wrong place (see `configureContext`).
+        let upperText = precedingContextDisplayText(width: width, laneHeight: upperLaneHeight)
+        previousContextLabel.attributedText = upperText
+        let upperTextHeight = min(upperLaneHeight, textHeight(of: upperText, width: width))
         previousContextLabel.frame = CGRect(
             x: contextX, y: upperBottom - upperTextHeight,
             width: width, height: upperTextHeight)
@@ -807,8 +823,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let lowerWidth = contextWidth(
             forLane: CGRect(x: contextX, y: lowerY, width: width, height: lowerLaneHeight),
             fullWidth: width)
+        // The trailing lane loses its FURTHEST words when it overflows, which is
+        // exactly what UILabel's tail truncation does — so it takes the window
+        // whole and lets the label ellipsise it.
+        nextContextLabel.text = followingContextText
         let lowerTextHeight = min(
-            lowerLaneHeight, textHeight(of: nextContextLabel, width: lowerWidth))
+            lowerLaneHeight, textHeight(of: followingContextText, width: lowerWidth))
         nextContextLabel.frame = CGRect(
             x: contextX, y: lowerY, width: lowerWidth, height: lowerTextHeight)
     }
@@ -874,14 +894,35 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         displayMode == .phrases ? (14, 14) : (20, 31)
     }
 
-    /// Height the label's current text needs at `width`, unbounded by lines —
-    /// the caller clamps it to the lane, which is where truncation happens.
-    private func textHeight(of label: UILabel, width: CGFloat) -> CGFloat {
-        guard let text = label.text, !text.isEmpty, width > 0 else { return 0 }
+    /// Height a plain context string needs at `width`, unbounded by lines — the
+    /// caller clamps it to the lane, which is where truncation happens.
+    private func textHeight(of text: String, width: CGFloat) -> CGFloat {
+        guard !text.isEmpty, width > 0 else { return 0 }
         let bounds = (text as NSString).boundingRect(
             with: CGSize(width: width, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: label.font ?? UIFont.systemFont(ofSize: 15)],
+            attributes: [.font: Self.contextFont],
+            context: nil)
+        return ceil(bounds.height)
+    }
+
+    /// Same, for the attributed preceding lane (which carries the masthead's two
+    /// fonts). The paragraph styles are re-measured as word-WRAPPING: a truncating
+    /// `lineBreakMode` makes `boundingRect` report a single line's height, and the
+    /// answer here has to be the height the label will actually fill.
+    private func textHeight(of text: NSAttributedString, width: CGFloat) -> CGFloat {
+        guard text.length > 0, width > 0 else { return 0 }
+        let full = NSRange(location: 0, length: text.length)
+        let measured = NSMutableAttributedString(attributedString: text)
+        measured.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
+            let style = (value as? NSParagraphStyle)?
+                .mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+            style.lineBreakMode = .byWordWrapping
+            measured.addAttribute(.paragraphStyle, value: style, range: range)
+        }
+        let bounds = measured.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
             context: nil)
         return ceil(bounds.height)
     }
@@ -1261,22 +1302,96 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         updateContextText()
     }
 
-    /// Fills the surrounding-prose labels for the current position. In Phrases
-    /// mode the context excludes the words currently in the focus panel; in Words
-    /// mode it surrounds the single focal word.
+    /// Re-reads the surrounding prose for the current position. In Phrases mode
+    /// the context excludes the words currently in the focus panel; in Words mode
+    /// it surrounds the single focal word.
+    ///
+    /// This only refreshes the SOURCE text — `layoutContext` fits it to the lanes
+    /// and puts it on the labels, and is called from here because a lane is sized
+    /// to the prose it holds. Without that call the labels kept the frames of the
+    /// text they held one word ago: the first words of an article arrived into a
+    /// zero-height lane (the position before them had no preceding prose at all)
+    /// and never appeared.
     private func updateContextText() {
         let shownRange: Range<Int> = displayMode == .phrases && chunks.indices.contains(currentChunkIndex)
             ? chunks[currentChunkIndex].wordRange
             : currentIndex..<(currentIndex + 1)
-        guard let context = RSVPContextWindow.context(
+        let context = RSVPContextWindow.context(
             around: shownRange, words: engine.words, radius: Self.contextWordCount)
-        else {
-            previousContextLabel.text = nil
-            nextContextLabel.text = nil
-            return
+        let preceding = context?.preceding ?? ""
+        let following = context?.following ?? ""
+        guard preceding != precedingContextText || following != followingContextText
+        else { return }
+        precedingContextText = preceding
+        followingContextText = following
+        if isViewLoaded { layoutContext() }
+    }
+
+    /// What the preceding lane shows: the surrounding prose trimmed to the lane,
+    /// or — before there is any of it — the article's own masthead, so the top of
+    /// the screen carries the title and byline instead of standing empty through
+    /// the opening words.
+    private func precedingContextDisplayText(width: CGFloat, laneHeight: CGFloat) -> NSAttributedString {
+        guard !precedingContextText.isEmpty else {
+            return mastheadContextText()
         }
-        previousContextLabel.text = context.preceding
-        nextContextLabel.text = context.following
+        return NSAttributedString(
+            string: fittedPrecedingProse(width: width, laneHeight: laneHeight),
+            attributes: [.font: Self.contextFont, .foregroundColor: LunaColors.tertiaryText])
+    }
+
+    /// The longest SUFFIX of the preceding prose that fits `laneHeight` — the
+    /// words nearest the focal word are the ones worth keeping, and dropping the
+    /// oldest ones by hand is the only way to drop them from the TOP (see
+    /// `configureContext`). Never returns empty: one word over the lane is better
+    /// than a blank lane, and the frame clamps it anyway.
+    private func fittedPrecedingProse(width: CGFloat, laneHeight: CGFloat) -> String {
+        let words = precedingContextText.split(separator: " ")
+        guard words.count > 1, width > 0, laneHeight > 0 else { return precedingContextText }
+        // Smallest number of leading words to drop that brings the rest into the
+        // lane. Monotone in the drop count, so a binary search settles it in ~6
+        // measurements rather than one per word.
+        var low = 0, high = words.count - 1
+        while low < high {
+            let mid = (low + high) / 2
+            let candidate = words[mid...].joined(separator: " ")
+            if textHeight(of: candidate, width: width) <= laneHeight {
+                high = mid
+            } else {
+                low = mid + 1
+            }
+        }
+        return words[low...].joined(separator: " ")
+    }
+
+    /// Title over byline, in the preceding lane's own scale — the masthead shown
+    /// while there is no preceding prose yet.
+    private func mastheadContextText() -> NSAttributedString {
+        let title = articleContent.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let author = articleContent.author?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let masthead = NSMutableAttributedString()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.paragraphSpacing = 2
+        if !title.isEmpty {
+            masthead.append(NSAttributedString(
+                string: author?.isEmpty == false ? title + "\n" : title,
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 17, weight: .semibold),
+                    .foregroundColor: LunaColors.secondaryText,
+                    .paragraphStyle: paragraph,
+                ]))
+        }
+        if let author, !author.isEmpty {
+            masthead.append(NSAttributedString(
+                string: author,
+                attributes: [
+                    .font: Self.contextFont,
+                    .foregroundColor: LunaColors.tertiaryText,
+                    .paragraphStyle: paragraph,
+                ]))
+        }
+        return masthead
     }
 
     /// Animates the Words-mode context in/out on play/pause (Phrases keeps it on).
@@ -1923,6 +2038,13 @@ extension RSVPViewController {
 
     /// The focal word's downward lean off the band midpoint, for the tests.
     public static var focalCenterBiasForTesting: CGFloat { focalCenterBias }
+
+    /// What the two prose lanes are actually showing — the fitted text, not the
+    /// window it was cut from.
+    public var contextProseForTesting: (preceding: String, following: String) {
+        (previousContextLabel.attributedText?.string ?? previousContextLabel.text ?? "",
+         nextContextLabel.attributedText?.string ?? nextContextLabel.text ?? "")
+    }
 }
 
 extension RSVPViewController: UIGestureRecognizerDelegate {

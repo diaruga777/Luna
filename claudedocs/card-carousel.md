@@ -692,8 +692,10 @@ The article kind's own answers:
 - The cards root has NO header bar.
 - Paste lives permanently at the bottom of the util card. Its native
   `UIPasteControl` owns clipboard authorization, and a valid URL follows the same
-  ingest, card handoff, and new-save centering path as weekly/recent util rows.
-  The deck no longer creates a synthetic pasteboard card.
+  ingest and new-save centering path as weekly/recent util rows — but NOT their
+  card handoff: the row-into-card grow is for URL rows only (`util-card.md`), and
+  the paste row reports in place instead. The deck no longer creates a synthetic
+  pasteboard card.
 - Settings and Share flank the mini-card scrubber in Liquid Glass circles instead of
   consuming header space. Friends is reached from Settings. The card begins
   directly below the safe area, so the reader's own header pills own the top row.

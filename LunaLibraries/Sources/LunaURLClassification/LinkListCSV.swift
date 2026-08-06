@@ -5,49 +5,18 @@
 
 import Foundation
 
-/// The two ordered lists a Luna link export carries — the live saves and the
-/// archive — and whether they really came from a Luna-shaped file.
-public struct LinkListDocument: Equatable, Sendable {
-    /// Ordinary saves, in file order (which the export writes newest-first).
-    public var links: [String]
-    /// Archived saves, in file order.
-    public var archived: [String]
-    /// True only when the source carried a recognized header with a section
-    /// column. False means the links were SCRAPED out of arbitrary text, where
-    /// nothing says which list a link belonged to — so every one of them arrives
-    /// as an ordinary save and `archived` is empty.
-    public var isStructured: Bool
-
-    public init(links: [String] = [], archived: [String] = [], isStructured: Bool = false) {
-        self.links = links
-        self.archived = archived
-        self.isStructured = isStructured
-    }
-
-    public var isEmpty: Bool { links.isEmpty && archived.isEmpty }
-    public var count: Int { links.count + archived.count }
-}
-
-/// Luna's link-list interchange format, and the best-effort reader for
-/// everything that isn't it.
+/// The CSV half of the link-list reader: a foreign read-later export, and the
+/// flat scrape that recovers links from any text at all.
 ///
-/// The written shape is a two-column CSV — `section,url` — one row per link,
-/// with `list` and `archive` as the only section values. That was chosen over
-/// literal blocks separated by blank lines for two reasons: it stays a *valid*
-/// CSV that a spreadsheet opens correctly, and a reader that knows nothing about
-/// the format still sees one link per line, so the fallback scrape below
-/// recovers everything (minus the archive split) from the same bytes.
+/// Luna's own export is markdown now (`LinkListMarkdown`) — this reads what other
+/// apps hand over. It writes nothing: there is no CSV encoder, because the one
+/// caller that had it (Settings ▸ Import & Export) writes markdown.
 ///
 /// Pure and unit-tested (`LinkListCSVTests`): no file access, no networking.
 public enum LinkListCSV {
 
-    /// The exported header row. Recognizing it on the way back in is what
-    /// separates a structured import from a scrape.
-    public static let header = "section,url"
-
-    /// Section values. Only these two are written; on read, anything beginning
-    /// `arch` is the archive and everything else is an ordinary save.
-    public static let listSectionValue = "list"
+    /// Section values recognized on read: anything beginning `arch` is the
+    /// archive and everything else is an ordinary save.
     public static let archiveSectionValue = "archive"
 
     /// Header names accepted for the section column, lowercased. `status` and
@@ -61,60 +30,12 @@ public enum LinkListCSV {
     /// Header names accepted for the URL column, lowercased.
     private static let urlColumnNames: Set<String> = ["url", "link", "address", "urls"]
 
-    // MARK: - Encoding
-
-    /// Renders the two lists as the CSV above, in the order given.
-    public static func encode(links: [String], archived: [String]) -> String {
-        var lines = [header]
-        lines.reserveCapacity(links.count + archived.count + 1)
-        for url in links { lines.append("\(listSectionValue),\(escape(url))") }
-        for url in archived { lines.append("\(archiveSectionValue),\(escape(url))") }
-        // A trailing newline: POSIX text, and it keeps the last row from being
-        // treated as truncated by strict readers.
-        return lines.joined(separator: "\n") + "\n"
-    }
-
-    /// RFC 4180 quoting. URLs legitimately contain commas (and, rarely, quotes),
-    /// so this is not decoration — an unquoted `?a=1,2` would split into two
-    /// fields and the link would be lost.
-    static func escape(_ field: String) -> String {
-        guard field.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" })
-        else { return field }
-        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
-    }
-
     // MARK: - Decoding
 
-    /// Reads whatever the user picked.
-    ///
-    /// A recognized header (a section column AND a url column) takes the
-    /// structured path and honors the archive. Anything else — a one-URL-per-line
-    /// text file, a CSV from another app, a pasted email, even a Luna export whose
-    /// header got mangled — falls back to scraping every link out of the raw text
-    /// in reading order. A structured file that yields no usable rows also falls
-    /// back, so a valid header above unparseable rows still imports something.
-    public static func parse(_ text: String) -> LinkListDocument {
-        let cleaned = strippingByteOrderMarks(text)
-        if let structured = parseStructured(cleaned), !structured.isEmpty { return structured }
-        return LinkListDocument(links: scrapeLinks(from: cleaned), isStructured: false)
-    }
-
-    /// Drops every U+FEFF, at the front or anywhere else.
-    ///
-    /// Done over `unicodeScalars` rather than with `hasPrefix`/
-    /// `replacingOccurrences`: U+FEFF is a default-ignorable code point, so
-    /// Swift's canonically-equivalent String comparison does NOT see a leading
-    /// BOM as a prefix — a UTF-8-with-BOM CSV (what a Windows spreadsheet
-    /// writes) kept its marker glued to the first header name and the file
-    /// silently lost its structure.
-    static func strippingByteOrderMarks(_ text: String) -> String {
-        guard text.unicodeScalars.contains("\u{FEFF}") else { return text }
-        return String(String.UnicodeScalarView(text.unicodeScalars.filter { $0 != "\u{FEFF}" }))
-    }
-
     /// The structured path: nil when the first non-empty record isn't a header
-    /// naming both columns.
-    private static func parseStructured(_ text: String) -> LinkListDocument? {
+    /// naming both columns. Called by `LinkListFile.parse`, which owns the tier
+    /// order and has already stripped byte-order marks.
+    static func parseStructured(_ text: String) -> LinkListDocument? {
         let records = parseRecords(text)
         // `parseRecords` already drops all-empty records, so the header is the
         // first record there is.

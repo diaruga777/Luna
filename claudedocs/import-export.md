@@ -7,23 +7,71 @@ way.
 
 ## The file format
 
-A two-column CSV, `section,url`, one row per link:
+**Markdown**, one bullet per link, under a `## Links` and a `## Archive`
+heading:
 
+```markdown
+# Luna Reader Links
+
+Exported 2026-08-06. Keep the two headings below and Luna reads the archive
+back as an archive when this file is imported again.
+
+## Links (2)
+
+- [Some Piece](https://example.com/a)
+- https://example.com/b
+
+## Archive (1)
+
+- [An Old One](https://example.com/old)
 ```
-section,url
-list,https://example.com/a
-list,https://example.com/b
-archive,https://example.com/old
-```
 
-`LinkListCSV` (LunaURLClassification, pure, `LinkListCSVTests`) owns both
-directions. The shape was chosen over literal blocks separated by blank lines
-for two reasons: it stays a *valid* CSV that a spreadsheet opens correctly, and
-a reader that knows nothing about the format still sees one link per line — so
-the fallback scrape recovers everything (minus the archive split) from the same
-bytes.
+`LinkListMarkdown` (LunaURLClassification, pure, `LinkListMarkdownTests`) owns
+both directions.
 
-Three things the reader has to get right, each of which was a real bug first:
+**It replaced a `section,url` CSV, which was correct and unreadable.**
+AirDropping the `.csv` routed it into Notes, and what came back out of Notes was
+text with no CSV left in it — so the whole file re-imported as one flat list and
+the archive split was gone. Markdown survives that trip because its structure is
+*prose*: a heading is still a heading after a rich-text editor has dropped the
+`##`, and a bullet is still a line with a link on it. It is also legible on
+arrival, which the CSV never was.
+
+**Titles travel.** Each bullet is `[Title](url)` when the save has a title, so a
+re-import shows real headlines in the review list without fetching anything
+(`LinkListDocument.titles`, keyed by URL). A bare-URL line is still a link, so a
+hand-written list imports fine.
+
+**The headings are not localized**, for the same reason the export filename
+isn't: the file travels between devices, apps and people, and the headings are
+the machine-readable half of the format.
+
+### Reading it back
+
+`LinkListFile.parse` is the one entry point, three tiers, each falling through
+so a file never costs the user the links sitting in it:
+
+1. **`LinkListMarkdown`** — Luna's own format, and anything else whose text
+   carries a recognizable heading. The reader does NOT require the `##`, the
+   `-`, or the exact word: a **short line with no address in it** whose letters
+   start with `arch` opens the archive, and one reading `links` / `unread` /
+   `saved` / `inbox` / `reading list` opens the live list, so `**Archive**`,
+   `ARCHIVE:`, `## Archive (128)` and a bare `Archive` all work. A line
+   containing anything but letters, digits, spaces and decoration is not a
+   heading — that one rule is what stops `archive.example.com` and
+   `[Archive](https://…)` from re-sectioning the file. Links found above the
+   first heading are ordinary saves.
+2. **`LinkListCSV`** — a header naming a section column and a url column, which
+   is what Pocket's `status` and Instapaper's `Folder` exports are; their
+   archive split is honored. Section-column aliases include `status` and
+   `folder` on purpose, and the `arch`-prefix rule imports those files WITH
+   their split rather than flattening them. There is no CSV *encoder* any more.
+3. **A scrape** — every http(s) link in the text, in reading order, all as
+   ordinary saves: a one-URL-per-line list, a foreign CSV with no section
+   column, a pasted email.
+
+Three things the CSV/scrape tier has to get right, each of which was a real bug
+first:
 
 - **The record walk goes over unicode scalars, not `Character`s.** Swift reads
   `\r\n` as ONE grapheme cluster, so a `Character`-based switch matches neither
@@ -40,16 +88,9 @@ Three things the reader has to get right, each of which was a real bug first:
   which also knows real TLDs — that is why bare hosts are left to it rather than
   accepted directly, or a `3.14` score column would import as `https://3.14`.
 
-**Reading a file is two paths.** A recognized header — a section column AND a
-url column — takes the structured path and honors the archive. Anything else
-falls back to scraping every link out of the raw text in reading order, all as
-ordinary saves. A structured header above unparseable rows also falls back, so a
-valid header never costs the user the links sitting below it.
-
-Section-column aliases include `status` and `folder` on purpose: Pocket's
-`status` and Instapaper's `Folder` already spell their archive `archive`, and the
-`arch`-prefix rule imports those exports WITH their archive split rather than
-flattening them.
+A tier that yields nothing falls through to the next, so a valid header above
+unparseable rows — or headings with nothing under them — never costs the user the
+links sitting elsewhere in the file.
 
 ## Export
 
@@ -61,15 +102,20 @@ splits them by `isArchived`.
   own re-import Reader then rejects.
 - Synthetic URLs (`lunadoc://`, `lunamail://`) are left out — they name bytes
   inside one device's container.
+- Each item's title comes along, so the file reads as a list of pieces rather
+  than a list of URLs.
 - The file is written to the temporary directory as
-  `Luna-Links-<yyyy-MM-dd>.csv` (per-app prefix) and handed to the system share
+  `Luna-Links-<yyyy-MM-dd>.md` (per-app prefix) and handed to the system share
   sheet.
 
 ## Import
 
 1. `UIDocumentPickerViewController(forOpeningContentTypes:asCopy: true)` — a copy,
    so the file is readable without coordinating against an original in another
-   app's container. CSV, plain text, and their common `.text` supertype.
+   app's container. Markdown (named explicitly, not just inherited through
+   `.text` — a file tagged `net.daringfireball.markdown` is otherwise offered
+   greyed out on some hosts), CSV, plain text, and their common `.text`
+   supertype.
 2. Bytes → text: UTF-8, then UTF-16 (what a spreadsheet's "Unicode text" writes),
    then Latin-1, which cannot fail — so one bad byte never costs the user a
    file's worth of links.
@@ -229,6 +275,8 @@ finishes it. Those count as recoverable, and the summary says so.
 
 ## Tests
 
-`LunaTests/LinkListCSVTests.swift` (codec), `LinkListExportTests.swift` (what
+`LunaTests/LinkListMarkdownTests.swift` (Luna's own format + the tier order),
+`LinkListCSVTests.swift` (the foreign-CSV and scrape tiers),
+`LinkListExportTests.swift` (what
 leaves and what is accepted back), `LinkImportRunnerTests.swift` (orchestration,
 with both real operations stubbed).

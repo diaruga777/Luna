@@ -28,6 +28,10 @@ final class LinkImportSheetViewController: UIViewController {
     /// One reviewable row.
     private struct Entry {
         let urlString: String
+        /// The title the FILE carried, when it did — a Luna markdown export writes
+        /// `[Title](url)`, so a re-import can read the headline straight off the
+        /// page it came from and never has to fetch it.
+        let fileTitle: String?
         var isSelected = true
     }
 
@@ -73,8 +77,12 @@ final class LinkImportSheetViewController: UIViewController {
     // MARK: - Init
 
     init(document: LinkListDocument, runner: LinkImportRunner = LinkImportRunner()) {
-        self.links = document.links.map { Entry(urlString: $0) }
-        self.archived = document.archived.map { Entry(urlString: $0) }
+        self.links = document.links.map {
+            Entry(urlString: $0, fileTitle: document.titles[$0])
+        }
+        self.archived = document.archived.map {
+            Entry(urlString: $0, fileTitle: document.titles[$0])
+        }
         self.isStructured = document.isStructured
         self.runner = runner
         super.init(nibName: nil, bundle: nil)
@@ -430,7 +438,7 @@ extension LinkImportSheetViewController: UITableViewDataSource, UITableViewDeleg
         let entry = entries(for: section)[indexPath.row]
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
-        content.text = Self.displayTitle(for: entry.urlString)
+        content.text = entry.fileTitle ?? Self.displayTitle(for: entry.urlString)
         content.textProperties.numberOfLines = 1
         content.secondaryText = Self.displaySubtitle(for: entry.urlString)
         content.secondaryTextProperties.numberOfLines = 1

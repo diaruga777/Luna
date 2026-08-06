@@ -181,6 +181,7 @@
 "Back" = "Back";
 "Better Voices Available" = "Better Voices Available";
 "Camera Access Needed" = "Camera Access Needed";
+"Close" = "Close";
 "Copy Image" = "Copy Image";
 "Copy Link" = "Copy Link";
 "Couldn't fetch this article" = "Couldn't fetch this article";
@@ -202,8 +203,8 @@
 "Pausing when you look away" = "Pausing when you look away";
 "Preview unavailable" = "Preview unavailable";
 "Read" = "Read";
-"Read Aloud" = "Read Aloud";
 "Read aloud" = "Read aloud";
+"Read Aloud" = "Read Aloud";
 "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings." = "Reading aloud with the standard voice. You can install higher-quality Apple voices for read-aloud in Settings.";
 "Resuming: %@" = "Resuming: %@";
 "Return to %@" = "Return to %@";
@@ -497,7 +498,6 @@
 "This device doesn't have the Save of the Week key." = "This device doesn't have the Save of the Week key.";
 
 /* ===================== Share & Action Extensions ===================== */
-"Close" = "Close";
 "Couldn't read the shared content in time." = "Couldn't read the shared content in time.";
 "Couldn't read the shared file." = "Couldn't read the shared file.";
 "Couldn't read the shared link." = "Couldn't read the shared link.";
@@ -530,8 +530,8 @@
 "Try Again" = "Try Again";
 
 /* ===================== Live Activity ===================== */
-"Cancel download" = "Cancel download";
 "Cancel Download" = "Cancel Download";
+"Cancel download" = "Cancel download";
 "Download ID" = "Download ID";
 "Open Photos Settings" = "Open Photos Settings";
 "Pauses the active Luna download briefly before canceling it." = "Pauses the active Luna download briefly before canceling it.";
@@ -595,7 +595,7 @@
 "Enhanced voices installed" = "Enhanced voices installed";
 "Enter your Kindle address first." = "Enter your Kindle address first.";
 "Export Links" = "Export Links";
-"Export writes every saved link, with the archive kept as its own list. Import reads a Luna export, another app's CSV, or any text file with links in it — you choose which ones to keep before anything is saved." = "Export writes every saved link, with the archive kept as its own list. Import reads a Luna export, another app's CSV, or any text file with links in it — you choose which ones to keep before anything is saved.";
+"Export writes every saved link as a Markdown file, with the archive kept as its own list. Import reads that file back, another app's CSV, or any text with links in it — you choose which ones to keep before anything is saved." = "Export writes every saved link as a Markdown file, with the archive kept as its own list. Import reads that file back, another app's CSV, or any text with links in it — you choose which ones to keep before anything is saved.";
 "Filter Active" = "Filter Active";
 "Finishing the links already started…" = "Finishing the links already started…";
 "Finishing up…" = "Finishing up…";
@@ -624,7 +624,7 @@
 "Listening" = "Listening";
 "Locked Only" = "Locked Only";
 "Luna" = "Luna";
-"Luna couldn't open it as text. Pick a CSV or plain-text file." = "Luna couldn't open it as text. Pick a CSV or plain-text file.";
+"Luna couldn't open it as text. Pick a Markdown, CSV or plain-text file." = "Luna couldn't open it as text. Pick a Markdown, CSV or plain-text file.";
 "Luna reads aloud with enhanced Apple voices when they're installed, otherwise the built-in system voice. Install enhanced voices in iOS Settings → Accessibility → Spoken Content → Voices." = "Luna reads aloud with enhanced Apple voices when they're installed, otherwise the built-in system voice. Install enhanced voices in iOS Settings → Accessibility → Spoken Content → Voices.";
 "Luna set up an inbox rule automatically for this account." = "Luna set up an inbox rule automatically for this account.";
 "M" = "M";

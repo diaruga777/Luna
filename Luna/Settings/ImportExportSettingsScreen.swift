@@ -14,10 +14,11 @@ import UniformTypeIdentifiers
 
 /// Settings ▸ Import & Export: two buttons (`claudedocs/import-export.md`).
 ///
-/// Export shares every link this app shows as one `section,url` CSV, with the
-/// archive as its own section so it comes back as an archive. Import opens the
-/// document picker, reads whatever was chosen, and hands what it found to the
-/// review sheet.
+/// Export shares every link this app shows as one markdown file — a titled
+/// bullet per link under a `## Links` and a `## Archive` heading, so it is
+/// readable as it stands and still comes back with its archive intact. Import
+/// opens the document picker, reads whatever was chosen (markdown, a foreign
+/// CSV, any text with links in it), and hands what it found to the review sheet.
 final class ImportExportSettingsScreen: NavHeaderTableController {
 
     private enum Row: Int, CaseIterable {
@@ -53,7 +54,7 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
         _ tableView: UITableView, titleForFooterInSection _: Int
     ) -> String? {
         L10n.string(
-            "Export writes every saved link, with the archive kept as its own list. Import reads a Luna export, another app's CSV, or any text file with links in it — you choose which ones to keep before anything is saved.")
+            "Export writes every saved link as a Markdown file, with the archive kept as its own list. Import reads that file back, another app's CSV, or any text with links in it — you choose which ones to keep before anything is saved.")
     }
 
     override func tableView(
@@ -174,7 +175,7 @@ extension ImportExportSettingsScreen: UIDocumentPickerDelegate {
                         self.infoAlert(
                             title: L10n.string("Couldn't Read That File"),
                             message: L10n.string(
-                                "Luna couldn't open it as text. Pick a CSV or plain-text file.")))
+                                "Luna couldn't open it as text. Pick a Markdown, CSV or plain-text file.")))
                     return
                 }
                 self.presentReview(for: document)
@@ -187,42 +188,63 @@ extension ImportExportSettingsScreen: UIDocumentPickerDelegate {
 /// file is named, and how bytes of unknown encoding become text.
 enum LinkListExport {
 
-    /// What the document picker offers. `commaSeparatedText` and `plainText`
-    /// cover the two named cases; `text` is their common supertype and admits the
-    /// `.md`/`.opml`-ish files that conform to it, which the scrape still reads.
+    /// What the document picker offers. Markdown first — that's what Luna writes —
+    /// then the two named foreign cases, then `text`, their common supertype,
+    /// which admits the `.opml`-ish files the scrape still reads. The explicit
+    /// markdown type matters on top of `.text`: a file that arrived from another
+    /// device tagged `net.daringfireball.markdown` is otherwise offered greyed out
+    /// on some hosts even though it conforms.
     static var importableTypes: [UTType] {
-        [.commaSeparatedText, .plainText, .text]
+        [markdownType, .commaSeparatedText, .plainText, .text]
     }
 
-    /// Every link THIS app is responsible for, newest first, archive separated.
+    /// `net.daringfireball.markdown` when the system knows it (it has since iOS
+    /// 14), else plain text — never nil, so the picker always has a type list.
+    static var markdownType: UTType {
+        UTType("net.daringfireball.markdown") ?? .plainText
+    }
+
+    /// Every link THIS app is responsible for, newest first, archive separated,
+    /// each with its title when it has one.
     ///
     /// Scoped by `LunaApp.includes` on purpose: the store is shared by all four
     /// apps, and Luna Reader exporting the Downloader's videos would hand back a
     /// file whose own re-import it would then reject.
     static func document(for items: [ReadingListItem]) -> LinkListDocument {
         let mine = items.filter { LunaApp.current.includes($0) }
+        let exportable = mine.filter { ReadingListItem.isWebPageURL($0.urlString) }
         return LinkListDocument(
-            links: mine.filter { !$0.isArchived }.compactMap(exportedURL),
-            archived: mine.filter(\.isArchived).compactMap(exportedURL),
+            links: exportable.filter { !$0.isArchived }.map(\.urlString),
+            archived: exportable.filter(\.isArchived).map(\.urlString),
+            // A title is what makes the file readable to a person, and it saves the
+            // review sheet a fetch when the file comes back.
+            titles: Dictionary(
+                exportable.compactMap { item in
+                    item.title.map { (item.urlString, $0) }
+                },
+                uniquingKeysWith: { first, _ in first }),
             isStructured: true)
     }
 
-    /// Synthetic URLs (`lunamail://`, `lunadoc://`) name bytes inside one
-    /// device's container, so they are not links and are left out.
-    private static func exportedURL(_ item: ReadingListItem) -> String? {
-        ReadingListItem.isWebPageURL(item.urlString) ? item.urlString : nil
-    }
-
+    /// Writes the export as **markdown**, `.md`.
+    ///
+    /// Markdown rather than the `section,url` CSV this used to write: AirDropping a
+    /// `.csv` routed it straight into Notes, and what came back out of Notes was
+    /// text with no CSV in it — every link re-imported as one flat list, archive
+    /// split gone. A markdown file is legible on arrival and its structure survives
+    /// that round trip, because a heading and a bullet are still a heading and a
+    /// bullet after a rich-text editor has had them (see `LinkListMarkdown`).
     static func writeTemporaryFile(
         _ document: LinkListDocument, now: Date = Date()
     ) throws -> URL {
-        let csv = LinkListCSV.encode(links: document.links, archived: document.archived)
+        let markdown = LinkListMarkdown.encode(
+            document, appName: LunaApp.current.displayName, exportedOn: now)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        let name = "\(LunaApp.current.exportFileBaseName)-\(formatter.string(from: now)).csv"
+        let name = "\(LunaApp.current.exportFileBaseName)-\(formatter.string(from: now)).md"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-        try Data(csv.utf8).write(to: url, options: .atomic)
+        try Data(markdown.utf8).write(to: url, options: .atomic)
         return url
     }
 
@@ -230,7 +252,7 @@ enum LinkListExport {
     /// as text at all.
     static func readDocument(at url: URL) -> LinkListDocument? {
         guard let data = try? Data(contentsOf: url), let text = decodeText(data) else { return nil }
-        return LinkListCSV.parse(text)
+        return LinkListFile.parse(text)
     }
 
     /// A file the user picked has no declared encoding. UTF-8 first (everything

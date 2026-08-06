@@ -206,43 +206,66 @@ stable Xcode 26.2.
 > which is why the splash corona is no longer 3×3 blocks. See
 > `claudedocs/card-carousel.md` and `claudedocs/reader-onboarding.md`.
 
-> **Strings: one flat file, and the key is the English.** Every user-visible
-> string in all four apps is an entry in
+> **Strings: one flat file, keyed by a descriptive name with a per-app
+> suffix.** Every user-visible string in all four apps is an entry in
 > `LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings`,
-> written `"the original English" = "what Luna shows";`. The KEY is the literal
-> that sits in the Swift and never changes; the VALUE is the copy, so wording is
-> edited in a text editor — on a phone, off-machine — with no Swift change and no
-> build step. An unknown or broken key falls back to itself, i.e. to the original
-> English. `L10n.string` / `L10n.resource` (`LunaModels/Localization.swift`) are
-> the only lookup points, resolving against `Bundle.module`, which ships in every
-> app, extension, clip and widget that links LunaModels. **`defaultLocalization:
-> "en"` in `Package.swift` is load-bearing**: without it the table is silently
-> dropped from the resource bundle and every lookup falls back — which is exactly
-> the state the codebase was in before this existed (two `.xcstrings` catalogs,
-> neither ever read, ~580 dead call sites that looked fine because key == English).
-> `LocalizableStringsTests` therefore reads the table out of the BUILT bundle, not
-> the working tree. Adding a string: call `L10n.string("…")`, then
-> `scripts/strings_sync.py --write` (it parses the Swift, matches interpolation to
-> the format key, adopts new keys and drops dead ones; `--check` reports drift and
-> is not a unit test because the suite can't see the source tree). NOT copy and
-> deliberately unwrapped: `OnboardingStrings.Accessibility` (UI-test identifiers)
-> and `.AnimationKeys` (CALayer keys), markup assembly, and matcher hostnames.
-> **App Intents metadata is in the SAME file but gets there differently**: intent
-> titles, descriptions and `@Parameter` names must stay Swift literals (the
-> metadata processor rejects anything else) and resolve against the HOST bundle,
-> so `strings_sync.py` finds them by shape in `Luna/Mail/Intents/` + the Live
-> Activity widget, and the app/widget targets COPY the one file into their own
-> bundles via `scripts/add_strings_to_app_bundles.rb` (re-run after adding a
-> target; a test fails if a host's copy is missing or has drifted). Staying in
-> code: `AppShortcut` phrases/`shortTitle`s (they are `AppShortcuts.strings`, and
-> are Siri grammar) and `BundledShortcut.displayName` (must equal the bundled
-> `.shortcut` filename). **There is no `InfoPlist.xcstrings`** — the three that
-> existed were shared by four targets each and every build rewrote
-> `CFBundleDisplayName`/`CFBundleName` with whichever target built last, dirtying
-> the tree on every `AllLunaApps` build; the usage descriptions they held are in
-> the `Info.plist`s verbatim and the names come from the xcconfig per target. If a
-> second language ever ships, add per-TARGET catalogs, never one shared file. Full
-> detail in `claudedocs/strings.md`.
+> written `"<descriptive base>_<suffix>" = "what Luna shows";`, where
+> `<suffix>` is one of `Luna` (the universal fallback every base key MUST
+> define), `Core` (the central Luna app's own override), `Reader`,
+> `Downloader`, `PriceTracker`. A call site never names an app — it just calls
+> `L10n.string("SomeDescriptiveKey")`, and `L10n`
+> (`LunaModels/Localization.swift`) resolves `SomeDescriptiveKey_<the running
+> app's own suffix>` first, then falls back to `SomeDescriptiveKey_Luna`. So a
+> string every app shows the same needs only a `_Luna` line, and giving one
+> app its own wording is one more line in the strings file — **never** a
+> `switch LunaApp.current { … }` around an `L10n` call; that switch IS this
+> resolution, done worse and invisibly to the strings file (`WeeklySaveLabels`
+> and `OnboardingStrings.Definition`/`ChunkedDefinition` are the two worked
+> examples of collapsing one into the suffix mechanism). `L10n.string(key,
+> args...)` substitutes `%@`/`%lld`/etc via `String(format:)` — a key must
+> NEVER itself be interpolated. `L10n.string(key, for: app)` / `L10n
+> .stringIfPresent(key, for:)` resolve for an explicit app rather than
+> `.current` (showing a sibling app's name, or reading a `ChunkedDefinition`'s
+> `"<prefix>1"`, `"<prefix>2"`, … until one is missing). Grouping and the
+> comment above each group in the strings file are HAND-AUTHORED — keys are
+> named so alphabetical order matches on-screen reading order (zero-padded
+> ordinals past 9 items, e.g. `_feature01`) — `scripts/strings_sync.py --write`
+> only appends a placeholder for a referenced key missing its `_Luna` entry
+> and drops lines nothing references; it never re-sorts or re-groups.
+> `L10n.string` / `L10n.resource` are the only lookup points, resolving
+> against `Bundle.module`, which ships in every app, extension, clip and
+> widget that links LunaModels. **`defaultLocalization: "en"` in
+> `Package.swift` is load-bearing**: without it the table is silently dropped
+> from the resource bundle and every lookup falls back to a raw key.
+> `LocalizableStringsTests` therefore reads the table out of the BUILT bundle,
+> not the working tree, and checks every entry's suffix is recognized, every
+> base key has a `_Luna` fallback, and format specifiers match ACROSS a base
+> key's suffix siblings (not key-vs-value — the key no longer carries
+> specifiers). NOT copy and deliberately unwrapped:
+> `OnboardingStrings.Accessibility` (UI-test identifiers) and `.AnimationKeys`
+> (CALayer keys), markup assembly, and matcher hostnames.
+> **App Intents metadata is in the SAME file but gets there differently, and
+> does NOT use the suffix fallback**: intent titles, descriptions,
+> `@Parameter`/`@Property` names, and `AppEnum.caseDisplayRepresentations`
+> must stay Swift literals (the metadata processor rejects anything else,
+> including an `L10n` call) — so the literal IS the concrete, already-suffixed
+> key (always ending `_Luna`), e.g. `static let title: LocalizedStringResource
+> = "Intents_save_title_Luna"`. `strings_sync.py` finds these by shape in
+> `Luna/Mail/Intents/` + the Live Activity widget (excluding a per-instance
+> `DisplayRepresentation(title: "\(dynamic)")` VALUE, which is runtime content
+> rather than build-time metadata), and the app/widget targets COPY the one
+> file into their own bundles via `scripts/add_strings_to_app_bundles.rb`
+> (re-run after adding a target; a test fails if a host's copy is missing or
+> has drifted). Staying in code: `AppShortcut` phrases/`shortTitle`s (they are
+> `AppShortcuts.strings`, and are Siri grammar) and `BundledShortcut
+> .displayName` (must equal the bundled `.shortcut` filename). **There is no
+> `InfoPlist.xcstrings`** — the three that existed were shared by four targets
+> each and every build rewrote `CFBundleDisplayName`/`CFBundleName` with
+> whichever target built last, dirtying the tree on every `AllLunaApps` build;
+> the usage descriptions they held are in the `Info.plist`s verbatim and the
+> names come from the xcconfig per target. If a second language ever ships,
+> add per-TARGET catalogs, never one shared file. Full detail in
+> `claudedocs/strings.md`.
 
 ## Agent workflow
 

@@ -1,4 +1,4 @@
-# Strings — one file, edited anywhere
+# Strings — one file, edited anywhere, keyed by name not by wording
 
 Every user-visible string in all four Luna apps lives in one flat text file:
 
@@ -9,64 +9,175 @@ LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings
 Each line is
 
 ```
-"the original English" = "what Luna actually shows";
+"<descriptive base>_<suffix>" = "what Luna actually shows";
 ```
 
-The **key never changes**; the **value** is the copy. That split is the whole
-point: copy can be rewritten in any text editor, on any device, without opening
-Xcode and without touching a line of Swift.
+The **key is a descriptive name, never the English text** — e.g.
+`"Onboarding_Util_headline_Luna"`. `<suffix>` is always one of five values:
+`Luna`, `Core`, `Reader`, `Downloader`, `PriceTracker`. That split is the whole
+point, twice over: copy can be rewritten in any text editor without touching
+Swift, AND an app can get its own wording for a shared string by adding one
+more line — no code change either way.
 
 That is the only file. It reaches every surface two ways: LunaModels' resource
 bundle (which every app, extension, clip and widget links) and a copy in each
 app's own bundle for the App Intents strings — see
 [Shortcuts and Siri](#shortcuts-and-siri).
 
+## The suffix mechanism
+
+A call site never names an app or writes its own `switch LunaApp.current`.
+Code just says, e.g.,
+
+```swift
+L10n.string("Settings_shortcut_safariButtonName")
+```
+
+and `L10n` (`LunaLibraries/Sources/LunaModels/Localization.swift`) resolves
+that base key at runtime by trying, in order:
+
+1. `"<base>_<the running app's own suffix>"` — `Core` for the central **Luna**
+   app, else `Reader` / `Downloader` / `PriceTracker`
+   (`LunaApp.ownLocalizationSuffix`).
+2. `"<base>_Luna"` — the universal default. **Every base key referenced from
+   code must define this line** — it's the fallback with nowhere further to
+   go, and `LocalizableStringsTests`/`strings_sync.py --check` both enforce it.
+
+So a string every app shows identically needs only a `_Luna` line. Giving
+Reader its own wording is adding exactly one more line:
+
+```
+"Settings_shortcut_safariButtonName_Luna" = "Luna";
+"Settings_shortcut_safariButtonName_Reader" = "Read in Luna";
+```
+
+— with no Swift touched at all. This is why `_Core` exists as its own name
+rather than reusing `_Luna` for the central app's override: `_Luna` is
+reserved for the fallback tier every key has, so the central app's *own*
+divergent wording (when it has any) needs a name that isn't already taken.
+
+Two escape hatches, both in `L10n`:
+
+- **`L10n.string(_ key:, for app: LunaApp, _ args: CVarArg...)`** resolves for
+  an EXPLICIT app rather than `.current` — for showing another app's text
+  (`LunaApp.displayName`, called as `owner.displayName` to name a sibling app
+  in `UnsupportedSaveCopy`) and for tests that want to check a specific app's
+  wording without faking a bundle identifier (`WeeklySaveLabels.promoteMenuTitle
+  (for: .reader)`).
+- **`L10n.stringIfPresent(_ key:, for app:)`** returns `nil` instead of falling
+  back, for a caller that needs to tell "no such key" apart from "found, but
+  empty" — `OnboardingSafariExtensionCopy.explainerChunks` reads
+  `"<prefix>1"`, `"<prefix>2"`, … until this returns `nil`, which is how an app
+  with fewer chunks than another falls out naturally with no length to keep in
+  sync.
+
+**Never hand-roll the switch this replaces.** If you find (or are about to
+write)
+
+```swift
+switch LunaApp.current {
+case .luna: return L10n.string("A")
+case .reader: return L10n.string("B")
+...
+}
+```
+
+collapse it to one `L10n.string("SomeKey")` call and move `A`/`B`/… into
+`SomeKey_Core`/`SomeKey_Reader`/… in the strings file. `WeeklySaveLabels.swift`
+and `OnboardingStrings.Definition`/`ChunkedDefinition` are the two worked
+examples in the codebase; `Definition` in particular used to carry a
+`.shared`/`.perSurface` enum in Swift that did exactly this switching — it now
+just stores a key and defers to `L10n.string(key, for:)`.
+
 ## Editing on a phone
 
 Copy the file off, edit the right-hand sides, copy it back. Nothing else is
-required — no regeneration step, no build step to "compile" the strings, no key
-to look up. The file is the resource that ships.
+required — no regeneration step, no build step, no key to look up.
 
 Three rules, and the test suite enforces all three:
 
-1. **Only edit inside the right-hand quotes.** The left-hand side is the lookup
-   key. Changing it doesn't rename anything — it detaches the line, and the app
-   falls back to displaying the key. (Which is the original English, so a
-   mistake degrades to "unedited", never to a blank or a raw identifier.)
-2. **Keep every `%@`, `%lld`, `%1$@` marker**, in a consistent order. These are
-   where a name, count, price or date gets substituted. Dropping one leaves an
-   argument with nowhere to go; adding one invents an argument the code never
-   passed. If you need to *reorder* them, switch the value to the positional
-   form — `%1$@ … %2$lld` — and the arguments follow the numbers.
+1. **Only edit inside the right-hand quotes.** The left-hand side is the
+   lookup key. Changing it doesn't rename anything — it detaches the line,
+   and `L10n` falls all the way through to showing the raw key (there's no
+   English to fall back to anymore, since the key was never English — this is
+   the one regression from the old key-is-the-English scheme, traded for the
+   ability to reword per app).
+2. **Keep every `%@`, `%lld`, `%1$@` marker**, in a consistent order, ACROSS
+   every suffix of one base key — `_Core`/`_Reader`/`_Downloader`/
+   `_PriceTracker`/`_Luna` are substituted with the same call-site args, so
+   they must all take the same shape. Dropping one leaves an argument with
+   nowhere to go; adding one invents an argument the code never passed.
 3. **Keep the punctuation**: opening quote, `=`, closing quote, trailing `;`.
    A line that loses its semicolon takes the rest of the file down with it —
-   `NSDictionary(contentsOf:)` returns nil for the whole table, and every string
-   in the app falls back to its key at once.
+   `NSDictionary(contentsOf:)` returns nil for the whole table, and every
+   string in the app falls back to its key at once.
 
 `\n` in a value is a real line break. A literal `"` inside copy is `\"`.
 
-Sections (`/* ===== Settings ===== */`) are cosmetic grouping to make the file
-scannable; the parser ignores them and they can be reordered freely.
+## Naming and grouping — hand-authored, not mechanical
+
+Unlike the old key-is-the-English file, **grouping and comments in this file
+are a permanent, hand-maintained asset** — `strings_sync.py` never re-sorts or
+re-groups it (see below). A key is `<ScreenOrFeaturePrefix>[_<SubGroup>]_
+<description>`, e.g. `Onboarding_Safari_explainerChunk1`,
+`Settings_email_testSendFailedTitle`. The two rules that make the file
+pleasant to read straight through:
+
+- **Strings shown together, or with a natural reading order, share a prefix**
+  so they sort together.
+- **Alphabetical key order should match on-screen reading order.** For a
+  numbered list of more than a few items, zero-pad the ordinal so it doesn't
+  break past 9 — `ShareSetupPractice_feature01` … `_feature23` is the worked
+  example. For a pair with no natural digit, pick names where alpha order
+  already matches (`headline1Initial`/`headline2Final`, not
+  `headlineInitial`/`headlineFinal`).
+- Every group gets a `/* ===== Name — what/where ===== */` header comment
+  above it explaining what the group is and where it's shown.
+
+Generic, truly-shared UI chrome ("Cancel", "Done", "Save" as a plain button)
+lives under one `Common_*` prefix rather than being duplicated with a
+different name per screen — the point is that changing "Cancel" everywhere is
+one edit, not a hunt. Don't reach for `Common_*` for text that only
+*coincidentally* matches another screen's wording today; two independent
+pickers that both happen to have a "System" option stay separate
+(`Settings_appearance_system` vs. `Settings_readerFont_system`) since they may
+need to diverge later.
 
 ## Adding a string in code
 
-Call `L10n.string("Your new sentence.")`. It works immediately — an unknown key
-falls back to itself — and then:
+Call `L10n.string("Some_Descriptive_Key")`, then add
+`"Some_Descriptive_Key_Luna" = "The actual copy.";` to the file, in whichever
+existing group it reads with (by hand — the sync script doesn't guess this).
+If the copy substitutes a value, pass it as a separate argument rather than
+interpolating into the key:
+
+```swift
+// wrong — a key must never itself be interpolated:
+L10n.string("Tried \(count) times")
+// right:
+L10n.string("SomeCard_attemptFooter", count)
+// strings file:
+"SomeCard_attemptFooter_Luna" = "Tried %lld times";
+```
 
 ```sh
 scripts/strings_sync.py --check    # what has drifted, both directions
-scripts/strings_sync.py --write    # adopt new keys, drop dead ones, re-sort
+scripts/strings_sync.py --write    # append missing keys as placeholders,
+                                    # drop lines no code references
 ```
 
-`--write` adds any literal it finds in the source, removes entries no code
-references any more, and rewrites the file grouped and alphabetised.
+`--write` is deliberately conservative compared to the old file's version: it
+never re-sorts or re-groups (grouping is hand-authored now), and a newly
+"adopted" key is appended under a loud `NEEDS REVIEW` marker with its own key
+text as a placeholder value — a human still has to write the real copy and
+move it into its proper group. Removing dead lines (a base+suffix combination
+no code references, or an entry whose key doesn't end in a recognized suffix
+at all) IS still automatic.
 
-The script parses the Swift itself, including interpolation: it turns
-`L10n.string("Links (\(count))")` into the pattern `Links (…)` and matches it
-against the file's `Links (%lld)`. What it will **not** do is invent a specifier
-for an interpolated string it has never seen — `\(count)` could be `%lld` or
-`%@`, and guessing wrong is a crash. Those are printed for a human to add once,
-by hand. There are around fifty interpolated strings in the whole codebase.
+The script also recognizes two indirection points that aren't `L10n` calls
+themselves but still need a required entry: `OnboardingStrings.Definition(key:
+"…")` and `ChunkedDefinition(keyPrefix: "…")` — see
+[The suffix mechanism](#the-suffix-mechanism).
 
 ## What is deliberately NOT in the file
 
@@ -75,36 +186,53 @@ file unreadable and the app fragile:
 
 - **`OnboardingStrings.Accessibility`** — UI-test identifiers
   (`onboarding.safari.page.headline`). They are contracts with the test suite,
-  not words anyone reads.
-- **`OnboardingStrings.AnimationKeys`** — CALayer animation keys.
+  not words anyone reads. Still constructed via `Definition(shared:)`, the one
+  surviving use of that initializer — a raw value with no `L10n` lookup at
+  all.
+- **`OnboardingStrings.AnimationKeys`** — CALayer animation keys, same
+  treatment.
 - **Markup assembly**, like the `<h1>…</h1>` fragment in
   `ShareSetupPractice.fallbackHTMLBody`.
 - **Hostnames and URLs** that the ingest pipeline matches on.
+- **Dynamic, non-authored text** — an error's own `localizedDescription`, a
+  save's real title. `L10n` has nothing to look up for text nobody wrote, so
+  it's just a plain `String` (or `"\(error)"`), never routed through a key.
 
-The mock InstaTok/Amayzon page copy *is* in the file — it is displayed, and the
-onboarding practice flow reads better when its wording can be tuned.
+The mock InstaTok/Amayzon page copy *is* in the file — it is displayed, and
+the onboarding practice flow reads better when its wording can be tuned.
 
 ## Shortcuts and Siri
 
-App Intents metadata — intent names, descriptions, parameter titles, the result
-types Shortcuts displays — is in the same file as everything else, but it gets
-there differently.
+App Intents metadata — intent names, descriptions, parameter titles, the
+result types Shortcuts displays — is in the same file as everything else, but
+it gets there differently, and it does NOT participate in the per-app suffix
+fallback.
 
 Xcode extracts that metadata at **build time**, and the metadata processor
-rejects anything that isn't a string literal: `static let title:
-LocalizedStringResource = "Save"` cannot become an `L10n` call. At runtime
-though, the literal resolves against a strings table in the **host** bundle —
-the app's own, not LunaModels'. So two things bridge the gap:
+rejects anything that isn't a string literal — no function call, so no
+`L10n.string(key, for: app)`. Concretely: a plain `title: "Save"` becomes
+`title: "Intents_save_title_Luna"` — the literal in the Swift source IS the
+already-suffixed, concrete key, always ending `_Luna` (there is no runtime
+resolution step to pick a different suffix for these). One exception worth
+knowing: `AppEnum.caseDisplayRepresentations` is ALSO build-time-extracted
+(same "must be a literal" restriction as `typeDisplayRepresentation`) even
+though it doesn't match any of the four shapes below by name — it showed up
+as a hard build failure (`'LocalizedStringResource' must be initialized with
+a call to its initializer or a string literal`) rather than a silent
+scanner miss, which is how this was caught.
 
 - `strings_sync.py` finds these literals by SHAPE rather than by call
   (`static let … : LocalizedStringResource =`, `IntentDescription(…)`,
-  `@Parameter(title:description:)`, `typeDisplayRepresentation`), and only in
-  `Luna/Mail/Intents/` and the Live Activity widget, because `title:` is far too
-  common a label to match everywhere. Multi-line `"""` descriptions are joined
-  the way Swift joins them, backslash continuations and all.
+  `@Parameter`/`@Property``(title:description:)`, `typeDisplayRepresentation`),
+  and only in `Luna/Mail/Intents/` and the Live Activity widget, because
+  `title:` is far too common a label to match everywhere — and even there, a
+  plain per-instance `DisplayRepresentation(title: "\(dynamic)")` VALUE
+  (runtime content, not metadata) is excluded by name. Multi-line `"""`
+  descriptions are joined the way Swift joins them, backslash continuations
+  and all.
 - **The app targets copy the one file into their own bundles**, via a plain
-  resource reference added by `scripts/add_strings_to_app_bundles.rb`. Re-run it
-  after adding an app or widget target; it is idempotent, and
+  resource reference added by `scripts/add_strings_to_app_bundles.rb`. Re-run
+  it after adding an app or widget target; it is idempotent, and
   `LocalizableStringsTests.testAppBundleCarriesTheSameTable` fails if a host is
   missing its copy or the copies have drifted.
 
@@ -119,8 +247,9 @@ Two things stay in Swift and are not editable this way:
   the constant and the filename have to agree; editing the copy alone would
   rename it in Luna's prose while the Action Button picker kept the old name.
   Rename the resource and the constant together. It reads the same words as
-  `LunaApp.displayName` and deliberately does not share its lookup — that one is
-  copy and may be reworded, this one is a filename.
+  `LunaApp.displayName` (now `L10n.string("LunaApp_displayName", for: self)`)
+  and deliberately does not share its lookup — that one is copy and may be
+  reworded, this one is a filename.
 
 ## Info.plist strings
 
@@ -143,30 +272,28 @@ than one shared file, for the same reason each app has its own entitlements.
 ## How the copy reaches the screen
 
 `L10n` (`LunaLibraries/Sources/LunaModels/Localization.swift`) is the only
-lookup point. `L10n.string(…)` returns a resolved `String`;
-`L10n.resource(…)` returns a `LocalizedStringResource` for the system APIs that
-demand one (ActivityKit alerts, and the computed `localizedStringResource` /
-`displayRepresentation` properties on App Intents errors and entities). Both
-resolve against `Bundle.module` — LunaModels' resource bundle — which is
-embedded in every app, extension, clip and widget that links LunaModels. One
-file, one lookup, every surface.
+lookup point. `L10n.string(…)` returns a resolved `String`, substituting any
+trailing `args` via `String(format:)`; `L10n.resource(…)` returns a
+`LocalizedStringResource` for the system APIs that demand one (ActivityKit
+alerts, and the computed `localizedStringResource` / `displayRepresentation`
+properties on App Intents errors and entities) — it resolves the app-suffix
+choice EAGERLY, in-process, at the call site, rather than deferring to
+whichever process ends up rendering the resource, since that process might not
+share this one's app identity. Both resolve against `Bundle.module` —
+LunaModels' resource bundle — which is embedded in every app, extension, clip
+and widget that links LunaModels. One file, one lookup, every surface.
 
 ### The bug this replaced, and the setting that must not be removed
 
-Before this, the copy lived in two `.xcstrings` catalogs and **none of it was
-ever read**. `LunaLibraries_LunaModels.bundle` shipped containing an Info.plist
-and nothing else: the package had no `defaultLocalization`, so neither
-swift-build nor Xcode ever placed a strings table inside it, and all ~580
-`L10n.string(…)` call sites silently fell back to their keys. It went unnoticed
-for as long as it did precisely because the key *is* the English — the apps
-looked correct while the localization layer did nothing at all.
-
-So: **`defaultLocalization: "en"` in `LunaLibraries/Package.swift` is
-load-bearing.** Remove it and the table vanishes from the bundle again, with no
-build error and no visible change until someone edits a value and it doesn't
-take. `LocalizableStringsTests` reads the table out of the *built* bundle rather
-than the working tree for exactly this reason — a test that read the source file
-would have passed the entire time the feature was dead.
+Before the key-is-the-English scheme even existed, the copy lived in two
+`.xcstrings` catalogs and **none of it was ever read**:
+`LunaLibraries_LunaModels.bundle` shipped containing an Info.plist and nothing
+else, because the package had no `defaultLocalization`. So: **`defaultLocalization:
+"en"` in `LunaLibraries/Package.swift` is load-bearing.** Remove it and the
+table vanishes from the bundle again, with no build error and no visible
+change until someone edits a value and it doesn't take.
+`LocalizableStringsTests` reads the table out of the *built* bundle rather than
+the working tree for exactly this reason.
 
 ## Tests
 
@@ -174,9 +301,24 @@ would have passed the entire time the feature was dead.
 
 - the shipped table exists in the bundle, parses, and is populated
 - every key resolves through the same bundle lookup `L10n` uses
-- every value substitutes exactly what its key substitutes (specifier parity,
-  positional or not)
-- the Shortcuts/Siri table parses and still carries the intent names
+- every entry's key ends in a recognized suffix (`_Luna`/`_Core`/`_Reader`/
+  `_Downloader`/`_PriceTracker`) — an unreachable key is dead weight or a typo
+  away from becoming one
+- every base key that has an app override also has a `_Luna` fallback
+- every value substitutes exactly what its SUFFIX SIBLINGS do (specifier
+  parity across `_Core`/`_Reader`/`_Downloader`/`_PriceTracker`/`_Luna` for one
+  base key — not key-vs-value the way the old file checked it, since the key
+  no longer carries specifiers)
+- the Shortcuts/Siri table parses and still carries the intent names, checked
+  against their concrete `Intents_*_Luna` keys directly (no runtime fallback
+  to check for these)
+
+A test that references a screen's copy to build an expected value (e.g. an
+accessibility-label match in a UI test) has to use the new key too —
+`L10n.string("Play")` no longer resolves to `"Play"`, it resolves to nothing,
+since `"Play"` was never a base key under this scheme. `RSVPEyeTrackingTests`/
+`RSVPEyeTrackingReliabilityTests`/`ArticleCardsChromeTests` all had one such
+site each, updated during this migration.
 
 Code-to-file drift is `scripts/strings_sync.py --check`, not a unit test: the
 tests run on a simulator with no access to the source tree.

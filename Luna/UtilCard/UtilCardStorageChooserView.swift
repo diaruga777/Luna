@@ -36,8 +36,10 @@ final class UtilCardStorageChooserView: UIView {
     private static let chevronWidth: CGFloat = 10
     /// The expanded panel's padding around its rows, and the row height it uses
     /// — which is the collapsed selector's own height, so the selected option
-    /// lands exactly where it already was.
-    private static let panelPadding = CGSize(width: 11, height: 7)
+    /// lands exactly where it already was. The horizontal padding is
+    /// `labelToSelector` on purpose: the panel's leading edge then lands in the
+    /// seam after "Store downloads" instead of over its last letters.
+    private static var panelPadding: CGSize { CGSize(width: labelToSelector, height: 7) }
     private static var optionRowHeight: CGFloat { iconSide + 8 }
 
     /// The user tapped an option. `luna` is applied by the caller directly;
@@ -235,6 +237,9 @@ final class UtilCardStorageChooserView: UIView {
         }
 
         positionExpansion()
+        // The panel takes over the selector's job while it is open; the chevron
+        // left behind beside it reads as a second, orphaned control.
+        chevron.isHidden = true
         guard !UIAccessibility.isReduceMotionEnabled else { return }
         panel.alpha = 0
         panel.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
@@ -283,6 +288,7 @@ final class UtilCardStorageChooserView: UIView {
 
     func collapse() {
         guard let panel else { return }
+        chevron.isHidden = false
         self.panel = nil
         optionRows = [:]
         let catcher = dismissCatcher

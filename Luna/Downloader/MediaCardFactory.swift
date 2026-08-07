@@ -603,9 +603,24 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleJobProgressChanged(_:)),
             name: .downloaderJobProgressChanged, object: nil)
+        #if DEBUG
+        if let stagedSnapshot {
+            apply(stagedSnapshot)
+            return
+        }
+        #endif
         apply(LiveMediaDownloadManager.shared.currentDownloadSnapshot(
             forSourceURLString: sourceURLString))
     }
+
+    #if DEBUG
+    /// Staged mode's hold on a download state (`claudedocs/staging.md`). A real
+    /// transfer passes through resolving/downloading/failed in seconds, so
+    /// there is no way to capture one from the outside; set this before the
+    /// view loads and the card renders that state and stays on it — nothing in
+    /// a staged run posts a progress notification to move it off.
+    var stagedSnapshot: DownloaderJobSnapshot?
+    #endif
 
     @objc private func handleJobProgressChanged(_ notification: Notification) {
         guard let urlString = notification.userInfo?["sourceURLString"] as? String,

@@ -57,6 +57,17 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         self.accountStore = accountStore
         super.init(style: .insetGrouped)
     }
+
+    #if DEBUG
+    /// Staged mode's only seam into this screen (`claudedocs/staging.md`).
+    /// Connecting is otherwise a state only a live sign-in attempt can produce
+    /// — it is set from `EmailAccountSetup`'s busy callback and cleared when
+    /// the network answers — so there is no way to hold a capture on the
+    /// spinner without one. Nothing but a stage calls this.
+    func setConnectingForStaging(_ connecting: Bool) {
+        isConnecting = connecting
+    }
+    #endif
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// The one destination for "this needs an email account first": pushes this

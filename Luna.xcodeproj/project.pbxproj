@@ -624,6 +624,9 @@
 				Settings/ReaderSettingsScreens.swift,
 				Settings/VoiceInstallLink.swift,
 				Social/AppReaderProviders.swift,
+				"Stage/StageCatalog+Article.swift",
+				"Stage/StageCatalog+Email.swift",
+				"Stage/StageCatalog+Product.swift",
 				UITestScreen.swift,
 			);
 			target = AF19C41BA051B4C0892BDA4E /* LunaDownloader */;
@@ -657,6 +660,9 @@
 				Settings/ReaderSettingsScreens.swift,
 				Settings/VoiceInstallLink.swift,
 				Social/AppReaderProviders.swift,
+				"Stage/StageCatalog+Article.swift",
+				"Stage/StageCatalog+Email.swift",
+				"Stage/StageCatalog+Media.swift",
 				UITestScreen.swift,
 			);
 			target = 6C65D0274C393548D3654967 /* LunaPriceTracker */;
@@ -714,6 +720,8 @@
 				"Resources/Luna Price Tracker.shortcut",
 				Resources/Luna.shortcut,
 				Settings/DownloadsSettingsScreen.swift,
+				"Stage/StageCatalog+Media.swift",
+				"Stage/StageCatalog+Product.swift",
 				UITestScreen.swift,
 			);
 			target = AAE000000000000000000000 /* LunaReader */;

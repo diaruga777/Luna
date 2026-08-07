@@ -94,6 +94,25 @@ public struct DownloaderJobSnapshot: Equatable {
     public let message: String
     public let thumbnailFileName: String?
     public let failureKind: FailureKind?
+
+    /// Public so a caller outside this module can DESCRIBE a job state without
+    /// running one. The synthesized memberwise init is internal, which left the
+    /// download states (queued, mid-transfer, failed, no-media) reachable only
+    /// by starting a real transfer and catching it at the right millisecond.
+    /// Staged mode builds them directly instead (`claudedocs/staging.md`).
+    public init(
+        sourceURLString: String, title: String, phase: DownloaderJobPhase,
+        progress: Double, message: String, thumbnailFileName: String? = nil,
+        failureKind: FailureKind? = nil
+    ) {
+        self.sourceURLString = sourceURLString
+        self.title = title
+        self.phase = phase
+        self.progress = progress
+        self.message = message
+        self.thumbnailFileName = thumbnailFileName
+        self.failureKind = failureKind
+    }
 }
 
 func postDownloaderJobProgress(job: LiveMediaDownloadJob, progress: Double?) {

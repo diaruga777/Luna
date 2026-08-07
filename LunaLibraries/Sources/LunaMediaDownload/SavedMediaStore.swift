@@ -568,6 +568,35 @@ public final class SavedMediaStore {
         return result
     }
 
+    #if DEBUG
+    /// Deterministic seeding, the twin of `ReadingListStore.seedForTesting`.
+    /// Replaces the whole manifest with `items`, so a staged (or test) run gets
+    /// a media library it fully controls rather than whatever the device had.
+    ///
+    /// Deliberately does NOT touch `Files/` or `Thumbnails/`: an item that
+    /// names a local file expects that file to exist, and the caller is the one
+    /// that put it there (`mediaDirectory` is public for exactly this).
+    /// DEBUG-only — never compiled into a release build.
+    public func seedForTesting(items: [SavedMediaItem]) {
+        lock.lock()
+        try? saveUnlocked(items)
+        lock.unlock()
+        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+    }
+
+    /// Empties the manifest and the media/thumbnail directories. DEBUG-only.
+    public func wipeForTesting() {
+        lock.lock()
+        try? saveUnlocked([])
+        lock.unlock()
+        for directory in [mediaDirectory, thumbnailDirectory] {
+            let contents = (try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in contents { try? fm.removeItem(at: file) }
+        }
+        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+    }
+    #endif
+
     public func delete(_ item: SavedMediaItem) {
         lock.lock()
         var items = loadUnlocked()

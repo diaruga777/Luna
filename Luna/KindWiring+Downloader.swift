@@ -33,6 +33,9 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
+        // Staged mode's catalogs — this app's kinds only (`claudedocs/staging.md`).
+        SharedStageCatalog.install()
+        MediaStageCatalog.install()
         #endif
 
         // The media kind pack — one call, shared verbatim with the Downloader's

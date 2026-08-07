@@ -46,6 +46,15 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
+        // Staged mode's catalogs, on the same rule as the kind packs: a kind's
+        // stages live with that kind, and this app installs the ones for the
+        // kinds it links (`claudedocs/staging.md`). No-op unless launched with
+        // `-LunaStage`.
+        SharedStageCatalog.install()
+        ArticleStageCatalog.install()
+        EmailStageCatalog.install()
+        MediaStageCatalog.install()
+        ProductStageCatalog.install()
         #endif
 
         // One install per kind this app handles. WHAT each kind registers is

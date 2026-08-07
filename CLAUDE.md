@@ -104,6 +104,17 @@ stable Xcode 26.2.
 > a slot for email; a SKIPPED one keeps its button and outranks email. Email
 > waits for three saves or two days with the first, needs
 > `LunaApp.sharesByEmail`, and disappears once an account is connected.
+> **Above that block, and outside its budget**, the two apps that download media
+> carry a chrome-free "Store downloads *in Luna* / *in Photos*" line in BOTH
+> states, which stands the recents down while present and retires from the next
+> launch once the question is answered anywhere (the card or Settings →
+> Downloads, both through `MediaStorageSettings.choose`). It exists because
+> Photos is the shipped default and needs a permission nobody has been asked for,
+> so choosing Photos there ASKS first and saves only on a yes — a refusal reverts
+> to Luna, and a second attempt opens Luna's own page in Settings, since iOS
+> prompts once. The card names no media symbol: `DownloadStorageChoice.installed`
+> (LunaModels) is the seam and `MediaUtilCardStorageChoice.install()` fills it
+> from the two media `KindWiring`s.
 > Paste remains in both states; the Save of the Week row
 > appears whenever a live signed entry exists (`claudedocs/save-of-the-week.md`).
 > With saves present the first save, not the util card, is the launch selection.

@@ -200,13 +200,17 @@ enum SharedStageCatalog {
         ]
     }
 
+    /// Not private: the media catalog builds the same card with a storage choice
+    /// installed, which only its own targets can offer
+    /// (`claudedocs/util-card.md`, "Where downloads are stored").
     @MainActor
-    private static func utilCard(
+    static func utilCard(
         showsOnboarding: Bool,
         recents: [RecentURLPreview],
         saveDates: [Date] = [],
         emailConnected: Bool = true,
-        weeklyDaysOld: Int? = nil
+        weeklyDaysOld: Int? = nil,
+        storageChoice: (any DownloadStorageChoosing)? = nil
     ) -> UIViewController {
         let onboarding = AppOnboardingStore(
             app: .current, defaults: scratchDefaults("utilCard"),
@@ -240,6 +244,7 @@ enum SharedStageCatalog {
             savedDates: { saveDates },
             isEmailConnected: { emailConnected },
             recentMatches: { recents },
+            storageChoice: storageChoice,
             saveHandler: { _, _, _, completion in completion(true) })
         return StageCardHostViewController(card: card)
     }

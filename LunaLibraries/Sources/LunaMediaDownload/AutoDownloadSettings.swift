@@ -9,10 +9,15 @@ import Foundation
 
 /// Per-platform "auto-download media to Photos on save" toggles, stored in the App
 /// Group so every save path (app, intents, extensions) reads the same values.
-/// Enabling a toggle requires Photos add permission (the settings screen prompts).
+/// Enabling a toggle requires Photos add permission. Only the util card's
+/// inline row asks for it at the moment the choice is made
+/// (`MediaUtilCardStorageChoice`); the Settings picker writes the pref and lets
+/// the download paths ask, as they always have.
 public enum AutoDownloadSettings {
     private static let appGroupID = AppConfig.appGroupID
-    private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
+    /// Shared with `MediaStorageSettings`, which stores the "the user chose this
+    /// themselves" marker beside the two prefs it fronts.
+    static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     private static let autoSaveDownloadsToPhotosKey = "autoSaveDownloadsToPhotos"
 

@@ -143,6 +143,55 @@ variants of the two email apps, because `EmailAndKindleSettingsScreen` is not
 compiled into the other two — which pushes Settings → Email with the address
 field focused (`claudedocs/email-login.md`).
 
+### Where downloads are stored
+
+Above the lessons, and outside their two-button budget, the two apps that
+download media carry one more line: **“Store downloads *in Luna* / *in
+Photos*”**. It is not a setup lesson and does not wait for the first run to be
+over — it belongs to BOTH variants, always tops the block, and while it is
+present the completed card shows **no recent URLs** (its options open over the
+room they would take).
+
+It exists because Photos is the shipped default and Photos needs a system
+permission nobody has been asked for: a fresh install carries a storage setting
+that quietly does something else, since a failed Photos save falls back to a
+local file (`claudedocs/media-download.md`, "Download destination").
+
+- **No pill and no rim.** It is a sentence with one word you can change, not a
+  fourth action button under three action buttons: white text, then the current
+  option as a tappable run of *app icon + “in Luna”/“in Photos”* with a chevron.
+  The icons are the real artwork at the text's own height — the running app's
+  own icon (`LunaAppIconImage`) and the Photos pinwheel Luna draws
+  (`PhotosAppGlyph`; a sandboxed app cannot read another app's icon).
+- **The options open IN PLACE**, over whatever the card has above them: the
+  panel lands with the SELECTED option exactly on the collapsed selector, so the
+  word being read does not move and the alternative appears beside it. The panel
+  and its tap-to-dismiss catcher are hosted by the CARD, not by the row — a
+  row-sized view cannot cover the rows and buttons around it.
+- **Photos is a REQUEST, not a write.** Choosing it asks for read/write access
+  first (the superset both download paths need, as
+  `MediaPhotosPreflight` does) and saves the setting only if the answer is yes.
+  A refusal reverts the line — and the setting — to *in Luna*. iOS shows that
+  prompt once, so a SECOND attempt cannot ask again: it opens Luna's own page in
+  system Settings (`UIApplication.openSettingsURLString`) instead of failing
+  silently.
+- **“In Luna” means the inline age**, `MediaStorageSettings.inlineRetention` (2
+  weeks) — deliberately shorter than the Settings screen's `defaultRetention`
+  (1 month), because this choice is made before there are any downloads to judge
+  by. If the user already has an age, the row only moves them off Photos and
+  leaves that age alone.
+- **Answered once, gone next launch.** `MediaStorageSettings.hasExplicitChoice`
+  is the marker, and every user-facing control writes through
+  `MediaStorageSettings.choose` — so answering in Settings → Downloads retires
+  the row too, and a refused Photos request counts as an answer. The card reads
+  the marker ONCE at construction, like `showsOnboarding`: the row stays for the
+  rest of the launch that answered it rather than vanishing under the tap.
+- **Per-app by linkage, like every other kind-specific hook.** The card names no
+  media symbol; `DownloadStorageChoice.installed` (LunaModels) is the seam,
+  `MediaUtilCardStorageChoice.install()` fills it from
+  `KindWiring+Luna`/`KindWiring+Downloader`, and Reader and Price Tracker — which
+  link no media module — leave it nil and never build the row.
+
 **A finished button is retired the next time the app leaves the foreground.**
 Completing a lesson checks and disables its button for the rest of that session;
 `AppOnboardingStore.retireCompletedSetupButtons()`, called from AppDelegate on
@@ -297,7 +346,14 @@ nudge's two earning conditions, its absence while both lessons are still offered
 and in the apps that connect no account, the slot a retired lesson gives up, a
 skipped lesson keeping its button, and the third save bringing email in live. Its
 recents come through the card's injected `recentMatches`, so the block's geometry
-is assertable without a real Safari trail.
+is assertable without a real Safari trail. The storage line is pinned there too
+— that it tops the block, belongs to both variants, stands the recents down, is
+absent in an app that downloads nothing or once the question is answered, opens
+both options with the selected one in place, reverts on a refusal, and opens
+system Settings on the second attempt — through an injected
+`DownloadStorageChoosing`; the real one's own behaviour (the permission request,
+the revert, the inline age, the answered marker) is in
+`AutoDownloadSettingsTests`.
 `WeeklyRowHostTests` covers the
 row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the

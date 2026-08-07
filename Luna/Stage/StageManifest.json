@@ -546,6 +546,14 @@
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
+      "id": "util.download-storage",
+      "screen": "Util card",
+      "variant": "storage unanswered",
+      "summary": "The inline \"Store downloads\" line above the setup buttons, on a completed card whose recents it stands down. Only the two apps that download can offer it.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
       "id": "util.email-nudge",
       "screen": "Util card",
       "variant": "email nudge earned",

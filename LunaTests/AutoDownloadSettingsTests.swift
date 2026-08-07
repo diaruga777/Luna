@@ -4,6 +4,7 @@
 //
 
 import LunaAppConfig
+import LunaModels
 import LunaStorage
 @testable import LunaMediaDownload
 import XCTest
@@ -15,6 +16,7 @@ final class AutoDownloadSettingsTests: XCTestCase {
     private let pendingWiFiKey = "pendingWiFiDownloads"
     private let retentionDisabledKey = "savedMediaRetention.disabled"
     private let retentionDaysKey = "savedMediaRetention.days"
+    private let explicitChoiceKey = "mediaStorage.userChose.v1"
 
     private var defaults: UserDefaults {
         UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
@@ -26,7 +28,9 @@ final class AutoDownloadSettingsTests: XCTestCase {
         let previousRetentionDays = defaults.object(forKey: retentionDaysKey)
         let previousAutoDownload = defaults.object(forKey: autoDownloadKey)
         let previousWiFiOnly = defaults.object(forKey: wifiOnlyKey)
+        let previousExplicitChoice = defaults.object(forKey: explicitChoiceKey)
         defer {
+            restore(previousExplicitChoice, forKey: explicitChoiceKey)
             restore(previousPhotos, forKey: photosKey)
             restore(previousRetentionDisabled, forKey: retentionDisabledKey)
             restore(previousRetentionDays, forKey: retentionDaysKey)
@@ -124,6 +128,107 @@ final class AutoDownloadSettingsTests: XCTestCase {
             MediaStorageOption.deleteAfter(.oneDay).displayName, "Delete after 1 day")
     }
 
+    // MARK: - The util card's inline "Store downloads …" choice
+
+    /// The row waits on a choice the USER made. A fresh install's `.photos` is
+    /// Luna's default, not an answer, which is the whole reason the row exists.
+    func testTheStorageQuestionIsUnansweredUntilSomeoneAnswersIt() {
+        preservingSettings {
+            defaults.removeObject(forKey: explicitChoiceKey)
+            XCTAssertFalse(MediaStorageSettings.hasExplicitChoice)
+
+            // Written by Luna rather than chosen: still unanswered.
+            MediaStorageSettings.option = .deleteAfter(.oneDay)
+            XCTAssertFalse(MediaStorageSettings.hasExplicitChoice)
+
+            MediaStorageSettings.choose(.photos)
+            XCTAssertTrue(MediaStorageSettings.hasExplicitChoice)
+            XCTAssertEqual(MediaStorageSettings.option, .photos)
+        }
+    }
+
+    @MainActor
+    func testChoosingInLunaTakesTheInlineAgeButNeverRetimesAnExistingOne() {
+        preservingSettings {
+            let choice = MediaUtilCardStorageChoice(
+                saver: StubPhotoLibrary(granted: true), authorizationStatus: { .authorized })
+
+            MediaStorageSettings.option = .photos
+            choice.chooseInLuna()
+            XCTAssertEqual(
+                MediaStorageSettings.option,
+                .deleteAfter(MediaStorageSettings.inlineRetention))
+
+            // Already on a clock the user set elsewhere — the row is only moving
+            // them off Photos, so it leaves the age alone.
+            MediaStorageSettings.option = .deleteAfter(.oneDay)
+            choice.chooseInLuna()
+            XCTAssertEqual(MediaStorageSettings.option, .deleteAfter(.oneDay))
+        }
+    }
+
+    @MainActor
+    func testPhotosIsSavedOnlyOnceTheSystemHasGrantedIt() async {
+        for granted in [true, false] {
+            let saver = StubPhotoLibrary(granted: granted)
+            let choice = MediaUtilCardStorageChoice(
+                saver: saver, authorizationStatus: { .notDetermined })
+            let previousPhotos = defaults.object(forKey: photosKey)
+            let previousDisabled = defaults.object(forKey: retentionDisabledKey)
+            let previousDays = defaults.object(forKey: retentionDaysKey)
+            let previousChoice = defaults.object(forKey: explicitChoiceKey)
+            defer {
+                restore(previousPhotos, forKey: photosKey)
+                restore(previousDisabled, forKey: retentionDisabledKey)
+                restore(previousDays, forKey: retentionDaysKey)
+                restore(previousChoice, forKey: explicitChoiceKey)
+            }
+            MediaStorageSettings.option = .photos
+            defaults.removeObject(forKey: explicitChoiceKey)
+
+            let outcome = await withCheckedContinuation { continuation in
+                choice.choosePhotos { continuation.resume(returning: $0) }
+            }
+
+            XCTAssertTrue(saver.didRequestRead)
+            if granted {
+                XCTAssertEqual(outcome, .granted)
+                XCTAssertEqual(MediaStorageSettings.option, .photos)
+            } else {
+                // A refusal reverts: an install left saying "Photos" would
+                // silently keep writing local files instead.
+                XCTAssertEqual(outcome, .refused)
+                XCTAssertEqual(
+                    MediaStorageSettings.option,
+                    .deleteAfter(MediaStorageSettings.inlineRetention))
+            }
+            // A refusal is still an answer — the row does not come back.
+            XCTAssertTrue(MediaStorageSettings.hasExplicitChoice)
+        }
+    }
+
+    /// iOS shows its Photos prompt once. A second attempt cannot ask again, so
+    /// it reports that the only way through is system Settings.
+    @MainActor
+    func testASecondAttemptAfterARefusalAsksNobodyAndReportsSettings() async {
+        preservingSettings {
+            defaults.removeObject(forKey: explicitChoiceKey)
+        }
+        let saver = StubPhotoLibrary(granted: true)
+        let choice = MediaUtilCardStorageChoice(
+            saver: saver, authorizationStatus: { .denied })
+        let previousChoice = defaults.object(forKey: explicitChoiceKey)
+        defer { restore(previousChoice, forKey: explicitChoiceKey) }
+
+        let outcome = await withCheckedContinuation { continuation in
+            choice.choosePhotos { continuation.resume(returning: $0) }
+        }
+
+        XCTAssertEqual(outcome, .refusedBefore)
+        XCTAssertFalse(saver.didRequestRead)
+        XCTAssertTrue(MediaStorageSettings.hasExplicitChoice)
+    }
+
     func testRetentionDefaultsToNever() {
         preservingSettings {
             defaults.removeObject(forKey: retentionDisabledKey)
@@ -194,5 +299,26 @@ final class AutoDownloadSettingsTests: XCTestCase {
         XCTAssertFalse(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
             forURLString: "https://www.tiktok.com/@luna/video/123",
             handlesMedia: false))
+    }
+}
+
+/// A photo library that answers however the test needs and records whether it
+/// was asked at all — the point of the "already refused" case is that nothing
+/// asks.
+private final class StubPhotoLibrary: PhotoLibrarySaving, @unchecked Sendable {
+    private let granted: Bool
+    private(set) var didRequestRead = false
+
+    init(granted: Bool) { self.granted = granted }
+
+    func requestAddAuthorization() async -> Bool { granted }
+
+    func requestReadAuthorization() async -> Bool {
+        didRequestRead = true
+        return granted
+    }
+
+    func save(fileURL: URL, kind: MediaAsset.Kind, shouldMoveFile: Bool) async throws -> String {
+        throw MediaDownloadError.permissionDenied
     }
 }

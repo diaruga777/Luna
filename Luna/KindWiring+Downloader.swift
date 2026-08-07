@@ -56,6 +56,10 @@ enum KindWiring {
         }
         // Action Button intents hand recognized posts to the media downloader.
         MediaIntentHandoff.install()
+        // The util card's inline "Store downloads …" line. Only an app that
+        // downloads has anywhere to store, so only an app that links this module
+        // installs the choice (`claudedocs/util-card.md`).
+        MediaUtilCardStorageChoice.install()
         // URL Rescue's media leg: download engine-resolved assets directly.
         URLRescueWiring.mediaResolverFactory = { SocialMediaResolver() }
         URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in

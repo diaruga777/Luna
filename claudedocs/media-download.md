@@ -67,6 +67,9 @@ UI surface uses instead of ever showing the URL when metadata was fetched.
 
 - On: a completed download is written to Photos and the returned durable identifier is
   committed as `.photosReference`.
+- Because that default is Luna's and not the user's, the util card offers the choice
+  inline until someone answers it — and asks for Photos access before saving the
+  Photos answer (`claudedocs/util-card.md`, "Where downloads are stored").
 - Off: the download is moved into App Group storage as `.localFile`.
 - If automatic Photos authorization/save fails, Luna preserves the completed bytes as a
   local file rather than discarding the download.
@@ -479,6 +482,14 @@ Luna and Luna Downloader share the same `Settings → Downloads` screen with two
    Photos off. An installation that had Photos off with no retention choice reads as the
    default age (1 month); a since-removed age (2 days, 1 week) maps to the closest
    surviving one.
+
+The screen writes through `MediaStorageSettings.choose`, not `option`, so the user's
+answer is recorded as theirs (`hasExplicitChoice`). That marker is what the util
+card's inline **“Store downloads in Luna / in Photos”** line waits on: Photos is the
+default and needs a permission nobody has been asked for, so both downloading apps
+offer the choice on the card until it is answered anywhere — and that row, unlike this
+screen, asks for Photos access BEFORE it saves the setting
+(`MediaUtilCardStorageChoice`, `claudedocs/util-card.md`).
 
 All values live in the App Group so the app, App Intents, share/action extensions, and
 background completion code make the same decision. Photos storage is global: every completed

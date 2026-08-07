@@ -571,6 +571,9 @@ class CardCarouselHostViewController: UIViewController {
             showsOnboarding: utilCardShowsOnboardingAtLaunch,
             animatesIntro: !hasSaves() && !AppLaunchTransition.hasFinished,
             hasSaves: hasSaves,
+            // Nil in the two apps that download nothing, so their card never
+            // offers the storage line (`claudedocs/util-card.md`).
+            storageChoice: DownloadStorageChoice.installed,
             saveHandler: saveHandler)
     }
 

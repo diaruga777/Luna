@@ -140,10 +140,7 @@ final class StageRegistryTests: XCTestCase {
     /// missing-symbol error, but only on a CLEAN build of that target, so pin
     /// the project file itself.
     func testKindCatalogsAreExcludedFromForeignTargets() throws {
-        let project = try String(
-            contentsOf: repositoryRoot
-                .appendingPathComponent("Luna.xcodeproj/project.pbxproj"),
-            encoding: .utf8)
+        let exclusions = try membershipExceptionsByTarget()
         let expected: [(catalog: String, foreignTargets: [String])] = [
             ("Article", ["LunaDownloader", "LunaPriceTracker"]),
             ("Email", ["LunaDownloader", "LunaPriceTracker"]),
@@ -152,19 +149,48 @@ final class StageRegistryTests: XCTestCase {
         ]
         for (catalog, foreignTargets) in expected {
             for target in foreignTargets {
-                let marker = "Exceptions for \"Luna\" folder in \"\(target)\" target"
-                guard let range = project.range(of: marker),
-                      let end = project.range(
-                        of: ");", range: range.upperBound..<project.endIndex)
-                else {
-                    return XCTFail("no exception set for \(target)")
-                }
+                let excluded = try XCTUnwrap(
+                    exclusions[target], "no exception set at all for \(target)")
                 XCTAssertTrue(
-                    project[range.upperBound..<end.lowerBound]
-                        .contains("Stage/StageCatalog+\(catalog).swift"),
-                    "\(target) must exclude Stage/StageCatalog+\(catalog).swift")
+                    excluded.contains("Stage/StageCatalog+\(catalog).swift"),
+                    """
+                    \(target) must exclude Stage/StageCatalog+\(catalog).swift — \
+                    it does not link that kind, so the file cannot compile there.
+                    """)
             }
         }
+    }
+
+    /// Every `PBXFileSystemSynchronizedBuildFileExceptionSet`, keyed by the
+    /// target it belongs to.
+    ///
+    /// Keyed off the `target = … /* Name */` line inside each block rather than
+    /// the block's own leading comment. Xcode and the xcodeproj gem disagree
+    /// about that comment — one writes `/* Exceptions for "Luna" folder in
+    /// "LunaDownloader" target */`, the other just `/*
+    /// PBXFileSystemSynchronizedBuildFileExceptionSet */` — so a check anchored
+    /// on it passes until the next tool touches the project and then fails
+    /// looking like a lost exception.
+    private func membershipExceptionsByTarget() throws -> [String: String] {
+        let project = try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("Luna.xcodeproj/project.pbxproj"),
+            encoding: .utf8)
+        var result: [String: String] = [:]
+        var remainder = Substring(project)
+        while let isa = remainder.range(
+            of: "isa = PBXFileSystemSynchronizedBuildFileExceptionSet;") {
+            let block = remainder[isa.upperBound...]
+            guard let blockEnd = block.range(of: "\n\t\t};") else { break }
+            let body = block[..<blockEnd.lowerBound]
+            if let targetLine = body.range(of: "target = "),
+               let open = body.range(of: "/* ", range: targetLine.upperBound..<body.endIndex),
+               let close = body.range(of: " */", range: open.upperBound..<body.endIndex) {
+                result[String(body[open.upperBound..<close.lowerBound])] = String(body)
+            }
+            remainder = block[blockEnd.upperBound...]
+        }
+        return result
     }
 
     // MARK: - The manifest

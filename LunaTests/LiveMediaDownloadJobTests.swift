@@ -22,6 +22,33 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertEqual(href, "https://www.facebook.com/reel/1610065874019369/")
     }
 
+    /// The durable engine must open on the same stage the foreground resolver does —
+    /// the persisted GraphQL query, the only keyless source still returning a reel's
+    /// `video_url`. It has to be a GET: a background `URLSession` cannot upload a
+    /// request body, and the endpoint refuses a bodyless POST.
+    func testInstagramReelBackgroundResolutionStartsWithGraphQLQuery() throws {
+        let source = try XCTUnwrap(URL(string:
+            "https://www.instagram.com/jonfilipko/reel/DbripgRKlb_/"))
+
+        let resolve = try XCTUnwrap(LiveMediaDownloadManager.resolveRequest(for: source))
+
+        XCTAssertEqual(resolve.kind, "instagramGraphQL")
+        XCTAssertNil(resolve.request.httpBody)
+        XCTAssertEqual(resolve.request.httpMethod, "GET")
+        XCTAssertEqual(resolve.request.httpShouldHandleCookies, false)
+        XCTAssertEqual(
+            resolve.request.value(forHTTPHeaderField: "X-IG-App-ID"),
+            MediaDownloadHTTP.instagramWebAppID)
+        let components = try XCTUnwrap(resolve.request.url.flatMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)
+        })
+        XCTAssertEqual(components.host, "www.instagram.com")
+        XCTAssertEqual(components.path, "/graphql/query/")
+        XCTAssertEqual(
+            components.queryItems?.first(where: { $0.name == "variables" })?.value,
+            #"{"shortcode":"DbripgRKlb_"}"#)
+    }
+
     func testYouTubeBackgroundResolutionCanonicalizesCommonURLForms() throws {
         let mobile = try XCTUnwrap(URL(string:
             "https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=90s"))

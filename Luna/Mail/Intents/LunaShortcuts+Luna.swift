@@ -1,5 +1,5 @@
 //
-//  LunaShortcuts.swift
+//  LunaShortcuts+Luna.swift
 //  Luna
 //
 
@@ -7,7 +7,10 @@ import LunaIntents
 import AppIntents
 
 /// Surfaces the intents in the Shortcuts app and Spotlight so they're easy to
-/// find when building the Action Button shortcut.
+/// find when building the Action Button shortcut. This variant is for the
+/// apps that link article read-aloud (`ReadArticleIntent`) — Luna and
+/// LunaReader; the other two apps compile `LunaShortcuts+Downloader.swift` /
+/// `LunaShortcuts+PriceTracker.swift` instead.
 struct LunaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(

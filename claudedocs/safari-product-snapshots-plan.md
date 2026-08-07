@@ -220,9 +220,13 @@ New: make the activity tappable.
     prebuilt URL string into `ContentState` (a new `viewURLString` field set by
     `activityState(for:)` in LunaMediaDownload, which knows `ownScheme` — mirror how
     `actionURLString` is populated today) rather than adding a dependency.
-- Extend the finished-state visibility: in `endActivity(for:dismissalDelay:)`, use a longer
-  dismissal for `.finished` (15 minutes instead of 20s) so "tap anywhere when complete" has a
-  real window. Keep failure at `failureDismissalDelay` and user-cancel at 0.
+- Keep the 20s finished-state dismissal EXACTLY as it is (do NOT extend it). Instead, on
+  completion the activity must re-present prominently: `endActivity` already passes an
+  `AlertConfiguration` on the final `.finished`/`.failed` update (:139-150) — verify it fires
+  on the deep-link save path and that the alerting final state carries the tap URL, so within
+  the 20s window a tap opens the media. If the alert isn't reaching the Lock Screen/Dynamic
+  Island prominently on completion, fix the alert configuration rather than the dismissal
+  policy.
 - App side, new route branch in `SceneDelegate.route`: host `media` with a `url` item →
   look up the saved media row (`SavedMediaStore.matchingItem(forURLString:)`):
   - `.localFile` → pop to root, center the deck on that item and open it (the deck's existing

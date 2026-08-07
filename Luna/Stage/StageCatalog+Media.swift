@@ -206,6 +206,20 @@ enum MediaStageCatalog {
                             showsSystemShare: true, onDone: {}))
                 }),
             StageDescriptor(
+                id: "util.download-storage", screen: "Util card",
+                variant: "storage unanswered",
+                summary: "The inline \"Store downloads\" line above the setup buttons, on a "
+                    + "completed card whose recents it stands down. Only the two apps that "
+                    + "download can offer it.",
+                kind: .media,
+                seed: { StageFixtures.seedEmpty() },
+                make: {
+                    SharedStageCatalog.utilCard(
+                        showsOnboarding: false,
+                        recents: [],
+                        storageChoice: StageDownloadStorageChoice())
+                }),
+            StageDescriptor(
                 id: "settings.downloads", screen: "Settings → Downloads", variant: "default",
                 summary: "Auto-download, Wi-Fi-only, and save-to-Photos.",
                 kind: .media,
@@ -213,6 +227,23 @@ enum MediaStageCatalog {
                     UINavigationController(rootViewController: DownloadsSettingsScreen())
                 }),
         ]
+    }
+}
+
+/// A storage choice that answers from memory. The real one
+/// (`MediaUtilCardStorageChoice`) reads the App Group and prompts PhotoKit —
+/// neither of which a stage may depend on if its screenshot is to be the same
+/// every time.
+@MainActor
+private final class StageDownloadStorageChoice: DownloadStorageChoosing {
+    var isUnanswered = true
+    var usesPhotos = true
+
+    func chooseInLuna() { usesPhotos = false }
+
+    func choosePhotos(completion: @escaping (DownloadStoragePhotosOutcome) -> Void) {
+        usesPhotos = true
+        completion(.granted)
     }
 }
 

@@ -187,7 +187,21 @@ open class ShareViewController: UIViewController {
 
     /// Action extension: surface a failure as visible error text (never a silent
     /// death). Share extension: stay zero-UI and just complete.
+    ///
+    /// This is the `ExtensionHost` requirement, so it takes the message and
+    /// nothing else — no defaulted parameters, which would stop it satisfying it.
     public func failOrComplete(_ message: String) {
+        failOrComplete(message, symbolName: nil, detail: nil)
+    }
+
+    /// The same terminal, dressed: `symbolName` takes the stopped spinner's place
+    /// and `detail` sits under the message. For a failure that has a shape worth
+    /// drawing rather than only a sentence.
+    public func failOrComplete(
+        _ message: String,
+        symbolName: String?,
+        detail: String?
+    ) {
         SharedDiagnosticLog.record("share extension finished: \(message)", category: "share")
         cancelLoadWatchdog()
         guard isActionExtension else { complete(); return }
@@ -200,7 +214,8 @@ open class ShareViewController: UIViewController {
             if self.loadingScreen == nil {
                 self.setUpStatusUI()
             }
-            self.loadingScreen?.showTerminal(message)
+            self.loadingScreen?.showTerminal(
+                message, symbolName: symbolName, detail: detail)
             // Visible error text IS a terminal state: nothing further will
             // happen until somebody taps Close, and an in-app host has no
             // finger to do it with.
@@ -378,13 +393,18 @@ open class ShareViewController: UIViewController {
     /// and inventing a save that did not happen is the one thing this lesson must
     /// not do.
     private func presentHostedOfflineFailure(url: URL) {
-        let reason = SaveFailureReason.offline
         SharedDiagnosticLog.record(
             "hosted surface offline for \(url.absoluteString)", category: "share")
+        // The real failure's own headline, under the symbol for it — but NOT its
+        // suggestion. "It will retry automatically once you're back online" is
+        // true of a save the user made and false of this: a rehearsal's row is
+        // deleted the moment the sheet closes, online or off. What the lesson
+        // owes the user instead is an admission that they are seeing the shape of
+        // a save rather than the save itself.
         failOrComplete(
-            [reason.headline, reason.suggestion]
-                .compactMap { $0 }
-                .joined(separator: "\n\n"))
+            SaveFailureReason.offline.headline,
+            symbolName: "wifi.slash",
+            detail: L10n.string("ShareExtension_share_hostedOfflineDetail"))
     }
 
     /// Runs the ONE shared ingest+present flow for the just-appended `originalURL`

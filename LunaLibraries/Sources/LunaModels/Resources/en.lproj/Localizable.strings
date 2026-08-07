@@ -1119,6 +1119,7 @@
 "ShareExtension_share_startingDownloadStatus_Luna" = "Starting download…";
 "ShareExtension_share_savingMediaStatus_Luna" = "Saving media…";
 "ShareExtension_share_loadTimeoutMessage_Luna" = "Couldn't read the shared content in time.";
+"ShareExtension_share_hostedOfflineDetail_Luna" = "You get your full save when you're online, but you get the idea";
 
 /* ===== ShareExtension_rescueFailure — RescueFailureViewController.swift ===== */
 "ShareExtension_rescueFailure_manualInstructionMessage_Luna" = "Open Luna to finish saving this.";

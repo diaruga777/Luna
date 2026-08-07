@@ -27,6 +27,10 @@ public final class ExtensionLoadingViewController: UIViewController {
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
     private let initialText: String
     private let onExit: () -> Void
+    /// Built only when a terminal state actually asks for them, so the ordinary
+    /// wait carries no extra views.
+    private var iconView: UIImageView?
+    private var detailLabel: UILabel?
 
     /// - Parameters:
     ///   - initialText: the first phrase; the cycler rotates its reassurance after.
@@ -59,12 +63,86 @@ public final class ExtensionLoadingViewController: UIViewController {
     /// A terminal state: stop the wait and let the message stand. The header's exit
     /// button is already there, so there is nothing to reveal — which is why this
     /// screen needs no floating close button of its own.
-    public func showTerminal(_ message: String) {
+    ///
+    /// - Parameters:
+    ///   - symbolName: an SF Symbol that takes the stopped spinner's place, for a
+    ///     state that has a shape worth naming (no connection, say) rather than
+    ///     just a sentence.
+    ///   - detail: a second, quieter line under the message.
+    public func showTerminal(
+        _ message: String,
+        symbolName: String? = nil,
+        detail: String? = nil
+    ) {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
         statusLabel.textColor = LunaColors.primaryText
         statusLabel.setTextImmediately(message)
+        if let symbolName { showIcon(named: symbolName) }
+        if let detail { showDetail(detail) }
     }
+
+    /// Names the terminal symbol, so a test can assert a state was DRAWN and not
+    /// only written without having to identify an image by its contents.
+    public static let terminalIconIdentifier = "extension.terminal.icon"
+
+    /// Swaps the stopped spinner for a symbol in the same spot — the layout keeps
+    /// its centre, so nothing above or below the icon moves.
+    private func showIcon(named symbolName: String) {
+        spinner.isHidden = true
+        let icon = iconView ?? {
+            let icon = UIImageView()
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            icon.contentMode = .scaleAspectFit
+            icon.tintColor = LunaColors.secondaryText
+            icon.isAccessibilityElement = false
+            icon.accessibilityIdentifier = Self.terminalIconIdentifier
+            view.addSubview(icon)
+            NSLayoutConstraint.activate([
+                icon.centerXAnchor.constraint(equalTo: spinner.centerXAnchor),
+                icon.centerYAnchor.constraint(equalTo: spinner.centerYAnchor),
+            ])
+            iconView = icon
+            return icon
+        }()
+        icon.image = UIImage(
+            systemName: symbolName,
+            withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: 34, weight: .light))
+    }
+
+    private func showDetail(_ detail: String) {
+        let label = detailLabel ?? {
+            let label = UILabel()
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.font = .preferredFont(forTextStyle: .subheadline)
+            label.textColor = LunaColors.secondaryText
+            label.textAlignment = .center
+            label.numberOfLines = 0
+            view.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(
+                    equalTo: statusLabel.bottomAnchor, constant: Self.detailSpacing),
+                label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                label.leadingAnchor.constraint(
+                    greaterThanOrEqualTo: view.leadingAnchor,
+                    constant: LoadingStatusLayout.horizontalInset),
+                label.trailingAnchor.constraint(
+                    lessThanOrEqualTo: view.trailingAnchor,
+                    constant: -LoadingStatusLayout.horizontalInset),
+                label.widthAnchor.constraint(
+                    lessThanOrEqualToConstant: LunaLayout.readableWidth),
+            ])
+            detailLabel = label
+            return label
+        }()
+        label.text = detail
+    }
+
+    /// Gap between the terminal message and its quieter second line — tighter
+    /// than the spinner's own `labelSpacing`, because the two lines are one
+    /// thought.
+    private static let detailSpacing: CGFloat = 8
 
     /// Stops the animation without changing the copy — for a handover to another
     /// screen that is about to replace this one.

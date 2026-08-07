@@ -329,6 +329,45 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(opened, false)
     }
 
+    /// The conversation's link is whatever the lesson resolved — and when that is
+    /// a live Save of the Week it is a real editorial URL, publisher and dated
+    /// path and slug. The whole of it is the thing the user is being pointed at,
+    /// so the bubble wraps it rather than truncating a spaceless string on its
+    /// first line. Three lines is where it finally gives up.
+    @MainActor
+    func testMessageURLBubbleWrapsALongLinkRatherThanTruncatingIt() throws {
+        let urlString = "https://www.example-publisher.com/technology/archive/"
+            + "2026/08/the-long-slow-decline-of-the-open-web/684213/"
+        let bubble = OnboardingMessageURLBubble(showsTail: true)
+        bubble.setURL(urlString)
+        bubble.translatesAutoresizingMaskIntoConstraints = false
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 393, height: 300))
+        container.addSubview(bubble)
+        NSLayoutConstraint.activate([
+            bubble.leadingAnchor.constraint(
+                equalTo: container.leadingAnchor, constant: 16),
+            bubble.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+        container.layoutIfNeeded()
+
+        let label = try XCTUnwrap(container.descendants(of: UILabel.self).first)
+        XCTAssertEqual(
+            label.text?.replacingOccurrences(of: "\u{200B}", with: ""),
+            urlString,
+            "Only invisible break opportunities are added to the link")
+        let lineHeight = UIFont
+            .systemFont(ofSize: OnboardingMessageBubble.textSize - 1).lineHeight
+        XCTAssertGreaterThan(
+            label.bounds.height, lineHeight * 1.5,
+            "A link this long has to wrap: got \(label.bounds.height)pt")
+        XCTAssertLessThanOrEqual(
+            label.bounds.height, lineHeight * 3.5,
+            "…and stops at three lines: got \(label.bounds.height)pt")
+        XCTAssertLessThanOrEqual(
+            bubble.bounds.width, OnboardingMessageBubble.maxWidth,
+            "The bubble keeps iMessage's width cap")
+    }
+
     /// The intro's setup block mounts its two actions plus the paste row, and
     /// nothing of the reveal's staging shadows them once they go live.
     @MainActor

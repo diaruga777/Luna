@@ -5,6 +5,7 @@
 
 import LunaAudioPlayback
 import LunaReaderEngine
+import LunaAppConfig
 import LunaDesignSystem
 import LunaStorage
 import LunaModels
@@ -1684,10 +1685,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         #if targetEnvironment(simulator)
         // Suppress these debug buttons during deterministic screenshot captures so
         // they don't overlay the article text; interactive automation still gets them.
-        // Suppressed during deterministic UI-test launches (matches UITestLaunch.isActive,
+        // Suppressed during a deterministic capture (see `CaptureLaunch`,
         // which lives in the app target — inlined here to avoid an upward dependency).
-        let uiTestArgs = ["-uiTestState", "-uiTestScreen"]
-        if ProcessInfo.processInfo.arguments.contains(where: uiTestArgs.contains) { return }
+        if CaptureLaunch.isActive { return }
         func hookButton(_ title: String, fraction: CGFloat) -> UIButton {
             var config = UIButton.Configuration.filled()
             config.title = title

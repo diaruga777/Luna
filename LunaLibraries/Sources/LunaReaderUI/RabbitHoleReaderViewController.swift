@@ -12,6 +12,7 @@
 //  Layers rest at integer focus positions (RabbitHoleLayout).
 //
 
+import LunaAppConfig
 import LunaDesignSystem
 import LunaModels
 import LunaStorage
@@ -135,10 +136,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// the header back button use. Never ships on device.
     private func addSimulatorDiveHooksIfNeeded() {
         #if targetEnvironment(simulator)
-        // Suppressed during deterministic UI-test launches (matches UITestLaunch.isActive,
+        // Suppressed during a deterministic capture (see `CaptureLaunch`,
         // which lives in the app target — inlined here to avoid an upward dependency).
-        let uiTestArgs = ["-uiTestState", "-uiTestScreen"]
-        if ProcessInfo.processInfo.arguments.contains(where: uiTestArgs.contains) { return }
+        if CaptureLaunch.isActive { return }
         func hookButton(_ title: String, action: @escaping () -> Void) -> UIButton {
             var config = UIButton.Configuration.filled()
             config.title = title

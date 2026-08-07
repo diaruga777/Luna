@@ -52,9 +52,12 @@ enum StageFixtures {
     }
 
     /// A ready article with body text. The deck centres on the NEWEST save, so
-    /// `daysAgo` is how a catalog says "this is the card to look at".
+    /// the age arguments are how a catalog says "this is the card to look at".
+    /// Both default to zero — "just now" — because a default of a DAY meant a
+    /// fixture written as `hoursAgo: 2` was actually 26 hours old and lost that
+    /// race to anything written as `daysAgo: 1`.
     static func article(
-        seed: String, url: String, title: String, daysAgo: Int = 1, hoursAgo: Int = 0,
+        seed: String, url: String, title: String, daysAgo: Int = 0, hoursAgo: Int = 0,
         state: ReadingListItem.State = .ready,
         readState: ReadingListItem.ReadState = .unopened,
         readingProgress: Double? = nil,
@@ -72,7 +75,7 @@ enum StageFixtures {
     /// failed (the error card).
     static func contentlessArticle(
         seed: String, url: String, title: String?, state: ReadingListItem.State,
-        daysAgo: Int = 1, hoursAgo: Int = 0
+        daysAgo: Int = 0, hoursAgo: Int = 0
     ) -> ReadingListItem {
         ReadingListItem(
             seed: seed, urlString: url, title: title,
@@ -85,7 +88,7 @@ enum StageFixtures {
     /// the two must agree (`MediaCardPresenter.media(for:)`).
     static func platformPost(
         seed: String, url: String, title: String, platform: ContentPlatform,
-        channel: String? = nil, daysAgo: Int = 1, hoursAgo: Int = 0
+        channel: String? = nil, daysAgo: Int = 0, hoursAgo: Int = 0
     ) -> ReadingListItem {
         ReadingListItem(
             seed: seed, urlString: url, title: title,

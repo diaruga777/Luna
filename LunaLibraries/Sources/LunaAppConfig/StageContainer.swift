@@ -115,3 +115,27 @@ public enum StageContainer {
 
     #endif
 }
+
+/// Whether this process was launched for a DETERMINISTIC CAPTURE — a staged
+/// run (`-LunaStage`), the UI-test seeding harness (`-uiTestState`) or its
+/// screen catalog (`-uiTestScreen`).
+///
+/// Its one job is suppressing the simulator-only debug tap targets (the
+/// reader's "Sim Dive"/"Sim Pop", the reading-list row ellipsis) that otherwise
+/// overlay the content being captured. They stay for interactive simulator
+/// automation, which passes none of these, and for unit tests, which build view
+/// controllers directly.
+///
+/// It lives in `LunaAppConfig` because the three call sites are in three
+/// different layers — the app shell and two reader view controllers in
+/// LunaReaderUI — and the argument list was previously hand-copied into each.
+/// It had drifted: adding `-LunaStage` to the app's copy left both readers
+/// still drawing their debug pills over every staged capture.
+public enum CaptureLaunch {
+    private static let argumentKeys = ["-uiTestState", "-uiTestScreen", "-LunaStage"]
+
+    public static var isActive: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return argumentKeys.contains { arguments.contains($0) }
+    }
+}

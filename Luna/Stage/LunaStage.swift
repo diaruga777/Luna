@@ -37,9 +37,6 @@ enum LunaStage {
     static let stageArgument = "-LunaStage"
     /// `-LunaStageList` — print the manifest as JSON on stdout and exit.
     static let listArgument = "-LunaStageList"
-    /// `-LunaStageAnimations` — keep UIKit animations on. Off by default so a
-    /// capture lands on the settled frame rather than mid-sweep.
-    static let animationsArgument = "-LunaStageAnimations"
 
     /// Whether this process was launched into staged mode. Readable from
     /// release code (it is constantly false there), so the launch-time network
@@ -66,12 +63,18 @@ enum LunaStage {
     /// App-Group-backed store at a throwaway container, before anything can
     /// resolve the real one. Everything after this — including the app's own
     /// launch bookkeeping — writes to scratch.
+    ///
+    /// Animations are deliberately left ON. Turning them off globally is the
+    /// obvious way to make a capture deterministic and it is wrong here: the
+    /// card carousel mounts its cards through an animated path, so
+    /// `UIView.setAnimationsEnabled(false)` rendered every deck stage as a
+    /// black screen. Determinism comes from the HARNESS instead — the capture
+    /// script waits for two identical frames rather than for a fixed delay
+    /// (`scripts/stage_screenshots.py`), which is both more accurate and
+    /// impossible to get wrong from inside the app.
     static func prepareIfNeeded() {
         guard isActive else { return }
         StageContainer.activate(identifier: requestedID ?? "list")
-        if !ProcessInfo.processInfo.arguments.contains(animationsArgument) {
-            UIView.setAnimationsEnabled(false)
-        }
     }
 
     /// Step 3, the last thing `didFinishLaunching` does — by which point every

@@ -11,7 +11,9 @@
 //  fallback) lives in LunaIntents.ArticleMatcher; playback itself goes
 //  through the `playArticle` seam — the same `AudioPlaybackCenter` the in-app
 //  mini-player uses, installed by the article apps' `KindWiring` variants at
-//  launch, before any intent could plausibly run.
+//  launch, before any intent could plausibly run. This file is scoped by
+//  membership exception to Luna and LunaReader only — the apps without
+//  read-aloud never compile the type at all.
 //
 
 import AppIntents
@@ -31,9 +33,9 @@ struct ReadArticleIntent: AudioPlaybackIntent {
     static let openAppWhenRun: Bool = false
 
     /// Article-audio playback, installed by the article apps' `KindWiring`
-    /// variants (`AudioPlaybackCenter.play`). The intent TYPE must exist in
-    /// every app (the shared `LunaShortcuts` metadata lists it), so apps
-    /// without read-aloud leave this nil and the intent throws `.notSupported`.
+    /// variants (`AudioPlaybackCenter.play`) before any intent could
+    /// plausibly run. `.notSupported` is a defensive guard rather than a
+    /// reachable path — both apps that compile this type always set it.
     static var playArticle: (@MainActor (ReadingListItem, ArticleContent) -> Void)?
 
     @Parameter(

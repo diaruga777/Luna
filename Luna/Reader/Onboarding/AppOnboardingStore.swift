@@ -5,6 +5,7 @@
 
 import LunaModels
 import LunaStorage
+import LunaAppConfig
 import Foundation
 
 /// Per-install completion and exact temporary-save ownership for each Luna app.
@@ -13,7 +14,11 @@ import Foundation
 /// share their content stores and setup evidence, but each host owns its own
 /// onboarding and must only remove the demonstration item it created.
 final class AppOnboardingStore {
-    static let shared = AppOnboardingStore(app: .current)
+    // Standard defaults, or a staged run's stand-in for them
+    // (`claudedocs/staging.md`): onboarding is the one thing a stage most needs
+    // to control and the one store the App-Group redirect deliberately misses.
+    static let shared = AppOnboardingStore(
+        app: .current, defaults: StageContainer.standardDefaults())
     static let didChange = Notification.Name("AppOnboardingStoreDidChange")
 
     let app: LunaApp

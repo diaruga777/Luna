@@ -34,6 +34,14 @@ public enum StageContainer {
     /// preferences.
     public private(set) static var appGroupIDOverride: String?
 
+    /// Stand-in for `UserDefaults.standard` while a stage runs, or nil.
+    ///
+    /// The App-Group redirect above covers everything SHARED between the apps.
+    /// `AppOnboardingStore` deliberately uses standard defaults instead — every
+    /// host owns its own onboarding — so it needs its own redirect or a staged
+    /// run would answer the real install's first-run card.
+    public private(set) static var standardDefaultsOverride: UserDefaults?
+
     /// Whether a stage owns the container right now.
     public static var isActive: Bool { directory != nil }
 
@@ -58,9 +66,19 @@ public enum StageContainer {
         try? FileManager.default.removeItem(at: url)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         directory = url
-        let suite = "\(AppConfig.provisionedAppGroupID).stage.\(name)"
+        // NOT derived from the App Group id: a suite name beginning "group."
+        // is resolved by cfprefsd as an app-group container, the process is not
+        // entitled to a group it invented, and the suite comes back unusable
+        // ("client is not entitled") — silently sending every defaults-backed
+        // store back to the REAL App Group, which is the one thing this type
+        // exists to prevent.
+        let suite = "LunaStage.\(name)"
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
         appGroupIDOverride = suite
+        let standardSuite = suite + ".standard"
+        let standard = UserDefaults(suiteName: standardSuite)
+        standard?.removePersistentDomain(forName: standardSuite)
+        standardDefaultsOverride = standard
         return url
     }
 
@@ -74,9 +92,22 @@ public enum StageContainer {
         if let directory { try? FileManager.default.removeItem(at: directory) }
         directory = nil
         appGroupIDOverride = nil
+        standardDefaultsOverride = nil
     }
 
-    #else
+    #endif
+
+    /// `UserDefaults.standard`, or the staged stand-in for it. The one call
+    /// site is `AppOnboardingStore.shared`; anything else reading standard
+    /// defaults is per-device configuration a stage has no business rewriting.
+    public static func standardDefaults() -> UserDefaults {
+        #if DEBUG
+        if let standardDefaultsOverride { return standardDefaultsOverride }
+        #endif
+        return .standard
+    }
+
+    #if !DEBUG
 
     /// Staged mode does not exist in release: nothing can redirect the
     /// container, and every caller compiles down to the production path.

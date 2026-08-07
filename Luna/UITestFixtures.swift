@@ -33,14 +33,17 @@ enum UITestState: String, CaseIterable {
     var fixture: UITestFixtures.Fixture { UITestFixtures.fixture(for: self) }
 }
 
-/// Whether this process was launched by the UI-test / screenshot harness (either
-/// of the `-uiTestState` / `-uiTestScreen` launch args is
-/// present). Lives in ReaderKit so both the app (`UITestSeeder`) and ReaderKit's
+/// Whether this process was launched by the UI-test / screenshot harness or
+/// into a stage (any of the `-uiTestState` / `-uiTestScreen` / `-LunaStage`
+/// launch args is present). Lives in ReaderKit so both the app (`UITestSeeder`) and ReaderKit's
 /// readers can suppress simulator-only debug tap targets ("Split High/Low") during
 /// deterministic captures without ReaderKit importing the app target. Reads the
 /// launch arguments directly; no UIKit. DEBUG-only.
 enum UITestLaunch {
-    private static let argKeys = ["-uiTestState", "-uiTestScreen"]
+    /// `-LunaStage` is here for the same reason as the other two: a staged run
+    /// is a capture, and the debug hooks overlay the content being captured
+    /// (`claudedocs/staging.md`).
+    private static let argKeys = ["-uiTestState", "-uiTestScreen", "-LunaStage"]
 
     /// True when any UI-test harness launch argument is present.
     static var isActive: Bool {

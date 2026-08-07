@@ -131,13 +131,34 @@ evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 | another Luna app | — (gated in the intent, above the table) | **unhandled** |
 | nil / empty (lock screen) | — | **unhandled** |
 | Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **done or download** — prepares/saves `lastURL` now |
-| Safari | URL stale/absent, vision model available | **screenshot** |
-| Safari | URL stale/absent, no vision model | **unhandled** |
+| Safari | URL stale/absent, no extension has ever run | **unhandled** |
+| Safari | URL stale/absent, an extension has run, vision model available | **screenshot** |
+| Safari | URL stale/absent, an extension has run, no vision model | **error** ("no tracked page") |
 | Shortcuts | — | **unhandled** (no meaningful screenshot of Shortcuts' own UI) |
 | Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | this app doesn't handle media | **unhandled** |
 | Platform app | handles media, no vision model | **unhandled** |
 | Platform app | handles media, vision model available | **screenshot** |
 | Unrecognized | — | **unhandled** |
+
+The Safari rows split on `safariExtensionHasRun`
+(`LunaSetupStatusStore.anySafariExtensionHasRun`) because the two situations are
+not the same failure. Nobody has ever enabled the extension ⇒ nothing was in a
+position to capture the page, so the Shortcut just stops — a first-run user gets
+no error dialog for a feature they haven't set up. An extension HAS run ⇒ assume
+it is still enabled, so a missing page URL in Safari is a real failure and is
+reported as one (the screenshot route, when a model is available, reports its own
+failure instead).
+
+That evidence — like the tracked URL itself — is **read opportunistically across
+all four apps**. Every app's Safari extension writes the one shared
+`lastSafariURL` in the one App Group (`SharedSafariURL.record`, from
+`background.js`'s kind-agnostic active-tab report), and `SafariURLStore` reads it
+from that same group, so the Downloader's extension supplies the Reader's Action
+Button and vice versa. `anySafariExtensionHasRun` matches by ORing both
+completion markers rather than asking `safariRunApplies(to:)`, whose per-app
+answer is deliberately narrower: an in-page pill can only deep-link into its OWN
+containing app, so onboarding completion is not shared sideways even though the
+URL is.
 
 Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
 `handlesMediaKind` = `LunaApp.current.handlesMedia` (Downloader or the

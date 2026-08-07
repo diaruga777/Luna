@@ -306,7 +306,6 @@ enum OnboardingStrings {
         static let setUpLater = Definition(key: "Onboarding_Instruction_setUpLater")
         static let externalOpenFailureTemplate = Definition(
             key: "Onboarding_Instruction_externalOpenFailureTemplate")
-        static let saveFailure = Definition(key: "Onboarding_Instruction_saveFailure")
         static let tryAgain = Definition(key: "Onboarding_Instruction_tryAgain")
         static let done = Definition(key: "Common_done")
 
@@ -335,16 +334,6 @@ enum OnboardingStrings {
         static let features = [
             "ShareSetupPractice_feature01", "ShareSetupPractice_feature02",
             "ShareSetupPractice_feature03", "ShareSetupPractice_feature04",
-            "ShareSetupPractice_feature05", "ShareSetupPractice_feature06",
-            "ShareSetupPractice_feature07", "ShareSetupPractice_feature08",
-            "ShareSetupPractice_feature09", "ShareSetupPractice_feature10",
-            "ShareSetupPractice_feature11", "ShareSetupPractice_feature12",
-            "ShareSetupPractice_feature13", "ShareSetupPractice_feature14",
-            "ShareSetupPractice_feature15", "ShareSetupPractice_feature16",
-            "ShareSetupPractice_feature17", "ShareSetupPractice_feature18",
-            "ShareSetupPractice_feature19", "ShareSetupPractice_feature20",
-            "ShareSetupPractice_feature21", "ShareSetupPractice_feature22",
-            "ShareSetupPractice_feature23",
         ].map(Definition.init(key:))
 
         static var featureValues: [String] {

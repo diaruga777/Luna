@@ -47,7 +47,7 @@
 "Common_close_Luna" = "Close";
 "Common_contacts_Luna" = "Contacts";
 "Common_copyLink_Luna" = "Copy link";
-"Common_couldntLoadThisArticle_Luna" = "Couldn't load this article.";
+"Common_couldntLoadThisArticle_Luna" = "Couldn't load this website.";
 "Common_couldntPromote_Luna" = "Couldn't Promote";
 "Common_delete_Luna" = "Delete";
 "Common_document_Luna" = "Document";
@@ -75,7 +75,7 @@
 "Common_promote_Luna" = "Promote";
 "Common_reader_Luna" = "Reader";
 "Common_remove_Luna" = "Remove";
-"Common_retryWithAI_Luna" = "Retry with AI";
+"Common_retryWithAI_Luna" = "Try using on-device AI";
 "Common_save_Luna" = "Save";
 "Common_saved_Luna" = "Saved";
 "Common_savedToLuna_Luna" = "Saved to Luna";
@@ -85,7 +85,7 @@
 "Common_share_Luna" = "Share";
 "Common_shareLink_Luna" = "Share link";
 "Common_shareLinkEllipsis_Luna" = "Share Link…";
-"Common_signInRequired_Luna" = "Sign-in required";
+"Common_signInRequired_Luna" = "Email sign-in required";
 "Common_untitled_Luna" = "Untitled";
 "Common_wpm_Luna" = "%lld wpm";
 
@@ -108,17 +108,14 @@
 /* ===================== Weekly — Save of the Week, faceted per app (each
  * app renames the noun it collects; see WeeklySaveLabels). ===================== */
 "Weekly_subtitle_week_Luna" = "Save of the week";
-"Weekly_subtitle_week_Core" = "Save of the week";
 "Weekly_subtitle_week_Reader" = "Read of the week";
 "Weekly_subtitle_week_Downloader" = "Download of the week";
 "Weekly_subtitle_week_PriceTracker" = "Deal of the week";
 "Weekly_subtitle_month_Luna" = "Save of the month";
-"Weekly_subtitle_month_Core" = "Save of the month";
 "Weekly_subtitle_month_Reader" = "Read of the month";
 "Weekly_subtitle_month_Downloader" = "Download of the month";
 "Weekly_subtitle_month_PriceTracker" = "Deal of the month";
 "Weekly_promoteMenuTitle_Luna" = "Promote to Save of the Week";
-"Weekly_promoteMenuTitle_Core" = "Promote to Save of the Week";
 "Weekly_promoteMenuTitle_Reader" = "Promote to Read of the Week";
 "Weekly_promoteMenuTitle_Downloader" = "Promote to Download of the Week";
 "Weekly_promoteMenuTitle_PriceTracker" = "Promote to Deal of the Week";
@@ -128,8 +125,8 @@
 "SaveOfWeek_propose_needsICloudTitle_Luna" = "Sign in to iCloud";
 "SaveOfWeek_propose_needsICloudMessage_Luna" = "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again.";
 "SaveOfWeek_propose_sentTitle_Luna" = "Proposal Sent";
-"SaveOfWeek_propose_sentMessage_Luna" = "Thanks — it's in the queue.";
-"SaveOfWeek_propose_couldntProposeTitle_Luna" = "Couldn't Propose";
+"SaveOfWeek_propose_sentMessage_Luna" = "Thanks!";
+"SaveOfWeek_propose_couldntProposeTitle_Luna" = "Couldn't propose link";
 
 /* ===================== Intents — App Intents metadata. These keys are
  * baked directly into the Swift literal at the call site (Xcode's metadata
@@ -185,10 +182,10 @@
 
 /* ===================== LoadingStatus — the fetch spinner's four-stage
  * status line, in the order it cycles. ===================== */
-"LoadingStatus_stage1_stillGoing_Luna" = "Still going…";
+"LoadingStatus_stage1_stillGoing_Luna" = "Not stuck I promise…";
 "LoadingStatus_stage2_justABitLonger_Luna" = "Just a bit longer…";
-"LoadingStatus_stage3_findingTheGoodPart_Luna" = "Finding the good part…";
-"LoadingStatus_stage4_nearlyThere_Luna" = "Nearly there…";
+"LoadingStatus_stage3_findingTheGoodPart_Luna" = "Spinning the gears…";
+"LoadingStatus_stage4_nearlyThere_Luna" = "Patience is a virtue";
 
 /* ===================== ExportFormat — the article export format picker
  * (share-sheet export of an unlocked article). ===================== */
@@ -225,57 +222,38 @@
 "SaveFailure_timedOut_Luna" = "The site took too long to respond";
 "SaveFailure_refused_Luna" = "The site refused the request (%lld)";
 "SaveFailure_gone_Luna" = "The page is gone (%lld)";
-"SaveFailure_rateLimited_Luna" = "The site is rate-limiting Luna (429)";
+"SaveFailure_rateLimited_Luna" = "The site is rate-limiting you";
 "SaveFailure_serverError_Luna" = "The site had a server error (%lld)";
-"SaveFailure_httpStatus_Luna" = "The site answered with HTTP %lld";
+"SaveFailure_httpStatus_Luna" = "The site had an error (%lld)";
 "SaveFailure_couldntLoadPage_Luna" = "Couldn't load this page.";
 "SaveFailure_nothingReadable_Luna" = "Nothing readable was found on the page";
 "SaveFailure_nothingToSave_Luna" = "There's nothing on this page to save";
 "SaveFailure_notReadableWebPage_Luna" = "The link isn't a readable web page";
-"SaveFailure_tooLarge_Luna" = "The page is too large to read";
-"SaveFailure_noMediaFound_Luna" = "No downloadable media was found";
-"SaveFailure_couldntStoreDownload_Luna" = "Luna couldn't store the download";
+"SaveFailure_tooLarge_Luna" = "Oops! The page is too large to read";
+"SaveFailure_noMediaFound_Luna" = "There was nothing to download";
+"SaveFailure_couldntStoreDownload_Luna" = "Unable to save the file, is your phone out of space?";
 "SaveFailure_sentToSubscribePage_Luna" = "The site sent Luna to its subscribe page";
 "SaveFailure_couldntFetchLink_Luna" = "Luna couldn't fetch this link";
 "SaveFailure_willRetryHint_Luna" = "It will retry automatically once you're back online.";
-"SaveFailure_pullToRetryHint_Luna" = "Pull to retry, or open it in the browser below.";
-"SaveFailure_openInBrowserHint_Luna" = "Opening it in the browser often works where a background fetch can't.";
+"SaveFailure_pullToRetryHint_Luna" = "Pull to retry, or open it in your browser.";
+"SaveFailure_openInBrowserHint_Luna" = "Opening it in your browser might work.";
 "SaveFailure_mayHaveMovedHint_Luna" = "The page may have moved — try the browser to check.";
 "SaveFailure_sitesProblemHint_Luna" = "The site's problem, not yours. Retry in a little while.";
 "SaveFailure_appleIntelligenceHint_Luna" = "Apple Intelligence can sometimes pull an article out anyway.";
-"SaveFailure_searchResultsHint_Luna" = "Search results and index pages hold no single item — open one from the page and save that instead.";
-"SaveFailure_openInBrowserToReadHint_Luna" = "Open it in the browser below to read it there.";
+"SaveFailure_searchResultsHint_Luna" = "If you're trying a page with search results or some other list, try going to a particular item's page and save that instead.";
+"SaveFailure_openInBrowserToReadHint_Luna" = "Open it in your browser to read it there.";
 
 /* ===================== ShareSetupPractice — the "practice mode" article
  * shown as a worked example of what Luna does (screenshot/marketing copy),
  * in reading order: subject line, byline, heading, then every feature
  * bullet as it lists. ===================== */
-"ShareSetupPractice_articleSubjectLine_Luna" = "An article you want to read";
-"ShareSetupPractice_bylineExample_Luna" = "A safari extension • by Luna";
-"ShareSetupPractice_featuresHeading_Luna" = "What you get, minus the pitch:";
-"ShareSetupPractice_feature01_Luna" = "Ads, popups and subscription walls: gone.";
-"ShareSetupPractice_feature02_Luna" = "Saved offline, ready on any flight.";
-"ShareSetupPractice_feature03_Luna" = "Speed-read a word at a time.";
-"ShareSetupPractice_feature04_Luna" = "Read aloud with the screen off.";
-"ShareSetupPractice_feature05_Luna" = "Open links without losing your place.";
-"ShareSetupPractice_feature06_Luna" = "Send to Kindle, or export anywhere.";
-"ShareSetupPractice_feature07_Luna" = "EPUB, PDF, Markdown or plain text.";
-"ShareSetupPractice_feature08_Luna" = "Long X threads read like articles.";
-"ShareSetupPractice_feature09_Luna" = "Newsletters pulled from your inbox.";
-"ShareSetupPractice_feature10_Luna" = "Share a save straight to a friend.";
-"ShareSetupPractice_feature11_Luna" = "Read-aloud rolls into the next piece.";
-"ShareSetupPractice_feature12_Luna" = "Eye tracking pauses when you glance away.";
-"ShareSetupPractice_feature13_Luna" = "Walled-off pages, readable again.";
-"ShareSetupPractice_feature14_Luna" = "PDFs and documents, same reader.";
-"ShareSetupPractice_feature15_Luna" = "A card deck, not another inbox.";
-"ShareSetupPractice_feature16_Luna" = "The Action Button saves from anywhere.";
-"ShareSetupPractice_feature17_Luna" = "One share-sheet save in every app.";
-"ShareSetupPractice_feature18_Luna" = "Track a product's price while you wait.";
-"ShareSetupPractice_feature19_Luna" = "Videos and audio, kept for the plane.";
-"ShareSetupPractice_feature20_Luna" = "Everything on device, searchable offline.";
-"ShareSetupPractice_feature21_Luna" = "No account. No feed. No streaks.";
-"ShareSetupPractice_feature22_Luna" = "Night-sky dark, down to the last pixel.";
-"ShareSetupPractice_feature23_Luna" = "Built to disappear while you read.";
+"ShareSetupPractice_articleSubjectLine_Luna" = "Luna x Safari - we ship that";
+"ShareSetupPractice_bylineExample_Luna" = "A Safari extension • by Luna";
+"ShareSetupPractice_featuresHeading_Luna" = "I know, I know. Big ask. So many buttons to press! But you get:";
+"ShareSetupPractice_feature01_Luna" = "Eliminate ads that block your view";
+"ShareSetupPractice_feature02_Luna" = "Get rid of interruptive popups";
+"ShareSetupPractice_feature03_Luna" = "Unlocked access to most articles on the web";
+"ShareSetupPractice_feature04_Luna" = "One-click save offline";
 
 /* ===== Onboarding_Intro — util card intro headline, setup actions, paste row (Luna/UtilCard, OnboardingStrings.Intro) ===== */
 "Onboarding_Intro_articleURLsOnly_Luna" = "article URLs only";
@@ -293,17 +271,17 @@
 "Onboarding_Intro_headline2Final_PriceTracker" = "Never miss a sale";
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";
-"Onboarding_Intro_safariAction_Luna" = "Stop popups & access gates";
+"Onboarding_Intro_safariAction_Luna" = "Use Luna inside Safari";
 "Onboarding_Intro_saveBenefit_Luna" = "Read, watch, track, anything";
-"Onboarding_Intro_saveBenefit_Core" = "Read, watch, track, anything";
+"Onboarding_Intro_saveBenefit_Core" = "Save anything";
 "Onboarding_Intro_saveBenefit_Reader" = "Read offline later";
 "Onboarding_Intro_saveBenefit_Downloader" = "Watch or share";
 "Onboarding_Intro_saveBenefit_PriceTracker" = "Never miss a sale";
-"Onboarding_Intro_shortcutAction_Luna" = "Show me one click save";
-"Onboarding_Intro_unableToLoadPage_Luna" = "unable to load site";
+"Onboarding_Intro_shortcutAction_Luna" = "Save in one click";
+"Onboarding_Intro_unableToLoadPage_Luna" = "Unable to load website";
 
 /* ===== Onboarding_Demo — InstaTok/Amayzon mock-page copy (Luna/UtilCard + Reader/Onboarding, OnboardingStrings.Demo) ===== */
-"Onboarding_Demo_amayzonAddToBasket_Luna" = "Add to basket";
+"Onboarding_Demo_amayzonAddToBasket_Luna" = "Add to cart";
 "Onboarding_Demo_amayzonBrandPrefix_Luna" = "amay";
 "Onboarding_Demo_amayzonBrandSuffix_Luna" = "zon";
 "Onboarding_Demo_amayzonBreadcrumb_Luna" = "Electronics › Pocket communicators › Unlocked";
@@ -350,31 +328,24 @@
 "Onboarding_Safari_adTrick_Luna" = "You won't BELIEVE this one weird trick";
 "Onboarding_Safari_appStepTemplate_Luna" = "Switch on %@";
 "Onboarding_Safari_bylineTemplate_Luna" = "A Safari extension • by %@";
-"Onboarding_Safari_explainerChunk1_Luna" = "Ads, popups and subscription walls come off on their own, privately, on your device. Anything on the page saves to Luna in one tap.";
-"Onboarding_Safari_explainerChunk1_Core" = "Ads, popups and subscription walls come off on their own, privately, on your device. Anything on the page saves to Luna in one tap.";
-"Onboarding_Safari_explainerChunk1_Reader" = "Ads, popups and subscription walls come off on their own, privately, on your device. Anything you keep saves to Luna in one tap.";
-"Onboarding_Safari_explainerChunk1_Downloader" = "Save the video, the clip or the audio straight from the page it lives on — one tap, no account, no signup wall.";
-"Onboarding_Safari_explainerChunk1_PriceTracker" = "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on.";
-"Onboarding_Safari_explainerChunk2_Luna" = "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.";
-"Onboarding_Safari_explainerChunk2_Core" = "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.";
-"Onboarding_Safari_explainerChunk2_Reader" = "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.";
-"Onboarding_Safari_explainerChunk2_Downloader" = "Ads, popups and signup sheets come off first, privately, on your device.";
-"Onboarding_Safari_explainerChunk2_PriceTracker" = "Ads, popups and upsell sheets come off first, privately, on your device.";
-"Onboarding_Safari_explainerChunk3_Luna" = "Articles arrive ready to read offline — scrolling, a word at a time, or aloud with the screen off.";
-"Onboarding_Safari_explainerChunk3_Core" = "Articles arrive ready to read offline — scrolling, a word at a time, or aloud with the screen off.";
-"Onboarding_Safari_explainerChunk3_Reader" = "A saved page is yours offline — on a plane, on the subway, next week.";
-"Onboarding_Safari_explainerChunk3_Downloader" = "Every download lands in your library on this phone, ready offline — on a plane, underground, anywhere.";
-"Onboarding_Safari_explainerChunk3_PriceTracker" = "Luna checks back for you and tells you the moment the price drops.";
-"Onboarding_Safari_explainerChunk4_Luna" = "The same tap keeps a video for the flight, or starts watching a product’s price for you.";
-"Onboarding_Safari_explainerChunk4_Core" = "The same tap keeps a video for the flight, or starts watching a product’s price for you.";
-"Onboarding_Safari_explainerChunk4_Reader" = "Read it scrolling, a word at a time, or aloud with the screen off.";
-"Onboarding_Safari_explainerChunk4_Downloader" = "Send one on to whoever you were going to send the link to instead.";
-"Onboarding_Safari_explainerChunk4_PriceTracker" = "Every check is kept, so the whole run of a price draws as a graph you can read.";
-"Onboarding_Safari_explainerChunk5_Luna" = "One app, one deck: everything you saved from anywhere, in the order you saved it.";
-"Onboarding_Safari_explainerChunk5_Core" = "One app, one deck: everything you saved from anywhere, in the order you saved it.";
-"Onboarding_Safari_explainerChunk5_Reader" = "Send it to your Kindle, or export it as EPUB, PDF, Markdown or plain text.";
-"Onboarding_Safari_explainerChunk5_Downloader" = "None of what you watch leaves your phone.";
-"Onboarding_Safari_explainerChunk5_PriceTracker" = "None of what you shop for leaves your phone.";
+"Onboarding_Safari_explainerChunk1_Luna" = "Stop popups and blocking ads, automatically.";
+"Onboarding_Safari_explainerChunk1_Core" = "Stop popups and blocking ads, automatically.";
+"Onboarding_Safari_explainerChunk1_Reader" = "Stop popups and blocking ads, automatically.";
+"Onboarding_Safari_explainerChunk1_Downloader" = "Download videos in one tap.";
+"Onboarding_Safari_explainerChunk1_PriceTracker" = "Track prices in one tap";
+"Onboarding_Safari_explainerChunk2_Luna" = "Unblock and save most of the web, without leaving Safari.";
+"Onboarding_Safari_explainerChunk2_Core" = "Unblock and save most of the web, without leaving Safari.";
+"Onboarding_Safari_explainerChunk2_Reader" = "Unblock and read most of the web, without leaving Safari.";
+"Onboarding_Safari_explainerChunk2_Downloader" = "Watch anything with no account and no app download";
+"Onboarding_Safari_explainerChunk2_PriceTracker" = "Your phone will check the price for you every day";
+"Onboarding_Safari_explainerChunk3_Luna" = "When you want the full Luna experience, its one tap away.";
+"Onboarding_Safari_explainerChunk3_Core" = "When you want the full Luna experience, its one tap away.";
+"Onboarding_Safari_explainerChunk3_Reader" = "When you want the full Luna experience, its one tap away.";
+"Onboarding_Safari_explainerChunk3_Downloader" = "Downloads go right to your Photos app, ready to share";
+"Onboarding_Safari_explainerChunk3_PriceTracker" = "Get notified when the price drops";
+"Onboarding_Safari_explainerChunk4_Luna" = "Don't worry. All your data is offline. There are no Luna servers to send anything to.";
+"Onboarding_Safari_explainerChunk5_Luna" = "And there's a whole family of Luna apps so you can do more in Safari.";
+"Onboarding_Safari_explainerChunk5_Core" = "All Luna apps' features are bundled in this one";
 "Onboarding_Safari_manageExtensionsStepTemplate_Luna" = "Choose “%@”";
 "Onboarding_Safari_manageExtensionsTitle_Luna" = "Manage Extensions";
 "Onboarding_Safari_newsletterSubmit_Luna" = "Subscribe";
@@ -391,16 +362,16 @@
 
 /* ===== Onboarding_Messages — mock Messages conversation walking through the Action Button save setup (Luna/UtilCard, OnboardingStrings.Messages) ===== */
 "Onboarding_Messages_answer_Luna" = "Nah. Its kinda dead tbh.";
-"Onboarding_Messages_centralCoreOffer_Luna" = "Nice. FYI if you switch it to this app instead, it can handle all your Luna apps in one.";
-"Onboarding_Messages_chooseCurrentApp_Luna" = "NP. You can pick one Luna app for your action button. For this one:";
+"Onboarding_Messages_centralCoreOffer_Luna" = "Nice. FYI if you set up this app instead, it can handle all your Luna apps in one.";
+"Onboarding_Messages_chooseCurrentApp_Luna" = "NP. You can pick one Luna app for your action button. If you want this one:";
 "Onboarding_Messages_coreAppPillAccessibilityLabel_Luna" = "Open Luna in the App Store";
 "Onboarding_Messages_facetedCoreOfferPrefix_Luna" = "Nice. FYI if you buy the";
-"Onboarding_Messages_facetedCoreOfferSuffix_Luna" = ", it can do all Luna app links";
+"Onboarding_Messages_facetedCoreOfferSuffix_Luna" = ", it can do everything from all the Luna apps";
 "Onboarding_Messages_greeting_Luna" = "Yoooooo";
-"Onboarding_Messages_keepCurrentAppQuestion_Luna" = "And if I don’t?";
-"Onboarding_Messages_pitch_Luna" = "👀 watch this";
-"Onboarding_Messages_previousSetupAnswer_Luna" = "Yeah, I set it up at some point";
-"Onboarding_Messages_previousSetupQuestionTemplate_Luna" = "You’ve already got the %@ Action Button setup, huh?";
+"Onboarding_Messages_keepCurrentAppQuestion_Luna" = "And if I don’t switch it?";
+"Onboarding_Messages_pitch_Luna" = "👀 check this out";
+"Onboarding_Messages_previousSetupAnswer_Luna" = "Yep, its awesome!";
+"Onboarding_Messages_previousSetupQuestionTemplate_Luna" = "You’ve got the %@ Action Button set up, yeah?";
 "Onboarding_Messages_question_Luna" = "You use the Action Button at all?";
 "Onboarding_Messages_senderName_Luna" = "Johnny Appleseed";
 "Onboarding_Messages_settingsSetup_Luna" = "Just set your action button to it in";
@@ -412,10 +383,9 @@
 "Onboarding_Messages_skipSetup_Luna" = "Or";
 
 /* ===== Onboarding_Instruction — the "Set up Safari"/"Install Shortcut" instruction screen (Luna/UtilCard + Reader/Onboarding, OnboardingStrings.Instruction) ===== */
-"Onboarding_Instruction_actionButtonPrompt_Luna" = "Press the action button to finish";
+"Onboarding_Instruction_actionButtonPrompt_Luna" = "Press the Action Button to finish";
 "Onboarding_Instruction_externalOpenFailureTemplate_Luna" = "Couldn’t open %@. Try again.";
 "Onboarding_Instruction_safariPromptTemplate_Luna" = "Press the Action Button to save\n%@";
-"Onboarding_Instruction_saveFailure_Luna" = "Couldn’t create the offline example";
 "Onboarding_Instruction_setActionButton_Luna" = "Set action button";
 "Onboarding_Instruction_setUpLater_Luna" = "Set up later";
 "Onboarding_Instruction_setUpSafari_Luna" = "Set up Safari";
@@ -441,7 +411,7 @@
 
 /* ===== Onboarding_Util — UtilCardContentViewController's own paste-row and accessibility strings ===== */
 "Onboarding_Util_invalidURL_Luna" = "Invalid URL";
-"Onboarding_Util_recentRowAccessibilityHint_Luna" = "Saves as a full card";
+"Onboarding_Util_recentRowAccessibilityHint_Luna" = "Saves link in Luna";
 "Onboarding_Util_unableToSaveURL_Luna" = "Unable to save URL";
 
 /* ===== Settings_diagnostics — Settings → (5-tap) Diagnostics screen: header
@@ -485,15 +455,15 @@
  * and enhanced-voice status/setup. Luna/Settings/AudioSettingsScreen.swift ===== */
 "Settings_audio_listeningSectionHeader_Luna" = "Listening";
 "Settings_audio_autoplayToggleLabel_Luna" = "Autoplay Next Article";
-"Settings_audio_autoplayFooter_Luna" = "When an article finishes, mark it read and continue with the next unread article — after a chime and a short “Now Reading” announcement.";
-"Settings_audio_cleanupToggleLabel_Luna" = "Clean Up Articles for Listening";
+"Settings_audio_autoplayFooter_Luna" = "When read-aloud is finished, mark the save as read and continue with the next unread save";
+"Settings_audio_cleanupToggleLabel_Luna" = "Clean up text for listening";
 "Settings_audio_cleanupToggleSecondary_Luna" = "Apple Intelligence";
-"Settings_audio_cleanupFooter_Luna" = "Skip photo captions, bylines, related-link lists, and other non-article text when reading aloud. Uses Apple Intelligence on this device — nothing leaves your iPhone — and falls back to Luna's built-in cleanup automatically when it isn't available.";
+"Settings_audio_cleanupFooter_Luna" = "Don't read aloud photo captions, bylines, related-link lists, and other non-article text. Uses on-device Apple Intelligence. No data leaves your phone.";
 "Settings_audio_voiceSectionHeader_Luna" = "Read-Aloud Voice";
 "Settings_audio_voiceInstalledStatus_Luna" = "Enhanced voices installed";
 "Settings_audio_voiceNotInstalledStatus_Luna" = "Not installed";
 "Settings_audio_installVoicesButton_Luna" = "Install Enhanced Voices";
-"Settings_audio_voiceFooter_Luna" = "Luna reads aloud with enhanced Apple voices when they're installed, otherwise the built-in system voice. Install enhanced voices in iOS Settings → Accessibility → Spoken Content → Voices.";
+"Settings_audio_voiceFooter_Luna" = "Read-aloud uses your device's Enhanced Voices. Install them in iOS Settings → Accessibility → Read & Speak → Voices.";
 
 /* ===== Settings_autoSend — the per-destination "Forwarding Settings" screen
  * (App Intents / email / share sheet & paste toggles for one ereader

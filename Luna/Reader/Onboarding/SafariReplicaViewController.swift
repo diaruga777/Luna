@@ -456,18 +456,6 @@ final class SafariReplicaViewController:
             ])
     }
 
-    func showSaveFailure(retry: @escaping () -> Void) {
-        setInstruction(
-            title: OnboardingStrings.Instruction.saveFailure.value(),
-            actions: [
-                .init(
-                    title: OnboardingStrings.Instruction.tryAgain.value(),
-                    image: UIImage(systemName: "arrow.clockwise"),
-                    prominent: true,
-                    action: retry),
-            ])
-    }
-
     func dismissInstructions(animated: Bool, completion: @escaping () -> Void) {
         guard let overlay = instructionOverlay else {
             completion()

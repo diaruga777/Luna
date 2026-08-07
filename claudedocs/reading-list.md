@@ -98,6 +98,15 @@ into `LunaApp`.
 
 `LunaTests/ArticleExtractorTests.swift`, `LunaTests/ReadingListStoreTests.swift`, `LunaTests/PasteboardSuggesterTests.swift`.
 
+## Bulk import / export
+
+Settings ▸ Import & Export shares every link as one `section,url` CSV (the
+archive as its own section) and reads one back through a review sheet, a bounded
+parallel ingest, and the LLM rescue for anything that failed. The import goes
+through `store.insertImported` + `ReadingListIngestor.ingest`, NOT
+`handleSavePress` — so it is not a save press and fires none of the new-save
+automation. Full design: `claudedocs/import-export.md`.
+
 ## Failed saves
 
 A `.failed` save shows a real error card on the Reader and Downloader card roots —

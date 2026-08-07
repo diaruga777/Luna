@@ -67,6 +67,10 @@ public final class VideoCardContentViewController: CardContentViewController {
         playerView.playerLayer.videoGravity = .resizeAspect
         playerView.playerLayer.player = player
         player.isMuted = true
+        // Everything this player shows is local (a library file or a Photos
+        // export), so never trade start latency for stall insurance — `play()`
+        // must set the rate NOW, not once AVPlayer feels sufficiently buffered.
+        player.automaticallyWaitsToMinimizeStalling = false
         // `play()` resumes at the default rate, so the remembered speed is set
         // once here and every later resume (loop, foregrounding) honors it.
         player.defaultRate = Float(speed)
@@ -121,8 +125,20 @@ public final class VideoCardContentViewController: CardContentViewController {
                 self.audioAvailabilityChanged?()
             }
         }
-        if wantsPlaying { player.play() }
+        if wantsPlaying {
+            player.play()
+        } else {
+            // Decode the first frame NOW, while this card is still a neighbor:
+            // the zero-tolerance seek spins the render pipeline up ahead of
+            // time, so centering starts playback instantly instead of leaving
+            // the poster showing while it warms.
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
     }
+
+    #if DEBUG
+    var playerForTesting: AVPlayer { player }
+    #endif
 
     // MARK: - CardContentViewController
 

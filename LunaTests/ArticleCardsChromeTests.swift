@@ -348,7 +348,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         let toggle = try XCTUnwrap(eyeToggle(), "RSVP seats its toggle in the deck's row")
         let audio = try XCTUnwrap(
             row.subviews.compactMap { $0 as? UIButton }
-                .first { $0.accessibilityLabel == L10n.string("Read Aloud") })
+                .first { $0.accessibilityLabel == L10n.string("Reader_readAloudChromeAccessibilityLabel") })
         XCTAssertEqual(toggle.frame.minX, 0, accuracy: 0.5,
                        "top-left of the card: the row's leading edge (back is hidden at the root)")
         XCTAssertEqual(toggle.center.y, audio.center.y, accuracy: 0.5,
@@ -488,11 +488,16 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(tray.trayAlphaForTesting, 1, accuracy: 0.001)
     }
 
+    @MainActor
     func testReaderCardContextMenuOffersArchiveAndDestructiveDelete() throws {
         let controller = makeArticleController(seed: "reader-card-menu", title: "Reader menu")
         let item = try XCTUnwrap(ReadingListStore.shared.items().first)
-        let menu = try XCTUnwrap(
-            controller.cardContextMenuForTesting(at: controller.carousel.currentIndex))
+        // The menu comes from the ONE provider now, not from a per-deck shim —
+        // which is the point: this is the same code path the Downloader and
+        // Price Tracker roots take for their own cards.
+        let slot = try XCTUnwrap(
+            controller.slotIndex(forCarouselIndex: controller.carousel.currentIndex))
+        let menu = try XCTUnwrap(controller.deckProvider?.deckMenu(forSlot: slot))
         let actions = menu.children.compactMap { $0 as? UIAction }
 
         // A device without the curator's key gets the propose verb, above the

@@ -139,7 +139,7 @@ stable Xcode 26.2.
 > kinds, the drop behavior, and the composition mechanism are documented in
 > `claudedocs/surface-support.md`. UI prose says
 > "Luna"; each app has its own `AppIcon{Luna,Reader,Downloader,PriceTracker}` (PNG appiconsets in
-> `SharedIconAssets.xcassets`; `scripts/make_icons.py` is retired — update the PNGs directly).
+> `SharedIconAssets.xcassets` — there is no icon generator script; update the PNGs directly).
 > The ACTION extensions use separate `{Luna,Reader,Downloader,PriceTracker}ActionExtIcon`-style
 > sets (`ReaderActionExtIcon`, `LunaActionExtIcon`, …): iOS
 > renders action-extension icons as monochrome templates from the icon's ALPHA channel, so an
@@ -183,8 +183,89 @@ stable Xcode 26.2.
 > frame, which is exactly the touches the card next door needs (`claudedocs/readers.md`).
 > **(3)** Everything else that was a full-width band keeps a readable column instead
 > (`LunaLayout.readableWidth`); the decks' own chrome follows the CARD's column rather than
-> the screen edges. Phone-shaped containers are left byte-identical throughout, which is why
-> the existing snapshot references still hold.
+> the screen edges.
+
+> **One card frame, and it is a function of the SCREEN.** Every carousel card — article,
+> media, product, failed save, util, onboarding — is the same rectangle: the largest exact
+> 9:16 that fits the card area, centered (`CardCarouselMetrics.resolve`, one fit). A card's
+> size used to be its KIND's answer (`CardFit`/`topOverflow`: a reader card took every point
+> of width and hung its extra height above the card area; a product card filled the room),
+> so paging between kinds resized and re-centered the card mid-transition; `edgeGap` was
+> per-deck too, so the same video card was 40pt narrower in the Downloader. `peek`/`edgeGap`/
+> `sideScale`/`verticalPadding` are constants now, and the 48pt top clearance is reserved by
+> EVERY deck (`CardCarouselHostViewController.carouselTopClearance` = `CardDeckGeometry
+> .topClearance`) rather than by the Reader alone. The point of all that:
+> **`CardDeckGeometry.cardFrame(inScreenSize:safeAreaInsets:)` is pure arithmetic**, so the
+> launch splash can be drawn at the deck's exact card before any deck exists — which is what
+> `LunaLaunchScreen.storyboard` reproduces in Interface Builder constants (its one
+> conditional, the iPad width cap, rides a regular-width variation because a launch
+> storyboard has no step function). `CardDeckGeometryTests` and `LaunchScreenGeometryTests`
+> pin the deck, the pure function and the storyboard to each other at six screen shapes;
+> nothing else can. Corona rasterisation is per-purpose — `EclipseCorona.transitionScale`
+> (1×) for a corona composited at its render size, `artworkScale` (3×) for the launch art,
+> which is why the splash corona is no longer 3×3 blocks. See
+> `claudedocs/card-carousel.md` and `claudedocs/reader-onboarding.md`.
+
+> **Strings: one flat file, keyed by a descriptive name with a per-app
+> suffix.** Every user-visible string in all four apps is an entry in
+> `LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings`,
+> written `"<descriptive base>_<suffix>" = "what Luna shows";`, where
+> `<suffix>` is one of `Luna` (the universal fallback every base key MUST
+> define), `Core` (the central Luna app's own override), `Reader`,
+> `Downloader`, `PriceTracker`. A call site never names an app — it just calls
+> `L10n.string("SomeDescriptiveKey")`, and `L10n`
+> (`LunaModels/Localization.swift`) resolves `SomeDescriptiveKey_<the running
+> app's own suffix>` first, then falls back to `SomeDescriptiveKey_Luna`. So a
+> string every app shows the same needs only a `_Luna` line, and giving one
+> app its own wording is one more line in the strings file — **never** a
+> `switch LunaApp.current { … }` around an `L10n` call; that switch IS this
+> resolution, done worse and invisibly to the strings file (`WeeklySaveLabels`
+> and `OnboardingStrings.Definition`/`ChunkedDefinition` are the two worked
+> examples of collapsing one into the suffix mechanism). `L10n.string(key,
+> args...)` substitutes `%@`/`%lld`/etc via `String(format:)` — a key must
+> NEVER itself be interpolated. `L10n.string(key, for: app)` / `L10n
+> .stringIfPresent(key, for:)` resolve for an explicit app rather than
+> `.current` (showing a sibling app's name, or reading a `ChunkedDefinition`'s
+> `"<prefix>1"`, `"<prefix>2"`, … until one is missing). Grouping and the
+> comment above each group in the strings file are HAND-AUTHORED — keys are
+> named so alphabetical order matches on-screen reading order (zero-padded
+> ordinals past 9 items, e.g. `_feature01`) — `scripts/strings_sync.py --write`
+> only appends a placeholder for a referenced key missing its `_Luna` entry
+> and drops lines nothing references; it never re-sorts or re-groups.
+> `L10n.string` / `L10n.resource` are the only lookup points, resolving
+> against `Bundle.module`, which ships in every app, extension, clip and
+> widget that links LunaModels. **`defaultLocalization: "en"` in
+> `Package.swift` is load-bearing**: without it the table is silently dropped
+> from the resource bundle and every lookup falls back to a raw key.
+> `LocalizableStringsTests` therefore reads the table out of the BUILT bundle,
+> not the working tree, and checks every entry's suffix is recognized, every
+> base key has a `_Luna` fallback, and format specifiers match ACROSS a base
+> key's suffix siblings (not key-vs-value — the key no longer carries
+> specifiers). NOT copy and deliberately unwrapped:
+> `OnboardingStrings.Accessibility` (UI-test identifiers) and `.AnimationKeys`
+> (CALayer keys), markup assembly, and matcher hostnames.
+> **App Intents metadata is in the SAME file but gets there differently, and
+> does NOT use the suffix fallback**: intent titles, descriptions,
+> `@Parameter`/`@Property` names, and `AppEnum.caseDisplayRepresentations`
+> must stay Swift literals (the metadata processor rejects anything else,
+> including an `L10n` call) — so the literal IS the concrete, already-suffixed
+> key (always ending `_Luna`), e.g. `static let title: LocalizedStringResource
+> = "Intents_save_title_Luna"`. `strings_sync.py` finds these by shape in
+> `Luna/Mail/Intents/` + the Live Activity widget (excluding a per-instance
+> `DisplayRepresentation(title: "\(dynamic)")` VALUE, which is runtime content
+> rather than build-time metadata), and the app/widget targets COPY the one
+> file into their own bundles via `scripts/add_strings_to_app_bundles.rb`
+> (re-run after adding a target; a test fails if a host's copy is missing or
+> has drifted). Staying in code: `AppShortcut` phrases/`shortTitle`s (they are
+> `AppShortcuts.strings`, and are Siri grammar) and `BundledShortcut
+> .displayName` (must equal the bundled `.shortcut` filename). **There is no
+> `InfoPlist.xcstrings`** — the three that existed were shared by four targets
+> each and every build rewrote `CFBundleDisplayName`/`CFBundleName` with
+> whichever target built last, dirtying the tree on every `AllLunaApps` build;
+> the usage descriptions they held are in the `Info.plist`s verbatim and the
+> names come from the xcconfig per target. If a second language ever ships,
+> add per-TARGET catalogs, never one shared file. Full detail in
+> `claudedocs/strings.md`.
 
 ## Agent workflow
 
@@ -224,7 +305,8 @@ the universal shell never names a foreign kind's symbols. The Action Button inte
 `ReadArticleIntent.playArticle`, and URL Rescue's kind legs via
 `URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
 (article: the article deck provider, mini-player, audio wiring, reader/email settings;
-media: the media deck provider, auto-download settings, intent handoff;
+media: the media deck provider, auto-download settings, intent handoff, the bulk
+import's download watcher;
 `UITestScreen`/`NonArticleCardOpening`:
 central-app-only) are excluded from foreign targets via the same membership-exception
 mechanism. The Share/Action extensions
@@ -292,9 +374,48 @@ every kind processor is registered at launch). The `LunaReader` /
 > **No spaces in paths.** Build inputs are all space-free (`LunaAction/`, not the
 > old `Luna Action Extension/`; `AllLunaApps.xcscheme`, not `All Luna Apps`) —
 > quoting bugs in build scripts are otherwise silent. The one deliberate exception
-> is the bundled resource `Luna/Resources/Send To Luna.shortcut`, whose filename IS
-> the user-visible name in the Action Button picker (`BundledShortcut.displayName`
-> must keep matching it).
+> is the four bundled shortcuts (`Luna/Resources/Luna.shortcut`, `Luna Reader
+> .shortcut`, `Luna Downloader.shortcut`, `Luna Price Tracker.shortcut` — one per
+> app, the other three excluded from each app target by membership exception),
+> whose filename IS the user-visible name in the Action Button picker
+> (`BundledShortcut.displayName` switches on `LunaApp.current` and must keep
+> matching it).
+
+```sh
+scripts/run_tests.sh            # preferred — picks a simulator, reports the real verdict
+scripts/run_tests.sh --fresh    # throwaway simulator (the fix for most flake modes)
+scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff reaches
+```
+
+> **`--changed` is for iterating, never for declaring a task done.** It asks
+> `scripts/select_changed_tests.py` which classes a `git diff <base>` (default
+> `HEAD`, so uncommitted work counts) can reach — by name convention
+> (`Foo.swift` → `FooTests`), by grepping LunaTests for every type the changed
+> file declares, and by a small path table for the non-Swift inputs (the strings
+> file → `LocalizableStringsTests`, the launch storyboard → the two geometry
+> suites, `.xcodeproj`/`Package.swift`/xcconfigs → everything). It always adds
+> `KindCompositionRootTests`. It prints what it picked and why, and when a
+> changed file matches no rule it says so and runs the WHOLE suite rather than
+> quietly running less — so a short selection is a claim it is prepared to
+> justify. A green partial run is not a green suite: finish with a full
+> `scripts/run_tests.sh --fresh`.
+
+> **Looking at a screen, rather than testing it: `-LunaStage`.** Any app boots
+> straight into any named screen in any named state — populated, empty, frozen
+> mid-load, errored — with stubbed data and nothing to set up, so reviewing or
+> driving a screen costs one `simctl launch` instead of a navigation script.
+> DEBUG-only (the catalogs call the DEBUG fixture seams, so a release build
+> cannot compile them). `xcrun simctl launch --console-pty <sim>
+> com.hsanabria.luna -LunaStageList` prints the whole catalog as JSON; the same
+> JSON is committed at `Luna/Stage/StageManifest.json` and pinned by
+> `StageRegistryTests`. `scripts/stage_screenshots.py` captures every stage of
+> every app and writes a review guide. Stages follow the kind-pack rule — a
+> kind's stages live in `Stage/StageCatalog+<Kind>.swift`, compiled only into
+> the targets that link the kind. Full detail, including what is out of scope
+> (extensions, clips, the Live Activity — none launchable by argument), in
+> `claudedocs/staging.md`.
+
+Or by hand:
 
 ```sh
 DD=<a derivedDataPath>
@@ -302,6 +423,21 @@ SIM=<a booted iOS 26.x simulator UDID>   # e.g. xcrun simctl list devices | grep
 xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   -configuration Debug -derivedDataPath "$DD" DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
 ```
+
+> **`** TEST FAILED **` with zero test failures means the DIAGNOSTICS step, not
+> the tests.** After the suite passes, xcodebuild may try to collect diagnostics
+> from the simulator, time out after a fixed 600s, and fail the run on that alone
+> — turning a ~105s suite into a ~12min one that reports exit 65. The log also
+> goes silent for those ten minutes, which reads exactly like the hung-runner mode
+> below and invites killing a healthy run. **Use `scripts/run_tests.sh`** — it
+> waits for the ROOT suite to close (every individual suite prints its own
+> `Executed N tests …` line, so those mean nothing), gives xcodebuild a grace
+> period, then stops it and exits on what the TESTS reported: 0 clean, 1 real
+> failures, 2 no summary at all. The scheme's
+> `systemAttachmentLifetime`/`userAttachmentLifetime = "keepNever"` is kept but
+> measured NOT sufficient on its own — xcodebuild was still busy 45s after a clean
+> run — so the script, not the setting, is the fix. **Always read the `Executed N
+> tests, with M failures` line; that, not the `** TEST` banner, is the result.**
 
 - **App icons use conventional PNG `.appiconset`s in
   `SharedIconAssets.xcassets`**, so stable Xcode 26.2's `actool` compiles every
@@ -360,34 +496,70 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   `No Accounts: Add a new account in Accounts settings` (automatic signing wanted an
   account session to go edit the `com.hsanabria.luna` App ID it should never have been
   touching). Only the two apps that actually have a clip may declare that key.
-- **Current suite state on the iOS 26.x sim: 2354 tests, 9 skipped, 0 failures**
-  (measured 2026-08-04 after the paused-card playback controls landed, full run with
-  nothing skipped on the command line, no mid-suite host death). The
-  long-standing `AudioMiniPlayerTests` reference-image drifts are gone: the whole
-  snapshot set was re-recorded for the predawn palette, and the harness now pins the
-  same appearance the app does (dark style + `lunaSky = .predawn`, over
-  `LunaColors.background`) instead of forcing a light style. The 9 skips are
-  intentional `XCTSkip`s —
-  `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot`, two
+- **The executed-test COUNT varies between runs on different simulators — diff the
+  failure list, not the total.** The same tree measured 2252/21/0 and, on a
+  `simctl create`d sim later the same day, 2173/7/0: `ArticleAudioEngineTests` (14)
+  did not register at all rather than skipping, and some 60 others likewise. No
+  test files had been deleted (`git diff --diff-filter=D main..HEAD -- LunaTests/`
+  is the check). **0 failures is the signal; the total is not.**
+- **Current suite state on the iOS 26.x sim: 2253 tests, 21 skipped, 0 failures**
+  (measured 2026-08-05 after the card-presenter refactor and the test-suite trim,
+  on a FRESH simulator, with **no `-skip-testing:` flags** — the plain recipe above
+  is the whole of it). 91s of test execution, ~128s wall on a warm
+  `-derivedDataPath`. The suite was 2453/9/0 at 261s before the trim; roughly 220
+  method fixtures were folded into table-driven rows or merged area files, the
+  Safari/JS suites went from ~159 WebContent spin-ups to 1, and ~5.4s of fixed
+  sleeps became injected seams. Re-measured 2026-08-06 after the one-card-frame
+  change, plain recipe on a warm existing sim: **2279/21/0** — 0 failures, and the
+  ~20 extra registered tests over the fresh-sim run are the registration variance
+  the bullet below describes rather than new coverage. Re-measured 2026-08-07
+  after a second timing pass, `--fresh` on a warm `-derivedDataPath`:
+  **2341/21/0 in 78s**, down from 140s for the SAME 2341 tests. Six suites were
+  waiting out a production constant rather than the behaviour it guards, and each
+  got a seam instead: a `now:` closure on `RSVPGazeCoordinator` (exposed as
+  `RSVPViewController.gazeClockOverride`), `ShareReaderViewController
+  .imagePreparationTimeout` and `WebArchiveCapturer.settleFirstTurn`/
+  `.settlePollInterval` as writable statics, an `interval:` on
+  `ArticleLoadingStatusCycler`, `BypassTests` moved onto the shared
+  `SafariJSTestHarness` web view, and the setup-celebration test intercepting its
+  `setTimeout` instead of sleeping through it. Nothing in the apps writes any of
+  those; they exist so a test can afford the assertion it already makes.
+- **The 21 skips are all intentional `XCTSkip`s, and all of them are env-gated
+  tooling or on-demand coverage** — nothing is skipped because it is broken:
+  `ArticleAudioEngineTests` (14, `RUN_AUDIO_ENGINE_TESTS=1`), the four
+  `EclipsePreviewRecorderTests` corona/starfield/flare recorders
+  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`), two
   `SocialMediaResolverTests` live-YouTube transfers
-  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), the four
-  `EclipsePreviewRecorderTests` corona/starfield preview recorders
-  (`RECORD_ECLIPSE_PREVIEWS=1` + `ECLIPSE_PREVIEW_DIR`), and
-  `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested`
-  (the wave-probe recorder this list used to name is gone from the tree). One class,
-  `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
-  rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
-  test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a
-  simulator reboot and a sandbox toggle, ruling out a code regression (the class hasn't
-  changed since it first landed). If you hit this, verify the rest of the suite with
-  `-skip-testing:LunaTests/ArticleAudioEngineTests` and run that class alone/on another
-  Mac. The ~36 failures previously documented here were all stale test data, not the
-  environment, and have been fixed: snapshot reference PNGs are device-specific and
-  were re-recorded on this sim with `RECORD_SNAPSHOTS=1` (re-record after intentional
-  UI changes via `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …` — the build-setting
-  form does NOT reach the runner's environment); and the two extraction tests were
-  aligned to the 1200 threshold. If snapshots fail again on a *different* device,
-  re-record there rather than treating it as a regression.
+  (`RUN_LIVE_YOUTUBE{,_BACKGROUND}_TESTS=1`), and
+  `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested`.
+- **`ArticleAudioEngineTests` is gated rather than excluded on the command line.**
+  It starts a real `AVAudioEngine` even in manual/offline rendering mode, and on at
+  least one Mac it reproducibly aborts every test with a mediaserverd "RPC timeout,
+  apparently deadlocked" — reproduced across a simulator reboot and a sandbox
+  toggle, so not a code regression. Rather than everyone remembering a
+  `-skip-testing:` flag, the class now `XCTSkipUnless`es on
+  `RUN_AUDIO_ENGINE_TESTS=1` in `setUp`. Run `RUN_AUDIO_ENGINE_TESTS=1 xcodebuild
+  test -only-testing:LunaTests/ArticleAudioEngineTests …` to exercise it, ideally
+  alone or on another Mac. (`SpeechRendererSpikeTests`, which used to hang the whole
+  run in the same family, was a Phase-1 spike and is deleted; its finding lives in a
+  doc comment.)
+- **A run that dies with "Test crashed with signal kill before establishing
+  connection" — or hangs with "the test runner hung before establishing
+  connection" — is the simulator, not the code**: create a FRESH simulator with
+  `simctl create` and re-run. A reboot is not enough, and neither is `pkill
+  dtpasteboardd`; the long-lived sim has produced the hang twice after both. Same for a run where WKWebView-backed suites mass-fail at
+  ~10s each, and for a wedged pasteboard daemon deadlocking `UIPasteControl` at
+  launch (`pkill dtpasteboardd`).
+- **Snapshots**: 10 reference PNGs remain, all of views rather than decks
+  (`LockedCardOverlayViewTests`, `UnsupportedSaveCardTests`, `ReaderScreenTests`,
+  `AudioMiniPlayerTests`); 28 orphans with no test reading them were deleted. The
+  long-standing `AudioMiniPlayerTests` drifts are gone: the set was re-recorded for
+  the predawn palette and the harness now pins the same appearance the app does
+  (dark style + `lunaSky = .predawn`, over `LunaColors.background`) instead of
+  forcing a light style. References are device-specific — re-record after
+  intentional UI changes with `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …`
+  (the build-setting form does NOT reach the runner's environment), and if they fail
+  on a *different* device re-record there rather than treating it as a regression.
 - For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Luna
   -destination 'generic/platform=iOS Simulator' DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO`.
 - **A target with an EMPTY Sources phase breaks `xcodebuild test` while plain builds

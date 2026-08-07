@@ -71,12 +71,10 @@ open class ShareViewController: UIViewController {
         hostedFinish = onFinish
     }
 
-    private let spinner = HorizonSpinnerView(side: 36)
-    private let statusLabel = EclipseBloomStatusLabel()
-    private var articleLoadingStatus: ArticleLoadingStatusCycler?
-    private lazy var closeButton = ExtensionExitButton.make(
-        symbol: "xmark", accessibilityLabel: L10n.string("Close")
-    ) { [weak self] in self?.complete() }
+    /// The action extension's wait screen (nil in the zero-UI share extension), kept
+    /// so a terminal message can be shown on the SAME screen the wait happened on
+    /// rather than on a second one that swaps the header out from under it.
+    private var loadingScreen: ExtensionLoadingViewController?
     /// The action extension owns one navigation context for its entire lifetime.
     /// Replacing its root avoids stacking a second modal over the extension sheet.
     private var actionNavigationController: UINavigationController?
@@ -126,7 +124,7 @@ open class ShareViewController: UIViewController {
         guard !providers.isEmpty else {
             SharedDiagnosticLog.record(
                 "\(host) extension: no attachments (\(items.count) item(s))", category: "share")
-            failOrComplete(L10n.string("Nothing to read was shared."))
+            failOrComplete(L10n.string("ShareExtension_share_noAttachmentsMessage"))
             return
         }
         // The route is decided from what the providers ADVERTISE, by the pure
@@ -168,66 +166,56 @@ open class ShareViewController: UIViewController {
             // out of it.
             handleText(providers[index])
         case .unsupported:
-            failOrComplete(L10n.string("This type of content can't be read in Luna."))
+            failOrComplete(L10n.string("ShareExtension_share_unsupportedContentMessage"))
         }
     }
 
     // MARK: - Status / error UI (action extension)
 
+    /// The action extension's wait, as a navigation ROOT rather than views on this
+    /// controller — so the header (and the way out of it) is on screen from the first
+    /// frame instead of appearing partway through, when the archive reader used to
+    /// become the first navigation root the sheet ever had.
     private func setUpStatusUI() {
         view.backgroundColor = LunaColors.background
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.startAnimating()
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.textColor = LunaColors.secondaryText
-        statusLabel.font = .preferredFont(forTextStyle: .body)
-        statusLabel.textAlignment = .center
-        statusLabel.numberOfLines = 0
-        // The same floating glass exit every other extension screen uses, in the
-        // same corner — an `xmark` rather than a checkmark, because this button
-        // only ever appears under an error (nothing to affirm).
-        closeButton.isHidden = true
-        view.addSubview(spinner)
-        view.addSubview(statusLabel)
-        view.addSubview(closeButton)
-        NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
-            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            statusLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            statusLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: view.trailingAnchor, constant: -32),
-            // A wide extension sheet would otherwise draw one line of status copy
-            // right across it.
-            statusLabel.widthAnchor.constraint(
-                lessThanOrEqualToConstant: LunaLayout.readableWidth),
-            closeButton.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -ExtensionExitButton.edgeInset),
-            closeButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -ExtensionExitButton.edgeInset),
-        ])
-        articleLoadingStatus = ArticleLoadingStatusCycler(
-            label: statusLabel, initialText: L10n.string("Opening in Luna…"))
-        articleLoadingStatus?.start()
+        let loading = ExtensionLoadingViewController(
+            initialText: L10n.string("Common_openingInLuna")
+        ) { [weak self] in self?.complete() }
+        loadingScreen = loading
+        hostInNavigation(loading)
     }
 
     /// Action extension: surface a failure as visible error text (never a silent
     /// death). Share extension: stay zero-UI and just complete.
+    ///
+    /// This is the `ExtensionHost` requirement, so it takes the message and
+    /// nothing else — no defaulted parameters, which would stop it satisfying it.
     public func failOrComplete(_ message: String) {
+        failOrComplete(message, symbolName: nil, detail: nil)
+    }
+
+    /// The same terminal, dressed: `symbolName` takes the stopped spinner's place
+    /// and `detail` sits under the message. For a failure that has a shape worth
+    /// drawing rather than only a sentence.
+    public func failOrComplete(
+        _ message: String,
+        symbolName: String?,
+        detail: String?
+    ) {
         SharedDiagnosticLog.record("share extension finished: \(message)", category: "share")
         cancelLoadWatchdog()
         guard isActionExtension else { complete(); return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.articleLoadingStatus?.stop()
-            self.spinner.stopAnimating()
-            self.statusLabel.textColor = LunaColors.primaryText
-            self.statusLabel.setTextImmediately(message)
-            self.closeButton.isHidden = false
+            // The error lands on the wait screen itself, whose header already carries
+            // the exit — so there is no second close affordance to reveal, and the
+            // sheet's chrome doesn't change shape at the moment of bad news. A route
+            // that failed before the wait screen existed (an in-app host) gets one now.
+            if self.loadingScreen == nil {
+                self.setUpStatusUI()
+            }
+            self.loadingScreen?.showTerminal(
+                message, symbolName: symbolName, detail: detail)
             // Visible error text IS a terminal state: nothing further will
             // happen until somebody taps Close, and an in-app host has no
             // finger to do it with.
@@ -358,7 +346,7 @@ open class ShareViewController: UIViewController {
                 SharedDiagnosticLog.record("saved url (js) \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url, prefetchedHTML: prefetchedHTML)
             } else {
-                self.failOrComplete(L10n.string("Couldn't read the shared page's address."))
+                self.failOrComplete(L10n.string("ShareExtension_share_missingPageAddressMessage"))
             }
         }
     }
@@ -377,7 +365,7 @@ open class ShareViewController: UIViewController {
                 self.presentSavedOrReader(url: url)
             } else {
                 SharedDiagnosticLog.record("url attachment had no URL value", category: "share")
-                self.failOrComplete(L10n.string("Couldn't read the shared link."))
+                self.failOrComplete(L10n.string("ShareExtension_share_missingLinkMessage"))
             }
         }
     }
@@ -405,13 +393,18 @@ open class ShareViewController: UIViewController {
     /// and inventing a save that did not happen is the one thing this lesson must
     /// not do.
     private func presentHostedOfflineFailure(url: URL) {
-        let reason = SaveFailureReason.offline
         SharedDiagnosticLog.record(
             "hosted surface offline for \(url.absoluteString)", category: "share")
+        // The real failure's own headline, under the symbol for it — but NOT its
+        // suggestion. "It will retry automatically once you're back online" is
+        // true of a save the user made and false of this: a rehearsal's row is
+        // deleted the moment the sheet closes, online or off. What the lesson
+        // owes the user instead is an admission that they are seeing the shape of
+        // a save rather than the save itself.
         failOrComplete(
-            [reason.headline, reason.suggestion]
-                .compactMap { $0 }
-                .joined(separator: "\n\n"))
+            SaveFailureReason.offline.headline,
+            symbolName: "wifi.slash",
+            detail: L10n.string("ShareExtension_share_hostedOfflineDetail"))
     }
 
     /// Runs the ONE shared ingest+present flow for the just-appended `originalURL`
@@ -453,7 +446,7 @@ open class ShareViewController: UIViewController {
     /// article merely to avoid a fetch.
     private static func articleSnapshotHTML(title: String?, text: String?) -> String? {
         guard let text, text.count >= ArticleContent.readableBodyThreshold else { return nil }
-        let escapedTitle = escapeHTML(title ?? L10n.string("Untitled"))
+        let escapedTitle = escapeHTML(title ?? L10n.string("Common_untitled"))
         let escapedText = escapeHTML(text).replacingOccurrences(of: "\n", with: "<br>")
         return "<html><head><title>\(escapedTitle)</title></head>"
             + "<body><article><p>\(escapedText)"
@@ -485,7 +478,7 @@ open class ShareViewController: UIViewController {
                 ?? (value as? NSAttributedString)?.string
                 ?? (value as? Data).flatMap { String(data: $0, encoding: .utf8) }
             guard let text else {
-                self.failOrComplete(L10n.string("No link found to save."))
+                self.failOrComplete(L10n.string("ShareExtension_share_noLinkFoundMessage"))
                 return
             }
             // A Facebook deep link (`fbrpc://…&target_url=…`) shared as text isn't a
@@ -518,7 +511,7 @@ open class ShareViewController: UIViewController {
         } catch {
             SharedDiagnosticLog.record(
                 "share: couldn't stage shared text as a document", category: "share")
-            failOrComplete(L10n.string("No link found to save."))
+            failOrComplete(L10n.string("ShareExtension_share_noLinkFoundMessage"))
             return
         }
         saveDocumentDirectly(sourceURL: temporaryURL)
@@ -557,7 +550,7 @@ open class ShareViewController: UIViewController {
             .filter { $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" || $0 == "_" }
             .trimmingCharacters(in: .whitespaces)
             .prefix(60)
-        return "\(title.isEmpty ? L10n.string("Shared Text") : String(title)).txt"
+        return "\(title.isEmpty ? L10n.string("ShareExtension_share_sharedTextFallbackTitle") : String(title)).txt"
     }
 
     /// The http article inside a Facebook deep link when the shared text IS such a
@@ -576,7 +569,7 @@ open class ShareViewController: UIViewController {
             // The system deletes `url` when this callback returns, so the
             // appender copies it synchronously here.
             guard let url else {
-                self.failOrComplete(L10n.string("Couldn't read the shared file."))
+                self.failOrComplete(L10n.string("ShareExtension_share_missingFileMessage"))
                 return
             }
             // A text file that's essentially just a link → import the link, not
@@ -692,7 +685,8 @@ open class ShareViewController: UIViewController {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let downloading = self.showDownloadingBadge(text: L10n.string("Starting download…"))
+            let downloading = self.showDownloadingBadge(
+                text: L10n.string("ShareExtension_share_startingDownloadStatus"))
             Task {
                 await media.startAutoDownload(urlString: urlString)
                 await MainActor.run {
@@ -712,7 +706,7 @@ open class ShareViewController: UIViewController {
     /// for the saved checkmark once the in-flight work finishes).
     @discardableResult
     private func showDownloadingBadge(
-        text: String = L10n.string("Saving media…")
+        text: String = L10n.string("ShareExtension_share_savingMediaStatus")
     ) -> UIVisualEffectView {
         let badge = UIVisualEffectView(effect: GlassStyle.barEffect())
         badge.translatesAutoresizingMaskIntoConstraints = false
@@ -749,7 +743,7 @@ open class ShareViewController: UIViewController {
     private func armLoadWatchdog() {
         let work = DispatchWorkItem { [weak self] in
             SharedDiagnosticLog.record("share extension: attachment load timed out", category: "share")
-            self?.failOrComplete(L10n.string("Couldn't read the shared content in time."))
+            self?.failOrComplete(L10n.string("ShareExtension_share_loadTimeoutMessage"))
         }
         loadWatchdog = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadTimeout, execute: work)
@@ -773,7 +767,7 @@ open class ShareViewController: UIViewController {
         check.tintColor = GlassStyle.readingAccent
         check.contentMode = .center
         let label = UILabel()
-        label.text = L10n.string("Saved")
+        label.text = L10n.string("Common_saved")
         label.font = .systemFont(ofSize: 16, weight: .semibold)
         label.textColor = LunaColors.primaryText
         let stack = UIStackView(arrangedSubviews: [check, label])
@@ -831,31 +825,40 @@ extension ShareViewController: ExtensionHost {
             HostedShareSession.current?.onReachedTerminal?()
         }
         if isActionExtension {
-            articleLoadingStatus?.stop()
-            spinner.stopAnimating()
-            statusLabel.isHidden = true
-            closeButton.isHidden = true
-            if let navigationController = actionNavigationController {
-                navigationController.setViewControllers([viewController], animated: false)
-                return
-            }
-            let navigationController = ExtensionNavigationController(
-                rootViewController: viewController)
-            navigationController.view.translatesAutoresizingMaskIntoConstraints = false
-            addChild(navigationController)
-            view.addSubview(navigationController.view)
-            NSLayoutConstraint.activate([
-                navigationController.view.topAnchor.constraint(equalTo: view.topAnchor),
-                navigationController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                navigationController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                navigationController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            ])
-            navigationController.didMove(toParent: self)
-            actionNavigationController = navigationController
+            // The wait screen is being replaced, so retire it rather than leaving its
+            // spinner turning behind whatever comes next.
+            loadingScreen?.stopWaiting()
+            loadingScreen = nil
+            hostInNavigation(viewController)
             return
         }
         let nav = ExtensionNavigationController(rootViewController: viewController)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)
+    }
+
+    /// Puts `viewController` in the action extension's ONE navigation context —
+    /// creating it on first use, replacing its root after that. Every action-extension
+    /// screen goes through here, the wait screen included, which is what keeps a
+    /// single header standing from the first frame to the last instead of appearing
+    /// when the first "real" screen arrives.
+    private func hostInNavigation(_ viewController: UIViewController) {
+        if let navigationController = actionNavigationController {
+            navigationController.setViewControllers([viewController], animated: false)
+            return
+        }
+        let navigationController = ExtensionNavigationController(
+            rootViewController: viewController)
+        navigationController.view.translatesAutoresizingMaskIntoConstraints = false
+        addChild(navigationController)
+        view.addSubview(navigationController.view)
+        NSLayoutConstraint.activate([
+            navigationController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            navigationController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            navigationController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            navigationController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        navigationController.didMove(toParent: self)
+        actionNavigationController = navigationController
     }
 }

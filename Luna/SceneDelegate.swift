@@ -70,6 +70,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = UIWindow(windowScene: windowScene)
         AppearanceSettings.apply(to: window)
 
+        #if DEBUG
+        // Staged mode (`claudedocs/staging.md`): seed the stage's fixtures, then
+        // either show the screen it builds or — for a deck stage, which wants
+        // the app's REAL root against staged data — fall through below.
+        if LunaStage.isActive {
+            if let stageRoot = LunaStage.rootViewController() {
+                window.rootViewController = stageRoot
+                self.window = window
+                window.makeKeyAndVisible()
+                return
+            }
+        }
+        #endif
+
         // DEBUG-only UI-test seeding (no-op unless launched with `-uiTestState`).
         UITestSeeder.applyIfNeeded()
         if let rootForUITest = uiTestRootViewController() {
@@ -186,6 +200,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
+        // A staged run is a frozen world; foregrounding must not re-fetch,
+        // re-import or re-purge anything into it.
+        guard !LunaStage.isActive else { return }
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()

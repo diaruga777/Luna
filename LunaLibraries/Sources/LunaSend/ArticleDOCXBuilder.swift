@@ -138,7 +138,7 @@ public struct ArticleDOCXBuilder {
                     if let image = imageParagraph(block) {
                         body.append(image)
                     } else {
-                        let alt = block.text.isEmpty ? L10n.string("Image") : block.text
+                        let alt = block.text.isEmpty ? L10n.string("Reader_export_docx_imageAltText") : block.text
                         body.append(paragraph(
                             runs: [run("[\(alt)]", italic: true, color: "666666")],
                             alignment: "center", before: 0, after: 140))

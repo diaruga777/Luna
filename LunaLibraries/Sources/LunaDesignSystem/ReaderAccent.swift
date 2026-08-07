@@ -27,15 +27,15 @@ public enum ReaderAccent: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .blue: return L10n.string("Blue")
-        case .red: return L10n.string("Red")
-        case .green: return L10n.string("Green")
-        case .purple: return L10n.string("Purple")
-        case .yellow: return L10n.string("Yellow")
-        case .orange: return L10n.string("Orange")
-        case .teal: return L10n.string("Teal")
-        case .pink: return L10n.string("Pink")
-        case .indigo: return L10n.string("Indigo")
+        case .blue: return L10n.string("Settings_readerAccent_blue")
+        case .red: return L10n.string("Settings_readerAccent_red")
+        case .green: return L10n.string("Settings_readerAccent_green")
+        case .purple: return L10n.string("Settings_readerAccent_purple")
+        case .yellow: return L10n.string("Settings_readerAccent_yellow")
+        case .orange: return L10n.string("Settings_readerAccent_orange")
+        case .teal: return L10n.string("Settings_readerAccent_teal")
+        case .pink: return L10n.string("Settings_readerAccent_pink")
+        case .indigo: return L10n.string("Settings_readerAccent_indigo")
         }
     }
 }

@@ -12,6 +12,7 @@ import LunaPriceUI
 import LunaReaderUI
 import LunaStorage
 import LunaModels
+import LunaURLClassification
 import UIKit
 
 #if DEBUG
@@ -35,6 +36,10 @@ enum UITestScreen: String, CaseIterable {
     case settings
     case emailRecovery
     case priceTrackingEditor
+    case importExport
+    /// The import review sheet, over Import & Export, with a fixture document —
+    /// the real one only ever arrives from a file the document picker returned.
+    case importReview
 
     // Readers (built from a deterministic fixture article).
     case readerScroll
@@ -48,6 +53,7 @@ enum UITestScreen: String, CaseIterable {
     case shareReaderArticle
     case shareMediaPlatform
     case actionReaderArticle
+    case actionMediaPlatform
     case actionRescueFailure
 }
 
@@ -68,12 +74,33 @@ enum UITestScreenBuilder {
         UITestFixtures.sampleArticleContent(title: "The Quiet Architecture of Everyday Things")
     }
 
+    /// A both-sections document for the import review sheet.
+    private static var importReviewFixture: LinkListDocument {
+        LinkListDocument(
+            links: [
+                "https://example.com/the-quiet-architecture-of-everyday-things",
+                "https://example.com/notes-on-a-long-winter",
+                "https://example.org/why-maps-lie",
+            ],
+            archived: ["https://example.com/an-older-piece-worth-keeping"],
+            isStructured: true)
+    }
+
     /// Returns the root view controller for `screen`. The store has already been
     /// seeded by `UITestSeeder.applyIfNeeded()` before this is called.
     static func rootViewController(for screen: UITestScreen) -> UIViewController {
         switch screen {
         case .settings:
             return UINavigationController(rootViewController: SettingsViewController())
+
+        case .importExport:
+            return UINavigationController(rootViewController: ImportExportSettingsScreen())
+
+        case .importReview:
+            let host = UINavigationController(rootViewController: ImportExportSettingsScreen())
+            return PresentingHostViewController(host: host) {
+                LinkImportSheetViewController(document: importReviewFixture)
+            }
 
         case .emailRecovery:
             let suiteName = "UITestScreen.emailRecovery"
@@ -131,7 +158,7 @@ enum UITestScreenBuilder {
         case .readerNested:
             let reader = self.reader(forceMode: .scroll)
             let host = UINavigationController(rootViewController: reader)
-            return PresentingHostViewController(host: host) {
+            return PresentingHostViewController(host: host, animates: true) {
                 guard let linkedURL = URL(string: "https://example.com/linked-article") else {
                     return nil
                 }
@@ -156,9 +183,12 @@ enum UITestScreenBuilder {
             let reader = ShareReaderViewController(url: url, mode: .reader, onDone: {})
             return UINavigationController(rootViewController: reader)
 
-        case .shareMediaPlatform:
+        case .shareMediaPlatform, .actionMediaPlatform:
+            // The same screen either way, minus the system-share circle in the
+            // share extension (its user just came from a share sheet).
             let screen = SavedNonTextualViewController(
-                articleURLString: "https://x.com/user/status/123", onDone: {})
+                articleURLString: "https://x.com/user/status/123",
+                showsSystemShare: screen == .actionMediaPlatform, onDone: {})
             return UINavigationController(rootViewController: screen)
 
         case .actionRescueFailure:
@@ -183,39 +213,4 @@ enum UITestScreenBuilder {
     }
 }
 
-/// A container that shows `host` and, once it has appeared, presents a modal built
-/// by `makeModal`. Used to deep-link to screens the app only ever shows modally over
-/// another root (e.g. the nested split-web overlay). DEBUG-only test scaffolding.
-final class PresentingHostViewController: UIViewController {
-    private let host: UIViewController
-    private let makeModal: () -> UIViewController?
-    private var hasPresented = false
-
-    init(host: UIViewController, makeModal: @escaping () -> UIViewController?) {
-        self.host = host
-        self.makeModal = makeModal
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        addChild(host)
-        host.view.frame = view.bounds
-        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(host.view)
-        host.didMove(toParent: self)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        guard !hasPresented, let modal = makeModal() else { return }
-        hasPresented = true
-        if modal.modalPresentationStyle == .automatic {
-            modal.modalPresentationStyle = .fullScreen
-        }
-        present(modal, animated: modal is SplitWebOverlayViewController)
-    }
-}
 #endif

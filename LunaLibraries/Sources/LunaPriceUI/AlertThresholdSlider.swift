@@ -26,7 +26,7 @@ public enum AlertThresholdPillChrome {
     /// The pill's "Alert threshold" title label, styled identically everywhere.
     public static func makeTitleLabel() -> UILabel {
         let title = UILabel()
-        title.text = L10n.string("Alert threshold")
+        title.text = L10n.string("PriceTracker_alertThreshold_title")
         title.font = .preferredFont(forTextStyle: .headline)
         title.textColor = LunaColors.primaryText
         return title
@@ -98,7 +98,7 @@ public final class AlertThresholdSlider: UIView {
         readoutLabel.numberOfLines = 0
 
         var setAlertConfiguration = UIButton.Configuration.plain()
-        setAlertConfiguration.title = L10n.string("Set price alert")
+        setAlertConfiguration.title = L10n.string("PriceTracker_alertThreshold_setButtonTitle")
         setAlertConfiguration.baseForegroundColor = GlassStyle.readingAccent
         setAlertConfiguration.contentInsets = .zero
         setAlertButton.configuration = setAlertConfiguration
@@ -146,10 +146,9 @@ public final class AlertThresholdSlider: UIView {
         slider.thumbTintColor = isUnset ? LunaColors.tertiaryText : nil
         setAlertButton.isHidden = !isUnset
         if isUnset {
-            readoutLabel.text = L10n.string(
-                "No price alert yet. Set one to be notified when the price drops.")
+            readoutLabel.text = L10n.string("PriceTracker_alertThreshold_unsetMessage")
             readoutLabel.textColor = LunaColors.tertiaryText
-            slider.accessibilityValue = L10n.string("No price alert set")
+            slider.accessibilityValue = L10n.string("PriceTracker_alertThreshold_sliderValueUnset")
         } else {
             readoutLabel.textColor = LunaColors.secondaryText
             slider.accessibilityValue = nil

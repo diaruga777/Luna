@@ -26,12 +26,12 @@ public enum CaptureSource: String, Codable, CaseIterable {
     /// User-facing label for the auto-send-by-source settings.
     public var displayName: String {
         switch self {
-        case .email: return L10n.string("Email")
-        case .appIntent: return L10n.string("App Intents (Shortcuts)")
-        case .friendShare: return L10n.string("Saves From Contacts")
-        case .shareSheet: return L10n.string("Share Sheet")
-        case .paste: return L10n.string("Paste")
-        case .manual: return L10n.string("In-App Saves")
+        case .email: return L10n.string("Common_email")
+        case .appIntent: return L10n.string("CaptureSource_appIntents")
+        case .friendShare: return L10n.string("CaptureSource_savesFromContacts")
+        case .shareSheet: return L10n.string("CaptureSource_shareSheet")
+        case .paste: return L10n.string("CaptureSource_paste")
+        case .manual: return L10n.string("CaptureSource_inAppSaves")
         }
     }
 }

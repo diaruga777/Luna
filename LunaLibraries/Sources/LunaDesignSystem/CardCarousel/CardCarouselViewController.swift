@@ -96,6 +96,13 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         edgeGlowColorForCardAt index: Int
     ) -> UIColor?
+
+    /// This card's own shape. Defaults to the deck's `style.card`, so a
+    /// single-kind deck never implements it.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        cardStyleForCardAt index: Int
+    ) -> CardCarouselCardStyle
 }
 
 public extension CardCarouselDataSource {
@@ -133,6 +140,11 @@ public extension CardCarouselDataSource {
 
     func carousel(
         _ carousel: CardCarouselViewController,
+        cardStyleForCardAt index: Int
+    ) -> CardCarouselCardStyle { carousel.style.card }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView? { nil }
 
@@ -142,33 +154,56 @@ public extension CardCarouselDataSource {
     ) -> UIColor? { nil }
 }
 
-/// Per-surface tuning, set BEFORE the carousel's view loads.
-public struct CardCarouselStyle {
-    /// Points of a neighboring card visible inside the screen edge.
-    public var peek: CGFloat = 14
-    /// Extra horizontal inset applied only to the centered card.
-    public var edgeGap: CGFloat = 30
-    public var sideScale: CGFloat = 0.92
-    public var verticalPadding: CGFloat = 12
-    /// How the card's size comes out of the room between the host's top inset
-    /// and the scrub strip.
-    public var cardFit: CardCarouselMetrics.CardFit = .aspectCentered
-    /// `.aspectFromBottom` only: points of floating host chrome above the card
-    /// area that the card may grow up into for its exact aspect. Hosts pass
-    /// their own top-inset clearance, which keeps the card below the safe area.
-    public var cardTopOverflow: CGFloat = 0
-    /// Horizontal swipes INSIDE the centered card page too (for content that
-    /// doesn't scrub, e.g. embedded readers). Recognized simultaneously with
-    /// the content's own gestures, gated to strongly-horizontal drags.
+/// How ONE card PRESENTS what it shows — the properties that are a fact about
+/// the content rather than about the screen it is on.
+///
+/// These used to be deck-level `CardCarouselStyle` fields, which is why the same
+/// media save behaved differently in the Downloader (hard-clipped, autoplaying
+/// under the finger) than in the central app (its video edges dissolved by a
+/// 28pt reader fade, previewing as a still). Nothing about a downloaded video
+/// changes when you open a different app, so nothing about its card does either.
+///
+/// **Card GEOMETRY is deliberately not in here.** `fit` and `topOverflow` were,
+/// and that is what made paging between kinds resize and re-center the card
+/// mid-transition. Every card in every deck is the one rectangle
+/// `CardCarouselMetrics.resolve` returns.
+public struct CardCarouselCardStyle: Hashable {
+    /// Content dissolves over this many points at the card's top and bottom
+    /// edges instead of hitting a hard clip — scrolled reader text fades away
+    /// as it approaches an edge. 0 keeps the hard clip, which is what a video
+    /// or a product editor wants.
+    public var contentEdgeFadeHeight: CGFloat = 0
+    /// Mount and autoplay this card's REAL content while the user scrolls the
+    /// scrub strip, rather than previewing it as a still. Only ever the
+    /// centered preview — a peek mounts content only if the strip already
+    /// prepared it, which is what keeps a sweep from spinning up one AVPlayer
+    /// per chip.
+    public var autoplaysScrubPreview = false
+    /// Horizontal swipes INSIDE this card page to the neighbor, for content
+    /// with no timeline of its own to scrub. Playable content overrides this
+    /// at the moment of the gesture: its whole width IS a timeline.
     public var pagesOnInCardSwipes = false
+
+    public init() {}
+}
+
+/// Per-surface tuning, set BEFORE the carousel's view loads.
+///
+/// **Nothing that decides the card's frame is per-surface.** `peek`, `edgeGap`,
+/// `sideScale` and `verticalPadding` were fields here, and three of the four
+/// decks overrode `edgeGap` to the same value while the fourth kept the default
+/// — so the same video card was 40pt narrower in the Downloader than in the
+/// central app. They are constants on `CardCarouselMetrics` now, so one card
+/// frame serves every deck, every app, and the launch splash.
+public struct CardCarouselStyle {
+    /// The presentation EVERY card takes unless its own kind says otherwise. A
+    /// deck whose cards are all one kind sets this and nothing else; a deck that
+    /// mixes kinds leaves it and lets each card answer
+    /// (`CardCarouselDataSource.carousel(_:cardStyleForCardAt:)`).
+    public var card = CardCarouselCardStyle()
     /// Multiplies finger translation while interactively paging. Values above
     /// one make the eclipse transition travel farther than the physical drag.
     public var pageSwipeMovementMultiplier: CGFloat = 1
-    public var scrubberStyle: CarouselScrubberView.Style = .thumbnails
-    /// Mount and autoplay the previewed card's real content while the user
-    /// scrolls the scrub strip. Kept opt-in because media previews may create
-    /// players rapidly; the Downloader enables it for its thumbnail strip.
-    public var autoplaysScrubPreviewContent = false
     /// Horizontal room around the scrub strip. Hosts can increase this to
     /// flank the strip with floating controls without covering its content.
     public var scrubberHorizontalInset: CGFloat = 16
@@ -181,15 +216,10 @@ public struct CardCarouselStyle {
     /// screen background. The centered card's rim fades with the rest of the
     /// carousel chrome during immersion.
     public var showsCardBorder = false
-    /// Card content dissolves over this many points at the card's top and
-    /// bottom edges instead of hitting a hard clip — scrolled reader text fades
-    /// away as it approaches an edge. 0 (the default) keeps the hard clip.
-    public var contentEdgeFadeHeight: CGFloat = 0
-
-    /// How far the paused card's speed pill floats above the card's bottom edge —
-    /// the mute button's inset from the top, so the two controls sit in from the
-    /// same margin.
-    static let playbackSpeedPillCardInset: CGFloat = 12
+    /// How far the paused card's playback controls sit in from the card's
+    /// bottom and side edges — the mute button's inset from the top, so the
+    /// card's floating controls all keep the same margin.
+    static let playbackControlsCardInset: CGFloat = 12
 
     public init() {}
 }
@@ -244,13 +274,19 @@ enum CardCarouselPagePanStartPolicy {
         isImmersed: Bool,
         startsInsideCenteredCard: Bool,
         pagesOnInCardSwipes: Bool,
+        centeredContentScrubs: Bool,
         velocity: CGPoint
     ) -> CardCarouselPagePanStartDecision {
         guard !isTransitioning else { return .reject }
         if startsInsideCenteredCard {
             // Immersed readers reserve in-card gestures for their content. A
             // screen-edge swipe remains the always-available paging affordance.
-            guard !isImmersed, pagesOnInCardSwipes,
+            // So does playable content, whose whole width is a TIMELINE: the
+            // same drag already scrubs it, and one gesture cannot mean two
+            // things at once (the all-kinds deck pages on in-card swipes for
+            // its readers, but its video cards must scrub like the
+            // Downloader's).
+            guard !isImmersed, pagesOnInCardSwipes, !centeredContentScrubs,
                   abs(velocity.x) > abs(velocity.y) * 1.5
             else { return .reject }
             return .accept
@@ -337,7 +373,30 @@ public final class CardCarouselViewController: UIViewController {
 
     private var slots: [Int: Slot] = [:]
     private var count = 0
-    private var metrics: CardCarouselMetrics?
+    /// ONE resolved geometry for the current container size, shared by every
+    /// card in the deck. There used to be one per card SHAPE, because a card's
+    /// size came from its kind — so paging from an article to a video resized
+    /// and re-centered the card underneath the transition. Every card is now the
+    /// same rectangle (`CardCarouselMetrics.resolve`), which is also the
+    /// rectangle the launch splash is drawn at (`CardDeckGeometry`).
+    private var resolvedMetrics: CardCarouselMetrics?
+    private var metricsContainerSize: CGSize = .zero
+
+    /// The card geometry at the current container size, computed on first sight.
+    private var metrics: CardCarouselMetrics? {
+        guard metricsContainerSize.width > 0, metricsContainerSize.height > 0 else { return nil }
+        if let resolvedMetrics { return resolvedMetrics }
+        let resolved = CardCarouselMetrics.resolve(containerSize: metricsContainerSize)
+        resolvedMetrics = resolved
+        return resolved
+    }
+
+    /// The per-card presentation style of card `index`, as its kind describes
+    /// it. Its GEOMETRY is not in here — that is the deck's, and it is one
+    /// answer for every card.
+    func cardStyle(at index: Int) -> CardCarouselCardStyle {
+        dataSource?.carousel(self, cardStyleForCardAt: index) ?? style.card
+    }
     private var isTransitioning = false
     private var isViewVisible = false
     /// A data reload that arrived mid-transition; applied when the transition
@@ -353,7 +412,7 @@ public final class CardCarouselViewController: UIViewController {
     private var cardAreaTopConstraint: NSLayoutConstraint!
     private var scrubberLeadingConstraint: NSLayoutConstraint!
     private var scrubberTrailingConstraint: NSLayoutConstraint!
-    private lazy var scrubber = CarouselScrubberView(style: style.scrubberStyle)
+    private lazy var scrubber = CarouselScrubberView()
     private lazy var scrubPreview = CarouselScrubPreviewController(carousel: self, cardArea: cardArea)
     /// True while the scrub strip's live preview is drawing the deck. The real
     /// slots stay mounted (and keep their content alive) but hide underneath it.
@@ -420,13 +479,17 @@ public final class CardCarouselViewController: UIViewController {
         // The traveling activity pulse belongs to download progress, not
         // deterministic media playback position.
         playbackScrubProgress.showsActivityPulse = false
-        playbackScrubProgress.accessibilityLabel = L10n.string("Video position")
+        playbackScrubProgress.accessibilityLabel = L10n.string("CardDeck_videoPositionAccessibilityLabel")
         cardArea.addSubview(playbackScrubProgress)
         playbackSpeedPill.alpha = 0
         playbackSpeedPill.isHidden = true
         playbackSpeedPill.onSelectSpeed = { [weak self] speed in
             guard let self, let content = self.slots[self.currentIndex]?.content else { return }
             content.setPlaybackSpeed(speed)
+            // The new label needs a new pill frame ("0.25×" is wider than
+            // "1×", and the pill is frame-managed) — without this the longer
+            // title wraps to a second line inside the old width.
+            self.layoutPlaybackScrubProgress()
         }
         cardArea.addSubview(playbackSpeedPill)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
@@ -468,15 +531,9 @@ public final class CardCarouselViewController: UIViewController {
         super.viewDidLayoutSubviews()
         let size = cardArea.bounds.size
         guard size.width > 0, size.height > 0 else { return }
-        if metrics?.containerSize != size {
-            metrics = CardCarouselMetrics.resolve(
-                containerSize: size,
-                peek: style.peek,
-                edgeGap: style.edgeGap,
-                sideScale: style.sideScale,
-                verticalPadding: style.verticalPadding,
-                fit: style.cardFit,
-                topOverflow: style.cardTopOverflow)
+        if metricsContainerSize != size {
+            metricsContainerSize = size
+            resolvedMetrics = nil
         }
         alignScrubberToCardColumn()
         // Render the eclipse corona for this exact card geometry now, in the
@@ -563,8 +620,8 @@ public final class CardCarouselViewController: UIViewController {
             // already this view's x — and deliberately WITHOUT the column-aside
             // shift, which the strip carries as its own transform instead. Going
             // through `restingCenteredCardFrame` here would apply it twice.
-            let clearanceInsideCard =
-                style.scrubberHorizontalInset - (style.peek + style.edgeGap)
+            let clearanceInsideCard = style.scrubberHorizontalInset
+                - (CardCarouselMetrics.peek + CardCarouselMetrics.edgeGap)
             inset = max(0, metrics.centeredCardFrame().minX + clearanceInsideCard)
         } else {
             inset = style.scrubberHorizontalInset
@@ -820,7 +877,7 @@ public final class CardCarouselViewController: UIViewController {
     private func makeCardView(at index: Int) -> CarouselCardView {
         let card = CarouselCardView()
         card.setBorderEnabled(style.showsCardBorder)
-        card.setContentEdgeFadeHeight(style.contentEdgeFadeHeight)
+        card.setContentEdgeFadeHeight(cardStyle(at: index).contentEdgeFadeHeight)
         card.setEdgeGlow(dataSource?.carousel(self, edgeGlowColorForCardAt: index))
         card.onMuteToggle = { [weak self] in
             guard let self else { return }
@@ -873,7 +930,12 @@ public final class CardCarouselViewController: UIViewController {
 
     /// The resting geometry of the card `offset` slots from center — shared by
     /// the mounted slots and the scrub preview's stand-in cards.
-    func applyRestingLayout(to card: CarouselCardView, atSlotOffset offset: Int) {
+    ///
+    /// Size and vertical placement are the deck's single answer for every card;
+    /// only the horizontal step depends on which slot this is.
+    func applyRestingLayout(
+        to card: CarouselCardView, atSlotOffset offset: Int
+    ) {
         guard let metrics else { return }
         card.layer.cornerRadius = CarouselCardView.cornerRadius
         card.borderAlpha = 1
@@ -923,17 +985,16 @@ public final class CardCarouselViewController: UIViewController {
     private func layoutPlaybackScrubProgress() {
         guard let metrics else { return }
         let height = playbackScrubProgress.intrinsicContentSize.height
-        let bar = metrics.playbackScrubProgressFrame(height: height)
+        let bar = metrics.playbackScrubProgressFrame(
+            bottomInset: CardCarouselStyle.playbackControlsCardInset, height: height)
         playbackScrubProgress.frame = bar
         // The speed pill rides above the bar's LEFT end — so the two read as one
-        // stack of controls for the card — and floats INSIDE the card's bottom
-        // edge at the same inset the mute button keeps at the top.
+        // stack of controls floating inside the card's bottom edge.
         let pill = playbackSpeedPill.systemLayoutSizeFitting(
             UIView.layoutFittingCompressedSize)
         playbackSpeedPill.frame = CGRect(
             x: bar.minX,
-            y: metrics.centeredCardFrame().maxY
-                - CardCarouselStyle.playbackSpeedPillCardInset - pill.height,
+            y: bar.minY - 8 - pill.height,
             width: pill.width,
             height: pill.height)
     }
@@ -1011,6 +1072,16 @@ public final class CardCarouselViewController: UIViewController {
 
     var playbackSpeedPillForTesting: PlaybackSpeedPillButton? {
         playbackSpeedPill.isHidden || playbackSpeedPill.alpha == 0 ? nil : playbackSpeedPill
+    }
+
+    /// The bar's frame in card-area coordinates, for geometry tests. Nil while
+    /// the controls are down.
+    var playbackScrubBarFrameForTesting: CGRect? {
+        isPlaybackPositionBarShowingForTesting ? playbackScrubProgress.frame : nil
+    }
+
+    var playbackSpeedPillFrameForTesting: CGRect? {
+        playbackSpeedPillForTesting?.frame
     }
     #endif
 
@@ -1377,22 +1448,15 @@ public final class CardCarouselViewController: UIViewController {
                 loadUtilityChip(at: index, generation: generation)
                 continue
             }
-            switch style.scrubberStyle {
-            case .thumbnails:
-                dataSource.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
-                    DispatchQueue.main.async {
-                        guard let self, self.stripLoadGeneration == generation else { return }
-                        self.scrubber.setThumbnail(image, at: index)
-                    }
-                }
-            case .miniCards:
-                if dataSource.carousel(self, prefersThumbnailChipForCardAt: index) {
-                    loadThumbnailChip(at: index, generation: generation)
-                } else {
-                    loadBadgeChip(at: index, generation: generation)
-                }
-                loadMiniCarouselAccessory(at: index, generation: generation)
+            // One strip in every app; what differs is the CHIP, and that is a
+            // per-card answer — a media save shows its own still, an article a
+            // mini card with its source badge.
+            if dataSource.carousel(self, prefersThumbnailChipForCardAt: index) {
+                loadThumbnailChip(at: index, generation: generation)
+            } else {
+                loadBadgeChip(at: index, generation: generation)
             }
+            loadMiniCarouselAccessory(at: index, generation: generation)
         }
     }
 
@@ -1646,7 +1710,8 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
                 isTransitioning: isTransitioning,
                 isImmersed: isImmersed,
                 startsInsideCenteredCard: insideCenter,
-                pagesOnInCardSwipes: style.pagesOnInCardSwipes,
+                pagesOnInCardSwipes: cardStyle(at: currentIndex).pagesOnInCardSwipes,
+                centeredContentScrubs: slots[currentIndex]?.content.isPlayable == true,
                 velocity: velocity)
             if decision == .acceptAndSurface {
                 // Restore the resting card geometry before the same pan starts
@@ -1670,7 +1735,7 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             let isScrollViewPan = (otherGestureRecognizer.view as? UIScrollView)
                 .map { $0.panGestureRecognizer === otherGestureRecognizer } ?? false
             return CardCarouselPagePanSimultaneityPolicy.allowsSimultaneousRecognition(
-                pagesOnInCardSwipes: style.pagesOnInCardSwipes,
+                pagesOnInCardSwipes: cardStyle(at: currentIndex).pagesOnInCardSwipes,
                 otherIsScrollViewPan: isScrollViewPan,
                 pagePanIsTrackingTheTouch: pagePan.state == .began || pagePan.state == .changed)
         }
@@ -1683,7 +1748,9 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
 extension CardCarouselViewController: CarouselScrubberViewDelegate {
 
     public func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet) {
-        guard case .miniCards = style.scrubberStyle else { return }
+        // Preparing is per-card self-limiting: a kind that declines prepared
+        // previews (media, whose content is an AVPlayer) returns no controller,
+        // so a sweep still never builds one player per chip.
         scrubPreview.prepare(indices: indices, cardCount: count)
     }
 

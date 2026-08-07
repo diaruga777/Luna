@@ -18,6 +18,9 @@ final class PriceRefresherTests: XCTestCase {
     private final class FakeStore: PriceTrackerPersisting {
         var items: [ReadingListItem]
         private(set) var updateOrder: [UUID] = []
+        /// Rows whose sort date was stamped, in order — an alert firing must
+        /// resurface its product, and only on the transition.
+        private(set) var bumped: [UUID] = []
 
         init(_ items: [ReadingListItem]) { self.items = items }
 
@@ -32,6 +35,12 @@ final class PriceRefresherTests: XCTestCase {
             items[index].priceTracker = tracker
             updateOrder.append(itemID)
             return items[index]
+        }
+
+        func bump(_ itemID: UUID) {
+            bumped.append(itemID)
+            guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
+            items[index].bumpDate = Date()
         }
     }
 

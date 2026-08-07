@@ -96,6 +96,16 @@ final class OriginalPageViewControllerTests: XCTestCase {
         </body></html>
         """
 
+        // A fixture page's layout is stable on the first sample, so the settle
+        // loop's shipped pacing is several seconds of waiting to be told so. The
+        // loop still runs — first turn, three matching signatures, the cap — just
+        // at a pace the test can afford.
+        WebArchiveCapturer.settleFirstTurn = .milliseconds(5)
+        WebArchiveCapturer.settlePollInterval = .milliseconds(5)
+        defer {
+            WebArchiveCapturer.settleFirstTurn = .milliseconds(500)
+            WebArchiveCapturer.settlePollInterval = .milliseconds(250)
+        }
         let captured = await WebArchiveCapturer.capture(html: html, baseURL: url)
         let archive = try XCTUnwrap(captured)
         let plist = try XCTUnwrap(

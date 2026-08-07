@@ -14,57 +14,35 @@ import LunaModels
 /// changing copy should never require hunting through a view or a test.
 enum OnboardingStrings {
     static func introCopy(for app: LunaApp) -> OnboardingIntroCopy {
-        switch app {
-        case .reader:
-            return .growingLine(
-                stem: Intro.headlineStem.value(for: app),
-                tail: Intro.headlineTail.value(for: app))
-        case .luna, .downloader, .priceTracker:
-            return .twoLines(
-                first: Intro.headlineStem.value(for: app),
-                second: Intro.headlineTail.value(for: app))
-        }
+        OnboardingIntroCopy(
+            initialText: Intro.headlineInitial.value(for: app),
+            finalText: Intro.headlineFinal.value(for: app))
     }
 
     struct Definition: Equatable {
-        private enum Values: Equatable {
-            case shared(String)
-            case perSurface(
-                core: String,
-                reader: String,
-                downloader: String,
-                priceTracker: String)
+        private enum Storage: Equatable {
+            case key(String)
+            case literal(String)
         }
 
-        private let values: Values
+        private let storage: Storage
 
+        init(key: String) {
+            storage = .key(key)
+        }
+
+        /// A raw value carried through as-is, with no L10n lookup — for the
+        /// `Accessibility`/`AnimationKeys` identifiers, which are UI-test and
+        /// CALayer keys rather than user-facing copy and so are never
+        /// localized (see those enums below).
         init(shared value: String) {
-            values = .shared(value)
-        }
-
-        init(
-            core: String,
-            reader: String,
-            downloader: String,
-            priceTracker: String
-        ) {
-            values = .perSurface(
-                core: core,
-                reader: reader,
-                downloader: downloader,
-                priceTracker: priceTracker)
+            storage = .literal(value)
         }
 
         func value(for app: LunaApp = .current) -> String {
-            switch values {
-            case .shared(let value): return value
-            case .perSurface(let core, let reader, let downloader, let priceTracker):
-                switch app {
-                case .luna: return core
-                case .reader: return reader
-                case .downloader: return downloader
-                case .priceTracker: return priceTracker
-                }
+            switch storage {
+            case .key(let key): return L10n.string(key, for: app)
+            case .literal(let value): return value
             }
         }
     }
@@ -72,131 +50,106 @@ enum OnboardingStrings {
     /// A definition whose value is an ORDERED LIST of chunks rather than one
     /// string — copy whose length is decided by the screen it lands on.
     ///
-    /// `Definition` cannot carry this: each app's chunk COUNT differs, so the
-    /// four values are not interchangeable strings. The rule the chunks encode
-    /// is that every cumulative prefix (chunk 1, chunks 1–2, …) is itself
-    /// publishable copy: each chunk ends on a sentence boundary that closes a
-    /// sub-topic, so a screen that can only hold the first two never shows half
-    /// an idea.
+    /// `Definition` cannot carry this directly: one L10n key holds one string,
+    /// not a list. Instead each app's chunks live at `"<keyPrefix>1"`,
+    /// `"<keyPrefix>2"`, … and reading stops at the first missing index — which
+    /// is also how apps with different chunk counts fall out naturally, with no
+    /// Swift-side length to keep in sync. The rule the chunks encode is that
+    /// every cumulative prefix (chunk 1, chunks 1–2, …) is itself publishable
+    /// copy: each chunk ends on a sentence boundary that closes a sub-topic, so
+    /// a screen that can only hold the first two never shows half an idea.
     struct ChunkedDefinition: Equatable {
-        private let core: [String]
-        private let reader: [String]
-        private let downloader: [String]
-        private let priceTracker: [String]
+        private let keyPrefix: String
 
-        init(
-            core: [String],
-            reader: [String],
-            downloader: [String],
-            priceTracker: [String]
-        ) {
-            self.core = core
-            self.reader = reader
-            self.downloader = downloader
-            self.priceTracker = priceTracker
+        init(keyPrefix: String) {
+            self.keyPrefix = keyPrefix
         }
 
         func value(for app: LunaApp = .current) -> [String] {
-            switch app {
-            case .luna: return core
-            case .reader: return reader
-            case .downloader: return downloader
-            case .priceTracker: return priceTracker
+            var chunks: [String] = []
+            var index = 1
+            while let chunk = L10n.stringIfPresent("\(keyPrefix)\(index)", for: app) {
+                chunks.append(chunk)
+                index += 1
             }
+            return chunks
         }
     }
 
     enum Intro {
-        static let safariAction = Definition(shared: "Stop popups and paywalls")
-        static let shortcutAction = Definition(shared: "Show me one click save")
+        static let safariAction = Definition(key: "Onboarding_Intro_safariAction")
+        static let shortcutAction = Definition(key: "Onboarding_Intro_shortcutAction")
         /// The util card's third, lowest-priority action: connect an account so
         /// the newsletters already in a mailbox arrive here as saves.
-        static let emailAction = Definition(shared: "Read your newsletters in Luna")
+        static let emailAction = Definition(key: "Onboarding_Intro_emailAction")
         /// The paste row's placeholder, and the paste control's own label.
-        static let paste = Definition(shared: "Paste a link")
+        static let paste = Definition(key: "Onboarding_Intro_paste")
         /// The seam between the two setup lessons and the paste row.
-        static let orSeparator = Definition(shared: "or")
-        static let articleURLsOnly = Definition(shared: "article URLs only")
-        static let unableToLoadPage = Definition(shared: "unable to load page")
-        static let completed = Definition(shared: "Completed")
-        static let growingLinePeriod = Definition(shared: ".")
+        static let orSeparator = Definition(key: "Onboarding_Intro_orSeparator")
+        static let articleURLsOnly = Definition(key: "Onboarding_Intro_articleURLsOnly")
+        static let unableToLoadPage = Definition(key: "Onboarding_Intro_unableToLoadPage")
+        static let completed = Definition(key: "Onboarding_Intro_completed")
 
-        static let headlineStem = Definition(
-            core: "All your Luna saves.",
-            reader: "Read",
-            downloader: "App signup required? So annoying.",
-            priceTracker: "Overpaid? Missed a sale?")
-        static let headlineTail = Definition(
-            core: "In a single app.",
-            reader: " more.",
-            downloader: "Watch and share instantly instead.",
-            priceTracker: "Never miss out again.")
-        static let supportingText = Definition(
-            core: "Save any link on your screen\nwith one click.",
-            reader: "Save onscreen links with one click.\nUnlock or read offline later.",
-            downloader: "Download any video link in one click,\nno signup required.",
-            priceTracker: "Track sales for any link\nin one click.")
-        static let saveBenefit = Definition(
-            core: "Read, watch, track, anything",
-            reader: "Read offline later",
-            downloader: "Watch or share",
-            priceTracker: "Never miss a sale")
+        /// The headline's two states. They are ONE sentence in two beats: what
+        /// the two share is a single continuous run of characters that never
+        /// moves, so write them as a claim being corrected rather than as two
+        /// unrelated lines (`OnboardingHeadlineTransition` finds the run, and
+        /// copy that shares nothing simply replaces itself outright).
+        static let headlineInitial = Definition(key: "Onboarding_Intro_headline1Initial")
+        static let headlineFinal = Definition(key: "Onboarding_Intro_headline2Final")
+        static let saveBenefit = Definition(key: "Onboarding_Intro_saveBenefit")
     }
 
     enum Demo {
-        static let instaTokResourceName = Definition(shared: "InstaTok")
-        static let amayzonResourceName = Definition(shared: "Amayzon")
+        static let instaTokResourceName = Definition(key: "Onboarding_Demo_instaTokResourceName")
+        static let amayzonResourceName = Definition(key: "Onboarding_Demo_amayzonResourceName")
 
-        static let lunaHost = Definition(shared: "luna.app")
-        static let instaTokHost = Definition(shared: "instatok.local")
-        static let amayzonHost = Definition(shared: "amayzon.local")
+        static let lunaHost = Definition(key: "Onboarding_Demo_lunaHost")
+        static let instaTokHost = Definition(key: "Onboarding_Demo_instaTokHost")
+        static let amayzonHost = Definition(key: "Onboarding_Demo_amayzonHost")
 
-        static let lunaURL = Definition(shared: ShareSetupPractice.lunaURLString)
-        static let instaTokURL = Definition(
-            shared: ShareSetupPractice.instaTokURLString)
-        static let amayzonURL = Definition(
-            shared: ShareSetupPractice.amayzonURLString)
+        // Same URLs as `ShareSetupPractice.*URLString`, carried through the
+        // Definition/L10n mechanism like every other value here even though
+        // they are not translated per app.
+        static let lunaURL = Definition(key: "Onboarding_Demo_lunaURL")
+        static let instaTokURL = Definition(key: "Onboarding_Demo_instaTokURL")
+        static let amayzonURL = Definition(key: "Onboarding_Demo_amayzonURL")
 
-        static let lunaSeedTitle = Definition(shared: "Anything")
-        static let readerSeedTitle = Definition(shared: "Save anything in Safari")
-        static let instaTokSeedTitle = Definition(shared: "InstaTok")
-        static let amayzonSeedTitle = Definition(shared: "eyePhone")
+        static let lunaSeedTitle = Definition(key: "Onboarding_Demo_lunaSeedTitle")
+        static let readerSeedTitle = Definition(key: "Onboarding_Demo_readerSeedTitle")
+        static let instaTokSeedTitle = Definition(key: "Onboarding_Demo_instaTokSeedTitle")
+        static let amayzonSeedTitle = Definition(key: "Onboarding_Demo_amayzonSeedTitle")
 
         // Text rendered by the bundled InstaTok page.
-        static let instaTokBrand = Definition(shared: "InstaTok")
-        static let instaTokHandle = Definition(shared: "@moonwatch")
-        static let instaTokCaption = Definition(
-            shared: "Earth’s shadow crossing the Moon 🌘 #eclipse #night")
-        static let instaTokLikeCount = Definition(shared: "84K")
-        static let instaTokCommentCount = Definition(shared: "912")
-        static let instaTokShare = Definition(shared: "Share")
-        static let instaTokSignupTitle = Definition(shared: "Sign up to keep watching")
-        static let instaTokSignupBody = Definition(
-            shared: "Create an account to see the full video, follow creators, and share with friends.")
-        static let instaTokCreateAccount = Definition(shared: "Create account")
-        static let instaTokLogin = Definition(shared: "Already have an account? Log in")
+        static let instaTokBrand = Definition(key: "Onboarding_Demo_instaTokBrand")
+        static let instaTokHandle = Definition(key: "Onboarding_Demo_instaTokHandle")
+        static let instaTokCaption = Definition(key: "Onboarding_Demo_instaTokCaption")
+        static let instaTokLikeCount = Definition(key: "Onboarding_Demo_instaTokLikeCount")
+        static let instaTokCommentCount = Definition(key: "Onboarding_Demo_instaTokCommentCount")
+        static let instaTokShare = Definition(key: "Common_share")
+        static let instaTokSignupTitle = Definition(key: "Onboarding_Demo_instaTokSignupTitle")
+        static let instaTokSignupBody = Definition(key: "Onboarding_Demo_instaTokSignupBody")
+        static let instaTokCreateAccount = Definition(key: "Onboarding_Demo_instaTokCreateAccount")
+        static let instaTokLogin = Definition(key: "Onboarding_Demo_instaTokLogin")
 
         // Text rendered by the bundled Amayzon page.
-        static let amayzonHTMLTitle = Definition(shared: "eyePhone — amayzon")
-        static let amayzonBrandPrefix = Definition(shared: "amay")
-        static let amayzonBrandSuffix = Definition(shared: "zon")
-        static let amayzonSearch = Definition(shared: "Search amayzon")
-        static let amayzonNavigation = Definition(
-            shared: "☰ &nbsp; Today’s Deals &nbsp;&nbsp; Best Sellers &nbsp;&nbsp; Devices &nbsp;&nbsp; Help")
-        static let amayzonBreadcrumb = Definition(
-            shared: "Electronics › Pocket communicators › Unlocked")
-        static let amayzonRatingStars = Definition(shared: "★★★★☆")
-        static let amayzonRatingCount = Definition(shared: "4,128 ratings")
-        static let amayzonProductTitle = Definition(
-            shared: "eyePhone Air — 256 GB, Moonmist, unlocked pocket communicator")
-        static let amayzonStore = Definition(shared: "Visit the Pearless Devices Store")
-        static let amayzonDeal = Definition(shared: "Limited time deal")
-        static let amayzonCurrency = Definition(shared: "$")
-        static let amayzonPriceMajor = Definition(shared: "799")
-        static let amayzonPriceMinor = Definition(shared: "00")
-        static let amayzonListPrice = Definition(shared: "List price: $999.00")
-        static let amayzonStock = Definition(shared: "In stock")
-        static let amayzonAddToBasket = Definition(shared: "Add to basket")
+        static let amayzonHTMLTitle = Definition(key: "Onboarding_Demo_amayzonHTMLTitle")
+        static let amayzonBrandPrefix = Definition(key: "Onboarding_Demo_amayzonBrandPrefix")
+        static let amayzonBrandSuffix = Definition(key: "Onboarding_Demo_amayzonBrandSuffix")
+        static let amayzonSearch = Definition(key: "Onboarding_Demo_amayzonSearch")
+        static let amayzonNavigation = Definition(key: "Onboarding_Demo_amayzonNavigation")
+        static let amayzonBreadcrumb = Definition(key: "Onboarding_Demo_amayzonBreadcrumb")
+        static let amayzonRatingStars = Definition(key: "Onboarding_Demo_amayzonRatingStars")
+        static let amayzonRatingCount = Definition(key: "Onboarding_Demo_amayzonRatingCount")
+        static let amayzonProductTitle = Definition(key: "Onboarding_Demo_amayzonProductTitle")
+        static let amayzonStore = Definition(key: "Onboarding_Demo_amayzonStore")
+        static let amayzonDeal = Definition(key: "Onboarding_Demo_amayzonDeal")
+        static let amayzonCurrency = Definition(key: "Onboarding_Demo_amayzonCurrency")
+        static let amayzonPriceMajor = Definition(key: "Onboarding_Demo_amayzonPriceMajor")
+        static let amayzonPriceMinor = Definition(key: "Onboarding_Demo_amayzonPriceMinor")
+        static let amayzonListPrice = Definition(key: "Onboarding_Demo_amayzonListPrice")
+        static let amayzonStock = Definition(key: "Onboarding_Demo_amayzonStock")
+        static let amayzonAddToBasket = Definition(key: "Onboarding_Demo_amayzonAddToBasket")
 
         /// Replaces the copy tokens in a bundled mock page. The HTML keeps its
         /// layout and artwork, while every rendered word comes from this file.
@@ -257,8 +210,8 @@ enum OnboardingStrings {
     }
 
     enum Safari {
-        static let title = Definition(shared: "Read the page, not the popups")
-        static let bylineTemplate = Definition(shared: "A Safari extension • by %@")
+        static let title = Definition(key: "Onboarding_Safari_title")
+        static let bylineTemplate = Definition(key: "Onboarding_Safari_bylineTemplate")
         /// The page's prose, per app, in the order it reads — and it is only
         /// ever shown as a PREFIX of this list. The page's own header, steps and
         /// actions are fixed furniture, so what is left over between them is the
@@ -268,58 +221,29 @@ enum OnboardingStrings {
         /// chunk is depth a taller screen (or an iPad's wider column) can
         /// afford. Each ends on a sentence boundary that finishes its own
         /// sub-topic, so no prefix ever cuts an idea in half.
-        static let explainerChunks = ChunkedDefinition(
-            core: [
-                "Ads, popups and subscription walls come off on their own, privately, on your device. Anything on the page saves to Luna in one tap.",
-                "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.",
-                "Articles arrive ready to read offline — scrolling, a word at a time, or aloud with the screen off.",
-                "The same tap keeps a video for the flight, or starts watching a product’s price for you.",
-                "One app, one deck: everything you saved from anywhere, in the order you saved it.",
-            ],
-            reader: [
-                "Ads, popups and subscription walls come off on their own, privately, on your device. Anything you keep saves to Luna in one tap.",
-                "None of it leaves your phone: the page is cleaned where you are reading it, and nothing you open is logged anywhere.",
-                "A saved page is yours offline — on a plane, on the subway, next week.",
-                "Read it scrolling, a word at a time, or aloud with the screen off.",
-                "Send it to your Kindle, or export it as EPUB, PDF, Markdown or plain text.",
-            ],
-            downloader: [
-                "Save the video, the clip or the audio straight from the page it lives on — one tap, no account, no signup wall.",
-                "Ads, popups and signup sheets come off first, privately, on your device.",
-                "Every download lands in your library on this phone, ready offline — on a plane, underground, anywhere.",
-                "Send one on to whoever you were going to send the link to instead.",
-                "None of what you watch leaves your phone.",
-            ],
-            priceTracker: [
-                "Start watching a product’s price from the page you are already on, in one tap — no account, no browser add-on.",
-                "Ads, popups and upsell sheets come off first, privately, on your device.",
-                "Luna checks back for you and tells you the moment the price drops.",
-                "Every check is kept, so the whole run of a price draws as a graph you can read.",
-                "None of what you shop for leaves your phone.",
-            ])
-        static let stepsHeading = Definition(shared: "Turn it on in Safari")
-        static let manageExtensionsTitle = Definition(shared: "Manage Extensions")
-        static let pageMenuStep = Definition(shared: "Tap the page menu in the address bar")
+        static let explainerChunks = ChunkedDefinition(keyPrefix: "Onboarding_Safari_explainerChunk")
+        static let stepsHeading = Definition(key: "Onboarding_Safari_stepsHeading")
+        static let manageExtensionsTitle = Definition(key: "Onboarding_Safari_manageExtensionsTitle")
+        static let pageMenuStep = Definition(key: "Onboarding_Safari_pageMenuStep")
         static let manageExtensionsStepTemplate = Definition(
-            shared: "Choose “%@”")
-        static let appStepTemplate = Definition(shared: "Switch on %@")
-        static let activate = Definition(shared: "Activate Safari")
-        static let skip = Definition(shared: "Skip")
+            key: "Onboarding_Safari_manageExtensionsStepTemplate")
+        static let appStepTemplate = Definition(key: "Onboarding_Safari_appStepTemplate")
+        static let activate = Definition(key: "Onboarding_Safari_activate")
+        static let skip = Definition(key: "Onboarding_Safari_skip")
 
-        static let adSale = Definition(shared: "🔥 80% OFF EVERYTHING — TODAY ONLY 🔥")
-        static let adTrick = Definition(shared: "You won't BELIEVE this one weird trick")
-        static let adCruise = Definition(shared: "WIN A FREE CRUISE 🚢 TAP NOW")
-        static let adDeals = Definition(shared: "HOT DEALS NEAR YOU ▸▸▸")
+        static let adSale = Definition(key: "Onboarding_Safari_adSale")
+        static let adTrick = Definition(key: "Onboarding_Safari_adTrick")
+        static let adCruise = Definition(key: "Onboarding_Safari_adCruise")
+        static let adDeals = Definition(key: "Onboarding_Safari_adDeals")
 
-        static let newsletterTitle = Definition(shared: "Subscribe to our newsletter")
-        static let newsletterSubtitle = Definition(shared: "We promise to spam you")
-        static let newsletterEmail = Definition(shared: "you@example.com")
-        static let newsletterSubmit = Definition(shared: "Subscribe")
-        static let subscriptionTitle = Definition(shared: "Subscribe to keep reading")
-        static let subscriptionBody = Definition(
-            shared: "You've reached your free article limit for this month. Get unlimited access to independent journalism.")
-        static let subscriptionSubmit = Definition(shared: "Subscribe for $4.99/month")
-        static let subscriptionSignIn = Definition(shared: "Already a subscriber? Sign in")
+        static let newsletterTitle = Definition(key: "Onboarding_Safari_newsletterTitle")
+        static let newsletterSubtitle = Definition(key: "Onboarding_Safari_newsletterSubtitle")
+        static let newsletterEmail = Definition(key: "Common_emailPlaceholderExample")
+        static let newsletterSubmit = Definition(key: "Onboarding_Safari_newsletterSubmit")
+        static let subscriptionTitle = Definition(key: "Onboarding_Safari_subscriptionTitle")
+        static let subscriptionBody = Definition(key: "Onboarding_Safari_subscriptionBody")
+        static let subscriptionSubmit = Definition(key: "Onboarding_Safari_subscriptionSubmit")
+        static let subscriptionSignIn = Definition(key: "Onboarding_Safari_subscriptionSignIn")
 
         static func byline(appName: String) -> String {
             bylineTemplate.value().replacingOccurrences(of: "%@", with: appName)
@@ -342,56 +266,47 @@ enum OnboardingStrings {
     }
 
     enum Messages {
-        static let senderName = Definition(shared: "Johnny Appleseed")
-        static let shortcutSetup = Definition(shared: "This saves on-screen links")
-        static let greeting = Definition(shared: "Yoooooo")
-        static let question = Definition(shared: "You use the Action Button at all?")
-        static let answer = Definition(shared: "Nah. Its kinda dead tbh.")
-        static let pitch = Definition(shared: "👀 watch this")
-        static let settingsSetup = Definition(shared: "Just set your action button to it in")
-        static let skipSetup = Definition(shared: "Or")
+        static let senderName = Definition(key: "Onboarding_Messages_senderName")
+        static let shortcutSetup = Definition(key: "Onboarding_Messages_shortcutSetup")
+        static let greeting = Definition(key: "Onboarding_Messages_greeting")
+        static let question = Definition(key: "Onboarding_Messages_question")
+        static let answer = Definition(key: "Onboarding_Messages_answer")
+        static let pitch = Definition(key: "Onboarding_Messages_pitch")
+        static let settingsSetup = Definition(key: "Onboarding_Messages_settingsSetup")
+        static let skipSetup = Definition(key: "Onboarding_Messages_skipSetup")
 
-        static let previousSetupAnswer = Definition(
-            shared: "Yeah, I set it up at some point")
-        static let facetedCoreOfferPrefix = Definition(
-            shared: "Nice. FYI if you buy the")
-        static let facetedCoreOfferSuffix = Definition(
-            shared: ", it can do all Luna app links")
-        static let centralCoreOffer = Definition(
-            shared: "Nice. FYI if you switch it to this app instead, it can handle all your Luna apps in one.")
-        static let keepCurrentAppQuestion = Definition(shared: "And if I don’t?")
-        static let chooseCurrentApp = Definition(
-            shared: "NP. You can pick one Luna app for your action button. For this one:")
+        static let previousSetupAnswer = Definition(key: "Onboarding_Messages_previousSetupAnswer")
+        static let facetedCoreOfferPrefix = Definition(key: "Onboarding_Messages_facetedCoreOfferPrefix")
+        static let facetedCoreOfferSuffix = Definition(key: "Onboarding_Messages_facetedCoreOfferSuffix")
+        static let centralCoreOffer = Definition(key: "Onboarding_Messages_centralCoreOffer")
+        static let keepCurrentAppQuestion = Definition(key: "Onboarding_Messages_keepCurrentAppQuestion")
+        static let chooseCurrentApp = Definition(key: "Onboarding_Messages_chooseCurrentApp")
 
         static func previousSetupQuestion(appName: String) -> String {
-            "You’ve already got the \(appName) Action Button setup, huh?"
+            L10n.string("Onboarding_Messages_previousSetupQuestionTemplate", appName)
         }
 
-        static let shortcutPillTitle = Definition(shared: "Install Luna Shortcut")
+        static let shortcutPillTitle = Definition(key: "Onboarding_Messages_shortcutPillTitle")
         static let shortcutPillAccessibilityLabel = Definition(
-            shared: "Install the Luna shortcut")
+            key: "Onboarding_Messages_shortcutPillAccessibilityLabel")
         static let coreAppPillAccessibilityLabel = Definition(
-            shared: "Open Luna in the App Store")
-        static let settingsPillTitle = Definition(shared: "Settings")
-        static let settingsPillAccessibilityLabel = Definition(shared: "Open Settings")
-        static let skipPillTitle = Definition(shared: "skip setup")
-        static let skipPillAccessibilityLabel = Definition(shared: "Skip setup")
+            key: "Onboarding_Messages_coreAppPillAccessibilityLabel")
+        static let settingsPillTitle = Definition(key: "Common_settings")
+        static let settingsPillAccessibilityLabel = Definition(key: "Common_openSettings")
+        static let skipPillTitle = Definition(key: "Onboarding_Messages_skipPillTitle")
+        static let skipPillAccessibilityLabel = Definition(key: "Onboarding_Messages_skipPillAccessibilityLabel")
     }
 
     enum Instruction {
-        static let safariPromptTemplate = Definition(
-            shared: "Press the Action Button to save\n%@")
-        static let setUpSafari = Definition(shared: "Set up Safari")
-        static let installShortcut = Definition(shared: "Install Shortcut")
-        static let setActionButton = Definition(shared: "Set action button")
-        static let actionButtonPrompt = Definition(
-            shared: "Press the action button to finish")
-        static let setUpLater = Definition(shared: "Set up later")
+        static let safariPromptTemplate = Definition(key: "Onboarding_Instruction_safariPromptTemplate")
+        static let setUpSafari = Definition(key: "Onboarding_Instruction_setUpSafari")
+        static let installShortcut = Definition(key: "Common_installShortcut")
+        static let setActionButton = Definition(key: "Onboarding_Instruction_setActionButton")
+        static let actionButtonPrompt = Definition(key: "Onboarding_Instruction_actionButtonPrompt")
+        static let setUpLater = Definition(key: "Onboarding_Instruction_setUpLater")
         static let externalOpenFailureTemplate = Definition(
-            shared: "Couldn’t open %@. Try again.")
-        static let saveFailure = Definition(shared: "Couldn’t create the offline example")
-        static let tryAgain = Definition(shared: "Try again")
-        static let done = Definition(shared: "Done")
+            key: "Onboarding_Instruction_externalOpenFailureTemplate")
+        static let done = Definition(key: "Common_done")
 
         static func safariPrompt(saveBenefit: String) -> String {
             safariPromptTemplate.value().replacingOccurrences(of: "%@", with: saveBenefit)
@@ -404,57 +319,12 @@ enum OnboardingStrings {
     }
 
     enum Card {
-        static let saved = Definition(shared: "Saved")
-        static let savedArticle = Definition(shared: "Saved article")
-    }
-
-    enum Article {
-        static let title = Definition(shared: ShareSetupPractice.title)
-        static let byline = Definition(shared: ShareSetupPractice.byline)
-        static let intro = Definition(shared: ShareSetupPractice.intro)
-        static let features = ShareSetupPractice.features.map(Definition.init(shared:))
-
-        static var featureValues: [String] {
-            features.map { $0.value() }
-        }
-
-        static var plainText: String {
-            ([intro.value()] + featureValues.map { "• " + $0 })
-                .joined(separator: "\n")
-        }
-
-        static var articleContent: ArticleContent {
-            ArticleContent(
-                title: title.value(),
-                blocks: [block(kind: .paragraph, intro.value())]
-                    + featureValues.map { block(kind: .listItem, $0) })
-        }
-
-        static var fallbackHTMLBody: String {
-            "<h1>\(escaped(title.value()))</h1>\n"
-                + "<p>\(escaped(intro.value()))</p>\n<ul>\n"
-                + featureValues.map { "<li>\(escaped($0))</li>" }
-                    .joined(separator: "\n")
-                + "\n</ul>"
-        }
-
-        private static func block(
-            kind: ArticleContent.Block.Kind,
-            _ text: String
-        ) -> ArticleContent.Block {
-            .init(kind: kind, text: text, links: [])
-        }
-
-        private static func escaped(_ text: String) -> String {
-            text.replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
-        }
+        static let saved = Definition(key: "Common_saved")
+        static let savedArticle = Definition(key: "Onboarding_Card_savedArticle")
     }
 
     enum Accessibility {
         static let introIconCluster = Definition(shared: "onboarding.intro.iconCluster")
-        static let introSupportingText = Definition(shared: "onboarding.intro.supportingText")
         static let introPaste = Definition(shared: "onboarding.intro.paste")
         static let introPasteField = Definition(shared: "onboarding.intro.pasteField")
         static let introOr = Definition(shared: "onboarding.intro.or")
@@ -509,29 +379,6 @@ enum OnboardingStrings {
         }
     }
 
-    /// Words that belong to iOS rather than to Luna. The mock link menu and the
-    /// mock share sheet replicate system surfaces, so they spell every label
-    /// exactly as the OS does — and they are gathered here for the same reason
-    /// all the other copy is: so a change is one edit, not a hunt through views.
-    enum SystemUI {
-        static let openLink = Definition(shared: "Open Link")
-        static let copy = Definition(shared: "Copy")
-        static let share = Definition(shared: "Share…")
-        static let editActions = Definition(shared: "Edit Actions")
-        static let favorites = Definition(shared: "Favorites")
-        static let otherActions = Definition(shared: "Other Actions")
-        static let saveToFiles = Definition(shared: "Save to Files")
-        static let addToReadingList = Definition(shared: "Add to Reading List")
-        static let airDrop = Definition(shared: "AirDrop")
-        static let messages = Definition(shared: "Messages")
-        static let reminders = Definition(shared: "Reminders")
-        static let more = Definition(shared: "More")
-        /// The two share targets the sheet always has: this user's own Mac and
-        /// somebody in Contacts.
-        static let laptop = Definition(shared: "Laptop")
-        static let contact = Definition(shared: "Johnny\nAppleseed")
-    }
-
     enum AnimationKeys {
         static let messageBubbleFlight = Definition(shared: "onboarding.bubble.flight")
         static let pillPulse = Definition(shared: "onboarding.pill.pulse")
@@ -544,33 +391,19 @@ enum OnboardingStrings {
         /// The visible front of the Action Button press wave.
         static let actionButtonPressWave = Definition(
             shared: "onboarding.press.wave")
-        /// The lift a context menu's preview and menu cast while they are up.
-        static let contextMenuShadow = Definition(
-            shared: "onboarding.contextMenu.shadow")
         static let switcherCorner = Definition(shared: "onboarding.switcher.corner")
         static let moonReveal = Definition(shared: "moonReveal")
         static let opaqueGlyphReveal = Definition(shared: "opaqueGlyphReveal")
     }
 }
 
-/// How an app's headline is staged. Both shapes take exactly two beats of the
-/// same lunar sweep, so the journey's timing is identical either way.
-enum OnboardingIntroCopy: Equatable {
-    case twoLines(first: String, second: String)
-    case growingLine(stem: String, tail: String)
-}
-
-/// Compatibility façade for the article surfaces. The values themselves live
-/// above; these names keep the rendering code expressive without duplicating
-/// any copy.
-enum OnboardingLunaArticleCopy {
-    static var title: String { OnboardingStrings.Article.title.value() }
-    static var byline: String { OnboardingStrings.Article.byline.value() }
-    static var intro: String { OnboardingStrings.Article.intro.value() }
-    static var features: [String] { OnboardingStrings.Article.featureValues }
-    static var plainText: String { OnboardingStrings.Article.plainText }
-    static var articleContent: ArticleContent { OnboardingStrings.Article.articleContent }
-    static var fallbackHTMLBody: String { OnboardingStrings.Article.fallbackHTMLBody }
+/// An app's headline: what it says first, and what it settles on. Every app's
+/// copy takes the same two beats of the same lunar sweep, and the difference
+/// between the two states is what the second beat animates — see
+/// `OnboardingHeadlineTransition`.
+struct OnboardingIntroCopy: Equatable {
+    let initialText: String
+    let finalText: String
 }
 
 /// Compatibility façade for the Safari explainer page. Its definitions live

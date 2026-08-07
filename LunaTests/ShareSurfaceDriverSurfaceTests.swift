@@ -79,57 +79,47 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
 
     // MARK: - Unsupported (cross-app, single-content app)
 
-    func testUnsupportedSocialSaveDeletesPendingRowAndPresentsError() {
+    /// The ONE call-site wiring proof for this surface: `present` asks the gate,
+    /// and a dropped save leaves NOTHING — no row, no copied document file, no
+    /// "Saved" checkmark — behind the shared drop card. Which (app, kind) pairs
+    /// are dropped is `SurfaceSupportTests`' decision matrix, not this file's.
+    func testUnsupportedSaveDropsEverythingAndPresentsTheDropCard() {
         _ = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .reader)
+        let reader = makeDriver(current: .reader)
 
-        driver.present(.social(.bluesky, itemID: "123"), url: socialURL)
+        reader.present(.social(.bluesky, itemID: "123"), url: socialURL)
 
         XCTAssertNil(store.item(forURLString: socialURL.absoluteString),
                      "an unsupported save must leave NOTHING in the store")
         XCTAssertEqual(host.presented.count, 1)
-        let error = host.presented.first as? UnsupportedSaveCardViewController
-        XCTAssertNotNil(error, "unsupported saves present the unsupported-kind error")
+        let card = host.presented.first as? UnsupportedSaveCardViewController
+        XCTAssertNotNil(card, "unsupported saves present the unsupported-kind error")
         XCTAssertEqual(host.confirmedSaved, 0, "never a 'Saved' checkmark for an unsupported save")
         XCTAssertEqual(host.autoDownloads, [])
+        XCTAssertEqual(host.completedSilently, 0, "waits for the drop card's Done")
 
-        // Done on the error completes quietly.
-        error?.onDone?()
+        // Done on the card completes quietly.
+        card?.onDone?()
         XCTAssertEqual(host.completedSilently, 1)
-    }
 
-    func testUnsupportedArticleDeletesRowBeforePersistingAnyContent() {
-        let url = URL(string: "https://example.com/story")!
-        _ = store.add(urlString: url.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .downloader)
-
-        let content = ArticleContent(title: "Story", blocks: [
-            .init(kind: .paragraph, text: "Body text.", links: []),
-        ])
-        driver.present(.article(content, html: "<html></html>"), url: url)
-
-        XCTAssertNil(store.item(forURLString: url.absoluteString))
-        XCTAssertTrue(host.presented.first is UnsupportedSaveCardViewController)
-        XCTAssertEqual(host.completedSilently, 0, "waits for the error card's Done")
-    }
-
-    func testUnsupportedDocumentDeletesRowAndCopiedSourceFile() {
-        let item = ReadingListItem(
+        // The other half of "nothing remains": a document's copied source file.
+        let document = ReadingListItem(
             seed: "doc", urlString: "lunadoc://ABC", title: "Report",
             dateAdded: Date(), state: .pending, documentType: "pdf",
             captureSource: .shareSheet)
-        store.seedForTesting(items: [item], contents: [:])
+        store.seedForTesting(items: [document], contents: [:])
         let sourceFile = store.articlesDirectory
-            .appendingPathComponent("\(item.id.uuidString)-source.pdf")
+            .appendingPathComponent("\(document.id.uuidString)-source.pdf")
         try? Data("pdf-bytes".utf8).write(to: sourceFile)
 
-        let driver = makeDriver(current: .priceTracker)
-        driver.present(.document(type: "pdf"), url: URL(string: "lunadoc://ABC")!)
+        let priceTracker = makeDriver(current: .priceTracker)
+        priceTracker.present(.document(type: "pdf"), url: URL(string: "lunadoc://ABC")!)
 
         XCTAssertNil(store.item(forURLString: "lunadoc://ABC"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceFile.path),
                        "the copied document file must be cleaned up with the row")
-        XCTAssertTrue(host.presented.first is UnsupportedSaveCardViewController)
+        XCTAssertEqual(host.presented.count, 2)
+        XCTAssertTrue(host.presented.last is UnsupportedSaveCardViewController)
     }
 
     func testUnsupportedResolvedWrapperDoesNotDeletePreexistingCanonicalItem() async {
@@ -159,13 +149,15 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         XCTAssertTrue(host.presented.first is UnsupportedSaveCardViewController)
     }
 
-    // MARK: - Same-app outcome — byte-identical to today
+    // MARK: - The negative control: a passed save is byte-identical to today
 
-    func testSameAppSaveIsUntouched() {
+    /// The gate's other half at this call site — an admitted outcome reaches the
+    /// same terminals it always did, and `.failed` (which belongs to nobody) is
+    /// never gated at all.
+    func testSupportedAndFailedOutcomesAreUntouchedByTheGate() {
         _ = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .downloader)
-
-        driver.present(.social(.bluesky, itemID: "123"), url: socialURL)
+        let downloader = makeDriver(current: .downloader)
+        downloader.present(.social(.bluesky, itemID: "123"), url: socialURL)
 
         let saved = store.item(forURLString: socialURL.absoluteString)
         XCTAssertNotNil(saved)
@@ -173,30 +165,14 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         XCTAssertEqual(host.autoDownloads, [socialURL.absoluteString],
                        "silent terminal exactly as today")
         XCTAssertTrue(host.presented.isEmpty, "no error card for a same-app save")
-    }
 
-    func testCentralLunaAppProcessesEveryKind() {
-        _ = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .luna)
+        let brokenURL = URL(string: "https://example.com/broken")!
+        let broken = store.add(urlString: brokenURL.absoluteString, source: .shareSheet)
+        let reader = makeDriver(current: .reader)
+        reader.present(.failed(nil), url: brokenURL)
 
-        driver.present(.social(.bluesky, itemID: "123"), url: socialURL)
-
-        XCTAssertNotNil(store.item(forURLString: socialURL.absoluteString))
-        XCTAssertEqual(host.autoDownloads, [socialURL.absoluteString])
-        XCTAssertTrue(host.presented.isEmpty)
-    }
-
-    // MARK: - .failed is never gated
-
-    func testFailedOutcomeIsNeverGated() {
-        let url = URL(string: "https://example.com/broken")!
-        let item = store.add(urlString: url.absoluteString, source: .shareSheet)
-        let driver = makeDriver(current: .reader)
-
-        driver.present(.failed(nil), url: url)
-
-        XCTAssertEqual(store.item(withID: item.id)?.state, .failed, "marked failed as today")
+        XCTAssertEqual(store.item(withID: broken.id)?.state, .failed, "marked failed as today")
         XCTAssertEqual(host.completedSilently, 1)
-        XCTAssertTrue(host.presented.isEmpty)
+        XCTAssertTrue(host.presented.isEmpty, "a genuine failure is nobody's kind — never dropped")
     }
 }

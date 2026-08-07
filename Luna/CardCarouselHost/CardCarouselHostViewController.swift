@@ -115,14 +115,21 @@ struct UtilCardSaveTransitionGeometry {
 /// card. Only the recent's empty shell expands to the full card frame. Its
 /// favicon and title travel independently into the normal header geometry;
 /// after ingest mounts the real card, that artwork is replaced by a crossfade.
-/// A source view that supplies no artwork falls back to one flat snapshot of
-/// itself.
+///
+/// A source that supplies no artwork gets NO handoff — the initialiser fails and
+/// the save runs without one. There is deliberately no flat-snapshot fallback:
+/// growing one raster of the source into the card frame stretches it by whatever
+/// the two shapes differ by, and the one source that ever took that path — the
+/// 40pt paste row — was scaled some fifteen times its own height, filling the
+/// card with a smeared copy of itself. The paste row says what it is doing in
+/// place instead (`OnboardingPasteRow.State`: the pasted URL, a spinner, then the
+/// mark), which is the whole of its feedback.
 @MainActor
 private final class UtilCardSaveTransition {
     let urlString: String
     private weak var host: CardCarouselHostViewController?
     private let sourceSnapshot: UIView
-    private let artwork: UtilCardSaveTransitionArtwork?
+    private let artwork: UtilCardSaveTransitionArtwork
     /// The shell's own card rim, kept in step with its animating corner radius.
     private var shellRim: UtilURLRowGlassBorder?
     /// Luna's own waiting: the horizon spinner for a page being read, the
@@ -138,44 +145,34 @@ private final class UtilCardSaveTransition {
     init?(host: CardCarouselHostViewController, urlString: String, sourceView: UIView) {
         self.urlString = urlString
         self.host = host
-        if let provider = sourceView as? UtilCardSaveTransitionArtworkProviding,
-           let artwork = provider.makeUtilCardSaveTransitionArtwork(in: host.view) {
-            self.artwork = artwork
-            let shell = UIView(frame: artwork.sourceFrame)
-            shell.backgroundColor = artwork.backgroundColor
-            shell.layer.cornerRadius = artwork.cornerRadius
-            shell.layer.cornerCurve = .continuous
-            shell.clipsToBounds = true
-            shell.isUserInteractionEnabled = false
-            sourceSnapshot = shell
-            // The growing shell IS the destination card from the first frame:
-            // it wears the deck's own rim (following its radius as it opens) and
-            // carries the app's loading indicator until real content lands —
-            // never a black rectangle with nothing happening in it.
-            let rim = UtilURLRowGlassBorder()
-            rim.rimTint = artwork.rimTint
-            rim.cornerRadius = artwork.cornerRadius
-            rim.frame = shell.bounds
-            rim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            shell.addSubview(rim)
-            shellRim = rim
-            host.view.addSubview(shell)
-            for view in [artwork.thumbnail, artwork.title] + [artwork.subtitle].compactMap({ $0 }) {
-                view.isUserInteractionEnabled = false
-                host.view.addSubview(view)
-            }
-            installLoadingIndicator(for: artwork.kind, in: shell)
-        } else {
-            guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
-            artwork = nil
-            sourceSnapshot = snapshot
-            snapshot.frame = sourceView.convert(sourceView.bounds, to: host.view)
-            snapshot.layer.cornerRadius = Self.cornerRadius(of: sourceView)
-            snapshot.layer.cornerCurve = .continuous
-            snapshot.clipsToBounds = true
-            snapshot.isUserInteractionEnabled = false
-            host.view.addSubview(snapshot)
+        guard let provider = sourceView as? UtilCardSaveTransitionArtworkProviding,
+              let artwork = provider.makeUtilCardSaveTransitionArtwork(in: host.view)
+        else { return nil }
+        self.artwork = artwork
+        let shell = UIView(frame: artwork.sourceFrame)
+        shell.backgroundColor = artwork.backgroundColor
+        shell.layer.cornerRadius = artwork.cornerRadius
+        shell.layer.cornerCurve = .continuous
+        shell.clipsToBounds = true
+        shell.isUserInteractionEnabled = false
+        sourceSnapshot = shell
+        // The growing shell IS the destination card from the first frame:
+        // it wears the deck's own rim (following its radius as it opens) and
+        // carries the app's loading indicator until real content lands —
+        // never a black rectangle with nothing happening in it.
+        let rim = UtilURLRowGlassBorder()
+        rim.rimTint = artwork.rimTint
+        rim.cornerRadius = artwork.cornerRadius
+        rim.frame = shell.bounds
+        rim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        shell.addSubview(rim)
+        shellRim = rim
+        host.view.addSubview(shell)
+        for view in [artwork.thumbnail, artwork.title] + [artwork.subtitle].compactMap({ $0 }) {
+            view.isUserInteractionEnabled = false
+            host.view.addSubview(view)
         }
+        installLoadingIndicator(for: artwork.kind, in: shell)
 
         // Defer one turn so the target uses the card's final resting frame while
         // the source frame above remains the exact on-screen row that was tapped.
@@ -221,27 +218,23 @@ private final class UtilCardSaveTransition {
         let currentCornerRadius = sourceSnapshot.layer.presentation()?.cornerRadius
             ?? sourceSnapshot.layer.cornerRadius
         let remainingFraction = max(0, 1 - (movementAnimator?.fractionComplete ?? 0))
-        let artworkFrames = artwork.map { artwork in
-            (
-                thumbnail: Self.presentationFrame(of: artwork.thumbnail),
-                title: Self.presentationFrame(of: artwork.title),
-                subtitle: artwork.subtitle.map(Self.presentationFrame(of:))
-            )
-        }
+        let artworkFrames = (
+            thumbnail: Self.presentationFrame(of: artwork.thumbnail),
+            title: Self.presentationFrame(of: artwork.title),
+            subtitle: artwork.subtitle.map(Self.presentationFrame(of:))
+        )
         movementAnimator?.stopAnimation(true)
         movementAnimator = nil
         sourceSnapshot.layer.removeAllAnimations()
         sourceSnapshot.frame = currentFrame
         sourceSnapshot.layer.cornerRadius = currentCornerRadius
         shellRim?.cornerRadius = currentCornerRadius
-        if let artwork, let artworkFrames {
-            artwork.thumbnail.layer.removeAllAnimations()
-            artwork.title.layer.removeAllAnimations()
-            artwork.subtitle?.layer.removeAllAnimations()
-            artwork.thumbnail.frame = artworkFrames.thumbnail
-            artwork.title.frame = artworkFrames.title
-            if let subtitleFrame = artworkFrames.subtitle { artwork.subtitle?.frame = subtitleFrame }
-        }
+        artwork.thumbnail.layer.removeAllAnimations()
+        artwork.title.layer.removeAllAnimations()
+        artwork.subtitle?.layer.removeAllAnimations()
+        artwork.thumbnail.frame = artworkFrames.thumbnail
+        artwork.title.frame = artworkFrames.title
+        if let subtitleFrame = artworkFrames.subtitle { artwork.subtitle?.frame = subtitleFrame }
 
         destinationSnapshot.frame = targetFrame
         destinationSnapshot.alpha = 0
@@ -251,29 +244,26 @@ private final class UtilCardSaveTransition {
         destinationSnapshot.isUserInteractionEnabled = false
         host.view.addSubview(destinationSnapshot)
 
-        let targetArtwork = artwork.map {
-            self.targetArtworkGeometry(for: $0, cardFrame: targetFrame, destination: destination)
-        }
+        let targetArtwork = targetArtworkGeometry(
+            for: artwork, cardFrame: targetFrame, destination: destination)
         let settle = { [weak self] in
             guard let self else { return }
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
             self.shellRim?.cornerRadius = CardSurfaceView.cornerRadius
-            if let artwork = self.artwork, let targetArtwork {
-                artwork.thumbnail.frame = targetArtwork.thumbnail
-                artwork.thumbnail.layer.cornerRadius = min(
-                    targetArtwork.thumbnail.width, targetArtwork.thumbnail.height) * 0.2
-                artwork.title.frame = targetArtwork.title
-                artwork.subtitle?.alpha = 0
-            }
+            self.artwork.thumbnail.frame = targetArtwork.thumbnail
+            self.artwork.thumbnail.layer.cornerRadius = min(
+                targetArtwork.thumbnail.width, targetArtwork.thumbnail.height) * 0.2
+            self.artwork.title.frame = targetArtwork.title
+            self.artwork.subtitle?.alpha = 0
         }
         let crossfade = { [weak self] in
             guard let self else { return }
             let changes = {
                 self.sourceSnapshot.alpha = 0
-                self.artwork?.thumbnail.alpha = 0
-                self.artwork?.title.alpha = 0
-                self.artwork?.subtitle?.alpha = 0
+                self.artwork.thumbnail.alpha = 0
+                self.artwork.title.alpha = 0
+                self.artwork.subtitle?.alpha = 0
                 destinationSnapshot.alpha = 1
             }
             guard UIView.areAnimationsEnabled, !UIAccessibility.isReduceMotionEnabled else {
@@ -309,11 +299,11 @@ private final class UtilCardSaveTransition {
         destination?.alpha = 1
         destinationSnapshot?.removeFromSuperview()
         destinationSnapshot = nil
-        let finish = { [sourceSnapshot] in
+        let finish = { [sourceSnapshot, artwork] in
             sourceSnapshot.alpha = 0
-            self.artwork?.thumbnail.alpha = 0
-            self.artwork?.title.alpha = 0
-            self.artwork?.subtitle?.alpha = 0
+            artwork.thumbnail.alpha = 0
+            artwork.title.alpha = 0
+            artwork.subtitle?.alpha = 0
         }
         let completed = { [weak self] in
             self?.removeTransitionViews()
@@ -340,23 +330,21 @@ private final class UtilCardSaveTransition {
             self.sourceSnapshot.frame = targetFrame
             self.sourceSnapshot.layer.cornerRadius = CardSurfaceView.cornerRadius
             self.shellRim?.cornerRadius = CardSurfaceView.cornerRadius
-            if let artwork = self.artwork {
-                let target = UtilCardSaveTransitionGeometry.fallback(
-                    in: targetFrame, kind: artwork.kind,
-                    sourceTitleHeight: artwork.title.bounds.height)
-                artwork.thumbnail.frame = target.thumbnail
-                artwork.thumbnail.layer.cornerRadius = min(
-                    target.thumbnail.width, target.thumbnail.height) * 0.2
-                artwork.title.frame = target.title
-                artwork.subtitle?.alpha = 0
-            }
+            let target = UtilCardSaveTransitionGeometry.fallback(
+                in: targetFrame, kind: self.artwork.kind,
+                sourceTitleHeight: self.artwork.title.bounds.height)
+            self.artwork.thumbnail.frame = target.thumbnail
+            self.artwork.thumbnail.layer.cornerRadius = min(
+                target.thumbnail.width, target.thumbnail.height) * 0.2
+            self.artwork.title.frame = target.title
+            self.artwork.subtitle?.alpha = 0
         }
         movementAnimator = animator
         animator.startAnimation()
     }
 
     /// The app's own waiting, inside the growing shell: a horizon spinner for a
-    /// page still being read, the eclipse progress bar for a media transfer
+    /// page still being read, the horizon progress bar for a media transfer
     /// (which mounts at zero and hands off to the real card's own bar). Faded in
     /// after a beat so a save that resolves at once never flashes it.
     private func installLoadingIndicator(
@@ -365,7 +353,7 @@ private final class UtilCardSaveTransition {
         let indicator: UIView
         switch kind {
         case .media:
-            let bar = EclipseProgressBar()
+            let bar = MoonHorizonProgressBar()
             bar.setProgress(0, animated: false)
             let width = max(80, shell.bounds.width * 0.6)
             bar.frame = CGRect(
@@ -417,9 +405,9 @@ private final class UtilCardSaveTransition {
     private func removeTransitionViews() {
         retireLoadingIndicator()
         sourceSnapshot.removeFromSuperview()
-        artwork?.thumbnail.removeFromSuperview()
-        artwork?.title.removeFromSuperview()
-        artwork?.subtitle?.removeFromSuperview()
+        artwork.thumbnail.removeFromSuperview()
+        artwork.title.removeFromSuperview()
+        artwork.subtitle?.removeFromSuperview()
     }
 
     private func targetArtworkGeometry(
@@ -443,10 +431,6 @@ private final class UtilCardSaveTransition {
 
     private static func presentationFrame(of view: UIView) -> CGRect {
         view.layer.presentation()?.frame ?? view.frame
-    }
-
-    private static func cornerRadius(of view: UIView) -> CGFloat {
-        CardTransitionSnapshot.cornerRadius(of: view)
     }
 }
 
@@ -509,10 +493,30 @@ class CardCarouselHostViewController: UIViewController {
 
     let carousel = CardCarouselViewController()
 
-    /// The kind-specific half of this deck. Subclasses return themselves; the
-    /// base default leaves a deck with nothing but its util card, which is
-    /// exactly what a bare host is.
-    var deckProvider: CardDeckProviding? { nil }
+    /// The kind-specific half of this deck.
+    ///
+    /// A deck that is CONFIGURED rather than subclassed (`configure(style:
+    /// provider:)`) supplies it up front — that is every app whose root is just
+    /// a deck. A subclass with real screen chrome of its own overrides this and
+    /// returns itself.
+    var deckProvider: CardDeckProviding? { configuredProvider }
+
+    private var configuredProvider: CardDeckProviding?
+    private var configuredStyle: CardCarouselStyle?
+
+    /// Builds this deck without subclassing it: the carousel's style, and the
+    /// provider that fills it. `viewDidLoad` then brings the whole deck up
+    /// itself, so an app whose root has no chrome of its own needs no subclass
+    /// at all.
+    final func configure(style: CardCarouselStyle, provider: (CardCarouselHostViewController) -> CardDeckProviding) {
+        configuredStyle = style
+        // Applied here, not only from `viewDidLoad`: a SUBCLASS with chrome of
+        // its own configures itself after `super.viewDidLoad()` has already
+        // early-returned, and a carousel left on the default style lays out on
+        // geometry that is not merely wrong but NaN.
+        carousel.style = style
+        configuredProvider = provider(self)
+    }
 
     /// The cards past the util card, as the last APPLIED reload left them. The
     /// single source of truth for every count and every index the host resolves;
@@ -548,7 +552,7 @@ class CardCarouselHostViewController: UIViewController {
     /// the util card while onboarding is unanswered — the same condition as the
     /// intro headline — so an incomplete first run keeps the light the splash
     /// handed it instead of losing it to the crossfade.
-    private var utilCardCorona: EclipseCoronaView?
+    private var utilCardCorona: UIView?
     private var isUtilCardCentered = true
 
     final var utilCardIndex: Int { 0 }
@@ -572,6 +576,19 @@ class CardCarouselHostViewController: UIViewController {
 
     final func loadUtilCardThumbnail(completion: @escaping (UIImage?) -> Void) {
         completion(OnboardingActionExtensionIcon.image() ?? OnboardingAppIcon.image())
+    }
+
+    /// A configured deck brings itself up; a subclassed one does it in its own
+    /// `viewDidLoad` (which is where its style and its chrome are set).
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        guard let configuredStyle else { return }
+        view.backgroundColor = LunaColors.background
+        // Handed to the carousel as chrome, so it fades away with the scrub strip
+        // and side cards when content takes over the screen.
+        carousel.chromeBackdrop = StarfieldView.install(behindContentsOf: view)
+        carousel.style = configuredStyle
+        mountDeck()
     }
 
     // MARK: - Bringing the deck up
@@ -606,7 +623,7 @@ class CardCarouselHostViewController: UIViewController {
     private func mountDeckBottomControls() {
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
-            accessibilityLabel: L10n.string("Settings"))
+            accessibilityLabel: L10n.string("Common_settings"))
         configureTrailingBottomButton(trailingBottomButton)
         mountBottomControls(leading: settingsButton, trailing: trailingBottomButton)
     }
@@ -617,9 +634,20 @@ class CardCarouselHostViewController: UIViewController {
     func configureTrailingBottomButton(_ button: UIButton) {
         guard let share = deckProvider?.deckShareButton else { return }
         configureBottomButton(
-            button, symbol: "square.and.arrow.up",
-            action: #selector(shareCenteredCardTapped),
+            button, symbol: "square.and.arrow.up", action: nil,
             accessibilityLabel: share.accessibilityLabel)
+        // Deferred, so a press always builds against whatever card is centered
+        // NOW: the provider offers a ladder (media's Copy link / Share link /
+        // Share video…) or, failing that, its single share verb.
+        ShareButtonMenu.install(
+            on: button, providesMenu: true,
+            build: { [weak self, weak button] in
+                guard let self, let button,
+                      let slot = self.slotIndex(forCarouselIndex: self.carousel.currentIndex)
+                else { return nil }
+                return self.deckProvider?.deckShareMenu(slot: slot, sourceView: button)
+            },
+            fallback: { [weak self] in self?.shareCenteredCardTapped() })
     }
 
     /// Reconciles the trailing circle with the centered card. Called from the two
@@ -635,6 +663,14 @@ class CardCarouselHostViewController: UIViewController {
         case .disables: trailingBottomButton.isEnabled = available
         }
     }
+
+    #if DEBUG
+    /// The menu the trailing circle would present right now, for tests.
+    var shareMenuForTesting: UIMenu? {
+        guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return nil }
+        return deckProvider?.deckShareMenu(slot: slot, sourceView: trailingBottomButton)
+    }
+    #endif
 
     @objc private func shareCenteredCardTapped() {
         guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return }
@@ -659,6 +695,25 @@ class CardCarouselHostViewController: UIViewController {
             openStateChanged: { [weak self] open in
                 self?.deckArchiveTrayOpenStateDidChange(open)
             })
+    }
+
+    /// The archive choreography, overridable because it is CHROME. The default
+    /// persists and reloads; the Reader's deck drifts the outgoing card up and
+    /// springs its successor in. Either way the write itself is the kind's.
+    func performArchive(ofItemID id: UUID, commit: @escaping () -> Void) {
+        commit()
+        reload()
+    }
+
+    /// As `performArchive`, for the return trip. The default just asks for the
+    /// row to take the centre; the Reader's deck cross-dissolves the pressed
+    /// tray cell into the destination card.
+    func performUnarchive(
+        ofItemID id: UUID, from sourceView: UIView?, commit: @escaping () -> Void
+    ) {
+        requestCentering(onSlotID: id)
+        commit()
+        reload()
     }
 
     /// Whether the tray may be pulled at all right now. Reader says no while a
@@ -777,6 +832,8 @@ class CardCarouselHostViewController: UIViewController {
         }
         carousel.view.isHidden = false
         archiveTray?.setItems(provider.deckArchiveTrayItems())
+        // The tray's own in-cell download bars, refreshed alongside its rows.
+        archiveDownloadProgressDidChange()
         deckDidApplyReload()
         if deckReconcilesArchivePullOnReload {
             refreshArchivePullAvailability(animated: false)
@@ -898,7 +955,7 @@ class CardCarouselHostViewController: UIViewController {
         else { return }
         if utilCardCorona?.bounds.size != cardFrame.size {
             utilCardCorona?.removeFromSuperview()
-            let corona = AppLaunchTransition.makePeakCoronaView(cardFrame: cardFrame)
+            let corona = AppLaunchTransition.makeCoronaCardView(cardFrame: cardFrame)
             isUtilCardCentered = isUtilCard(carousel.currentIndex)
             corona.alpha = isUtilCardCentered ? 1 : 0
             view.insertSubview(corona, belowSubview: carousel.view)
@@ -980,10 +1037,12 @@ class CardCarouselHostViewController: UIViewController {
         archiveTray?.setPullAvailable(false, animated: animated)
     }
 
-    /// Extra chrome-row clearance this deck floats above the carousel, on top of
-    /// the safe area (Reader's top control row; the other decks have none and
-    /// keep the shared 4pt breathing room).
-    class var carouselTopClearance: CGFloat { 4 }
+    /// Chrome clearance every deck reserves above the card area, on top of the
+    /// safe area. One value, shared — it is `CardDeckGeometry.topClearance`, and
+    /// the reason it is not a per-deck override any more is that the card frame
+    /// has to be a function of the SCREEN: the launch splash draws the card
+    /// before it knows which app it is launching.
+    static var carouselTopClearance: CGFloat { CardDeckGeometry.topClearance }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -1278,6 +1337,16 @@ extension CardCarouselHostViewController: CardCarouselDataSource {
         return deckProvider?.deckPrefersThumbnailChip(forSlot: slot) ?? false
     }
 
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        cardStyleForCardAt index: Int
+    ) -> CardCarouselCardStyle {
+        guard let slot = slotIndex(forCarouselIndex: index),
+              let style = deckProvider?.deckCardStyle(forSlot: slot)
+        else { return carousel.style.card }
+        return style
+    }
+
     /// The util card holds no save, so its chip is neither a still nor a
     /// favicon-and-skeleton mini card: it is the app's own mark over a button.
     func carousel(
@@ -1342,6 +1411,84 @@ extension CardCarouselHostViewController: CardCarouselDelegate {
 
     func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {
         deckDidSurfaceForEdgePaging()
+    }
+}
+
+// MARK: - The deck, as a kind's presenter sees it
+
+// One conformance, on the base every app's root already is. A presenter is
+// handed this rather than a concrete deck, which is what lets the same
+// implementation of a kind draw into the Downloader's root and the central
+// app's without knowing which it is in.
+extension CardCarouselHostViewController: CardPresenterHost {
+
+    var presentingController: UIViewController { self }
+
+    /// The scale of the screen this deck is ACTUALLY on. The Downloader read it
+    /// from its window and the central app from `UIScreen.main`, so the same
+    /// media save was decoded at two different scales depending on which app
+    /// opened it.
+    var displayScale: CGFloat {
+        view.window?.screen.scale ?? UIScreen.main.scale
+    }
+
+    func reloadDeck() { reload() }
+
+    /// Slots are keyed by the reading-list row, so an item id IS a slot id; the
+    /// presenter-facing name is the item one because a presenter never sees a
+    /// slot.
+    func requestCentering(onItemID id: UUID) { requestCentering(onSlotID: id) }
+
+    /// The save on the centered card, or nil on the util card.
+    var centeredItem: ReadingListItem? {
+        guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return nil }
+        return deckProvider?.deckItem(forSlot: slot)
+    }
+
+    func cardView(forItemID id: UUID) -> UIView? {
+        guard let slot = slots.firstIndex(where: { $0.id == id }) else { return nil }
+        return carousel.cardView(at: carouselIndex(forSlot: slot))
+    }
+
+    /// The kind that owns a save, asked of the PROVIDER rather than the registry
+    /// so a stand-in for an unbacked row reaches the presenter that supplied it.
+    func presenter(forItem item: ReadingListItem) -> CardKindPresenting? {
+        deckProvider?.deckPresenter(forItemID: item.id)
+            ?? CardKindPresenters.presenter(for: item)
+    }
+
+    /// Unarchive, with this deck's choreography around the kind's store write.
+    /// One implementation for all three kinds: the tray rows used to each carry
+    /// their own, and only the article one bumped the row's date.
+    func unarchive(_ item: ReadingListItem, from sourceView: UIView?) {
+        performUnarchive(ofItemID: item.id, from: sourceView) { [weak self] in
+            guard let self else { return }
+            if let presenter = self.presenter(forItem: item) {
+                presenter.setArchived(false, for: item)
+            } else {
+                ReadingListStore.shared.setArchived(false, for: item.id)
+            }
+        }
+    }
+
+    /// Delete a save whole. The companion half is the reason this is one method:
+    /// the archive tray's delete released only the row, so an archived media
+    /// save deleted from the tray left its file, its Photos asset and its
+    /// auto-download bookkeeping behind.
+    func deleteSave(_ item: ReadingListItem) {
+        presenter(forItem: item)?.deleteCompanionStorage(for: item, host: self)
+        ReadingListStore.shared.delete(item)
+        reload()
+    }
+
+    /// Ticks arrive several times a second, so the tray updates its visible
+    /// cells in place rather than reloading the deck.
+    func archiveDownloadProgressDidChange() {
+        var merged: [UUID: Double] = [:]
+        for presenter in CardKindPresenters.installed {
+            merged.merge(presenter.archiveDownloadProgress) { _, new in new }
+        }
+        archiveTray?.setDownloadProgress(merged)
     }
 }
 

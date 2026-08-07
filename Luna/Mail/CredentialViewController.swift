@@ -23,7 +23,7 @@ final class CredentialViewController: UIViewController {
     private let completion: ((Bool) -> Void)?
     private let passwordField = UITextField()
     private let revealButton = UIButton(type: .system)
-    private let signInButton = EmailLoginActionButton(title: L10n.string("Sign In"))
+    private let signInButton = EmailLoginActionButton(title: L10n.string("Settings_email_credential_signInButton"))
     private var didFinish = false
 
     init(
@@ -48,9 +48,9 @@ final class CredentialViewController: UIViewController {
         let titleLabel = EmailLoginUI.titleLabel(account.provider.displayName)
         let bodyLabel = EmailLoginUI.bodyLabel(
             account.provider.setupInstructions
-                ?? L10n.string("Enter an app-specific password for this account."))
+                ?? L10n.string("Settings_email_credential_bodyFallback"))
 
-        passwordField.placeholder = L10n.string("App password")
+        passwordField.placeholder = L10n.string("Settings_email_credential_passwordPlaceholder")
         passwordField.font = .preferredFont(forTextStyle: .body)
         passwordField.isSecureTextEntry = true
         passwordField.autocapitalizationType = .none
@@ -94,7 +94,7 @@ final class CredentialViewController: UIViewController {
         var appPasswordLinkButton: UIButton?
         if let url = account.provider.appPasswordURL {
             let button = UIButton(type: .system)
-            button.setTitle(L10n.string("Create an app password…"), for: .normal)
+            button.setTitle(L10n.string("Settings_email_credential_createPasswordLink"), for: .normal)
             button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
             button.tintColor = GlassStyle.lunaBrandAccent
             button.addAction(UIAction { _ in UIApplication.shared.open(url) }, for: .touchUpInside)
@@ -227,8 +227,8 @@ final class CredentialViewController: UIViewController {
                 signInButton.isEnabled = true
                 passwordField.isUserInteractionEnabled = true
                 let alert = UIAlertController(
-                    title: L10n.string("Couldn't sign in"), message: Self.errorMessage(for: error), preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+                    title: L10n.string("Settings_email_credential_signInFailedTitle"), message: Self.errorMessage(for: error), preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
                 present(alert, animated: true)
             }
         }
@@ -254,7 +254,7 @@ final class CredentialViewController: UIViewController {
 
     private static func errorMessage(for error: Error) -> String {
         isConnectivityFailure(error)
-            ? L10n.string("Couldn't reach the mail servers. Check your connection and try again.")
-            : L10n.string("Check the address and app password and try again.")
+            ? L10n.string("Settings_email_credential_connectivityErrorMessage")
+            : L10n.string("Settings_email_credential_credentialErrorMessage")
     }
 }

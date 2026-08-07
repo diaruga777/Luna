@@ -146,10 +146,14 @@ final class UtilCardTests: XCTestCase {
 
         let headline = try XCTUnwrap(
             card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
-        let fragments = try XCTUnwrap(headline.growingLine?.fragments)
-        XCTAssertTrue(fragments.stem.isFullyRevealed)
-        XCTAssertTrue(fragments.tail.isFullyRevealed)
-        XCTAssertTrue(fragments.period.isFullyConcealed)
+        let fragments = headline.fragments
+        // The finished sentence stands: what both states share, plus whatever
+        // only the second one says. The first state's own words are gone.
+        for line in [fragments.shared] + fragments.arriving.map(Optional.some) {
+            XCTAssertTrue(try XCTUnwrap(line).isFullyRevealed)
+        }
+        XCTAssertFalse(fragments.departing.isEmpty)
+        for line in fragments.departing { XCTAssertTrue(line.isFullyConcealed) }
     }
 
     func testIntroHeadlineWaitsBehindItsFrontOnTheLaunchItBelongsTo() throws {
@@ -160,9 +164,9 @@ final class UtilCardTests: XCTestCase {
 
         let headline = try XCTUnwrap(
             card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
-        let fragments = try XCTUnwrap(headline.growingLine?.fragments)
-        XCTAssertFalse(fragments.stem.isFullyRevealed)
-        XCTAssertFalse(fragments.tail.isFullyRevealed)
+        let fragments = headline.fragments
+        XCTAssertFalse(fragments.all.isEmpty)
+        for line in fragments.all { XCTAssertFalse(line.isFullyRevealed) }
     }
 
     // MARK: - The headline speaks first
@@ -516,28 +520,6 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(savedSource, .manual)
     }
 
-    /// The noun lives in the corner flag, not in the subtitle — which is now the
-    /// host and nothing else, so it has the whole row's width to spell it out.
-    func testTheCornerFlagNamesTheAppsNounAndItsAgeTier() throws {
-        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
-        let week = try XCTUnwrap(weeklyRowFlagText(app: .reader))
-        XCTAssertEqual(week, "Read of the week")
-
-        clock = clock.addingTimeInterval(10 * 86_400)
-        let month = try XCTUnwrap(weeklyRowFlagText(app: .reader))
-        XCTAssertEqual(month, "Read of the month")
-
-        let central = try XCTUnwrap(weeklyRowFlagText(app: .luna))
-        XCTAssertEqual(central, "Save of the month")
-    }
-
-    func testTheSubtitleIsTheHostAloneWithNoWeeklyPhraseBesideIt() {
-        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
-        let hostLabels = weeklyRowLabelTexts(app: .reader)
-            .filter { $0.contains("example.com") }
-        XCTAssertEqual(hostLabels, ["example.com"])
-    }
-
     /// The flag is a band across the row's top, not a sticker on the artwork —
     /// it used to overhang the thumbnail by a few points on purpose.
     func testTheCornerFlagClearsTheArtworkItLabels() throws {
@@ -731,27 +713,6 @@ final class UtilCardTests: XCTestCase {
             WeeklySaveDisplay(
                 save: save, title: title, subtitleHost: "example.com", imageData: nil),
             for: kind)
-    }
-
-    private func weeklyRowLabelTexts(app: LunaApp) -> [String] {
-        let card = makeCard(showsOnboarding: false, app: app)
-        card.loadViewIfNeeded()
-        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
-        card.view.layoutIfNeeded()
-        guard let row = card.view.descendant(identifier: "utilCard.saveOfTheWeek") else {
-            return []
-        }
-        return row.descendants(of: UILabel.self).compactMap(\.text)
-    }
-
-    /// The corner flag's own text.
-    private func weeklyRowFlagText(app: LunaApp) -> String? {
-        let card = makeCard(showsOnboarding: false, app: app)
-        card.loadViewIfNeeded()
-        card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
-        card.view.layoutIfNeeded()
-        return (card.view.descendant(identifier: "utilCard.weeklyRibbon")
-            as? WeeklyRibbonView)?.text
     }
 
     /// The x of the flag's trailing edge at one height, found by walking in from

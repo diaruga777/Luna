@@ -44,20 +44,22 @@ public final class FriendDetailViewController: NavHeaderTableController {
         cell.accessoryView = nil
         switch Section(rawValue: indexPath.section)! {
         case .profile:
-            config.text = friend.name ?? L10n.string("Set a name")
+            config.text = friend.name ?? L10n.string("Sharing_friendDetail_setNamePlaceholder")
             config.secondaryText = friend.email
             cell.accessoryType = .disclosureIndicator
         case .notifications:
-            config.text = L10n.string("Notify on every share")
+            config.text = L10n.string("Sharing_friendDetail_notifyLabel")
             let toggle = UISwitch()
             toggle.isOn = friend.notifyOnEveryShare
             toggle.addTarget(self, action: #selector(toggleNotify(_:)), for: .valueChanged)
             cell.accessoryView = toggle
         case .blocking:
-            config.text = friend.isBlocked ? L10n.string("Unblock Contact") : L10n.string("Block Contact")
+            config.text = friend.isBlocked
+                ? L10n.string("Sharing_friendDetail_unblockAction")
+                : L10n.string("Sharing_friendDetail_blockAction")
             config.textProperties.color = friend.isBlocked ? .systemBlue : .systemRed
         case .remove:
-            config.text = L10n.string("Remove Contact")
+            config.text = L10n.string("Sharing_friendDetail_removeAction")
             config.textProperties.color = .systemRed
         }
         cell.contentConfiguration = config
@@ -68,7 +70,7 @@ public final class FriendDetailViewController: NavHeaderTableController {
         _ tableView: UITableView, titleForFooterInSection section: Int
     ) -> String? {
         Section(rawValue: section) == .notifications
-            ? L10n.string("By default you're notified only the first time this contact shares with you.")
+            ? L10n.string("Sharing_friendDetail_notifyFooter")
             : nil
     }
 
@@ -92,10 +94,11 @@ public final class FriendDetailViewController: NavHeaderTableController {
     }
 
     private func promptRename() {
-        let alert = UIAlertController(title: L10n.string("Name"), message: friend.email, preferredStyle: .alert)
-        alert.addTextField { $0.text = self.friend.name; $0.placeholder = L10n.string("Name") }
-        alert.addAction(UIAlertAction(title: L10n.string("Cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: L10n.string("Save"), style: .default) { [weak self, weak alert] _ in
+        let alert = UIAlertController(
+            title: L10n.string("Sharing_friendDetail_renameTitle"), message: friend.email, preferredStyle: .alert)
+        alert.addTextField { $0.text = self.friend.name; $0.placeholder = L10n.string("Sharing_friendDetail_renameTitle") }
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_save"), style: .default) { [weak self, weak alert] _ in
             guard let self else { return }
             let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
             self.friend.name = (name?.isEmpty ?? true) ? nil : name

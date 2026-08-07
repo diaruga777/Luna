@@ -23,73 +23,91 @@ final class ArticleResolverTests: XCTestCase {
         ExtractedArticle(content: content(title: title, bodyLength: bodyLength), sourceHTML: html)
     }
 
-    func testDirectReadableWinsAndSkipsArchive() {
-        let direct = content(title: "Real", bodyLength: 2000)
-        let result = ArticleResolver.resolution(
-            direct: ExtractedArticle(content: direct, sourceHTML: "<html>direct</html>"), archived: nil)
-        XCTAssertEqual(result, .readable(direct, html: "<html>direct</html>"))
-    }
+    /// The whole `resolution(direct:archived:directFailure:)` decision table in one
+    /// sweep: every (direct, archived, captured-failure) shape and the resolution it
+    /// must produce. Each row names the real case it encodes and that name is the
+    /// failure message, so a break points at the row rather than at the file.
+    func testResolutionDecisionTable() {
+        let readableDirect = content(title: "Real", bodyLength: 2000)
+        let readableArchive = content(title: "Paywalled", bodyLength: 2000)
 
-    func testArchiveReadableUsedWhenDirectIsStub() {
-        let directStub = extracted(title: "Paywalled", bodyLength: 50, html: "<stub>")
-        let archived = content(title: "Paywalled", bodyLength: 2000)
-        let result = ArticleResolver.resolution(
-            direct: directStub, archived: ExtractedArticle(content: archived, sourceHTML: "<archive>"))
-        XCTAssertEqual(result, .readable(archived, html: "<archive>"))
-    }
+        let cases: [(
+            why: String,
+            direct: ExtractedArticle?,
+            archived: ExtractedArticle?,
+            directFailure: SaveFailureReason?,
+            expected: ArticleResolution
+        )] = [
+            (
+                "a readable direct read wins and skips the archive",
+                ExtractedArticle(content: readableDirect, sourceHTML: "<html>direct</html>"),
+                nil, nil,
+                .readable(readableDirect, html: "<html>direct</html>")
+            ),
+            (
+                "a readable archive is used when the direct read is a stub",
+                extracted(title: "Paywalled", bodyLength: 50, html: "<stub>"),
+                ExtractedArticle(content: readableArchive, sourceHTML: "<archive>"), nil,
+                .readable(readableArchive, html: "<archive>")
+            ),
+            (
+                // FT-shaped: the direct fetch returns a titled subscription stub and
+                // the archive fetch fails entirely — the title must survive.
+                "a direct stub's title survives when the archive fails",
+                extracted(title: "FT Headline", bodyLength: 80, html: "<stub>"),
+                nil, nil,
+                .paywalled(title: "FT Headline")
+            ),
+            (
+                // WSJ-shaped: the direct fetch 401s (no content at all) but the
+                // archive snapshot, while itself paywalled, still carries the title.
+                "the archive's title is used when the direct read fails outright",
+                nil,
+                extracted(title: "WSJ Headline", bodyLength: 120, html: "<archive>"), nil,
+                .paywalled(title: "WSJ Headline")
+            ),
+            (
+                "the direct title is preferred over the archive's copy of it",
+                extracted(title: "Canonical", bodyLength: 40, html: "<stub>"),
+                extracted(title: "Archive Copy", bodyLength: 60, html: "<archive>"), nil,
+                .paywalled(title: "Canonical")
+            ),
+            (
+                // The page WAS reached — it just held nothing usable — so the reason
+                // is a content failure, never whatever the transport reported.
+                "a placeholder title is not treated as a real one",
+                extracted(title: "Untitled", bodyLength: 40, html: "<stub>"),
+                nil, nil,
+                .unreadable(.notReadable)
+            ),
+            (
+                // A page that never came back carries the fetch's own reason forward,
+                // so the failed card can say "403" instead of "couldn't fetch".
+                "an unreachable page carries the fetch reason",
+                nil, nil, .httpStatus(403),
+                .unreadable(.httpStatus(403))
+            ),
+            (
+                // A reached-but-empty page must NOT inherit the direct fetch's reason:
+                // the direct read here succeeded, and any captured error belongs to an
+                // earlier attempt.
+                "a reached page ignores a stale fetch reason",
+                extracted(title: "", bodyLength: 10, html: "<stub>"),
+                nil, .offline,
+                .unreadable(.notReadable)
+            ),
+            (
+                "nothing reachable at all is unreadable with no reason",
+                nil, nil, nil,
+                .unreadable(nil)
+            ),
+        ]
 
-    /// FT-shaped: the direct fetch returns a titled subscription stub and the
-    /// archive fetch fails entirely — the title must survive as `.paywalled`.
-    func testDirectStubTitleSurvivesWhenArchiveFails() {
-        let directStub = extracted(title: "FT Headline", bodyLength: 80, html: "<stub>")
-        let result = ArticleResolver.resolution(direct: directStub, archived: nil)
-        XCTAssertEqual(result, .paywalled(title: "FT Headline"))
-    }
-
-    /// WSJ-shaped: the direct fetch 401s (no content at all) but the archive
-    /// snapshot, while itself paywalled, still carries the real title.
-    func testArchiveTitleUsedWhenDirectFails() {
-        let archivedStub = extracted(title: "WSJ Headline", bodyLength: 120, html: "<archive>")
-        let result = ArticleResolver.resolution(direct: nil, archived: archivedStub)
-        XCTAssertEqual(result, .paywalled(title: "WSJ Headline"))
-    }
-
-    func testDirectTitlePreferredOverArchiveTitle() {
-        let directStub = extracted(title: "Canonical", bodyLength: 40, html: "<stub>")
-        let archivedStub = extracted(title: "Archive Copy", bodyLength: 60, html: "<archive>")
-        let result = ArticleResolver.resolution(direct: directStub, archived: archivedStub)
-        XCTAssertEqual(result, .paywalled(title: "Canonical"))
-    }
-
-    func testPlaceholderTitleIsNotTreatedAsReal() {
-        let directStub = extracted(title: "Untitled", bodyLength: 40, html: "<stub>")
-        let result = ArticleResolver.resolution(direct: directStub, archived: nil)
-        // The page WAS reached — it just held nothing usable — so the reason is a
-        // content failure, never whatever the transport reported.
-        XCTAssertEqual(result, .unreadable(.notReadable))
-    }
-
-    /// A page that never came back carries the fetch's own reason forward, so the
-    /// failed card can say "403" instead of "couldn't fetch".
-    func testUnreachablePageCarriesTheFetchReason() {
-        let result = ArticleResolver.resolution(
-            direct: nil, archived: nil, directFailure: .httpStatus(403))
-        XCTAssertEqual(result, .unreadable(.httpStatus(403)))
-    }
-
-    /// A reached-but-empty page must NOT inherit the direct fetch's reason: the
-    /// direct read here succeeded, and any captured error belongs to an earlier
-    /// attempt.
-    func testReachedPageIgnoresAStaleFetchReason() {
-        let directStub = extracted(title: "", bodyLength: 10, html: "<stub>")
-        let result = ArticleResolver.resolution(
-            direct: directStub, archived: nil, directFailure: .offline)
-        XCTAssertEqual(result, .unreadable(.notReadable))
-    }
-
-    func testNothingReachableIsUnreadable() {
-        let result = ArticleResolver.resolution(direct: nil, archived: nil)
-        XCTAssertEqual(result, .unreadable(nil))
+        for c in cases {
+            let result = ArticleResolver.resolution(
+                direct: c.direct, archived: c.archived, directFailure: c.directFailure)
+            XCTAssertEqual(result, c.expected, c.why)
+        }
     }
 
     // MARK: - silent-strategy loop: advance-on-failure (GOAL 2 routing reliability)

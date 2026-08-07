@@ -30,8 +30,7 @@ public final class RabbitHoleStackStore {
 
     private var containerURL: URL {
         if let overrideContainerURL { return overrideContainerURL }
-        return fileManager.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupID)
-            ?? fileManager.temporaryDirectory
+        return AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory
     }
 
     private var directory: URL {

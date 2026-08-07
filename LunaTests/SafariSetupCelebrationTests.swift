@@ -5,7 +5,6 @@
 
 import LunaModels
 import LunaStorage
-import WebKit
 import XCTest
 
 /// The one-shot in-page confirmation the Safari extension shows the first time it
@@ -237,44 +236,18 @@ final class SafariSetupCelebrationTests: XCTestCase {
 @MainActor
 final class SafariSetupCelebrationOverlayTests: XCTestCase {
 
-    private static let contentScriptSource: String = {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-        return (try? String(
-            contentsOf: repoRoot.appendingPathComponent("LunaSafari/Resources/content.js"),
-            encoding: .utf8)) ?? ""
-    }()
-
     private static let windowHeight: CGFloat = 844
 
-    private var webView: WKWebView!
-    private var loadDelegate: LoadDelegate!
+    private lazy var js = SafariJSTestHarness(self)
 
     override func setUp() {
         super.setUp()
-        XCTAssertFalse(Self.contentScriptSource.isEmpty, "content.js not found on disk")
-
-        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: Self.windowHeight))
-        let loaded = expectation(description: "fixture loaded")
-        loadDelegate = LoadDelegate { loaded.fulfill() }
-        webView.navigationDelegate = loadDelegate
-        // The viewport meta matters: without one WebKit lays the fixture out in its
-        // default 980pt-wide viewport, so every CSS pixel — and therefore every
-        // `vh` — is scaled, and the measurements below stop resembling a phone.
-        webView.loadHTMLString(
-            """
-            <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-            </head><body style="margin:0"><p>fixture</p></body></html>
-            """,
-            baseURL: URL(string: "https://example.com/"))
-        wait(for: [loaded], timeout: 10)
-        _ = evaluate(Self.contentScriptSource)
-    }
-
-    override func tearDown() {
-        webView = nil
-        loadDelegate = nil
-        super.tearDown()
+        // A fresh document per test (so one test's overlay can't leak into the
+        // next) on the ONE shared web view. The harness's blank page carries the
+        // viewport meta this class needs: without one WebKit lays the fixture out
+        // in its default 980pt-wide viewport, so every CSS pixel — and therefore
+        // every `vh` — is scaled, and the measurements below stop resembling a phone.
+        js.load(urlString: "https://example.com/")
     }
 
     private func present(scheme: String = "lunareader", appName: String = "Luna Reader") {
@@ -334,14 +307,12 @@ final class SafariSetupCelebrationOverlayTests: XCTestCase {
         XCTAssertEqual(
             evaluate("\(overlayQuery).lastChild.textContent"), "Return to Luna Price Tracker")
 
-        // The tap goes through the real navigation path; the delegate captures the
+        // The tap goes through the real navigation path; the harness captures the
         // app-scheme URL and cancels it rather than letting it leave the fixture.
-        let navigated = expectation(description: "app-scheme navigation attempted")
-        loadDelegate.onAppSchemeNavigation = { navigated.fulfill() }
-        _ = evaluate("\(overlayQuery).lastChild.click(); 'clicked'")
-        wait(for: [navigated], timeout: 10)
-
-        XCTAssertEqual(loadDelegate.appSchemeURL, "lunapricetracker://")
+        let attempted = js.awaitAppSchemeNavigation {
+            _ = evaluate("\(overlayQuery).lastChild.click(); 'clicked'")
+        }
+        XCTAssertEqual(attempted, "lunapricetracker://")
         // Feedback while the app comes up, the same beat the pill gives.
         XCTAssertEqual(evaluate("\(overlayQuery).lastChild.textContent"), "Opening Luna…")
     }
@@ -363,14 +334,44 @@ final class SafariSetupCelebrationOverlayTests: XCTestCase {
             "1")
     }
 
+    /// The self-dismissal, without spending its five seconds — and without a
+    /// wait of any kind.
+    ///
+    /// `SETUP_CELEBRATION_DURATION` is a closure-scoped constant, so it can't be
+    /// shortened from outside; but the ONE thing the overlay does with it is
+    /// hand it to `setTimeout`, and that IS reachable. Stubbing `setTimeout`
+    /// across `present()` intercepts the dismissal timer instead of scheduling
+    /// it, which lets this assert three things the old six-second version could
+    /// only imply: the timer was armed with 5000 (not merely that a mirror
+    /// global says so), the overlay is still up until it fires, and firing it is
+    /// what takes the overlay down and hands the page back.
     func testItDismissesItselfAfterFiveSecondsAndHandsThePageBack() {
-        XCTAssertEqual(evaluate("String(window.__lunaSetupCelebrationDuration)"), "5000")
+        _ = evaluate("""
+            window.__lunaRealSetTimeout = window.setTimeout;
+            window.__lunaArmedDelay = null;
+            window.__lunaArmedCallback = null;
+            window.setTimeout = function (fn, delay) {
+                if (delay >= 1000 && window.__lunaArmedCallback === null) {
+                    window.__lunaArmedDelay = delay;
+                    window.__lunaArmedCallback = fn;
+                    return 0;
+                }
+                return window.__lunaRealSetTimeout.apply(window, arguments);
+            };
+            "stubbed"
+            """)
         present()
+        _ = evaluate("window.setTimeout = window.__lunaRealSetTimeout; 'restored'")
+
+        XCTAssertEqual(
+            evaluate("String(window.__lunaArmedDelay)"), "5000",
+            "the dismissal timer must be armed with the celebration's own duration")
+        XCTAssertEqual(evaluate("String(window.__lunaSetupCelebrationDuration)"), "5000")
+        // Nothing has fired yet, so the overlay is still up.
+        XCTAssertEqual(evaluate("\(overlayQuery) ? 'present' : 'absent'"), "present")
         XCTAssertEqual(evaluate("String(window.__lunaTestDismissed)"), "false")
 
-        let dismissed = expectation(description: "overlay dismissed itself")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { dismissed.fulfill() }
-        wait(for: [dismissed], timeout: 10)
+        _ = evaluate("window.__lunaArmedCallback(); 'fired'")
 
         XCTAssertEqual(evaluate("\(overlayQuery) ? 'present' : 'absent'"), "absent")
         // The callback is how the pill logic gets its turn.
@@ -380,58 +381,13 @@ final class SafariSetupCelebrationOverlayTests: XCTestCase {
     // MARK: - Harness
 
     private func evaluate(_ script: String) -> String {
-        let finished = expectation(description: "script evaluated")
-        var outcome = ""
-        webView.evaluateJavaScript(script) { result, error in
-            if let error {
-                XCTFail("\(script.prefix(120)) failed to evaluate: \(error)")
-            }
-            if let string = result as? String {
-                outcome = string
-            } else if let result, !(result is NSNull) {
-                outcome = String(describing: result)
-            }
-            finished.fulfill()
-        }
-        wait(for: [finished], timeout: 10)
-        return outcome
+        guard let result = js.evaluate(script), !(result is NSNull) else { return "" }
+        return result as? String ?? String(describing: result)
     }
 
     private func number(_ expression: String) -> Double {
         Double(evaluate("String(\(expression))")) ?? .nan
     }
 
-    private func json(_ value: String) -> String {
-        let data = try? JSONSerialization.data(withJSONObject: [value])
-        let array = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
-        return String(array.dropFirst().dropLast())
-    }
-
-    /// Also stands in for iOS's app-scheme handling: a `luna*://` navigation is
-    /// captured and cancelled instead of leaving the fixture.
-    private final class LoadDelegate: NSObject, WKNavigationDelegate {
-        private let onFinish: () -> Void
-        var appSchemeURL: String?
-        var onAppSchemeNavigation: (() -> Void)?
-
-        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onFinish() }
-
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-        ) {
-            let scheme = navigationAction.request.url?.scheme ?? ""
-            guard scheme.hasPrefix("luna") else {
-                decisionHandler(.allow)
-                return
-            }
-            appSchemeURL = navigationAction.request.url?.absoluteString
-            decisionHandler(.cancel)
-            onAppSchemeNavigation?()
-            onAppSchemeNavigation = nil
-        }
-    }
+    private func json(_ value: String) -> String { SafariJSTestHarness.jsString(value) }
 }

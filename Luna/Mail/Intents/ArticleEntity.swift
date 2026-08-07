@@ -24,11 +24,11 @@ import Foundation
 /// drives the actual `CSSearchableIndex` writes.
 struct ArticleEntity: AppEntity, IndexedEntity {
     let id: UUID
-    @Property(title: "Title") var title: String
-    @Property(title: "Saved") var savedDate: Date
-    @Property(title: "Source") var sourceHost: String
+    @Property(title: "Intents_articleEntity_titleProperty_title_Luna") var title: String
+    @Property(title: "Intents_articleEntity_savedDateProperty_title_Luna") var savedDate: Date
+    @Property(title: "Intents_articleEntity_sourceHostProperty_title_Luna") var sourceHost: String
 
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Article"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Intents_articleEntity_typeName_Luna"
     static var defaultQuery = ArticleEntityQuery()
 
     var displayRepresentation: DisplayRepresentation {

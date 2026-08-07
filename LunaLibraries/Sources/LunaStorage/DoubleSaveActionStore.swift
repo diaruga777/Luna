@@ -28,9 +28,9 @@ public enum DoubleSaveAction: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .nothing: return L10n.string("Nothing")
-        case .sendToKindle: return L10n.string("Send to Kindle")
-        case .openDocument: return L10n.string("View immediately")
+        case .nothing: return L10n.string("ReadingList_doubleSave_actionNothingTitle")
+        case .sendToKindle: return L10n.string("Common_sendToKindle")
+        case .openDocument: return L10n.string("ReadingList_doubleSave_actionViewImmediatelyTitle")
         }
     }
 
@@ -53,8 +53,8 @@ public enum DoubleSaveFriendMode: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .preset: return L10n.string("Preset Contacts")
-        case .askEveryTime: return L10n.string("Ask Every Time")
+        case .preset: return L10n.string("ReadingList_doubleSave_friendModePresetTitle")
+        case .askEveryTime: return L10n.string("ReadingList_doubleSave_friendModeAskEveryTimeTitle")
         }
     }
 }

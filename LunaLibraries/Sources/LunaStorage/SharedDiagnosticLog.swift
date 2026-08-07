@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import LunaAppConfig
 import Foundation
 
 /// Minimal append-only diagnostic logger usable from the share/action
@@ -55,8 +56,6 @@ public enum SharedDiagnosticLog {
     }
 
     private static func logFileURL() -> URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)?
-            .appendingPathComponent("clip-diagnostics.log")
+        AppConfig.sharedContainerURL()?.appendingPathComponent("clip-diagnostics.log")
     }
 }

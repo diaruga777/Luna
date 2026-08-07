@@ -103,10 +103,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     private var safariState = OnboardingSetupButtonState.pending
     private var shortcutState = OnboardingSetupButtonState.pending
 
-    init(
-        introCopy: OnboardingIntroCopy,
-        supportingText _: String
-    ) {
+    init(introCopy: OnboardingIntroCopy) {
         headline = OnboardingIntroHeadlineView(copy: introCopy)
         super.init()
     }
@@ -1223,320 +1220,6 @@ final class MoonRevealLineView: UIView {
     }
 }
 
-/// One sentence delivered in two beats, with nothing moving between them.
-///
-/// The stem is typeset where it sits in the FINISHED sentence, so the first
-/// beat's “Read.” reads a little left of centre and the finished “Read more.”
-/// is centred without a single glyph translating. Three lines share one frame
-/// and one text block: each renders the whole composition with every fragment
-/// but its own in clear ink, so a fragment's position comes from the real
-/// typesetting of the sentence around it rather than a measured offset. Their
-/// occluders are clear because they overlap: the front hides text by
-/// geometrically removing it from the mask, and a black disc wide enough to
-/// cover this line would cover its neighbours too.
-///
-/// The second beat is TWO fronts, started together — one bringing the tail in,
-/// one taking the stem's period out. A single shared edge would be wrong here:
-/// a period's ink sits a whole x-height below “more”'s, so one edge descending
-/// through the shared frame uncovers the top of the “m” a third of a second
-/// before it reaches the period still standing to its left. Each front is
-/// placed against its own fragment's ink instead, so the two tops start
-/// together and the sentence never reads as having both punctuations at once.
-final class MoonRevealGrowingLineView: UIView {
-    let firstBeatText: String
-    let finishedText: String
-
-    /// The three lines the sentence is typeset across.
-    var fragments: (stem: MoonRevealLineView, period: MoonRevealLineView, tail: MoonRevealLineView) {
-        (stemLine, periodLine, tailLine)
-    }
-
-    /// How far the period's front starts ahead of the tail's — the drop from
-    /// the tail's highest ink to the period's, so the two tops go together.
-    let periodFrontLead: CGFloat
-
-    private let stemLine: MoonRevealLineView
-    private let periodLine: MoonRevealLineView
-    private let tailLine: MoonRevealLineView
-    private let textWidth: CGFloat
-
-    init(
-        stem: String,
-        tail: String,
-        font: UIFont = .systemFont(ofSize: 25, weight: .semibold)
-    ) {
-        let finished = stem + tail
-        let period = OnboardingStrings.Intro.growingLinePeriod.value()
-        let firstBeat = stem + period
-        let stemLength = (stem as NSString).length
-        let finishedLength = (finished as NSString).length
-        firstBeatText = firstBeat
-        finishedText = finished
-
-        stemLine = Self.line(
-            firstBeat, font: font,
-            visible: NSRange(location: 0, length: stemLength))
-        periodLine = Self.line(
-            firstBeat, font: font,
-            visible: NSRange(location: stemLength, length: 1))
-        tailLine = Self.line(
-            finished, font: font,
-            visible: NSRange(
-                location: stemLength, length: finishedLength - stemLength))
-        textWidth = Self.composition(
-            finished, font: font,
-            visible: NSRange(location: 0, length: finishedLength)
-        ).size().width
-        periodFrontLead = Self.inkTopDrop(
-            of: period, below: tail, font: font)
-
-        super.init(frame: .zero)
-        isUserInteractionEnabled = false
-        clipsToBounds = false
-        // The period is behind its neighbours so its own bloom never washes
-        // over them, and in front of nothing it could hide.
-        for line in [periodLine, stemLine, tailLine] { addSubview(line) }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        // Left-aligned from one shared origin: every fragment then lands where
-        // the sentence puts it, whatever the trailing glyphs of its own
-        // composition are. The two points of slack keep a label whose text
-        // measures its own width from shrinking to fit itself.
-        let block = CGRect(
-            x: max(((bounds.width - textWidth) / 2).rounded(), 0),
-            y: 0,
-            width: min(textWidth.rounded(.up) + 2, bounds.width),
-            height: bounds.height)
-        for line in [periodLine, stemLine, tailLine] { line.frame = block }
-    }
-
-    /// The stem arrives with a period of its own.
-    func revealFirstBeat(duration: TimeInterval, completion: @escaping () -> Void) {
-        sweep(
-            [
-                { self.stemLine.reveal(duration: duration, completion: $0) },
-                { self.periodLine.reveal(duration: duration, completion: $0) },
-            ],
-            spokenText: firstBeatText,
-            completion: completion)
-    }
-
-    /// The tail arrives as the period goes out: two fronts of the same pace,
-    /// started in the same turn, each already placed at its own fragment's ink
-    /// so the top of the “m” and the top of the period go together. The stem is
-    /// not part of this beat at all.
-    func revealSecondBeat(duration: TimeInterval, completion: @escaping () -> Void) {
-        sweep(
-            [
-                { self.tailLine.reveal(duration: duration, completion: $0) },
-                {
-                    self.periodLine.conceal(
-                        duration: duration,
-                        frontLead: self.periodFrontLead,
-                        completion: $0)
-                },
-            ],
-            spokenText: finishedText,
-            completion: completion)
-    }
-
-    /// The sentence as both beats leave it — stem and tail standing, the stem's
-    /// own period gone — with no front ever running.
-    func showFinishedState() {
-        stemLine.showFullyRevealed()
-        tailLine.showFullyRevealed()
-        periodLine.showFullyConcealed()
-        for line in [periodLine, stemLine, tailLine] {
-            line.isAccessibilityElement = false
-        }
-        isAccessibilityElement = true
-        accessibilityLabel = finishedText
-    }
-
-    private func sweep(
-        _ operations: [(@escaping () -> Void) -> Void],
-        spokenText: String,
-        completion: @escaping () -> Void
-    ) {
-        var remaining = operations.count
-        let finish = { [weak self] in
-            remaining -= 1
-            guard remaining == 0, let self else { return }
-            // One sentence, one element: the fragments are typography, not
-            // three separate things to swipe through.
-            for line in [self.periodLine, self.stemLine, self.tailLine] {
-                line.isAccessibilityElement = false
-            }
-            self.isAccessibilityElement = true
-            self.accessibilityLabel = spokenText
-            completion()
-        }
-        for operation in operations { operation(finish) }
-    }
-
-    private static func line(
-        _ string: String,
-        font: UIFont,
-        visible: NSRange
-    ) -> MoonRevealLineView {
-        MoonRevealLineView(
-            text: (string as NSString).substring(with: visible),
-            styledText: composition(string, font: font, visible: visible),
-            font: font,
-            textAlignment: .left,
-            minimumScaleFactor: 1,
-            occluderColor: .clear)
-    }
-
-    /// How far below `reference`'s highest ink this fragment's own highest ink
-    /// sits. Both are typeset on the sentence's one baseline, so the difference
-    /// of their ink heights above it is exactly how much later a shared front
-    /// would arrive — and so exactly the lead the fragment's own front needs.
-    ///
-    /// Ink, not typography: the line box of a period is as tall as the line box
-    /// of an “m”, and it is the visible dot that has to start when the “m” does.
-    private static func inkTopDrop(
-        of fragment: String,
-        below reference: String,
-        font: UIFont
-    ) -> CGFloat {
-        max(inkTopAboveBaseline(reference, font: font)
-            - inkTopAboveBaseline(fragment, font: font), 0)
-    }
-
-    private static func inkTopAboveBaseline(
-        _ string: String,
-        font: UIFont
-    ) -> CGFloat {
-        let line = CTLineCreateWithAttributedString(
-            NSAttributedString(string: string, attributes: [.font: font]))
-        return CTLineGetImageBounds(line, nil).maxY
-    }
-
-    /// The whole composition, with only `visible` in white ink. Kerning is
-    /// switched off so every fragment's advance widths are the plain sum of
-    /// its glyphs' and the compositions agree on where each one begins.
-    private static func composition(
-        _ string: String,
-        font: UIFont,
-        visible: NSRange
-    ) -> NSAttributedString {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .left
-        paragraph.lineBreakMode = .byClipping
-        let text = NSMutableAttributedString(
-            string: string,
-            attributes: [
-                .font: font,
-                .kern: 0,
-                .foregroundColor: UIColor.clear,
-                .paragraphStyle: paragraph,
-            ])
-        text.addAttribute(.foregroundColor, value: UIColor.white, range: visible)
-        return text
-    }
-}
-
-/// The intro's headline, in whichever shape its app's copy takes. Both take
-/// two beats of the same sweep, so the card drives them the same way.
-final class OnboardingIntroHeadlineView: UIView {
-    static let lineHeight: CGFloat = 44
-    private static let lineGap: CGFloat = 3
-
-    private enum Shape {
-        case pair(MoonRevealLineView, MoonRevealLineView)
-        case growing(MoonRevealGrowingLineView)
-    }
-
-    private let shape: Shape
-
-    init(copy: OnboardingIntroCopy) {
-        switch copy {
-        case .twoLines(let first, let second):
-            shape = .pair(
-                MoonRevealLineView(text: first),
-                MoonRevealLineView(text: second))
-        case .growingLine(let stem, let tail):
-            shape = .growing(MoonRevealGrowingLineView(stem: stem, tail: tail))
-        }
-        super.init(frame: .zero)
-        isUserInteractionEnabled = false
-        clipsToBounds = false
-        switch shape {
-        case .pair(let first, let second):
-            addSubview(first)
-            addSubview(second)
-        case .growing(let line):
-            addSubview(line)
-        }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
-
-    var height: CGFloat {
-        switch shape {
-        case .pair: return Self.lineHeight * 2 + Self.lineGap
-        case .growing: return Self.lineHeight
-        }
-    }
-
-    var growingLine: MoonRevealGrowingLineView? {
-        guard case .growing(let line) = shape else { return nil }
-        return line
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        switch shape {
-        case .pair(let first, let second):
-            first.frame = CGRect(
-                x: 0, y: 0, width: bounds.width, height: Self.lineHeight)
-            second.frame = CGRect(
-                x: 0, y: first.frame.maxY + Self.lineGap,
-                width: bounds.width, height: Self.lineHeight)
-        case .growing(let line):
-            line.frame = bounds
-        }
-    }
-
-    func revealFirstBeat(duration: TimeInterval, completion: @escaping () -> Void) {
-        switch shape {
-        case .pair(let first, _):
-            first.reveal(duration: duration, completion: completion)
-        case .growing(let line):
-            line.revealFirstBeat(duration: duration, completion: completion)
-        }
-    }
-
-    func revealSecondBeat(duration: TimeInterval, completion: @escaping () -> Void) {
-        switch shape {
-        case .pair(_, let second):
-            second.reveal(duration: duration, completion: completion)
-        case .growing(let line):
-            line.revealSecondBeat(duration: duration, completion: completion)
-        }
-    }
-
-    /// The headline as both beats leave it, with neither beat playing. A card
-    /// paged back to shows the sentence it already said rather than saying it
-    /// again — the reveal belongs to the launch.
-    func showFinishedState() {
-        switch shape {
-        case .pair(let first, let second):
-            first.showFullyRevealed()
-            second.showFullyRevealed()
-        case .growing(let line):
-            line.showFinishedState()
-        }
-    }
-}
-
 /// Draws the transient light separately from the ordinary text.
 ///
 /// The emitter is rebuilt at display cadence by intersecting the descending
@@ -1544,6 +1227,25 @@ final class OnboardingIntroHeadlineView: UIView {
 /// Quartz shadows are then applied to that exact alpha image in additive passes.
 /// Keeping the padded result in its own view lets the glow illuminate pixels
 /// around the letters instead of being clipped back to the text mask.
+///
+/// **The frames are composited off the main thread.** Those additive passes are
+/// the expensive part of the whole animation — measured at ~5ms a frame for one
+/// short fragment of a headline, and nearly all of it fixed cost per pass rather
+/// than blur width, so there is no cheaper arrangement of them that keeps this
+/// light. A headline's second beat blooms two fragments at once, which put ~10ms
+/// of Quartz on the main thread every frame before Core Animation had committed
+/// anything: the sweep dropped frames unevenly and read as choppy. So a frame is
+/// drawn on `renderQueue` and arrives as ready-made layer contents (`Pass`),
+/// while the display link — which must stay on the main thread to sample the
+/// occluder's presentation transform — does nothing but ask for one.
+///
+/// Nothing about the light itself changed: the same emitter, the same eight
+/// passes in the same order, the same geometry, and a buffer snapped to this
+/// view's own device-pixel grid so the composite lands where the backing store's
+/// did. Held against the old drawing at three frozen points of the sweep it
+/// matched to a mean of 0.03 of one 255-level, with the total light within 0.1%
+/// and every other pixel on screen identical. The one thing that had to be
+/// converted rather than copied is the halo radii — see `Pass`.
 ///
 /// Internal (not private): the mock Safari article's images ride the same
 /// light pass, fed a raster of the image instead of glyph alpha.
@@ -1570,7 +1272,21 @@ final class GlyphPixelBloomView: UIView {
     /// glyph's brighten-and-cool takes the same TIME at any front speed.
     static let referenceFrontSpeed: CGFloat = 46
 
-    private static let edgeFalloff = [
+    /// Where a frame is composited. The work itself is unchanged; the main
+    /// thread simply no longer waits for it.
+    ///
+    /// Concurrent, and deliberately without a pool of its own: a view never has
+    /// more than one frame in flight, so the tasks in the queue are at most one
+    /// per blooming view, none of them ever blocks, and the parallelism settles
+    /// wherever the cores put it. The mock Safari page's wave — a dozen elements
+    /// lit in one pass — then renders as fast as the machine allows instead of
+    /// queueing a dozen composites onto the main thread the way it used to.
+    private static let renderQueue = DispatchQueue(
+        label: "app.luna.onboarding.glyph-bloom",
+        qos: .userInitiated,
+        attributes: .concurrent)
+
+    fileprivate static let edgeFalloff = [
         EdgeBand(inner: 0, outer: 1.75, alpha: 1.00),
         EdgeBand(inner: 1.75, outer: 4.00, alpha: 0.72),
         EdgeBand(inner: 4.00, outer: 7.25, alpha: 0.32),
@@ -1581,7 +1297,7 @@ final class GlyphPixelBloomView: UIView {
     // shadow reads as soft text; stacked scales produce a clipped white core,
     // a dense local flare that erases legibility, and a broad low-frequency
     // wash like the first visible edge of the sun.
-    private static let haloPasses = [
+    fileprivate static let haloPasses = [
         HaloPass(radius: 30, alpha: 0.72),
         HaloPass(radius: 30, alpha: 0.72),
         HaloPass(radius: 18, alpha: 0.90),
@@ -1592,6 +1308,9 @@ final class GlyphPixelBloomView: UIView {
         HaloPass(radius: 2, alpha: 1.00),
     ]
 
+    /// The light's own layer, handed finished frames rather than drawing them.
+    private let lightLayer = CALayer()
+
     private var glyphImage: UIImage?
     private var glyphFrame = CGRect.zero
     private var initialCircleFrame = CGRect.zero
@@ -1600,7 +1319,17 @@ final class GlyphPixelBloomView: UIView {
     private var revealStartTime: CFTimeInterval = 0
     private var revealDuration: CFTimeInterval = 0
     private var displayLink: CADisplayLink?
-    private var emitterRenderer: UIGraphicsImageRenderer?
+    /// Everything one pass's frames need, fixed when the pass begins. Nil until
+    /// a raster has been configured; replaced, never mutated, so the render
+    /// queue only ever reads a finished object.
+    private var pass: Pass?
+    /// Set while a frame is being composited. The display link does not queue a
+    /// second one behind it: the tick after this one carries fresher geometry
+    /// than a backlog would.
+    private var isRenderingFrame = false
+    /// Bumped whenever a pass is replaced, so a frame still in flight from the
+    /// previous one is discarded instead of appearing over the new pass.
+    private var passGeneration = 0
     private var edgeSagitta: CGFloat = 0
     private var edge = Edge.topArc
     private var edgeBandScale: CGFloat = 1
@@ -1631,7 +1360,12 @@ final class GlyphPixelBloomView: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
-        contentMode = .redraw
+        lightLayer.isOpaque = false
+        // The composite arrives sized to its own rect; nothing here is ever
+        // stretched, and an implicit fade between frames would smear the light.
+        lightLayer.contentsGravity = .resize
+        lightLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+        layer.addSublayer(lightLayer)
     }
 
     @available(*, unavailable)
@@ -1680,33 +1414,9 @@ final class GlyphPixelBloomView: UIView {
         let radius = circleFrame.width / 2
         let halfWidth = bounds.width / 2
         edgeSagitta = radius - sqrt(max(radius * radius - halfWidth * halfWidth, 0))
-        setNeedsDisplay()
-    }
-
-    /// The widest cooling distance for the current front speed.
-    private var scaledFalloffReach: CGFloat {
-        (Self.edgeFalloff.last?.outer ?? 12) * edgeBandScale
-    }
-
-    /// The emitting band: everything within the falloff distance outside the
-    /// edge, plus the bow of the near-flat arc across the view's width.
-    private var stripHeight: CGFloat {
-        scaledFalloffReach + edgeSagitta + 12
-    }
-
-    private func currentStripRect() -> CGRect {
-        // The bands trail the moving edge: above a descending circle's top
-        // arc, below a climbing (or concealing) one's bottom arc.
-        let circle = initialCircleFrame.offsetBy(
-            dx: 0, dy: circleTravel * progress)
-        let y = edge == .bottomArc
-            ? circle.maxY - edgeSagitta - 8
-            : circle.minY - scaledFalloffReach - 4
-        return CGRect(
-            x: 0,
-            y: y,
-            width: bounds.width,
-            height: stripHeight)
+        // A raster placed but not yet swept has no light of its own; whatever an
+        // earlier pass left on the layer is not this one's.
+        clearLight()
     }
 
     /// `offsetProvider` slaves the light to the occluder itself: it returns
@@ -1745,13 +1455,21 @@ final class GlyphPixelBloomView: UIView {
         // article-length text: whole lines never got their bright moment
         // because the frame rate fell to a handful of samples. The strip is
         // sized here because the falloff reach depends on the front's speed.
-        let emitterFormat = UIGraphicsImageRendererFormat()
-        emitterFormat.scale = rasterScale
-        emitterFormat.opaque = false
-        emitterRenderer = UIGraphicsImageRenderer(
-            size: CGSize(width: bounds.width, height: stripHeight),
-            format: emitterFormat)
-        setNeedsDisplay()
+        pass = glyphImage?.cgImage.flatMap { raster in
+            Pass(
+                raster: raster,
+                rasterFrame: glyphFrame,
+                initialCircleFrame: initialCircleFrame,
+                circleTravel: circleTravel,
+                edge: self.edge,
+                edgeSagitta: edgeSagitta,
+                edgeBandScale: self.edgeBandScale,
+                emitterGain: self.emitterGain,
+                width: bounds.width,
+                scale: rasterScale)
+        }
+        passGeneration += 1
+        clearLight()
 
         let displayLink = CADisplayLink(
             target: self,
@@ -1768,35 +1486,21 @@ final class GlyphPixelBloomView: UIView {
         displayLink?.invalidate()
         displayLink = nil
         offsetProvider = nil
+        // The pass owns two bitmaps, and the mock Safari page's wave has a dozen
+        // passes alive at once. A frame still in flight holds its own reference,
+        // so dropping this one only frees what nothing is drawing into.
+        pass = nil
     }
 
-    override func draw(_ rect: CGRect) {
-        guard let emitter = makeEmitterImage(),
-              let context = UIGraphicsGetCurrentContext()
-        else { return }
-
-        context.saveGState()
-        context.setBlendMode(.plusLighter)
-        for halo in Self.haloPasses {
-            context.saveGState()
-            context.setShadow(
-                offset: .zero,
-                blur: halo.radius,
-                color: UIColor.white
-                    .withAlphaComponent(min(halo.alpha * emitterGain, 1))
-                    .cgColor)
-            emitter.image.draw(
-                in: emitter.rect,
-                blendMode: .plusLighter,
-                alpha: min(emitterGain, 1))
-            context.restoreGState()
-        }
-        context.restoreGState()
+    /// Drops whatever light is on screen. The layer keeps its last frame
+    /// through `stop()` — a sweep that has run its course has taken the band
+    /// off the view already — and is only emptied when a new pass is set up.
+    private func clearLight() {
+        lightLayer.contents = nil
     }
 
     @objc private func drawNextRevealFrame(_ link: CADisplayLink) {
         if revealStartTime == 0 { revealStartTime = link.timestamp }
-        let previousStrip = currentStripRect()
         if let offsetProvider {
             if let offset = offsetProvider() {
                 // Signed travel: an upward sweep translates negatively, and
@@ -1828,29 +1532,266 @@ final class GlyphPixelBloomView: UIView {
             let elapsed = link.timestamp - revealStartTime
             progress = min(max(CGFloat(elapsed / revealDuration), 0), 1)
         }
-        // Redraw covers where the glow was and where it is now — the widest
-        // halo included — so old light is cleared without repainting the view.
-        let glowReach = (Self.haloPasses.map(\.radius).max() ?? 30) + 4
-        setNeedsDisplay(
-            previousStrip
-                .union(currentStripRect())
-                .insetBy(dx: -glowReach, dy: -glowReach))
+        requestFrame(atProgress: progress)
         if progress >= 1 {
             stop()
         }
     }
 
-    private func makeEmitterImage() -> (image: UIImage, rect: CGRect)? {
-        guard let glyphImage, let emitterRenderer else { return nil }
-        let circleFrame = initialCircleFrame.offsetBy(
-            dx: 0,
-            dy: circleTravel * progress)
-        let strip = currentStripRect()
+    /// Composites one frame off the main thread and hands it to the layer.
+    ///
+    /// A tick that arrives while the previous frame is still being composited
+    /// is dropped rather than queued: it is the CURRENT edge position the light
+    /// has to sit on, and a backlog would deliver stale ones late.
+    private func requestFrame(atProgress progress: CGFloat) {
+        guard let pass, !isRenderingFrame else { return }
+        isRenderingFrame = true
+        let generation = passGeneration
+        Self.renderQueue.async { [weak self] in
+            let frame = pass.frame(atProgress: progress)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isRenderingFrame = false
+                guard let frame, generation == self.passGeneration else { return }
+                self.show(frame)
+            }
+        }
+    }
 
-        let image = emitterRenderer.image { rendererContext in
-            let context = rendererContext.cgContext
+    private func show(_ frame: Pass.Frame) {
+        lightLayer.contentsScale = rasterScale
+        lightLayer.frame = frame.rect
+        lightLayer.contents = frame.image
+    }
+
+    /// One pass's fixed drawing, and the frames it makes.
+    ///
+    /// Every value here is settled before the sweep starts, so a frame is a pure
+    /// function of its progress and the render queue never reads mutable view
+    /// state. The two bitmaps are built once and reused: at display cadence a
+    /// fresh backing store per frame is pure allocation.
+    ///
+    /// **Core Graphics, not UIKit, and that is not a preference.** The obvious
+    /// port kept `UIGraphicsImageRenderer` and `UIImage.draw(in:)`, and off the
+    /// main thread they composite NOTHING — no error, no warning, an entirely
+    /// empty buffer every frame, with a light that simply never appeared. So the
+    /// emitter and the composite are `CGContext`s with the UIKit y-down flip
+    /// applied by hand, and rasters are drawn as `CGImage`s (which is why
+    /// `draw(_:in:blendMode:alpha:)` below re-flips around each rect the way
+    /// `UIImage.draw(in:)` used to).
+    private final class Pass {
+        struct Frame {
+            let image: CGImage
+            /// Where the composite belongs in the bloom view's coordinates.
+            let rect: CGRect
+        }
+
+        private let raster: CGImage
+        private let rasterFrame: CGRect
+        private let initialCircleFrame: CGRect
+        private let circleTravel: CGFloat
+        private let edge: Edge
+        private let edgeSagitta: CGFloat
+        private let edgeBandScale: CGFloat
+        private let emitterGain: CGFloat
+        private let width: CGFloat
+        private let scale: CGFloat
+        private let stripHeight: CGFloat
+        private let scaledFalloffReach: CGFloat
+        /// How far past the strip the widest halo can still put light. A shadow's
+        /// blur is in the USER SPACE it was set in — points here, as in the view
+        /// context this drawing came from — so the reach is the widest radius
+        /// itself, plus a little. (This is the same 34 the old invalidation rect
+        /// grew by, for the same reason.)
+        private let glowReach: CGFloat
+        /// The halo stack with its gain already folded in, so a frame does no
+        /// colour arithmetic.
+        private let halos: [(blur: CGFloat, color: CGColor)]
+        private let drawAlpha: CGFloat
+        /// The rect the emitter image is drawn back into. Deliberately the
+        /// UNROUNDED strip size, as the old renderer's was.
+        private let emitterSize: CGSize
+        private let compositeSize: CGSize
+        private let emitterContext: CGContext
+        private let compositeContext: CGContext
+        /// Each bitmap's own size in points, which is a whole number of device
+        /// pixels and so is not always its logical size. The flip is applied
+        /// against THIS, so user-space (0, 0) is the bitmap's top-left corner —
+        /// exactly where `UIGraphicsImageRenderer` used to put it.
+        private let emitterBitmapSize: CGSize
+        private let compositeBitmapSize: CGSize
+
+        init?(
+            raster: CGImage,
+            rasterFrame: CGRect,
+            initialCircleFrame: CGRect,
+            circleTravel: CGFloat,
+            edge: Edge,
+            edgeSagitta: CGFloat,
+            edgeBandScale: CGFloat,
+            emitterGain: CGFloat,
+            width: CGFloat,
+            scale: CGFloat
+        ) {
+            self.raster = raster
+            self.rasterFrame = rasterFrame
+            self.initialCircleFrame = initialCircleFrame
+            self.circleTravel = circleTravel
+            self.edge = edge
+            self.edgeSagitta = edgeSagitta
+            self.edgeBandScale = edgeBandScale
+            self.emitterGain = emitterGain
+            self.width = width
+            self.scale = max(scale, 1)
+            let pixelScale = max(scale, 1)
+            scaledFalloffReach = (GlyphPixelBloomView.edgeFalloff.last?.outer ?? 12)
+                * edgeBandScale
+            stripHeight = scaledFalloffReach + edgeSagitta + 12
+            let widestHalo = GlyphPixelBloomView.haloPasses.map(\.radius).max() ?? 30
+            glowReach = widestHalo + 4
+            // The radii are in POINTS, as the view context they were tuned in
+            // measured them, and a bitmap context measures a shadow's blur in
+            // DEVICE PIXELS however its transform is scaled afterwards — so each
+            // one is converted here. Skip this and the white cores still land
+            // perfectly while every soft outer halo comes in at a third of its
+            // reach: the broad low-frequency wash disappears and the light reads
+            // as a hard glow instead of a sunrise.
+            halos = GlyphPixelBloomView.haloPasses.map { halo in
+                (halo.radius * pixelScale,
+                 UIColor.white
+                     .withAlphaComponent(min(halo.alpha * emitterGain, 1))
+                     .cgColor)
+            }
+            drawAlpha = min(emitterGain, 1)
+            emitterSize = CGSize(width: width, height: stripHeight)
+            // Whole device pixels, so the composite maps onto the bloom view's
+            // own pixel grid one for one and Core Animation never resamples it.
+            compositeSize = CGSize(
+                width: ((width * pixelScale).rounded(.up) + 1) / pixelScale,
+                height: (((stripHeight + glowReach * 2) * pixelScale).rounded(.up) + 1)
+                    / pixelScale)
+            // Both bitmaps work in points, like the view whose drawing this is.
+            guard let emitter = Pass.makeBitmap(
+                    pixelWidth: Int((emitterSize.width * pixelScale).rounded()),
+                    pixelHeight: Int((emitterSize.height * pixelScale).rounded()),
+                    unitsPerPixel: 1 / pixelScale),
+                  let composite = Pass.makeBitmap(
+                    pixelWidth: Int((compositeSize.width * pixelScale).rounded()),
+                    pixelHeight: Int((compositeSize.height * pixelScale).rounded()),
+                    unitsPerPixel: 1 / pixelScale)
+            else { return nil }
+            emitterContext = emitter.context
+            emitterBitmapSize = emitter.size
+            compositeContext = composite.context
+            compositeBitmapSize = composite.size
+        }
+
+        /// A reusable bitmap in UIKit's coordinates — y down, origin at the
+        /// top-left — whose user unit is `unitsPerPixel` of a device pixel.
+        private static func makeBitmap(
+            pixelWidth: Int,
+            pixelHeight: Int,
+            unitsPerPixel: CGFloat
+        ) -> (context: CGContext, size: CGSize)? {
+            guard pixelWidth > 0, pixelHeight > 0, unitsPerPixel > 0,
+                  let context = CGContext(
+                    data: nil,
+                    width: pixelWidth,
+                    height: pixelHeight,
+                    bitsPerComponent: 8,
+                    bytesPerRow: 0,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)
+                        ?? CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                        | CGBitmapInfo.byteOrder32Little.rawValue)
+            else { return nil }
+            let size = CGSize(
+                width: CGFloat(pixelWidth) * unitsPerPixel,
+                height: CGFloat(pixelHeight) * unitsPerPixel)
+            context.scaleBy(x: 1 / unitsPerPixel, y: 1 / unitsPerPixel)
+            context.translateBy(x: 0, y: size.height)
+            context.scaleBy(x: 1, y: -1)
+            return (context, size)
+        }
+
+        /// `UIImage.draw(in:blendMode:alpha:)`, in Core Graphics: a `CGImage`
+        /// draws bottom-up, so it has to be flipped back around its own rect.
+        private func draw(
+            _ image: CGImage,
+            in rect: CGRect,
+            blendMode: CGBlendMode,
+            alpha: CGFloat,
+            into context: CGContext
+        ) {
+            context.saveGState()
+            context.setBlendMode(blendMode)
+            context.setAlpha(alpha)
+            context.translateBy(x: 0, y: rect.midY)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: 0, y: -rect.midY)
+            context.draw(image, in: rect)
+            context.restoreGState()
+        }
+
+        func frame(atProgress progress: CGFloat) -> Frame? {
+            let strip = stripRect(atProgress: progress)
+            let rect = compositeRect(for: strip)
+            guard let emitter = emitterImage(atProgress: progress, strip: strip)
+            else { return nil }
+
+            let context = compositeContext
+            context.saveGState()
+            context.clear(CGRect(origin: .zero, size: compositeBitmapSize))
+            context.translateBy(x: -rect.minX, y: -rect.minY)
+            context.setBlendMode(.plusLighter)
+            let emitterRect = CGRect(origin: strip.origin, size: emitterSize)
+            for halo in halos {
+                context.saveGState()
+                context.setShadow(offset: .zero, blur: halo.blur, color: halo.color)
+                draw(
+                    emitter,
+                    in: emitterRect,
+                    blendMode: .plusLighter,
+                    alpha: drawAlpha,
+                    into: context)
+                context.restoreGState()
+            }
+            context.restoreGState()
+            guard let image = context.makeImage() else { return nil }
+            return Frame(image: image, rect: rect)
+        }
+
+        private func stripRect(atProgress progress: CGFloat) -> CGRect {
+            // The bands trail the moving edge: above a descending circle's top
+            // arc, below a climbing (or concealing) one's bottom arc.
+            let circle = initialCircleFrame.offsetBy(dx: 0, dy: circleTravel * progress)
+            let y = edge == .bottomArc
+                ? circle.maxY - edgeSagitta - 8
+                : circle.minY - scaledFalloffReach - 4
+            return CGRect(x: 0, y: y, width: width, height: stripHeight)
+        }
+
+        /// The strip plus everywhere its halos reach, snapped DOWN to a device
+        /// pixel. Snapping the buffer rather than the light is the whole point:
+        /// the strip keeps its exact subpixel position inside the buffer, so the
+        /// glyphs land where they always landed, while the buffer's own grid
+        /// lines up with the view's.
+        private func compositeRect(for strip: CGRect) -> CGRect {
+            let top = strip.minY - glowReach
+            return CGRect(
+                origin: CGPoint(x: 0, y: (top * scale).rounded(.down) / scale),
+                size: compositeSize)
+        }
+
+        private func emitterImage(atProgress progress: CGFloat, strip: CGRect) -> CGImage? {
+            let circleFrame = initialCircleFrame.offsetBy(
+                dx: 0,
+                dy: circleTravel * progress)
+            let context = emitterContext
+            context.saveGState()
+            context.clear(CGRect(origin: .zero, size: emitterBitmapSize))
             context.translateBy(x: -strip.minX, y: -strip.minY)
-            for band in Self.edgeFalloff {
+            for band in GlyphPixelBloomView.edgeFalloff {
                 context.saveGState()
                 let ring = UIBezierPath(
                     ovalIn: circleFrame.insetBy(
@@ -1863,13 +1804,16 @@ final class GlyphPixelBloomView: UIView {
                 ring.usesEvenOddFillRule = true
                 context.addPath(ring.cgPath)
                 context.clip(using: .evenOdd)
-                glyphImage.draw(
-                    in: glyphFrame,
+                draw(
+                    raster,
+                    in: rasterFrame,
                     blendMode: .normal,
-                    alpha: min(band.alpha * max(emitterGain, 1), 1))
+                    alpha: min(band.alpha * max(emitterGain, 1), 1),
+                    into: context)
                 context.restoreGState()
             }
+            context.restoreGState()
+            return context.makeImage()
         }
-        return (image, strip)
     }
 }

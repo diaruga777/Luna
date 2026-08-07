@@ -358,7 +358,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         header.addSubview(audioButton)
 
         if shareProvider != nil {
-            saveButton.configuration = Self.capsuleConfiguration(title: L10n.string("Save"))
+            saveButton.configuration = Self.capsuleConfiguration(title: L10n.string("Common_save"))
             saveButton.tintColor = GlassStyle.readingAccent
             saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
             header.addSubview(saveButton)
@@ -366,7 +366,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             shareButton.configuration = GlassStyle.circularButtonConfiguration(
                 symbol: "square.and.arrow.up", padding: 8)
             shareButton.tintColor = GlassStyle.readingAccent
-            ReaderShareMenu.install(
+            ShareButtonMenu.install(
                 on: shareButton,
                 providesMenu: shareProvider?.providesShareMenu == true,
                 build: { [weak self] in
@@ -645,7 +645,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         guard view.viewWithTag(Self.errorLabelTag) == nil else { return }
         let label = UILabel()
         label.tag = Self.errorLabelTag
-        label.text = L10n.string("Couldn’t load this page.")
+        label.text = L10n.string("Reader_rabbitHole_loadErrorMessage")
         label.textColor = LunaColors.secondaryText
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textAlignment = .center

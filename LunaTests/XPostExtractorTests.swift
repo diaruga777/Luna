@@ -40,16 +40,35 @@ final class XPostExtractorTests: XCTestCase {
 
     // MARK: - The length gate
 
-    /// A short standalone post is not reader content: the pipeline must be told
-    /// nil so the save stays a social item.
-    func testStandaloneShortPostIsDeclined() {
-        XCTAssertNil(article("standalone-short.json"))
-    }
+    /// Every payload the extractor must DECLINE — the pipeline is told nil so the
+    /// save stays a social item rather than becoming reader content.
+    func testDeclinedPayloads() {
+        let cases: [(name: String, payload: XPostPayload)] = [
+            // A short standalone post is not reader content.
+            ("standalone short post", XPostFixtures.payload("standalone-short.json")),
+            // A two-post aside totalling 536 characters is still not an article.
+            // This is the case that pins the threshold: above one tweet, below reading.
+            ("short two-post thread", XPostFixtures.payload("thread-two-posts-short.json")),
+            // `is_note_tweet` is decoded but must NOT be the gate — X sets it on posts
+            // at the 280-character ordinary limit, so it cannot separate an essay from
+            // a quip. A declined post can still carry the flag.
+            ("note-tweet flag on a short post", XPostPayload(
+                thread: [XPostPayload.Post(
+                    id: "1", text: "Short but composed in the note editor.",
+                    author: .init(screen_name: "a", id: "1"), is_note_tweet: true)],
+                author: .init(screen_name: "a", id: "1"))),
+            // A post shared BECAUSE it holds a video stays media — converting it
+            // would strip the download the save was for.
+            ("long post whose named status carries a video",
+             XPostFixtures.payload("video-post.json")),
+            // Nothing in it yields nothing, rather than an empty article.
+            ("empty payload", XPostPayload()),
+        ]
 
-    /// A two-post aside totalling 536 characters is still not an article. This is
-    /// the case that pins the threshold: it is above one tweet but below reading.
-    func testShortTwoPostThreadIsDeclined() {
-        XCTAssertNil(article("thread-two-posts-short.json"))
+        for testCase in cases {
+            XCTAssertNil(
+                XPostExtractor.article(from: testCase.payload, url: postURL), testCase.name)
+        }
     }
 
     /// No single ordinary post can reach the threshold, whatever it contains —
@@ -66,18 +85,6 @@ final class XPostExtractorTests: XCTestCase {
             content?.bodyTextLength ?? 0, XPostExtractor.minimumBodyTextLength)
         XCTAssertEqual(content?.author, "Arvind Narayanan (@random_walker)")
         XCTAssertFalse(content?.title.isEmpty ?? true)
-    }
-
-    /// `is_note_tweet` is decoded but must NOT be the gate — X sets it on posts at
-    /// the 280-character ordinary limit, so it cannot separate an essay from a
-    /// quip. The short fixture proves a declined post can still carry the flag.
-    func testNoteTweetFlagIsNotTheGate() {
-        let payload = XPostPayload(
-            thread: [XPostPayload.Post(
-                id: "1", text: "Short but composed in the note editor.",
-                author: .init(screen_name: "a", id: "1"), is_note_tweet: true)],
-            author: .init(screen_name: "a", id: "1"))
-        XCTAssertNil(XPostExtractor.article(from: payload, url: postURL))
     }
 
     // MARK: - X Articles (the long-form editor)
@@ -190,37 +197,39 @@ final class XPostExtractorTests: XCTestCase {
         XCTAssertFalse(content.blocks.contains { $0.text.contains("stranger") })
     }
 
-    /// A handle rename must not split one author's thread: identity is by id when
-    /// both sides carry one.
-    func testAuthorIdentityPrefersIDOverHandle() throws {
+    /// Which posts of a payload count as the author's own chain.
+    func testAuthorThreadMembership() {
         let mine = String(repeating: "Long-form writing that keeps going. ", count: 20)
-        let payload = XPostPayload(
-            thread: [
-                .init(id: "1", text: mine, author: .init(screen_name: "old_handle", id: "7")),
-                .init(id: "2", text: mine, author: .init(screen_name: "new_handle", id: "7")),
-            ],
-            author: .init(screen_name: "new_handle", id: "7"))
-        XCTAssertEqual(XPostExtractor.authorThread(in: payload).count, 2)
-    }
+        let cases: [(name: String, payload: XPostPayload, count: Int)] = [
+            // A handle rename must not split one author's thread: identity is by id
+            // when both sides carry one.
+            ("renamed handle, same id", XPostPayload(
+                thread: [
+                    .init(id: "1", text: mine, author: .init(screen_name: "old_handle", id: "7")),
+                    .init(id: "2", text: mine, author: .init(screen_name: "new_handle", id: "7")),
+                ],
+                author: .init(screen_name: "new_handle", id: "7")), 2),
+            // A duplicated post id contributes once.
+            ("duplicate post id", XPostPayload(
+                thread: [
+                    .init(id: "1", text: "a", author: .init(screen_name: "me", id: "1")),
+                    .init(id: "1", text: "a", author: .init(screen_name: "me", id: "1")),
+                ],
+                author: .init(screen_name: "me", id: "1")), 1),
+        ]
 
-    /// A duplicated post id contributes once.
-    func testDuplicatePostsAreDeduplicated() {
-        let payload = XPostPayload(
-            thread: [
-                .init(id: "1", text: "a", author: .init(screen_name: "me", id: "1")),
-                .init(id: "1", text: "a", author: .init(screen_name: "me", id: "1")),
-            ],
-            author: .init(screen_name: "me", id: "1"))
-        XCTAssertEqual(XPostExtractor.authorThread(in: payload).count, 1)
+        for testCase in cases {
+            XCTAssertEqual(
+                XPostExtractor.authorThread(in: testCase.payload).count,
+                testCase.count,
+                testCase.name)
+        }
     }
 
     // MARK: - The video guard
-
-    /// A post shared BECAUSE it holds a video stays media — converting it would
-    /// strip the download the save was for.
-    func testVideoPostIsDeclinedEvenWhenLongEnough() {
-        XCTAssertNil(article("video-post.json"))
-    }
+    //
+    // The decline half (a post shared BECAUSE it holds a video stays media) is a
+    // row in `testDeclinedPayloads`.
 
     /// A clip further down a long essay thread does not disqualify the essay: the
     /// decision is made on the post the URL actually named.
@@ -251,64 +260,88 @@ final class XPostExtractorTests: XCTestCase {
     /// so these tests isolate the stripping rules from the threshold.
     private let pad = String(repeating: "Sentence of body text to clear the gate. ", count: 16)
 
-    /// A hand-numbered thread reads as continuous prose: "1/5", "(2/5)", "3/5"
-    /// come off both ends.
-    func testConsistentClosedCountersAreStripped() {
-        let blocks = threadBlocks(["1/5 First. " + pad, "2/5 Second. " + pad, pad + " 3/5"])
-        XCTAssertEqual(blocks.first?.hasPrefix("First."), true)
-        XCTAssertTrue(blocks.contains { $0.hasPrefix("Second.") })
-        XCTAssertFalse(blocks.contains { $0.contains("1/5") || $0.contains("2/5") || $0.contains("3/5") })
+    private struct CounterCase {
+        let name: String
+        let posts: [String]
+        /// The first assembled block must start with this.
+        var firstBlockPrefix: String?
+        /// Some assembled block must start with each of these.
+        var blockPrefixes: [String] = []
+        /// Some assembled block must contain each of these.
+        var survives: [String] = []
+        /// No assembled block may contain any of these.
+        var stripped: [String] = []
+        /// Stripping must never consume a whole post.
+        var rejectsEmptyBlocks = false
     }
 
-    /// An open-ended counter has no denominator to mistake for a fraction, so it
-    /// is stripped even from a single post.
-    func testOpenEndedCountersAreStripped() {
-        let blocks = threadBlocks(["1/ Kickoff. " + pad, "2/n Next. " + pad])
-        XCTAssertEqual(blocks.first?.hasPrefix("Kickoff."), true)
-        XCTAssertFalse(blocks.contains { $0.contains("1/") || $0.contains("2/n") })
-    }
+    func testThreadCounterStripping() {
+        let cases: [CounterCase] = [
+            // A hand-numbered thread reads as continuous prose: "1/5", "2/5", "3/5"
+            // come off both ends.
+            .init(name: "consistent closed counters are stripped",
+                  posts: ["1/5 First. " + pad, "2/5 Second. " + pad, pad + " 3/5"],
+                  firstBlockPrefix: "First.", blockPrefixes: ["Second."],
+                  stripped: ["1/5", "2/5", "3/5"]),
+            // An open-ended counter has no denominator to mistake for a fraction, so
+            // it is stripped even from a single post.
+            .init(name: "open-ended counters are stripped",
+                  posts: ["1/ Kickoff. " + pad, "2/n Next. " + pad],
+                  firstBlockPrefix: "Kickoff.", stripped: ["1/", "2/n"]),
+            // Bare ordinal prefixes ("1." / "2)") are markers too, under the same
+            // consistent-scheme rule.
+            .init(name: "bare ordinal prefixes are stripped",
+                  posts: ["1. First. " + pad, "2) Second. " + pad],
+                  firstBlockPrefix: "First.", blockPrefixes: ["Second."]),
+            // An ordinary fraction in a lone post is prose, not a counter. Nothing in
+            // a single post establishes a numbering scheme, so it survives verbatim.
+            .init(name: "a lone fraction is not a counter",
+                  posts: ["1/2 cup of flour, then stir. " + pad],
+                  firstBlockPrefix: "1/2 cup of flour"),
+            // A fraction mid-sentence is never a position marker.
+            .init(name: "mid-sentence fraction survives",
+                  posts: ["Only 3/5 of respondents agreed with the premise. " + pad],
+                  survives: ["3/5 of respondents"]),
+            // Counters are only stripped where a scheme exists: two posts whose
+            // numbers do NOT ascend are not a numbered thread.
+            .init(name: "non-ascending closed counters are left alone",
+                  posts: ["Mix 1/2 cup water. " + pad, "Add 1/4 cup sugar. " + pad],
+                  survives: ["1/2 cup", "1/4 cup"]),
+            // Thread furniture — the 🧵 emoji and an explicit end marker — carries no
+            // meaning once the chain is one document.
+            .init(name: "thread ornaments are stripped",
+                  posts: ["🧵 Opening. " + pad, pad + " Closing. /end"],
+                  firstBlockPrefix: "Opening.", stripped: ["🧵", "/end"]),
+            .init(name: "stripping never empties a post",
+                  posts: ["1/", pad + pad], rejectsEmptyBlocks: true),
+        ]
 
-    /// Bare ordinal prefixes ("1." / "2)") are markers too, under the same
-    /// consistent-scheme rule.
-    func testBareOrdinalPrefixesAreStripped() {
-        let blocks = threadBlocks(["1. First. " + pad, "2) Second. " + pad])
-        XCTAssertEqual(blocks.first?.hasPrefix("First."), true)
-        XCTAssertTrue(blocks.contains { $0.hasPrefix("Second.") })
-    }
-
-    /// An ordinary fraction in a lone post is prose, not a counter. Nothing in a
-    /// single post establishes a numbering scheme, so it must survive verbatim.
-    func testLoneFractionIsNotTreatedAsACounter() {
-        let blocks = threadBlocks(["1/2 cup of flour, then stir. " + pad])
-        XCTAssertEqual(blocks.first?.hasPrefix("1/2 cup of flour"), true)
-    }
-
-    /// A fraction mid-sentence is never a position marker.
-    func testMidSentenceFractionSurvives() {
-        let blocks = threadBlocks(["Only 3/5 of respondents agreed with the premise. " + pad])
-        XCTAssertEqual(blocks.first?.contains("3/5 of respondents"), true)
-    }
-
-    /// Counters are only stripped where a scheme exists: two posts whose numbers
-    /// do NOT ascend are not a numbered thread.
-    func testNonAscendingClosedCountersAreLeftAlone() {
-        let blocks = threadBlocks(["Mix 1/2 cup water. " + pad, "Add 1/4 cup sugar. " + pad])
-        XCTAssertTrue(blocks.contains { $0.contains("1/2 cup") })
-        XCTAssertTrue(blocks.contains { $0.contains("1/4 cup") })
-    }
-
-    /// Thread furniture — the 🧵 emoji and an explicit end marker — carries no
-    /// meaning once the chain is one document.
-    func testThreadOrnamentsAreStripped() {
-        let blocks = threadBlocks(["🧵 Opening. " + pad, pad + " Closing. /end"])
-        XCTAssertEqual(blocks.first?.hasPrefix("Opening."), true)
-        XCTAssertFalse(blocks.contains { $0.contains("🧵") || $0.contains("/end") })
-    }
-
-    /// Stripping must never consume a whole post.
-    func testStrippingNeverEmptiesAPost() {
-        let blocks = threadBlocks(["1/", pad + pad])
-        XCTAssertFalse(blocks.contains(""))
+        for testCase in cases {
+            let blocks = threadBlocks(testCase.posts)
+            if let prefix = testCase.firstBlockPrefix {
+                XCTAssertEqual(
+                    blocks.first?.hasPrefix(prefix), true,
+                    "\(testCase.name): first block should start with \"\(prefix)\"")
+            }
+            for prefix in testCase.blockPrefixes {
+                XCTAssertTrue(
+                    blocks.contains { $0.hasPrefix(prefix) },
+                    "\(testCase.name): no block starts with \"\(prefix)\"")
+            }
+            for text in testCase.survives {
+                XCTAssertTrue(
+                    blocks.contains { $0.contains(text) },
+                    "\(testCase.name): \"\(text)\" should have survived")
+            }
+            for marker in testCase.stripped {
+                XCTAssertFalse(
+                    blocks.contains { $0.contains(marker) },
+                    "\(testCase.name): \"\(marker)\" should have been stripped")
+            }
+            if testCase.rejectsEmptyBlocks {
+                XCTAssertFalse(blocks.contains(""), "\(testCase.name): produced an empty block")
+            }
+        }
     }
 
     // MARK: - Titles and links
@@ -344,10 +377,5 @@ final class XPostExtractorTests: XCTestCase {
         let links = XPostExtractor.inlineLinks(in: "See https://example.com/a, then stop.")
         let link = try XCTUnwrap(links.first)
         XCTAssertEqual(link.urlString, "https://example.com/a")
-    }
-
-    /// A payload with nothing in it yields nothing, rather than an empty article.
-    func testEmptyPayloadYieldsNil() {
-        XCTAssertNil(XPostExtractor.article(from: XPostPayload(), url: postURL))
     }
 }

@@ -49,8 +49,7 @@ public final class RescueLedgerStore {
 
     public init(containerURL: URL? = nil, now: @escaping () -> Date = Date.init) {
         self.now = now
-        let base = containerURL ?? FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
+        let base = containerURL ?? AppConfig.sharedContainerURL()
         self.fileURL = base?.appendingPathComponent("rescueLedger.json")
         self.entries = [:]
         loadFromDisk()

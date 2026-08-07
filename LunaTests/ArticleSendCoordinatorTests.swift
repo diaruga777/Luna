@@ -3,7 +3,7 @@
 //  LunaTests
 //
 
-import LunaSend
+@_spi(Testing) import LunaSend
 import LunaStorage
 import LunaModels
 import XCTest
@@ -56,6 +56,11 @@ final class ArticleSendCoordinatorTests: XCTestCase {
     private var second: MockDestination!
     private var coordinator: ArticleSendCoordinator!
     private var currentDate: Date!
+    /// Every background delivery task `articleBecameReady`/`retryPendingSends`
+    /// starts, collected through the coordinator's `didStartDeliveryTask` seam
+    /// so `drainDeliveries()` can await them instead of sleeping.
+    private let taskLock = NSLock()
+    private var deliveryTasks: [Task<Void, Never>] = []
 
     override func setUp() {
         super.setUp()
@@ -71,11 +76,33 @@ final class ArticleSendCoordinatorTests: XCTestCase {
             destinations: [kindle, second],
             retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
             now: { self.currentDate })
+        coordinator.didStartDeliveryTask = { [taskLock] task in
+            taskLock.lock()
+            defer { taskLock.unlock() }
+            self.deliveryTasks.append(task)
+        }
     }
 
     override func tearDown() {
+        // Breaks the test -> coordinator -> closure -> test retain cycle.
+        coordinator?.didStartDeliveryTask = nil
+        deliveryTasks.forEach { $0.cancel() }
+        deliveryTasks.removeAll()
         try? FileManager.default.removeItem(at: scratchDirectory)
         super.tearDown()
+    }
+
+    /// Awaits every delivery task started so far (and anything they start in
+    /// turn), so the assertions that follow read settled state.
+    private func drainDeliveries() async {
+        while true {
+            taskLock.lock()
+            let pending = deliveryTasks
+            deliveryTasks.removeAll()
+            taskLock.unlock()
+            if pending.isEmpty { return }
+            for task in pending { await task.value }
+        }
     }
 
     private func makeReadyItem(
@@ -152,7 +179,7 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         store.setSendState(.queued, for: item.id, destination: kindle.id)
         guard let fresh = store.item(withID: item.id) else { return XCTFail("item gone") }
         coordinator.articleBecameReady(fresh)
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
     }
 
@@ -161,7 +188,7 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         second.mode = .allSaves
         let item = makeReadyItem()
         coordinator.articleBecameReady(item)
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertEqual(sendState(item, second.id), .sent)
     }
@@ -171,7 +198,7 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         second.mode = .off
         let item = makeReadyItem()
         coordinator.articleBecameReady(item)
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertNil(sendState(item, second.id))
         XCTAssertTrue(second.sentTitles.isEmpty)
@@ -184,7 +211,7 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         let pasteItem = makeReadyItem("https://example.com/paste", source: .paste)
         coordinator.articleBecameReady(emailItem)
         coordinator.articleBecameReady(pasteItem)
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        await drainDeliveries()
         XCTAssertEqual(sendState(emailItem, kindle.id), .sent)
         XCTAssertNil(sendState(pasteItem, kindle.id))
     }
@@ -209,14 +236,14 @@ final class ArticleSendCoordinatorTests: XCTestCase {
             errorMessage: "network")
 
         coordinator.retryPendingSends()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        await drainDeliveries()
         XCTAssertEqual(sendState(queued, kindle.id), .sent)
         XCTAssertEqual(sendState(waiting, second.id), .queued)
         XCTAssertTrue(second.sentTitles.isEmpty)
 
         currentDate = currentDate.addingTimeInterval(61)
         coordinator.retryPendingSends()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        await drainDeliveries()
         XCTAssertEqual(sendState(waiting, second.id), .sent)
     }
 
@@ -227,10 +254,10 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         await coordinator.send(item, toDestinationID: kindle.id)
         currentDate = currentDate.addingTimeInterval(61)
         coordinator.retryPendingSends()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        await drainDeliveries()
         currentDate = currentDate.addingTimeInterval(121)
         coordinator.retryPendingSends()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        await drainDeliveries()
 
         let fresh = store.item(withID: item.id)
         XCTAssertEqual(fresh?.sendState(for: kindle.id), .failed)

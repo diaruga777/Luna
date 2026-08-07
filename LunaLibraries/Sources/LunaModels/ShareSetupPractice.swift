@@ -12,9 +12,9 @@ import Foundation
 public enum ShareSetupPractice {
     public static let lunaURLString = "https://luna.app/about"
     public static let instaTokURLString =
-        "https://instatok.local/@moonwatch/lunar-eclipse"
+        "https://instatok.web/@moonwatch/lunar-eclipse"
     public static let amayzonURLString =
-        "https://amayzon.local/eyephone-air"
+        "https://amayzon.web/eyephone-air"
 
     public static let urlStrings: Set<String> = [
         lunaURLString,
@@ -22,33 +22,14 @@ public enum ShareSetupPractice {
         amayzonURLString,
     ]
 
-    public static let title = "An article you want to read"
-    public static let byline = "A safari extension • by Luna"
-    public static let intro = "What you get, minus the pitch:"
+    public static let title = L10n.string("ShareSetupPractice_articleSubjectLine")
+    public static let byline = L10n.string("ShareSetupPractice_bylineExample")
+    public static let intro = L10n.string("ShareSetupPractice_featuresHeading")
     public static let features = [
-        "Ads, popups and subscription walls: gone.",
-        "Saved offline, ready on any flight.",
-        "Speed-read a word at a time.",
-        "Read aloud with the screen off.",
-        "Open links without losing your place.",
-        "Send to Kindle, or export anywhere.",
-        "EPUB, PDF, Markdown or plain text.",
-        "Long X threads read like articles.",
-        "Newsletters pulled from your inbox.",
-        "Share a save straight to a friend.",
-        "Read-aloud rolls into the next piece.",
-        "Eye tracking pauses when you glance away.",
-        "Walled-off pages, readable again.",
-        "PDFs and documents, same reader.",
-        "A card deck, not another inbox.",
-        "The Action Button saves from anywhere.",
-        "One share-sheet save in every app.",
-        "Track a product's price while you wait.",
-        "Videos and audio, kept for the plane.",
-        "Everything on device, searchable offline.",
-        "No account. No feed. No streaks.",
-        "Night-sky dark, down to the last pixel.",
-        "Built to disappear while you read.",
+        L10n.string("ShareSetupPractice_feature01"),
+        L10n.string("ShareSetupPractice_feature02"),
+        L10n.string("ShareSetupPractice_feature03"),
+        L10n.string("ShareSetupPractice_feature04"),
     ]
 
     public static var plainText: String {

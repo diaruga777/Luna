@@ -13,6 +13,14 @@ final class OnboardingURLHighlightView: UIView {
 
     private(set) var isHighlighted = false
 
+    /// Caps the wash's corner radius, which is otherwise a pill's — right for
+    /// Safari's one-line URL field, wrong inside a message bubble that has
+    /// wrapped onto three lines, where half the height would round the wash far
+    /// more than the bubble containing it. Set to the host's own radius there.
+    var maximumCornerRadius: CGFloat = .greatestFiniteMagnitude {
+        didSet { setNeedsLayout() }
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
@@ -27,8 +35,9 @@ final class OnboardingURLHighlightView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         gradient.frame = bounds
-        gradient.cornerRadius = bounds.height / 2
-        layer.cornerRadius = bounds.height / 2
+        let radius = min(bounds.height / 2, maximumCornerRadius)
+        gradient.cornerRadius = radius
+        layer.cornerRadius = radius
     }
 
     func setHighlighted(_ highlighted: Bool) {

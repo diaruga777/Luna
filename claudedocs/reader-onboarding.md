@@ -31,27 +31,137 @@ save at index one; only an empty store starts on the util card.
 deck for its real resting frame, holds the launch layer briefly, and crossfades
 into the laid-out deck. There is no onboarding-root swap after the reveal.
 
-The launch composite is generated from production views. To re-record it after
-intentional corona/rim/star changes, run
+**The storyboard is CONSTRAINTS over two rasters, not one composite.** It used to
+be a single 402×874 image pinned to all four edges with `scaleToFill`, so the
+card inside it was the right size on the recorder's phone and a non-uniform
+stretch of it everywhere else. It now reproduces `CardDeckGeometry` in Interface
+Builder constants — safe area + 48pt clearance, 104pt strip runway, the largest
+exact-9:16 card centered in what is left, capped at half the width on a
+regular-width screen — and scales the corona artwork to `1.84 ×` that card's
+width. `LaunchScreenGeometryTests` loads the storyboard at six screen sizes and
+checks both frames against the Swift geometry, which is the only thing keeping
+IB constants and Swift constants in step.
+
+Two single-scale rasters, loose in the bundle (the launch screen needs them
+before the app has started) rather than in the asset catalog, and single-scale so
+one generously-sized file downscales to every device instead of a 2× variant
+being upscaled on the largest iPad:
+
+| Asset | Canvas |
+| --- | --- |
+| `LunaLaunchStarfield.png` | the whole reference screen; drawn `scaleToFill` so stars land where the live `AppLaunchStarfieldView` (which places them at fractions of its bounds) puts them |
+| `LunaLaunchCoronaCard.png` | exactly `AppLaunchGeometry.coronaFrame` — the card grown by `0.42 × cardWidth` on all sides — holding the corona, the black card body and its rim |
+
+The corona's throw is a fixed FRACTION of the card width here
+(`AppLaunchGeometry.coronaReachFraction`) rather than `EclipseCorona.reach`'s
+clamped formula: a ratio that changes with the card size cannot be carried by one
+uniformly scaled raster. On a phone the clamp does not bind, so the throw is
+unchanged.
+
+`AppLaunchTransition` draws the SAME two rasters in the app's first live frame,
+and onboarding's intro corona and the util card's corona draw the corona raster
+too, so all four surfaces are identical by construction rather than by agreement
+— and none of them re-renders a corona at launch (~80ms each at 1× on a
+simulator, three times over).
+
+To re-record after intentional corona/rim/star changes, run
 `ReaderLaunchArtRecorderTests.testRecordReaderLaunchArtworkWhenRequested` with
-`TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then replace the
-`LunaLaunchComposite` and diagnostic assets.
+`TEST_RUNNER_READER_LAUNCH_ART_DIR=<output directory>`, then copy both PNGs into
+`Luna/`.
 
 ## Surface headlines
 
-| App | Util-card headline |
-|---|---|
-| Reader | “Read.” growing into “Read more.” |
-| Downloader | “App signup required? So annoying.” / “Watch and share instantly instead.” |
-| Price Tracker | “Overpaid? Missed a sale?” / “Never miss out again.” |
-| Luna | “All your Luna saves.” / “In a single app.” |
+One sentence in two beats, in EVERY app: a headline is an initial state and a
+final one (`OnboardingStrings.Intro.headlineInitial` / `headlineFinal`), and the
+second beat animates the difference between them. There is no two-line variant;
+it was deleted once the diff generalized.
 
-`OnboardingIntroHeadlineView` retains the existing two-beat moon-reveal
-animation. Reader uses `growingLine`; the others use two lines. The util card
-starts that animation from `cardDidBecomeCentered`, so it does not spend the
-animation while mounted only as a side peek. On the launch that animates it,
-the card's other elements wait at alpha 0 and fade in together, in place, from
-the second beat's completion (`claudedocs/util-card.md`, "the headline speaks
+| App | Initial | Final | Anchor that never moves |
+|---|---|---|---|
+| Reader | “Read.” | “Read more.” | `Read` |
+| Luna | “All your Luna apps.” | “One Luna app.” | ` Luna app` |
+| Downloader | “Sign in to watch.” | “No Sign in to download.” | `Sign in to ` |
+| Price Tracker | “Miss a sale” | “Never miss a sale” | `iss a sale` |
+
+`OnboardingHeadlineTransition` (pure text, `OnboardingHeadlineTransition.swift`)
+finds the anchor: the LONGEST continuous run of characters both states carry,
+ties going to the run that appears earliest in the final text. Everything before
+it and everything after it belongs to one state or the other — whitespace,
+punctuation and a letter changing case are ordinary characters here, which is
+why Price Tracker's capital “M” leaves with “Never m” arriving in its place.
+Copy that shares no run worth standing still for — nothing in common, a single
+character, or punctuation only — replaces itself outright (`isFullReplacement`),
+each state centred on its own.
+
+`OnboardingIntroHeadlineView` renders that in the two-beat moon-reveal: beat one
+brings the initial sentence in whole; beat two blooms the arriving fragments in
+and the departing ones out, in the same turn, and never touches the anchor. Two
+consequences worth knowing before changing copy or layout:
+
+- **The FINAL sentence is what is centred.** The initial one is typeset wherever
+  the anchor's final position puts it, so it lands left of centre when the copy
+  grows on the right (Reader) and right of centre when it grows on the left
+  (Price Tracker). Nothing translates between beats, because nothing was ever
+  anywhere else. Each sentence is one composition with every character but the
+  fragment's own in clear ink, so a fragment's position is real typesetting
+  rather than a measured offset.
+- **A narrow card shrinks the font, not the layout.** Both states have to fit
+  side by side (`Metrics.unionWidth`), so the view picks a size from 25pt down to
+  a 13pt floor at layout time and rebuilds its fragments if that size changes —
+  which it will only do before a beat has begun.
+
+Departures get their own fronts rather than sharing the arrivals'. A period's
+ink sits a whole x-height below “more”'s, so one edge descending through the
+shared frame would uncover the top of the “m” a third of a second before
+reaching the period beside it — long enough to read the wrong sentence. Each
+departing fragment's front starts advanced by the drop from the highest arriving
+ink (`frontLead(forDeparting:)`), so it goes out as the arrivals come in.
+
+### The light is composited off the main thread
+
+The glow is the expensive part of the whole animation, and it is expensive in a
+way that cannot be arranged away: `GlyphPixelBloomView` builds an emitter (the
+glyph raster clipped to the front's trailing bands) and then draws it eight times
+under stacked Quartz shadows. Measured, that is **~5ms a frame for one short
+fragment**, and it is almost all fixed cost per pass rather than blur width —
+halving the area or the radii barely moves it, and merging passes changes the
+look. A second beat blooms two fragments at once, so the old arrangement, which
+drew in `draw(_:)`, spent ~10ms of every frame on the main thread before Core
+Animation had committed anything. On a 60Hz simulator that measured **26.6ms
+mean between display-link ticks with 55% of frames later than 20ms** — the
+choppiness was real, and not a slow device.
+
+A frame is now composited on a background queue and handed to a `CALayer` as
+ready-made `contents` (`GlyphPixelBloomView.Pass`). The display link stays on the
+main thread, because it has to sample the occluder's *presentation* transform to
+keep the light on the mask edge, but it only asks for a frame; a tick arriving
+while one is still in flight is dropped rather than queued. Same measurement
+after: **16.67ms median, p99 16.67ms, one late tick in 371** — a locked 60Hz.
+
+Two things are worth knowing before touching that renderer:
+
+- **It is Core Graphics, not UIKit, and that is not a style choice.**
+  `UIGraphicsImageRenderer` and `UIImage.draw(in:)` composite *nothing at all*
+  off the main thread — no error, no warning, an empty buffer every frame and a
+  light that simply never appears. Hence the hand-applied y-down flip and the
+  `CGImage` draws.
+- **The halo radii are POINTS and had to be converted.** A view's `draw(_:)`
+  context carries its 2×/3× in the CTM, so `blur: 30` there means 30 points; a
+  bitmap context measures a shadow's blur in DEVICE PIXELS however its transform
+  is scaled afterwards. Miss the conversion and the white cores still land
+  perfectly while every outer halo comes in at a third of its reach — the broad
+  low-frequency wash that makes this read as sunrise disappears and the light
+  goes hard. (The old invalidation rect's `-34` inset was in points for the same
+  reason, which is where `glowReach` comes from.)
+
+Equivalence was checked by freezing both the old and new drawing at the same
+sweep phase and diffing the screens: a mean of 0.03 of one 255-level over the
+headline, total light within 0.1%, and every other pixel identical.
+
+The util card starts the animation from `cardDidBecomeCentered`, so it does not
+spend it while mounted only as a side peek. On the launch that animates it, the
+card's other elements wait at alpha 0 and fade in together, in place, from the
+second beat's completion (`claudedocs/util-card.md`, "the headline speaks
 first"); a non-animating appearance shows them immediately.
 
 ## Completion model
@@ -186,7 +296,16 @@ taps in:
 |---|---|---|
 | online, live Save of the Week for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
 | online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → bundled preview, nothing stored |
-| offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline and suggestion in the surface's real error state |
+| offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline, under `wifi.slash`, in the surface's real error state |
+
+The offline terminal takes the failure's **headline** but not its `suggestion`:
+"it will retry automatically once you're back online" is true of a save the user
+made and false of a rehearsal, whose row is deleted the moment the sheet closes
+either way. In its place goes
+`ShareExtension_share_hostedOfflineDetail` — the admission that this is the shape
+of a save rather than the save. Both the symbol and that second line ride
+`ExtensionLoadingViewController.showTerminal(_:symbolName:detail:)`, which every
+other failure calls without them.
 
 `practiceURLString` is declared per app (Reader/central luna, Downloader instaTok,
 Price Tracker amayzon). It used to be read off the browser's current demo page;
@@ -293,7 +412,11 @@ same deck and preserves its current card.
 
 Debug launches accept `-resetOnboarding` (`-resetReaderOnboarding` remains the
 Reader alias). The reset clears explicit completion, both handled markers, and
-all setup run evidence, so the next host construction is deterministic.
+all setup run evidence, so the next host construction is deterministic. It is
+the only caller of `AppOnboardingStore.resetCompletion` left: Diagnostics used
+to offer an onboarding-only reset and now erases the install outright
+(`settings.md`), which reaches these markers by deleting the domain they live
+in.
 
 The older lesson inspection arguments remain available for the transient setup
 controller: `-onboardingStage`, `-forceActionButtonSetup`,

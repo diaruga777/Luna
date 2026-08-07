@@ -23,7 +23,7 @@ public struct ArticlePlainTextBuilder {
     public func build(content: ArticleContent, sourceURLString: String) -> String {
         var lines: [String] = [content.title]
         if let author = content.author, !author.isEmpty {
-            lines.append(L10n.string("by \(author)"))
+            lines.append(L10n.string("Reader_export_plainText_byAuthorLine", author))
         }
         if !sourceURLString.isEmpty {
             lines.append(sourceURLString)
@@ -50,12 +50,12 @@ public struct ArticlePlainTextBuilder {
             case .caption:
                 // Labelled, because with no typography a caption would otherwise be
                 // indistinguishable from the paragraph it interrupts.
-                lines.append(L10n.string("[Caption: \(block.text)]"))
+                lines.append(L10n.string("Reader_export_plainText_captionLine", block.text))
             case .image:
                 let alt = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 lines.append(alt.isEmpty
-                    ? L10n.string("[Image]")
-                    : L10n.string("[Image: \(alt)]"))
+                    ? L10n.string("Reader_export_plainText_imagePlaceholder")
+                    : L10n.string("Reader_export_plainText_imageWithAltLine", alt))
             }
         }
 

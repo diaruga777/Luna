@@ -43,7 +43,6 @@ struct OnboardingSurfaceConfiguration {
     let app: LunaApp
     let saveSetupMode: OnboardingSaveSetupMode
     let introCopy: OnboardingIntroCopy
-    let supportingText: String
     let saveBenefit: String
     let demoPages: [OnboardingDemoPage]
     /// The link the SAVE lesson rehearses with when there is no live Save of
@@ -74,7 +73,6 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
-                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: [.lunaPage],
                 practiceURLString: ShareSetupPractice.lunaURLString,
@@ -85,7 +83,6 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
-                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: [.lunaPage, .instaTok],
                 practiceURLString: ShareSetupPractice.instaTokURLString,
@@ -96,7 +93,6 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
-                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: [.lunaPage, .amayzon],
                 practiceURLString: ShareSetupPractice.amayzonURLString,
@@ -107,7 +103,6 @@ struct OnboardingSurfaceConfiguration {
                 app: app,
                 saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
-                supportingText: OnboardingStrings.Intro.supportingText.value(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
                 demoPages: OnboardingDemoPage.allCases,
                 practiceURLString: ShareSetupPractice.lunaURLString,

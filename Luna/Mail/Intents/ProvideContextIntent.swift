@@ -22,21 +22,17 @@ import UniformTypeIdentifiers
 /// runtime limit hand a resumable opaque checkpoint to the LongRunning SaveIntent.
 struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
-    static let title: LocalizedStringResource = "Provide Context"
-    static let description = IntentDescription("""
-        First step of the Action Button shortcut. Pass the current app (from Get \
-        Current App) and optionally URLs detected on screen. Returns a structured \
-        outcome telling the shortcut whether the page is done, unhandled, needs \
-        a screenshot, or must continue in Save.
-        """)
+    static let title: LocalizedStringResource = "Intents_provideContext_title_Luna"
+    static let description = IntentDescription("Intents_provideContext_description_Luna")
     static let openAppWhenRun: Bool = false
 
-    @Parameter(title: "CurrentApp", description: "The current app, from Get Current App.")
+    @Parameter(title: "Intents_provideContext_currentAppParam_title_Luna",
+               description: "Intents_provideContext_currentAppParam_description_Luna")
     var currentApp: String?
 
     @Parameter(
-        title: "OnScreenURLs",
-        description: "The output from Get On-Screen URLs. Compatible complete values may be saved directly.",
+        title: "Intents_provideContext_onScreenURLsParam_title_Luna",
+        description: "Intents_provideContext_onScreenURLsParam_description_Luna",
         inputConnectionBehavior: .connectToPreviousIntentResult)
     var onScreenURLs: String?
 
@@ -55,15 +51,15 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .noTrackedPage:
-                return "No Safari page tracked yet. Is the Luna extension enabled?"
+                return L10n.resource("Intents_provideContext_noTrackedPageError")
             case .unsupportedKind(let message):
                 return "\(message)"
             case .multipleURLs:
-                return "Several different links are on screen. Open the one you want and try again."
+                return L10n.resource("Intents_provideContext_multipleURLsError")
             case .saveFailed:
-                return "Luna couldn't save this link."
+                return L10n.resource("Intents_provideContext_saveFailedError")
             case .contentUnavailable:
-                return "Luna saved this link but couldn't fetch the page. Try again from the app."
+                return L10n.resource("Intents_provideContext_contentUnavailableError")
             }
         }
 

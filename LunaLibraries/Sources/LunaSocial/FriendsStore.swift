@@ -156,17 +156,6 @@ public final class FriendsStore {
         }
     }
 
-    public func setNotifyOnEveryShare(_ enabled: Bool, email: String) {
-        let normalized = Friend.normalize(email)
-        store.mutate { all in
-            guard let index = all.firstIndex(where: { $0.email == normalized }),
-                  all[index].notifyOnEveryShare != enabled
-            else { return ((), false) }
-            all[index].notifyOnEveryShare = enabled
-            return ((), true)
-        }
-    }
-
     public func setBlocked(_ blocked: Bool, email: String) {
         let normalized = Friend.normalize(email)
         store.mutate { all in

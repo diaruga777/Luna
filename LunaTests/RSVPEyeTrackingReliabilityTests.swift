@@ -62,7 +62,8 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
 
     private func playButton(in reader: RSVPViewController) throws -> UIButton {
         try XCTUnwrap(allSubviews(of: reader.view).compactMap { $0 as? UIButton }.first {
-            $0.accessibilityLabel == L10n.string("Play") || $0.accessibilityLabel == L10n.string("Pause")
+            $0.accessibilityLabel == L10n.string("Reader_rsvp_playAccessibilityLabel")
+                || $0.accessibilityLabel == L10n.string("Reader_rsvp_pauseAccessibilityLabel")
         })
     }
 
@@ -81,7 +82,7 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
         XCTAssertTrue(reader.isPlaying, "a dark room or dropped AR session must not interrupt reading")
         XCTAssertEqual(eye.trackingState, .unavailable)
         XCTAssertEqual(eye.tintColor, LunaColors.errorAccent)
-        XCTAssertEqual(eye.accessibilityValue, L10n.string("Gaze unavailable"))
+        XCTAssertEqual(eye.accessibilityValue, L10n.string("Reader_rsvp_eyeTracking_unavailableAccessibilityValue"))
 
         tracker.onSample?(.point(reader.focalGazePoint))
         XCTAssertEqual(eye.trackingState, .active,

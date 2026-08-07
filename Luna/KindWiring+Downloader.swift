@@ -33,6 +33,9 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
+        // Staged mode's catalogs — this app's kinds only (`claudedocs/staging.md`).
+        SharedStageCatalog.install()
+        MediaStageCatalog.install()
         #endif
 
         // The media kind pack — one call, shared verbatim with the Downloader's
@@ -40,6 +43,9 @@ enum KindWiring {
         // web-processing pipeline stage (platform recognition is URL-only
         // classification), which is stated there rather than re-derived here.
         MediaKindComposition.install()
+        // The media kind's CARD half, on the same principle — the one
+        // definition the central app installs too (`CardKindPresenter.swift`).
+        CardKindPresenters.media = MediaCardPresenter()
         // Post-save ingestion — metadata, thumbnail, auto-download handoff — is
         // the app-shell media ingestor handler.
         IngestorKindHandlers.media = MediaKindHandler()
@@ -56,21 +62,46 @@ enum KindWiring {
             await LiveMediaDownloadManager.shared.startWithResolvedAssets(
                 sourceURLString: sourceURLString, title: title, assets: assets)
         }
+        // The factory reset's media leg: a Live Activity outlives the process
+        // that started it, so the wipe has to end them itself.
+        FactoryReset.additionalErasers.append {
+            await LiveMediaDownloadManager.shared.endAllActivities()
+        }
+        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
+        // A bulk import runs its own progress bar; the per-transfer Live
+        // Activity alerts (banner + sound + haptic) would buzz twice per link
+        // over the top of it.
+        // Photos access asked for at the START of an import, not when the first
+        // transfer wants it (`claudedocs/import-export.md`).
+        LinkImportRunner.mediaStoragePreflight = { urlStrings in
+            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
+        }
+        LinkImportRunner.mediaAlertSuspension = { suspended in
+            if suspended {
+                LiveMediaDownloadManager.suspendActivityAlerts()
+            } else {
+                LiveMediaDownloadManager.resumeActivityAlerts()
+            }
+        }
     }
 
     // MARK: - Root UI shape
 
     /// The saved-media card deck in a bare nav controller — no audio
-    /// mini-player host (read-aloud is an article-app feature).
+    /// mini-player host (read-aloud is an article-app feature). The deck itself
+    /// is the shared host configured by `MediaCardDeck`; this app has no deck
+    /// subclass of its own.
+    @MainActor
     static func makeRootViewController() -> UIViewController {
-        let content: UIViewController = SavedMediaCardsViewController()
-        return UINavigationController(rootViewController: content)
+        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
     }
 
+    @MainActor
     private static func makeCompletedRootViewController() -> UIViewController {
-        UINavigationController(rootViewController: SavedMediaCardsViewController())
+        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
     }
 
+    @MainActor
     static func makeSetupReplayRootViewController() -> UIViewController {
         makeCompletedRootViewController()
     }
@@ -81,7 +112,7 @@ enum KindWiring {
 
     static func settingsCategories() -> [SettingsCategory] {
         [
-            SettingsCategory(title: L10n.string("Downloads"), symbol: "arrow.down.circle") {
+            SettingsCategory(title: L10n.string("Common_downloads"), symbol: "arrow.down.circle") {
                 DownloadsSettingsScreen()
             },
         ]

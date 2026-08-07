@@ -654,7 +654,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
         return url.host?.replacingOccurrences(of: "www.", with: "")
-            ?? L10n.string("Reader")
+            ?? L10n.string("Common_reader")
     }
 
     private func closeInnermostReader() {
@@ -952,7 +952,7 @@ private final class InlineReaderPresentationController: UIPresentationController
             x: max(containerView.bounds.maxX - 92, 0), y: cardFrame.maxY,
             width: min(92, containerView.bounds.width),
             height: max(containerView.bounds.maxY - cardFrame.maxY, 0))
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: shareProxy,
             providesMenu: overlay.providesShareMenu,
             build: { [weak overlay, weak shareProxy] in
@@ -1029,12 +1029,12 @@ private final class InlineReaderColumnChromeBar: UIView {
         background.clipsToBounds = true
         addSubview(background)
 
-        configure(closeButton, symbol: "xmark", label: L10n.string("Close"))
+        configure(closeButton, symbol: "xmark", label: L10n.string("Common_close"))
         closeButton.addAction(UIAction { [weak self] _ in self?.onClose?() }, for: .touchUpInside)
-        configure(audioButton, symbol: "speaker.slash", label: L10n.string("Read Aloud"))
+        configure(audioButton, symbol: "speaker.slash", label: L10n.string("Reader_readAloudChromeAccessibilityLabel"))
         audioButton.addAction(
             UIAction { [weak self] _ in self?.onToggleAudio?() }, for: .touchUpInside)
-        configure(shareButton, symbol: "square.and.arrow.up", label: L10n.string("Share"))
+        configure(shareButton, symbol: "square.and.arrow.up", label: L10n.string("Common_share"))
 
         modeControl.addAction(
             UIAction { [weak self] _ in
@@ -1058,12 +1058,12 @@ private final class InlineReaderColumnChromeBar: UIView {
     }
 
     func apply(_ state: ReaderChromeState?, providesShareMenu: Bool) {
-        // Installed once and only once: `ReaderShareMenu.install` fixes the
+        // Installed once and only once: `ShareButtonMenu.install` fixes the
         // menu-vs-tap behaviour at install time, and stacking a second install
         // would leave two handlers on one press.
         if !didInstallShare {
             didInstallShare = true
-            ReaderShareMenu.install(
+            ShareButtonMenu.install(
                 on: shareButton,
                 providesMenu: providesShareMenu,
                 build: { [weak self] in
@@ -1087,7 +1087,7 @@ private final class InlineReaderColumnChromeBar: UIView {
             UIImage(systemName: state.isAudioOn ? "speaker.wave.2" : "speaker.slash"),
             for: .normal)
         audioButton.accessibilityValue =
-            state.isAudioOn ? L10n.string("On") : L10n.string("Off")
+            state.isAudioOn ? L10n.string("Reader_audioOnAccessibilityValue") : L10n.string("Reader_audioOffAccessibilityValue")
         shareButton.isHidden = !state.offersSaveShare
         modeControl.isHidden = !state.isArticle
         if modes != state.modes {
@@ -1157,7 +1157,7 @@ private final class InlineReaderTabButton: UIButton {
     init(url: URL, title: String) {
         self.url = url
         super.init(frame: .zero)
-        accessibilityLabel = L10n.string("Return to \(title)")
+        accessibilityLabel = L10n.string("Reader_split_returnToAccessibilityLabel", title)
         backgroundColor = LunaColors.background
         clipsToBounds = false
         layer.mask = tabShapeMask
@@ -1198,7 +1198,7 @@ private final class InlineReaderTabButton: UIButton {
     deinit { faviconTask?.cancel() }
 
     func updateTitle(_ title: String) {
-        accessibilityLabel = L10n.string("Return to \(title)")
+        accessibilityLabel = L10n.string("Reader_split_returnToAccessibilityLabel", title)
         titleLabelView.text = title
     }
 

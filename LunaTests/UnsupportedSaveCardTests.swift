@@ -19,52 +19,36 @@ final class UnsupportedSaveCardTests: XCTestCase {
 
     // MARK: - Copy
 
-    func testHeaderNamesTheRunningApp() {
+    /// The one surface that can't draw reads the card aloud: both lines
+    /// flattened, and the header alone when no sibling owns the kind. (The
+    /// wording itself is `UnsupportedSaveCopy`'s; what matters here is that the
+    /// spoken form is BUILT from it rather than apologising a second time.)
+    func testSpokenMessageIsTheFlattenedCard() {
         XCTAssertEqual(
-            UnsupportedSaveCopy.header(current: .reader),
-            "Unable to save this link in Luna Reader")
-    }
-
-    func testUpsellNamesTheOwningApp() {
-        XCTAssertEqual(
-            UnsupportedSaveCopy.upsell(owner: .downloader),
-            "You can get the Luna Downloader app for this type of link")
-    }
-
-    func testSentenceFlattensBothLinesForSurfacesThatCanOnlySpeak() {
-        let sentence = UnsupportedSaveCopy.sentence(owner: .priceTracker, current: .reader)
-        XCTAssertEqual(
-            sentence,
-            "Unable to save this link in Luna Reader. "
-                + "You can get the Luna Price Tracker app for this type of link.")
-    }
-
-    func testSentenceWithNoSiblingOwnerIsHeaderOnly() {
+            UnsupportedSaveCopy.sentence(owner: .priceTracker, current: .reader),
+            UnsupportedSaveCopy.header(current: .reader) + ". "
+                + UnsupportedSaveCopy.upsell(owner: .priceTracker) + ".")
         XCTAssertEqual(
             UnsupportedSaveCopy.sentence(owner: nil, current: .downloader),
-            "Unable to save this link in Luna Downloader.")
-    }
-
-    /// The intent dialog is the flattened card, not a second apology.
-    func testSurfaceSupportMessageIsTheSameCopy() {
+            UnsupportedSaveCopy.header(current: .downloader) + ".",
+            "no sibling owner ⇒ no upsell clause")
         XCTAssertEqual(
             SurfaceSupport.unsupportedMessage(owner: .downloader, current: .reader),
-            UnsupportedSaveCopy.sentence(owner: .downloader, current: .reader))
+            UnsupportedSaveCopy.sentence(owner: .downloader, current: .reader),
+            "the intent dialog is the flattened card, not a second apology")
     }
 
     // MARK: - Sibling icons
 
     /// The whole reason the icons live in LunaDesignSystem's resource bundle:
-    /// every app must be able to draw every OTHER app's icon.
-    func testEveryAppIconResolvesFromTheSharedBundle() {
+    /// every app must be able to draw every OTHER app's icon, and each must be
+    /// its OWN artwork.
+    func testEveryAppIconResolvesFromTheSharedBundleAsDistinctArtwork() {
         for app in LunaApp.allCases {
             XCTAssertNotNil(
                 LunaAppIconImage.image(for: app),
                 "\(app.displayName)'s icon must ship with LunaDesignSystem")
         }
-    }
-
-    func testAppIconsAreDistinctArtwork() {
         let artwork = LunaApp.allCases.compactMap { LunaAppIconImage.image(for: $0)?.pngData() }
         XCTAssertEqual(artwork.count, LunaApp.allCases.count)
         XCTAssertEqual(Set(artwork).count, artwork.count, "each app must show its OWN icon")
@@ -72,27 +56,27 @@ final class UnsupportedSaveCardTests: XCTestCase {
 
     // MARK: - The card
 
-    func testCardShowsHeaderIconAndUpsellForASiblingOwner() {
-        let card = UnsupportedSaveCardViewController(owner: .downloader, currentApp: .reader)
-        card.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
-        card.view.layoutIfNeeded()
+    /// The card's two statements: the header for EVERY drop, and — only when a
+    /// sibling owns the kind — that app's real icon and the upsell.
+    func testCardShowsTheHeaderAlwaysAndTheOwnerOnlyWhenThereIsOne() {
+        let owned = UnsupportedSaveCardViewController(owner: .downloader, currentApp: .reader)
+        owned.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        owned.view.layoutIfNeeded()
 
-        let text = Self.labelTexts(in: card.view)
+        let text = Self.labelTexts(in: owned.view)
         XCTAssertTrue(text.contains(UnsupportedSaveCopy.header(current: .reader)))
         XCTAssertTrue(text.contains(UnsupportedSaveCopy.upsell(owner: .downloader)))
-        XCTAssertEqual(Self.count(LunaAppIconView.self, in: card.view), 1,
+        XCTAssertEqual(Self.count(LunaAppIconView.self, in: owned.view), 1,
                        "the owning app's icon is the card's one image")
-    }
 
-    func testCardWithNoSiblingOwnerShowsTheHeaderAlone() {
-        let card = UnsupportedSaveCardViewController(owner: nil, currentApp: .priceTracker)
-        card.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
-        card.view.layoutIfNeeded()
+        let ownerless = UnsupportedSaveCardViewController(owner: nil, currentApp: .priceTracker)
+        ownerless.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        ownerless.view.layoutIfNeeded()
 
         XCTAssertTrue(
-            Self.labelTexts(in: card.view)
+            Self.labelTexts(in: ownerless.view)
                 .contains(UnsupportedSaveCopy.header(current: .priceTracker)))
-        XCTAssertEqual(Self.count(LunaAppIconView.self, in: card.view), 0)
+        XCTAssertEqual(Self.count(LunaAppIconView.self, in: ownerless.view), 0)
     }
 
     /// The deck's chrome, not a dialog's: starry sky behind a 9:16 card at the

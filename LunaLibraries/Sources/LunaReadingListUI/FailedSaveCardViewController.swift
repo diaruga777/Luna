@@ -129,7 +129,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// Covers ONLY the web view while a rescue runs — the URL bar and its share
     /// button stay lit and usable underneath, per the card's contract.
     private let dimmingView = UIView()
-    private let progressBar = EclipseProgressBar()
+    private let progressBar = MoonHorizonProgressBar()
 
     private let urlBar = UIView()
     private let reloadButton = UIButton(type: .system)
@@ -247,12 +247,12 @@ public final class FailedSaveCardViewController: CardContentViewController {
         urlBar.translatesAutoresizingMaskIntoConstraints = false
 
         configureBarButton(reloadButton, symbol: "arrow.clockwise",
-                           label: L10n.string("Reload page"))
+                           label: L10n.string("CardDeck_failedSave_reloadPageAccessibilityLabel"))
         reloadButton.addAction(UIAction { [weak self] _ in self?.reload() },
                                for: .touchUpInside)
 
         configureBarButton(shareButton, symbol: "square.and.arrow.up",
-                           label: L10n.string("Share link"))
+                           label: L10n.string("Common_shareLink"))
         shareButton.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             self.actions.share(self.shareButton)
@@ -296,7 +296,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
         apologyLabel.numberOfLines = 2
 
         deleteButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Delete"), symbol: "trash", compact: true)
+            title: L10n.string("Common_delete"), symbol: "trash", compact: true)
         deleteButton.tintColor = LunaColors.errorAccent
         deleteButton.contentHorizontalAlignment = .center
         deleteButton.addAction(UIAction { [weak self] _ in

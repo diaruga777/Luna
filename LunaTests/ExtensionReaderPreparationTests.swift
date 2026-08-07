@@ -29,6 +29,7 @@ final class ExtensionReaderPreparationTests: XCTestCase {
 
     override func tearDown() {
         ShareReaderViewController.settleImagesOverride = nil
+        ShareReaderViewController.imagePreparationTimeout = 8
         try? FileManager.default.removeItem(at: scratch)
         super.tearDown()
     }
@@ -105,8 +106,11 @@ final class ExtensionReaderPreparationTests: XCTestCase {
         let article = content([imageBlock(url: "https://example.com/unsized.jpg")])
         let item = store.add(urlString: "https://example.com/story")
 
+        // The bound is what's under test, not its production value: shrink it and
+        // the same race runs in a twentieth of a second. tearDown puts 8 back.
+        ShareReaderViewController.imagePreparationTimeout = 0.05
         ShareReaderViewController.settleImagesOverride = { content, _, _, _ in
-            // Longer than the timeout; cancellation lands on the sleep.
+            // Far longer than the timeout; cancellation lands on the sleep.
             try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
             return content
         }

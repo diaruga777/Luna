@@ -75,8 +75,9 @@ public final class ShareReaderViewController: UIViewController {
     /// How long a surface holds its loading state waiting for the images whose
     /// size the page never declared. Bounded because an unreachable image CDN
     /// must not strand the sheet on a spinner; whatever landed by the deadline is
-    /// still baked in.
-    public static let imagePreparationTimeout: TimeInterval = 8
+    /// still baked in. A `var` only so a test can prove the bound holds without
+    /// spending eight seconds proving it; nothing in the app writes it.
+    public static var imagePreparationTimeout: TimeInterval = 8
 
     /// Replaces the blocking half of the image settling. Nil (production) runs
     /// the real bounded downloader; a test surface substitutes it so a fixture's
@@ -217,7 +218,7 @@ public final class ShareReaderViewController: UIViewController {
         ])
         spinner.startAnimating()
         articleLoadingStatus = ArticleLoadingStatusCycler(
-            label: loadingStatus, initialText: L10n.string("Opening in Luna…"))
+            label: loadingStatus, initialText: L10n.string("Common_openingInLuna"))
         articleLoadingStatus?.start()
         installExitButton()
 
@@ -278,7 +279,7 @@ public final class ShareReaderViewController: UIViewController {
             // A video/post/document reached the reader VC (shouldn't, since the
             // host routes those to SavedNonTextualViewController) — never extract it;
             // confirm the save and let the app render it.
-            presentSavedConfirmation(productName: url.host ?? L10n.string("Saved"))
+            presentSavedConfirmation(productName: url.host ?? L10n.string("Common_saved"))
         case .failed, .unsupported:
             // .unsupported can't genuinely occur here (the driver gates and
             // discards before presenting a reader), so treat it as a failure.
@@ -341,7 +342,7 @@ public final class ShareReaderViewController: UIViewController {
         icon.contentMode = .center
 
         let label = UILabel()
-        label.text = L10n.string("Tracking price for \(productName)")
+        label.text = L10n.string("Reader_share_trackingPriceMessage", productName)
         label.textColor = LunaColors.primaryText
         label.font = .preferredFont(forTextStyle: .headline)
         label.textAlignment = .center
@@ -366,7 +367,7 @@ public final class ShareReaderViewController: UIViewController {
         spinner.stopAnimating()
         // Nothing was read — the exit stops claiming otherwise.
         exitButton.configuration?.image = UIImage(systemName: "xmark")
-        exitButton.accessibilityLabel = L10n.string("Close")
+        exitButton.accessibilityLabel = L10n.string("Common_close")
 
         let icon = UIImageView(image: UIImage(
             systemName: "exclamationmark.triangle.fill",
@@ -375,7 +376,7 @@ public final class ShareReaderViewController: UIViewController {
         icon.contentMode = .center
 
         let label = UILabel()
-        label.text = L10n.string("Couldn't load this article.")
+        label.text = L10n.string("Common_couldntLoadThisArticle")
         label.textColor = .systemRed
         label.font = .preferredFont(forTextStyle: .headline)
         label.textAlignment = .center

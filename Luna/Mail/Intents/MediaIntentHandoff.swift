@@ -34,11 +34,11 @@ enum MediaIntentHandoff {
             case .insufficientStorage(let message): return "\(message)"
             case .downloadFailed(let message):
                 guard let message, !message.isEmpty else {
-                    return "Luna saved the link but couldn't download its media."
+                    return L10n.resource("MediaIntentHandoff_downloadFailedMessage")
                 }
                 return "\(message)"
             case .notAuthorized:
-                return "Luna needs permission to save media to your photo library."
+                return L10n.resource("MediaIntentHandoff_notAuthorizedMessage")
             }
         }
 

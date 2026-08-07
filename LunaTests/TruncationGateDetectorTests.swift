@@ -48,15 +48,98 @@ final class TruncationGateDetectorTests: XCTestCase {
         "<html><head><title>The Art of Fiction No. 45</title></head><body>\(body)</body></html>"
     }
 
-    func testDetectsGateThatTruncatesTheBody() {
-        let html = page(body: navChrome + """
-        <div id="main"><article><div class="article-body-wrap magazine paywall-base">
-          <main class="article-body">\(prose(20))</main>
-          \(gate)
-        </div></article></div>
-        <footer><p>Subscribe to the magazine and receive four issues a year, plus access.</p></footer>
-        """)
-        XCTAssertTrue(TruncationGateDetector.showsTruncationGate(in: html))
+    /// Every decision boundary of `showsTruncationGate(in:)` in one sweep. Each row
+    /// names the shape it encodes and that name is the failure message, so a break
+    /// points at the boundary that moved.
+    func testTruncationGateDecisionBoundaries() {
+        let cases: [(why: String, html: String, isGate: Bool)] = [
+            (
+                // The real shape: a preview-length body, then the wall, ending the
+                // container. Sign-in chrome and a footer CTA are also present and
+                // must not change the answer.
+                "a gate that ends the body container after a real preview IS a truncation",
+                page(body: navChrome + """
+                <div id="main"><article><div class="article-body-wrap magazine paywall-base">
+                  <main class="article-body">\(prose(20))</main>
+                  \(gate)
+                </div></article></div>
+                <footer><p>Subscribe to the magazine and receive four issues a year, plus access.</p></footer>
+                """),
+                true
+            ),
+            (
+                // The pre-paywall Wayback capture is the same publisher template
+                // WITHOUT the wall; it must not inherit the flag from its sign-in
+                // chrome.
+                "the pre-paywall capture of the same page stays readable",
+                page(body: navChrome + """
+                <div class="article-body-wrap"><main class="article-body">\(prose(40))</main></div>
+                """),
+                false
+            ),
+            (
+                // Gate WORDING on a free article (site nav) with no wall container
+                // around the body.
+                "sign-in chrome alone is not a gate",
+                page(body: navChrome + "<article>\(prose(20))</article>"),
+                false
+            ),
+            (
+                // WSJ ships the readable post-unlock body inside the node that NAMES
+                // the paywall. `ArticleExtractor` keeps such a wrapper; the detector
+                // must likewise not call it a gate.
+                "an unlocked body inside a paywall-named class is not a gate",
+                page(body: """
+                <div class="paywall PaywalledContent">
+                  <h4>Already a subscriber? Sign in.</h4>
+                  \(prose(20))
+                </div>
+                """),
+                false
+            ),
+            (
+                // An already-unlocked capture: the extension hid the overlay but left
+                // the node, and the rest of the story follows it. Only a wall that
+                // ENDS the container truncates.
+                "a wall left behind mid-body is not a truncation",
+                page(body: """
+                <div class="article-body-wrap"><main class="article-body">
+                  \(prose(10))\(gate)\(prose(10))
+                </main></div>
+                """),
+                false
+            ),
+            (
+                // A registration interstitial rendered before any prose is a
+                // whole-page wall, which the existing short-body signals already own.
+                "a gate ahead of the body is not a truncation",
+                page(body: """
+                <div class="article-body-wrap">\(gate)<main class="article-body">\(prose(20))</main></div>
+                """),
+                false
+            ),
+            (
+                // Below the preview minimum the page is a stub, not a generous
+                // preview — the length-based signals handle it and this detector
+                // stays out of it.
+                "a gate after a teaser too short to be a preview is not a truncation",
+                page(body: """
+                <div class="article-body-wrap"><main class="article-body"><p>A two-line teaser only.</p></main>\(gate)</div>
+                """),
+                false
+            ),
+            (
+                // No wall-named container anywhere → the cheap pre-filter answers, and
+                // the answer must agree with the full check.
+                "a page with no wall container is never a gate",
+                page(body: "<article>\(prose(30))</article>"),
+                false
+            ),
+        ]
+
+        for c in cases {
+            XCTAssertEqual(TruncationGateDetector.showsTruncationGate(in: c.html), c.isGate, c.why)
+        }
     }
 
     /// The point of the structural signal: the body clears every length threshold and
@@ -77,69 +160,5 @@ final class TruncationGateDetectorTests: XCTestCase {
         // Text-only callers (no source HTML) are unchanged — the gate lives in the markup
         // the extractor strips, so it can only be seen with the HTML in hand.
         XCTAssertFalse(PaywallDetector.looksPaywalled(content: content))
-    }
-
-    /// The pre-paywall Wayback capture is the same publisher template WITHOUT the wall;
-    /// it must not inherit the flag from its sign-in chrome.
-    func testPrePaywallCaptureOfTheSamePageStaysReadable() {
-        let html = page(body: navChrome + """
-        <div class="article-body-wrap"><main class="article-body">\(prose(40))</main></div>
-        """)
-        XCTAssertFalse(TruncationGateDetector.showsTruncationGate(in: html))
-    }
-
-    /// Gate WORDING on a free article (site nav) with no wall container around the body.
-    func testSignInChromeAloneIsNotAGate() {
-        let html = page(body: navChrome + "<article>\(prose(20))</article>")
-        XCTAssertFalse(TruncationGateDetector.showsTruncationGate(in: html))
-    }
-
-    /// WSJ ships the readable post-unlock body inside the node that NAMES the paywall.
-    /// `ArticleExtractor` keeps such a wrapper; the detector must likewise not call it a
-    /// gate.
-    func testUnlockedBodyInsideAPaywallClassIsNotAGate() {
-        let html = page(body: """
-        <div class="paywall PaywalledContent">
-          <h4>Already a subscriber? Sign in.</h4>
-          \(prose(20))
-        </div>
-        """)
-        XCTAssertFalse(TruncationGateDetector.showsTruncationGate(in: html))
-    }
-
-    /// An already-unlocked capture: the extension hid the overlay but left the node, and
-    /// the rest of the story follows it. Only a wall that ENDS the container truncates.
-    func testWallLeftBehindMidBodyIsNotATruncation() {
-        let html = page(body: """
-        <div class="article-body-wrap"><main class="article-body">
-          \(prose(10))\(gate)\(prose(10))
-        </main></div>
-        """)
-        XCTAssertFalse(TruncationGateDetector.showsTruncationGate(in: html))
-    }
-
-    /// A registration interstitial rendered before any prose is a whole-page wall, which
-    /// the existing short-body signals already own.
-    func testGateAheadOfTheBodyIsNotATruncation() {
-        let html = page(body: """
-        <div class="article-body-wrap">\(gate)<main class="article-body">\(prose(20))</main></div>
-        """)
-        XCTAssertFalse(TruncationGateDetector.showsTruncationGate(in: html))
-    }
-
-    /// Below the preview minimum the page is a stub, not a generous preview — the
-    /// length-based signals handle it and this detector stays out of it.
-    func testGateAfterATeaserTooShortToBeAPreviewIsNotATruncation() {
-        let html = page(body: """
-        <div class="article-body-wrap"><main class="article-body"><p>A two-line teaser only.</p></main>\(gate)</div>
-        """)
-        XCTAssertFalse(TruncationGateDetector.showsTruncationGate(in: html))
-    }
-
-    /// No wall-named container anywhere → the cheap pre-filter answers, and the answer
-    /// must agree with the full check.
-    func testPageWithNoWallContainerIsNeverAGate() {
-        let html = page(body: "<article>\(prose(30))</article>")
-        XCTAssertFalse(TruncationGateDetector.showsTruncationGate(in: html))
     }
 }

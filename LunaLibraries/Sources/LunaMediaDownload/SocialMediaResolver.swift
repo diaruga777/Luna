@@ -60,25 +60,46 @@ public struct SocialMediaResolver: SocialMediaResolving {
         return TikTokMediaParser.assets(fromHTML: html)
     }
 
+    /// Instagram posts/reels. Every stage here is keyless, and the order exists to
+    /// keep a VIDEO from resolving to its cover frame: Instagram hands out that still
+    /// freely and the playable MP4 only from one endpoint.
     private func resolveInstagram(url: URL, shortcode: String?) async -> [MediaAsset] {
-        // Embed page FIRST. Its `contextJSON` (gql_data.shortcode_media) carries the
-        // real `video_url` for reels/videos and `display_url` for stills — the only
-        // reliable keyless source. The crawler `og:` tags expose ONLY the poster image
-        // behind a login wall, so relying on them would save a still for a video reel.
-        // `/p/{code}/embed/` serves reels too.
+        // The web client's persisted GraphQL query FIRST — today the only keyless
+        // source that still carries `video_url`. The embed page below used to, and no
+        // longer does for reels: its `contextJSON` now describes the post as a video
+        // (`is_video`, `video_duration`, `product_type: clips`) while omitting the
+        // playable URL entirely, which is exactly how a saved reel became a static
+        // image. Both endpoints return the same `shortcode_media` node shape.
+        if let code = shortcode,
+           let data = await fetch(Self.instagramGraphQLRequest(shortcode: code)),
+           let post = InstagramMediaParser.post(fromGraphQLJSON: data) {
+            if !post.assets.isEmpty { return post.assets }
+            // A video the query couldn't produce a URL for: the sources below can
+            // only offer its poster, so stop rather than pass a still off as the reel.
+            if post.declaresVideo { return [] }
+        }
+
+        // Embed page. Still the source for stills and carousels, and for any post
+        // whose `video_url` it does hand back. `/p/{code}/embed/` serves reels too.
+        var embedDeclaredVideo = false
         if let code = shortcode,
            let embed = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/"),
            let data = await fetch(htmlRequest(embed)),
            let html = String(data: data, encoding: .utf8) {
-            let assets = InstagramMediaParser.assetsFromEmbedContextJSON(html)
-            if !assets.isEmpty { return assets }
+            if let post = InstagramMediaParser.post(fromEmbedHTML: html) {
+                if !post.assets.isEmpty { return post.assets }
+                embedDeclaredVideo = post.declaresVideo
+            }
             // Older embed markup occasionally inlines an unescaped video_url/image.
             let legacy = InstagramMediaParser.assets(fromHTML: html)
-            if !legacy.isEmpty { return legacy }
+            if let first = legacy.first, !embedDeclaredVideo || first.kind == .video {
+                return legacy
+            }
         }
 
-        // Fallback: the post page's `og:` tags (image-only for walled video posts,
-        // but better than nothing when the embed is unavailable).
+        // The post page's `og:` tags. Image-only for a walled video post — better than
+        // nothing for a still, never right for a reel.
+        if embedDeclaredVideo { return [] }
         if let data = await fetch(metaScrapeRequest(url)),
            let html = String(data: data, encoding: .utf8) {
             return InstagramMediaParser.assets(fromHTML: html)
@@ -214,6 +235,43 @@ public struct SocialMediaResolver: SocialMediaResolving {
         return request
     }
 
+    /// The Instagram web client's own persisted GraphQL query for one post, as a GET
+    /// so the durable background engine (which can only issue plain background
+    /// download tasks) can run the identical request. `doc_id` names a query Instagram
+    /// has already registered server-side — there is no key and no login — and
+    /// `variables` carries just the shortcode. Sent with the public web `X-IG-App-ID`
+    /// the site's own JS sends; the endpoint 403s a bare POST but answers this GET.
+    ///
+    /// Instagram rotates `doc_id`s. When this one is retired the query returns no
+    /// media rather than wrong media, and `resolveInstagram` stops instead of falling
+    /// through to a still — a reel that can't be fetched stays a link.
+    static func instagramGraphQLRequest(
+        shortcode: String, timeoutInterval: TimeInterval = 15
+    ) -> URLRequest {
+        var components = URLComponents(string: "https://www.instagram.com/graphql/query/")
+        components?.queryItems = [
+            URLQueryItem(name: "doc_id", value: instagramPostDocumentID),
+            URLQueryItem(name: "variables", value: #"{"shortcode":"\#(shortcode)"}"#),
+        ]
+        let endpoint = components?.url
+            ?? URL(string: "https://www.instagram.com/graphql/query/")!
+        // Cookie-free for the same reason the Facebook factory is: state carried over
+        // from an earlier Instagram request can turn a public post's response into a
+        // login wall.
+        var request = URLRequest(
+            url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: timeoutInterval)
+        request.httpShouldHandleCookies = false
+        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(MediaDownloadHTTP.instagramWebAppID, forHTTPHeaderField: "X-IG-App-ID")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    /// `PolarisPostActionLoadPostQueryQuery` — the query Instagram's own web post page
+    /// issues, and the only keyless one that returns `video_url`.
+    private static let instagramPostDocumentID = "10015901848480474"
+
     /// Stable Facebook content URL used by every resolver stage. Path-addressed
     /// permalinks and `fb.watch` short links need no query. `/watch/?v=<id>` retains
     /// only `v`, since it is content identity rather than share tracking.
@@ -278,6 +336,10 @@ public enum MediaDownloadHTTP {
 
     /// Facebook's public link-unfurl crawler, used only after browser-page fallbacks.
     public static let facebookCrawlerUserAgent = "facebookexternalhit/1.1"
+
+    /// The public application id instagram.com's own web JS sends on every API call.
+    /// Not a credential — the logged-out GraphQL endpoint just expects the header.
+    public static let instagramWebAppID = "936619743392459"
 }
 
 /// Small, dependency-free Open Graph parser for social pages. Attribute order in
@@ -444,32 +506,102 @@ public enum TikTokMediaParser {
     }
 }
 
+/// What one Instagram post's own metadata says about it: the media that can
+/// actually be downloaded, plus whether the post IS a video regardless of whether
+/// a playable URL came with it.
+///
+/// The two are separate answers because Instagram now routinely serves the second
+/// without the first: a reel's embed payload carries `is_video: true`,
+/// `video_duration` and `product_type: clips` but no `video_url` at all. Collapsing
+/// that into "no video found" is what let a reel save its cover frame as if it were
+/// the reel — so callers ladder through sources while `declaresVideo` is true rather
+/// than accepting the first still any source offers.
+public struct InstagramPost: Equatable {
+    /// Downloadable media in post order — one entry, or one per carousel child.
+    public let assets: [MediaAsset]
+    /// True when the post (or any carousel child) is a video, even if no playable
+    /// URL was present to build a `.video` asset from.
+    public let declaresVideo: Bool
+
+    public init(assets: [MediaAsset], declaresVideo: Bool) {
+        self.assets = assets
+        self.declaresVideo = declaresVideo
+    }
+
+    /// True when the post is a video but nothing playable was found — the case where
+    /// falling back to a still would silently substitute a poster for the reel.
+    public var isVideoMissingItsPlayableURL: Bool {
+        declaresVideo && !assets.contains { $0.kind == .video }
+    }
+}
+
 /// Parses Instagram post/embed HTML into a single media asset (video preferred).
 public enum InstagramMediaParser {
+    /// Parses the web client's persisted-GraphQL response (`data.xdt_shortcode_media`).
+    /// This is the one keyless source that still carries a reel's real `video_url`;
+    /// the node shape is otherwise identical to the embed's `shortcode_media`, down to
+    /// `edge_sidecar_to_children`, so both feed the same node parser.
+    public static func post(fromGraphQLJSON data: Data) -> InstagramPost? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = root["data"] as? [String: Any],
+              let media = payload["xdt_shortcode_media"] as? [String: Any]
+        else { return nil }
+        return post(fromShortcodeMedia: media)
+    }
+
     /// Parses the embed page's `contextJSON` blob — a JSON-encoded string holding
-    /// `gql_data.shortcode_media` — into ordered assets. This is the reliable source
-    /// for a reel/video's real `video_url` (carousels and stills too). Empty if the
-    /// blob is absent or has no recognizable media.
+    /// `gql_data.shortcode_media`. Nil if the blob is absent or unparsable.
+    public static func post(fromEmbedHTML html: String) -> InstagramPost? {
+        shortcodeMedia(fromEmbedHTML: html).flatMap(post(fromShortcodeMedia:))
+    }
+
+    /// Parses the embed page's `contextJSON` blob into ordered assets. Empty if the
+    /// blob is absent or has no recognizable media. Prefer `post(fromEmbedHTML:)`,
+    /// which also reports a video whose playable URL Instagram withheld.
     public static func assetsFromEmbedContextJSON(_ html: String) -> [MediaAsset] {
-        guard let media = shortcodeMedia(fromEmbedHTML: html) else { return [] }
+        post(fromEmbedHTML: html)?.assets ?? []
+    }
+
+    /// One post from a `shortcode_media` / `xdt_shortcode_media` node.
+    private static func post(fromShortcodeMedia media: [String: Any]) -> InstagramPost {
         // Carousel (mixed photos/videos) → one asset per child, in order.
         if let sidecar = media["edge_sidecar_to_children"] as? [String: Any],
            let edges = sidecar["edges"] as? [[String: Any]] {
-            let assets = edges.compactMap { ($0["node"] as? [String: Any]).flatMap(asset(fromNode:)) }
-            if !assets.isEmpty { return assets }
+            let children = edges.compactMap { $0["node"] as? [String: Any] }
+            if !children.isEmpty {
+                return InstagramPost(
+                    assets: children.compactMap(asset(fromNode:)),
+                    declaresVideo: children.contains(where: declaresVideo(node:)))
+            }
         }
-        return asset(fromNode: media).map { [$0] } ?? []
+        return InstagramPost(
+            assets: asset(fromNode: media).map { [$0] } ?? [],
+            declaresVideo: declaresVideo(node: media))
+    }
+
+    /// Whether a shortcode-media node is a video. `__typename` is `GraphVideo` on the
+    /// embed payload and `XDTGraphVideo` on the GraphQL one, so match the suffix.
+    private static func declaresVideo(node: [String: Any]) -> Bool {
+        if let isVideo = node["is_video"] as? Bool { return isVideo }
+        return (node["__typename"] as? String)?.hasSuffix("GraphVideo") == true
     }
 
     /// One asset from a shortcode-media node: its video when it's a video, else the
     /// still. URLs come straight from parsed JSON, so they need no unescaping.
+    ///
+    /// A video node with no `video_url` yields NOTHING rather than its `display_url`:
+    /// that still is the reel's cover frame, and returning it here is what made a
+    /// saved reel come back as a static image. The poster is still reachable — it
+    /// rides a resolved video as `thumbnailURL`, and the card's own artwork comes
+    /// from the platform metadata fetcher either way.
     private static func asset(fromNode node: [String: Any]) -> MediaAsset? {
-        let isVideo = (node["is_video"] as? Bool) ?? (node["__typename"] as? String == "GraphVideo")
+        let isVideo = declaresVideo(node: node)
         if isVideo, let videoURL = node["video_url"] as? String, let url = URL(string: videoURL) {
             return MediaAsset(
                 url: url, kind: .video,
                 thumbnailURL: (node["display_url"] as? String).flatMap(URL.init(string:)))
         }
+        if isVideo { return nil }
         if let displayURL = node["display_url"] as? String, let url = URL(string: displayURL) {
             return MediaAsset(url: url, kind: .image)
         }

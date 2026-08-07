@@ -31,92 +31,108 @@ final class ArchiveStageDecisionTests: XCTestCase {
             blockedLimit: blockedLimit)
     }
 
-    // MARK: - The fixed regression
-
-    func testHomepageChromeAfterSubmitDoesNotResubmit() {
-        // The snapshot's chrome still has the home form. It is not itself a content
-        // signal; wait for the semantic content-root probe instead of text length.
-        XCTAssertEqual(decide("homepage", didLeaveHomepage: true), .wait)
+    private struct StageCase {
+        let name: String
+        let stage: String
+        var didLeaveHomepage = false
+        var isSubmittingHomepage = false
+        var hasResolvedSnapshot = false
+        var blockedCount = 0
+        let expected: ArchiveWebReaderViewController.StageDecision
     }
 
-    func testContentRootAfterSubmitExtracts() {
-        XCTAssertEqual(decide("content-root", didLeaveHomepage: true), .attemptExtract)
-    }
+    // MARK: - stage → action
 
-    func testVerboseRequestLogNeverTriggersExtraction() {
-        XCTAssertEqual(decide("waiting", didLeaveHomepage: true), .wait)
-    }
+    func testStageDecisions() {
+        let cases: [StageCase] = [
+            // The fixed regression: the snapshot's chrome still has the home form.
+            // It is not itself a content signal; wait for the semantic content-root
+            // probe instead of resubmitting or gating on text length.
+            .init(name: "homepage chrome after submit does not resubmit",
+                  stage: "homepage", didLeaveHomepage: true, expected: .wait),
+            .init(name: "content-root after submit extracts",
+                  stage: "content-root", didLeaveHomepage: true, expected: .attemptExtract),
+            .init(name: "verbose request log never triggers extraction",
+                  stage: "waiting", didLeaveHomepage: true, expected: .wait),
 
-    // MARK: - Homepage submit (before leaving)
+            // Homepage submit (before leaving).
+            .init(name: "homepage before submit submits",
+                  stage: "homepage", expected: .submitHomepage),
+            .init(name: "homepage before submit with resolved snapshot loads it",
+                  stage: "homepage", hasResolvedSnapshot: true, expected: .loadResolvedSnapshot),
+            .init(name: "submitting homepage waits for navigation",
+                  stage: "homepage", isSubmittingHomepage: true, expected: .wait),
 
-    func testHomepageBeforeSubmitSubmits() {
-        XCTAssertEqual(decide("homepage"), .submitHomepage)
-    }
+            // Challenge.
+            .init(name: "challenge waits for user", stage: "challenge", expected: .challenge),
 
-    func testHomepageBeforeSubmitWithResolvedSnapshotLoadsIt() {
-        XCTAssertEqual(
-            decide("homepage", hasResolvedSnapshot: true),
-            .loadResolvedSnapshot)
-    }
+            // "Enable JS / disable ad blocker" gate: tolerate a transient flash,
+            // terminal once it persists.
+            .init(name: "blocked once is a flash", stage: "blocked", blockedCount: 1, expected: .wait),
+            .init(name: "blocked twice is a flash", stage: "blocked", blockedCount: 2, expected: .wait),
+            .init(name: "blocked at the limit is terminal",
+                  stage: "blocked", blockedCount: 3, expected: .cannotArchive),
+            .init(name: "blocked past the limit is terminal",
+                  stage: "blocked", blockedCount: 9, expected: .cannotArchive),
 
-    func testSubmittingHomepageWaitsForNavigation() {
-        XCTAssertEqual(decide("homepage", isSubmittingHomepage: true), .wait)
-    }
+            // Errors. archive.today's "Error -32602: Invalid InterceptionId"
+            // (probe → "error") is terminal — retrying/solving won't help.
+            .init(name: "error is terminal", stage: "error", expected: .cannotArchive),
+            .init(name: "error is terminal regardless of homepage state",
+                  stage: "error", didLeaveHomepage: true, expected: .cannotArchive),
+            .init(name: "malformed stage waits", stage: "unknown", expected: .wait),
+        ]
 
-    // MARK: - Challenge
-
-    func testChallengeWaitsForUser() {
-        XCTAssertEqual(decide("challenge"), .challenge)
-    }
-
-    // MARK: - "Enable JS / disable ad blocker" gate
-
-    func testBlockedGateToleratesATransientFlash() {
-        XCTAssertEqual(decide("blocked", blockedCount: 1), .wait)
-        XCTAssertEqual(decide("blocked", blockedCount: 2), .wait)
-    }
-
-    func testBlockedGateBecomesTerminalWhenItPersists() {
-        XCTAssertEqual(decide("blocked", blockedCount: 3), .cannotArchive)
-        XCTAssertEqual(decide("blocked", blockedCount: 9), .cannotArchive)
-    }
-
-    // MARK: - Errors
-
-    func testErrorIsTerminal() {
-        // archive.today's "Error -32602: Invalid InterceptionId" (probe → "error")
-        // is terminal — retrying/solving won't help, so show the error.
-        XCTAssertEqual(decide("error"), .cannotArchive)
-    }
-
-    func testErrorIsTerminalRegardlessOfHomepageState() {
-        XCTAssertEqual(decide("error", didLeaveHomepage: true), .cannotArchive)
-    }
-
-    func testMalformedStageWaits() {
-        XCTAssertEqual(decide("unknown"), .wait)
+        for testCase in cases {
+            XCTAssertEqual(
+                decide(
+                    testCase.stage,
+                    didLeaveHomepage: testCase.didLeaveHomepage,
+                    isSubmittingHomepage: testCase.isSubmittingHomepage,
+                    hasResolvedSnapshot: testCase.hasResolvedSnapshot,
+                    blockedCount: testCase.blockedCount),
+                testCase.expected,
+                testCase.name)
+        }
     }
 
     // MARK: - JS-required gate (pre-stage hardening)
 
-    func testJavaScriptRequiredGateDetectedOnShortBody() {
-        XCTAssertTrue(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
-            text: "Please enable JavaScript to continue."))
-        XCTAssertTrue(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
-            text: "JavaScript is required to view this content."))
-        XCTAssertTrue(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
-            text: "Enable JS and reload."))
-    }
-
-    func testJavaScriptRequiredGateNotTrippedByLongArticle() {
+    func testJavaScriptRequiredGate() {
         // A real, rendered article that merely mentions JavaScript must NOT be
-        // treated as a gate (gated on a short body).
-        let article = String(repeating: "This post is about JavaScript frameworks. ", count: 60)
-        XCTAssertFalse(ArchiveWebReaderViewController.isJavaScriptRequiredGate(text: article))
+        // treated as a gate — the gate is conditioned on a SHORT body.
+        let longArticle = String(repeating: "This post is about JavaScript frameworks. ", count: 60)
+        let cases: [(name: String, text: String, isGate: Bool)] = [
+            ("please enable", "Please enable JavaScript to continue.", true),
+            ("is required", "JavaScript is required to view this content.", true),
+            ("enable JS and reload", "Enable JS and reload.", true),
+            ("long article mentioning JavaScript", longArticle, false),
+            ("unrelated short page", "Loading your article…", false),
+        ]
+
+        for testCase in cases {
+            XCTAssertEqual(
+                ArchiveWebReaderViewController.isJavaScriptRequiredGate(text: testCase.text),
+                testCase.isGate,
+                testCase.name)
+        }
     }
 
-    func testJavaScriptRequiredGateNotTrippedByUnrelatedShortPage() {
-        XCTAssertFalse(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
-            text: "Loading your article…"))
+    // MARK: - What the cover does when the unlock lands
+
+    /// The regression: a successful unlock uncovered the page and then fired
+    /// `onExtracted`, whose handler dismisses the modal — so the raw
+    /// archive/publisher page played underneath the whole dismissal animation.
+    /// A controller someone is about to take away keeps its cover on.
+    func testTheCoverOnlyComesOffForAControllerThatIsStayingUp() {
+        XCTAssertFalse(
+            ArchiveWebReaderViewController.uncoversPageAfterExtraction(
+                hasExtractedHandler: true),
+            "An onExtracted handler dismisses or replaces this controller; "
+                + "uncovering first shows the raw page through that animation")
+        XCTAssertTrue(
+            ArchiveWebReaderViewController.uncoversPageAfterExtraction(
+                hasExtractedHandler: false),
+            "With nowhere to go, the unlocked page is what the user reads")
     }
 }

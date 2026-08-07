@@ -13,11 +13,8 @@ import Photos
 import UIKit
 
 /// Shown by the action extension for non-textual content (a video, post, etc.):
-/// the URL is already saved, so this confirms the save and — for shareable links,
-/// when there are friends — shows a scrolling friend list; tapping a friend QUEUES
-/// the send to the App Group (the app delivers it on next launch). The confirmation
-/// content sits near the top to leave room for the friend list. No eBook / system
-/// share. Done dismisses the extension.
+/// the URL is already saved, so this confirms the save — the confirmation pill
+/// sits at the top, and Done dismisses the extension.
 ///
 /// For downloadable platforms (X / Instagram / TikTok / Facebook) the media is
 /// fetched and shown INLINE: when the "Auto-download media" setting is ON the file
@@ -28,10 +25,21 @@ import UIKit
 /// A video gets a play-button overlay (tap → AVPlayer); an image just
 /// displays. Once downloaded (auto or manual) a "Save to Photos" button enables;
 /// saving writes to the Photos library AND marks the item read in the reading list.
+///
+/// The controls are two stacks in one column (`contentColumn`): the
+/// confirmation, the media, and the media's OWN action (Download / Save to
+/// Photos) sit at the top, and the ways OUT of the screen stack up from the
+/// bottom — a full-width Done under a full-width Delete, with the system-share
+/// affordance a floating glass circle above them (action extension only; the
+/// share extension's sheet already sits inside a share flow).
 public final class SavedNonTextualViewController: UIViewController {
 
     private let articleURLString: String
     private let onDone: () -> Void
+    /// Whether to offer the system share sheet for the downloaded file. The
+    /// ACTION extension does (it's a destination in its own right); the share
+    /// extension doesn't — the user arrived from a share sheet.
+    private let showsSystemShare: Bool
 
     /// The app's own colour — the extensions inherit their host app's tint, so
     /// the Downloader's buttons read orange and the central app's indigo.
@@ -74,10 +82,12 @@ public final class SavedNonTextualViewController: UIViewController {
     /// `MediaDownloadStorage.purgeAll()`, catches files orphaned by a kill.)
     private var unsavedPreviewFileURL: URL?
 
-    // A fixed-height media preview area. Reserves space from load so the layout
-    // never shifts as the media state resolves: it hosts the still image / video
-    // poster, the play overlay, the pending media icon, the download progress
-    // bar, and any load-failure placeholder.
+    // A SQUARE media preview area, sized from the content column and filled
+    // aspect-fit. Its side depends on nothing the download resolves, so the
+    // media's vertical centre — and everything anchored below it — is fixed from
+    // load. It hosts the still image / video poster, the play overlay, the
+    // pending media icon, the download progress bar, and any load-failure
+    // placeholder.
     private let previewContainer = UIView()
     private let previewImageView = UIImageView()
     /// A large media icon shown in the pending state (before any download starts).
@@ -86,17 +96,28 @@ public final class SavedNonTextualViewController: UIViewController {
     private let playOverlay = UIView()
     /// Shown (grey box + message) when media exists but its preview couldn't render.
     private let previewPlaceholder = UILabel()
-    private static let previewHeight: CGFloat = 220
 
-    // The action row: a primary button that is "Download media" (pending) /
-    // hidden (downloading, ready), then Share + "Save to Photos" side by side
-    // (enabled once a file exists) over the destructive Delete. A status label
-    // carries errors. All hold layout space from load.
+    /// The one column both stacks are laid out in: the view's margins, capped at
+    /// the readable width so a wide iPad sheet doesn't stretch the media.
+    private let contentColumn = UILayoutGuide()
+    /// Distance from the safe area to the bottom control stack — the same inset
+    /// the floating exit button used to keep.
+    private static let bottomInset = ExtensionExitButton.edgeInset
+    /// The Photos button is inset one further standard margin on each side, so it
+    /// reads as the media's own action rather than another full-width control.
+    private static let photosButtonInset: CGFloat = 16
+
+    // The media's own action, in a fixed-height slot directly under the preview:
+    // "Download media" while nothing is on disk, "Save to Photos" once something
+    // is (never both — the slot holds the space either way). A status label
+    // carries errors under it. The ways out of the screen — the floating Share
+    // circle, Delete, Done — stack up from the bottom instead.
     private let downloadButton = UIButton(type: .system)
-    private let downloadButtonSlot = UIView()
+    private let primaryActionSlot = UIView()
     private let shareButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
     private let deleteButton = UIButton(type: .system)
+    private let doneButton = UIButton(type: .system)
     /// Drawn inside the media placeholder, not under the buttons — see the type
     /// comment. Hidden except while the file is streaming to disk.
     private let downloadProgress = MoonHorizonProgressBar()
@@ -108,8 +129,12 @@ public final class SavedNonTextualViewController: UIViewController {
     /// (the player VC owns it) so we can pause it while a share sheet is up.
     private weak var activePlayer: AVPlayer?
 
-    public init(articleURLString: String, onDone: @escaping () -> Void) {
+    public init(
+        articleURLString: String, showsSystemShare: Bool = false,
+        onDone: @escaping () -> Void
+    ) {
         self.articleURLString = articleURLString
+        self.showsSystemShare = showsSystemShare
         self.onDone = onDone
         super.init(nibName: nil, bundle: nil)
     }
@@ -124,8 +149,8 @@ public final class SavedNonTextualViewController: UIViewController {
         }
     }
 
-    /// The screen carries its own header pill and its own floating exit button,
-    /// so the host's navigation bar would be an empty strip above them.
+    /// The screen carries its own header pill and its own Done button, so the
+    /// host's navigation bar would be an empty strip above them.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
@@ -135,52 +160,82 @@ public final class SavedNonTextualViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
 
+        installContentColumn()
+
         // The header states the one fact this screen exists to report. It used
         // to be a 44pt checkmark, the word "Saved", AND a navigation title
         // hard-coded to "Luna Downloader" (wrong in the three other apps that
         // present this screen) — three pieces of chrome for one sentence.
-        let savedBadge = GlassConfirmationBadge(title: L10n.string("Saved to Luna"))
+        let savedBadge = GlassConfirmationBadge(title: L10n.string("Common_savedToLuna"))
 
-        // Confirmation + download controls sit at the TOP.
+        // Confirmation + the media + the media's own action sit at the TOP.
         // All platforms use the same confirmation header. Downloadable media,
         // including YouTube videos, renders only in the extension playback area
         // below so there is one resolver, one preview, and one set of controls.
-        let topStack = UIStackView(arrangedSubviews: [savedBadge] + mediaDownloadViews())
+        let topStack = UIStackView(arrangedSubviews: [savedBadge] + mediaPreviewViews())
         topStack.axis = .vertical
         topStack.spacing = 14
         topStack.setCustomSpacing(24, after: savedBadge)
+        if topStack.arrangedSubviews.contains(previewContainer) {
+            // The Photos button hangs off the bottom of the square, close enough
+            // to belong to it.
+            topStack.setCustomSpacing(18, after: previewContainer)
+        }
         topStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(topStack)
-        NSLayoutConstraint.activate([
-            topStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            topStack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            topStack.leadingAnchor.constraint(
-                greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
-            topStack.trailingAnchor.constraint(
-                lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor),
-            // A wide extension sheet on iPad would otherwise stretch the media
-            // preview and its two buttons the whole way across.
-            topStack.widthAnchor.constraint(
-                lessThanOrEqualToConstant: LunaLayout.readableWidth),
-        ])
 
-        ExtensionExitButton.install(in: self) { [weak self] in self?.onDone() }
+        // The exits stack UP from the bottom safe area, so an absent Share
+        // circle is not a gap above Delete.
+        let bottomStack = UIStackView(arrangedSubviews: exitControlViews())
+        bottomStack.axis = .vertical
+        bottomStack.spacing = 10
+        bottomStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomStack)
+
+        NSLayoutConstraint.activate([
+            topStack.topAnchor.constraint(equalTo: contentColumn.topAnchor, constant: 20),
+            topStack.leadingAnchor.constraint(equalTo: contentColumn.leadingAnchor),
+            topStack.trailingAnchor.constraint(equalTo: contentColumn.trailingAnchor),
+            bottomStack.leadingAnchor.constraint(equalTo: contentColumn.leadingAnchor),
+            bottomStack.trailingAnchor.constraint(equalTo: contentColumn.trailingAnchor),
+            bottomStack.bottomAnchor.constraint(
+                equalTo: contentColumn.bottomAnchor, constant: -Self.bottomInset),
+            // On a short sheet the square preview gives way rather than sliding
+            // the exits off the bottom.
+            topStack.bottomAnchor.constraint(
+                lessThanOrEqualTo: bottomStack.topAnchor, constant: -16),
+        ])
 
         beginMediaFlow()
     }
 
+    /// The single width both stacks share: the view's margins on a phone, capped
+    /// at the readable width so a wide iPad sheet doesn't stretch the media
+    /// preview or its buttons the whole way across.
+    private func installContentColumn() {
+        view.addLayoutGuide(contentColumn)
+        let fillsMargins = contentColumn.widthAnchor.constraint(
+            equalTo: view.layoutMarginsGuide.widthAnchor)
+        fillsMargins.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            contentColumn.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            fillsMargins,
+            contentColumn.widthAnchor.constraint(
+                lessThanOrEqualToConstant: LunaLayout.readableWidth),
+            contentColumn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            contentColumn.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+        ])
+    }
+
     // MARK: - Media preview UI
 
-    /// The inline media preview + the Download / Save-to-Photos buttons + (hidden)
+    /// The inline media preview + the Download / Save-to-Photos slot + (hidden)
     /// progress bar / status, shown only for downloadable platforms. The preview
-    /// reserves fixed space so nothing above or the friend list below shifts as the
-    /// media state resolves. Non-downloadable items still get the destructive exit
-    /// action, but omit the media preview controls.
-    private func mediaDownloadViews() -> [UIView] {
-        configureDeleteButton()
-        guard MediaDownloadablePlatform.supports(articleURLString) else {
-            return [deleteButton]
-        }
+    /// reserves a square from load, so nothing shifts as the media state
+    /// resolves. Non-textual items from a platform Luna can't download show the
+    /// confirmation and the exits alone.
+    private func mediaPreviewViews() -> [UIView] {
+        guard MediaDownloadablePlatform.supports(articleURLString) else { return [] }
 
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.backgroundColor = LunaColors.secondaryBackground
@@ -214,7 +269,7 @@ public final class SavedNonTextualViewController: UIViewController {
         Self.styleAsSystemPlayButton(playOverlay, diameter: 60)
         previewContainer.addSubview(playOverlay)
 
-        previewPlaceholder.text = L10n.string("Unable to preview media")
+        previewPlaceholder.text = L10n.string("Downloader_media_preview_unavailableMessage")
         previewPlaceholder.font = .preferredFont(forTextStyle: .subheadline)
         previewPlaceholder.textColor = LunaColors.secondaryText
         previewPlaceholder.textAlignment = .center
@@ -228,8 +283,16 @@ public final class SavedNonTextualViewController: UIViewController {
         previewContainer.addGestureRecognizer(
             UITapGestureRecognizer(target: self, action: #selector(previewTapped)))
 
+        // Square, by preference: the media's own proportions never move its
+        // centre. `lessThanOrEqualTo` is the one that must hold — a short sheet
+        // shrinks the box instead of pushing the exits off the bottom.
+        let square = previewContainer.heightAnchor.constraint(
+            equalTo: previewContainer.widthAnchor)
+        square.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            previewContainer.heightAnchor.constraint(equalToConstant: Self.previewHeight),
+            square,
+            previewContainer.heightAnchor.constraint(
+                lessThanOrEqualTo: previewContainer.widthAnchor),
             previewImageView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
             previewImageView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
             previewImageView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
@@ -253,38 +316,38 @@ public final class SavedNonTextualViewController: UIViewController {
         ])
 
         downloadButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Download media"), symbol: "arrow.down.circle",
+            title: L10n.string("Downloader_media_preview_downloadButtonTitle"), symbol: "arrow.down.circle",
             prominent: true, tint: Self.tint)
         downloadButton.addAction(
             UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
-        downloadButtonSlot.translatesAutoresizingMaskIntoConstraints = false
-        downloadButtonSlot.addSubview(downloadButton)
-        downloadButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            downloadButtonSlot.heightAnchor.constraint(equalToConstant: 50),
-            downloadButton.topAnchor.constraint(equalTo: downloadButtonSlot.topAnchor),
-            downloadButton.bottomAnchor.constraint(equalTo: downloadButtonSlot.bottomAnchor),
-            downloadButton.leadingAnchor.constraint(equalTo: downloadButtonSlot.leadingAnchor),
-            downloadButton.trailingAnchor.constraint(equalTo: downloadButtonSlot.trailingAnchor),
-        ])
-
-        shareButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Share"), symbol: "square.and.arrow.up", tint: Self.tint)
-        shareButton.addAction(
-            UIAction { [weak self] _ in self?.shareDownloadedMedia() }, for: .touchUpInside)
-        shareButton.isEnabled = false
-        // Hold layout space (visible but disabled) so the row height is stable.
 
         setSaveButton(savedToPhotos: false)
         saveButton.addAction(
             UIAction { [weak self] _ in self?.saveToPhotos() }, for: .touchUpInside)
         saveButton.isEnabled = false
-        // Hold layout space (visible but disabled) so the row height is stable.
 
-        let mediaActions = UIStackView(arrangedSubviews: [shareButton, saveButton])
-        mediaActions.axis = .horizontal
-        mediaActions.spacing = 10
-        mediaActions.distribution = .fillEqually
+        // Download and Save-to-Photos are the same slot in two states — the media
+        // either isn't here yet or is. The slot keeps its height either way, so
+        // the status line below it never moves. Save is inset a further margin on
+        // each side: wide, but plainly not one of the full-width controls.
+        primaryActionSlot.translatesAutoresizingMaskIntoConstraints = false
+        primaryActionSlot.addSubview(downloadButton)
+        primaryActionSlot.addSubview(saveButton)
+        downloadButton.translatesAutoresizingMaskIntoConstraints = false
+        saveButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            primaryActionSlot.heightAnchor.constraint(equalToConstant: 50),
+            downloadButton.topAnchor.constraint(equalTo: primaryActionSlot.topAnchor),
+            downloadButton.bottomAnchor.constraint(equalTo: primaryActionSlot.bottomAnchor),
+            downloadButton.leadingAnchor.constraint(equalTo: primaryActionSlot.leadingAnchor),
+            downloadButton.trailingAnchor.constraint(equalTo: primaryActionSlot.trailingAnchor),
+            saveButton.topAnchor.constraint(equalTo: primaryActionSlot.topAnchor),
+            saveButton.bottomAnchor.constraint(equalTo: primaryActionSlot.bottomAnchor),
+            saveButton.leadingAnchor.constraint(
+                equalTo: primaryActionSlot.leadingAnchor, constant: Self.photosButtonInset),
+            saveButton.trailingAnchor.constraint(
+                equalTo: primaryActionSlot.trailingAnchor, constant: -Self.photosButtonInset),
+        ])
 
         downloadStatus.isHidden = true
         downloadStatus.font = .preferredFont(forTextStyle: .subheadline)
@@ -292,20 +355,64 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadStatus.textAlignment = .center
         downloadStatus.numberOfLines = 0
 
-        return [
-            previewContainer, downloadButtonSlot, mediaActions, deleteButton, downloadStatus
-        ]
+        return [previewContainer, primaryActionSlot, downloadStatus]
+    }
+
+    // MARK: - The exits
+
+    /// The ways out, bottom-up: Done (full width, the app's tinted glass — the
+    /// affirmative exit this screen is reached by), Delete above it, and — in the
+    /// action extension, and only where a file could exist to share — a floating
+    /// glass Share circle above that.
+    private func exitControlViews() -> [UIView] {
+        configureDeleteButton()
+        configureDoneButton()
+        guard showsSystemShare, MediaDownloadablePlatform.supports(articleURLString) else {
+            return [deleteButton, doneButton]
+        }
+        return [floatingShareRow(), deleteButton, doneButton]
     }
 
     private func configureDeleteButton() {
         guard deleteButton.configuration == nil else { return }
         var config = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Delete and exit"), symbol: "trash", tint: Self.tint)
+            title: L10n.string("Common_delete"), symbol: "trash", tint: Self.tint)
         // Quiet glass, but the label and glyph stay unmistakably destructive.
         config.baseForegroundColor = LunaColors.errorAccent
         deleteButton.configuration = config
         deleteButton.addAction(
             UIAction { [weak self] _ in self?.deleteAndExit() }, for: .touchUpInside)
+    }
+
+    private func configureDoneButton() {
+        guard doneButton.configuration == nil else { return }
+        doneButton.configuration = GlassStyle.primaryActionButtonConfiguration(
+            title: L10n.string("Common_done"), symbol: "checkmark", tint: Self.tint)
+        doneButton.addAction(UIAction { [weak self] _ in self?.onDone() }, for: .touchUpInside)
+    }
+
+    /// The Share circle, sitting against the trailing edge the pills under it
+    /// end at. It stays visible but disabled until a file exists, so the action
+    /// extension's bottom chrome doesn't rearrange itself mid-download.
+    private func floatingShareRow() -> UIView {
+        shareButton.isEnabled = false
+        ExtensionFloatingGlassButton.style(
+            shareButton, symbol: "square.and.arrow.up",
+            accessibilityLabel: L10n.string("Common_share"))
+        shareButton.addAction(
+            UIAction { [weak self] _ in self?.shareDownloadedMedia() }, for: .touchUpInside)
+
+        let row = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(shareButton)
+        NSLayoutConstraint.activate([
+            shareButton.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            shareButton.topAnchor.constraint(equalTo: row.topAnchor),
+            // A little more air under the circle than the pills keep between
+            // themselves, so it floats rather than joining the stack.
+            shareButton.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -6),
+        ])
+        return row
     }
 
     // MARK: - Media flow (state machine)
@@ -464,6 +571,8 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadButton.isHidden = false
             downloadProgress.isHidden = true
             shareButton.isEnabled = false
+            // Download owns the slot until a file exists.
+            saveButton.isHidden = true
             saveButton.isEnabled = false
             downloadStatus.isHidden = true
 
@@ -478,8 +587,11 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadProgress.setProgress(0, animated: false)
             downloadProgress.isHidden = false
             shareButton.isEnabled = false
+            // The progress bar in the preview is the whole story; the slot below
+            // it holds its space and says nothing.
+            saveButton.isHidden = true
             saveButton.isEnabled = false
-            downloadStatus.text = L10n.string("Downloading…")
+            downloadStatus.text = L10n.string("Downloader_media_preview_downloadingStatus")
             downloadStatus.textColor = LunaColors.secondaryText
             downloadStatus.isHidden = false
 
@@ -489,7 +601,9 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadProgress.isHidden = true
             downloadStatus.isHidden = true
             shareButton.isEnabled = true
+            saveButton.isHidden = false
             setSaveButton(savedToPhotos: didSaveToPhotos)
+            // Takes the slot back for audio, which Photos can't hold.
             showReadyPreview(media)
             persistToDownloaderLibraryIfNeeded(media)
 
@@ -499,6 +613,7 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadProgress.isHidden = true
             downloadStatus.isHidden = true
             shareButton.isEnabled = true
+            saveButton.isHidden = false
             didSaveToPhotos = item.photosLocalIdentifier != nil
             setSaveButton(savedToPhotos: didSaveToPhotos)
             showAlreadyDownloadedPreview(item)
@@ -511,6 +626,8 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadButton.isHidden = false
             downloadProgress.isHidden = true
             shareButton.isEnabled = false
+            // Back to the retry, which owns the slot again.
+            saveButton.isHidden = true
             saveButton.isEnabled = false
             downloadStatus.text = message
             downloadStatus.textColor = .systemRed
@@ -551,7 +668,8 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.applyResolvedMediaState(.ready(media))
                 }
             } catch {
-                let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't download the media.")
+                let message = (error as? MediaDownloadError)?.message
+                    ?? L10n.string("Downloader_media_error_downloadFailed")
                 await MainActor.run {
                     guard !self.isDeleting else { return }
                     self.applyMediaState(.failed(message: message))
@@ -798,7 +916,8 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.markItemRead()
                     await MainActor.run { self.finishSave(success: true) }
                 } catch {
-                    let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't save the media.")
+                    let message = (error as? MediaDownloadError)?.message
+                        ?? L10n.string("Downloader_media_error_saveMediaFailed")
                     await MainActor.run { self.finishSave(message: message, success: false) }
                 }
             }
@@ -817,7 +936,8 @@ public final class SavedNonTextualViewController: UIViewController {
                     self.markItemRead()
                     await MainActor.run { self.finishSave(success: true) }
                 } catch {
-                    let message = (error as? MediaDownloadError)?.message ?? L10n.string("Couldn't save the media.")
+                    let message = (error as? MediaDownloadError)?.message
+                        ?? L10n.string("Downloader_media_error_saveMediaFailed")
                     await MainActor.run { self.finishSave(message: message, success: false) }
                 }
             }
@@ -827,7 +947,7 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     private func showSavingStatus() {
-        downloadStatus.text = L10n.string("Saving to Photos…")
+        downloadStatus.text = L10n.string("Downloader_media_preview_savingStatus")
         downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
     }
@@ -849,7 +969,7 @@ public final class SavedNonTextualViewController: UIViewController {
         }
     }
 
-    /// The Photos button, in either state. It is the prominent action of its row
+    /// The Photos button, in either state. It is the prominent action of its slot
     /// (the app's tint fills the glass) and BOTH states carry the Photos mark
     /// itself, set inline before the word "Photos" — the destination is the
     /// point of the button, so it shouldn't disappear the moment it's reached.
@@ -865,7 +985,8 @@ public final class SavedNonTextualViewController: UIViewController {
         // The title carries an image attachment in place of a word, so spell the
         // label out rather than letting VoiceOver read around the glyph.
         saveButton.accessibilityLabel = savedToPhotos
-            ? L10n.string("Saved to Photos") : L10n.string("Save to Photos")
+            ? L10n.string("Downloader_media_preview_savedAccessibilityLabel")
+            : L10n.string("Downloader_media_preview_saveAccessibilityLabel")
     }
 
     /// "Save to 🌸 Photos" — the Photos mark placed inline, at the position the
@@ -875,8 +996,8 @@ public final class SavedNonTextualViewController: UIViewController {
     private static func photosTitle(savedToPhotos: Bool) -> AttributedString {
         let marker = "\u{FFFC}"   // OBJECT REPLACEMENT CHARACTER
         let text = savedToPhotos
-            ? L10n.string("Saved to \(marker) Photos")
-            : L10n.string("Save to \(marker) Photos")
+            ? L10n.string("Downloader_media_preview_savedButtonTitleFormat", marker)
+            : L10n.string("Downloader_media_preview_saveButtonTitleFormat", marker)
         let font = UIFont.systemFont(ofSize: 15, weight: .semibold)
         let string = NSMutableAttributedString(string: text, attributes: [.font: font])
         guard let range = text.range(of: marker) else { return AttributedString(string) }
@@ -899,7 +1020,7 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadButton.isEnabled = false
         shareButton.isEnabled = false
         saveButton.isEnabled = false
-        downloadStatus.text = L10n.string("Deleting…")
+        downloadStatus.text = L10n.string("Downloader_media_preview_deletingStatus")
         downloadStatus.textColor = LunaColors.secondaryText
         downloadStatus.isHidden = false
 
@@ -921,7 +1042,7 @@ public final class SavedNonTextualViewController: UIViewController {
                 await MainActor.run { self.onDone() }
             } catch {
                 let message = (error as? MediaDownloadError)?.message
-                    ?? L10n.string("Couldn't delete this media.")
+                    ?? L10n.string("Downloader_media_error_deleteFailed")
                 await MainActor.run {
                     self.isDeleting = false
                     self.deleteButton.isEnabled = true

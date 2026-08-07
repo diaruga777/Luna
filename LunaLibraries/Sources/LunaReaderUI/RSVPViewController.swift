@@ -136,6 +136,28 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         }
     }
 
+    /// Top of the playback controls, for a host that floats a control above them
+    /// (the reader's share circle). An ANCHOR rather than a measurement: the
+    /// controls now lift off the bottom safe area by an amount only this reader
+    /// computes, and a host reading that distance during its own
+    /// `viewDidLayoutSubviews` would be reading it a pass late. Nil until the
+    /// view loads.
+    public var controlsClearanceAnchor: NSLayoutYAxisAnchor? {
+        isViewLoaded ? controlsStack.topAnchor : nil
+    }
+
+    /// Frame — in THIS reader's coordinate space — of a control the host floats
+    /// over the reader rather than beside it: the reader's bottom-right share
+    /// circle, which lands in the trailing-context lane. The lane gives up the
+    /// width the control covers (see `contextWidth(forLane:fullWidth:)`) instead of
+    /// running its prose underneath it. `.null` (the default) reserves nothing.
+    public var hostOverlayFrame: CGRect = .null {
+        didSet {
+            guard isViewLoaded, !hostOverlayFrame.equalTo(oldValue) else { return }
+            view.setNeedsLayout()
+        }
+    }
+
     private let wordLabel = UILabel()
     /// Multi-line phrase text shown in the focus panel in Phrases mode.
     private let phraseLabel = UILabel()
@@ -145,6 +167,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// thread of the sentence.
     private let previousContextLabel = UILabel()
     private let nextContextLabel = UILabel()
+    /// The surrounding prose for the current position as the context window
+    /// produced it. The LABELS hold what fits their lanes (`layoutContext`); these
+    /// hold the whole window, so a relayout can re-fit it against a lane that has
+    /// changed height without going back to the engine.
+    private var precedingContextText = ""
+    private var followingContextText = ""
     /// A compact accent-to-neutral reticule around the ORP letter (Words mode).
     /// Its only vertical elements are two tiny inward ticks; nothing crosses
     /// behind the highlighted glyph.
@@ -173,6 +201,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private var gazeCoordinator: RSVPGazeCoordinator?
     /// Test seam: substitutes the gaze source. Must be set before the view loads.
     public var gazeTrackerOverride: GazeTracking?
+    /// Test seam: substitutes the clock the gaze coordinator measures its
+    /// away-threshold and resume-dwell against, so a test can prove what
+    /// happens after four seconds of staring without spending four seconds.
+    /// Must be set before the view loads.
+    public var gazeClockOverride: (() -> TimeInterval)?
 
     /// Words a skip button jumps from the current position.
     private static let skipWordCount = 25
@@ -209,20 +242,37 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
     private static let contextWordCount = 55
-    /// Vertical center of the focal word / phrase. It is derived from the actual
-    /// space between the host chrome standing over the reader and the playback
-    /// controls, so a tall title header can never cover the reticule and the
-    /// controls can never be overrun. `topContentInset` is load-bearing here:
-    /// inside a card it is the (possibly multi-line) title header's real
-    /// height, and a focal band measured from the view's own top sat under it.
-    /// The resting target is slightly BELOW the view's midpoint — the freed
-    /// top of the screen belongs to the paused preceding-context lane, which
-    /// needs the room far more than the lane under the word does.
-    private var focalCenterY: CGFloat {
-        let top = view.safeAreaInsets.top + topContentInset + 18
-        let controlsTop = controlsStack.frame.minY > 0
+    /// The surrounding prose's own font — also the one the lane-fitting
+    /// measurements run against, so they must not drift apart.
+    private static let contextFont = UIFont.systemFont(ofSize: 15, weight: .regular)
+    /// First line the reader owns: below the host chrome standing over it.
+    /// `topContentInset` is load-bearing — inside a card it is the (possibly
+    /// multi-line) title header's real height, and a band measured from the
+    /// view's own top sat under it.
+    private var readingBandTop: CGFloat {
+        view.safeAreaInsets.top + topContentInset + 18
+    }
+    /// Bottom of the reading band: the top of the playback controls.
+    private var readingBandBottom: CGFloat {
+        controlsStack.frame.minY > 0
             ? controlsStack.frame.minY
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
+    }
+    /// Vertical center of the focal word / phrase: the MIDPOINT of the reading
+    /// band — the space actually between the host chrome and the playback
+    /// controls — so a tall title header can never cover the reticule and the
+    /// controls can never be overrun.
+    ///
+    /// It used to rest at the VIEW's midpoint, which is only the band's midpoint
+    /// when the chrome above and the controls below happen to be equally tall.
+    /// They rarely are: in the action extension the navigation bar takes ~140pt
+    /// off the top, and the word sat ~100pt below the middle of its own space
+    /// with a void above it. `focalCenterBias` keeps the small downward lean the
+    /// view-midpoint target used to give for free — the preceding-context lane
+    /// grows taller than the trailing one, so the room above is worth more.
+    private var focalCenterY: CGFloat {
+        let top = readingBandTop
+        let controlsTop = readingBandBottom
         // Keep the link/completion lane below the focused content and leave the
         // focused type clear of the title header above.
         let lowerClearance: CGFloat = displayMode == .phrases ? 104 : 106
@@ -232,7 +282,51 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         guard maximumCenter >= minimumCenter else {
             return (top + controlsTop) / 2
         }
-        return min(max(view.bounds.midY + 24, minimumCenter), maximumCenter)
+        let bandCenter = (top + controlsTop) / 2 + Self.focalCenterBias
+        return min(max(bandCenter, minimumCenter), maximumCenter)
+    }
+
+    /// How far below the reading band's midpoint the focal word rests.
+    private static let focalCenterBias: CGFloat = 16
+
+    /// Gap the controls always keep from the bottom safe area.
+    private static let controlsBaseBottomInset: CGFloat = 24
+    /// Extra lift granted on a container tall enough that the reading band has
+    /// height to spare — the controls unglue from the bottom edge and the whole
+    /// reading group (which is centered on the band, so it follows them up)
+    /// stops sitting in the lower third of an action-extension sheet.
+    private static let controlsMaximumLift: CGFloat = 40
+    /// Band height below which the lift is refused outright: everything from the
+    /// preceding-context prose to the trailing lane already wants this much, so
+    /// on a short container the controls stay put rather than crowd the word.
+    private static let comfortableReadingBandHeight: CGFloat = 340
+    /// Height the controls stack occupies before it has been laid out once
+    /// (scrubber + status + 64pt button row + two 12pt gaps).
+    private static let estimatedControlsHeight: CGFloat = 138
+
+    private var controlsBottomConstraint: NSLayoutConstraint?
+
+    /// Negative inset from the bottom safe area for the controls stack: the base
+    /// gap, plus the lift a roomy band can afford. Measured from the UNLIFTED
+    /// geometry so the result can't feed back into itself.
+    private var controlsBottomInset: CGFloat {
+        let controlsHeight = controlsStack.bounds.height > 0
+            ? controlsStack.bounds.height
+            : Self.estimatedControlsHeight
+        let bandBottom = view.safeAreaLayoutGuide.layoutFrame.maxY
+            - Self.controlsBaseBottomInset - controlsHeight
+        let band = bandBottom - readingBandTop
+        let lift = min(
+            Self.controlsMaximumLift, max(0, band - Self.comfortableReadingBandHeight))
+        return -(Self.controlsBaseBottomInset + lift)
+    }
+
+    private func updateControlsBottomInset() {
+        guard let controlsBottomConstraint else { return }
+        let target = controlsBottomInset
+        guard abs(controlsBottomConstraint.constant - target) > 0.5 else { return }
+        controlsBottomConstraint.constant = target
+        view.layoutIfNeeded()
     }
 
     /// Sized at init from the device width so `targetCharactersAcross`
@@ -369,7 +463,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// with `isPlaying`, from wherever it's set.
     private func updatePlayPauseGlyph() {
         playPauseButton.configuration?.image = UIImage(systemName: isPlaying ? "pause.fill" : "play.fill")
-        playPauseButton.accessibilityLabel = isPlaying ? L10n.string("Pause") : L10n.string("Play")
+        playPauseButton.accessibilityLabel = isPlaying
+            ? L10n.string("Reader_rsvp_pauseAccessibilityLabel") : L10n.string("Reader_rsvp_playAccessibilityLabel")
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -470,6 +565,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // Before anything measures the reading band: the lift moves its floor.
+        updateControlsBottomInset()
         layoutEyeTrackingButton()
         layoutFocusReticule()
         layoutPhrasePanel()
@@ -527,7 +624,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// feature could never run. The coordinator is still created so the reader
     /// has one uniform place to report playback state to.
     private func configureEyeTracking() {
-        let coordinator = RSVPGazeCoordinator(tracker: gazeTrackerOverride)
+        let coordinator = gazeClockOverride.map {
+            RSVPGazeCoordinator(tracker: gazeTrackerOverride, now: $0)
+        } ?? RSVPGazeCoordinator(tracker: gazeTrackerOverride)
         coordinator.delegate = self
         coordinator.attach(to: view)
         coordinator.setAudioPlaybackOn(isSpeechMode)
@@ -657,7 +756,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func configureContext() {
         for label in [previousContextLabel, nextContextLabel] {
-            label.font = .systemFont(ofSize: 15, weight: .regular)
+            label.font = Self.contextFont
             label.textColor = LunaColors.tertiaryText
             // As many lines as the (frame-clamped) height allows, so the taller
             // preceding-context lane fills with real surrounding prose.
@@ -668,9 +767,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         }
         previousContextLabel.textAlignment = .natural
         nextContextLabel.textAlignment = .natural
-        // Preceding context should keep the words closest to the focal word: when
-        // it overflows the (now taller) lane, drop the oldest text off the top.
-        previousContextLabel.lineBreakMode = .byTruncatingHead
+        // NB: the preceding lane keeps the words closest to the focal word by
+        // DROPPING leading words (`fittedPrecedingProse`), not by asking UILabel
+        // for head truncation. `.byTruncatingHead` ellipsises only the LAST
+        // visible line, so an overlong passage rendered as "the article's oldest
+        // words … the words just before the focus" — a hole cut out of the middle.
     }
 
     /// Lays out the surrounding-prose labels above and below the focal band. In
@@ -695,34 +796,156 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             ? max(chromeFloor, eyeTrackingButton.frame.maxY + 12)
             : chromeFloor
 
-        let bandHalf: CGFloat = displayMode == .phrases
-            ? phrasePanel.bounds.height / 2 + 14 : 84
+        let lanes = focalLanes
         // Words mode: the removed sub-mode switcher freed the top of the screen,
         // so the preceding-context label grows upward into it (its bottom stays
         // anchored to the focal band — the word and everything below don't move).
         let upperHeight: CGFloat = displayMode == .phrases ? 120 : 220
-        let upperBottom = centerY - bandHalf
+        let upperBottom = lanes.precedingBottom
+        // Each lane is sized to the PROSE it holds, not to the lane it may grow
+        // into: a label given the full lane centers a short passage inside it,
+        // which reads as a hole between the chrome and the text and a second
+        // hole between the text and the word. The preceding lane keeps its
+        // bottom against the focal band and grows upward (truncating its oldest
+        // words off the top once it fills); the trailing lane keeps its top
+        // against the band and grows downward.
+        let upperLaneHeight = max(0, min(upperHeight, upperBottom - topLimit))
+        // The preceding lane's text is FITTED to the lane here rather than set in
+        // `updateContextText`: how much of the window survives depends on the lane
+        // this pass produced, and a label sized to text it can't hold truncates in
+        // the wrong place (see `configureContext`).
+        let upperText = precedingContextDisplayText(width: width, laneHeight: upperLaneHeight)
+        previousContextLabel.attributedText = upperText
+        let upperTextHeight = min(upperLaneHeight, textHeight(of: upperText, width: width))
         previousContextLabel.frame = CGRect(
-            x: contextX,
-            y: max(topLimit, upperBottom - upperHeight),
-            width: width,
-            height: max(0, min(upperHeight, upperBottom - topLimit)))
+            x: contextX, y: upperBottom - upperTextHeight,
+            width: width, height: upperTextHeight)
 
-        let controlsTop = controlsStack.frame.minY > 0
-            ? controlsStack.frame.minY
-            : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
-        // In Phrases mode the link pill lives in the gap just below the panel, so the
-        // lower context must start beneath it (panel half + pill gap + pill + 12).
-        let lowerY: CGFloat = displayMode == .phrases
-            ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap + Self.phrasePillHeight + 12
-            : centerY + bandHalf + 32
+        let controlsTop = readingBandBottom
+        let lowerY = lanes.trailingTop
         let lowerHeight: CGFloat = displayMode == .phrases ? 120 : 96
+        let lowerLaneHeight = max(0, min(lowerHeight, controlsTop - lowerY - 12))
+        // A control the HOST floats over this reader (the reader's bottom-right
+        // share circle) sits inside the trailing lane's rectangle. The prose
+        // gives up the width the circle covers rather than running under it.
+        let lowerWidth = contextWidth(
+            forLane: CGRect(x: contextX, y: lowerY, width: width, height: lowerLaneHeight),
+            fullWidth: width)
+        // The trailing lane loses its FURTHEST words when it overflows, which is
+        // exactly what UILabel's tail truncation does — so it takes the window
+        // whole and lets the label ellipsise it.
+        nextContextLabel.text = followingContextText
+        let lowerTextHeight = min(
+            lowerLaneHeight, textHeight(of: followingContextText, width: lowerWidth))
         nextContextLabel.frame = CGRect(
-            x: contextX,
-            y: lowerY,
-            width: width,
-            height: max(0, min(lowerHeight, controlsTop - lowerY - 12)))
+            x: contextX, y: lowerY, width: lowerWidth, height: lowerTextHeight)
     }
+
+    /// The three edges everything around the focal display measures from: where
+    /// the preceding prose stops, where the pill row (link preview / completion
+    /// badge) sits, and where the trailing prose starts.
+    private struct FocalLanes {
+        let precedingBottom: CGFloat
+        let pillTop: CGFloat
+        let trailingTop: CGFloat
+    }
+
+    /// Half-height of the focal display measured from `focalCenterY`: in Words
+    /// mode the greater of the word label's own line box and the reticule's reach
+    /// (both scale with `wordFont`, which is sized from the screen width — a
+    /// fixed clearance would crowd the glyph on a wide screen); in Phrases mode
+    /// the glass panel's half-height.
+    private var focalHalfHeight: CGFloat {
+        guard displayMode != .phrases else { return phrasePanel.bounds.height / 2 }
+        let lineHalf = wordFont.lineHeight / 2
+        let padding = RSVPFocusReticuleMetrics.verticalPadding
+        // Mirrors `layoutFocusReticule`, relative to the focal centre.
+        let baseline = wordFont.ascender - lineHalf
+        let reticuleAbove = wordFont.capHeight + padding - baseline
+        let reticuleBelow = baseline + padding
+        return max(lineHalf, max(reticuleAbove, reticuleBelow))
+    }
+
+    /// The prose lanes and the pill row, all measured off the focal display's
+    /// own half-height rather than a fixed band.
+    ///
+    /// The gaps used to be a flat 84pt above the centre and 116pt below it —
+    /// ~60pt and ~92pt of air around a 30pt word, which read as the word
+    /// floating alone between two paragraphs. They are now a third of that
+    /// (`focalProseGaps`).
+    ///
+    /// **The pill row is only reserved while something occupies it.** Holding an
+    /// empty 36pt row open under every word is what made the lower gap so large,
+    /// and the row is nearly always empty: a link pill shows only on a linkified
+    /// word, and the completion badge only at the end of the article — where the
+    /// trailing prose is empty anyway. When a pill does appear the trailing prose
+    /// steps down for it (animated with the pill's own fade, see `updateLinkPill`).
+    private var focalLanes: FocalLanes {
+        let centerY = focalCenterY
+        let half = focalHalfHeight
+        let gaps = focalProseGaps
+        let pillTop = centerY + half + gaps.below
+        let occupied = linkPill.alpha > 0 || !finishedBadge.isHidden
+        return FocalLanes(
+            precedingBottom: centerY - half - gaps.above,
+            pillTop: pillTop,
+            trailingTop: occupied ? pillTop + Self.phrasePillHeight + 10 : pillTop)
+    }
+
+    /// Air between the focal display and the prose above / below it. Words mode
+    /// keeps a third of the gap it used to leave, still roomier below because the
+    /// pill row lands there. Phrases keeps its own tighter pair unchanged — the
+    /// glass panel already separates the phrase from the prose, so 14pt was never
+    /// the problem there; it only gains a matching bottom (it was holding the
+    /// empty pill row open too, at 56).
+    private var focalProseGaps: (above: CGFloat, below: CGFloat) {
+        displayMode == .phrases ? (14, 14) : (20, 31)
+    }
+
+    /// Height a plain context string needs at `width`, unbounded by lines — the
+    /// caller clamps it to the lane, which is where truncation happens.
+    private func textHeight(of text: String, width: CGFloat) -> CGFloat {
+        guard !text.isEmpty, width > 0 else { return 0 }
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: Self.contextFont],
+            context: nil)
+        return ceil(bounds.height)
+    }
+
+    /// Same, for the attributed preceding lane (which carries the masthead's two
+    /// fonts). The paragraph styles are re-measured as word-WRAPPING: a truncating
+    /// `lineBreakMode` makes `boundingRect` report a single line's height, and the
+    /// answer here has to be the height the label will actually fill.
+    private func textHeight(of text: NSAttributedString, width: CGFloat) -> CGFloat {
+        guard text.length > 0, width > 0 else { return 0 }
+        let full = NSRange(location: 0, length: text.length)
+        let measured = NSMutableAttributedString(attributedString: text)
+        measured.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
+            let style = (value as? NSParagraphStyle)?
+                .mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+            style.lineBreakMode = .byWordWrapping
+            measured.addAttribute(.paragraphStyle, value: style, range: range)
+        }
+        let bounds = measured.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil)
+        return ceil(bounds.height)
+    }
+
+    /// The lane's width less whatever a host-floated control covers of it.
+    private func contextWidth(forLane lane: CGRect, fullWidth: CGFloat) -> CGFloat {
+        guard !hostOverlayFrame.isNull, hostOverlayFrame.intersects(lane) else {
+            return fullWidth
+        }
+        return max(Self.minimumContextWidth, hostOverlayFrame.minX - 12 - lane.minX)
+    }
+
+    /// A lane never narrows past this: below it the prose would read as a column
+    /// of fragments, which is worse than letting the host's circle graze it.
+    private static let minimumContextWidth: CGFloat = 140
 
     private func configureLinkPill() {
         var config = UIButton.Configuration.gray()
@@ -746,22 +969,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// In Words mode it sits in the clear lane below the focused word and above
     /// the lower context text.
     private func layoutLinkPill() {
-        let centerY = focalCenterY
         let maxWidth = contentColumn.width - 64
         let fitted = linkPill.systemLayoutSizeFitting(
             CGSize(width: maxWidth, height: 40),
             withHorizontalFittingPriority: .fittingSizeLevel,
             verticalFittingPriority: .required)
         let width = min(max(fitted.width, 80), maxWidth)
-        let y = displayMode == .phrases
-            ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap
-            : centerY + 88 - Self.phrasePillHeight / 2
         linkPill.frame = CGRect(
-            x: (view.bounds.width - width) / 2, y: y, width: width, height: Self.phrasePillHeight)
+            x: (view.bounds.width - width) / 2, y: focalLanes.pillTop,
+            width: width, height: Self.phrasePillHeight)
     }
 
     /// Link-pill geometry shared with `layoutContext` so the lower context clears it.
-    private static let phrasePillGap: CGFloat = 8
     private static let phrasePillHeight: CGFloat = 36
 
     /// Shows/refreshes the pill for a linkified word, or starts the post-link
@@ -777,7 +996,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 view.setNeedsLayout()
             }
             if linkPill.alpha < 1 {
-                UIView.animate(withDuration: 0.2) { self.linkPill.alpha = 1 }
+                // The trailing prose gives the pill row its 36pt back — inside the
+                // same animation, so the paragraph slides rather than jumps.
+                UIView.animate(withDuration: 0.2) {
+                    self.linkPill.alpha = 1
+                    self.view.layoutIfNeeded()
+                }
             }
         } else if linkPillURL != nil, linkPillHideTimer == nil {
             linkPillHideTimer = Timer.scheduledTimer(withTimeInterval: 1.4, repeats: false) {
@@ -790,7 +1014,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         linkPillHideTimer?.invalidate()
         linkPillHideTimer = nil
         linkPillURL = nil
-        UIView.animate(withDuration: 0.25) { self.linkPill.alpha = 0 }
+        UIView.animate(withDuration: 0.25) {
+            self.linkPill.alpha = 0
+            self.view.layoutIfNeeded()
+        }
     }
 
     @objc private func linkPillTapped() {
@@ -845,7 +1072,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         playConfig.cornerStyle = .fixed
         playConfig.background.cornerRadius = 30
         playPauseButton.configuration = playConfig
-        playPauseButton.accessibilityLabel = L10n.string("Play")
+        playPauseButton.accessibilityLabel = L10n.string("Reader_rsvp_playAccessibilityLabel")
         // Pin the control layer too, so both the glass and its clipping mask stay
         // circular through highlighted/disabled configuration updates.
         playPauseButton.clipsToBounds = true
@@ -869,10 +1096,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let paceSymbolSize = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
         wpmDownButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
         wpmUpButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
-        wpmDownButton.accessibilityLabel = L10n.string("Slow down")
-        wpmDownButton.accessibilityHint = L10n.string("Decreases reading speed by 25 words per minute")
-        wpmUpButton.accessibilityLabel = L10n.string("Speed up")
-        wpmUpButton.accessibilityHint = L10n.string("Increases reading speed by 25 words per minute")
+        wpmDownButton.accessibilityLabel = L10n.string("Reader_rsvp_slowDownAccessibilityLabel")
+        wpmDownButton.accessibilityHint = L10n.string("Reader_rsvp_slowDownAccessibilityHint")
+        wpmUpButton.accessibilityLabel = L10n.string("Reader_rsvp_speedUpAccessibilityLabel")
+        wpmUpButton.accessibilityHint = L10n.string("Reader_rsvp_speedUpAccessibilityHint")
         wpmDownButton.addTarget(self, action: #selector(wpmDown), for: .touchUpInside)
         wpmUpButton.addTarget(self, action: #selector(wpmUp), for: .touchUpInside)
 
@@ -882,8 +1109,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         var skipForwardConfig = GlassStyle.circularButtonConfiguration(symbol: "forward.fill", padding: 12)
         skipForwardConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 19)
         skipForwardButton.configuration = skipForwardConfig
-        skipBackButton.accessibilityLabel = L10n.string("Skip back 25 words")
-        skipForwardButton.accessibilityLabel = L10n.string("Skip forward 25 words")
+        skipBackButton.accessibilityLabel = L10n.string("Reader_rsvp_skipBackAccessibilityLabel")
+        skipForwardButton.accessibilityLabel = L10n.string("Reader_rsvp_skipForwardAccessibilityLabel")
         skipBackButton.addTarget(self, action: #selector(skipBack), for: .touchUpInside)
         skipForwardButton.addTarget(self, action: #selector(skipForward), for: .touchUpInside)
 
@@ -936,6 +1163,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 button.widthAnchor.constraint(equalTo: skipBackButton.widthAnchor))
         }
 
+        let controlsBottom = controlsStack.bottomAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+            constant: -Self.controlsBaseBottomInset)
+        controlsBottomConstraint = controlsBottom
+
         NSLayoutConstraint.activate([
             controlsStack.leadingAnchor.constraint(
                 greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
@@ -943,7 +1175,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 lessThanOrEqualTo: view.trailingAnchor, constant: -16),
             preferredLeading,
             preferredTrailing,
-            controlsStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+            controlsBottom,
             speedRow.heightAnchor.constraint(equalToConstant: 64),
             buttonRow.leadingAnchor.constraint(greaterThanOrEqualTo: speedRow.leadingAnchor, constant: 8),
             buttonRow.trailingAnchor.constraint(lessThanOrEqualTo: speedRow.trailingAnchor, constant: -8),
@@ -1078,22 +1310,96 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         updateContextText()
     }
 
-    /// Fills the surrounding-prose labels for the current position. In Phrases
-    /// mode the context excludes the words currently in the focus panel; in Words
-    /// mode it surrounds the single focal word.
+    /// Re-reads the surrounding prose for the current position. In Phrases mode
+    /// the context excludes the words currently in the focus panel; in Words mode
+    /// it surrounds the single focal word.
+    ///
+    /// This only refreshes the SOURCE text — `layoutContext` fits it to the lanes
+    /// and puts it on the labels, and is called from here because a lane is sized
+    /// to the prose it holds. Without that call the labels kept the frames of the
+    /// text they held one word ago: the first words of an article arrived into a
+    /// zero-height lane (the position before them had no preceding prose at all)
+    /// and never appeared.
     private func updateContextText() {
         let shownRange: Range<Int> = displayMode == .phrases && chunks.indices.contains(currentChunkIndex)
             ? chunks[currentChunkIndex].wordRange
             : currentIndex..<(currentIndex + 1)
-        guard let context = RSVPContextWindow.context(
+        let context = RSVPContextWindow.context(
             around: shownRange, words: engine.words, radius: Self.contextWordCount)
-        else {
-            previousContextLabel.text = nil
-            nextContextLabel.text = nil
-            return
+        let preceding = context?.preceding ?? ""
+        let following = context?.following ?? ""
+        guard preceding != precedingContextText || following != followingContextText
+        else { return }
+        precedingContextText = preceding
+        followingContextText = following
+        if isViewLoaded { layoutContext() }
+    }
+
+    /// What the preceding lane shows: the surrounding prose trimmed to the lane,
+    /// or — before there is any of it — the article's own masthead, so the top of
+    /// the screen carries the title and byline instead of standing empty through
+    /// the opening words.
+    private func precedingContextDisplayText(width: CGFloat, laneHeight: CGFloat) -> NSAttributedString {
+        guard !precedingContextText.isEmpty else {
+            return mastheadContextText()
         }
-        previousContextLabel.text = context.preceding
-        nextContextLabel.text = context.following
+        return NSAttributedString(
+            string: fittedPrecedingProse(width: width, laneHeight: laneHeight),
+            attributes: [.font: Self.contextFont, .foregroundColor: LunaColors.tertiaryText])
+    }
+
+    /// The longest SUFFIX of the preceding prose that fits `laneHeight` — the
+    /// words nearest the focal word are the ones worth keeping, and dropping the
+    /// oldest ones by hand is the only way to drop them from the TOP (see
+    /// `configureContext`). Never returns empty: one word over the lane is better
+    /// than a blank lane, and the frame clamps it anyway.
+    private func fittedPrecedingProse(width: CGFloat, laneHeight: CGFloat) -> String {
+        let words = precedingContextText.split(separator: " ")
+        guard words.count > 1, width > 0, laneHeight > 0 else { return precedingContextText }
+        // Smallest number of leading words to drop that brings the rest into the
+        // lane. Monotone in the drop count, so a binary search settles it in ~6
+        // measurements rather than one per word.
+        var low = 0, high = words.count - 1
+        while low < high {
+            let mid = (low + high) / 2
+            let candidate = words[mid...].joined(separator: " ")
+            if textHeight(of: candidate, width: width) <= laneHeight {
+                high = mid
+            } else {
+                low = mid + 1
+            }
+        }
+        return words[low...].joined(separator: " ")
+    }
+
+    /// Title over byline, in the preceding lane's own scale — the masthead shown
+    /// while there is no preceding prose yet.
+    private func mastheadContextText() -> NSAttributedString {
+        let title = articleContent.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let author = articleContent.author?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let masthead = NSMutableAttributedString()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.paragraphSpacing = 2
+        if !title.isEmpty {
+            masthead.append(NSAttributedString(
+                string: author?.isEmpty == false ? title + "\n" : title,
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 17, weight: .semibold),
+                    .foregroundColor: LunaColors.secondaryText,
+                    .paragraphStyle: paragraph,
+                ]))
+        }
+        if let author, !author.isEmpty {
+            masthead.append(NSAttributedString(
+                string: author,
+                attributes: [
+                    .font: Self.contextFont,
+                    .foregroundColor: LunaColors.tertiaryText,
+                    .paragraphStyle: paragraph,
+                ]))
+        }
+        return masthead
     }
 
     /// Animates the Words-mode context in/out on play/pause (Phrases keeps it on).
@@ -1511,7 +1817,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func updateStatus() {
         let percent = engine.words.isEmpty
             ? 0 : Int((Double(currentIndex + 1) / Double(engine.words.count)) * 100)
-        statusLabel.text = L10n.string("\(percent)% · \(Int(wpm)) wpm")
+        statusLabel.text = L10n.string("Reader_rsvp_statusPercentWpm", percent, Int(wpm))
     }
 
     /// Seeks the center to the currently displayed focal word — used after a
@@ -1693,6 +1999,59 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         scrubber.value = Float(currentIndex)
         updateStatus()
         speakCurrentSentence()
+    }
+}
+
+// MARK: - Layout seam
+
+extension RSVPViewController {
+
+    /// Where the reader put itself: the band it lays out inside (host chrome
+    /// above, playback controls below) and what landed where within it. Read by
+    /// the layout tests so they assert on the geometry the reader actually
+    /// computed rather than re-deriving it from private constants.
+    public struct LayoutGeometry {
+        public let bandTop: CGFloat
+        public let bandBottom: CGFloat
+        public let focalCenterY: CGFloat
+        /// Half-height of the focal display (word line box / reticule reach, or
+        /// the phrase panel) — the edge the prose gaps are measured from.
+        public let focalHalfHeight: CGFloat
+        public let precedingContext: CGRect
+        public let trailingContext: CGRect
+        public let pillRow: CGRect
+        public let controls: CGRect
+        /// Midpoint of the band — where the focal word rests, plus its bias.
+        public var bandCenterY: CGFloat { (bandTop + bandBottom) / 2 }
+        /// Air between the focal display and the prose above / below it.
+        public var gapAboveProse: CGFloat {
+            focalCenterY - focalHalfHeight - precedingContext.maxY
+        }
+        public var gapBelowProse: CGFloat {
+            trailingContext.minY - focalCenterY - focalHalfHeight
+        }
+    }
+
+    public var layoutGeometryForTesting: LayoutGeometry {
+        LayoutGeometry(
+            bandTop: readingBandTop,
+            bandBottom: readingBandBottom,
+            focalCenterY: focalCenterY,
+            focalHalfHeight: focalHalfHeight,
+            precedingContext: previousContextLabel.frame,
+            trailingContext: nextContextLabel.frame,
+            pillRow: linkPill.frame,
+            controls: controlsStack.frame)
+    }
+
+    /// The focal word's downward lean off the band midpoint, for the tests.
+    public static var focalCenterBiasForTesting: CGFloat { focalCenterBias }
+
+    /// What the two prose lanes are actually showing — the fitted text, not the
+    /// window it was cut from.
+    public var contextProseForTesting: (preceding: String, following: String) {
+        (previousContextLabel.attributedText?.string ?? previousContextLabel.text ?? "",
+         nextContextLabel.attributedText?.string ?? nextContextLabel.text ?? "")
     }
 }
 

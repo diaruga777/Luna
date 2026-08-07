@@ -4,7 +4,6 @@
 //
 
 import LunaHTMLClassification
-import WebKit
 import XCTest
 
 /// The Safari extension and the ingest pipeline must agree on what an index page
@@ -18,63 +17,16 @@ import XCTest
 /// the product detector.
 @MainActor
 final class SafariIndexVetoParityTests: XCTestCase {
-    private static let contentScriptSource = resource("LunaSafari/Resources/content.js")
-    private static let newsHostsSource = resource("LunaSafari/Resources/news_hosts.generated.js")
-    private static let platformHostsSource = resource("LunaSafari/Resources/platform_hosts.generated.js")
-    private static let productRulesSource = resource("LunaSafari/Resources/product_rules.generated.js")
-
-    private static func resource(_ relativePath: String) -> String {
-        let thisFile = URL(fileURLWithPath: #filePath)
-        let repoRoot = thisFile.deletingLastPathComponent().deletingLastPathComponent()
-        return (try? String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)) ?? ""
-    }
-
-    override func setUp() {
-        super.setUp()
-        XCTAssertFalse(Self.contentScriptSource.isEmpty)
-        XCTAssertFalse(Self.newsHostsSource.isEmpty)
-        XCTAssertFalse(Self.platformHostsSource.isEmpty)
-        XCTAssertFalse(Self.productRulesSource.isEmpty)
-    }
-
-    private final class LoadDelegate: NSObject, WKNavigationDelegate {
-        private let onFinish: () -> Void
-        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onFinish() }
-    }
+    private lazy var js = SafariJSTestHarness(self)
 
     private func safariVetoesAsIndex(html: String, urlString: String) -> Bool {
-        let expectation = expectation(description: "Safari index veto")
-        var outcome: Bool?
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let delegate = LoadDelegate {
-            let preludes = [
-                Self.newsHostsSource, Self.platformHostsSource,
-                Self.productRulesSource, Self.contentScriptSource,
-            ]
-            func evaluate(_ remaining: ArraySlice<String>) {
-                guard let next = remaining.first else {
-                    webView.evaluateJavaScript("window.__lunaLooksLikeNonArticleIndex()") {
-                        result, error in
-                        if let error { XCTFail("index verdict failed: \(error)") }
-                        outcome = result as? Bool
-                        expectation.fulfill()
-                    }
-                    return
-                }
-                webView.evaluateJavaScript(next) { _, error in
-                    if let error { XCTFail("prelude failed: \(error)") }
-                    evaluate(remaining.dropFirst())
-                }
-            }
-            evaluate(preludes[...])
-        }
-        webView.navigationDelegate = delegate
-        webView.loadHTMLString(html, baseURL: URL(string: urlString))
-        wait(for: [expectation], timeout: 10)
-        withExtendedLifetime(delegate) {}
-        return outcome ?? false
+        js.load(html: html, urlString: urlString, scripts: [
+            SafariJSTestHarness.newsHosts,
+            SafariJSTestHarness.platformHosts,
+            SafariJSTestHarness.productRules,
+            SafariJSTestHarness.contentScript,
+        ])
+        return js.bool("window.__lunaLooksLikeNonArticleIndex()")
     }
 
     /// The Swift side minus its URL half — `content.js` runs on a loaded document

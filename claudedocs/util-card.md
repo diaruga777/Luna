@@ -95,8 +95,18 @@ resolves as "a save this deck has never shown" — the top rung
 store's ids (the Downloader's media rows) resolves it by URL instead; both keys
 travel with the request. The growing shell is a card from its first frame: it wears the
 card rim (whose radius follows the shell's own, 16 → 22) and carries Luna's own
-waiting — `HorizonSpinnerView` for an article or product, `EclipseProgressBar`
+waiting — `HorizonSpinnerView` for an article or product, `MoonHorizonProgressBar`
 for a media transfer — until the real content crossfades in.
+
+**Only a `UtilURLRow` gets that handoff.** The transition is built from artwork
+the source hands over (`UtilCardSaveTransitionArtworkProviding`: a kind, a fill,
+a thumbnail, a title), and a source that has none does not get a grow at all.
+There is deliberately no flat-snapshot fallback — the one source that ever took
+that path, the 40pt paste row, was stretched some fifteen times its own height
+and filled the card with a smeared copy of itself, placeholder text included
+(a snapshot taken `afterScreenUpdates: false` predates the pasted value
+landing). A paste says what it is doing where it stands: the pasted URL in the
+field, a spinner ahead of it, then the mark.
 
 ## The setup block
 
@@ -146,7 +156,9 @@ email. The outcome is persisted per leg, so the distinction survives relaunches.
 `AppOnboardingStore.isCompleted == false` selects this state when the carousel
 host is constructed. The card shows, top to bottom:
 
-1. the surface-specific two-beat intro headline;
+1. the surface-specific two-beat intro headline — ONE line in every app, its
+   second beat animating the difference between two states of the same sentence
+   (`claudedocs/reader-onboarding.md`, "Surface headlines");
 2. Save of the Week, when there is one;
 3. the setup block (above);
 4. the “or” separator, when it applies (see below);

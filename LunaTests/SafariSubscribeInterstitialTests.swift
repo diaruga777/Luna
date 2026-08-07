@@ -3,7 +3,6 @@
 //  LunaTests
 //
 
-import WebKit
 import XCTest
 
 /// Covers the Safari half of the News Corp Australia unlock, by evaluating the real
@@ -20,64 +19,31 @@ import XCTest
 @MainActor
 final class SafariSubscribeInterstitialTests: XCTestCase {
 
-    private static let contentScriptSource: String = resource("LunaSafari/Resources/content.js")
-    private static let newsHostsSource: String = resource("LunaSafari/Resources/news_hosts.generated.js")
-    private static let productRulesSource: String = resource("LunaSafari/Resources/product_rules.generated.js")
-
-    private static func resource(_ relativePath: String) -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-        return (try? String(contentsOf: repoRoot.appendingPathComponent(relativePath),
-                            encoding: .utf8)) ?? ""
-    }
+    private lazy var js = SafariJSTestHarness(self)
 
     private let articleURL = "https://www.theaustralian.com.au/wealth/retirement/"
         + "selffunded-retirees-hit-by-new-30pc-topup-tax-on-investments/news-story/"
         + "476176fcef46250d229a1612ce9f44d1"
 
-    override func setUp() {
-        super.setUp()
-        XCTAssertFalse(Self.contentScriptSource.isEmpty, "content.js not found on disk")
-        XCTAssertFalse(Self.newsHostsSource.isEmpty, "news_hosts.generated.js not found on disk")
-    }
-
     // MARK: - Harness
 
-    /// Loads `html` at `urlString`, evaluates the generated data globals + content.js,
-    /// then evaluates `script` and returns its result.
+    /// Loads `html` at `urlString` with the generated data globals + content.js
+    /// (the real injection order), then evaluates `script`.
     private func evaluate(_ script: String, html: String, urlString: String) -> Any? {
-        let expectation = expectation(description: "script evaluated")
-        var outcome: Any?
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let delegate = LoadDelegate {
-            webView.evaluateJavaScript(Self.newsHostsSource) { _, _ in
-                webView.evaluateJavaScript(Self.productRulesSource) { _, _ in
-                    webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
-                        if let error { XCTFail("content.js failed to evaluate: \(error)") }
-                        webView.evaluateJavaScript(script) { result, error in
-                            if let error { XCTFail("\(script) failed: \(error)") }
-                            outcome = result
-                            expectation.fulfill()
-                        }
-                    }
-                }
-            }
-        }
-        webView.navigationDelegate = delegate
-        webView.loadHTMLString(html, baseURL: URL(string: urlString))
-        wait(for: [expectation], timeout: 10)
-        withExtendedLifetime(delegate) {}
-        return outcome
+        loadPage(html: html, urlString: urlString)
+        return js.evaluate(script)
+    }
+
+    private func loadPage(html: String, urlString: String) {
+        js.load(html: html, urlString: urlString, scripts: [
+            SafariJSTestHarness.newsHosts,
+            SafariJSTestHarness.productRules,
+            SafariJSTestHarness.contentScript,
+        ])
     }
 
     private func target(html: String, urlString: String) -> String? {
         evaluate("window.__lunaSubscribeInterstitialTarget()", html: html, urlString: urlString) as? String
-    }
-
-    private final class LoadDelegate: NSObject, WKNavigationDelegate {
-        private let onFinish: () -> Void
-        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onFinish() }
     }
 
     /// A trimmed capture of the live subscribe page, which carries the article in both
@@ -154,19 +120,19 @@ final class SafariSubscribeInterstitialTests: XCTestCase {
     // MARK: - The AMP flag
 
     func testAMPFlagMatchesTheSwiftTransform() {
-        let html = "<html><body><p>x</p></body></html>"
-        XCTAssertEqual(
-            evaluate("window.__lunaWithAMPFlag(\"\(articleURL)\")", html: html,
-                     urlString: articleURL) as? String,
-            articleURL + "?amp")
-        XCTAssertEqual(
-            evaluate("window.__lunaWithAMPFlag(\"\(articleURL)?utm_source=x\")", html: html,
-                     urlString: articleURL) as? String,
-            articleURL + "?utm_source=x&amp")
-        XCTAssertEqual(
-            evaluate("window.__lunaWithAMPFlag(\"\(articleURL)?amp\")", html: html,
-                     urlString: articleURL) as? String,
-            articleURL + "?amp")
+        // One document, three transforms — the hook takes the URL as an argument.
+        loadPage(html: "<html><body><p>x</p></body></html>", urlString: articleURL)
+        let expected = [
+            articleURL: articleURL + "?amp",
+            articleURL + "?utm_source=x": articleURL + "?utm_source=x&amp",
+            articleURL + "?amp": articleURL + "?amp",
+        ]
+        for (input, output) in expected {
+            XCTAssertEqual(
+                js.evaluate("window.__lunaWithAMPFlag(\(SafariJSTestHarness.jsString(input)))")
+                    as? String,
+                output, input)
+        }
     }
 
     // MARK: - The AMP gate strip

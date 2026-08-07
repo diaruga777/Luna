@@ -37,10 +37,34 @@ final class CardCarouselMetricsTests: XCTestCase {
             accuracy: 0.01)
     }
 
-    func testCardIsAlwaysTallerThanWide() {
-        for size in [CGSize(width: 320, height: 600), CGSize(width: 1200, height: 700)] {
+    /// **One shape, every container.** A reader card used to take every point of
+    /// width and hang its extra height ABOVE the container's top; a product card
+    /// ignored the aspect and filled the room; only a video card was this. Three
+    /// rectangles at two different centers in one deck is what jumped when
+    /// paging between kinds, so the rule is pinned as an invariant rather than
+    /// per case.
+    func testEveryContainerYieldsAnExact9By16CardCenteredInTheRoom() {
+        for size in [
+            CGSize(width: 320, height: 600),
+            CGSize(width: 402, height: 626),
+            CGSize(width: 440, height: 708),
+            CGSize(width: 744, height: 1_000),
+            CGSize(width: 1_200, height: 700),
+        ] {
             let metrics = CardCarouselMetrics.resolve(containerSize: size)
-            XCTAssertGreaterThan(metrics.cardSize.height, metrics.cardSize.width)
+            let frame = metrics.centeredCardFrame()
+            XCTAssertEqual(
+                frame.width / frame.height,
+                CardCarouselMetrics.cardAspectRatio,
+                accuracy: 0.0001, "\(size)")
+            XCTAssertGreaterThan(frame.height, frame.width, "\(size)")
+            XCTAssertEqual(frame.midY, size.height / 2, accuracy: 0.01, "\(size)")
+            XCTAssertEqual(frame.midX, size.width / 2, accuracy: 0.01, "\(size)")
+            XCTAssertGreaterThanOrEqual(
+                frame.minY, CardCarouselMetrics.verticalPadding - 0.01,
+                "\(size) overflowed its own padding")
+            XCTAssertLessThanOrEqual(
+                frame.maxY, size.height - CardCarouselMetrics.verticalPadding + 0.01, "\(size)")
         }
     }
 
@@ -81,95 +105,36 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertEqual(frame.size, metrics.cardSize)
     }
 
-    func testPlaybackScrubProgressSitsBelowCenteredCard() {
+    /// The bar lives INSIDE the card's bottom edge now — over the video, backed
+    /// by the controller's scrim — leaving the runway beneath the card to the
+    /// thumbnail strip.
+    func testPlaybackScrubProgressSitsInsideTheCardBottomEdge() {
         let metrics = CardCarouselMetrics.resolve(containerSize: CGSize(width: 400, height: 800))
         let cardFrame = metrics.centeredCardFrame()
         let progressFrame = metrics.playbackScrubProgressFrame(height: 20)
 
-        XCTAssertEqual(progressFrame.minY, cardFrame.maxY + 8, accuracy: 0.01)
+        XCTAssertEqual(progressFrame.maxY, cardFrame.maxY - 12, accuracy: 0.01)
         XCTAssertEqual(progressFrame.minX, cardFrame.minX + 18, accuracy: 0.01)
         XCTAssertEqual(progressFrame.maxX, cardFrame.maxX - 18, accuracy: 0.01)
-    }
-
-    func testFillIgnoresAspectAndTakesEveryPoint() {
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: CGSize(width: 400, height: 600),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
-        XCTAssertEqual(metrics.cardSize.width, 400 - 2 * (14 + 10), accuracy: 0.01)
-        XCTAssertEqual(metrics.cardSize.height, 600 - 24, accuracy: 0.01)
-        XCTAssertEqual(metrics.centerY(), 300, accuracy: 0.01)
-    }
-
-    func testAspectFromBottomAddsItsExtraHeightAtTheTop() {
-        // The article deck's container: too SHORT for a 9:16 card at its width,
-        // so the card overflows the container's top — and only its top. Compared
-        // against `.fill`, which is what the same container used to yield.
-        let container = CGSize(width: 402, height: 626)
-        let filled = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-
-        // Same width; exactly 9:16, so taller than the container's usable height.
-        XCTAssertEqual(metrics.cardSize.width, filled.cardSize.width, accuracy: 0.01)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertGreaterThan(metrics.cardSize.height, filled.cardSize.height)
-
-        // Bottom edge unmoved; the whole gain is above the old top edge.
-        let frame = metrics.centeredCardFrame()
-        let filledFrame = filled.centeredCardFrame()
-        XCTAssertEqual(frame.maxY, filledFrame.maxY, accuracy: 0.01)
-        XCTAssertEqual(
-            filledFrame.minY - frame.minY,
-            metrics.cardSize.height - filled.cardSize.height,
-            accuracy: 0.01)
-        XCTAssertLessThan(frame.minY, 0)   // above the container's own top
-    }
-
-    func testAspectFromBottomNeverOverflowsMoreThanAllowed() {
-        // A container too wide for its height, but still phone-shaped enough to
-        // escape the wide-container width cap (a landscape phone): the card
-        // can't have the full width at 9:16 within the overflow allowance, so it
-        // narrows — the aspect stays exact and the overflow stops at the
-        // allowance.
-        let container = CGSize(width: LunaLayout.wideThreshold - 10, height: 400)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertLessThan(metrics.cardSize.width, container.width - 2 * (14 + 10))
-        XCTAssertEqual(metrics.cardSize.height, 400 - 24 + 48, accuracy: 0.01)
-        // Clamped: the card's top stops one `verticalPadding` inside the
-        // allowance — 36pt above the container, not the full 48.
-        XCTAssertEqual(metrics.centeredCardFrame().minY, -(48 - 12), accuracy: 0.01)
+        XCTAssertTrue(cardFrame.contains(progressFrame))
     }
 
     // MARK: - Wide containers (iPad)
 
     /// The half-width cap, which is the whole reason two reader columns fit.
-    func testWideContainerCapsEveryFitAtHalfTheWidthMinusPadding() throws {
+    /// Capping the width must not start letterboxing the card vertically: the
+    /// aspect is exact on an iPad exactly as it is on a phone.
+    func testWideContainerCapsTheCardAtHalfTheWidthMinusPadding() throws {
         let container = CGSize(width: 1024, height: 1200)
         let cap = try XCTUnwrap(LunaLayout.cardWidthCap(forContainerWidth: container.width))
         XCTAssertEqual(cap, 1024 / 2 - 36, accuracy: 0.01)
 
-        for fit in [CardCarouselMetrics.CardFit.aspectCentered, .fill, .aspectFromBottom] {
-            let metrics = CardCarouselMetrics.resolve(
-                containerSize: container,
-                peek: 14, edgeGap: 10, verticalPadding: 12,
-                fit: fit, topOverflow: 48)
-            XCTAssertLessThanOrEqual(
-                metrics.cardSize.width, cap + 0.01, "\(fit) ignored the wide width cap")
-        }
+        let metrics = CardCarouselMetrics.resolve(containerSize: container)
+        XCTAssertEqual(metrics.cardSize.width, cap, accuracy: 0.01)
+        XCTAssertEqual(
+            metrics.cardSize.width / metrics.cardSize.height,
+            CardCarouselMetrics.cardAspectRatio,
+            accuracy: 0.0001)
     }
 
     /// Two capped cards plus the gap between them span exactly the container
@@ -189,55 +154,6 @@ final class CardCarouselMetricsTests: XCTestCase {
         }
     }
 
-    /// A capped card is shorter than an iPad's card area, so anchoring its
-    /// bottom would strand it under a band of dead space. It grows into the room
-    /// and centers instead — bounded so it never becomes a sliver.
-    func testWideAspectFromBottomGrowsIntoTheRoomAndCenters() {
-        let container = CGSize(width: 834, height: 1100)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-
-        XCTAssertEqual(metrics.centerY(), container.height / 2, accuracy: 0.01)
-        XCTAssertGreaterThan(
-            metrics.cardSize.height, metrics.cardSize.width / CardCarouselMetrics.cardAspectRatio,
-            "the card should claim more than its 9:16 height")
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            LunaLayout.tallestCardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertGreaterThanOrEqual(metrics.centeredCardFrame().minY, 0)
-    }
-
-    /// A landscape iPad is short enough that the exact-aspect card is still
-    /// taller than the room, so it keeps the phone behaviour: bottom-anchored,
-    /// overflowing up through the allowance.
-    func testWideButShortContainerKeepsTheBottomAnchoredOverflow() {
-        let container = CGSize(width: 1194, height: 700)
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: container,
-            peek: 14, edgeGap: 10, verticalPadding: 12,
-            fit: .aspectFromBottom, topOverflow: 48)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-        XCTAssertEqual(metrics.centeredCardFrame().minY, -(48 - 12), accuracy: 0.01)
-    }
-
-    /// Media cards are 9:16 because their CONTENT is: capping the width must not
-    /// start letterboxing them vertically.
-    func testWideAspectCenteredStaysExactly9By16() {
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: CGSize(width: 1024, height: 1200),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .aspectCentered)
-        XCTAssertEqual(
-            metrics.cardSize.width / metrics.cardSize.height,
-            CardCarouselMetrics.cardAspectRatio,
-            accuracy: 0.0001)
-    }
-
     /// The threshold is a cliff, so pin both sides of it: one point below, the
     /// card still takes every point the peeks leave.
     func testJustBelowTheThresholdNothingIsCapped() {
@@ -245,17 +161,8 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertNil(LunaLayout.cardWidthCap(forContainerWidth: width))
         let metrics = CardCarouselMetrics.resolve(
             containerSize: CGSize(width: width, height: 2000),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .fill)
+            peek: 14, edgeGap: 10, verticalPadding: 12)
         XCTAssertEqual(metrics.cardSize.width, width - 2 * (14 + 10), accuracy: 0.01)
-    }
-
-    func testAspectFromBottomWithNoAllowanceStaysInsideTheContainer() {
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: CGSize(width: 402, height: 626),
-            peek: 14, edgeGap: 10, verticalPadding: 12, fit: .aspectFromBottom)
-        let frame = metrics.centeredCardFrame()
-        XCTAssertEqual(frame.minY, 12, accuracy: 0.01)
-        XCTAssertEqual(frame.maxY, 614, accuracy: 0.01)
     }
 
     func testTinyContainerDegradesGracefully() {
@@ -267,8 +174,10 @@ final class CardCarouselMetricsTests: XCTestCase {
 
 final class CarouselScrubberMathTests: XCTestCase {
 
+    /// A chip showing a still fills its whole item — the picture IS the chip,
+    /// over the mini card's furniture rather than inset within it.
     func testThumbnailImageKeepsItsItemBoundsAfterInitialLayout() throws {
-        let scrubber = CarouselScrubberView(style: .thumbnails)
+        let scrubber = CarouselScrubberView()
         scrubber.frame = CGRect(x: 0, y: 0, width: 390, height: scrubber.preferredHeight)
         scrubber.setThumbnailCount(3)
         scrubber.layoutIfNeeded()
@@ -279,7 +188,7 @@ final class CarouselScrubberMathTests: XCTestCase {
     }
 
     func testMiniCardsReserveSelectionAndShadowRunway() {
-        let scrubber = CarouselScrubberView(style: .miniCards)
+        let scrubber = CarouselScrubberView()
         XCTAssertEqual(scrubber.preferredHeight, 96)
     }
 
@@ -344,6 +253,7 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
     private func decision(
         isImmersed: Bool,
         startsInsideCenteredCard: Bool,
+        centeredContentScrubs: Bool = false,
         velocity: CGPoint
     ) -> CardCarouselPagePanStartDecision {
         CardCarouselPagePanStartPolicy.decision(
@@ -351,7 +261,29 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
             isImmersed: isImmersed,
             startsInsideCenteredCard: startsInsideCenteredCard,
             pagesOnInCardSwipes: true,
+            centeredContentScrubs: centeredContentScrubs,
             velocity: velocity)
+    }
+
+    /// A playable card's whole width is a timeline: the same drag scrubs it,
+    /// so it must never ALSO page — even on the decks that page on in-card
+    /// swipes for their readers. Edge swipes stay the paging affordance.
+    func testInCardPanOverPlayableContentScrubsInsteadOfPaging() {
+        XCTAssertEqual(
+            decision(
+                isImmersed: false,
+                startsInsideCenteredCard: true,
+                centeredContentScrubs: true,
+                velocity: CGPoint(x: 500, y: 10)),
+            .reject)
+        XCTAssertEqual(
+            decision(
+                isImmersed: false,
+                startsInsideCenteredCard: false,
+                centeredContentScrubs: true,
+                velocity: CGPoint(x: 500, y: 10)),
+            .accept,
+            "an edge swipe still pages past a video card")
     }
 }
 
@@ -434,36 +366,32 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
     }
 
     func testReaderTapTwoCardsForwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
-        try await assertScrubberTapEclipse(style: .miniCards, from: 3, to: 5)
+        try await assertScrubberTapEclipse(from: 3, to: 5)
     }
 
     func testReaderTapTwoCardsBackwardStagesTargetAndUsesEclipseBeforeCenteringIt() async throws {
-        try await assertScrubberTapEclipse(style: .miniCards, from: 3, to: 1)
+        try await assertScrubberTapEclipse(from: 3, to: 1)
     }
 
     func testDownloaderTapOneCardUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 4)
+        try await assertScrubberTapEclipse(from: 3, to: 4)
     }
 
     func testDownloaderTapTwoCardsStagesTargetAndUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 5)
+        try await assertScrubberTapEclipse(from: 3, to: 5)
     }
 
     func testDownloaderTapTwoCardsBackwardStagesTargetAndUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(style: .thumbnails, from: 3, to: 1)
+        try await assertScrubberTapEclipse(from: 3, to: 1)
     }
 
     private func assertScrubberTapEclipse(
-        style scrubberStyle: CarouselScrubberView.Style,
         from start: Int,
         to target: Int
     ) async throws {
         let source = MiniCardPagingDataSource()
         let delegate = NavigationTargetSpy()
         let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.scrubberStyle = scrubberStyle
-        carousel.style = style
         carousel.dataSource = source
         carousel.delegate = delegate
 
@@ -553,7 +481,7 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         let delegate = NavigationTargetSpy()
         let carousel = CardCarouselViewController()
         var style = CardCarouselStyle()
-        style.autoplaysScrubPreviewContent = true
+        style.card.autoplaysScrubPreview = true
         carousel.style = style
         carousel.dataSource = source
         carousel.delegate = delegate
@@ -566,27 +494,27 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         muteButton.sendActions(for: .touchUpInside)
 
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        let centered = source.previews[1]
         scrubber.delegate?.scrubber(scrubber, didPreview: 1)
         XCTAssertEqual(delegate.targets, [1])
-        XCTAssertTrue(source.preview.isPlaying)
-        XCTAssertFalse(source.preview.isMuted)
-        XCTAssertEqual(source.preview.pauseCount, 0)
+        XCTAssertTrue(centered.isPlaying)
+        XCTAssertFalse(centered.isMuted)
+        XCTAssertEqual(centered.pauseCount, 0)
 
         scrubber.delegate?.scrubber(scrubber, didCommit: 1)
 
         XCTAssertEqual(carousel.currentIndex, 1)
-        XCTAssertTrue(source.preview.parent === carousel)
-        XCTAssertTrue(source.preview.isPlaying)
-        XCTAssertEqual(source.preview.pauseCount, 0)
+        XCTAssertTrue(centered.parent === carousel)
+        XCTAssertTrue(centered.isPlaying)
+        XCTAssertEqual(
+            centered.pauseCount, 0,
+            "promotion must hand the playing preview over, not pause and rebuild it")
         XCTAssertEqual(source.normalRequestCounts[1], 1)
     }
 
     func testMiniCardScrubberPreparesOnlyVisibleWindowAndPromotesExactPreview() throws {
         let source = VisibleWindowScrubDataSource()
         let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.scrubberStyle = .miniCards
-        carousel.style = style
         carousel.dataSource = source
         carousel.loadViewIfNeeded()
         carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -619,9 +547,6 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
     func testScrubSettleOnAPosterOnlyCardHandsOverWithoutTheEclipse() throws {
         let source = PosterOnlyScrubDataSource()
         let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.scrubberStyle = .miniCards
-        carousel.style = style
         carousel.dataSource = source
 
         // On-window, so the eclipse is available to be wrongly chosen.
@@ -734,10 +659,20 @@ private final class CenteringSpyCardContentViewController: CardContentViewContro
 
 @MainActor
 private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSource {
-    let preview = PlaybackSpyCardContentViewController()
+    /// One preview controller PER CARD, which is what a real data source
+    /// supplies. A single shared instance used to work here only because the
+    /// deck-level `.thumbnails` scrubber prepared nothing, so the peeks never
+    /// mounted anything: once the strip prepares its visible window for every
+    /// deck, a shared instance lets a PEEK's "peeks never play" pause land on
+    /// the centre's own player and the spy can no longer tell the two apart.
+    let previews = [
+        PlaybackSpyCardContentViewController(),
+        PlaybackSpyCardContentViewController(),
+        PlaybackSpyCardContentViewController(),
+    ]
     var normalRequestCounts: [Int: Int] = [:]
 
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 3 }
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { previews.count }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -750,7 +685,7 @@ private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSo
     func carousel(
         _ carousel: CardCarouselViewController,
         previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? { preview }
+    ) -> CardContentViewController? { previews[index] }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -878,7 +813,7 @@ final class CardCarouselChromeBackdropTests: XCTestCase {
 final class CarouselScrubberUtilityChipTests: XCTestCase {
 
     func testUtilityChipCentersItsMarkAboveCenterWithAPillBeneathIt() throws {
-        let strip = CarouselScrubberView(style: .miniCards)
+        let strip = CarouselScrubberView()
         strip.frame = CGRect(x: 0, y: 0, width: 320, height: strip.preferredHeight)
         strip.setThumbnailCount(3)
         let icon = Self.solidImage(side: 40)
@@ -907,7 +842,7 @@ final class CarouselScrubberUtilityChipTests: XCTestCase {
     }
 
     func testASaveArtworkTakesTheChipBackFromTheUtilityLayout() throws {
-        let strip = CarouselScrubberView(style: .miniCards)
+        let strip = CarouselScrubberView()
         strip.frame = CGRect(x: 0, y: 0, width: 320, height: strip.preferredHeight)
         strip.setThumbnailCount(2)
         let icon = Self.solidImage(side: 40)

@@ -48,6 +48,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        #if DEBUG
+        // FIRST, before anything resolves a store: a staged launch points the
+        // whole App Group container at a throwaway directory and suite, so
+        // everything below — including this app's own launch bookkeeping —
+        // writes to scratch (`claudedocs/staging.md`). No-op without
+        // `-LunaStage`.
+        LunaStage.prepareIfNeeded()
+        #endif
         DiagnosticLog.shared.record("app launch", category: "lifecycle")
         // Register this app's per-kind pipeline processors, handlers, and UI
         // seams FIRST — everything below (launch re-ingest, intents, list UI)
@@ -119,8 +127,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // appears, and the fetch is a network round-trip that only gets slower
         // the later it leaves. The task body still runs off the launch frame
         // (the main actor is busy until didFinishLaunching returns).
-        Task(priority: .userInitiated) { @MainActor in
-            await WeeklySaveRefresher.shared.refreshWeeklySaves()
+        if !LunaStage.isActive {
+            Task(priority: .userInitiated) { @MainActor in
+                await WeeklySaveRefresher.shared.refreshWeeklySaves()
+            }
         }
 
         // Diagnostics export header shows the connected email account (which lives
@@ -133,7 +143,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // reading list so saved articles are semantically discoverable and
         // Siri can resolve "my article about …"/"from …" without the app
         // running. Main app only (extensions don't index).
-        ArticleSpotlightIndexWiring.install()
+        if !LunaStage.isActive { ArticleSpotlightIndexWiring.install() }
 
         // URL Rescue (claudedocs/url-rescue.md): install the LLM-fallback engine
         // bridge + coordinator (all three apps; main-app only — extensions never
@@ -144,17 +154,24 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Warm the Wi-Fi reachability monitor (background preloads are Wi-Fi-gated) and
         // run the one-time image-ownership backfill so images shared with pre-existing
         // saves/preloads are reference-counted before any preload release could delete one.
-        DispatchQueue.global(qos: .utility).async {
-            _ = NetworkReachability.shared
-            ImageReferenceStore.shared.backfillIfNeeded(readingList: .shared, preloads: .shared)
+        if !LunaStage.isActive {
+            DispatchQueue.global(qos: .utility).async {
+                _ = NetworkReachability.shared
+                ImageReferenceStore.shared.backfillIfNeeded(readingList: .shared, preloads: .shared)
+            }
         }
 
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
-        ReadingListIngestor.shared.ingestAllPending()
-        // Kind-specific launch resumption: orphaned-media sweep + Live Activity
-        // reattachment (media apps), pending ereader-send retry (article apps).
-        KindWiring.appDidLaunch()
+        // Both are skipped in staged mode: the re-ingest would resolve the very
+        // saves a stage froze mid-fetch, and the launch sweep would purge the
+        // media a stage just seeded. This is what makes a staged screen HOLD.
+        if !LunaStage.isActive {
+            ReadingListIngestor.shared.ingestAllPending()
+            // Kind-specific launch resumption: orphaned-media sweep + Live Activity
+            // reattachment (media apps), pending ereader-send retry (article apps).
+            KindWiring.appDidLaunch()
+        }
 
         // Local notifications: show as banners while open. Launch does NOT ask for
         // authorization — a fresh install has nothing to notify anyone about, so the
@@ -210,7 +227,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
 
         // Read incoming mail (Luna shares + newsletters).
-        if sharesByEmail {
+        if sharesByEmail && !LunaStage.isActive {
             Task { await IncomingMailImporter.shared.importNewMail() }
             scheduleMailFetch()
         }
@@ -219,7 +236,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // launch frame. BGTaskScheduler and DiagnosticLog are thread-safe, and
         // each call still runs exactly once per launch — just not synchronously
         // before didFinishLaunching returns.
-        if schedulesPriceRefresh {
+        if schedulesPriceRefresh && !LunaStage.isActive {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 self?.schedulePriceRefresh(reason: "launch")
                 self?.refreshOverduePriceTrackersOnLaunch()
@@ -229,16 +246,27 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // housekeeping no visible surface is waiting on. (The weekly pull
         // itself starts earlier, at user-initiated priority — the card's row
         // is waiting on that one.)
-        DispatchQueue.global(qos: .utility).async {
-            WeeklyProposalBackgroundCheck.schedule(reason: "launch")
-            Task { @MainActor in
-                await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
+        if !LunaStage.isActive {
+            DispatchQueue.global(qos: .utility).async {
+                WeeklyProposalBackgroundCheck.schedule(reason: "launch")
+                Task { @MainActor in
+                    await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
+                }
             }
         }
+        #if DEBUG
+        // LAST, once every catalog has been installed above: answer
+        // `-LunaStageList` with the manifest and exit. Never reached without it.
+        LunaStage.finishLaunchIfNeeded()
+        #endif
         return true
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        // A staged run backgrounds and returns during a screenshot pass; none of
+        // this housekeeping should be allowed to reflow the screen it captured
+        // (retiring a setup button is exactly that).
+        guard !LunaStage.isActive else { return }
         // Kind-specific background work: pending-completion promotion + send
         // retry (article apps), Live Activity reattachment (media apps).
         KindWiring.appDidEnterBackground()

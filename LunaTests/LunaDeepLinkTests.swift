@@ -9,111 +9,101 @@ import XCTest
 
 final class LunaDeepLinkTests: XCTestCase {
 
-    func testReadLinkWrapsArticleURL() {
-        let link = LunaDeepLink.readLink(forArticleURL: "https://example.com/story")
-        XCTAssertEqual(link?.scheme, "lunareader")
-        XCTAssertEqual(link?.host, "read")
-        XCTAssertEqual(
-            LunaDeepLink.articleURL(from: link!),
-            "https://example.com/story")
-    }
+    // MARK: - Building a read link
 
-    func testReadLinkTargetsRequestedScheme() {
-        let link = LunaDeepLink.readLink(
-            forArticleURL: "https://example.com/story",
-            scheme: LunaDeepLink.priceTrackerScheme)
-        XCTAssertEqual(link?.scheme, "lunapricetracker")
-        XCTAssertEqual(LunaDeepLink.articleURL(from: link!), "https://example.com/story")
-    }
+    /// `readLink` builds a `<scheme>://read?url=…` link that round-trips the exact
+    /// article URL back out through `articleURL(from:)`.
+    func testReadLinkRoundTrips() {
+        let cases: [(name: String, articleURL: String, scheme: String?, expectedScheme: String)] = [
+            ("default scheme", "https://example.com/story", nil, "lunareader"),
+            ("requested scheme", "https://example.com/story",
+             LunaDeepLink.priceTrackerScheme, "lunapricetracker"),
+            ("query and fragment", "https://example.com/p?id=42&ref=abc#section", nil, "lunareader"),
+            ("characters needing encoding", "https://example.com/search?q=hello world&tag=a+b",
+             nil, "lunareader"),
+        ]
 
-    func testRoundTripsURLWithQueryAndFragment() {
-        let original = "https://example.com/p?id=42&ref=abc#section"
-        let link = LunaDeepLink.readLink(forArticleURL: original)
-        XCTAssertNotNil(link)
-        XCTAssertEqual(LunaDeepLink.articleURL(from: link!), original)
-    }
-
-    func testRoundTripsURLWithEncodedCharacters() {
-        let original = "https://example.com/search?q=hello world&tag=a+b"
-        let link = LunaDeepLink.readLink(forArticleURL: original)
-        XCTAssertNotNil(link)
-        XCTAssertEqual(LunaDeepLink.articleURL(from: link!), original)
-    }
-
-    func testArticleURLAcceptsEveryLunaScheme() {
-        // Each app registers only its own scheme, but parsing accepts any of
-        // them — the OS delivers only what the running app registered.
-        for scheme in LunaDeepLink.allSchemes {
-            let url = URL(string: "\(scheme)://read?url=https://example.com")!
-            XCTAssertEqual(LunaDeepLink.articleURL(from: url), "https://example.com")
+        for testCase in cases {
+            let link = testCase.scheme.map {
+                LunaDeepLink.readLink(forArticleURL: testCase.articleURL, scheme: $0)
+            } ?? LunaDeepLink.readLink(forArticleURL: testCase.articleURL)
+            guard let link else {
+                XCTFail("\(testCase.name): readLink returned nil")
+                continue
+            }
+            XCTAssertEqual(link.scheme, testCase.expectedScheme, testCase.name)
+            XCTAssertEqual(link.host, "read", testCase.name)
+            XCTAssertEqual(LunaDeepLink.articleURL(from: link), testCase.articleURL, testCase.name)
         }
     }
 
-    func testArticleURLRejectsWrongScheme() {
-        let url = URL(string: "https://read?url=https://example.com")!
-        XCTAssertNil(LunaDeepLink.articleURL(from: url))
-    }
+    // MARK: - Parsing an inbound link
 
-    func testArticleURLRejectsWrongHost() {
-        let url = URL(string: "lunareader://open?url=https://example.com")!
-        XCTAssertNil(LunaDeepLink.articleURL(from: url))
-    }
+    func testArticleURLParsing() {
+        // Each app registers only its own scheme, but parsing accepts any of them —
+        // the OS delivers only what the running app registered.
+        var cases: [(name: String, url: String, expected: String?)] =
+            LunaDeepLink.allSchemes.map {
+                ("\($0) read link", "\($0)://read?url=https://example.com", "https://example.com")
+            }
+        cases += [
+            ("wrong scheme", "https://read?url=https://example.com", nil),
+            ("wrong host", "lunareader://open?url=https://example.com", nil),
+            ("missing url parameter", "lunareader://read?other=value", nil),
+            // The Safari-extension takeover overlay's "Back to Luna" link is a bare
+            // `<scheme>://` with no host/path (see LunaSafari/Resources/background.js) —
+            // it must be tolerated as "nothing to route", never crash or ingest junk.
+            ("bare scheme with no host", "lunareader://", nil),
+        ]
 
-    func testArticleURLReturnsNilWhenURLParamMissing() {
-        let url = URL(string: "lunareader://read?other=value")!
-        XCTAssertNil(LunaDeepLink.articleURL(from: url))
-    }
-
-    func testArticleURLRejectsBareSchemeWithNoHost() {
-        // The Safari-extension takeover overlay's "Back to Luna" link is a bare
-        // `<scheme>://` with no host/path (see LunaSafari/Resources/background.js) —
-        // it must be tolerated as "nothing to route", never crash or ingest junk.
-        let url = URL(string: "lunareader://")!
-        XCTAssertNil(url.host)
-        XCTAssertNil(LunaDeepLink.articleURL(from: url))
-    }
-
-    func testSchemeConstantsAreStable() {
-        // The schemes are registered in Info.plist ($(LUNA_URL_SCHEME), set per
-        // app target) and mirrored in the Safari extension's content script;
-        // drift would break inbound links.
-        XCTAssertEqual(LunaDeepLink.lunaScheme, "luna")
-        XCTAssertEqual(LunaDeepLink.readerScheme, "lunareader")
-        XCTAssertEqual(LunaDeepLink.downloaderScheme, "lunadownloader")
-        XCTAssertEqual(LunaDeepLink.priceTrackerScheme, "lunapricetracker")
-        XCTAssertEqual(
-            LunaDeepLink.allSchemes,
-            [LunaDeepLink.lunaScheme, LunaDeepLink.readerScheme, LunaDeepLink.downloaderScheme,
-             LunaDeepLink.priceTrackerScheme])
+        for testCase in cases {
+            guard let url = URL(string: testCase.url) else {
+                XCTFail("\(testCase.name): unparseable test URL")
+                continue
+            }
+            XCTAssertEqual(LunaDeepLink.articleURL(from: url), testCase.expected, testCase.name)
+        }
     }
 
     func testOwnSchemeIsTheCentralLunaSchemeInTheTestHost() {
         // The unit-test host is the central Luna app, which registers luna://
-        // (LUNA_URL_SCHEME). ownScheme reads the host bundle's CFBundleURLTypes.
+        // (LUNA_URL_SCHEME). ownScheme reads the host bundle's CFBundleURLTypes, so
+        // this is the one test that actually pins the Info.plist mirror.
         XCTAssertEqual(LunaDeepLink.ownScheme, "luna")
-    }
-
-    func testArticleURLParsesTheCentralLunaScheme() {
-        let url = URL(string: "luna://read?url=https://example.com")!
-        XCTAssertEqual(LunaDeepLink.articleURL(from: url), "https://example.com")
     }
 
     // MARK: - Rescue
 
-    func testRescueLinkTargetsOwnSchemeByDefault() {
-        XCTAssertEqual(LunaDeepLink.rescueLink()?.absoluteString, "luna://rescue")
-    }
+    func testRescueLinkConstruction() {
+        // `nil` = the default, which targets the host bundle's own scheme (luna://
+        // in the test host).
+        var cases: [(scheme: String?, expected: String)] =
+            LunaDeepLink.allSchemes.map { ($0, "\($0)://rescue") }
+        cases.append((nil, "luna://rescue"))
 
-    func testRescueLinkForEachScheme() {
-        for scheme in LunaDeepLink.allSchemes {
-            let link = LunaDeepLink.rescueLink(scheme: scheme)
-            XCTAssertEqual(link?.absoluteString, "\(scheme)://rescue")
-            XCTAssertTrue(LunaDeepLink.isRescueLink(link!))
+        for testCase in cases {
+            let link = testCase.scheme.map { LunaDeepLink.rescueLink(scheme: $0) }
+                ?? LunaDeepLink.rescueLink()
+            XCTAssertEqual(
+                link?.absoluteString, testCase.expected,
+                "rescueLink(scheme: \(testCase.scheme ?? "own"))")
         }
     }
 
-    func testIsRescueLinkRejectsOtherHosts() {
-        XCTAssertFalse(LunaDeepLink.isRescueLink(URL(string: "lunareader://read")!))
-        XCTAssertFalse(LunaDeepLink.isRescueLink(URL(string: "https://example.com/rescue")!))
+    func testIsRescueLink() {
+        var cases: [(url: String, isRescue: Bool)] =
+            LunaDeepLink.allSchemes.map { ("\($0)://rescue", true) }
+        cases += [
+            ("lunareader://read", false),
+            ("https://example.com/rescue", false),
+        ]
+
+        for testCase in cases {
+            guard let url = URL(string: testCase.url) else {
+                XCTFail("unparseable test URL \(testCase.url)")
+                continue
+            }
+            XCTAssertEqual(LunaDeepLink.isRescueLink(url), testCase.isRescue, testCase.url)
+        }
     }
 }

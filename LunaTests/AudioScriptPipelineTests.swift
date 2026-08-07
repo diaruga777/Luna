@@ -129,8 +129,13 @@ final class AudioScriptPipelineTests: XCTestCase {
         source.itemsList = [pendingItem, emptyItem]
         source.contentByID[emptyItem.id] = ArticleContent(title: "Title", blocks: [.init(kind: .image, text: "", links: [])])
 
+        let swept = expectation(description: "launch sweep ran")
+        // `.readingListChanged` is process-global, so a sibling test's store
+        // write can debounce a second sweep in behind ours.
+        swept.assertForOverFulfill = false
+        pipeline.didFinishSweepForTesting = { swept.fulfill() }
         pipeline.install()
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await fulfillment(of: [swept], timeout: 2)
 
         XCTAssertNil(scriptStore.load(forContentFileName: pendingItem.contentFileName!))
         XCTAssertNil(scriptStore.load(forContentFileName: emptyItem.contentFileName!))
@@ -176,8 +181,15 @@ final class AudioScriptPipelineTests: XCTestCase {
 
         source.itemsList = [item]
         source.contentByID[item.id] = content
+        // The sweep decides eligibility synchronously, so a sweep that has RUN
+        // and started nothing is the whole assertion — no sleeping required.
+        let swept = expectation(description: "launch sweep ran")
+        // `.readingListChanged` is process-global, so a sibling test's store
+        // write can debounce a second sweep in behind ours.
+        swept.assertForOverFulfill = false
+        pipeline.didFinishSweepForTesting = { swept.fulfill() }
         pipeline.install()
-        try await Task.sleep(nanoseconds: 250_000_000)
+        await fulfillment(of: [swept], timeout: 2)
 
         XCTAssertEqual(scriptStore.load(forContentFileName: item.contentFileName!)?.refined, false)
         XCTAssertTrue(session.requestedPrompts.isEmpty, "the model must never be asked when the setting is off")
@@ -199,8 +211,13 @@ final class AudioScriptPipelineTests: XCTestCase {
 
         source.itemsList = [item]
         source.contentByID[item.id] = content
+        let swept = expectation(description: "launch sweep ran")
+        // `.readingListChanged` is process-global, so a sibling test's store
+        // write can debounce a second sweep in behind ours.
+        swept.assertForOverFulfill = false
+        pipeline.didFinishSweepForTesting = { swept.fulfill() }
         pipeline.install()
-        try await Task.sleep(nanoseconds: 250_000_000)
+        await fulfillment(of: [swept], timeout: 2)
 
         XCTAssertTrue(session.requestedPrompts.isEmpty, "a permanently-failed article must never be retried")
         XCTAssertEqual(scriptStore.load(forContentFileName: item.contentFileName!)?.llmPermanentlyFailed, true)

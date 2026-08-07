@@ -5,63 +5,141 @@ their root presentation. The machinery is **generic and surface-agnostic** and
 lives in `LunaLibraries/Sources/LunaDesignSystem/CardCarousel/` (LunaDesignSystem
 is linked by every app).
 
-## One deck, four kinds
+## One deck, one provider, one presenter per kind
 
 **There is ONE deck implementation**: `CardCarouselHostViewController`
 (`Luna/CardCarouselHost/`). It owns the carousel instance, the index arithmetic
 over its cards, the six-phase reload with its fingerprint diff and its centering
 ladder, the single `CardCarouselDataSource`/`CardCarouselDelegate` conformance,
 the archive tray's item pipeline, the flanking Settings/share circles, and the
-util card's save transition. None of that exists anywhere else — the three root
-decks used to parallel-implement all of it.
+util card's save transition.
 
-What differs between four apps is what a card IS, and that arrives through
-`CardDeckProviding` (`Luna/CardCarouselHost/CardDeckProvider.swift`): what a card
-looks like, what its long press offers, where a tap goes, what deleting it
-releases, and how its store is ordered, filtered, and watched. **Each deck view
-controller is its own provider** (`deckProvider` returns `self`), so the
-kind-specific code stays in the file it already lived in without a second object
-or a retain cycle:
+**And there is ONE provider**: `KindDeckProvider`
+(`Luna/CardCarouselHost/KindDeckProvider.swift`), the sole `CardDeckProviding`
+implementation for all four apps. It builds the slot list from the reading list
+filtered by `LunaApp.current.includes`, and forwards every question about a
+particular save to that save's KIND, resolved once by
+`CardKindPresenters.presenter(for:)`.
 
-| File | What it contributes |
-| --- | --- |
-| `Luna/Reader/ArticleCardsViewController.swift` | articles (and, in the central app, every kind — see "all-kinds deck") plus the reader chrome stack |
-| `Luna/Downloader/SavedMediaCardsViewController.swift` | media rows and failed saves |
-| `Luna/PriceTracker/PriceTrackerCardsViewController.swift` | product cards |
+That resolution is the only place a save is mapped to a kind, and the order is
+fixed: a FAILED save is kind-less (the classifier never got one) and returns
+nil, which is why the deck draws the shared error card itself and why every app
+shows failed saves; then product, then media, then article.
+
+| Presenter | File | Compiled into |
+| --- | --- | --- |
+| `ArticleCardPresenter` | `Luna/Reader/ArticleCardPresenter.swift` | Luna, Reader |
+| `MediaCardPresenter` | `Luna/Downloader/MediaCardPresenter.swift` | Luna, Downloader |
+| `ProductCardPresenter` | `Luna/PriceTracker/ProductCardPresenter.swift` | Luna, PriceTracker |
+
+Each `KindWiring+<App>` installs exactly its app's presenters, one line each,
+beside the `<Kind>KindComposition.install()` call that installs the same kind's
+INGEST half. `KindCompositionRootTests` fails the build if a root's presenters
+don't match its app's kinds, if anything else writes the registry, or if a file
+under `Luna/CardCarouselHost/` mentions `isPriceTracker` or `contentPlatform` —
+the deck is not allowed to know what kind it is holding.
+
+### Why it is shaped this way
+
+It used to be shaped the other way, and the shape was the bug. Each root view
+controller was its OWN provider (`deckProvider` returned `self`), so three deck
+subclasses answered the same questions about the same saves — and the central
+Luna app, which shows all of them, needed a FOURTH hand-listed adapter
+(`AllKindsCardProviding`, forwarded hook by hook) for the kinds its file could
+not name. Anything not explicitly forwarded diverged in silence. What that
+actually cost, all of it real and all of it now fixed by construction:
+
+- a media row whose DOWNLOAD failed wore a red rim in the Downloader and nothing
+  in the central app;
+- archiving wrote a different store in each app, so a save archived in one was
+  still live in the other;
+- deleting an ARCHIVED media save centrally left the file, the Photos asset and
+  the auto-download bookkeeping behind;
+- an archived media row in the central tray had a dead tap (it asked for a
+  reader, and there is no reader for a video);
+- Photos reconciliation ran only from the Downloader, so an asset deleted behind
+  Luna's back was never noticed centrally;
+- a tracked product rendered centrally as a "Tap to see price history" link card
+  while the real in-card editor sat compiled into the same binary, unreachable;
+- share prewarming, the display scale, the fingerprint components and the
+  activation-notification set each existed in two versions.
+
+`SavedMediaCardsViewController` and `PriceTrackerCardsViewController` are gone;
+`ArticleCardsViewController` survives only as the article kind's screen CHROME
+(header row, immersion, mode switcher, footer veil, hosted scroll indicator,
+inline second column, eye-tracking adoption) and holds no kind or per-slot
+logic.
+
+### Slots
 
 The host keeps a flat `[CardDeckSlot]` — `id`, optional `urlString`,
 `fingerprint` — and **takes the util card's offset off exactly once**, so a
-provider never sees a carousel index at all. `CardDeckSlot.urlString` exists for
-the Downloader, whose media rows are keyed by the MEDIA store's id: a util-card
-save hands back a reading-list item whose id that row does not share, but whose
-URL it does, so either key resolves.
+presenter never sees a carousel index at all. A presenter answers questions
+about a `ReadingListItem`, never about a slot.
+
+Slots are keyed by the reading-list row, because that is the one store every
+kind writes. Media is the exception, and not a theoretical one: a media row
+lives under the MEDIA store's id and its `sourceURLString` is whatever the URL
+was when the download STARTED, which is not always what the reading-list row
+says. A Reddit `/r/…/s/<token>` share link is network-resolved to its permalink
+inside `gateAndPrepare`; the share driver resolves a wrapper URL and then
+deletes the wrapper row. Both leave real, downloaded user media with nothing
+pointing at it — `SavedMediaStore.purgeExpired`'s own comment records that an
+earlier membership sweep was deleted for removing exactly these. So a presenter
+may contribute `unbackedItems()`: stand-in items carrying its own store's id,
+which the deck routes straight back to that presenter instead of asking the
+registry. Media saved this way now appears in the central app too, which it
+never did before.
 
 Slot preparation is two steps on purpose. `deckPreparedSnapshot()` reads the
 stores and computes the slots WITHOUT adopting them; only a reload that actually
 goes ahead calls `deckCommitPreparedSnapshot()`. An abandoned reload must leave
 the provider's typed arrays exactly as the carousel was built from them.
 
-`ArticleCardsViewController` subclasses the host — the only deck that does —
-because its cards are live readers and it has real screen-level chrome of its own
-(header row, immersion, footer veil, hosted scroll indicator, inline second
-column, eye-tracking adoption, animated archive/unarchive). It rides the shared
-core through named hooks: `deckWillReload`, `deckWillApplyReload`,
-`deckDidApplyReload`, `deckWillMountBottomControls`,
-`deckDidMountBottomControls`, `deckDidCenterCard(at:)`,
-`deckDidSurfaceForEdgePaging`, `configureTrailingBottomButton`,
-`refreshTrailingBottomButton`, `deckAllowsArchivePull`,
-`deckArchiveTrayOpenStateDidChange`, `deckReconcilesArchivePullOnReload`, and
-`carouselTopClearance`.
+### Ordering
+
+**One rule, every app, every kind: `bumpDate ?? dateAdded`, descending**, tie
+broken by id. There is no per-app ordering strategy and no presenter ordering
+hook. The Reader app does NOT group read articles after unread ones — a
+reader-completed article self-archives on the next launch or background through
+`ReadingListStore.archivePendingFinishedItems()`, so it leaves the deck on its
+own and grouping bought nothing.
+
+The date moves in exactly three ways, and no others:
+
+- reader completion → `archivePendingFinishedItems()` takes the card away;
+- unarchiving ANY kind stamps `bumpDate = now`, so the row returns at the top;
+- a price alert FIRING stamps `bumpDate = now`, so the product resurfaces.
 
 ## Layout
 
+- **There is ONE card frame.** `CardCarouselMetrics.resolve` returns the largest
+  exact-9:16 rectangle that fits the card area, centered in it — for every kind,
+  every deck and every app. A card's size used to be its KIND's answer (`cardFit`
+  / `topOverflow`): an article card took every point of width and hung its extra
+  height above the card area, a product card ignored the aspect and filled the
+  room, only a media card was this. Three rectangles at two vertical centers in
+  one deck is what resized and re-centered the card underneath a page
+  transition. `edgeGap` was per-deck too, and three of four decks overrode it to
+  the same value while the Downloader kept the default, so the same video card
+  was 40pt narrower there. All four inputs (`peek` 14, `edgeGap` 10, `sideScale`
+  0.92, `verticalPadding` 12) are constants on `CardCarouselMetrics` now.
+- **And the frame is a function of the SCREEN**, not of a live layout pass:
+  `CardDeckGeometry.cardFrame(inScreenSize:safeAreaInsets:)` computes it from the
+  safe area plus `topClearance` (48 — the Reader's floating control row, reserved
+  by every deck so the answer cannot depend on which app opened) and
+  `bottomChromeHeight` (the 96pt scrub strip plus its 8pt gap). That is what lets
+  the launch splash be drawn before any deck exists; `CardDeckGeometryTests` pins
+  the two answers together against a live carousel at six screen shapes.
 - Cards are portrait 9:16 (`CardCarouselMetrics.cardAspectRatio`), rounded
   (`CarouselCardView.cornerRadius`, continuous), filled `.secondarySystemBackground`
   so a letterboxed (aspect-fit) frame still reads as a card against
   `.systemBackground`.
-- The centered card rests at scale 1, inset `peek + edgeGap` (14 + 30pt) from each
-  screen edge — the `edgeGap` insets only the centered card, giving the areas
-  beside it enough width for paging swipes. Each neighbor rests at `sideScale`
+- The centered card rests at scale 1, at least `peek + edgeGap` (14 + 10pt) in
+  from each screen edge — the `edgeGap` insets only the centered card, giving the
+  areas beside it enough width for paging swipes. On every phone Luna ships to
+  the card is HEIGHT-limited, so that inset is a floor rather than the binding
+  constraint. Each neighbor rests at `sideScale`
   (0.92) with exactly `peek` (14pt) of its edge visible inside the screen edge,
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
@@ -79,8 +157,11 @@ core through named hooks: `deckWillReload`, `deckWillApplyReload`,
   exactly from the Settings circle's trailing edge to the Share circle's leading
   edge. Its mini cards disappear through a transparent alpha mask near those
   bounds; no blur/white veil is drawn in either appearance. Downloader's Share circle
-  exports the centered media file directly through the system share sheet and is
-  hidden for undownloaded cards. Downloader has no Friends or Add
+  opens the media share MENU (`MediaItemActions.shareMenuRows`, hung off the
+  button by `ShareButtonMenu` exactly like the Reader's pill): Copy link and
+  Share link over the original saved URL, plus Share video / GIF / image /
+  audio once the file exists. The link is always shareable, so the circle shows
+  for undownloaded cards too; only the util and failed-save cards hide it. Downloader has no Friends or Add
   button on the root; Friends remains reachable through Settings. Its 9:16
   thumbnail chips have a visible pitch gap and enough strip height for selection
   scaling/shadows, so neither selected nor neighboring previews overlap or clip.
@@ -101,13 +182,11 @@ threshold is 700pt: above every iPhone (widest 440), below every iPad in portrai
 
 Consequences for the deck:
 
-- The card is capped at half the width minus padding, for **every** `CardFit`.
-- That cap makes an `.aspectFromBottom` card SHORTER than the room instead of
-  taller, so the overflow-upward branch has nothing to do and would strand the
-  card under a band of dead space. It grows into the room and centers instead,
-  bounded at `LunaLayout.tallestCardAspectRatio` (1:2) so it never becomes a
-  sliver. `.aspectCentered` (media) is deliberately excluded — its content IS
-  9:16, and a taller frame would only letterbox it.
+- The card is capped at half the width minus padding. It keeps the exact 9:16
+  either way: capping the width must not start letterboxing a video.
+  `LunaLayout.tallestCardAspectRatio` is gone with the fit that used it — a card
+  allowed to grow past 9:16 into an iPad's spare height was, by definition, a
+  card of a different size than the one beside it.
 - Everything pinned to the screen edges came loose from the card, so it follows
   the card's column instead: the scrub strip
   (`CardCarouselViewController.alignScrubberToCardColumn`, keeping the exact
@@ -176,15 +255,23 @@ Consequences for the deck:
   leaves center, keeping position.
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
   playback timestamp (one card-width ≈ full duration).
-  The card itself never pans.
+  The card itself never pans — and on decks that page on in-card swipes (the
+  all-kinds deck's readers), a playable card is exempt: its whole width is a
+  timeline, so the drag scrubs and never ALSO pages
+  (`CardCarouselPagePanStartPolicy`, `centeredContentScrubs`). Edge swipes and
+  the strip stay the paging affordances. Playback starts the instant a card
+  centers: the player never waits to minimize stalling (everything is local),
+  and a neighbor card pre-decodes its first frame with a zero-tolerance seek at
+  install.
 - **A PAUSED card shows its playback controls**, and they are a function of the
-  paused state rather than of any gesture: a `MoonHorizonProgressBar` sits just
-  below the card, against the black carousel background, following the position
-  (it shows only determinate progress and the head point — the traveling activity
-  pulse remains exclusive to download progress), and content that plays at a
-  chooseable rate also gets a **glass speed pill** at the card's bottom-left,
-  12pt in from the card's bottom edge (the mute button's inset from the top) and
-  aligned with the bar's leading edge. One tap opens its menu:
+  paused state rather than of any gesture: a `MoonHorizonProgressBar` sits INSIDE
+  the card's bottom edge (12pt up — the mute button's inset from the top), bare
+  over the video — it carries no backdrop of its own. The bar shows only
+  determinate progress and the head point — the traveling activity pulse remains
+  exclusive to download progress. Content that plays at a chooseable rate also
+  gets a **glass speed pill** floating above the bar's leading end (the pill
+  re-fits its frame on every speed change — it is frame-managed, and "0.25×" is
+  wider than "1×"). One tap opens its menu:
   0.25× / 0.5× / 1× / 1.5× / 2×, the current one checked
   (`PlaybackSpeedPillButton`, `PlaybackSpeed.options`).
   Because the pause a drag-scrub performs is the same pause, the bar comes up
@@ -385,82 +472,91 @@ new, and its newest-first default already opens on the most recent save.
 Covered by `NewSaveCenteringTests` (all three decks, end to end, plus the shared
 seam in isolation).
 
-## Store plumbing (Downloader provider)
+## Store plumbing (the media presenter)
 
-`SavedMediaCardsViewController` keeps the grid's plumbing: cross-process Darwin
-bridge (`deckWillBeginObservingStores`),
-`.savedMediaChanged`/`.readingListChanged`/foreground/activation reloads
-(`deckChangeNotificationNames` + `deckActivationNotificationNames`), expiry purge,
-Photos reconciliation (full `.authorized` only, in `deckDidSettleReload` so a
-reload that changed nothing still notices a vanished asset), long-press context
-menu (Download / Share / Save to Photos / Archive / Delete), and mark-opened on
-centering. Its slot fingerprint is `id|thumbnail|storageState`, so store
-notifications that change nothing visible don't rebuild live card content
-mid-playback.
+`MediaCardPresenter` keeps what used to be the Downloader deck's plumbing, and
+now keeps it for BOTH apps that show media: the cross-process Darwin bridge
+(`willBeginObservingStores`), `.savedMediaChanged` plus a `didBecomeActive`
+activation reload (Darwin notifications are dropped while suspended, and on iPad
+the app can stay foregrounded the whole time an extension runs alongside it),
+the expiry purge on snapshot preparation, Photos reconciliation on
+`didSettleReload` (full `.authorized` only, on the SETTLE path so a reload that
+changed nothing still notices a vanished asset), the long-press menu, and
+mark-opened plus share prewarming on centering. Its slot fingerprint contributes
+`thumbnail|storageState`, so store notifications that change nothing visible
+don't rebuild live card content mid-playback.
 
-**Its failed saves are SLOTS, not a second index space.** A save whose ingestion
-failed carries no kind, so the surface gate keeps it and every app shows it —
-this app included. Those cards sit after the media rows in the same
-`[CardDeckSlot]` list. This deck used to keep two index maps (`mediaIndex` /
-`failedIndex`) that every data-source method probed, and they disagreed in two
-places, both now fixed:
+Every one of those used to exist in the Downloader alone. The central app had no
+activation reload, no purge, no Photos reconciliation, no share prewarm, and a
+fingerprint missing the thumbnail — so the same save behaved differently
+depending on which icon you tapped. That is the whole reason this file exists.
 
-- Parking on a failed-save card survives a reload. `centeredID` was read out of
-  the media array only, so a failed card gave nil and the deck fell back to the
-  first media row.
-- The archive tray's pull activates on the last CARD. `canPull` compared
-  `currentIndex` against `items.count + cardOffset` — the last MEDIA card — while
-  `navigationTargetDidChangeTo` correctly counted the failed saves too, so with
-  failed saves present the pull turned on mid-deck and never on the true end.
-
+**Failed saves are SLOTS, not a second index space.** A save whose ingestion
+failed carries no kind, so `CardKindPresenters.presenter(for:)` returns nil, the
+surface gate keeps it, and every app shows it — including Price Tracker, which
+used to filter them out entirely. They sit among the other slots in the one
+`[CardDeckSlot]` list. The Downloader deck once kept two parallel index maps
+(`mediaIndex` / `failedIndex`) that disagreed in two places — parking on a failed
+card didn't survive a reload, and the archive-tray pull activated mid-deck — both
+of which are structurally impossible now that there is one list.
 Covered by `SavedMediaDeckSlotTests`.
 
 The verbs a media row offers, and the storage work behind two of them, live once
 in `MediaItemActions` (`Luna/Downloader/MediaCardFactory.swift`): the switch over
 `storageState` that decides the menu, the manual-download start, the
 save-to-Photos copy, the companion-storage release, and the `storageStateKey`
-both this deck and the all-kinds deck fingerprint a media card by. Two decks show
-the same media save, and they were answering "what can you do with this?" and
-"what goes when it goes?" with two copies of the same code.
+the fingerprint uses.
 
 **Download progress is never floating chrome.** The app-level
 `DownloaderProgressFooterView` was deleted: an in-flight download is drawn inside
 the card of the item downloading it (the undownloaded card's own glass status bar
 — see `claudedocs/media-download.md`), or, for an archived row re-downloading in
-place, on that row's archive-tray cell (`ArchiveTrayController.setDownloadProgress`
-updates visible cells without a reload, since ticks arrive several times a
-second). Every such view is a pure observer of
+place, on that row's archive-tray cell. The presenter keeps that archived-row
+progress map and pushes it through the host's
+`archiveDownloadProgressDidChange()`, since ticks arrive several times a second
+and must not cost a reload. Every such view is a pure observer of
 `.downloaderJobProgressChanged`; the transfer lives in
 `LiveMediaDownloadManager`'s background `URLSession`, so paging the card away,
 leaving the screen, or backgrounding the app does not pause or cancel it, and a
 card that returns mid-transfer re-reads `currentDownloadSnapshot` to resume its
 bar.
 
-The old `SavedMediaGridViewController` + `SavedMediaViewerViewController` were
-deleted with this change (the carousel replaces both).
+## The article card, and the chrome behind it
 
-## Reader adoption (ArticleCardsViewController)
+`Luna/Reader/ArticleCardsViewController.swift` is no longer a deck. It is the
+article kind's screen CHROME — the header row, immersion, the mode switcher, the
+footer veil, the hosted scroll indicator, the inline second column, eye-tracking
+adoption, the reader share pill, and the archive/unarchive choreography — riding
+the shared host as a thin subclass. It holds no kind logic and no per-slot
+logic; the article kind's card answers live in `ArticleCardPresenter`, and it
+meets them at the `ArticleDeckChromeHosting` seam (reader-card delegate, top
+inset, `centerCard`, `presentUnlockFlow`, `pushReader`, `toggleImmersion`).
 
-The Reader app's root (`Luna/Reader/ArticleCardsViewController.swift`) replaces
-`ReadingListViewController` for `.reader` only (Price Tracker kept the list at the time). **Since superseded:** every app roots on a deck and that list has been deleted.
-Differences from the Downloader, via `CardCarouselStyle`:
+The archive/unarchive split is worth stating: WHAT is written belongs to the
+kind (`setArchived`, mirroring whatever companion stores that kind owns), while
+HOW the deck moves belongs to the subclass (`performArchive` / `performUnarchive`
+override the host's persist-and-reload default). That is what lets the Reader's
+drift-and-spring animation stay Reader-only without the store write staying
+there too.
 
-- `cardFit = .aspectFromBottom` (the card is exactly 9:16 — the
-  Shorts/Reels/TikTok portrait shape the media cards already use — at the full
-  width the peeks leave, which is TALLER than the room between the header row
-  and the scrub strip: the card's bottom edge stays on the strip and the extra
-  height is added at the top, growing up through `cardTopOverflow` points of
-  header-row clearance to the safe-area top and no further. On a 402×874pt
-  screen that's a 354×629 card whose top sits at y≈95, so the header row's
-  buttons float over the card's (fade-masked) top edge. A container too wide for
-  the allowance — iPad — keeps the aspect exact by narrowing instead), `edgeGap` 10
-  (card closer to the screen edges), `pagesOnInCardSwipes` (horizontal swipes
-  inside the card page — readers have no timeline to scrub; the page pan
-  recognizes simultaneously with the reader's own gestures, gated to
-  strongly-horizontal drags — EXCEPT over a `UISlider`: a drag that starts on
-  a horizontal control (the RSVP scrubber) is a scrub, and near the track's
-  ends it reads exactly like a page-worthy swipe, so `pagePan` refuses to
-  begin there rather than paging the card out from under the thumb.
+**How a card PRESENTS its content is its KIND's answer, not this screen's.**
+`contentEdgeFadeHeight`, scrub-preview autoplay and in-card paging come from the
+presenter per card (`CardKindStyle`), so a media card behaves the same in the
+central app as in the Downloader, which it did not when these were deck-level
+fields. `style.card` survives only as the default for the util card and for
+onboarding, neither of which has a kind. Card GEOMETRY went the other way: `fit`
+and `topOverflow` were per-kind, and that is precisely what made paging between
+kinds relayout the card, so there is now one frame and no kind can state one.
+
+The article kind's own answers:
+
+- `contentEdgeFadeHeight` 28 and `pagesOnInCardSwipes` (horizontal swipes inside
+  the card page — readers have no timeline to scrub; the page pan recognizes
+  simultaneously with the reader's own gestures, gated to strongly-horizontal
+  drags — EXCEPT over a `UISlider`: a drag that starts on a horizontal control
+  (the RSVP scrubber) is a scrub, and near the track's ends it reads exactly like
+  a page-worthy swipe, so `pagePan` refuses to begin there rather than paging the
+  card out from under the thumb.
   **A swipe that BECOMES a page stops being anything else.** Simultaneous
   recognition is what keeps links, taps and scrolling alive on a card that is
   not being paged, so by the time the horizontal gate opens, the reader under
@@ -475,7 +571,12 @@ Differences from the Downloader, via `CardCarouselStyle`:
   `CardCarouselPagePanSimultaneityPolicy` refuses a scroll view that asks to
   start *after* the pan is already tracking. The reverse case is untouched: a
   drag that starts vertical fails the horizontal gate, so `pagePan` never
-  begins and the article scrolls as before), `.miniCards` scrubber: each chip is a miniature
+  begins and the article scrolls as before). The article card is the same 9:16
+  rectangle as every other card, and the Reader's floating control row follows
+  it rather than the screen: the row is framed from the resting card's own top
+  corners (`layoutReaderChromeRow`), so it sits inside the card's fade-masked
+  top edge wherever the card lands. Its strip chips: an article
+  declines `prefersThumbnailChip`, so each chip is a miniature
   article card — a tiny `.systemBackground` surface with skeleton headline/body
   bars and a source badge as its masthead. The badge (`CarouselSourceBadge` in
   LunaDesignSystem, rendered by `CarouselSourceBadgeView`) is the site's
@@ -605,8 +706,10 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - The cards root has NO header bar.
 - Paste lives permanently at the bottom of the util card. Its native
   `UIPasteControl` owns clipboard authorization, and a valid URL follows the same
-  ingest, card handoff, and new-save centering path as weekly/recent util rows.
-  The deck no longer creates a synthetic pasteboard card.
+  ingest and new-save centering path as weekly/recent util rows — but NOT their
+  card handoff: the row-into-card grow is for URL rows only (`util-card.md`), and
+  the paste row reports in place instead. The deck no longer creates a synthetic
+  pasteboard card.
 - Settings and Share flank the mini-card scrubber in Liquid Glass circles instead of
   consuming header space. Friends is reached from Settings. The card begins
   directly below the safe area, so the reader's own header pills own the top row.
@@ -631,43 +734,51 @@ Differences from the Downloader, via `CardCarouselStyle`:
 
 ## The central app's all-kinds deck
 
-The same `ArticleCardsViewController` is the central Luna app's root, where
-`LunaApp.current == .luna` turns on `includesAllKinds`: one deck over
-every app's saves, **most recent first**. It deliberately drops the Reader's
-read-vs-unread grouping — "read" is an article-only notion, and it would file a
-just-watched video behind everything else.
+The central Luna app's root is the same deck every app uses, with all three
+presenters installed instead of one. `LunaApp.current.includes` admits every
+kind, so it is one deck over every app's saves under the one ordering rule.
 
-A Downloader save is rendered here by the **Downloader's own card**, not as a
-link: the looping player, the animated GIF, the full-resolution image, or the
-in-card download progress bar, plus its Photos badge, its platform logo in the
-scrub strip, and Share / Save to Photos in its long-press menu. Deleting the
-card deletes the whole save — the downloaded file and its Photos asset with it.
-Its tap belongs to the card content (play/pause, the download button); the
-native-app → embed → in-app-browser ladder (`nonArticleOpener`) is left to the
-link-style card that stands in when nothing has been downloaded yet, and to
-price trackers, which still open the price editor.
+There is nothing special about it any more, and that is the point. A Downloader
+save is rendered here by `MediaCardPresenter` — the SAME object the Downloader
+installs — so it is not "the Downloader's card reproduced centrally", it is the
+media card, once: the looping player, the animated GIF, the full-resolution
+image, or the in-card download progress bar, plus its Photos badge, its platform
+logo in the strip, its red rim when a download failed, its Share / Save to
+Photos verbs, its `.aspectCentered` shape, its autoplaying centre preview, and
+its archive row with a working tap. A tracked product is rendered by
+`ProductCardPresenter`, which is the same object Price Tracker installs, so the
+central app gets the real in-card price editor rather than the
+"Tap to see price history" link card it used to draw.
 
-`ArticleCardsViewController` is shared with **Luna Reader**, which links no
-media module and so cannot name any of that. The deck therefore talks to an
-`AllKindsCardProviding` seam — an inner seam, NESTED inside the article deck's
-own `CardDeckProviding` conformance: the deck is the provider for the whole deck,
-and `AllKindsCardProviding` is how the foreign kinds contribute to it (card
-content, top-leading accessory, source badge, thumbnail, menu actions,
-companion-storage delete, per-item fingerprint, change-notification names). Only
-the central app compiles an implementation
-(`AllKindsCardProvider`, installed beside `nonArticleOpener` by
-`NonArticleCardOpening.install()`). The card construction itself lives in
-`MediaCardFactory` (compiled into Luna + LunaDownloader), which the Downloader's
-own deck uses too.
+The three questions that used to be per-deck and are now per-kind, everywhere:
+
+- **What a card looks like** — `contentEdgeFadeHeight`, scrub-preview autoplay
+  and in-card paging are answers the presenter gives per card, not fields the
+  screen sets, so a media card cannot behave one way in one app and another way
+  next door. Its SIZE is nobody's answer but the deck's.
+- **What archiving and deleting mean.** One `setArchived` per kind writing every
+  store that kind owns, and one delete path releasing companion storage — from a
+  card menu or from a tray cell, in any app.
+- **Which chip the strip shows.** There is one strip; `prefersThumbnailChip`
+  decides per card whether it is a full-bleed still or a mini card with a source
+  badge.
+
+Reader and Price Tracker link no media module and so cannot name any of that —
+which is exactly what the per-target membership exceptions on the presenter
+files express. The link set still decides what an app handles; what is shared is
+the DEFINITION of a kind's card, not which apps use it.
 
 Two consequences worth knowing:
 
-- The deck reloads on `.savedMediaChanged` (and `KindWiring+Luna.appDidLaunch`
-  starts `SavedMediaStore.startObservingCrossProcessChanges()`), so a download
-  that finishes in the background — or in an extension's process — turns a
-  placeholder card into a player. The reload fingerprint includes the provider's
-  per-item storage-state key, so that change actually re-renders.
+- The deck reloads on `.savedMediaChanged` and on `didBecomeActive` (and
+  `KindWiring+Luna.appDidLaunch` starts
+  `SavedMediaStore.startObservingCrossProcessChanges()`), because the media
+  presenter declares both — so a download that finishes in the background, or in
+  an extension's process, turns a placeholder card into a player. The
+  fingerprint includes the presenter's thumbnail + storage-state key, so that
+  change actually re-renders.
 - Media cards decline PREPARED scrub previews
-  (`allowsPreparedPreviewContent`): the mini-card strip prepares content for its
-  whole visible chip window, which would be an AVPlayer per chip. They preview
-  as their poster thumbnail instead and build the real player on commit.
+  (`allowsPreparedPreviewContent`): the strip prepares content for its whole
+  visible chip window, which would be an AVPlayer per chip. They preview as
+  their poster and build the real player on commit — while the CENTRE preview
+  still autoplays, which is how both invariants coexist.

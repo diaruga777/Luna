@@ -46,6 +46,15 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
+        // Staged mode's catalogs, on the same rule as the kind packs: a kind's
+        // stages live with that kind, and this app installs the ones for the
+        // kinds it links (`claudedocs/staging.md`). No-op unless launched with
+        // `-LunaStage`.
+        SharedStageCatalog.install()
+        ArticleStageCatalog.install()
+        EmailStageCatalog.install()
+        MediaStageCatalog.install()
+        ProductStageCatalog.install()
         #endif
 
         // One install per kind this app handles. WHAT each kind registers is
@@ -54,6 +63,13 @@ enum KindWiring {
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
+        // …and the CARD half of each kind, on the same principle: one
+        // definition per kind, installed by every app that shows it, so the
+        // central deck and each single-kind deck cannot disagree about the
+        // same save (`CardKindPresenter.swift`).
+        CardKindPresenters.article = ArticleCardPresenter()
+        CardKindPresenters.media = MediaCardPresenter()
+        CardKindPresenters.product = ProductCardPresenter()
         // The central Luna app handles every kind, so it installs every
         // ingestor handler and every kind-specific presentation hook.
         IngestorKindHandlers.article = ArticleKindHandler()
@@ -76,10 +92,6 @@ enum KindWiring {
         UtilCardContentViewController.emailSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
-        // The central Luna app is the only surface whose card deck contains
-        // non-article cards; give them their tap routing.
-        NonArticleCardOpening.install()
-
         installArticleLaunchWiring()
         installMediaLaunchWiring()
         installProductLaunchWiring()
@@ -144,6 +156,14 @@ enum KindWiring {
                 KindleSettingsScreen(), animated: true)
         }
 
+        // A bulk import's pass over the saves that came back hard-paywalled:
+        // the same web unlock a tap would run, off-screen and giving up on any
+        // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there is
+        // no article save to unlock anywhere else.
+        LinkImportRunner.articleUnlocker = { itemID, urlString in
+            await UnattendedArticleUnlock.unlock(itemID: itemID, urlString: urlString)
+        }
+
         // Voice status and installation now live on the Audio settings page.
         VoiceFirstRunPrompt.openVoiceSettings = { presenter in
             let audio = AudioSettingsScreen()
@@ -165,6 +185,27 @@ enum KindWiring {
         URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in
             await LiveMediaDownloadManager.shared.startWithResolvedAssets(
                 sourceURLString: sourceURLString, title: title, assets: assets)
+        }
+        // The factory reset's media leg: a Live Activity outlives the process
+        // that started it, so the wipe has to end them itself.
+        FactoryReset.additionalErasers.append {
+            await LiveMediaDownloadManager.shared.endAllActivities()
+        }
+        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
+        // A bulk import runs its own progress bar; the per-transfer Live
+        // Activity alerts (banner + sound + haptic) would buzz twice per link
+        // over the top of it.
+        // Photos access asked for at the START of an import, not when the first
+        // transfer wants it (`claudedocs/import-export.md`).
+        LinkImportRunner.mediaStoragePreflight = { urlStrings in
+            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
+        }
+        LinkImportRunner.mediaAlertSuspension = { suspended in
+            if suspended {
+                LiveMediaDownloadManager.suspendActivityAlerts()
+            } else {
+                LiveMediaDownloadManager.resumeActivityAlerts()
+            }
         }
     }
 
@@ -215,18 +256,18 @@ enum KindWiring {
 
     static func settingsCategories() -> [SettingsCategory] {
         [
-            SettingsCategory(title: L10n.string("Reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
-            SettingsCategory(title: L10n.string("Audio"), symbol: "headphones") { AudioSettingsScreen() },
+            SettingsCategory(title: L10n.string("Common_reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
+            SettingsCategory(title: L10n.string("Common_audio"), symbol: "headphones") { AudioSettingsScreen() },
             SettingsCategory(
-                title: L10n.string("Email"),
+                title: L10n.string("Common_email"),
                 symbol: "envelope",
                 detail: {
                     EmailAccountStore.shared.authenticationIssue == nil
-                        ? nil : L10n.string("Sign-in required")
+                        ? nil : L10n.string("Common_signInRequired")
                 }
             ) { EmailAndKindleSettingsScreen() },
             SettingsCategory(
-                title: L10n.string("Kindle"), symbol: "book.closed",
+                title: L10n.string("Common_kindle"), symbol: "book.closed",
                 requiresEmail: true,
                 makePrerequisite: {
                     let email = EmailAndKindleSettingsScreen()
@@ -236,7 +277,7 @@ enum KindWiring {
             ) {
                 KindleSettingsScreen()
             },
-            SettingsCategory(title: L10n.string("Downloads"), symbol: "arrow.down.circle") {
+            SettingsCategory(title: L10n.string("Common_downloads"), symbol: "arrow.down.circle") {
                 DownloadsSettingsScreen()
             },
         ]

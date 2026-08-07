@@ -106,10 +106,11 @@ one variant, and the variants reference the kind modules' symbols directly
   `priceRefreshRunner` — nil ⇒ the task is never registered). The shared list
   UI consulted a third shell registry, `ListKindSupport` (DELETED — it served only the removed sectioned list; nothing ever read it from the decks)
   (`ArticleListSupport` / `MediaListSupport` / `ProductListSupport`, per-target
-  compiled like the wiring); kind-specific shell FILES (article card deck +
-  mini-player + audio wiring + reader/email settings screens; saved-media deck +
-  auto-download settings + `MediaIntentHandoff`; the central-only
-  `UITestScreen` / `NonArticleCardOpening`) are excluded from foreign targets
+  compiled like the wiring); kind-specific shell FILES (each kind's card
+  presenter — see "Card presenters" below — plus the article chrome deck,
+  mini-player, audio wiring and reader/email settings screens; the media
+  auto-download settings and `MediaIntentHandoff`; the product card content;
+  and the central-only `UITestScreen`) are excluded from foreign targets
   through the same membership-exception mechanism. Intent seams:
   `ActionButtonIntentSupport.mediaHandoff` (media),
   `ReadArticleIntent.playArticle` (article; nil throws a friendly
@@ -185,6 +186,65 @@ types the library layer can't see, so it stays in each `KindWiring+*`. Those fou
 roots live in one folder and are app-only, so the surface-mismatch hazard the
 packs remove doesn't apply to it.
 
+## Card presenters — the same contract, for what a save LOOKS like
+
+Kind packs answer "what does this app DO with this link". A second, parallel
+registry answers "what does this save look like on a card", and it exists for
+the same reason and was created by the same bug.
+
+Every app's root is a card deck. The deck machinery is shared
+(`CardCarouselHostViewController`), but the kind-specific half used to be a
+`CardDeckProviding` conformance on each root VIEW CONTROLLER — so three deck
+subclasses each answered the same questions about the same saves, and the
+central app, which shows all of them, needed a FOURTH hand-listed adapter
+(`AllKindsCardProviding`) to forward the kinds it could not name. Anything not
+explicitly forwarded diverged in silence: a failed download's red rim existed
+only in the Downloader, archiving wrote a different store in each app, deleting
+an archived media save centrally leaked its file and its Photos asset, and a
+tracked product rendered as a generic link card in the central app while the
+real product editor sat compiled into the same binary, unreachable.
+
+So a kind's CARD behavior is now defined once too, in
+`CardKindPresenting` (`Luna/CardCarouselHost/CardKindPresenter.swift`):
+
+| Kind | Presenter | File | Luna | Reader | Downloader | PriceTracker |
+| --- | --- | --- | --- | --- | --- | --- |
+| article | `ArticleCardPresenter` | `Luna/Reader/ArticleCardPresenter.swift` | ✓ | ✓ | ✗ | ✗ |
+| media | `MediaCardPresenter` | `Luna/Downloader/MediaCardPresenter.swift` | ✓ | ✗ | ✓ | ✗ |
+| product | `ProductCardPresenter` | `Luna/PriceTracker/ProductCardPresenter.swift` | ✓ | ✗ | ✗ | ✓ |
+
+Gated by the SAME membership-exception mechanism as every other per-target file
+(`#if canImport` is not target-reliable here), and installed by the same roots
+that install the packs — one line each in `KindWiring+<App>`. Only the app shell
+draws cards, so unlike a pack, no extension installs a presenter.
+
+Two rules make the old bug unrepresentable, and `KindCompositionRootTests`
+enforces both by reading source:
+
+- **The deck never asks what kind a save is.** Resolution lives once, in
+  `CardKindPresenters.presenter(for:)`, in a fixed order: a FAILED save is
+  kind-less by definition (the classifier never got one) and returns nil, which
+  is exactly why the deck draws its error card itself and why every app shows
+  failed saves; then product, then media, then article. A file under
+  `Luna/CardCarouselHost/` that mentions `isPriceTracker` or `contentPlatform`
+  fails the build.
+- **Only an app root writes the registry.** Reading it is how the deck works;
+  a second write is how a surface gets a different card for the same save.
+
+A presenter answers questions about a `ReadingListItem`, never about a slot
+index — slot arithmetic, the util-card offset, the fingerprint diff and the
+centering ladder stay in the host, which is the only thing that ever needed
+them. The one place that model bends is `unbackedItems()`: media rows are keyed
+by the MEDIA store's id and their `sourceURLString` is whatever the URL was when
+the download started, which is not always what the reading-list row says (a
+Reddit `/r/…/s/` share link is network-resolved to its permalink inside
+`gateAndPrepare`; the share driver resolves a wrapper URL and then deletes the
+wrapper row). Those are real, downloaded user saves with nothing pointing at
+them — `SavedMediaStore.purgeExpired`'s own comment records that an earlier
+membership sweep was deleted for removing exactly these — so the media presenter
+hands the deck stand-in items for them and the deck routes those slots straight
+back to it.
+
 A third registry, **`ShareKindPresenters` (LunaShareSurface)**, mirrors
 `IngestKindProcessors`/`IngestorKindHandlers` for extension PRESENTATION:
 LunaShareSurface is kind-neutral (host chrome + `ShareSurfaceDriver` only), and
@@ -222,6 +282,11 @@ error mapping + save verification), `IntentURLPrecheckTests` (per-app kind
 prediction), `UnsupportedSaveCardTests` (the shared card's copy, the
 sibling-app icons resolving from LunaDesignSystem's bundle in every target, the
 carousel dress, and the header-only fallback), and `SurfaceParityTests`
-(presentation parity across surfaces).
+(presentation parity across surfaces). `KindCompositionRootTests` covers both
+registries: the ingest packs (no root registers a kind directly, each root
+installs exactly its app's packs, no expected root has vanished, no unlisted
+root installs one) and the card presenters (each app root installs exactly its
+app's presenters, nothing else writes that registry, the deck never branches on
+kind).
 Keep the "dropped means nothing remains" invariant explicit when adding a
 capture source or a new direct-write path.

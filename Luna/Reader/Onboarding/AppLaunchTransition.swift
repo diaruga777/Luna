@@ -6,52 +6,66 @@
 import LunaDesignSystem
 import UIKit
 
+/// Where the launch splash draws, and what it draws there.
+///
+/// The card frame itself is not this type's business — it is
+/// `CardDeckGeometry.cardFrame(inScreenSize:safeAreaInsets:)`, the same pure
+/// function the live deck's constraints reproduce. What lives here is the
+/// splash's own geometry: the reference canvas the artwork is recorded on, and
+/// the corona's throw past the card.
+///
+/// This used to be three constants (`rootCardHorizontalInset`,
+/// `rootCardBottomClearanceFromSafeArea`, `referenceSafeAreaBottomInset`)
+/// hand-copied from the ARTICLE card's layout and measured on one iPhone, plus a
+/// "launch-safe approximation" (`fallbackRootCardFrame`) used on every other
+/// device. Both are gone: there is one card frame, and it is exact everywhere.
 enum AppLaunchGeometry {
+    /// The phone the artwork is recorded at. Nothing depends on it being this
+    /// device — the rasters are scaled to the card frame wherever they land —
+    /// but recording at a real shipping geometry keeps the artwork's aspect
+    /// honest.
     static let referenceSize = CGSize(width: 402, height: 874)
-    static let rootCardHorizontalInset: CGFloat = 24
-    static let rootCardBottomClearanceFromSafeArea: CGFloat = 116
-    static let referenceSafeAreaBottomInset: CGFloat = 34
+    static let referenceSafeAreaInsets = UIEdgeInsets(
+        top: 62, left: 0, bottom: 34, right: 0)
 
-    /// The production Reader/onboarding card at rest on the launch-art
-    /// recorder's reference iPhone. The launch storyboard constrains the black
-    /// card to this same 24pt side inset, 9:16 aspect, and safe-area-relative
-    /// bottom edge; only the corona is allowed to crop outside the display.
+    /// The card the artwork is recorded around.
     static var referenceRootCardFrame: CGRect {
-        let width = referenceSize.width - rootCardHorizontalInset * 2
-        let height = width / CardCarouselMetrics.cardAspectRatio
-        let bottom = referenceSize.height
-            - referenceSafeAreaBottomInset
-            - rootCardBottomClearanceFromSafeArea
-        return CGRect(
-            x: rootCardHorizontalInset,
-            y: bottom - height,
-            width: width,
-            height: height)
+        CardDeckGeometry.cardFrame(
+            inScreenSize: referenceSize, safeAreaInsets: referenceSafeAreaInsets)
     }
 
-    /// Launch-safe approximation used only when a root has not yet exposed its
-    /// real carousel frame. Width wins on phones; available safe-area height
-    /// wins on compact-height and iPad layouts.
-    static func fallbackRootCardFrame(
-        in bounds: CGRect,
-        safeAreaInsets: UIEdgeInsets
-    ) -> CGRect {
-        let preferredWidth = max(
-            40, bounds.width - rootCardHorizontalInset * 2)
-        let bottom = bounds.maxY
-            - safeAreaInsets.bottom
-            - rootCardBottomClearanceFromSafeArea
-        let maximumHeight = max(
-            40, bottom - bounds.minY - safeAreaInsets.top - 12)
-        let height = min(
-            preferredWidth / CardCarouselMetrics.cardAspectRatio,
-            maximumHeight)
-        let width = height * CardCarouselMetrics.cardAspectRatio
-        return CGRect(
-            x: bounds.midX - width / 2,
-            y: bottom - height,
-            width: width,
-            height: height)
+    /// How far the splash corona throws past the card's limb, as a fraction of
+    /// the card's WIDTH.
+    ///
+    /// `EclipseCorona.reach` is `0.42 × shortest side` with a 150pt ceiling, and
+    /// the ceiling is why this is stated separately: a ratio that changes with
+    /// the card size cannot be carried by one raster. Pinning the fraction makes
+    /// the splash artwork uniformly scalable — one image, exact on every screen
+    /// — and on the reference phone it resolves to the same throw the clamped
+    /// formula gives, because the clamp does not bind at a phone's card width.
+    static let coronaReachFraction: CGFloat = 0.42
+
+    /// The corona artwork's frame for a card at `cardFrame`: the card grown by
+    /// its proportional reach on all four sides. Crops off the display on
+    /// purpose — the light does not stop at the bezel.
+    static func coronaFrame(forCardFrame cardFrame: CGRect) -> CGRect {
+        let reach = coronaReach(forCardWidth: cardFrame.width)
+        return cardFrame.insetBy(dx: -reach, dy: -reach)
+    }
+
+    static func coronaReach(forCardWidth width: CGFloat) -> CGFloat {
+        width * coronaReachFraction
+    }
+
+    /// The corona artwork's width as a multiple of the card's — what the launch
+    /// storyboard multiplies its card guide by, since it cannot call this.
+    static var coronaWidthMultiple: CGFloat { 1 + coronaReachFraction * 2 }
+
+    /// The corona artwork's own width:height. Constant, because both the card's
+    /// aspect and the reach fraction are.
+    static var coronaAspectRatio: CGFloat {
+        let cardHeightMultiple = 1 / CardCarouselMetrics.cardAspectRatio
+        return coronaWidthMultiple / (cardHeightMultiple + coronaReachFraction * 2)
     }
 }
 
@@ -97,8 +111,8 @@ enum AppLaunchTransition {
         // Do not begin the fade in the same run-loop turn that installs the
         // splash. On a warm/fast launch Core Animation can otherwise commit
         // only the final alpha, producing a plain black frame with no eclipse.
-        // (An instant-reveal target keeps its own live corona, so it only
-        // needs the next turn, not a guaranteed eclipse beat.)
+        // (An instant-reveal target keeps its own corona, so it only needs the
+        // next turn, not a guaranteed eclipse beat.)
         let instant = target?.prefersInstantLaunchReveal == true
         let hold = instant ? instantMinimumVisibleDuration : minimumVisibleDuration
         let fade: TimeInterval = instant
@@ -127,8 +141,9 @@ enum AppLaunchTransition {
         }
     }
 
-    /// The first live splash frame. Its card frame comes directly from the
-    /// destination carousel, making the fade geometrically stationary.
+    /// The first live splash frame: the same two layers the launch STORYBOARD
+    /// shows, at the same geometry, so the system's launch screen and the app's
+    /// own first frame are one picture and the crossfade has nothing to reveal.
     static func makeLaunchView(frame: CGRect, cardFrame: CGRect) -> UIView {
         let overlay = UIView(frame: frame)
         overlay.backgroundColor = .black
@@ -138,48 +153,86 @@ enum AppLaunchTransition {
         sky.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         overlay.addSubview(sky)
 
-        let corona = makePeakCoronaView(cardFrame: cardFrame)
+        let corona = makeCoronaCardView(cardFrame: cardFrame)
         overlay.addSubview(corona)
-
-        let body = CardSurfaceView(frame: cardFrame)
-        body.backgroundColor = .black
-        body.setBorderEnabled(true)
-        let black = UIView(frame: body.bounds)
-        black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        black.backgroundColor = .black
-        body.installContentView(black)
-        overlay.addSubview(body)
-        body.layoutIfNeeded()
-        corona.layoutIfNeeded()
         return overlay
     }
 
-    /// Full-screen transparent artwork for the launch storyboard. A prior
-    /// tight image required an oversized, negatively positioned UIImageView;
-    /// iOS rendered that launch hierarchy as plain black. Pinning this canvas
-    /// to the launch root uses the proven launch-screen path while preserving
-    /// the exact production card frame inside the raster.
-    static func makeStaticCoronaCardView(
-        frame: CGRect,
-        cardFrame: CGRect
-    ) -> UIView {
-        let canvas = UIView(frame: frame)
+    /// The recorded corona-and-card artwork, sized to `cardFrame`.
+    ///
+    /// It used to be a live `EclipseCoronaView`, rendered fresh at every launch
+    /// and again for onboarding's persistent corona. Two things were wrong with
+    /// that. It is not free — the exterior corona is ~80ms of stroked offset
+    /// curves at 1x on a simulator, on the launch path, three times over — and
+    /// 1x is exactly what made the splash look soft: the recorded artwork is
+    /// baked at 3x from a 1x render, so its streamer wedges arrived as 3x3
+    /// blocks. Drawing the artwork instead costs nothing, is sharp, and is
+    /// identical to the launch screen by construction rather than by agreement.
+    ///
+    /// The view's own bounds are the CARD's, with the artwork overhanging on
+    /// every side, so callers position it exactly as they position the card.
+    static func makeCoronaCardView(cardFrame: CGRect) -> UIView {
+        let container = UIView(frame: cardFrame)
+        container.isUserInteractionEnabled = false
+        container.clipsToBounds = false
+        container.backgroundColor = .clear
+
+        let artwork = UIImageView(image: launchCoronaCardArtwork)
+        artwork.frame = container.bounds.insetBy(
+            dx: -AppLaunchGeometry.coronaReach(forCardWidth: cardFrame.width),
+            dy: -AppLaunchGeometry.coronaReach(forCardWidth: cardFrame.width))
+        // Fixed (negative) margins with a flexible core: the overhang stays put
+        // when the card resizes.
+        artwork.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        artwork.contentMode = .scaleToFill
+        container.addSubview(artwork)
+        return container
+    }
+
+    /// The one raster, shared by the launch overlay, onboarding's intro corona
+    /// and the util card's. Loose in the bundle rather than in the asset
+    /// catalog, and single-scale rather than 1x/2x/3x: the launch screen needs
+    /// it before the app has started, and it is always drawn at an explicitly
+    /// computed frame, so one generously-sized image downscales to every device
+    /// instead of a 2x variant being upscaled on the largest iPad.
+    static let coronaCardArtworkName = "LunaLaunchCoronaCard"
+    static let starfieldArtworkName = "LunaLaunchStarfield"
+
+    private static let launchCoronaCardArtwork = UIImage(named: coronaCardArtworkName)
+
+    /// Renders the corona-and-card artwork: the corona at `artworkScale`, the
+    /// black card body, and its rim, on a canvas that is exactly
+    /// `AppLaunchGeometry.coronaFrame`. Called by the recorder only.
+    static func makeCoronaCardArtworkView(cardFrame: CGRect) -> UIView {
+        let coronaFrame = AppLaunchGeometry.coronaFrame(forCardFrame: cardFrame)
+        let canvas = UIView(frame: CGRect(origin: .zero, size: coronaFrame.size))
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
 
-        let corona = makePeakCoronaView(cardFrame: cardFrame)
+        let body = CGRect(
+            x: cardFrame.minX - coronaFrame.minX,
+            y: cardFrame.minY - coronaFrame.minY,
+            width: cardFrame.width,
+            height: cardFrame.height)
+        let corona = EclipseCoronaView(
+            bodySize: body.size,
+            cornerRadius: CardSurfaceView.cornerRadius,
+            tint: LunaSurfacePalette.atmosphereTint(for: .reader),
+            reach: AppLaunchGeometry.coronaReach(forCardWidth: cardFrame.width),
+            scale: EclipseCorona.artworkScale)
+        corona.frame = body
         canvas.addSubview(corona)
 
-        let body = CardSurfaceView(frame: cardFrame)
-        body.backgroundColor = .black
-        body.setBorderEnabled(true)
-        let black = UIView(frame: body.bounds)
+        let surface = CardSurfaceView(frame: body)
+        surface.backgroundColor = .black
+        surface.setBorderEnabled(true)
+        let black = UIView(frame: surface.bounds)
         black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         black.backgroundColor = .black
-        body.installContentView(black)
-        canvas.addSubview(body)
+        surface.installContentView(black)
+        canvas.addSubview(surface)
         canvas.layoutIfNeeded()
-        body.layoutIfNeeded()
+        surface.layoutIfNeeded()
         corona.layoutIfNeeded()
         return canvas
     }
@@ -188,22 +241,9 @@ enum AppLaunchTransition {
         AppLaunchStarfieldView(frame: frame)
     }
 
-    /// Creates a fresh UIKit reconstruction of the card transition's peak
-    /// corona. The launch overlay and onboarding each own separate instances;
-    /// no launch-screen image or launch overlay view is retained in the app
-    /// hierarchy.
-    static func makePeakCoronaView(cardFrame: CGRect) -> EclipseCoronaView {
-        let corona = EclipseCoronaView(
-            bodySize: cardFrame.size,
-            cornerRadius: CardSurfaceView.cornerRadius,
-            tint: LunaSurfacePalette.atmosphereTint(for: .reader))
-        corona.frame = cardFrame
-        return corona
-    }
-
     private static func fallbackTargetFrame(in window: UIWindow) -> CGRect {
-        AppLaunchGeometry.fallbackRootCardFrame(
-            in: window.bounds,
+        CardDeckGeometry.cardFrame(
+            inScreenSize: window.bounds.size,
             safeAreaInsets: window.safeAreaInsets)
     }
 }

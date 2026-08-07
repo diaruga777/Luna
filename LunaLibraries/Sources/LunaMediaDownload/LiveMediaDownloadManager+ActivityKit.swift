@@ -41,7 +41,8 @@ extension LiveMediaDownloadManager {
     /// Activity appears, so a download starting reads as more than a silent
     /// Dynamic Island update. Suppressed for `startFailedActivity`, which
     /// never actually starts a download — only its (single) end-of-life alert
-    /// should fire there.
+    /// should fire there, and while alerts are suspended altogether
+    /// (`areActivityAlertsSuspended` — a bulk import).
     func startActivity(for job: LiveMediaDownloadJob, announce: Bool = true) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -61,11 +62,11 @@ extension LiveMediaDownloadManager {
         let state = activityState(for: job)
         do {
             let activity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
-            if announce {
+            if announce, !Self.areActivityAlertsSuspended {
                 await activity.update(
                     using: state,
                     alertConfiguration: AlertConfiguration(
-                        title: L10n.resource("Download started"),
+                        title: L10n.resource("Downloader_liveActivity_alert_downloadStartedTitle"),
                         body: "\(job.title)",
                         sound: .default))
             }
@@ -87,7 +88,7 @@ extension LiveMediaDownloadManager {
             sourceURLString: urlString,
             assetURLString: nil,
             mediaKind: "unknown",
-            title: title ?? L10n.string("Media download"),
+            title: title ?? L10n.string("Downloader_liveActivity_defaultTitle"),
             creator: nil,
             resolveKind: nil,
             phase: .failed,
@@ -132,14 +133,16 @@ extension LiveMediaDownloadManager {
         // is easy to miss, so both a successful finish and a failure surface
         // as a system alert (banner + sound), matching the one at start. Not
         // for a user-canceled (still `.suspended` when torn down) job — that's
-        // an intentional dismissal, not a result worth alerting about.
+        // an intentional dismissal, not a result worth alerting about — and not
+        // while alerts are suspended (a bulk import, where every transfer's
+        // start and finish would buzz over the import's own progress bar).
         var alert: AlertConfiguration?
         switch job.phase {
         case .finished, .failed:
-            alert = AlertConfiguration(
+            alert = Self.areActivityAlertsSuspended ? nil : AlertConfiguration(
                 title: job.phase == .failed
-                    ? L10n.resource("Download failed")
-                    : L10n.resource("Download finished"),
+                    ? L10n.resource("Downloader_liveActivity_status_downloadFailed")
+                    : L10n.resource("Downloader_liveActivity_alert_downloadFinishedTitle"),
                 body: "\(job.title)",
                 sound: .default)
         default:
@@ -151,6 +154,20 @@ extension LiveMediaDownloadManager {
                 await activity.update(using: state, alertConfiguration: alert)
             }
             await activity.end(using: state, dismissalPolicy: .after(Date(timeIntervalSinceNow: dismissalDelay)))
+        }
+        #endif
+    }
+
+    /// Tears every Live Activity down at once, immediately and without an alert
+    /// — the factory reset's media leg, installed on `FactoryReset` by the media
+    /// composition roots. An activity outlives the process that started it, so a
+    /// wiped install would otherwise leave a lock-screen card describing a
+    /// download whose job file is gone.
+    public func endAllActivities() async {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return }
+        for activity in Activity<LiveMediaDownloadAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
         #endif
     }

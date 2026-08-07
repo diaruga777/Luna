@@ -15,7 +15,7 @@
 > ReaderKit also holds the models/helpers it needs: `ArticleContent`,
 > `LunaDeepLink`, `NonTextualContent`.
 
-TWO reading modes for extracted articles, with read-aloud, nested inline readers, and position memory. Hosted by `ReaderKit/ReaderViewController.swift` — a container with a segmented switcher (icons via `ReaderKit/ReaderModeIcons`: `doc.richtext` for the extracted scroll reader / `forward.fill` for RSVP speed reading / a latitude-longitude `globe` for Original) plus a **separate audio toggle** that turns read-aloud on/off for whichever mode is showing. At the Reader card root, the switcher occupies the bottom-center only while card chrome is dismissed, replacing the mini carousel with a short translation + fade; standalone and extension hosts retain their own inline/nav placement. The retired standalone **chunk-highlight ("highlight") mode now lives as the RSVP reader's "Phrases" sub-mode** (see below); a persisted `.highlight` reader mode resolves to RSVP opened in Phrases (`ReaderViewController.opensRSVPInPhrases`, one-shot; `ReaderSettings.lastReaderMode` also maps the legacy value). A third **Original** segment (a locally saved `.webarchive` snapshot or an imported source document) is appended **only when the save actually has one** — `availableModes = baseModes + (ReadingListStore.hasOriginalSource(for:) ? [.original] : [])`. Saves with no real web page (mail/email imports — no web archive AND no source file) therefore never show Original (test: `ReadingListStoreTests.testEmailSaveHasNoOriginalSource`). It persists `lastReaderMode` per article AND globally (`ReaderSettings.lastReaderMode`) — a new article with no per-article preference opens in the global last-used mode. Changing mode/audio replaces the active child directly. RabbitHole layers create and attach only the selected reader child; switching modes removes that child and installs the requested one without keeping hidden reader views in the hierarchy. Scroll readers begin their full-content load as soon as they become visible. Tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`). Reaching the end never dismisses the reader: it visibly draws a trait-aware check into a persistent interactive Liquid Glass “Read” pill below scroll content or in RSVP’s link-pill lane. On tap — and automatically after a beat the first time per app install — the pill expands to “Sent to archive,” then collapses back without disappearing. Completion persists `pendingArchiveAt`; the card remains active for the foreground session, then the Reader app promotes that timestamp to `archivedAt` on background, or during the next cold launch after a force-quit. Scrolling/paging back does not retract a completion. A **floating glass share button** (bottom-right) lifts to clear that mode's footer (`floatingShareBottomInset(for:audioOn:)` — scroll mode only reserves room when read-aloud is on), and fades out while the end-of-article share footer is scrolled into view (`ScrollReaderViewController.onShareFooterVisibilityChanged`), fading back in otherwise.
+TWO reading modes for extracted articles, with read-aloud, nested inline readers, and position memory. Hosted by `ReaderKit/ReaderViewController.swift` — a container with a segmented switcher (icons via `ReaderKit/ReaderModeIcons`: `doc.richtext` for the extracted scroll reader / `forward.fill` for RSVP speed reading / a latitude-longitude `globe` for Original) plus a **separate audio toggle** that turns read-aloud on/off for whichever mode is showing. At the Reader card root, the switcher occupies the bottom-center only while card chrome is dismissed, replacing the mini carousel with a short translation + fade; standalone and extension hosts retain their own inline/nav placement. The retired standalone **chunk-highlight ("highlight") mode now lives as the RSVP reader's "Phrases" sub-mode** (see below); a persisted `.highlight` reader mode resolves to RSVP opened in Phrases (`ReaderViewController.opensRSVPInPhrases`, one-shot; `ReaderSettings.lastReaderMode` also maps the legacy value). A third **Original** segment (a locally saved `.webarchive` snapshot or an imported source document) is appended **only when the save actually has one** — `availableModes = baseModes + (ReadingListStore.hasOriginalSource(for:) ? [.original] : [])`. Saves with no real web page (mail/email imports — no web archive AND no source file) therefore never show Original (test: `ReadingListStoreTests.testEmailSaveHasNoOriginalSource`). It persists `lastReaderMode` per article AND globally (`ReaderSettings.lastReaderMode`) — a new article with no per-article preference opens in the global last-used mode. Changing mode/audio replaces the active child directly. RabbitHole layers create and attach only the selected reader child; switching modes removes that child and installs the requested one without keeping hidden reader views in the hierarchy. Scroll readers begin their full-content load as soon as they become visible. Tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`). Reaching the end never dismisses the reader: it visibly draws a trait-aware check into a persistent interactive Liquid Glass “Read” pill below scroll content or in RSVP’s link-pill lane. On tap — and automatically after a beat the first time per app install — the pill expands to “Sent to archive,” then collapses back without disappearing. Completion persists `pendingArchiveAt`; the card remains active for the foreground session, then the Reader app promotes that timestamp to `archivedAt` on background, or during the next cold launch after a force-quit. Scrolling/paging back does not retract a completion. A **floating glass share button** (bottom-right) lifts to clear that mode's footer (`floatingShareBottomInset(for:audioOn:)` — scroll mode only reserves room when read-aloud is on; RSVP is not in that table at all, it hangs off the speed reader's own controls — see "the speed reader's vertical layout" below), and fades out while the end-of-article share footer is scrolled into view (`ScrollReaderViewController.onShareFooterVisibilityChanged`), fading back in otherwise.
 
 **Position carry-over across mode switches** (`ReaderPositionTracking` protocol, `ReaderProviders.swift`): before tearing the outgoing child down, the host reads its `currentReadingWordIndex` and passes it as `resumeWordIndex` to the next child. Scroll plain-mode's reported index is **gated so opening/closing alone never moves the carried position** — the bug was recomputing `firstFullyVisibleWordIndex` on every switch, which drifted the index even when the user did nothing. The decision is a PURE, unit-tested function (`ReaderResumePositionResolver.reportedWordIndex(resumeIndex:scrolledPastThreshold:firstFullyVisibleIndex:)`, `ReaderKit/ReaderResumePositionResolver.swift`): the scroll reader records the content offset at open and reports the freshly-computed first FULLY-visible word (`firstFullyVisibleWordIndex` — first line not clipped by the top edge) ONLY if the user scrolled past a threshold (`scrolledPastThresholdPoints = 44pt` from the open offset); else it returns the incoming `resumeWordIndex` UNCHANGED (a no-op). (Active read-aloud / chunk playback still reports the live playback word. A FRESH open with no carried index — straight from the list — has no position to protect, so it reports the first-visible word so the first switch resumes correctly.) Entering scroll mode scrolls the carried word to 25% from the top (`scrollWord(_:toFractionFromTop:)`, clamped, no overscroll). Highlight/audio start playback at the word (follow-scroll centers it). RSVP reports/accepts its `currentIndex`. First open (no switch) keeps the persisted defaults (lastScrollOffset / lastWordIndex). Tests: `ReaderResumePositionResolverTests`.
 
@@ -320,6 +320,38 @@ the stale scroll offset; unsaved links use a bounded App-Group URL→word map in
 its former duplicated UIKit link menu; its plain-text sentence-selection hold is unchanged.
 - `Luna/Settings/ReaderSettings.swift` — base WPM in standard defaults (also adjustable in Settings screen slider).
 
+### Highlight, copy, share (plain-text selection)
+
+A hold on plain text in the scroll reader selects the whole enclosing SENTENCE, not the
+word UIKit would give you, and the selection callout carries a **Share** action ahead of
+the system's own items. Both COPY and SHARE emit the same payload —
+`ScrollReaderViewController.makeHighlightShareText`: the trimmed quote in literal double
+quotes, a blank line, then the item's URL (a save with no real web URL — an imported
+document, a synthetic scheme — sends the bare quote, since there is nothing to cite).
+Two mechanics are worth knowing before touching this:
+
+- **Copy is intercepted at the text view, not in the menu.** `QuotingTextView` (LunaReaderUI)
+  overrides `copy(_:)`, which is where the callout's Copy, ⌘C and the accessibility action
+  all converge — so one override covers every route and `editMenuForTextIn` can keep
+  handing back `suggestedActions` verbatim. An empty selection, or a range the reader
+  declines, falls through to UIKit's plain-text copy.
+- **The sentence snap must not depend on recognizer order.** The reader's own long-press
+  never moves the selection; it either expands what is already selected or arms the next
+  selection change to snap (`sentenceLongPressAction`, pure and unit-tested; the expansion
+  itself is `enclosingSentenceRange`, scoped to the pressed paragraph). Arming alone used
+  to be the whole rule, which assumed this recognizer fires BEFORE the text view's own
+  word-select — true in a full-screen reader, unreliable inside a carousel card, where the
+  deck's context-menu interaction competes for the same press and the flag could end up
+  waiting on a change that had already happened. A selection elsewhere in the article is
+  stale and is never the one expanded. Tests: `HighlightShareTextTests`.
+
+On a card this rides on the deck declining the press: `CardCarouselViewController`'s
+context-menu delegate returns nil when the content claims the point, and
+`ArticleCardsViewController.longPressSelectsContent` claims every press over a glyph, a
+link, or an inline image — bare whitespace is what keeps the card's own Archive/Delete
+menu. Nothing about the selection behavior is per-app: the article card is the same
+`ScrollReaderViewController` in the central Luna app and in Luna Reader.
+
 ## Header bar
 
 The 3-mode switcher lives in an **inline header bar** at the top of the reader's
@@ -341,10 +373,77 @@ no nav bar of its own beyond Done.
   Two 3pt vertical ticks point inward from the lines toward the ORP glyph; the
   middle remains completely clear, so nothing runs behind the highlighted
   letter. Words mode (`layoutFocusReticule`; Phrases has its own panel) still
-  reserves no separate reticule band. The focal centre is fitted into the live
-  space between the title-aware mode switcher and playback controls so tall
-  in-card title headers cannot crowd the controls. Scroll/chunk highlight
+  reserves no separate reticule band. Scroll/chunk highlight
   remains an inline text-background tint in the accent.
+- **The speed reader's vertical layout is one band, and the word sits at its
+  MIDPOINT.** The band is the live space between the host chrome standing over
+  the reader (`readingBandTop` = safe area + `topContentInset` + 18) and the top
+  of the playback controls (`readingBandBottom`), so a tall in-card title header
+  can never crowd the controls. `focalCenterY` is that band's midpoint plus a
+  16pt downward lean (`focalCenterBias`). It used to be the **view's** midpoint
+  + 24, which coincides with the band's only when the chrome above and the
+  controls below are equally tall — in the action extension the bottom ~200pt go
+  to controls plus the home-indicator inset against 18pt at the top, so the word
+  sat ~110pt low under a void, and the trailing-context lane was squeezed to a
+  single truncated line. Three consequences:
+  - **The prose sits a third as far from the word as it used to, and the gap is
+    measured from the word's OWN edge.** `focalHalfHeight` is the greater of the
+    word label's line box and the reticule's reach (both scale with `wordFont`,
+    which is sized from the screen width — a fixed clearance crowds the glyph on
+    a wide screen); Phrases measures from the glass panel instead. On top of that
+    sit `focalProseGaps`: 20pt above / 31pt below in Words (a third of the ~60 /
+    ~92 the old flat 84 / 116 offsets left around a 30pt word), and Phrases keeps
+    its own tighter 14/14. **The pill row — link preview or completion badge — is
+    reserved only while something occupies it** (`FocalLanes.trailingTop`):
+    holding an empty 36pt row open under every word is most of what made the
+    lower gap large, and the row is nearly always empty (a link pill needs a
+    linkified word; the badge only appears at the end, where the trailing prose is
+    empty anyway). When a pill does appear the prose steps down inside the pill's
+    own fade, so it slides rather than jumps.
+  - **Each context lane is sized to its prose, not to the lane it may grow
+    into** (`textHeight(of:width:)`). The preceding lane keeps its bottom against
+    the focal band and grows upward; the trailing lane keeps its top against the
+    band and grows down. A label given the whole lane centres a short passage
+    inside it, which read as a hole above the prose and a second hole below it.
+    The sizing happens in `layoutContext`, which `updateContextText` CALLS —
+    that method only refreshes the source text (`precedingContextText` /
+    `followingContextText`). Without the call each lane kept the frame of the
+    prose it held one word ago, and since word zero has no preceding prose at
+    all, the opening words of an article arrived into a zero-height lane and
+    never appeared.
+  - **The preceding lane drops its OLDEST words word-wise**
+    (`fittedPrecedingProse`, a binary search over the drop count) rather than
+    asking UILabel for `.byTruncatingHead`, which ellipsises only the last
+    visible LINE: an overlong window then read as the article's oldest words, a
+    gap, and the words just before the focus — a hole cut out of the middle. It
+    overflows wherever the lane is short, i.e. inside a card, where the title
+    header stands over the reader. The trailing lane keeps `.byTruncatingTail`,
+    which drops its furthest words, which is what it wants.
+  - **Before there is any preceding prose the lane carries the article's
+    masthead** — title over byline (`mastheadContextText`) — instead of standing
+    empty through the opening words.
+  - **The controls lift off the bottom safe area on a roomy container** — 24pt
+    base gap plus up to 40pt more, granted only while the band still clears
+    `comfortableReadingBandHeight` (340pt) without it, so a short container keeps
+    every point for the reading group. Because the group is centred on the band,
+    it rises with them (`updateControlsBottomInset`, called first in
+    `viewDidLayoutSubviews` — the lift moves the band's floor).
+  - **`ReaderViewController`'s floating share circle hangs off the controls, not
+    the safe area** (`updateFloatingShareAnchor` → `controlsClearanceAnchor`, an
+    anchor rather than a measurement because a host reading the lift during its
+    own `viewDidLayoutSubviews` would read it a pass late). The old fixed `-168`
+    RSVP inset is gone. The circle still lands inside the trailing lane's
+    rectangle, so the host publishes its frame as `hostOverlayFrame` and the lane
+    gives up exactly that width (never narrowing past 140pt) rather than running
+    its prose underneath. Tests, all in `ReaderScreenTests`:
+    `testRSVPFocalWordRestsAtTheMidpointOfItsReadingBand`,
+    `…ContextLanesAreSizedToTheirProse…`,
+    `…PrecedingProseAppearsAsSoonAsThereIsAnyOfIt`,
+    `…PrecedingProseDropsItsOldestWordsWhenTheLaneOverflows`,
+    `…PrecedingLaneShowsTheMastheadAtTheStartOfTheArticle`,
+    `…ControlsLiftOffTheBottomOnlyWhenTheBandCanSpareIt`,
+    `…TrailingProseYieldsTheRowOnlyWhileAPillOccupiesIt`,
+    `…ShareButtonClearsRSVPControlsAndTrailingContext`.
 - **Shared chrome carries a subtle per-app tint.** `LunaSurfacePalette` resolves
   Reader (173/181/246), Downloader (204/118/9), or Price Tracker (7/255/157)
   from the host bundle-id component, including that host's extensions. Liquid
@@ -377,13 +476,15 @@ Fixed behavior: the **share extension** (`com.apple.share-services`) always save
 
 **Exits.** Every extension screen whose bottom-right corner is free carries the same
 floating Liquid Glass exit (`ExtensionExitButton`, LunaDesignSystem) instead of a
-navigation bar holding one "Done": the media save screen, the action extension's
-status/error screen, and `ShareReaderViewController`'s loading / saved / failure states —
-which hide the host's bar for exactly that reason. A checkmark where something WAS saved,
-an `xmark` where the screen is an error (never a checkmark over a failure). Two screens
-deliberately keep their existing exit: the in-sheet **reader** (its bottom-right is the
+navigation bar holding one "Done": the action extension's status/error screen and
+`ShareReaderViewController`'s loading / saved / failure states — which hide the host's bar
+for exactly that reason. A checkmark where something WAS saved,
+an `xmark` where the screen is an error (never a checkmark over a failure). Three screens
+deliberately keep their own: the **media save screen**, whose exits are a stack of
+full-width pills on the bottom safe area (Done under Delete, with the floating share
+circle above them — see `claudedocs/media-download.md`); the in-sheet **reader** (its bottom-right is the
 floating share control, and two hovering circles in one corner is worse than one bar
-button — `ShareReaderViewController.doneButton` documents this) and the extension **price
+button — `ShareReaderViewController.doneButton` documents this); and the extension **price
 editor** (its bottom-right is the alert-threshold footer, and it is the same object in-app,
 where the header control is the one the user already knows). The archive-CAPTCHA reader
 keeps its own bar buttons, so `presentArchiveReader` restores the navigation bar before
@@ -634,6 +735,93 @@ Regression tests: `ArticleExtractorTests.testArchivedArticleBeatsSubscriptionGat
 
 **A paywall is a property of the site at a MOMENT, not of the article (`.waybackPrePaywall`).** Newest-first is the wrong end of the capture history for an article the publisher metered years after publishing it. The Paris Review put its interview archive online free and walled it later, so every recent Wayback capture of a 1969 interview carries the same truncated preview the live page serves, while the 2010–2016 captures hold the whole ~50k-character piece. `.waybackPrePaywall` takes the OLDEST non-trivial 200 capture and is ranked AFTER `.waybackRaw` — newest is right for an article walled from publication, where the oldest capture is just an older wall, and the ranking costs nothing because the readability gate (now including `TruncationGateDetector`) discards whichever capture still carries the wall. **It is only SCHEDULED when that era could exist.** A story published this week was walled the day it went out, so its oldest capture is the identical wall and the lookup provably cannot help: `BypassStrategySelector` reads the page's own `article:published_time` / schema.org `datePublished` / `<time datetime>` (`PublicationDate`, zero network, no per-host knowledge) and omits the strategy when the page dates itself inside `ArticleFetcher.prePaywallCaptureMinimumAge` (180 days). An UNDATED page keeps it — absence of a date is not evidence of youth — and so does a page that never arrived at all (WSJ's 401 leaves no markup to date), where `ArticleFetcher.captureCouldPredateAWall` applies the same age test to the resolved capture timestamp as a backstop. That is what stops a save of today's paywalled news from paying for yesterday's long shot. This is the ONLY technique that can beat a server-side truncation: the rest of the body was never sent, so nothing done to the live page — crawler UA, referer, trailing dot, script blocking, `.directUnlock` — can recover it (verified against this page: a Googlebot UA gets a Cloudflare block, a Google referer gets the identical truncation). Tests: `WaybackCDXTests`, `PublicationDateTests`, `ArticleResolverTests.testPrePaywallCaptureBeatsATruncatedPreview`.
 
+**A refused CLIENT is not a verdict on the PAGE (`directFailure` / `silentTierExhausted`).** A free
+piratewires.com article was unsaveable, and nothing about it was paywalled: the host sits behind
+Vercel bot mitigation, which answers `x-vercel-mitigated: challenge` + **HTTP 429** and a "Vercel
+Security Checkpoint" body to every silent strategy — plain Safari UA, Googlebot, cookieless, and the
+jina reader, which faithfully relays the 429. A WKWebView loading the identical URL gets **200 and
+all 57 paragraphs on the first try**, because the mitigation keys on the CLIENT (TLS fingerprint,
+challenge JS actually executed) and not on volume or on the page. `ArticleIngestProcessor` already
+had the instinct — its comment names anti-bot front doors that reject URLSession while the browser
+leg still renders — but `.directUnlock` was reachable ONLY through a per-host unlock rule, and the
+hosts that need it most are exactly the ones the upstream table gives up on (piratewires.com is on
+its `noFix` list, which is why `SiteUnlockRules.isNoFix` is defined and deliberately never
+consulted). So `webPreStages` was empty and the page died as a terminal `.failed` before any browser
+was asked. Two SEPARATE flags now, because they answer different questions: **`directFailure`**
+decides whether a page has earned browser recovery at all, and is narrow on purpose —
+`SaveFailureReason.browserMayRecover` is true only for the client-refusal codes 401/403/429 (the
+same set whose failed-card copy already said "opening it in the browser often works"), so a 404
+still fails honestly instead of parking and a 5xx, Cloudflare's 503 interstitial included, stays a
+server fault rather than a recoverable one. **`silentTierExhausted`** is what the archive reader IS:
+it only ever opens for a page nothing silent could read, so the live page is the last untried
+authority and earns one browser load ahead of the archive CAPTCHA — skipped for a hard-paywall host
+(the wall is certain, so it would only delay the archive) and for a URL that is already a snapshot.
+Tests: `BypassTests.testClientRefusedRulelessHostEarnsTheBrowserLeg`,
+`.testNonRefusalFailuresDoNotEarnTheBrowserLeg`, `.testBrowserTier*`,
+`IngestPipelineBrowserFallbackTests.testBotMitigatedRulelessHostParksForBrowserRecovery`.
+
+Measured end to end against the live page with the shipped code, because every link in that chain
+was worth proving rather than assuming: the WKWebView load answers **200** (the `?comment=` intact),
+`directBypassStageProbeJavaScript` returns **`content-root` on the FIRST 0.35s tick** — via its
+`<h1>` + paragraph-prose fallback, since the page exposes no recognized article container — the
+whole-document extraction yields **9002 body chars** under the title "Inside the Coke-Fueled Rise and
+Fall of VICE", and `extractAndSave`'s gate passes, so the overlay is never revealed and the CAPTCHA
+flow is never reached. In an extension this needs no user action at all: `.needsArchive` →
+`ShareSurfaceDriver` → `ExtensionArticlePresenter.presentArchive` presents the reader immediately, so
+the recovery happens behind the 0.99 cover inside the share/action sheet and finishes on
+`onExtracted`. In the APP the item still parks as `.needsCaptcha` and the recovery runs when the card
+is opened (`ArchiveUnlockFlow`) — the pre-existing parked-card pattern, not something this changed.
+
+**The gate `extractAndSave` uses is `hasReadableBody`, and on this page that is load-bearing.**
+`ArticleExtraction.isReadableArticle(content, html:)` is **false** for the successfully-loaded Pirate
+Wires article: body 9002 (over the 1200 threshold) and the text alone doesn't read as walled, but
+`TruncationGateDetector` **false-positives** on the Substack subscribe furniture around the finished
+article, so the HTML-aware verdict says "truncated preview behind a gate". The reader survives that
+only because `extractAndSave` checks `content.hasReadableBody` — the text-only reading, which applies
+neither the truncation gate nor the declared-lock signal. So do NOT "strengthen" that call site to
+the HTML-aware predicate without first fixing the detector: it would reject a page whose entire
+article is in hand. (It also means the silent tier would have rejected this page had the fetch ever
+succeeded — which is a second, independent reason the browser leg is what saves this host.)
+
+**One wait must LOOK like one wait (`LoadingStatusLayout`).** Saving through the action extension
+runs two loading surfaces back to back in the same sheet — the extension's own wait, then the archive
+reader's cover — and every difference between them read as the UI glitching rather than as one wait
+continuing. Three of them, each with its own cause, all fixed together: **(1)** the header used to
+appear PARTWAY THROUGH, because the wait was views dropped onto `ShareViewController` and the reader
+became the first navigation root the sheet ever had; the wait is now a real root
+(`ExtensionLoadingViewController`) hosted through the same `hostInNavigation` path as every later
+screen, so one bar stands from the first frame, its button an `xmark` while the outcome is unknown and
+a `checkmark` once the article is actually saved (the reader's leading item was a permanent "Done",
+promising an outcome it did not have). **(2)** The spinner used to HOP UPWARDS: the reader centred a
+STACK of [spinner, label, button] while the extension centred the SPINNER, putting the reader's ~28pt
+higher. Both now call `LoadingStatusLayout` — spinner centred, copy beneath — so text can come and go
+without moving it. **(3)** The spinner used to CHANGE COLOUR, because the reader forced
+`GlassStyle.readingAccent` (the user's reader highlight, usually a bright blue) over
+`HorizonSpinnerView`'s horizon default. Don't reintroduce a per-surface tint or a per-surface layout
+here; the whole point is that neither surface owns the answer. Tests:
+`ExtensionLoadingContinuityTests`.
+
+**The cover covers: there is no translucent state and no setting for one.** The cover is
+`LunaColors.background` at 0.99 — a hair off opaque only so the loading controls composite crisply —
+and the page beneath is otherwise either hidden or, when a CAPTCHA needs solving, revealed outright
+via `isHidden`. It used to have one more state: a five-tap gesture dropped it to 0.1, which is
+trivially triggered by tapping at something that looks stuck, and produced exactly the report of "the
+overlay went transparent, spinner still on it, page showing through, no CAPTCHA". That gesture is
+gone. Worth knowing for the next such report: `LunaArchiveReader` reads **no** `UserDefaults` at all,
+and no alpha/opacity setting exists anywhere in the codebase, so a translucent cover is never a
+stale preference — it can only be code.
+
+**A comment deep link is not a different article.** The same save carried
+`?comment=308157614`, and `comment`/`commentId` were not in
+`URLClassification.trackingParameterNames` — so the archive tier, which is keyed on the exact URL,
+asked for a URL nobody has ever captured: archive.today's TimeMap holds two snapshots of the bare
+article and 404s ("no Mementos") for the comment-suffixed form, and Wayback's CDX returns `[]`. A
+link copied out of a comment thread could therefore never reach a snapshot sitting right there.
+They are in the noise list now — the same class of thing as the fragment `canonicalURL` already
+drops — which also dedupes two saves of one article differing only by comment id, and because
+`URLUnwrapper` strips on ingest it fixes every archive lookup at once rather than the archive path
+alone.
+
 **A wall that REDIRECTS instead of gating: the `?amp` unlock (`AMPQueryBypass`).** News
 Corp Australia (`theaustralian.com.au` + 13 sibling mastheads) doesn't serve a teaser
 at the article URL — it 302s the request onto `…/subscribe/news/1/?dest=<article>`
@@ -716,7 +904,7 @@ branch of `extractAndSave` picks the RICHEST matching container for the same rea
 
 **Snapshot resolution (avoid the `/newest/` loop).** Hitting `archive.is/newest/<url>` cold triggers archive.today's self-reloading CAPTCHA loop. So the reader loads the **`archive.is/` homepage** and reaches the snapshot the way the site itself does: a **`pollTimer`** (1.3s; a timer, not `didFinish`, because clearing the CAPTCHA is often an in-page transition that fires no navigation callback) runs `checkStage()` → a JS probe returning `challenge` / `homepage:<len>` / `page:<len>`, mapped to an action by the pure, unit-tested **`decideStage(...)`** (see `ArchiveStageDecisionTests`). **Before** submitting (`!didLeaveHomepage`), a `homepage` stage (the `input[name=url]` search box is present = gate cleared) means **types the article URL into `input[name=url]` and submits the form** (`submitURLOnHomepage` — POSTs to `/submit/`, which 302-redirects to the existing snapshot for an already-archived page; this is exactly the working manual flow), or loads the TimeMap-resolved snapshot if one resolved first. **After** submitting, a lingering `homepage:<len>` is NOT re-treated as the homepage: archive.today's chrome carries that `input[name=url]` box on **every** page (homepage, the `/wip/` progress shell, AND the rendered snapshot), so it falls through to the same length gate as `page` — on `len>1500` it calls `extractAndSave`, whose `hasReadableBody` (≥600 block chars, not paywalled) is the final arbiter. This is what catches the **`/wip/` → article transition** (archive.today renders the saved article in place at the `/wip/<id>` URL, firing no navigation callback): the progress shell's request-log has no article blocks and fails the readability gate (keep polling), the rendered article passes and extracts → `onExtracted` closes the web view into the native reader. (Without this, the ever-present url-box pinned the spinner forever once `/wip/` rendered the article.) In parallel, `ArticleFetcher.resolveNewestArchiveSnapshot` (Memento TimeMap `/timemap/<url>` → `newestMemento(fromTimeMap:)`, a clean read endpoint off the CAPTCHA'd write path) is a best-effort fast path. See `archive-today-research.md` (DNS/EDNS + IP reputation are the real loop drivers; archive.today uses reCAPTCHA, which WKWebView *can* solve, not Turnstile).
 
-**Hidden flow + escape hatches.** The raw archive.today navigation is covered by an opaque themed overlay (spinner, "Unlocking article…"); `checkStage` reveals the web view ONLY when `stage == challenge` (the user solves the CAPTCHA), re-covering for every automated step, then dismisses into the native reader. **Terminal failures display IN the overlay, not a popup** (`showTerminalMessage`): the spinner stops, the cover goes fully opaque, and it shows a message plus an **"Open in Safari"** button (hidden in extensions). Cases: (1) **rate-limit** — a 429 loop (≥3) or the **stall guard** (overlay covering the page ~30s without progress) shows the rate-limit guidance; (2) **un-archivable** — archive.today's capture-session error **"Error -32602: Invalid InterceptionId"** (probe stage `error`, matched on the code or the phrase) is terminal — no retry/solve helps — and shows "This site can't be archived right now."; (3) **JS/ad-blocker gate** — archive.today's "Please enable JS and disable any ad blocker" interstitial (probe stage `blocked`, matched on a SHORT body so real articles can't trip it) doesn't clear in a WKWebView (JS is on; we install no content blocker), so after `blockedPollLimit` (3 ticks ≈ 4s, tolerating a transient flash) it shows the same un-archivable message + Safari escape. `showTerminalMessage` invalidates the `pollTimer` and latches `didShowTerminalMessage` so no in-flight probe re-covers/re-drives the page; the timer is also invalidated in `viewDidDisappear`. The submit fills `input[name=url]` and submits immediately (no `submitid` wait — that was the build-79 "spinner forever" regression).
+**Hidden flow + escape hatches.** The raw archive.today navigation is covered by an opaque themed overlay (spinner, "Unlocking article…"); `checkStage` reveals the web view ONLY when `stage == challenge` (the user solves the CAPTCHA), re-covering for every automated step, then dismisses into the native reader. **The cover leaves WITH the controller, never before it** (`uncoversPageAfterExtraction`): a successful extraction used to un-hide the web view and then fire `onExtracted`, but that handler is precisely the thing that takes the controller away — the app dismisses the modal and opens the item's reader, the extensions swap it out of their nav stack — so the raw archive/publisher page played under the whole dismissal animation. Setting `onExtracted` now means the cover stays up through it (and the status cycler stops, so the wording can't change halfway down), showing whatever it was already showing. It comes off only where `onExtracted` is nil, i.e. the DEBUG roots, where the unlocked page is what the user reads. **Terminal failures display IN the overlay, not a popup** (`showTerminalMessage`): the spinner stops, the cover goes fully opaque, and it shows a message plus an **"Open in Safari"** button (hidden in extensions). Cases: (1) **rate-limit** — a 429 loop (≥3) or the **stall guard** (overlay covering the page ~30s without progress) shows the rate-limit guidance; (2) **un-archivable** — archive.today's capture-session error **"Error -32602: Invalid InterceptionId"** (probe stage `error`, matched on the code or the phrase) is terminal — no retry/solve helps — and shows "This site can't be archived right now."; (3) **JS/ad-blocker gate** — archive.today's "Please enable JS and disable any ad blocker" interstitial (probe stage `blocked`, matched on a SHORT body so real articles can't trip it) doesn't clear in a WKWebView (JS is on; we install no content blocker), so after `blockedPollLimit` (3 ticks ≈ 4s, tolerating a transient flash) it shows the same un-archivable message + Safari escape. `showTerminalMessage` invalidates the `pollTimer` and latches `didShowTerminalMessage` so no in-flight probe re-covers/re-drives the page; the timer is also invalidated in `viewDidDisappear`. The submit fills `input[name=url]` and submits immediately (no `submitid` wait — that was the build-79 "spinner forever" regression).
 
 The archive cover starts with a 99% opaque background. Tapping it five times lowers
 that background to 10% for the current session and disables its touch handling, so

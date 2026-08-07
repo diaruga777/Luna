@@ -204,10 +204,10 @@ public struct ArticleExportService {
                 guard let presenter else { return }
                 guard let fileURL else {
                     let alert = UIAlertController(
-                        title: L10n.string("Couldn't Export Article"),
-                        message: L10n.string("This article has no readable content to export."),
+                        title: L10n.string("Reader_export_failureTitle"),
+                        message: L10n.string("Reader_export_failureMessage"),
                         preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: L10n.string("OK"), style: .default))
+                    alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
                     presenter.present(alert, animated: true)
                     return
                 }

@@ -84,11 +84,19 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
         }
     }
 
+    /// The settle loop's pacing. Only tests write these: capturing a fixture
+    /// page is otherwise several real seconds of waiting for a layout that
+    /// settled on the first sample. The SHAPE of the loop — a first turn, then
+    /// three identical signatures, then a cap — is what the tests exercise, so
+    /// shrinking the intervals costs no coverage.
+    static var settleFirstTurn: Duration = .milliseconds(500)
+    static var settlePollInterval: Duration = .milliseconds(250)
+
     private func waitForStableLayout() async {
         // Always give post-load work one turn before sampling. Then require three
         // identical signatures, capped at four seconds so animation/ad churn cannot
         // consume the whole capture timeout.
-        try? await Task.sleep(for: .milliseconds(500))
+        try? await Task.sleep(for: Self.settleFirstTurn)
         var previous: String?
         var stableSamples = 0
         for _ in 0..<14 {
@@ -115,7 +123,7 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
                 previous = signature
                 stableSamples = 0
             }
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await Task.sleep(for: Self.settlePollInterval)
         }
     }
 

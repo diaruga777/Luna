@@ -2,9 +2,10 @@
 //  CardPlaybackSpeedTests.swift
 //  LunaTests
 //
-//  A paused media card shows its playback controls: the position bar under the
-//  card and, above the bar's left end, the glass speed pill. These tests pin
-//  the three halves of that contract — when the controls are up, what the pill
+//  A paused media card shows its playback controls: the position bar inside
+//  the card's bottom edge (over a soft black scrim for contrast) and, above
+//  the bar's left end, the glass speed pill. These tests pin the halves of
+//  that contract — when the controls are up, where they sit, what the pill
 //  offers, and that the chosen speed is remembered PER ITEM in memory (so a
 //  card unmounted two slots out comes back at the speed the user left it) and
 //  never written to disk.
@@ -197,6 +198,57 @@ final class CardPlaybackSpeedTests: XCTestCase {
 
         XCTAssertEqual(content.playbackSpeed, 2)
         XCTAssertEqual(carousel.playbackSpeedPillForTesting?.speed, 2)
+    }
+
+    /// The pill is frame-managed, so a picked speed must re-fit the frame to
+    /// the new label — "0.25×" is wider than "1×", and inside the old width it
+    /// wrapped onto a second line.
+    @MainActor
+    func testPickingAWiderSpeedRefitsThePillToOneLine() throws {
+        let content = StubPlayableContent()
+        let (carousel, _) = makeDeck(content)
+        content.setPlaying(false)
+        let pill = try XCTUnwrap(carousel.playbackSpeedPillForTesting)
+        let narrowWidth = pill.frame.width
+
+        pill.selectSpeedForTesting(0.25)
+
+        let fitted = pill.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        XCTAssertGreaterThan(pill.frame.width, narrowWidth, "0.25× needs more room than 1×")
+        XCTAssertEqual(pill.frame.width, fitted.width, accuracy: 0.5)
+        XCTAssertEqual(
+            pill.frame.height, fitted.height, accuracy: 0.5,
+            "a frame at the fitting size cannot be wrapping its title")
+    }
+
+    /// The bar sits INSIDE the card, bare over the video (no backdrop of its
+    /// own), riding the controls inset above the card's bottom edge with the
+    /// pill floating above its left end.
+    @MainActor
+    func testPausedControlsSitInsideTheCard() throws {
+        let content = StubPlayableContent()
+        let (carousel, _) = makeDeck(content)
+        content.setPlaying(false)
+
+        let bar = try XCTUnwrap(carousel.playbackScrubBarFrameForTesting)
+        let card = try XCTUnwrap(carousel.cardView(at: 0))
+        XCTAssertTrue(card.frame.contains(bar), "the bar overlays the video now")
+        XCTAssertEqual(bar.maxY, card.frame.maxY - 12, accuracy: 0.5)
+
+        let pillFrame = try XCTUnwrap(carousel.playbackSpeedPillFrameForTesting)
+        XCTAssertEqual(pillFrame.maxY, bar.minY - 8, accuracy: 0.5)
+        XCTAssertEqual(pillFrame.minX, bar.minX, accuracy: 0.5)
+    }
+
+    /// Local playback must start the instant the card centers — the player is
+    /// configured to never trade start latency for stall insurance.
+    @MainActor
+    func testVideoPlayerDoesNotWaitToMinimizeStalling() {
+        let content = VideoCardContentViewController(
+            fileURL: URL(fileURLWithPath: "/dev/null"))
+        content.loadViewIfNeeded()
+
+        XCTAssertFalse(content.playerForTesting.automaticallyWaitsToMinimizeStalling)
     }
 
     @MainActor

@@ -41,7 +41,7 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         seedMedia(count: 2)
         seedFailedSaves(count: 2)
 
-        let deck = SavedMediaCardsViewController()
+        let deck = MediaCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
@@ -59,7 +59,7 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         seedMedia(count: 2)
         seedFailedSaves(count: 1)
 
-        let deck = SavedMediaCardsViewController()
+        let deck = MediaCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
@@ -87,7 +87,7 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         seedMedia(count: 2)
         var failed = seedFailedSaves(count: 2)
 
-        let deck = SavedMediaCardsViewController()
+        let deck = MediaCardDeck.makeRoot()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
@@ -116,14 +116,19 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         SavedMediaDeckFixtures.seedMedia(count: count, prefix: "deck-slot")
     }
 
+    /// Deliberately OLDER than the media rows. The deck orders every card by
+    /// save date now that one provider builds them all, so "failed saves sit
+    /// after the media rows" is a statement about their dates rather than about
+    /// a second index space appended to the first.
     @discardableResult
     private func seedFailedSaves(count: Int) -> [ReadingListItem] {
+        let base = Date().addingTimeInterval(-3600)
         let items = (0..<count).map { offset in
             ReadingListItem(
                 seed: "deck-slot-failed-\(offset)",
                 urlString: "https://broken.example.com/deck-slot-\(offset)",
                 title: nil,
-                dateAdded: Date().addingTimeInterval(TimeInterval(-offset * 60)),
+                dateAdded: base.addingTimeInterval(TimeInterval(-offset * 60)),
                 state: .failed)
         }
         ReadingListStore.shared.seedForTesting(items: items, contents: [:])

@@ -21,6 +21,23 @@ public enum ImageDownsampling {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
             return nil
         }
+        return decode(source: source, scale: scale, maxPixelSize: maxPixelSize)
+    }
+
+    /// The same decode for bytes already in memory — a thumbnail that came off the
+    /// network and is never written to disk (the import review list's previews).
+    /// Safe to call off the main thread.
+    public static func decode(data: Data, scale: CGFloat, maxPixelSize: CGFloat) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return nil
+        }
+        return decode(source: source, scale: scale, maxPixelSize: maxPixelSize)
+    }
+
+    private static func decode(
+        source: CGImageSource, scale: CGFloat, maxPixelSize: CGFloat
+    ) -> UIImage? {
         let thumbnailOptions = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceShouldCacheImmediately: true,

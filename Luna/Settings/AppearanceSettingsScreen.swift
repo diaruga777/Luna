@@ -14,7 +14,7 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        headerTitle = L10n.string("Appearance")
+        headerTitle = L10n.string("Settings_appearance_title")
         super.viewDidLoad()
     }
 
@@ -23,7 +23,7 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        L10n.string("Theme")
+        L10n.string("Settings_appearance_themeSectionHeader")
     }
 
     override func tableView(

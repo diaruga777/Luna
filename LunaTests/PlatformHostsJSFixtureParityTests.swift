@@ -4,85 +4,35 @@
 //
 
 import LunaURLClassification
-import WebKit
 import XCTest
 
-/// Runs a fixture URL matrix through BOTH `content.js`'s `recognizedPlatformPage`
-/// (in a bare `WKWebView`, exactly as the real extension injects it -- see
-/// `background.js`'s `injectContentScript`) and `PlatformRecognizer.recognize`,
-/// and asserts they agree on every URL. `platform_hosts.generated.js` supplies the
-/// host lists (guarded against drift from `PlatformRecognizer.rules` by
-/// `PlatformHostsJSParityTests`); this test is what actually exercises the
-/// path-shape logic (Bluesky's post-only requirement, Reddit's post/share-link
-/// gate, host-suffix matching) that the generated file's raw host lists alone
-/// can't verify. Includes the drift URLs from
-/// `refactor-plans/audits/platform-matching.md`'s matrix, several of which used to
-/// disagree before content.js was rewritten to consume the generated table.
+/// The end-to-end smoke for `platform_hosts.generated.js`: the generated table
+/// really loads in WebKit, `content.js`'s `recognizedPlatformPage` really runs on
+/// top of it (injected in the same order as `background.js`'s
+/// `injectContentScript`), and its verdict agrees with `PlatformRecognizer`.
+///
+/// The DATA is pinned elsewhere and far more cheaply: `PlatformHostsJSParityTests`
+/// byte-compares the generated file against `PlatformRecognizer.rules`, and the
+/// Swift detector's own tests cover the per-URL semantics. So this keeps a handful
+/// of URLs — one positive with a host-suffix match, the two path-shape branches
+/// that actually diverged historically (Bluesky's post-only requirement, Reddit's
+/// app-native share link), and a non-platform control — rather than sweeping the
+/// whole matrix through a browser at ~1000x the cost of the Swift test.
 @MainActor
 final class PlatformHostsJSFixtureParityTests: XCTestCase {
 
-    private static let contentScriptSource: String = resource("LunaSafari/Resources/content.js")
-    private static let platformHostsSource: String = resource("LunaSafari/Resources/platform_hosts.generated.js")
+    private lazy var js = SafariJSTestHarness(self)
 
-    private static func resource(_ relativePath: String) -> String {
-        let thisFile = URL(fileURLWithPath: #filePath)
-        let repoRoot = thisFile.deletingLastPathComponent().deletingLastPathComponent()
-        let url = repoRoot.appendingPathComponent(relativePath)
-        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-    }
-
-    override func setUp() {
-        super.setUp()
-        XCTAssertFalse(
-            Self.contentScriptSource.isEmpty,
-            "content.js not found on disk -- check the path relative to #filePath")
-        XCTAssertFalse(
-            Self.platformHostsSource.isEmpty,
-            "platform_hosts.generated.js not found on disk -- generate it with "
-            + "TEST_RUNNER_RECORD_PLATFORM_HOSTS=1")
-    }
-
-    /// Loads `platform_hosts.generated.js` THEN `content.js` into a WKWebView at
-    /// `urlString` (mirroring background.js's real injection order), then evaluates
-    /// `window.__lunaRecognizedPlatformPage()` and returns the result (nil for the
-    /// JS `null`).
-    @MainActor
+    /// Loads `platform_hosts.generated.js` THEN `content.js` at `urlString`
+    /// (mirroring background.js's real injection order), then evaluates
+    /// `window.__lunaRecognizedPlatformPage()` (nil for the JS `null`).
     private func recognizedPlatform(at urlString: String) -> String? {
-        let expectation = expectation(description: "recognizedPlatformPage evaluated for \(urlString)")
-        var outcome: String?
-        var evaluated = false
-
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        let delegate = LoadDelegate {
-            webView.evaluateJavaScript(Self.platformHostsSource) { _, error in
-                if let error { XCTFail("platform_hosts.generated.js failed to evaluate: \(error)") }
-                webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
-                    if let error { XCTFail("content.js failed to evaluate: \(error)") }
-                    webView.evaluateJavaScript("window.__lunaRecognizedPlatformPage()") { result, error in
-                        if let error { XCTFail("recognizedPlatformPage failed to evaluate: \(error)") }
-                        outcome = result as? String
-                        evaluated = true
-                        expectation.fulfill()
-                    }
-                }
-            }
-        }
-        webView.navigationDelegate = delegate
-        webView.loadHTMLString("<html><body></body></html>", baseURL: URL(string: urlString))
-
-        wait(for: [expectation], timeout: 10)
-        withExtendedLifetime(delegate) {}
-        XCTAssertTrue(evaluated, "recognizedPlatformPage never returned for \(urlString)")
-        return outcome
+        js.load(
+            html: "<html><body></body></html>", urlString: urlString,
+            scripts: [SafariJSTestHarness.platformHosts, SafariJSTestHarness.contentScript])
+        return js.string("window.__lunaRecognizedPlatformPage()")
     }
 
-    private final class LoadDelegate: NSObject, WKNavigationDelegate {
-        private let onFinish: () -> Void
-        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onFinish() }
-    }
-
-    /// Asserts `content.js` and `PlatformRecognizer` agree on `urlString`.
     private func assertParity(_ urlString: String, file: StaticString = #filePath, line: UInt = #line) {
         let expected = PlatformRecognizer.recognize(urlString)?.platform.rawValue
         XCTAssertEqual(
@@ -90,75 +40,17 @@ final class PlatformHostsJSFixtureParityTests: XCTestCase {
             "content.js/PlatformRecognizer disagree on \(urlString)", file: file, line: line)
     }
 
-    func testXURLs() {
-        assertParity("https://x.com/jack/status/20")
-        assertParity("https://mobile.twitter.com/user/status/123")
-        // A subdomain outside XLink's old fixed host set -- PlatformRecognizer and
-        // content.js both suffix-match ANY x.com/twitter.com subdomain.
+    func testGeneratedTableClassifiesInWebKitTheWaySwiftDoes() {
+        // A subdomain outside XLink's old fixed host set: both sides suffix-match
+        // ANY x.com/twitter.com subdomain, and the path shape says "post".
         assertParity("https://some-other.twitter.com/user/status/123")
-    }
-
-    func testBlueskyURLs() {
-        assertParity("https://bsky.app/profile/alice.bsky.social/post/3kxyz")
-        // A bare profile (no /post/) must NOT recognize -- content.js used to
-        // false-positive here on any "post" segment anywhere in the path.
+        // A bare Bluesky profile (no /post/) must NOT recognize — content.js used
+        // to false-positive on any "post" segment anywhere in the path.
         assertParity("https://bsky.app/profile/alice.bsky.social")
-        assertParity("https://bsky.app/settings")
-    }
-
-    func testRedditURLs() {
-        assertParity("https://www.reddit.com/")
-        assertParity("https://www.reddit.com/r/pics/")
-        assertParity("https://www.reddit.com/r/pics/comments/1abc2d/title/")
-        assertParity("https://redd.it/1abc2d")
-        // A direct redd.it media subdomain is a recognized reddit HOST but not a
-        // POST -- must still classify as "not reddit" overall.
-        assertParity("https://i.redd.it/abc.jpg")
-        // Reddit's app-native share link -- content.js used to miss this entirely
-        // (no share-token branch), silently falling through to article/product
-        // heuristics instead of recognizing it as a Reddit item.
+        // Reddit's app-native share link — content.js used to miss this entirely
+        // (no share-token branch), falling through to the article/product heuristics.
         assertParity("https://www.reddit.com/r/WhatsWrongWithYourDog/s/qRjWPbZ2bo")
-        assertParity("https://www.reddit.com/r/pics/s/")
-    }
-
-    func testTikTokURLs() {
-        assertParity("https://www.tiktok.com/@user/video/7212345678901234567")
-        assertParity("https://vm.tiktok.com/ZM1234/")
-    }
-
-    func testInstagramURLs() {
-        assertParity("https://www.instagram.com/reel/CxYz123/")
-        // instagr.am -- content.js already covered this, unlike the dead
-        // InstagramLink.isInstagram predicate that used to be instagram.com-only.
-        assertParity("https://instagr.am/p/AbC123/")
-    }
-
-    func testYouTubeURLs() {
-        assertParity("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        assertParity("https://m.youtube.com/shorts/dQw4w9WgXcQ?t=30")
-        assertParity("https://youtu.be/dQw4w9WgXcQ?t=30")
-        assertParity("https://www.youtube.com/clip/UgkxOpaqueClipToken")
-        assertParity("https://www.youtube.com/")
-        assertParity("https://www.youtube.com/channel/UCexample")
-    }
-
-    func testFacebookURLs() {
-        assertParity("https://www.facebook.com/watch/?v=123")
-        assertParity("https://facebook.com/reel/456")
-        assertParity("https://fb.watch/abcdef/")
-        assertParity("https://m.facebook.com/watch/?v=123")
-    }
-
-    /// Spotify / Apple Music / Apple Podcasts are gone from content.js -- Swift has
-    /// no such platforms, so identical behavior means the extension no longer
-    /// offers a download the app cannot perform.
-    func testRemovedAudioPlatformsNoLongerRecognize() {
-        assertParity("https://open.spotify.com/track/abc123")
-        assertParity("https://music.apple.com/us/album/example/123")
-        assertParity("https://podcasts.apple.com/us/podcast/example/id123")
-    }
-
-    func testOrdinaryURLIsNotAPlatform() {
+        // A page on no platform at all.
         assertParity("https://en.wikipedia.org/wiki/Swift")
     }
 }

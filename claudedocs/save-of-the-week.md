@@ -186,14 +186,24 @@ page-pan test), so the two gestures never fight.
 
 ## Promotion and proposals
 
-`WeeklyPromotionMenu` adds one action to all three decks' long-press menus,
-above Archive/Delete. Failed saves get neither verb.
+`WeeklyPromotionMenu` adds one or two actions to all three decks' long-press
+menus, above Archive/Delete. Failed saves get no verb at all.
 
-- **Key-holder**: "Promote to {Save|Read|Download|Deal} of the Week" — confirm,
-  sign, write the record, and mirror the pick into the local store so it shows
-  immediately instead of waiting for the next fetch.
-- **Everyone else**: "Propose Save of the Week" — writes a proposal record. A
-  signed-out iCloud account is reported rather than failing silently.
+- **Everyone, key-holder included**: "Propose Save of the Week" — writes a
+  proposal record. A signed-out iCloud account is reported rather than failing
+  silently.
+- **Key-holder, additionally and first**: "Promote to {Save|Read|Download|Deal}
+  of the Week" — confirm, sign, write the record, and mirror the pick into the
+  local store so it shows immediately instead of waiting for the next fetch.
+
+**The key ADDS a verb; it never removes one.** Holding it is a capability, not
+a mode: the curator still works the proposal queue, and a link they want to
+queue rather than publish today belongs in it like anyone else's — the previous
+either/or meant the only way to queue one was to remove your own key. The one
+consequence: `createProposal` marks its own record name seen in the store
+(`WeeklySaveStore.markProposalSeen`, additive, unlike the pruning
+`markProposalsSeen` the inbox check uses), so the curator is never notified
+about their own submission.
 
 The curator's inbox is `Settings → Save of the Week`, a category
 `SettingsViewController` appends only when `WeeklyPromotionKeyStore.isKeyHolder`

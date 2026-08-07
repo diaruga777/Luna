@@ -11,7 +11,7 @@ final class PhotosReferenceBadgeView: UIButton {
         super.init(frame: .zero)
         setImage(Self.icon, for: .normal)
         imageView?.contentMode = .scaleAspectFit
-        accessibilityLabel = L10n.string("Open in Photos")
+        accessibilityLabel = L10n.string("Downloader_mediaCard_photosBadgeAccessibilityLabel")
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.28
         layer.shadowRadius = 2

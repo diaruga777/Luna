@@ -116,7 +116,7 @@ final class AppOnboardingViewController: UIViewController {
     private(set) var saveDemoController: OnboardingSaveDemoController?
     private var savedRootViewController: UIViewController?
     private var savedCardWaveSnapshot: UIImage?
-    private var introCorona: EclipseCoronaView?
+    private var introCorona: UIView?
     private var keepsIntroCorona = true
     private var externalReturn = ExternalReturn.none
     private var didConfigureGuides = false
@@ -166,8 +166,7 @@ final class AppOnboardingViewController: UIViewController {
         self.setupReplayOriginSnapshot = setupReplayOriginSnapshot
         self.completion = completion
         self.intro = OnboardingIntroCardContentViewController(
-            introCopy: configuration.introCopy,
-            supportingText: configuration.supportingText)
+            introCopy: configuration.introCopy)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -257,11 +256,6 @@ final class AppOnboardingViewController: UIViewController {
         let starfield = StarfieldView.install(behindContentsOf: view)
         carousel.chromeBackdrop = starfield
         var style = CardCarouselStyle()
-        style.edgeGap = 10
-        style.cardFit = .aspectFromBottom
-        style.cardTopOverflow = 48
-        style.pagesOnInCardSwipes = false
-        style.scrubberStyle = .miniCards
         style.scrubberHorizontalInset = 56
         style.scrubberEdgeFadeWidth = 28
         style.showsCardBorder = true
@@ -321,7 +315,7 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func applyTopInset() {
-        carousel.setTopInset(view.safeAreaInsets.top + 48)
+        carousel.setTopInset(view.safeAreaInsets.top + CardDeckGeometry.topClearance)
     }
 
     private func layoutIntroCorona() {
@@ -337,10 +331,10 @@ final class AppOnboardingViewController: UIViewController {
 
         if introCorona?.bounds.size != cardFrame.size {
             introCorona?.removeFromSuperview()
-            // This is a fresh UIKit reconstruction of the transition's peak
-            // corona. It visually replaces the launch raster; the splash view
-            // itself is still free to fade out and be discarded.
-            let corona = AppLaunchTransition.makePeakCoronaView(
+            // The same artwork the splash draws, at the same frame, so the
+            // launch view is free to fade out and be discarded without anything
+            // on screen changing.
+            let corona = AppLaunchTransition.makeCoronaCardView(
                 cardFrame: cardFrame)
             view.insertSubview(corona, belowSubview: carousel.view)
             introCorona = corona
@@ -1556,8 +1550,8 @@ final class AppOnboardingViewController: UIViewController {
               let target = savedRootViewController?.appLaunchTransitionTarget(),
               let frame = target.appLaunchTargetFrame(in: window)
         else {
-            return AppLaunchGeometry.fallbackRootCardFrame(
-                in: view.bounds,
+            return CardDeckGeometry.cardFrame(
+                inScreenSize: view.bounds.size,
                 safeAreaInsets: view.safeAreaInsets)
         }
         return view.convert(frame, from: window)

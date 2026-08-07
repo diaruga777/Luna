@@ -66,81 +66,75 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
 
     // MARK: - Unsupported cross-app saves are discarded
 
-    func testUnsupportedInteractiveSaveIsDiscardedAndPresented() async {
+    /// The ONE call-site wiring proof for this surface: `ingest` asks the gate,
+    /// and a dropped save leaves NOTHING — neither the row nor a copied document
+    /// file — while the interactive presenter names the owning app. Which
+    /// (app, kind) pairs are dropped is `SurfaceSupportTests`' matrix.
+    func testUnsupportedSaveIsDiscardedWholeAndPresented() async {
         let ingestor = makeIngestor(decision: unsupportedDecision)
-        let item = store.add(urlString: "https://bsky.app/profile/a/post/1", source: .paste)
+        let pasted = store.add(urlString: "https://bsky.app/profile/a/post/1", source: .paste)
 
-        let decision = await ingestor.ingest(item)
+        let decision = await ingestor.ingest(pasted)
 
         XCTAssertEqual(decision, .unsupported(owner: .downloader))
-        XCTAssertNil(store.item(withID: item.id), "nothing may remain in the store")
+        XCTAssertNil(store.item(withID: pasted.id), "nothing may remain in the store")
         XCTAssertEqual(presentedOwners, [.downloader])
-    }
 
-    func testUnsupportedDocumentSaveDeletesCopiedSourceFile() async {
-        let ingestor = makeIngestor(decision: unsupportedDecision)
-        var item = pendingDocumentItem(seed: "gate-doc")
-        item.captureSource = .manual
-        store.seedForTesting(items: [item], contents: [:])
+        // The other half of "nothing remains": a document's copied source file.
+        var document = pendingDocumentItem(seed: "gate-doc")
+        document.captureSource = .manual
+        store.seedForTesting(items: [document], contents: [:])
         let sourceFile = store.articlesDirectory
-            .appendingPathComponent("\(item.id.uuidString)-source.pdf")
+            .appendingPathComponent("\(document.id.uuidString)-source.pdf")
         try? Data("pdf".utf8).write(to: sourceFile)
 
-        let decision = await ingestor.ingest(item)
+        let documentDecision = await ingestor.ingest(document)
 
-        XCTAssertEqual(decision, .unsupported(owner: .reader))
-        XCTAssertNil(store.item(withID: item.id))
+        XCTAssertEqual(documentDecision, .unsupported(owner: .reader))
+        XCTAssertNil(store.item(withID: document.id))
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceFile.path))
     }
 
-    // MARK: - No more source exemptions: .email / .friendShare are gated too
+    // MARK: - No source exemptions
 
-    func testEmailSourceIsAlsoDroppedWhenOutcomeIsUnsupported() async {
+    /// Not a kind question, so not the matrix's: EVERY capture source is gated,
+    /// including the two that used to be exempt.
+    func testNoCaptureSourceIsExemptFromTheGate() async {
         let ingestor = makeIngestor(decision: unsupportedDecision)
-        var item = pendingDocumentItem(seed: "email-doc")
-        item.captureSource = .email
-        store.seedForTesting(items: [item], contents: [:])
 
-        let decision = await ingestor.ingest(item)
+        for source in [CaptureSource.email, .friendShare, .manual, .shareSheet] {
+            var item = pendingDocumentItem(seed: "src-\(source)")
+            item.captureSource = source
+            store.seedForTesting(items: [item], contents: [:])
 
-        XCTAssertEqual(decision, .unsupported(owner: .reader))
-        XCTAssertNil(store.item(withID: item.id), "email saves are no longer exempt from the gate")
+            let decision = await ingestor.ingest(item)
+
+            XCTAssertEqual(decision, .unsupported(owner: .reader), "\(source)")
+            XCTAssertNil(store.item(withID: item.id), "\(source) saves are not exempt from the gate")
+        }
     }
 
-    func testFriendShareSourceIsAlsoDroppedWhenOutcomeIsUnsupported() async {
+    // MARK: - When the drop is allowed to speak
+
+    /// The presenter is for a save the user is watching: the background sweep and
+    /// a `.shareSheet` leftover discard silently.
+    func testOnlyInteractiveSavesPresentTheDrop() async {
         let ingestor = makeIngestor(decision: unsupportedDecision)
-        var item = pendingDocumentItem(seed: "friend-doc")
-        item.captureSource = .friendShare
-        store.seedForTesting(items: [item], contents: [:])
+        let sweptItem = store.add(urlString: "https://bsky.app/profile/a/post/2", source: .shareSheet)
 
-        let decision = await ingestor.ingest(item)
-
-        XCTAssertEqual(decision, .unsupported(owner: .reader))
-        XCTAssertNil(store.item(withID: item.id), "friend-share saves are no longer exempt from the gate")
-    }
-
-    // MARK: - Background sweep: silent discard
-
-    func testBackgroundSweepDiscardsUnsupportedLeftoversWithoutPresenting() async {
-        let ingestor = makeIngestor(decision: unsupportedDecision)
-        let item = store.add(urlString: "https://bsky.app/profile/a/post/2", source: .shareSheet)
-
-        let decision = await ingestor.ingest(item, allowsInteractivePrompt: false)
+        let decision = await ingestor.ingest(sweptItem, allowsInteractivePrompt: false)
 
         XCTAssertEqual(decision, .unsupported(owner: .downloader))
-        XCTAssertNil(store.item(withID: item.id))
+        XCTAssertNil(store.item(withID: sweptItem.id))
         XCTAssertTrue(presentedOwners.isEmpty, "the sweep has no UI")
-    }
 
-    func testShareSheetLeftoverNeverPresentsEvenInteractively() async {
-        // A `.shareSheet` item re-ingested in the foreground (e.g. retry) still
+        // A `.shareSheet` item re-ingested in the FOREGROUND (e.g. a retry) still
         // never presents — the presenter fires for `.paste`/`.manual` saves only.
-        let ingestor = makeIngestor(decision: unsupportedDecision)
-        let item = store.add(urlString: "https://bsky.app/profile/a/post/3", source: .shareSheet)
+        let leftover = store.add(urlString: "https://bsky.app/profile/a/post/3", source: .shareSheet)
 
-        _ = await ingestor.ingest(item)
+        _ = await ingestor.ingest(leftover)
 
-        XCTAssertNil(store.item(withID: item.id))
+        XCTAssertNil(store.item(withID: leftover.id))
         XCTAssertTrue(presentedOwners.isEmpty)
     }
 

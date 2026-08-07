@@ -30,15 +30,38 @@ import WebKit
 /// reuse it without re-solving).
 public final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelegate {
 
+    /// Who is watching this unlock.
+    public enum Mode: Equatable {
+        /// The user is: the cover comes off for a CAPTCHA so they can solve it, a
+        /// dead end shows its message and its Safari escape, and the flow waits.
+        case interactive
+        /// Nobody is: the controller is off-screen, driven by the bulk import
+        /// (`claudedocs/import-export.md`). There is no one to solve a CAPTCHA and
+        /// nowhere to put a message, so anything that would ask the user for
+        /// something ends the attempt through `onGaveUp` instead. The save stays
+        /// exactly as it was, for whenever they open it themselves.
+        case unattended
+    }
+
+    /// Why an unattended attempt stopped without an article.
+    public enum GiveUpReason: Equatable {
+        /// A CAPTCHA or bot gate is up — unsolvable without the user.
+        case challenge
+        /// archive.today is rate-limiting, or the page can't be archived.
+        case unavailable
+    }
+
     private let articleURL: URL
     private let itemID: UUID?
     private let store: ReadingListStore
+    private let mode: Mode
     private let webView: WKWebView
     private let progress = HorizonSpinnerView()
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
-    /// archive.today navigation (home page, form fill/submit, snapshot load). It's
-    /// removed only while a CAPTCHA is up — the one moment the user must see and
-    /// touch the page. The web view stays un-hidden and full-size beneath it
+    /// archive.today navigation (home page, form fill/submit, snapshot load). It
+    /// comes off for a CAPTCHA — the one moment the user must see and touch the
+    /// page — and, at the end, only for a controller that is staying up
+    /// (`onExtracted` nil). The web view stays un-hidden and full-size beneath it
     /// (covered, not hidden — so iOS never throttles its JS/navigation), which is
     /// what keeps the automated flow running while it's visually concealed. When the
     /// flow can't proceed (rate-limited, or the page can't be archived) the cover
@@ -47,7 +70,6 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// Five deliberate taps reveal the archive page for troubleshooting without
     /// exposing a user-facing experimental setting. Once revealed, disabling the
     /// overlay's interaction lets scroll gestures reach the web view below.
-    private var archiveCoverTapCount = 0
     private let overlaySpinner = HorizonSpinnerView(side: 36)
     private let overlayLabel = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
@@ -135,38 +157,52 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// dismissing the presentation when nil.
     public var onClose: (() -> Void)?
     /// Called once the article has been extracted and saved (the CAPTCHA was
-    /// solved and a real snapshot loaded). Extensions use this to show their
-    /// success checkmark and finish; the main app leaves it nil and lets the user
-    /// keep reading the loaded snapshot.
+    /// solved and a real snapshot loaded). Setting it means this controller is
+    /// about to be TAKEN AWAY by whoever set it — the app dismisses the modal and
+    /// opens the item's own reader, the extensions swap it out of their nav stack
+    /// — which is also what decides whether the cover comes off at the end of the
+    /// unlock (see `extractAndSave`). Left nil only where the controller is a root
+    /// with nowhere to go: there the unlocked page is uncovered and stays up.
     public var onExtracted: (() -> Void)?
     /// Escape hatch for when archive.today keeps CAPTCHA-looping in the embedded
     /// web view: opens the same archive URL in real Safari (which may already hold
     /// a valid `cf_clearance`). Main-app-only — set by the presenter; left nil in
     /// extensions (no `UIApplication` there), where the button is hidden.
     public var onOpenInBrowser: ((URL) -> Void)?
+    /// `.unattended` only: the attempt has stopped and no article was saved. Called
+    /// at most once, and never alongside `onExtracted`.
+    public var onGaveUp: ((GiveUpReason) -> Void)?
+    /// Set once either outcome has been reported, so the poll timer's in-flight
+    /// probes can't report a second one.
+    private var didReportOutcome = false
 
     /// archive.today rate-limits aggressively (HTTP 429) and, once it does, won't
     /// honor CAPTCHA solves until the throttle clears — so surface actionable
     /// remedies rather than letting the user re-solve a CAPTCHA that can't pass.
-    private static let rateLimitMessage = L10n.string(
-        "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n•  Wait ~30 minutes\n•  Switch networks or turn on a VPN\n•  Tap Open in Safari below and view there")
+    private static let rateLimitMessage = L10n.string("Reader_archiveUnlock_rateLimitMessage")
 
     /// Shown when archive.today returns an error AFTER the user solved the CAPTCHA
     /// (a stale/invalid capture session, an un-archivable page) — solving again
     /// won't help, so we stop and tell the user plainly rather than spin forever.
-    private static let cannotArchiveMessage = L10n.string(
-        "This site can't be archived right now. Try again in a little while, or open it in Safari.")
+    private static let cannotArchiveMessage = L10n.string("Reader_archiveUnlock_cannotArchiveMessage")
 
-    private static let mayBeStuckMessage = L10n.string(
-        "This archive is taking longer than usual. It may be stuck, but we’re still waiting.")
+    private static let mayBeStuckMessage = L10n.string("Reader_archiveUnlock_stuckMessage")
 
-    public init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared) {
+    public init(
+        articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared,
+        mode: Mode = .interactive
+    ) {
         self.articleURL = articleURL
         self.itemID = itemID
         self.store = store
+        self.mode = mode
         // Build the plan once so we know both the pre-stage URLs and whether the
-        // `.directUnlock` WKWebView technique is in play.
-        let plan = BypassPlan.make(for: articleURL, directHTML: nil)
+        // `.directUnlock` WKWebView technique is in play. `silentTierExhausted` is what
+        // this reader IS: it only ever opens for a page the background tier could not
+        // read, so the live page in a real browser is the last untried authority and is
+        // worth one load before the archive CAPTCHA (see the selector).
+        let plan = BypassPlan.make(
+            for: articleURL, directHTML: nil, silentTierExhausted: true)
         self.usesDirectUnlock = plan.webPreStages.contains(.directUnlock)
         self.directUnlockReferer = Self.directUnlockReferer(for: articleURL)
         self.webPreStageURLs = plan.webPreStages.compactMap {
@@ -250,11 +286,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { [weak self] _ in
-                guard let self else { return }
-                if let onClose = self.onClose { onClose() } else { self.dismiss(animated: true) }
-            })
+        setExitButton(symbol: "xmark")
         if onOpenInBrowser != nil {
             navigationItem.rightBarButtonItem = UIBarButtonItem(
                 image: UIImage(systemName: "safari"),
@@ -374,24 +406,21 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// view; visible from the start so the user never sees the raw archive page
     /// except when a CAPTCHA is up (`checkStage` reveals it then).
     private func setUpLoadingOverlay() {
-        // The cover is effectively opaque until its five-tap escape hatch is used.
-        // Only its background is translucent so the loading controls stay crisp.
+        // The cover COVERS. Its background is a hair off opaque only so the loading
+        // controls composite crisply over it; there is no translucent state and no
+        // way to ask for one — the page underneath is either hidden or, when a CAPTCHA
+        // needs solving, revealed outright by `isHidden`.
         loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
-        let revealGesture = UITapGestureRecognizer(
-            target: self, action: #selector(archiveCoverTapped(_:)))
-        loadingOverlay.addGestureRecognizer(revealGesture)
 
-        overlaySpinner.color = GlassStyle.readingAccent
+        // Tint deliberately left at `HorizonSpinnerView`'s own horizon palette. It used
+        // to be forced to `GlassStyle.readingAccent` — the user's reader highlight,
+        // usually a bright blue — which made the spinner appear to change colour at the
+        // handover from the extension's wait, since that one uses the default.
         overlaySpinner.startAnimating()
 
-        overlayLabel.textColor = LunaColors.secondaryText
-        overlayLabel.font = .preferredFont(forTextStyle: .callout)
-        overlayLabel.textAlignment = .center
-        overlayLabel.numberOfLines = 0
-
         var safariConfig = UIButton.Configuration.borderedProminent()
-        safariConfig.title = L10n.string("Open in Safari")
+        safariConfig.title = L10n.string("Common_openInSafari")
         safariConfig.image = UIImage(systemName: "safari")
         safariConfig.imagePadding = 6
         safariConfig.cornerStyle = .large
@@ -399,38 +428,39 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         overlaySafariButton.isHidden = true   // only shown with a terminal message
         overlaySafariButton.addAction(UIAction { [weak self] _ in self?.openInBrowser() }, for: .touchUpInside)
 
-        // A centered stack: hiding the spinner (and showing the button) recenters
-        // the message cleanly, since stacks ignore hidden arranged subviews.
-        let stack = UIStackView(arrangedSubviews: [overlaySpinner, overlayLabel, overlaySafariButton])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        loadingOverlay.addSubview(stack)
         view.addSubview(loadingOverlay)
         NSLayoutConstraint.activate([
             loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
             loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingOverlay.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
-            overlayLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
         ])
+        // The SPINNER is centred and the copy hangs below it — the shared
+        // `LoadingStatusLayout`, identical to the extension's wait screen. The old
+        // centred STACK put the spinner ~28pt higher than the wait it was continuing,
+        // so the spinner appeared to jump upwards at the handover.
+        LoadingStatusLayout.install(
+            spinner: overlaySpinner, label: overlayLabel,
+            action: overlaySafariButton, in: loadingOverlay)
         articleLoadingStatus = ArticleLoadingStatusCycler(
-            label: overlayLabel, initialText: L10n.string("Unlocking article…"))
+            label: overlayLabel, initialText: L10n.string("Reader_archiveUnlock_unlockingStatus"))
         articleLoadingStatus?.start()
     }
 
-    @objc private func archiveCoverTapped(_ gesture: UITapGestureRecognizer) {
-        archiveCoverTapCount += 1
-        guard archiveCoverTapCount == 5 else { return }
-
-        loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.1)
-        loadingOverlay.isUserInteractionEnabled = false
+    /// The header's leading button. An `xmark` while the outcome is still unknown —
+    /// leaving now abandons the unlock and the item stays parked — and a `checkmark`
+    /// once the article has actually been extracted and saved, so the button says which
+    /// of the two it is. Both do the same thing; only the promise differs.
+    private func setExitButton(symbol: String) {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: symbol),
+            primaryAction: UIAction { [weak self] _ in
+                guard let self else { return }
+                if let onClose = self.onClose { onClose() } else { self.dismiss(animated: true) }
+            })
+        item.accessibilityLabel = symbol == "checkmark"
+            ? L10n.string("Common_done") : L10n.string("Common_close")
+        navigationItem.leftBarButtonItem = item
     }
 
     private static let archiveHomepage = URL(string: "https://archive.is/")! // valid constant
@@ -467,7 +497,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     public static func webPreStageURLs(for articleURL: URL) -> [URL] {
         // A URL already on archive.today goes straight to the snapshot flow.
         guard !ArticleFetcher.isArchiveTodayURL(articleURL) else { return [] }
-        let plan = BypassPlan.make(for: articleURL, directHTML: nil)
+        let plan = BypassPlan.make(
+            for: articleURL, directHTML: nil, silentTierExhausted: true)
         return plan.webPreStages.compactMap { BypassURLs.loadURL(for: $0, article: articleURL) }
     }
 
@@ -545,7 +576,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     ///   have one, else type the URL into the box and submit the form (once).
     /// - **article** (substantial text, no search box) → extract.
     private func checkStage() {
-        guard !didExtract, !isExtracting, viewIfLoaded?.window != nil else { return }
+        guard !didExtract, !isExtracting, !didReportOutcome, viewIfLoaded?.window != nil
+        else { return }
         if isAttemptingDirectBypass { checkDirectBypassStage(); return }
         // Returns only structural state. In particular, no text length is used:
         // archive.is's idle homepage and its request-log shell can both be long.
@@ -601,6 +633,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             if self.didShowTerminalMessage { return }
             SharedDiagnosticLog.record(
                 "archive: stage \(stage) @ \(self.webView.url?.absoluteString ?? "")", category: "archive")
+            // Nobody can solve a CAPTCHA in an unattended run, so meeting one ends
+            // the attempt rather than waiting forever behind a cover.
+            if self.mode == .unattended, stage == "challenge" {
+                self.giveUp(.challenge)
+                return
+            }
             // Reveal the web view ONLY for the CAPTCHA; cover every automated step.
             self.loadingOverlay.isHidden = (stage == "challenge")
             // Stall guard: if the overlay has covered the page for too long without
@@ -766,11 +804,17 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // to solve it — the same courtesy the archive.today flow gives.
         let probe = Self.directBypassStageProbeJavaScript
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
-            guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting else { return }
+            guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting,
+                  !self.didReportOutcome else { return }
             let text = (result as? String) ?? ""
             // A CAPTCHA is up on the site itself → reveal the page so the user can
             // solve it, and PAUSE the pre-stage timeout while they do (so it doesn't
-            // give up and fall through to archive.today mid-solve).
+            // give up and fall through to archive.today mid-solve). Unattended,
+            // there is no one to reveal it to: stop and leave the save locked.
+            if text == "challenge", self.mode == .unattended {
+                self.giveUp(.challenge)
+                return
+            }
             if text == "challenge" {
                 if !self.loadingOverlay.isHidden {
                     SharedDiagnosticLog.record(
@@ -962,10 +1006,20 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                         return
                     }
                     self.didExtract = true
+                    self.didReportOutcome = true
                     self.pollTimer?.invalidate()
-                    // Reveal the unlocked page so the user reads it (the main app keeps
-                    // the loaded article up; extensions finish via `onExtracted`).
-                    self.loadingOverlay.isHidden = true
+                    // There IS something to affirm now: the article is saved.
+                    self.setExitButton(symbol: "checkmark")
+                    if Self.uncoversPageAfterExtraction(
+                        hasExtractedHandler: self.onExtracted != nil)
+                    {
+                        self.loadingOverlay.isHidden = true
+                    } else {
+                        // The cover is staying up through the dismissal, so it is
+                        // frozen on its current wording rather than cycling to
+                        // another phrase halfway through the animation.
+                        self.articleLoadingStatus?.stop()
+                    }
                     _ = self.store.saveContent(content, for: item)
                     // The unlocked snapshot this reader extracted from. If the
                     // web-view capture below fails, the app's backfill must still
@@ -979,6 +1033,20 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                 }
             }
         }
+    }
+
+    /// Whether a successful unlock takes the cover off the page.
+    ///
+    /// Only for a controller that is STAYING. An `onExtracted` handler means the
+    /// opposite: the very next thing that happens is whoever set it taking this
+    /// controller away — the app dismisses the modal and opens the item's own
+    /// reader, the extensions swap it out of their nav stack — and uncovering
+    /// first plays the raw archive/publisher page under the whole of that
+    /// animation. Whatever the cover is showing when the unlock lands (its own
+    /// spinner, or the page the user just solved a CAPTCHA on) is simply what
+    /// leaves with it.
+    public static func uncoversPageAfterExtraction(hasExtractedHandler: Bool) -> Bool {
+        !hasExtractedHandler
     }
 
     /// Captures the fully-loaded, unlocked page now on screen as the item's
@@ -1011,6 +1079,22 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             || html.contains("Why do I have to complete a CAPTCHA")
     }
 
+    /// Ends an unattended attempt: stop polling, stop loading, and report once.
+    /// Nothing is written and nothing is shown — the item keeps the state the
+    /// silent tier left it in.
+    private func giveUp(_ reason: GiveUpReason) {
+        guard mode == .unattended, !didReportOutcome else { return }
+        didReportOutcome = true
+        pollTimer?.invalidate()
+        pollTimer = nil
+        webView.stopLoading()
+        progress.stopAnimating()
+        SharedDiagnosticLog.record(
+            "archive: unattended attempt gave up (\(reason)) for \(articleURL.absoluteString)",
+            category: "archive")
+        onGaveUp?(reason)
+    }
+
     /// archive.today is rate-limiting the network — solving the CAPTCHA won't pass.
     private func showRateLimit() { showTerminalMessage(Self.rateLimitMessage) }
 
@@ -1021,7 +1105,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// Unlike a terminal archive error, this keeps the automation alive. It is a
     /// user-visible nudge after a long quiet period, with the same Safari escape.
     private func showStuckNotice() {
-        guard !didShowStuckNotice, !didShowTerminalMessage else { return }
+        // Unattended, "still waiting" is not news anyone can act on — the caller's
+        // own deadline is what ends a slow attempt.
+        guard mode == .interactive, !didShowStuckNotice, !didShowTerminalMessage else { return }
         didShowStuckNotice = true
         view.bringSubviewToFront(loadingOverlay)
         loadingOverlay.isHidden = false
@@ -1042,6 +1128,13 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// Stops polling so the flow can't re-cover or re-drive the page afterward.
     private func showTerminalMessage(_ message: String) {
         guard !didShowTerminalMessage else { return }
+        // Unattended there is no one to read it and nowhere to put it: the dead end
+        // is reported to the caller instead.
+        guard mode == .interactive else {
+            didShowTerminalMessage = true
+            giveUp(.unavailable)
+            return
+        }
         didShowTerminalMessage = true
         pollTimer?.invalidate()
         pollTimer = nil

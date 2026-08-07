@@ -8,28 +8,72 @@ import Foundation
 import PDFKit
 
 /// Turns an imported document file into `ArticleContent`. PDF text via PDFKit,
-/// RTF via attributed string, plain text and Markdown via the pure parsers
-/// below. Returns nil when nothing readable can be extracted.
+/// RTF via attributed string, EPUB and `.docx` via their own readers over
+/// `ZipArchiveReader`, HTML through the markup extractor, plain text and
+/// Markdown via the pure parsers below. Returns nil when nothing readable can be
+/// extracted.
+///
+/// **`title` is a FALLBACK for the container formats.** It is the shared file's
+/// name, which for a book is a distribution artifact ("pg84-images-3"); an EPUB
+/// or `.docx` that names itself in its own metadata wins, and `saveContent`
+/// carries that title back onto the reading-list row.
 public enum DocumentParser {
+
+    /// Every extension that can be read, which is also what
+    /// `ShareAttachmentRouter` offers to accept — the two lists exist for
+    /// different callers (one takes files, one takes UTTypes) and
+    /// `DocumentImportFormatTests` pins them to each other.
+    public static let readableExtensions: Set<String> = [
+        "pdf", "epub", "docx", "rtf", "html", "htm", "xhtml", "md", "markdown", "txt", "text",
+    ]
 
     public static func parse(fileURL: URL, type: String, title: String) -> ArticleContent? {
         let lowercased = type.lowercased()
+        // The container formats carry their own title and author, so they build
+        // the whole `ArticleContent` rather than just its blocks.
+        switch lowercased {
+        case "epub":
+            return (try? Data(contentsOf: fileURL)).flatMap {
+                EpubDocumentParser.parse(data: $0, fallbackTitle: title)
+            }
+        case "docx":
+            return (try? Data(contentsOf: fileURL)).flatMap {
+                DocxDocumentParser.parse(data: $0, fallbackTitle: title)
+            }
+        default: break
+        }
+
         let blocks: [ArticleContent.Block]?
+        var resolvedTitle = title
         switch lowercased {
         case "pdf":
             blocks = parsePDF(fileURL: fileURL)
         case "md", "markdown":
-            blocks = (try? String(contentsOf: fileURL, encoding: .utf8))
-                .map(MarkdownParser.blocks(from:))
+            blocks = text(at: fileURL).map(MarkdownParser.blocks(from:))
         case "rtf":
             blocks = parseRTF(fileURL: fileURL)
+        case "html", "htm", "xhtml":
+            let html = text(at: fileURL)
+            blocks = html.map(MarkupBlockExtractor.blocks(fromHTML:))
+            // A saved page's file name is whatever the browser called it; the
+            // page's own `<title>` is what it calls itself.
+            if let html, let pageTitle = MarkupBlockExtractor.title(fromHTML: html) {
+                resolvedTitle = pageTitle
+            }
         default:
             // txt and any other public.text type.
-            blocks = (try? String(contentsOf: fileURL, encoding: .utf8))
-                .map(PlainTextParser.blocks(from:))
+            blocks = text(at: fileURL).map(PlainTextParser.blocks(from:))
         }
         guard let blocks, !blocks.isEmpty else { return nil }
-        return ArticleContent(title: title, blocks: blocks)
+        return ArticleContent(title: resolvedTitle, blocks: blocks)
+    }
+
+    /// UTF-8, then Latin-1 — which cannot fail. A single bad byte in a plain-text
+    /// or HTML file should cost that byte, not the whole import (the same rule
+    /// the link importer follows, `claudedocs/import-export.md`).
+    private static func text(at fileURL: URL) -> String? {
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
     }
 
     private static func parsePDF(fileURL: URL) -> [ArticleContent.Block]? {

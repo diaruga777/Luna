@@ -81,16 +81,6 @@ public enum LunaLayout {
         return max(40, width / 2 - wideEdgePadding - columnGap / 2)
     }
 
-    /// A width-capped card on a wide container comes out SHORTER than the room
-    /// rather than taller, so a strict 9:16 would leave it floating in a sea of
-    /// empty space. A reader card may grow past 9:16 to use that room — more of
-    /// the article on screen is the whole point of the extra space — but never
-    /// past this width:height ratio, beyond which a card reads as a sliver.
-    ///
-    /// Media cards (`.aspectCentered`) are deliberately excluded: their content
-    /// IS 9:16, and growing the frame would only letterbox it.
-    public static let tallestCardAspectRatio: CGFloat = 0.5
-
     /// A centered, readability-capped width for text-forward content.
     public static func contentWidth(forContainerWidth width: CGFloat) -> CGFloat {
         guard isWide(containerWidth: width) else { return width }
@@ -117,11 +107,5 @@ public enum LunaLayout {
         let proportional = width * fraction
         guard isWide(containerWidth: width) else { return proportional }
         return min(proportional, maximumDrawerWidth)
-    }
-
-    /// Insets that center a phone-proportioned replica inside `width`.
-    public static func phoneReplicaHorizontalInset(forContainerWidth width: CGFloat) -> CGFloat {
-        guard isWide(containerWidth: width) else { return 0 }
-        return max(0, (width - min(width - wideEdgePadding * 2, phoneReplicaWidth)) / 2)
     }
 }

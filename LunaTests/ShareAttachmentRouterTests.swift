@@ -135,6 +135,42 @@ final class ShareAttachmentRouterTests: XCTestCase {
             .document(index: 0, type: .plainText))
     }
 
+    /// The two formats Luna itself EXPORTS, shared back in. Neither conforms to
+    /// `public.text`, so neither could reach the document leg before they were
+    /// named.
+    func testSharedEbookAndWordDocumentRouteAsDocuments() throws {
+        XCTAssertEqual(
+            ShareAttachmentRouter.route(
+                providerTypes: [["public.file-url", "org.idpf.epub-container"]]),
+            .document(index: 0, type: .epub))
+        let docx = try XCTUnwrap(ShareAttachmentRouter.docx)
+        XCTAssertEqual(
+            ShareAttachmentRouter.route(providerTypes: [[
+                "public.file-url", "org.openxmlformats.wordprocessingml.document",
+            ]]),
+            .document(index: 0, type: docx))
+    }
+
+    /// An HTML FILE is a saved page, and must be matched as `.html` rather than
+    /// by the `public.text` supertype it conforms to — the whole point of the
+    /// most-specific-first order in `documentTypes`. Matched as text, it imported
+    /// as a wall of raw markup.
+    func testSavedWebPageFileRoutesAsHTMLNotPlainText() {
+        XCTAssertEqual(
+            ShareAttachmentRouter.route(
+                providerTypes: [["public.file-url", "public.html"]]),
+            .document(index: 0, type: .html))
+    }
+
+    /// …while an in-memory HTML payload is a host rendering a LINK it is sharing,
+    /// and still goes down the text leg where the link inside wins. Same type,
+    /// opposite answer — that asymmetry is why `textTypes` is a separate list.
+    func testInMemoryHTMLStaysOnTheTextLeg() {
+        XCTAssertEqual(
+            ShareAttachmentRouter.route(providerTypes: [["public.html"]]),
+            .text(index: 0))
+    }
+
     /// A file URL with no recognized content type still goes down the URL leg,
     /// whose `isFileURL` branch imports it as a document.
     func testBareFileURLRoutesAsWebURLForTheFileLeg() {

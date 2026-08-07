@@ -21,10 +21,10 @@ public enum ReaderFont: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .system: return L10n.string("System")
-        case .newYork: return L10n.string("New York")
-        case .charter: return L10n.string("Charter")
-        case .stixTwo: return L10n.string("STIX Two")
+        case .system: return L10n.string("Settings_readerFont_system")
+        case .newYork: return L10n.string("Settings_readerFont_newYork")
+        case .charter: return L10n.string("Settings_readerFont_charter")
+        case .stixTwo: return L10n.string("Settings_readerFont_stixTwo")
         }
     }
 
@@ -33,8 +33,8 @@ public enum ReaderFont: String, CaseIterable {
     private var familyName: String? {
         switch self {
         case .system, .newYork: return nil
-        case .charter: return L10n.string("Charter")
-        case .stixTwo: return L10n.string("STIX Two Text")
+        case .charter: return L10n.string("Settings_readerFont_charter")
+        case .stixTwo: return L10n.string("Settings_readerFont_stixTwoText")
         }
     }
 

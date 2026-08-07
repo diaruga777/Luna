@@ -1050,6 +1050,9 @@ class OnboardingMessageBubble: UIView {
     /// Larger than the real app's 17pt — the conversation is a demonstration
     /// watched from arm's length, not something being read up close.
     static let textSize: CGFloat = 19
+    /// How wide a bubble may grow before its content has to wrap, the way
+    /// iMessage caps one short of the screen edge.
+    static let maxWidth: CGFloat = 292
 
     /// A bubble is either a line of the conversation or the way out of it. The
     /// skip-out is drawn, never sent: unfilled and sketched in dots, in a
@@ -1097,7 +1100,7 @@ class OnboardingMessageBubble: UIView {
             ghostOutline.lineDashPattern = [0.01, 6]
             layer.addSublayer(ghostOutline)
         }
-        widthAnchor.constraint(lessThanOrEqualToConstant: 292).isActive = true
+        widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth).isActive = true
     }
 
     @available(*, unavailable)
@@ -1190,6 +1193,15 @@ final class OnboardingMessageTextBubble: OnboardingMessageBubble {
 }
 
 final class OnboardingMessageURLBubble: OnboardingMessageBubble {
+    /// The bubble's own text inset, each side.
+    private static let textInset: CGFloat = 14
+    /// How many lines a link may take before it finally gives up and truncates.
+    /// A weekly Save of the Week is a real editorial URL — a publisher, a dated
+    /// path, a slug — and the whole of it is what the lesson is asking the user
+    /// to look at, so it wraps like a link in a real conversation instead of
+    /// ending in an ellipsis three characters in.
+    private static let maximumLines = 3
+
     private let highlight = OnboardingURLHighlightView()
     private let label = UILabel()
     private var urlString = ""
@@ -1200,12 +1212,19 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
             OnboardingStrings.Accessibility.messagesLatestIncoming.value()
 
         highlight.translatesAutoresizingMaskIntoConstraints = false
+        highlight.maximumCornerRadius = layer.cornerRadius
         addSubview(highlight)
 
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.numberOfLines = 1
+        label.numberOfLines = Self.maximumLines
         label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        // The bubble's own cap decides the wrap width. The label used to resist
+        // horizontal compression outright, which fought that cap: the loser was
+        // the label, and a long URL came out as a couple of characters and an
+        // ellipsis. Pinning `preferredMaxLayoutWidth` instead makes the wrapped
+        // width the label's intrinsic width, so short links still hug their text.
+        label.preferredMaxLayoutWidth =
+            OnboardingMessageBubble.maxWidth - Self.textInset * 2
         label.accessibilityIdentifier =
             OnboardingStrings.Accessibility.messagesLatestURL.value()
         addSubview(label)
@@ -1216,8 +1235,10 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
             highlight.trailingAnchor.constraint(equalTo: trailingAnchor),
             highlight.bottomAnchor.constraint(equalTo: bottomAnchor),
             label.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            label.leadingAnchor.constraint(
+                equalTo: leadingAnchor, constant: Self.textInset),
+            label.trailingAnchor.constraint(
+                equalTo: trailingAnchor, constant: -Self.textInset),
             label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -11),
         ])
     }
@@ -1225,6 +1246,9 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
     func setURL(_ urlString: String) {
         self.urlString = urlString
         accessibilityValue = urlString
+        // The rendered string carries invisible break opportunities; anything
+        // reading this bubble aloud (or in a UI test) gets the real URL.
+        label.accessibilityLabel = urlString
         applyURLText(highlighted: isURLHighlighted)
     }
 
@@ -1235,10 +1259,36 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
 
     var isURLHighlighted: Bool { highlight.isHighlighted }
 
+    /// The URL's structural separators, each of which is a place a link may
+    /// break across lines.
+    private static let breakAfter = Set("/?&=#._-")
+
+    /// Zero-width spaces after every separator, so the layout has somewhere to
+    /// wrap. A URL contains no spaces at all, and word wrapping cannot break
+    /// what has no word boundary — without these a long link is one line the
+    /// truncation then eats. A zero-width space is invisible, occupies nothing,
+    /// and is never read out: `accessibilityValue` still carries the real URL.
+    ///
+    /// Runs of separators (the `//` in a scheme) take one opportunity at the end
+    /// of the run rather than one each, so a link never breaks mid-`https://`.
+    private static func wrappable(_ urlString: String) -> String {
+        let characters = Array(urlString)
+        var wrapped = ""
+        wrapped.reserveCapacity(characters.count * 2)
+        for (index, character) in characters.enumerated() {
+            wrapped.append(character)
+            guard breakAfter.contains(character) else { continue }
+            let next = index + 1 < characters.count ? characters[index + 1] : nil
+            guard let next, !breakAfter.contains(next) else { continue }
+            wrapped.append("\u{200B}")
+        }
+        return wrapped
+    }
+
     /// iMessage renders bare links as underlined blue text.
     private func applyURLText(highlighted: Bool) {
         label.attributedText = NSAttributedString(
-            string: urlString,
+            string: Self.wrappable(urlString),
             attributes: [
                 .font: UIFont.systemFont(
                     ofSize: OnboardingMessageBubble.textSize - 1),

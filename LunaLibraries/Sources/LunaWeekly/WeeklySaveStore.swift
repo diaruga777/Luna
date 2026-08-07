@@ -52,8 +52,7 @@ public final class WeeklySaveStore {
 
     public init(containerURL: URL? = nil, now: @escaping () -> Date = Date.init) {
         self.now = now
-        let base = containerURL ?? FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
+        let base = containerURL ?? AppConfig.sharedContainerURL()
         self.fileURL = base?.appendingPathComponent("weeklySaves.json")
         loadFromDisk()
     }
@@ -99,6 +98,16 @@ public final class WeeklySaveStore {
     public func seenProposalIDs() -> Set<String> {
         lock.lock(); defer { lock.unlock() }
         return Set(payload.seenProposalIDs)
+    }
+
+    /// Marks ONE record name announced, leaving the rest of the set alone —
+    /// the proposal this device just wrote, which its own curator does not
+    /// need telling about. The next full check prunes it like any other.
+    public func markProposalSeen(_ id: String) {
+        lock.lock(); defer { lock.unlock() }
+        guard !payload.seenProposalIDs.contains(id) else { return }
+        payload.seenProposalIDs = (payload.seenProposalIDs + [id]).sorted()
+        persistLocked()
     }
 
     /// Marks these record names announced and forgets any that are no longer

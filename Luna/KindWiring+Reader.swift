@@ -33,11 +33,18 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
+        // Staged mode's catalogs — this app's kinds only (`claudedocs/staging.md`).
+        SharedStageCatalog.install()
+        ArticleStageCatalog.install()
+        EmailStageCatalog.install()
         #endif
 
         // The article kind pack — one call, shared verbatim with Reader's share
         // extension, action extension and App Clip (`ArticleKindComposition`).
         ArticleKindComposition.install()
+        // The article kind's CARD half, on the same principle — the one
+        // definition the central app installs too (`CardKindPresenter.swift`).
+        CardKindPresenters.article = ArticleCardPresenter()
         IngestorKindHandlers.article = ArticleKindHandler()
 
         // A completion written before a force-quit never received the normal
@@ -97,6 +104,14 @@ enum KindWiring {
                 KindleSettingsScreen(), animated: true)
         }
 
+        // A bulk import's pass over the saves that came back hard-paywalled:
+        // the same web unlock a tap would run, off-screen and giving up on any
+        // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there is
+        // no article save to unlock anywhere else.
+        LinkImportRunner.articleUnlocker = { itemID, urlString in
+            await UnattendedArticleUnlock.unlock(itemID: itemID, urlString: urlString)
+        }
+
         // Voice status and installation now live on the Audio settings page.
         VoiceFirstRunPrompt.openVoiceSettings = { presenter in
             let audio = AudioSettingsScreen()
@@ -149,18 +164,18 @@ enum KindWiring {
 
     static func settingsCategories() -> [SettingsCategory] {
         [
-            SettingsCategory(title: L10n.string("Reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
-            SettingsCategory(title: L10n.string("Audio"), symbol: "headphones") { AudioSettingsScreen() },
+            SettingsCategory(title: L10n.string("Common_reader"), symbol: "textformat.size") { ReaderSettingsScreen() },
+            SettingsCategory(title: L10n.string("Common_audio"), symbol: "headphones") { AudioSettingsScreen() },
             SettingsCategory(
-                title: L10n.string("Email"),
+                title: L10n.string("Common_email"),
                 symbol: "envelope",
                 detail: {
                     EmailAccountStore.shared.authenticationIssue == nil
-                        ? nil : L10n.string("Sign-in required")
+                        ? nil : L10n.string("Common_signInRequired")
                 }
             ) { EmailAndKindleSettingsScreen() },
             SettingsCategory(
-                title: L10n.string("Kindle"), symbol: "book.closed",
+                title: L10n.string("Common_kindle"), symbol: "book.closed",
                 requiresEmail: true,
                 makePrerequisite: {
                     let email = EmailAndKindleSettingsScreen()

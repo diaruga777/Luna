@@ -113,8 +113,12 @@ final class OnboardingSaveDemoTests: XCTestCase {
     }
 
     /// The one honest thing to show with no connection: `SaveFailureReason.offline`
-    /// in the surface's real error state. Those strings existed and had never been
-    /// rendered anywhere before this.
+    /// in the surface's real error state — the real headline, under the symbol for
+    /// it, over a line saying what the user is looking at instead of a save.
+    ///
+    /// NOT the failure's own `suggestion`: "it will retry once you're back online"
+    /// describes a save that was kept, and the rehearsal's row is deleted either
+    /// way. The assertion is on its ABSENCE for that reason.
     @MainActor
     func testHostedOfflineInputRendersTheRealOfflineFailure() throws {
         let url = try XCTUnwrap(URL(string: ShareSetupPractice.lunaURLString))
@@ -130,8 +134,22 @@ final class OnboardingSaveDemoTests: XCTestCase {
         XCTAssertTrue(
             shown.contains { $0.contains(SaveFailureReason.offline.headline) },
             "Expected the real offline headline, got \(shown)")
+        XCTAssertTrue(
+            shown.contains {
+                $0.contains(L10n.string("ShareExtension_share_hostedOfflineDetail"))
+            },
+            "Expected the rehearsal's own explanation, got \(shown)")
         let suggestion = try XCTUnwrap(SaveFailureReason.offline.suggestion)
-        XCTAssertTrue(shown.contains { $0.contains(suggestion) })
+        XCTAssertFalse(
+            shown.contains { $0.contains(suggestion) },
+            "The failed-card retry hint is not true of a rehearsal")
+        let icon = window.descendants(of: UIImageView.self).first {
+            $0.accessibilityIdentifier
+                == ExtensionLoadingViewController.terminalIconIdentifier
+        }
+        XCTAssertNotNil(
+            icon?.image,
+            "Expected the offline state to be drawn, not only written")
     }
 
     /// Completion is one chokepoint and it is idempotent, hosted or not — a

@@ -33,7 +33,7 @@ public final class RecipientPickerViewController: UITableViewController,
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        title = L10n.string("Send to")
+        title = L10n.string("Sharing_recipientPicker_screenTitle")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
@@ -59,7 +59,7 @@ public final class RecipientPickerViewController: UITableViewController,
         _ tableView: UITableView, titleForHeaderInSection section: Int
     ) -> String? {
         Section(rawValue: section) == .recipients && !allRecipients.isEmpty
-            ? L10n.string("Contacts")
+            ? L10n.string("Common_contacts")
             : nil
     }
 
@@ -71,10 +71,10 @@ public final class RecipientPickerViewController: UITableViewController,
         switch Section(rawValue: indexPath.section)! {
         case .actions:
             if indexPath.row == 0 {
-                config.text = L10n.string("Enter email address…")
+                config.text = L10n.string("Sharing_recipientPicker_action1EnterEmail")
                 config.image = UIImage(systemName: "envelope")
             } else {
-                config.text = L10n.string("Add from Phone Contacts")
+                config.text = L10n.string("Sharing_recipientPicker_action2AddFromContacts")
                 config.image = UIImage(systemName: "person.crop.circle.badge.plus")
             }
             cell.accessoryType = .none
@@ -104,7 +104,7 @@ public final class RecipientPickerViewController: UITableViewController,
     // MARK: - Adding recipients
 
     private func promptForEmail() {
-        EmailRecipientPrompt.presentEmailAlert(from: self, title: L10n.string("Recipient email")) { [weak self] raw in
+        EmailRecipientPrompt.presentEmailAlert(from: self, title: L10n.string("Sharing_recipientPicker_recipientEmailAlertTitle")) { [weak self] raw in
             self?.addRecipient(email: raw, name: nil)
         }
     }
@@ -135,7 +135,9 @@ public final class RecipientPickerViewController: UITableViewController,
     private func updateSendButton() {
         let count = selected.count
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: count == 0 ? L10n.string("Send") : L10n.string("Send (\(count))"),
+            title: count == 0
+                ? L10n.string("Sharing_recipientPicker_sendButton")
+                : L10n.string("Sharing_recipientPicker_sendButtonWithCount", count),
             style: .done, target: self, action: #selector(send))
         navigationItem.rightBarButtonItem?.isEnabled = count > 0
     }

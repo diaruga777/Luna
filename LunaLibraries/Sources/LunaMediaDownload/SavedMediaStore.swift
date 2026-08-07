@@ -271,9 +271,7 @@ public final class SavedMediaStore {
     public var directory: URL {
         let fallback = fm.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory
-        let base = overrideContainerURL
-            ?? fm.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
-            ?? fallback
+        let base = overrideContainerURL ?? AppConfig.sharedContainerURL(fm) ?? fallback
         let dir = base.appendingPathComponent("SavedMedia", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         BackupPolicy.excludeFromBackups(dir)
@@ -569,6 +567,35 @@ public final class SavedMediaStore {
         notifyChanged()
         return result
     }
+
+    #if DEBUG
+    /// Deterministic seeding, the twin of `ReadingListStore.seedForTesting`.
+    /// Replaces the whole manifest with `items`, so a staged (or test) run gets
+    /// a media library it fully controls rather than whatever the device had.
+    ///
+    /// Deliberately does NOT touch `Files/` or `Thumbnails/`: an item that
+    /// names a local file expects that file to exist, and the caller is the one
+    /// that put it there (`mediaDirectory` is public for exactly this).
+    /// DEBUG-only — never compiled into a release build.
+    public func seedForTesting(items: [SavedMediaItem]) {
+        lock.lock()
+        try? saveUnlocked(items)
+        lock.unlock()
+        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+    }
+
+    /// Empties the manifest and the media/thumbnail directories. DEBUG-only.
+    public func wipeForTesting() {
+        lock.lock()
+        try? saveUnlocked([])
+        lock.unlock()
+        for directory in [mediaDirectory, thumbnailDirectory] {
+            let contents = (try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in contents { try? fm.removeItem(at: file) }
+        }
+        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+    }
+    #endif
 
     public func delete(_ item: SavedMediaItem) {
         lock.lock()
@@ -930,11 +957,11 @@ public enum MediaRetentionOption: Int, CaseIterable, Sendable {
     /// `MediaStorageOption.displayName`.
     public var displayName: String {
         switch self {
-        case .never: return L10n.string("Never")
-        case .oneDay: return L10n.string("1 day")
-        case .threeDays: return L10n.string("3 days")
-        case .twoWeeks: return L10n.string("2 weeks")
-        case .oneMonth: return L10n.string("1 month")
+        case .never: return L10n.string("Common_never")
+        case .oneDay: return L10n.string("Downloader_media_retention_oneDay")
+        case .threeDays: return L10n.string("Downloader_media_retention_threeDays")
+        case .twoWeeks: return L10n.string("Downloader_media_retention_twoWeeks")
+        case .oneMonth: return L10n.string("Downloader_media_retention_oneMonth")
         }
     }
 

@@ -7,15 +7,16 @@ import ActivityKit
 import AppIntents
 import LunaDesignSystem
 import LunaMediaDownload
+import LunaModels
 import SwiftUI
 import UIKit
 import WidgetKit
 
 struct SuspendLiveMediaDownloadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Cancel Download"
-    static var description = IntentDescription("Pauses the active Luna download briefly before canceling it.")
+    static var title: LocalizedStringResource = "Intents_cancelLiveDownload_title_Luna"
+    static var description = IntentDescription("Intents_cancelLiveDownload_description_Luna")
 
-    @Parameter(title: "Download ID")
+    @Parameter(title: "Intents_cancelLiveDownload_jobIDParam_title_Luna")
     var jobID: String
 
     init() {}
@@ -31,10 +32,10 @@ struct SuspendLiveMediaDownloadIntent: AppIntent {
 }
 
 struct ResumeLiveMediaDownloadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Resume Download"
-    static var description = IntentDescription("Resumes a paused Luna download.")
+    static var title: LocalizedStringResource = "Intents_resumeLiveDownload_title_Luna"
+    static var description = IntentDescription("Intents_resumeLiveDownload_description_Luna")
 
-    @Parameter(title: "Download ID")
+    @Parameter(title: "Intents_resumeLiveDownload_jobIDParam_title_Luna")
     var jobID: String
 
     init() {}
@@ -129,7 +130,7 @@ private struct DownloadActivityView: View {
                     if context.state.phase == .failed,
                        let actionURL = context.state.actionURLString.flatMap(URL.init(string:)) {
                         Link(destination: actionURL) {
-                            Label("Open Photos Settings", systemImage: "gearshape")
+                            Label(L10n.string("LiveActivity_downloader_openPhotosSettingsLabel"), systemImage: "gearshape")
                                 .font(.caption.weight(.semibold))
                         }
                     }
@@ -162,7 +163,7 @@ private struct ActivityControlButton: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Cancel download")
+            .accessibilityLabel(L10n.string("LiveActivity_downloader_cancelButtonAccessibilityLabel"))
         case .suspended, .waiting:
             Button(intent: ResumeLiveMediaDownloadIntent(jobID: context.attributes.jobID)) {
                 Image(systemName: "arrow.clockwise.circle.fill")
@@ -170,7 +171,7 @@ private struct ActivityControlButton: View {
                     .foregroundStyle(Color.accentColor)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Resume download")
+            .accessibilityLabel(L10n.string("LiveActivity_downloader_resumeButtonAccessibilityLabel"))
         default:
             EmptyView()
         }

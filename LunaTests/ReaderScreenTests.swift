@@ -24,6 +24,14 @@ private final class RecordingReaderCompletionDelegate: ReaderCompletionDelegate 
     func readerDidMoveAwayFromEnd(_ reader: UIViewController) { didMoveAway = true }
 }
 
+/// A share provider that only has to EXIST — the reader shows its floating share
+/// button whenever one is installed, and the layout tests never tap it.
+private final class StubReaderShareProvider: ReaderShareProviding {
+    func presentShareSheet(
+        urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView) {}
+    func saveLink(urlString: String) {}
+}
+
 final class ReaderScreenTests: XCTestCase {
 
     private let content = UITestFixtures.sampleArticleContent(title: "Reader Fixture Article")
@@ -60,14 +68,6 @@ final class ReaderScreenTests: XCTestCase {
                                        named: "reader-rsvp")
     }
 
-    /// The former standalone "highlight" (chunking) view now lives as RSVP's
-    /// Phrases sub-mode; `forceMode: .highlight` resolves there.
-    func testPhraseReaderSnapshot() {
-        let reader = makeReader(forceMode: .highlight)
-        SnapshotTesting.assertSnapshot(of: UINavigationController(rootViewController: reader),
-                                       named: "reader-rsvp-phrases")
-    }
-
     func testInlineHeaderReaderSnapshot() {
         let reader = ReaderViewController(
             item: item, content: content, forceMode: .scroll,
@@ -76,18 +76,17 @@ final class ReaderScreenTests: XCTestCase {
         SnapshotTesting.assertSnapshot(of: reader, named: "reader-inline-header")
     }
 
-    // MARK: - Standalone scroll / RSVP children
-
-    func testStandaloneScrollReaderSnapshot() {
-        let scroll = ScrollReaderViewController(item: item, content: content)
-        SnapshotTesting.assertSnapshot(of: scroll, named: "reader-scroll-standalone")
-    }
-
-    func testStandaloneRSVPSnapshot() {
-        let rsvp = RSVPViewController(item: item, content: content)
-        SnapshotTesting.assertSnapshot(of: rsvp, named: "reader-rsvp-standalone")
-    }
-
+    // The standalone `ScrollReaderViewController` / `RSVPViewController`
+    // snapshots are gone: each was the same child the hosted scroll/rsvp
+    // snapshots above already render, minus the host chrome — a second
+    // reference image of the same pixels. Their non-snapshot behavior (finish
+    // on scroll end, skip-to-end, scrubber persistence, restored offsets) is
+    // asserted directly further down.
+    //
+    // The former standalone "highlight" (chunking) snapshot is gone too:
+    // Phrases is an RSVP sub-mode, and the sub-mode switch itself is covered by
+    // `testModeSwitcherChangesHostedChild`.
+    //
     // Note: SplitWebOverlayViewController is a transition overlay that requires a
     // live cut position + rendered top/bottom halves snapshotted from the host scroll
     // reader, plus a WKWebView (no network in tests). It isn't meaningful in
@@ -121,13 +120,13 @@ final class ReaderScreenTests: XCTestCase {
 
         control.selectedSegmentIndex = 1
         control.sendActions(for: .valueChanged)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         XCTAssertTrue(reader.children.contains { $0 is RSVPViewController },
                       "rsvp segment should host the RSVP reader")
 
         control.selectedSegmentIndex = 0
         control.sendActions(for: .valueChanged)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         XCTAssertTrue(reader.children.contains { $0 is ScrollReaderViewController },
                       "scroll segment should restore the scroll reader")
         _ = window
@@ -314,7 +313,7 @@ final class ReaderScreenTests: XCTestCase {
         let skipForward = findControl(in: reader.view, accessibilityLabel: "Skip forward 25 words")
         XCTAssertNotNil(skipForward)
         skipForward?.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
 
         XCTAssertTrue(delegate.didFinish, "Skipping onto the final RSVP word should mark the article read")
         let badge = findView(of: FinishedReadingBadgeView.self, in: reader.view)
@@ -442,7 +441,7 @@ final class ReaderScreenTests: XCTestCase {
         }
 
         skipForward.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
 
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
@@ -469,9 +468,9 @@ final class ReaderScreenTests: XCTestCase {
         }
 
         skipForward.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         skipBack.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         // Skipping saves progress via the fire-and-forget saveReaderExitPosition
         // (WS-F1); flush before reading back so this isn't racing the store queue.
         ReadingListStore.shared.flushPendingUpdates()
@@ -507,17 +506,247 @@ final class ReaderScreenTests: XCTestCase {
 
         slider.value = 5
         slider.sendActions(for: .valueChanged)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, initialWordIndex,
                        "A continuous scrub tick must not persist to the store")
 
         slider.sendActions(for: .touchUpInside)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         // saveReaderExitPosition is a fire-and-forget async write (WS-F1); flush
         // it before reading back so this assertion isn't racing the store queue.
         ReadingListStore.shared.flushPendingUpdates()
         XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, 5,
                        "Ending the scrub gesture should persist the new word index")
+    }
+
+    // MARK: - Speed-reader vertical layout
+
+    /// The action extension hands the speed reader a view that already starts
+    /// below the navigation bar, so its own chrome inset is zero while the bottom
+    /// ~200pt go to the playback controls and the home-indicator inset. The focal
+    /// word rests at the midpoint of what is left. It used to rest at the
+    /// midpoint of the VIEW — which is only the same point when the chrome above
+    /// and the controls below are equally tall — and sat ~110pt low, with a void
+    /// between the extension's chrome and the preceding prose.
+    func testRSVPFocalWordRestsAtTheMidpointOfItsReadingBand() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 60)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let geometry = reader.layoutGeometryForTesting
+        XCTAssertEqual(
+            geometry.focalCenterY,
+            geometry.bandCenterY + RSVPViewController.focalCenterBiasForTesting,
+            accuracy: 0.5,
+            "The focal word rests on the midpoint of the band between the host "
+            + "chrome and the playback controls")
+        XCTAssertLessThan(
+            geometry.focalCenterY, reader.view.bounds.midY,
+            "The band's midpoint is above the view's whenever the controls take "
+            + "more room below than the chrome takes above")
+    }
+
+    /// Each context lane is sized to the prose it holds and pinned to the focal
+    /// band. Given the whole lane, a short passage centers inside it — which is
+    /// the hole that used to open between the chrome and the preceding text.
+    func testRSVPContextLanesAreSizedToTheirProseAndHugTheFocalBand() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 6)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let geometry = reader.layoutGeometryForTesting
+        XCTAssertEqual(
+            geometry.gapAboveProse, 20, accuracy: 0.5,
+            "The preceding lane keeps its bottom a third of the old 60pt off the "
+            + "word's own edge")
+        XCTAssertLessThan(
+            geometry.precedingContext.height, 100,
+            "Six words of preceding prose take two lines, not the 220pt lane they "
+            + "may grow into")
+        XCTAssertEqual(
+            geometry.gapBelowProse, 31, accuracy: 0.5,
+            "…and the trailing lane a third of the old 92pt — the empty pill row "
+            + "is no longer held open under every word")
+        XCTAssertGreaterThan(geometry.trailingContext.height, 0)
+    }
+
+    /// The pill row is reserved only while something is in it. A link pill (or
+    /// the completion badge) pushes the trailing prose down by its own height
+    /// instead of every other word paying for an empty row.
+    func testRSVPTrailingProseYieldsTheRowOnlyWhileAPillOccupiesIt() {
+        let prose = "one two three four five six seven eight nine ten eleven "
+            + "twelve thirteen fourteen fifteen sixteen seventeen"
+        let seven = (prose as NSString).range(of: "seven")
+        let linked = ArticleContent(title: "Linked RSVP Fixture", blocks: [
+            .init(kind: .paragraph, text: prose,
+                  links: [.init(start: seven.location, length: seven.length,
+                                urlString: "https://example.com/link")]),
+        ])
+        let reader = RSVPViewController(item: item, content: linked, resumeWordIndex: 3)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let quiet = reader.layoutGeometryForTesting
+        XCTAssertEqual(quiet.trailingContext.minY, quiet.pillRow.minY, accuracy: 0.5,
+                       "With no pill showing, the prose starts on the pill's row")
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber"); return
+        }
+        slider.value = 6                                    // the linkified word
+        slider.sendActions(for: .valueChanged)
+        reader.view.layoutIfNeeded()
+
+        let withPill = reader.layoutGeometryForTesting
+        XCTAssertGreaterThan(
+            withPill.trailingContext.minY, withPill.pillRow.maxY,
+            "A visible pill pushes the prose clear of the whole row")
+        XCTAssertEqual(withPill.pillRow.minY, quiet.pillRow.minY, accuracy: 0.5,
+                       "The row itself doesn't move — only the prose below it")
+    }
+
+    /// The preceding lane is laid out from the prose it is GIVEN, not from the
+    /// prose it held a word ago. It used to be sized only in `viewDidLayoutSubviews`
+    /// — and nothing marked the view dirty when the word advanced — so the opening
+    /// words of an article arrived into the zero-height lane left by word 0, which
+    /// has no preceding prose at all, and never appeared.
+    func testRSVPPrecedingProseAppearsAsSoonAsThereIsAnyOfIt() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 0)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber"); return
+        }
+        slider.value = 3                                    // three words of context
+        slider.sendActions(for: .valueChanged)
+
+        XCTAssertEqual(reader.contextProseForTesting.preceding, "There has been",
+                       "The lane shows every word it has")
+        XCTAssertGreaterThan(
+            reader.layoutGeometryForTesting.precedingContext.height, 0,
+            "…and is tall enough to draw them, without waiting for another "
+            + "layout pass to be triggered by something else")
+    }
+
+    /// A window too long for the lane loses its OLDEST words. UILabel's own
+    /// `.byTruncatingHead` ellipsises the last visible line only, which kept the
+    /// oldest words and cut a hole out of the middle of the passage.
+    func testRSVPPrecedingProseDropsItsOldestWordsWhenTheLaneOverflows() {
+        let reader = RSVPViewController(
+            item: item, content: longContextContent(), resumeWordIndex: 120)
+        // Inside a card the title header stands over the reader, and the lane it
+        // leaves is where the whole window stopped fitting — which is where the
+        // hole used to open.
+        reader.topContentInset = 300
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let words = longContextContent().blocks[0].text
+            .split(separator: " ").map(String.init)
+        let window = words[(120 - 55)..<120].joined(separator: " ")
+        let shown = reader.contextProseForTesting.preceding
+
+        XCTAssertFalse(shown.isEmpty)
+        XCTAssertLessThan(shown.count, window.count,
+                          "55 words don't fit the lane — this test needs an overflow")
+        XCTAssertTrue(window.hasSuffix(shown),
+                      "What's shown is an unbroken run of the words nearest the "
+                      + "focal word, not the start of the window with its middle "
+                      + "missing. Shown: \(shown)")
+    }
+
+    /// Before there is any preceding prose the lane carries the article's own
+    /// masthead rather than standing empty through the opening words.
+    func testRSVPPrecedingLaneShowsTheMastheadAtTheStartOfTheArticle() {
+        var content = longContextContent()
+        content.author = "Ada Lovelace"
+        let reader = RSVPViewController(item: item, content: content, resumeWordIndex: 0)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        XCTAssertEqual(reader.contextProseForTesting.preceding,
+                       "Long RSVP Fixture\nAda Lovelace")
+        XCTAssertGreaterThan(reader.layoutGeometryForTesting.precedingContext.height, 0)
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber"); return
+        }
+        slider.value = 4
+        slider.sendActions(for: .valueChanged)
+        XCTAssertEqual(reader.contextProseForTesting.preceding, "There has been a",
+                       "Once there is prose to show, the prose takes the lane")
+    }
+
+    /// A roomy container lets the controls unglue from the bottom safe area (the
+    /// reading group is centered on the band, so it rises with them); a container
+    /// with no height to spare keeps them where they were.
+    func testRSVPControlsLiftOffTheBottomOnlyWhenTheBandCanSpareIt() {
+        let roomy = RSVPViewController(item: item, content: longContextContent())
+        roomy.view.frame = CGRect(x: 0, y: 0, width: 402, height: 732)
+        roomy.loadViewIfNeeded()
+        roomy.view.layoutIfNeeded()
+        XCTAssertEqual(
+            roomy.layoutGeometryForTesting.controls.maxY, 732 - 64, accuracy: 0.5,
+            "24pt base gap plus the 40pt lift")
+
+        let tight = RSVPViewController(item: item, content: longContextContent())
+        tight.topContentInset = 150
+        tight.view.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
+        tight.loadViewIfNeeded()
+        tight.view.layoutIfNeeded()
+        XCTAssertEqual(
+            tight.layoutGeometryForTesting.controls.maxY, 650 - 24, accuracy: 0.5,
+            "A band this short owes the reading group every point it has")
+    }
+
+    /// The host's floating share circle hovers over the speed reader. It has to
+    /// clear the playback controls (whose top now moves with the lift) and the
+    /// trailing-context prose has to clear IT — in the extension the circle sat
+    /// on top of the trailing line.
+    func testReaderShareButtonClearsRSVPControlsAndTrailingContext() {
+        let share = StubReaderShareProvider()
+        let reader = ReaderViewController(
+            item: item, content: longContextContent(), forceMode: .rsvp,
+            shareProvider: share, persistsModePreference: false,
+            marksOpenedOnLoad: false, inlineControlsHeader: true)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let rsvp = reader.children.compactMap({ $0 as? RSVPViewController }).first,
+              let shareButton = reader.view.subviews.compactMap({ $0 as? UIButton }).first
+        else {
+            XCTFail("The RSVP host should float a share button over the speed reader")
+            return
+        }
+        // Mid-article, so both context lanes carry their full 55 words.
+        if let slider = findSlider(in: rsvp.view) {
+            slider.value = 60
+            slider.sendActions(for: .valueChanged)
+        }
+        reader.view.layoutIfNeeded()
+
+        let geometry = rsvp.layoutGeometryForTesting
+        let shareInReader = reader.view.convert(shareButton.frame, to: rsvp.view)
+        XCTAssertLessThanOrEqual(
+            shareInReader.maxY, geometry.controls.minY,
+            "The share circle hangs above the playback controls")
+        XCTAssertFalse(
+            shareInReader.intersects(geometry.trailingContext),
+            "The trailing-context lane gives up the width the share circle covers")
+        XCTAssertGreaterThan(
+            geometry.trailingContext.width, 140,
+            "…without narrowing into a column of fragments")
     }
 
     // MARK: - Helpers
@@ -556,6 +785,17 @@ final class ReaderScreenTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    /// Enough prose for both context lanes to fill at any position.
+    private func longContextContent() -> ArticleContent {
+        let sentence = "There has been a weird debate over the last few months about "
+            + "whether the United States is better off than Western Europe and the "
+            + "participants of this debate tend to operate under a shared premise "
+            + "that people know what they mean by better off in the first place. "
+        return ArticleContent(title: "Long RSVP Fixture", blocks: [
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 6), links: []),
+        ])
     }
 
     private func shortArticleContent() -> ArticleContent {

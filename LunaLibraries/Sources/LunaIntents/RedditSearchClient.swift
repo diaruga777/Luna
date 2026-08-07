@@ -7,11 +7,7 @@ import Foundation
 
 /// Searches Reddit and returns the top post's permalink. Uses the public
 /// `search.json` endpoint (no OAuth — best-effort, rate-limited).
-public protocol RedditSearching {
-    func topPostURL(query: String) async throws -> URL
-}
-
-public struct RedditSearchClient: RedditSearching {
+public struct RedditSearchClient {
     public struct NoResultError: Error {}
 
     private let session: URLSession

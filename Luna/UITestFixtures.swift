@@ -4,6 +4,7 @@
 //
 
 #if DEBUG
+import LunaAppConfig
 import LunaModels
 import Foundation
 
@@ -33,20 +34,16 @@ enum UITestState: String, CaseIterable {
     var fixture: UITestFixtures.Fixture { UITestFixtures.fixture(for: self) }
 }
 
-/// Whether this process was launched by the UI-test / screenshot harness (either
-/// of the `-uiTestState` / `-uiTestScreen` launch args is
-/// present). Lives in ReaderKit so both the app (`UITestSeeder`) and ReaderKit's
-/// readers can suppress simulator-only debug tap targets ("Split High/Low") during
-/// deterministic captures without ReaderKit importing the app target. Reads the
-/// launch arguments directly; no UIKit. DEBUG-only.
+/// Whether this process was launched for a deterministic capture.
+///
+/// A thin alias for `CaptureLaunch.isActive` (LunaAppConfig), kept because the
+/// app-shell call sites read better with the harness's own name. The argument
+/// list itself lives in ONE place now — it used to be hand-copied here and into
+/// two reader view controllers, and adding `-LunaStage` to this copy alone left
+/// both readers still drawing their debug pills over every staged capture.
 enum UITestLaunch {
-    private static let argKeys = ["-uiTestState", "-uiTestScreen"]
-
-    /// True when any UI-test harness launch argument is present.
-    static var isActive: Bool {
-        let args = ProcessInfo.processInfo.arguments
-        return argKeys.contains { args.contains($0) }
-    }
+    /// True when any capture launch argument is present.
+    static var isActive: Bool { CaptureLaunch.isActive }
 }
 
 /// Builders for the deterministic fixtures. Pure — no UIKit, no disk, no network —

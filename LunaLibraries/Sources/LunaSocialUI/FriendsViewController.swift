@@ -24,7 +24,7 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     public override func viewDidLoad() {
-        headerTitle = L10n.string("Contacts")
+        headerTitle = L10n.string("Common_contacts")
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         NotificationCenter.default.addObserver(
@@ -66,8 +66,8 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
         _ tableView: UITableView, titleForHeaderInSection section: Int
     ) -> String? {
         switch Section(rawValue: section)! {
-        case .contacts: return contacts.isEmpty ? nil : L10n.string("Contacts")
-        case .blocked: return blocked.isEmpty ? nil : L10n.string("Blocked")
+        case .contacts: return contacts.isEmpty ? nil : L10n.string("Common_contacts")
+        case .blocked: return blocked.isEmpty ? nil : L10n.string("Sharing_friends_blockedSectionHeader")
         default: return nil
         }
     }
@@ -80,15 +80,15 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
         cell.accessoryType = .disclosureIndicator
         switch Section(rawValue: indexPath.section)! {
         case .pending:
-            config.text = L10n.string("Pending Requests")
+            config.text = L10n.string("Sharing_friends_pendingRow")
             config.secondaryText = "\(pendingCount) waiting"
             config.image = UIImage(systemName: "tray.and.arrow.down")
         case .add:
             if indexPath.row == 0 {
-                config.text = L10n.string("Add by Email")
+                config.text = L10n.string("Sharing_friends_add1ByEmail")
                 config.image = UIImage(systemName: "envelope")
             } else {
-                config.text = L10n.string("Add from Phone Contacts")
+                config.text = L10n.string("Sharing_friends_add2FromContacts")
                 config.image = UIImage(systemName: "person.crop.circle.badge.plus")
             }
             cell.accessoryType = .none
@@ -142,7 +142,7 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     // MARK: - Adding
 
     private func promptForEmail() {
-        EmailRecipientPrompt.presentEmailAlert(from: self, title: L10n.string("Add contact")) { [weak self] raw in
+        EmailRecipientPrompt.presentEmailAlert(from: self, title: L10n.string("Sharing_friends_addContactAlertTitle")) { [weak self] raw in
             guard Friend.isValidEmail(raw) else { return }
             _ = FriendsStore.shared.add(email: raw)
             self?.reload()

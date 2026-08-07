@@ -37,6 +37,9 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     /// mode's footer: low in scroll (no footer), above the chunk footer in
     /// highlight, and above the playback controls in RSVP.
     private var floatingShareBottomConstraint: NSLayoutConstraint?
+    /// Active only in RSVP, where the button hangs off the speed reader's
+    /// controls rather than the bottom safe area.
+    private var shareAboveControlsConstraint: NSLayoutConstraint?
 
     /// Sharing affordances (nil in the share extension → no share button/footer).
     private let shareProvider: ReaderShareProviding?
@@ -208,11 +211,27 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         showCurrentMode()
     }
 
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        publishShareButtonFrameToSpeedReader()
+    }
+
+    /// The share circle hovers OVER the child reader, and in RSVP it lands in the
+    /// trailing-context lane. Hand the speed reader the circle's frame in its own
+    /// coordinates so that lane can step aside instead of running its prose under
+    /// it; every other child lays out clear of the corner already.
+    private func publishShareButtonFrameToSpeedReader() {
+        guard let rsvp = currentChild as? RSVPViewController, rsvp.isViewLoaded else { return }
+        rsvp.hostOverlayFrame = floatingShareButton.superview == nil
+            ? .null
+            : view.convert(floatingShareButton.frame, to: rsvp.view)
+    }
+
     private func setUpFloatingShareButton() {
         floatingShareButton.configuration = GlassStyle.solidCircularButtonConfiguration(
             symbol: "square.and.arrow.up", padding: 14)
         floatingShareButton.tintColor = GlassStyle.readingAccent
-        ReaderShareMenu.install(
+        ShareButtonMenu.install(
             on: floatingShareButton,
             providesMenu: shareProvider?.providesShareMenu == true,
             build: { [weak self] in self?.shareMenu() },
@@ -234,6 +253,11 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     /// each mode, so it never overlaps that mode's footer controls. Scroll mode only
     /// grows a playback footer when read-aloud is on, so the button sits low until
     /// then and lifts to clear the controls once they appear.
+    ///
+    /// RSVP is not here: its footer no longer sits at a fixed height above the
+    /// safe area (the controls lift off it on a roomy container), so the button
+    /// hangs off the speed reader's own controls instead — see
+    /// `updateFloatingShareAnchor`.
     private static func floatingShareBottomInset(
         for mode: ReadingListItem.ReaderMode, audioOn: Bool) -> CGFloat {
         switch mode {
@@ -242,8 +266,30 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             // (extensions). In-app the window-level mini-player replaces it,
             // so the share button stays low.
             return (audioOn && ReaderAudioLauncher.center == nil) ? -92 : -24
-        case .rsvp: return -168                     // clear the scrubber + playback controls
-        default: return -24                         // .original
+        default: return -24                         // .rsvp handled by its anchor, .original
+        }
+    }
+
+    /// Gap the share circle keeps above the speed reader's playback controls.
+    private static let shareControlsClearance: CGFloat = 12
+
+    /// Hangs the share circle off whichever line it has to clear: the speed
+    /// reader's controls stack (whose own top moves with the controls lift), or —
+    /// every other mode — a fixed inset from the bottom safe area.
+    private func updateFloatingShareAnchor() {
+        guard shareProvider != nil else { return }
+        shareAboveControlsConstraint?.isActive = false
+        shareAboveControlsConstraint = nil
+        if let controlsTop = (currentChild as? RSVPViewController)?.controlsClearanceAnchor {
+            floatingShareBottomConstraint?.isActive = false
+            let above = floatingShareButton.bottomAnchor.constraint(
+                equalTo: controlsTop, constant: -Self.shareControlsClearance)
+            above.isActive = true
+            shareAboveControlsConstraint = above
+        } else {
+            floatingShareBottomConstraint?.constant =
+                Self.floatingShareBottomInset(for: mode, audioOn: audioOn)
+            floatingShareBottomConstraint?.isActive = true
         }
     }
 
@@ -284,7 +330,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             ReaderAudioLauncher.pauseIfPlaying(itemID: item.id)
         }
         // Read-aloud grows a playback footer in scroll mode — lift the share button.
-        floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode, audioOn: audioOn)
+        updateFloatingShareAnchor()
         showCurrentMode()
     }
 
@@ -298,7 +344,8 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         } else {
             audioButton.setImage(symbol, for: .normal)
         }
-        audioButton.accessibilityLabel = activeAudio ? L10n.string("Turn off read aloud") : L10n.string("Read aloud")
+        audioButton.accessibilityLabel = activeAudio
+            ? L10n.string("Reader_turnOffReadAloudAccessibilityLabel") : L10n.string("Reader_readAloudAccessibilityLabel")
     }
 
     private func syncControlsToCurrentReader() {
@@ -388,7 +435,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         child.didMove(toParent: self)
         currentChild = child
 
-        floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode, audioOn: audioOn)
+        updateFloatingShareAnchor()
         // Keep the share button above the freshly added child content.
         view.bringSubviewToFront(floatingShareButton)
     }

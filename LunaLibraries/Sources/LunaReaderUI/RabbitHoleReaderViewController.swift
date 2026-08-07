@@ -12,6 +12,7 @@
 //  Layers rest at integer focus positions (RabbitHoleLayout).
 //
 
+import LunaAppConfig
 import LunaDesignSystem
 import LunaModels
 import LunaStorage
@@ -135,10 +136,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// the header back button use. Never ships on device.
     private func addSimulatorDiveHooksIfNeeded() {
         #if targetEnvironment(simulator)
-        // Suppressed during deterministic UI-test launches (matches UITestLaunch.isActive,
+        // Suppressed during a deterministic capture (see `CaptureLaunch`,
         // which lives in the app target — inlined here to avoid an upward dependency).
-        let uiTestArgs = ["-uiTestState", "-uiTestScreen"]
-        if ProcessInfo.processInfo.arguments.contains(where: uiTestArgs.contains) { return }
+        if CaptureLaunch.isActive { return }
         func hookButton(_ title: String, action: @escaping () -> Void) -> UIButton {
             var config = UIButton.Configuration.filled()
             config.title = title
@@ -150,13 +150,13 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             view.addSubview(button)
             return button
         }
-        let dive = hookButton(L10n.string("Sim Dive")) { [weak self] in
+        let dive = hookButton(L10n.string("Reader_rabbitHole_simDiveButtonTitle")) { [weak self] in
             guard let self, let focused = self.layers[safe: self.focus],
                   let url = URL(string: "https://en.wikipedia.org/wiki/Swift_(programming_language)")
             else { return }
-            self.pushLayer(url: url, lineText: L10n.string("Sim Dive"), from: focused)
+            self.pushLayer(url: url, lineText: L10n.string("Reader_rabbitHole_simDiveButtonTitle"), from: focused)
         }
-        let pop = hookButton(L10n.string("Sim Pop")) { [weak self] in
+        let pop = hookButton(L10n.string("Reader_rabbitHole_simPopButtonTitle")) { [weak self] in
             guard let self, self.topIndex > 0 else { return }
             self.popToLayer(self.topIndex - 1)
         }

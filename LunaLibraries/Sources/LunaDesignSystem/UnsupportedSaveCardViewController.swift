@@ -44,11 +44,6 @@ public final class UnsupportedSaveCardViewController: UIViewController {
     /// the card's own frame is only known then. See `applyLabelWrapWidth`.
     private var wrappingLabels: [UILabel] = []
 
-    /// Matches the carousel's own card geometry so this reads as one of the
-    /// deck's cards rather than a dialog: same peek/gap insets, same 9:16.
-    private static let cardPeek: CGFloat = 14
-    private static let cardEdgeGap: CGFloat = 10
-    private static let cardVerticalPadding: CGFloat = 12
     /// The card's own inner margin — wide enough that the text never crowds the
     /// 22pt corner radius.
     private static let contentInset: CGFloat = 26
@@ -138,7 +133,7 @@ public final class UnsupportedSaveCardViewController: UIViewController {
         }
 
         doneButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Done"), symbol: "checkmark", prominent: true)
+            title: L10n.string("Common_done"), symbol: "checkmark", prominent: true)
         doneButton.addAction(
             UIAction { [weak self] _ in self?.onDone?() }, for: .touchUpInside)
         doneButton.translatesAutoresizingMaskIntoConstraints = false
@@ -174,12 +169,7 @@ public final class UnsupportedSaveCardViewController: UIViewController {
         super.viewDidLayoutSubviews()
         let safe = view.bounds.inset(by: view.safeAreaInsets)
         guard safe.width > 0, safe.height > 0 else { return }
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: safe.size,
-            peek: Self.cardPeek,
-            edgeGap: Self.cardEdgeGap,
-            verticalPadding: Self.cardVerticalPadding,
-            fit: .aspectCentered)
+        let metrics = CardCarouselMetrics.resolve(containerSize: safe.size)
         cardView.frame = metrics.centeredCardFrame().offsetBy(
             dx: safe.minX, dy: safe.minY)
         applyLabelWrapWidth(cardWidth: cardView.bounds.width)

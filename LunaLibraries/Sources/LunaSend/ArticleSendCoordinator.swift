@@ -76,7 +76,7 @@ public final class AccountEmailSender: ArticleEmailSending {
 /// The Kindle destination: email through the connected Luna account.
 public final class KindleDestination: ArticleDestination {
     public let id = ArticleDestinationID.kindle
-    public let displayName = L10n.string("Kindle")
+    public let displayName = L10n.string("Common_kindle")
 
     private let sender: ArticleEmailSending
 
@@ -139,6 +139,14 @@ public final class ArticleSendCoordinator {
     private var inFlight = Set<String>()
     private let lock = NSLock()
 
+    /// Testing seam. `articleBecameReady`/`retryPendingSends` are synchronous
+    /// entry points that fan delivery out into detached `Task`s; with nothing
+    /// to await, a test can only sleep and hope. When this is set, every task
+    /// they start is handed over so the test can await it instead. Nil in
+    /// production — nothing is retained and no behavior changes.
+    @_spi(Testing)
+    public var didStartDeliveryTask: ((Task<Void, Never>) -> Void)?
+
     public init(
         store: ReadingListStore = .shared,
         destinations: [ArticleDestination]? = nil,
@@ -187,7 +195,8 @@ public final class ArticleSendCoordinator {
             let shouldSend = state == .queued
                 || (destination.sendMode(for: item) == .allSaves && state == nil)
             guard shouldSend else { continue }
-            Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+            let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+            didStartDeliveryTask?(task)
         }
     }
 
@@ -200,7 +209,8 @@ public final class ArticleSendCoordinator {
                 guard shouldAttempt(item, destinationID: destination.id, respectBackoff: true) else {
                     continue
                 }
-                Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+                let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+                didStartDeliveryTask?(task)
             }
         }
     }
@@ -304,7 +314,7 @@ public final class ArticleSendCoordinator {
         guard failureCount < retryPolicy.maxSoftFailures else {
             store.markSendTerminalFailure(
                 for: itemID, destination: destination.id,
-                errorMessage: L10n.string("\(message) Luna gave up after \(failureCount) attempts."),
+                errorMessage: L10n.string("Reader_export_giveUpAfterAttemptsMessage", message, failureCount),
                 failureCount: failureCount)
             return
         }
@@ -334,7 +344,7 @@ public final class ArticleSendCoordinator {
     private static func userVisibleErrorMessage(_ error: Error) -> String {
         let message = String(describing: error)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty ? L10n.string("Delivery failed.") : message
+        return message.isEmpty ? L10n.string("Reader_export_deliveryFailedMessage") : message
     }
 
     /// Sends a minimal test document to one destination so the user can verify
@@ -342,10 +352,10 @@ public final class ArticleSendCoordinator {
     public func sendTestDocument(toDestinationID id: String) async throws {
         guard let destination = destination(id: id) else { return }
         let content = ArticleContent(
-            title: L10n.string("Luna Test Document"),
+            title: L10n.string("Reader_export_testDocumentTitle"),
             blocks: [ArticleContent.Block(
                 kind: .paragraph,
-                text: L10n.string("If you can read this on your ereader, Luna's send setup works."),
+                text: L10n.string("Reader_export_testDocumentBody"),
                 links: [])])
         let epub = EpubBuilder().build(
             content: content,
@@ -353,7 +363,7 @@ public final class ArticleSendCoordinator {
             imagesDirectory: store.articlesDirectory)
         try await destination.send(
             epubData: epub,
-            fileName: L10n.string("Luna Test Document.epub"),
+            fileName: L10n.string("Reader_export_testDocumentFileName"),
             title: content.title)
     }
 

@@ -1,0 +1,581 @@
+{
+  "app": "luna",
+  "stages": [
+    {
+      "id": "card.failed-save.error",
+      "screen": "Failed save card",
+      "variant": "error",
+      "summary": "The default failed save: the page in a web view, its URL, and the retry-with-AI affordance.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "card.failed-save.no-rescue",
+      "screen": "Failed save card",
+      "variant": "no rescue offered",
+      "summary": "A failure not worth an LLM pass (or no engine available): the button is absent rather than disabled.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "card.failed-save.rescuing",
+      "screen": "Failed save card",
+      "variant": "rescue in progress",
+      "summary": "A rescue running: the page dimmed under a progress bar. Frozen mid-run — the card polls its state provider and this one never moves.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "card.failed-save.terminal",
+      "screen": "Failed save card",
+      "variant": "attempt spent",
+      "summary": "The rescue was already spent under this app version: an apology and Delete, until an update makes it eligible again.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "card.media.downloading",
+      "screen": "Media card",
+      "variant": "in progress",
+      "summary": "Mid-transfer at 45%: the embedded glass status bar with its horizon progress.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "card.media.failed",
+      "screen": "Media card",
+      "variant": "failed",
+      "summary": "A download that failed: red status, no progress, and the download glyph back for a retry.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "card.media.finished",
+      "screen": "Media card",
+      "variant": "saved",
+      "summary": "The transfer done and the file saved.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "card.media.no-media",
+      "screen": "Media card",
+      "variant": "nothing to download",
+      "summary": "The one failure that offers the AI rescue: the page held no media this app could recognise.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "card.media.queued",
+      "screen": "Media card",
+      "variant": "queued",
+      "summary": "Saved but not downloaded: the download glyph, no status bar.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "card.media.resolving",
+      "screen": "Media card",
+      "variant": "resolving",
+      "summary": "Finding the asset behind the post. A message but no percentage — a fraction is only honest once bytes are moving.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "card.media.waiting",
+      "screen": "Media card",
+      "variant": "waiting for Wi-Fi",
+      "summary": "Deferred by the Wi-Fi-only policy — status, no percentage, and the transfer resumes the instant Wi-Fi returns.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "card.rescue-failure",
+      "screen": "Extension failure card",
+      "variant": "save failed",
+      "summary": "The share/action extension's failure card, hosted in-app because a simulator cannot drive the real share sheet.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "card.unsupported-save",
+      "screen": "Unsupported save card",
+      "variant": "another app's kind",
+      "summary": "What a single-content app shows when a foreign kind arrives — the same card from every surface.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "deck.article.from-contact",
+      "screen": "Card deck",
+      "variant": "shared by a contact",
+      "summary": "An article that arrived by email from a contact — the sender attribution on the card.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "deck.article.in-progress",
+      "screen": "Card deck",
+      "variant": "part-read article",
+      "summary": "A save opened and left a third of the way in: the progress the card carries back.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "deck.article.loading",
+      "screen": "Card deck",
+      "variant": "article fetching",
+      "summary": "A save whose content download has not finished. Frozen: staged mode suppresses the launch re-ingest, so the spinner stays.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "deck.article.locked",
+      "screen": "Card deck",
+      "variant": "paywalled article",
+      "summary": "A hard-paywalled save: the locked overlay over the card, with no extracted text behind it.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "deck.empty",
+      "screen": "Card deck",
+      "variant": "empty",
+      "summary": "Onboarding answered, nothing saved yet — the util card in its completed layout is the only card.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "deck.failed-save",
+      "screen": "Card deck",
+      "variant": "failed save centred",
+      "summary": "A save that never resolved: the error card with its red rim, centred because it is the newest.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "deck.first-run",
+      "screen": "Card deck",
+      "variant": "first run",
+      "summary": "Nothing saved and onboarding unanswered: the surface headline, the corona, and the setup block on the util card.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "deck.media.empty",
+      "screen": "Card deck",
+      "variant": "no media saved",
+      "summary": "The media deck with nothing in it.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "deck.media.populated",
+      "screen": "Card deck",
+      "variant": "saved media",
+      "summary": "A downloaded image beside an undownloaded video — the two shapes a media card takes.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "deck.populated",
+      "screen": "Card deck",
+      "variant": "populated",
+      "summary": "One save of every kind this app shows; the newest is centred and the util card sits one page left.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "deck.product.alerting",
+      "screen": "Card deck",
+      "variant": "price drop",
+      "summary": "A drop past the alert threshold, unacknowledged: the badged card that floats to the top of the whole list.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "deck.product.empty",
+      "screen": "Card deck",
+      "variant": "no trackers",
+      "summary": "The price deck with nothing tracked.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "deck.product.pending",
+      "screen": "Card deck",
+      "variant": "never refreshed",
+      "summary": "A tracker saved but not yet priced — what the card shows before the first refresh lands.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "deck.product.steady",
+      "screen": "Card deck",
+      "variant": "price holding",
+      "summary": "A tracker whose price has not moved: the product card with a flat series and no alert.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "deck.save-of-the-week",
+      "screen": "Card deck",
+      "variant": "Save of the Week",
+      "summary": "The util card carrying a live weekly pick — the ribbon, the row, and its save affordance.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "price.editor.alerting",
+      "screen": "Price editor",
+      "variant": "price drop",
+      "summary": "The full editor over a tracker past its threshold: graph, threshold line, seller list.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.editor.creation",
+      "screen": "Price editor",
+      "variant": "just saved",
+      "summary": "The chrome a save-time editor wears: 'Read instead' discards the whole tracker rather than going back.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.editor.merge",
+      "screen": "Price editor",
+      "variant": "second seller added",
+      "summary": "A second store for a product already tracked: the added seller flashes, and 'Read instead' reverts only that one.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.editor.no-threshold",
+      "screen": "Price editor",
+      "variant": "no alert set",
+      "summary": "No threshold yet: the slider parked and dimmed behind a 'set price alert' offer, and no line on the graph.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.graph.empty",
+      "screen": "Price graph",
+      "variant": "no data",
+      "summary": "Axes and the 'set price alert' offer, before three days of samples exist to draw.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.graph.series",
+      "screen": "Price graph",
+      "variant": "falling series",
+      "summary": "A week of samples under a threshold line — the shape a drop makes.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.threshold.set",
+      "screen": "Alert threshold slider",
+      "variant": "armed",
+      "summary": "A 25%-off threshold committed: accent track and the price it resolves to.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.threshold.unset",
+      "screen": "Alert threshold slider",
+      "variant": "parked",
+      "summary": "The slider before an alert is set: track dimmed, readout tertiary.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "reader.audio.paused",
+      "screen": "Audio mini-player",
+      "variant": "paused",
+      "summary": "The same bar paused, at double rate, with autoplay off.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.audio.playing",
+      "screen": "Audio mini-player",
+      "variant": "playing",
+      "summary": "The bar over a reader, mid-article, autoplay on.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.audio.slim",
+      "screen": "Audio mini-player",
+      "variant": "slim",
+      "summary": "The slimmed bar it wears when the reader it is playing is already on screen and can carry the controls itself.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.audio.up-next",
+      "screen": "Audio mini-player",
+      "variant": "announcing next",
+      "summary": "Between articles: the bar announcing what autoplay is about to start.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.highlight",
+      "screen": "Reader",
+      "variant": "highlight",
+      "summary": "Highlight mode — the line-at-a-time guide over the same text.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.inline-header",
+      "screen": "Reader",
+      "variant": "inline header",
+      "summary": "The reader as it appears inside a card: controls in an inline header with a provenance subtitle rather than a nav bar.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.nested",
+      "screen": "Reader",
+      "variant": "nested split-web card",
+      "summary": "A link tapped inside the reader, opening as a second card cut into the page (`claudedocs/readers.md`). Animated, unlike every other stage: the transition IS the subject.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.rsvp",
+      "screen": "Reader",
+      "variant": "RSVP speed reader",
+      "summary": "The silent speed reader, one word at a focal point.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "reader.scroll",
+      "screen": "Reader",
+      "variant": "scrolling",
+      "summary": "The scrolling reader over the fixture article.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.appearance",
+      "screen": "Settings → Appearance",
+      "variant": "default",
+      "summary": "Night vs predawn. Both are night; predawn is the same sky lifted one notch (`claudedocs/visual-effects.md`).",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "settings.audio",
+      "screen": "Settings → Audio",
+      "variant": "default",
+      "summary": "Autoplay, on-device trimming, and voice installation.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.auto-send",
+      "screen": "Settings → Auto-send by source",
+      "variant": "Kindle",
+      "summary": "Which capture sources forward automatically to a destination.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.diagnostics",
+      "screen": "Diagnostics",
+      "variant": "default",
+      "summary": "The five-tap screen. Reachable by argument here because five taps in blank space is not a thing a capture script should be doing.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "settings.downloads",
+      "screen": "Settings → Downloads",
+      "variant": "default",
+      "summary": "Auto-download, Wi-Fi-only, and save-to-Photos.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "settings.email.connected",
+      "screen": "Settings → Email & Sending",
+      "variant": "connected",
+      "summary": "An account in good standing: address, inbox filter, sign out.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.email.connecting",
+      "screen": "Settings → Email & Sending",
+      "variant": "connecting",
+      "summary": "A sign-in attempt in flight — the spinner in the Connect row. Frozen: staged mode holds the busy flag rather than running a login.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.email.error",
+      "screen": "Settings → Email & Sending",
+      "variant": "credentials rejected",
+      "summary": "The account the provider stopped accepting: the issue row, the reconnect affordance, and the 'sign in required' detail.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.email.expired",
+      "screen": "Settings → Email & Sending",
+      "variant": "authorization expired",
+      "summary": "The OAuth variant of the same recovery — an Outlook grant that aged out rather than a password that was refused.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.email.signed-out",
+      "screen": "Settings → Email & Sending",
+      "variant": "signed out",
+      "summary": "No account: the Sharing Account section IS the sign-in form (`claudedocs/email-login.md`).",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.import-export",
+      "screen": "Settings → Import & Export",
+      "variant": "populated",
+      "summary": "Export counts read from the seeded store.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "settings.import-review",
+      "screen": "Import review sheet",
+      "variant": "both sections",
+      "summary": "The sheet a picked link-list file produces. Staged with a fixture document — a simulator has no document picker result to hand it.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "settings.kindle",
+      "screen": "Settings → Kindle",
+      "variant": "connected",
+      "summary": "Send-to-Kindle, reachable only once an account exists.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.reader",
+      "screen": "Settings → Reader",
+      "variant": "default",
+      "summary": "Font, depth, accent, speed — the reader's own preferences.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "settings.root",
+      "screen": "Settings",
+      "variant": "root",
+      "summary": "The app's own settings list — the categories differ per app.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "settings.safari-only",
+      "screen": "Settings → Safari",
+      "variant": "no Action Button",
+      "summary": "The same screen on hardware that cannot run the shortcut: renamed, with the shortcut, On-Screen URLs and Double Save sections gone.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "settings.shortcut",
+      "screen": "Settings → Shortcut & Safari",
+      "variant": "shortcut available",
+      "summary": "The full screen, forced into the Action-Button-capable layout a simulator would otherwise hide.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "share.media-saved",
+      "screen": "Extension media screen",
+      "variant": "pending",
+      "summary": "What a saved post shows in the share/action extension before any download starts. Hosted in-app — a simulator cannot drive the share sheet.",
+      "kind": "media",
+      "apps": ["luna", "downloader"]
+    },
+    {
+      "id": "share.reader-article",
+      "screen": "Extension reader",
+      "variant": "article",
+      "summary": "The share/action extension's reader, hosted in-app — the real share sheet cannot be driven on a simulator.",
+      "kind": "article",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "social.contacts",
+      "screen": "Contacts",
+      "variant": "empty",
+      "summary": "The Contacts list on a device with no contacts yet — its own identity QR and the invite affordance.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "social.pending-requests",
+      "screen": "Pending requests",
+      "variant": "empty",
+      "summary": "Incoming contact requests — the screen a tapped request notification routes to.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "social.recipient-picker",
+      "screen": "Recipient picker",
+      "variant": "empty",
+      "summary": "What 'send this save to someone' opens, before any contact exists.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "util.completed",
+      "screen": "Util card",
+      "variant": "completed",
+      "summary": "After both lessons: the paste row plus matching Safari-history URLs where the setup controls were.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "util.email-nudge",
+      "screen": "Util card",
+      "variant": "email nudge earned",
+      "summary": "Three saves old enough to earn the email offer, with no account connected — the third setup slot in use.",
+      "kind": "email",
+      "apps": ["luna", "reader"]
+    },
+    {
+      "id": "util.first-run",
+      "screen": "Util card",
+      "variant": "first run",
+      "summary": "Headline, corona and setup block, before either lesson is answered.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "util.save-of-the-month",
+      "screen": "Util card",
+      "variant": "month-tier pick",
+      "summary": "The same row past the nine-day mark, where the label flips from week to month.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
+      "id": "util.save-of-the-week",
+      "screen": "Util card",
+      "variant": "weekly pick",
+      "summary": "A pick two days old: the week-tier label and the ribbon.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    }
+  ]
+}

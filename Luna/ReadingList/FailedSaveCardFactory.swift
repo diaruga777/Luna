@@ -82,7 +82,7 @@ enum FailedSaveCardFactory {
     static func makeMenu(shareLink: @escaping () -> Void, delete: UIAction) -> UIMenu {
         UIMenu(children: [
             UIAction(
-                title: L10n.string("Share Link…"),
+                title: L10n.string("Common_shareLinkEllipsis"),
                 image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in shareLink() },
             delete,
@@ -98,7 +98,7 @@ enum FailedSaveCardFactory {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         let when = formatter.localizedString(for: record.lastFailureDate, relativeTo: now)
-        return L10n.string("Tried \(record.failureCount) times · last \(when)")
+        return L10n.string("CardDeck_failedSave_attemptFooter", record.failureCount, when)
     }
 
     // MARK: - Actions

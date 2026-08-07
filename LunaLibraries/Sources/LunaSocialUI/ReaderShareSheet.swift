@@ -48,7 +48,7 @@ public final class ReaderShareSheet: UIViewController {
     /// Title of the nested export sheet/submenu. Public so a caller presenting
     /// the export options on their own (an article with no link to share) labels
     /// them identically.
-    public static var exportTitle: String { L10n.string("Export as…") }
+    public static var exportTitle: String { L10n.string("Sharing_readerShareSheet_2exportTitle") }
 
     /// The export-format options, in `ArticleExportFormat.shareMenuFormats`
     /// order (which is NOT `allCases` — `.document` is double-save only).
@@ -71,13 +71,13 @@ public final class ReaderShareSheet: UIViewController {
     ) -> [Row] {
         var rows: [Row] = []
         rows.append(Row(
-            title: L10n.string("Copy link"), systemImage: "doc.on.doc",
+            title: L10n.string("Common_copyLink"), systemImage: "doc.on.doc",
             isPrimary: false, action: onCopyLink))
         rows.append(Row(
-            title: L10n.string("Share link"), systemImage: "square.and.arrow.up",
+            title: L10n.string("Common_shareLink"), systemImage: "square.and.arrow.up",
             isPrimary: false, action: onShareLink))
         rows.append(Row(
-            title: L10n.string("Send as email"), systemImage: "envelope",
+            title: L10n.string("Sharing_readerShareSheet_1sendAsEmail"), systemImage: "envelope",
             isPrimary: false, action: onPickFriend))
         // File export only applies to readable articles, not media / platform posts.
         if includeExport {
@@ -110,7 +110,7 @@ public final class ReaderShareSheet: UIViewController {
     private let rows: [Row]
     private let sheetTitle: String
 
-    public init(rows: [Row], title: String = L10n.string("Share")) {
+    public init(rows: [Row], title: String = L10n.string("Common_share")) {
         self.rows = rows
         self.sheetTitle = title
         super.init(nibName: nil, bundle: nil)
@@ -134,7 +134,7 @@ public final class ReaderShareSheet: UIViewController {
 
     /// Convenience: build the sheet and present it from `presenter`.
     public static func present(
-        from presenter: UIViewController, rows: [Row], title: String = L10n.string("Share")
+        from presenter: UIViewController, rows: [Row], title: String = L10n.string("Common_share")
     ) {
         presenter.present(ReaderShareSheet(rows: rows, title: title), animated: true)
     }

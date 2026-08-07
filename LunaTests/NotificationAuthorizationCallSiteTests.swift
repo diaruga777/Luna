@@ -31,7 +31,7 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
         // (3) Committing a price alert threshold — both editors. The card's
         // graph has two commit paths for the one moment: dragging the line, and
         // the "Set price alert" request a threshold-less tracker offers instead.
-        "Luna/PriceTracker/PriceTrackerCardsViewController.swift": 2,
+        "Luna/PriceTracker/ProductCardContent.swift": 2,
         "LunaLibraries/Sources/LunaPriceUI/PriceTrackingViewController.swift": 1,
     ]
 
@@ -39,10 +39,17 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
     private static let definitionFile =
         "LunaLibraries/Sources/LunaSocial/NotificationManager.swift"
 
+    /// Normalized, and so is every enumerated URL below. `#filePath` is
+    /// whatever path the compiler was handed while the enumerator reports the
+    /// real one, and under a symlinked checkout (a worktree in `/tmp`, which is
+    /// `/private/tmp`) those differ — the prefix strip then leaves `/privateLuna
+    /// /...` and every call site reads as new. `resolvingSymlinksInPath` is the
+    /// normalizer, and it is only correct applied to BOTH ends.
     private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+            .resolvingSymlinksInPath()
     }
 
     func testRequestAuthorizationIsCalledOnlyFromTheThreeOptInMoments() throws {
@@ -99,7 +106,7 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
                 continue
             }
             for case let url as URL in walker where url.pathExtension == "swift" {
-                let relative = url.path.replacingOccurrences(
+                let relative = url.resolvingSymlinksInPath().path.replacingOccurrences(
                     of: repoRoot.path + "/", with: "")
                 guard relative != definitionFile else { continue }
                 let source = try String(contentsOf: url, encoding: .utf8)

@@ -9,9 +9,10 @@ import Foundation
 
 /// The article the onboarding mocks show.
 ///
-/// The copy itself lives in `OnboardingLunaArticleCopy` and is rendered by the
-/// replica views alone — the mock Safari page and the mock action-extension
-/// sheet. **It is never saved.** Onboarding writes nothing to the reading list,
+/// The copy itself lives in `ShareSetupPractice` (LunaModels, so the share
+/// extension shows the same words) and is rendered by the replica views alone —
+/// the mock Safari page and the mock action-extension sheet. **It is never
+/// saved.** Onboarding writes nothing to the reading list,
 /// so the deck the user lands on holds exactly what they saved themselves.
 ///
 /// What remains here is the one-time sweep of the item an OLDER build did

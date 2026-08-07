@@ -222,12 +222,12 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         }
         closeButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark")
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        closeButton.accessibilityLabel = L10n.string("Close")
+        closeButton.accessibilityLabel = L10n.string("Common_close")
         closeTab.contentView.addSubview(closeButton)
 
         safariButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "safari")
         safariButton.addTarget(self, action: #selector(openInSafariTapped), for: .touchUpInside)
-        safariButton.accessibilityLabel = L10n.string("Open in Safari")
+        safariButton.accessibilityLabel = L10n.string("Common_openInSafari")
         safariTab.contentView.addSubview(safariButton)
 
         backButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "chevron.backward")
@@ -257,7 +257,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         urlField.keyboardType = .URL
         urlField.clearButtonMode = .whileEditing
         urlField.returnKeyType = .go
-        urlField.placeholder = L10n.string("Search or enter a URL")
+        urlField.placeholder = L10n.string("PriceTracker_search_addressFieldPlaceholder")
         urlField.delegate = self
         bottomBar.contentView.addSubview(backButton)
         bottomBar.contentView.addSubview(forwardButton)
@@ -358,14 +358,18 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         guard !isOfferingUseThisPage else { return }
         isOfferingUseThisPage = true
         let alert = UIAlertController(
-            title: L10n.string("Use this page?"),
-            message: L10n.string("Add this page as a seller for this product."),
+            title: L10n.string("PriceTracker_search_useThisPageTitle"),
+            message: L10n.string("PriceTracker_search_useThisPageMessage"),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Add to tracker"), style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(
+            title: L10n.string("PriceTracker_search_addToTrackerActionTitle"), style: .default
+        ) { [weak self] _ in
             self?.isOfferingUseThisPage = false
             self?.handleAddCurrentPage(urlString: urlString, prefetchedHTML: html)
         })
-        alert.addAction(UIAlertAction(title: L10n.string("No thanks"), style: .cancel) { [weak self] _ in
+        alert.addAction(UIAlertAction(
+            title: L10n.string("PriceTracker_search_noThanksActionTitle"), style: .cancel
+        ) { [weak self] _ in
             self?.isOfferingUseThisPage = false
         })
         present(alert, animated: true)
@@ -399,12 +403,12 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
             dismiss(animated: true)
         case .noPrice:
             presentPriceMessage(
-                title: L10n.string("Couldn't find a price"),
-                message: L10n.string("We couldn't find a price on this page, so it wasn't added. Try a product page that shows a price."))
+                title: L10n.string("PriceTracker_search_noPriceTitle"),
+                message: L10n.string("PriceTracker_search_noPriceMessage"))
         case .duplicate:
             presentPriceMessage(
-                title: L10n.string("Already tracked"),
-                message: L10n.string("This page is already a seller for this product."))
+                title: L10n.string("PriceTracker_addSeller_alreadyTrackedTitle"),
+                message: L10n.string("PriceTracker_search_alreadyTrackedMessage"))
         }
     }
 

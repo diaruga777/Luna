@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaFetch
 import LunaURLClassification
 import XCTest
 @testable import Luna
@@ -262,6 +263,36 @@ final class URLUnwrapperTests: XCTestCase {
         XCTAssertTrue(result.didUnwrap)
         XCTAssertFalse(result.url.absoluteString.contains("fbclid"))
         XCTAssertEqual(result.url.absoluteString, "https://techcrunch.com/story/")
+    }
+
+    /// A Substack-style `?comment=<id>` deep link points INSIDE an article, not at a
+    /// different document — and keeping it broke the archive tier outright, because
+    /// archive.today/Wayback are keyed on the exact URL and have no capture under the
+    /// comment-suffixed form. Both spellings go, and the article path survives intact.
+    func testCanonicalizationDropsInPageCommentPointers() {
+        XCTAssertEqual(
+            URLCanonicalizer.strip(url(
+                "https://www.piratewires.com/p/inside-the-coke-fueled-rise-and-fall"
+                + "?comment=308157614")).absoluteString,
+            "https://www.piratewires.com/p/inside-the-coke-fueled-rise-and-fall")
+        XCTAssertEqual(
+            URLCanonicalizer.strip(url("https://example.com/story?commentId=42")).absoluteString,
+            "https://example.com/story")
+        // A real content-bearing query is NOT collateral damage.
+        XCTAssertEqual(
+            URLCanonicalizer.strip(url("https://example.com/view?p=1234&comment=9")).absoluteString,
+            "https://example.com/view?p=1234")
+    }
+
+    /// The archive lookups all key off `canonicalForArchiving`, so the comment pointer
+    /// must be gone by the time a snapshot is requested — this is the actual defect
+    /// that made a free Pirate Wires article unsaveable.
+    func testArchiveLookupTargetDropsCommentPointer() {
+        XCTAssertEqual(
+            ArticleFetcher.canonicalForArchiving(url(
+                "https://www.piratewires.com/p/inside-the-coke-fueled-rise-and-fall"
+                + "?comment=308157614")).absoluteString,
+            "https://www.piratewires.com/p/inside-the-coke-fueled-rise-and-fall")
     }
 
     // MARK: - Network handlers (mock session)

@@ -70,9 +70,17 @@ final class RSVPGazeCoordinator {
     /// camera; inside an app extension).
     let isAvailable: Bool
 
-    init(tracker: GazeTracking? = nil) {
+    /// Where "now" comes from. Every duration this coordinator measures — the
+    /// away threshold, the resume dwell — is a difference between two readings
+    /// of this, so a test can hand it a clock it advances itself instead of
+    /// spending the seconds. Production reads the process clock.
+    private let now: () -> TimeInterval
+
+    init(tracker: GazeTracking? = nil,
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.isAvailable = GazeTrackingAvailability.isSupported
         self.tracker = tracker ?? ARFaceGazeTracker()
+        self.now = now
         self.state = EyeTrackingState(userEnabled: ReaderSettings.eyeTrackingEnabled)
         self.tracker.onSample = { [weak self] sample in self?.handle(sample) }
     }
@@ -176,14 +184,13 @@ final class RSVPGazeCoordinator {
 
     private func presentPermissionDenied(from presenter: UIViewController) {
         let alert = UIAlertController(
-            title: L10n.string("Camera Access Needed"),
-            message: L10n.string(
-                "Luna tracks your eyes to pause playback automatically when you look away. Turn on camera access in Settings to use it."),
+            title: L10n.string("Reader_rsvp_gaze_cameraAccessDeniedTitle"),
+            message: L10n.string("Reader_rsvp_gaze_cameraAccessDeniedMessage"),
             preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Not Now"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
         if let settings = URL(string: UIApplication.openSettingsURLString) {
             alert.addAction(UIAlertAction(
-                title: L10n.string("Open Settings"), style: .default,
+                title: L10n.string("Common_openSettings"), style: .default,
                 handler: { _ in UIApplication.shared.open(settings) }))
         }
         presenter.present(alert, animated: true)
@@ -238,7 +245,7 @@ final class RSVPGazeCoordinator {
             }
             assessed = isOnDisplay(calibrated, in: view) ? .point(calibrated) : .offScreen
         }
-        let now = ProcessInfo.processInfo.systemUptime
+        let now = self.now()
         let trippedThreshold = monitor.update(sample: assessed, focus: focus, at: now)
 
         // A pause this coordinator caused undoes itself: once the eyes have

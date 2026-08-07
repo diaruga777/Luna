@@ -242,16 +242,158 @@ final class SocialMediaResolverTests: XCTestCase {
     }
 
     func testInstagramReelResolvesEmbedContextVideoBeforePoster() {
-        let context = #"{"gql_data":{"shortcode_media":{"is_video":true,"video_url":"https://video.example.com/reel.mp4","display_url":"https://cdn.example.com/reel.jpg"}}}"#
-        let literal = String(data: try! JSONSerialization.data(
-            withJSONObject: context, options: [.fragmentsAllowed]), encoding: .utf8)!
-        let html = #"window.__additionalDataLoaded("/embed/", {"contextJSON": \#(literal)});"#
+        let html = Self.instagramEmbedHTML(
+            #"{"is_video":true,"video_url":"https://video.example.com/reel.mp4","display_url":"https://cdn.example.com/reel.jpg"}"#)
 
         XCTAssertEqual(InstagramMediaParser.assetsFromEmbedContextJSON(html), [
             MediaAsset(
                 url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video,
                 thumbnailURL: URL(string: "https://cdn.example.com/reel.jpg")!),
         ])
+    }
+
+    // MARK: - Instagram reels
+
+    /// Instagram's embed payload now describes a reel as a video (`is_video`,
+    /// `video_duration`, `product_type: clips`) while withholding `video_url`
+    /// entirely. Yielding `display_url` there is what saved a reel's cover frame in
+    /// place of the reel, so a video node with no playable URL must yield nothing.
+    func testInstagramVideoWithoutPlayableURLYieldsNoStill() throws {
+        let html = Self.instagramEmbedHTML(#"""
+        {"__typename":"GraphVideo","is_video":true,"video_duration":46.043,
+         "product_type":"clips",
+         "display_url":"https://cdn.example.com/cover-frame.jpg"}
+        """#)
+
+        let post = try XCTUnwrap(InstagramMediaParser.post(fromEmbedHTML: html))
+        XCTAssertEqual(post.assets, [])
+        XCTAssertTrue(post.declaresVideo)
+        XCTAssertTrue(post.isVideoMissingItsPlayableURL)
+        XCTAssertEqual(InstagramMediaParser.assetsFromEmbedContextJSON(html), [])
+    }
+
+    func testInstagramGraphQLResponseResolvesReelVideoWithPoster() throws {
+        let json = Data(#"""
+        {"data":{"xdt_shortcode_media":{"__typename":"XDTGraphVideo","is_video":true,
+         "video_url":"https://video.example.com/reel.mp4",
+         "display_url":"https://cdn.example.com/cover-frame.jpg"}},"status":"ok"}
+        """#.utf8)
+
+        let post = try XCTUnwrap(InstagramMediaParser.post(fromGraphQLJSON: json))
+        XCTAssertEqual(post.assets, [
+            MediaAsset(
+                url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/cover-frame.jpg")!),
+        ])
+        XCTAssertTrue(post.declaresVideo)
+        XCTAssertFalse(post.isVideoMissingItsPlayableURL)
+    }
+
+    /// The GraphQL payload's carousel shape matches the embed's, down to the
+    /// `edge_sidecar_to_children` key — only `__typename` gains an `XDT` prefix, which
+    /// is why video detection matches the suffix rather than the whole name.
+    func testInstagramGraphQLCarouselResolvesEveryChildInOrder() throws {
+        let json = Data(#"""
+        {"data":{"xdt_shortcode_media":{"__typename":"XDTGraphSidecar",
+         "edge_sidecar_to_children":{"edges":[
+          {"node":{"__typename":"XDTGraphImage","display_url":"https://cdn.example.com/one.jpg"}},
+          {"node":{"__typename":"XDTGraphVideo","video_url":"https://video.example.com/two.mp4",
+                   "display_url":"https://cdn.example.com/two.jpg"}}]}}}}
+        """#.utf8)
+
+        let post = try XCTUnwrap(InstagramMediaParser.post(fromGraphQLJSON: json))
+        XCTAssertEqual(post.assets, [
+            MediaAsset(url: URL(string: "https://cdn.example.com/one.jpg")!, kind: .image),
+            MediaAsset(
+                url: URL(string: "https://video.example.com/two.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/two.jpg")!),
+        ])
+        XCTAssertTrue(post.declaresVideo)
+    }
+
+    /// The user-facing shape of the bug: a `/(username)/reel/(code)/` permalink must
+    /// resolve to the MP4, and the resolver must ask the persisted GraphQL query for
+    /// it first — that endpoint is the only keyless one still returning `video_url`.
+    func testInstagramReelResolvesVideoThroughGraphQLQueryFirst() async throws {
+        let source = URL(string: "https://www.instagram.com/jonfilipko/reel/DbripgRKlb_/")!
+        var requestedURLs: [URL] = []
+        let resolver = SocialMediaResolver { request in
+            request.url.map { requestedURLs.append($0) }
+            return Data(#"""
+            {"data":{"xdt_shortcode_media":{"__typename":"XDTGraphVideo","is_video":true,
+             "video_url":"https://video.example.com/reel.mp4",
+             "display_url":"https://cdn.example.com/cover-frame.jpg"}}}
+            """#.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(assets, [
+            MediaAsset(
+                url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/cover-frame.jpg")!),
+        ])
+        XCTAssertEqual(requestedURLs.count, 1)
+        let components = try XCTUnwrap(requestedURLs.first.flatMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)
+        })
+        XCTAssertEqual(components.host, "www.instagram.com")
+        XCTAssertEqual(components.path, "/graphql/query/")
+        XCTAssertEqual(
+            components.queryItems?.first(where: { $0.name == "variables" })?.value,
+            #"{"shortcode":"DbripgRKlb_"}"#)
+        XCTAssertNotNil(components.queryItems?.first(where: { $0.name == "doc_id" })?.value)
+    }
+
+    /// When the query answers "video, no playable URL", the remaining sources can only
+    /// offer the cover frame — so the ladder stops rather than saving a still.
+    func testInstagramVideoWithoutPlayableURLNeverFallsBackToOpenGraphStill() async {
+        let source = URL(string: "https://www.instagram.com/reel/DbripgRKlb_/")!
+        var fetchCount = 0
+        let resolver = SocialMediaResolver { _ in
+            fetchCount += 1
+            if fetchCount == 1 {
+                return Data(#"""
+                {"data":{"xdt_shortcode_media":{"__typename":"XDTGraphVideo","is_video":true,
+                 "product_type":"clips",
+                 "display_url":"https://cdn.example.com/cover-frame.jpg"}}}
+                """#.utf8)
+            }
+            return Data(
+                #"<meta property="og:image" content="https://cdn.example.com/cover-frame.jpg">"#.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(assets, [])
+        XCTAssertEqual(fetchCount, 1, "the ladder must stop, not scrape a poster")
+    }
+
+    /// A photo post is unaffected: the GraphQL query answers with a still and it is
+    /// exactly what gets saved.
+    func testInstagramPhotoPostStillResolvesAsImage() async {
+        let source = URL(string: "https://www.instagram.com/p/AbCdEfGhIjK/")!
+        let resolver = SocialMediaResolver { _ in
+            Data(#"""
+            {"data":{"xdt_shortcode_media":{"__typename":"XDTGraphImage","is_video":false,
+             "display_url":"https://cdn.example.com/photo.jpg"}}}
+            """#.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://cdn.example.com/photo.jpg")!, kind: .image),
+        ])
+    }
+
+    /// Wraps a `shortcode_media` object the way the embed page ships it: JSON encoded
+    /// once into a `contextJSON` string literal inside the page's bootstrap call.
+    private static func instagramEmbedHTML(_ shortcodeMedia: String) -> String {
+        let context = #"{"gql_data":{"shortcode_media":\#(shortcodeMedia)}}"#
+        let literal = String(data: try! JSONSerialization.data(
+            withJSONObject: context, options: [.fragmentsAllowed]), encoding: .utf8)!
+        return #"window.__additionalDataLoaded("/embed/", {"contextJSON": \#(literal)});"#
     }
 
     func testTikTokVideoResolvesAsVideoAndRedditIsAutoDownloadable() {

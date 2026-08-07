@@ -178,7 +178,9 @@ Photos references remain governed by the user's Photos library.
   Video/social links arrive through the same shared `IngestPipeline` outcomes and media
   resolver as every other ingestion context; YouTube has no extension-only embed or
   URL-derived poster path. Once resolved, media renders only in the extension preview
-  area with the extension's Download, Share, Save to Photos, and Delete controls.
+  area, which is a SQUARE filled aspect-fit: its side follows the content column, not
+  the still's proportions, so the media's vertical centre — and the Photos button
+  anchored under it — is fixed from load.
   Before deciding to auto-download or wait for a tap, it checks
   `SavedMediaStore.existingDownloadedItem(forURLString:)`; a duplicate link renders
   directly from the existing local file or Photos asset (`alreadyDownloaded`) with no
@@ -188,15 +190,27 @@ Photos references remain governed by the user's Photos library.
   set inline before the word "Photos" in BOTH states, and reads "Saved to Photos", disabled,
   after either an automatic or manual Photos save. Download progress is drawn INSIDE the
   media placeholder (`MoonHorizonProgressBar` under the media icon) rather than in a row of
-  its own, and there is no separate spinner — one indicator for one wait. The download row
-  retains a fixed layout slot while its contents change, so completion does not pull the
-  Share/Save controls upward. Its chrome is the extensions' shared chrome: a
+  its own, and there is no separate spinner — one indicator for one wait. **Download and
+  Save to Photos are one fixed-height slot** directly under the preview, in two states —
+  the media either isn't on disk yet or is, never both — so nothing moves when the
+  download completes, and the status line under it stays put. Save to Photos is inset one
+  further standard margin on each side than the full-width controls, so it reads as the
+  media's own action.
+  Its chrome is the extensions' shared chrome: a
   `GlassConfirmationBadge` header ("Saved to Luna" — the screen used to carry a navigation
-  title hard-coded to "Luna Downloader" in all four apps), Liquid Glass action pills in the
-  host app's own tint (`GlassStyle.actionButtonConfiguration(tint:)`), and the floating
-  `ExtensionExitButton` bottom-right in place of a navigation bar holding one Done.
+  title hard-coded to "Luna Downloader" in all four apps) and Liquid Glass action pills in
+  the host app's own tint (`GlassStyle.actionButtonConfiguration(tint:)`). **The ways out
+  stack up from the bottom safe area** instead: a full-width **Done** carrying the app's
+  tint as a real glass fill (`GlassStyle.primaryActionButtonConfiguration`, iOS 26
+  prominent glass — plain glass tinted at 55% is indistinguishable from the quiet pills
+  over true black), **Delete** directly above it, and — in the ACTION extension only, whose
+  user did not arrive from a share sheet — the system-share affordance as a floating glass
+  circle above that (`ExtensionFloatingGlassButton`, the same object as
+  `ExtensionExitButton`, which every other extension surface still uses bottom-right) —
+  pinned to the trailing edge the two pills end at, not centred over them.
+  Because the stack is bottom-anchored, an absent Share circle is not a gap.
   Leaving completes SILENTLY — the host's "Saved" checkmark card used to animate in over a
-  screen the user had just dismissed, re-stating the header it replaced. **Delete and exit** removes a
+  screen the user had just dismissed, re-stating the header it replaced. **Delete** removes a
   Photos asset first when one backs the item, then removes the Downloader and reading-list
   records; a Photos permission failure retains the Luna records. The separate
   `autoDownloadMediaInPreview` setting, also default on, decides whether a genuinely new
@@ -321,6 +335,48 @@ shown in the card/Live Activity (and thrown as an App Intent dialog) with a user
 free. The corresponding `E174.1` disk-space required-reason declaration lives in the
 `LunaMediaDownload` privacy manifest.
 
+## Instagram
+
+`PlatformRecognizer` takes the shortcode out of any `(p|reel|reels|tv)/<code>`
+path, including the username-prefixed form Instagram now shares
+(`/<user>/reel/<code>/`). Resolution then runs a two-stage ladder, and the order
+exists for one reason: **Instagram hands out a reel's cover frame freely and its
+playable MP4 from exactly one endpoint.**
+
+1. **The web client's persisted GraphQL query** — a GET to
+   `/graphql/query/?doc_id=…&variables={"shortcode":…}` with the public
+   `X-IG-App-ID` instagram.com's own JavaScript sends. `doc_id` names a query
+   Instagram has already registered server-side, so there is no key and no login.
+   This is today the only keyless source that still returns `video_url`. It is a
+   GET rather than the POST the site itself issues because the durable background
+   engine can only run plain download tasks (no request body) — and the endpoint
+   answers this GET while 403-ing a bodyless POST.
+2. **The embed page** (`/p/<code>/embed/captioned/`) — its `contextJSON` blob
+   still carries stills and carousels, and any `video_url` it does hand back.
+
+Both endpoints return the same `shortcode_media` node shape, down to
+`edge_sidecar_to_children`; only `__typename` gains an `XDT` prefix on the GraphQL
+one, which is why video detection matches that name's suffix. One node parser
+serves both.
+
+**A video node with no playable URL yields nothing, never its still.** Instagram's
+embed payload now describes a reel as a video (`is_video`, `video_duration`,
+`product_type: clips`) while omitting `video_url` entirely; reading that as "no
+video here" and falling through to `display_url` is what made a saved reel come
+back as a static image — the reel's own cover frame, stored as though it were the
+reel. `InstagramPost.declaresVideo` carries the fact up so the ladder stops rather
+than scraping an `og:image` poster from the post page. A reel Luna cannot fetch
+stays a usable link; it never becomes a picture of itself. Photo posts and
+carousels are unaffected — their stills *are* the media, and the `og:` stage
+remains their last resort.
+
+`doc_id`s rotate. When this one is retired the query returns no media rather than
+wrong media, so the degradation is a reel that fails to download, not a reel that
+downloads the wrong thing. The durable background engine mirrors the same two
+stages (`instagramGraphQL` → `instagramEmbed`, via `startNextInstagramResolve`),
+the way its Facebook and YouTube ladders mirror theirs; reordering one means
+reordering both.
+
 ## YouTube
 
 `PlatformRecognizer` accepts concrete video URLs on `youtube.com` and all subdomains (including
@@ -394,7 +450,8 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
   resolver/downloader/Photo-library protocols.
 - `SocialMediaResolver.swift` dispatches to pure parsers for X, Instagram, TikTok, and
   Facebook. X uses fxtwitter JSON; TikTok parses hydration/reflow JSON; Instagram prefers
-  embed `contextJSON`; Facebook prefers playable URLs in browser-page JSON. Facebook share
+  the persisted GraphQL query and never substitutes a still for a video (see the Instagram
+  section above); Facebook prefers playable URLs in browser-page JSON. Facebook share
   tracking is removed before every resolution stage (`v` is retained for `/watch/` identity),
   because tracked and stable permalinks can receive different logged-out response shapes.
   Its final crawler response is parsed for both inline `browser_native_*_url` JSON and Open

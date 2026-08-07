@@ -81,13 +81,22 @@ still starlight. The central app's sky is plain moonlight.
 ## App launch fade
 
 All four Luna apps use the production card and corona as their launch surface.
-Their static `LunaLaunchScreen.storyboard` contains one opaque standalone PNG
-recorded from the same fixed star table, `EclipseCoronaView`, and blank black
-`CardSurfaceView` used by the first live frame. The corona intentionally omits
-colored solar prominences. Keeping the composite outside
-the asset catalog makes it available to the launch-snapshot process before the
-app has started. The card is already the destination root card's full resting
-size; the corona crops beyond the display instead of making the card smaller.
+Their static `LunaLaunchScreen.storyboard` lays out two rasters — recorded from
+the same fixed star table, `EclipseCoronaView` and blank black `CardSurfaceView`
+the first live frame uses — against constraints that reproduce
+`CardDeckGeometry`, so the card is the destination deck's exact resting frame on
+every iPhone and iPad rather than on one reference phone. The corona
+intentionally omits colored solar prominences. Keeping the rasters outside the
+asset catalog makes them available to the launch-snapshot process before the app
+has started; keeping them single-scale means one file downscales to every device.
+The corona crops beyond the display instead of making the card smaller.
+
+**Corona rasterisation is per-purpose.** `EclipseCorona.transitionScale` (1×) is
+right for a corona composited at the size it was rendered for — the in-app
+eclipse — and wrong for one that will be magnified: the launch artwork was baked
+at 3× from a 1× render, so its streamer wedges arrived as 3×3 blocks. The halo's
+concentric rings and each streamer's angular slices now step WITH the raster, and
+the launch artwork renders at `EclipseCorona.artworkScale`.
 No content or app chrome is present. `AppLaunchTransition` asks the destination
 carousel for its exact frame, guarantees the eclipse one 0.10-second visible
 beat, and fades the splash away as one layer over 0.20 seconds. On an

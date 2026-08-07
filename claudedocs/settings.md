@@ -18,7 +18,24 @@ and finished by `SettingsViewController`.
 - Diagnostics has no visible row. Five taps in blank space on the top-level
   Settings table pushes `DiagnosticsViewController`; taps on rows and controls
   do not count. That screen also holds the Save of the Week signing key entry
-  (`save-of-the-week.md`).
+  (`save-of-the-week.md`) and **Erase All Data**, the factory reset.
+- **Erase All Data is a factory reset, not an onboarding reset** (it replaced
+  one). `FactoryReset.eraseEverything` (LunaStorage) empties BOTH containers —
+  the app's own `Documents`/`Library`/`tmp` and the whole App Group — then both
+  defaults domains, every keychain item this process can reach (all five item
+  classes, every reachable access group, `kSecAttrSynchronizableAny` so the
+  iCloud Keychain copies go too), the notification queue, the Spotlight index,
+  the URL cache and the cookie jar. It is a FILE SWEEP rather than a list of
+  stores, so a store added tomorrow is covered; the only per-kind leg is
+  `FactoryReset.additionalErasers`, where the two media apps install "end every
+  Live Activity" (an activity outlives the process that started it). Two
+  consequences worth stating out loud: the App Group is shared, so **the other
+  three Luna apps are erased too**, and the screen **quits the app afterwards**
+  — every store is a singleton holding a decoded cache of a file that no longer
+  exists, and the first one to write itself back would undo part of the wipe.
+  Out of reach: another app's or extension's private container (nothing in Luna
+  keeps state there) and the Safari web extension's `browser.storage`, which
+  lives inside Safari.
 - Save of the Week appears as a top-level category ONLY on a device holding the
   curator's signing key. It is the proposal inbox: promote or delete, both of
   which retire the proposal record.
@@ -28,6 +45,10 @@ and finished by `SettingsViewController`.
   only in Luna and Reader (see double-save.md) and defaults to Nothing.
 - Appearance contains only the theme choice. Reader eclipse navigation is always
   enabled unless the system Reduce Motion accessibility setting is on.
+- Import & Export is two buttons: share every link this app is responsible for as
+  one CSV, or pick a file and review what it found before anything is saved. It
+  is universal — every app can hand its links out and take a file back, and each
+  keeps only its own kinds either way. See `import-export.md`.
 
 ## Reader and Luna
 

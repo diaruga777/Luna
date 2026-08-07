@@ -28,6 +28,7 @@ let package = Package(
         .library(name: "LunaMailTransport", targets: ["LunaMailTransport"]),
         .library(name: "LunaDesignSystem", targets: ["LunaDesignSystem"]),
         .library(name: "LunaPlatforms", targets: ["LunaPlatforms"]),
+        .library(name: "LunaMediaResolve", targets: ["LunaMediaResolve"]),
         .library(name: "LunaMediaDownload", targets: ["LunaMediaDownload"]),
         .library(name: "LunaSocial", targets: ["LunaSocial"]),
         .library(name: "LunaWeekly", targets: ["LunaWeekly"]),
@@ -105,9 +106,16 @@ let package = Package(
         // LunaDesignSystem: the extension's saved-non-textual screen
         // (`SavedNonTextualViewController`) + `ExtensionMediaPresenter` live
         // here with the download machinery they present.
+        // Post-URL media RESOLUTION only (post URL → direct CDN asset), split out
+        // of LunaMediaDownload so the Safari extension can link it: resolution is
+        // Foundation + URLSession, while the download machinery around it pulls
+        // UIKit / Photos / ActivityKit / SwiftSoup, none of which belong in an
+        // appex with an ~80MB ceiling. LunaMediaDownload re-exports it, so no
+        // existing call site changed (`claudedocs/safari-extension.md`).
+        .target(name: "LunaMediaResolve", dependencies: ["LunaModels", "LunaURLClassification"]),
         .target(
             name: "LunaMediaDownload",
-            dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage", "LunaDesignSystem", "LunaShareSurface"],
+            dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaMediaResolve", "LunaStorage", "LunaDesignSystem", "LunaShareSurface"],
             resources: [.process("Resources")]),
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
         // Save of the Week (claudedocs/save-of-the-week.md): the signed,

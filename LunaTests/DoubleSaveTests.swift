@@ -45,16 +45,13 @@ final class DoubleSaveTests: XCTestCase {
     /// the user picks an action.
     func testDefaults() {
         XCTAssertEqual(actionStore.action(forSurface: surface), .nothing)
-        XCTAssertEqual(actionStore.friendMode(forSurface: surface), .askEveryTime)
         XCTAssertEqual(actionStore.presetFriendEmails(forSurface: surface), [])
     }
 
     func testSettingsRoundTrip() {
         actionStore.setAction(.openDocument, forSurface: surface)
-        actionStore.setFriendMode(.preset, forSurface: surface)
         actionStore.setPresetFriendEmails(["a@b.com", "c@d.com"], forSurface: surface)
         XCTAssertEqual(actionStore.action(forSurface: surface), .openDocument)
-        XCTAssertEqual(actionStore.friendMode(forSurface: surface), .preset)
         XCTAssertEqual(actionStore.presetFriendEmails(forSurface: surface), ["a@b.com", "c@d.com"])
         // Surfaces are independent: Luna and Reader each keep their own action.
         XCTAssertEqual(actionStore.action(forSurface: "luna"), .nothing)

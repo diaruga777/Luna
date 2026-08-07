@@ -92,7 +92,10 @@ Legacy `DoubleSaveActionStore` values may remain in an existing App Group. The
 retired `openPDF` and `openMarkdown` values migrate to `.openDocument` (View
 immediately). The retired `sendToFriend` action no longer decodes and reads back
 as `.nothing`; the friend-prompt hand-off and preset-email storage survive
-unused, and pending contact prompts are not consumed on foreground.
+unused, and pending contact prompts are not consumed on foreground. The
+`DoubleSaveFriendMode` picker (preset contacts vs. ask every time) is gone —
+nothing chose between the two once `sendToFriend` was retired — so any
+`doubleSave.friendMode.<surface>` value left in the App Group is now ignored.
 
 ## Why DOCX for "View immediately"
 

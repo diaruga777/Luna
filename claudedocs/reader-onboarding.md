@@ -255,7 +255,16 @@ taps in:
 |---|---|---|
 | online, live Save of the Week for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
 | online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → bundled preview, nothing stored |
-| offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline and suggestion in the surface's real error state |
+| offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline, under `wifi.slash`, in the surface's real error state |
+
+The offline terminal takes the failure's **headline** but not its `suggestion`:
+"it will retry automatically once you're back online" is true of a save the user
+made and false of a rehearsal, whose row is deleted the moment the sheet closes
+either way. In its place goes
+`ShareExtension_share_hostedOfflineDetail` — the admission that this is the shape
+of a save rather than the save. Both the symbol and that second line ride
+`ExtensionLoadingViewController.showTerminal(_:symbolName:detail:)`, which every
+other failure calls without them.
 
 `practiceURLString` is declared per app (Reader/central luna, Downloader instaTok,
 Price Tracker amayzon). It used to be read off the browser's current demo page;

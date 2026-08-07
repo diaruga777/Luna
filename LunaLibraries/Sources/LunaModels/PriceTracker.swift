@@ -84,6 +84,32 @@ public struct PriceTrackerStore: Codable, Equatable, Identifiable {
             priceHistory.sort { $0.dayStart < $1.dayStart }
         }
     }
+
+    /// Merges externally-supplied day-bucketed samples (passive Safari-extension
+    /// product snapshots, seeded at save time by `SnapshotMatcher`) into
+    /// `priceHistory`: one bucket per day, LOWEST price wins on a collision with
+    /// an existing bucket. Unlike `recordSample`, this never touches `lastPrice`/
+    /// `lastRefreshed` — a passive snapshot is historical data, not a live fetch.
+    public mutating func mergeHistorySamples(
+        _ samples: [(day: Date, price: Decimal, currency: String)],
+        calendar: Calendar = .current
+    ) {
+        for sample in samples {
+            if let index = priceHistory.firstIndex(where: {
+                calendar.isDate($0.dayStart, inSameDayAs: sample.day)
+            }) {
+                if sample.price < priceHistory[index].lowestPrice {
+                    priceHistory[index].lowestPrice = sample.price
+                    priceHistory[index].currency = sample.currency
+                }
+            } else {
+                priceHistory.append(PriceDaySnapshot(
+                    dayStart: calendar.startOfDay(for: sample.day),
+                    lowestPrice: sample.price, currency: sample.currency, fxRate: nil))
+            }
+        }
+        priceHistory.sort { $0.dayStart < $1.dayStart }
+    }
 }
 
 /// A price-tracking payload attached to a `ReadingListItem`. Represents a product

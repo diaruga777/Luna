@@ -58,6 +58,23 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                let html = message?["html"] as? String {
                 SharedSafariURL.recordUnlockedContent(urlString, html: html)
             }
+        case "productSnapshot":
+            // Passive product-page data: persisted (Feature 1, seeds a tracker's
+            // history at save time) and answered against the app-written tracked
+            // index + the snapshot file (Feature 3, the "Was $X" history pill) in
+            // the SAME round trip — one page-side extraction, one message. Never a
+            // save: nothing here schedules a refresh or writes a reading-list row.
+            if Self.hostHandlesProducts, let snapshot = message?["snapshot"] as? [String: Any] {
+                SharedProductSnapshots.record(snapshot)
+                if let record = SharedProductSnapshots.makeRecord(from: snapshot, now: Date()) {
+                    let answer = SharedProductMatching.historyAnswer(forPageSnapshot: record)
+                    payload["isTracked"] = answer.isTracked
+                    payload["hasHistory"] = answer.hasHistory
+                    payload["amount"] = answer.amount
+                    payload["currency"] = answer.currency
+                    payload["day"] = answer.day
+                }
+            }
         default:
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
                 SharedSafariURL.record(urlString)

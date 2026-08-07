@@ -43,13 +43,12 @@ new argument is ignored.
 The stage is live UI, not a picture — tap it, scroll it, drive it. What it will
 not do is fetch anything, so a tap that needs the network dead-ends.
 
-Three arguments, all inert when absent:
+Two arguments, both inert when absent:
 
 | Argument | Effect |
 |---|---|
 | `-LunaStage <id>` | Boot into that stage. An unknown id is a hard failure listing the known ones — a capture of the wrong screen is worse than no capture. |
 | `-LunaStageList` | Print the manifest as JSON on stdout and exit. |
-| `-LunaStageAnimations` | Keep UIKit animations on. Off by default, so a capture lands on the settled frame rather than mid-sweep. |
 
 The committed manifest, `Luna/Stage/StageManifest.json`, is the same JSON for
 the central app (which links every kind, so its catalog is the complete set).
@@ -162,9 +161,18 @@ out from under itself, all in `AppDelegate`/`SceneDelegate`:
 The BGTask **registrations** are deliberately NOT skipped — an identifier has to
 be claimed before launch returns, and a registration alone runs nothing.
 
-Animations are off by default (`-LunaStageAnimations` to keep them), and staged
-runs count as a capture for `UITestLaunch.isActive`, so the simulator-only debug
-tap targets ("Sim Dive", the row ellipsis) do not overlay the content.
+**Animations stay ON.** Turning them off globally is the obvious way to make a
+capture deterministic and it is wrong here: the card carousel mounts its cards
+through an animated path, so `UIView.setAnimationsEnabled(false)` rendered every
+deck stage as a black screen. Determinism lives in the harness instead, which
+waits for two identical frames.
+
+Staged runs do count as a capture for `CaptureLaunch.isActive`, so the
+simulator-only debug tap targets ("Sim Dive", the reading-list row ellipsis) do
+not overlay the content. That list of launch arguments lives in exactly one
+place (`LunaAppConfig.CaptureLaunch`) — it used to be hand-copied into the app
+shell and both reader view controllers, and adding `-LunaStage` to the app's
+copy alone left the readers still drawing their pills over every capture.
 
 ### Catalogs, and the per-app split
 

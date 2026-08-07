@@ -112,15 +112,6 @@ enum LunaStage {
         return stage.make?()
     }
 
-    /// Whether a stage was requested that wants the app's REAL root (its card
-    /// deck) rather than a directly-built screen — the deck stages, which are
-    /// the majority.
-    @MainActor
-    static var usesAppRoot: Bool {
-        guard let requestedID, let stage = StageRegistry.stage(id: requestedID) else { return false }
-        return stage.make == nil
-    }
-
     private static func argumentValue(for key: String) -> String? {
         let args = ProcessInfo.processInfo.arguments
         guard let index = args.firstIndex(of: key), index + 1 < args.count else { return nil }

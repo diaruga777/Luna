@@ -173,6 +173,23 @@ enum KindWiring {
         LiveMediaDownloadManager.shared.attachBackgroundCompletionHandler(completionHandler)
     }
 
+    /// The download Live Activity's tap-to-view link, resolved against the
+    /// saved-media store: a downloaded local file centers/opens the deck's
+    /// card; a Photos-backed save opens Photos directly (reusing the card's
+    /// own rosette mechanism); still-downloading or unknown lands on the deck.
+    static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction {
+        guard let matched = SavedMediaStore.shared.matchingItem(forURLString: urlString) else { return .none }
+        switch matched.storageState {
+        case .localFile:
+            return .centerAndOpen(matched.id)
+        case .photosReference(let localIdentifier, _, _):
+            MediaCardFactory.openInPhotos(localIdentifier: localIdentifier)
+            return .openedExternally
+        case .undownloaded:
+            return .none
+        }
+    }
+
     /// Downloader handles no products — no runner ⇒ AppDelegate never registers
     /// or schedules the price-refresh BGTask.
     static let priceRefreshRunner: (() async -> Int)? = nil

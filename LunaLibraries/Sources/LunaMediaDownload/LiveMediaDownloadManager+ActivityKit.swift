@@ -185,7 +185,15 @@ extension LiveMediaDownloadManager {
             // only its own scheme now, so this can't hardcode Reader's.
             actionURLString: job.errorKind == .photosPermission
                 ? "\(LunaDeepLink.ownScheme)://settings/photos" : nil,
-            suspendDeadline: job.suspendDeadline
+            suspendDeadline: job.suspendDeadline,
+            // Tap-anywhere-on-the-activity, every phase including `.finished`
+            // — opening the app on the downloading/downloaded card is correct
+            // and harmless even mid-transfer. Built here (not in the widget)
+            // because this file already imports LunaDeepLink; the widget
+            // target links only LunaMediaDownload + LunaDesignSystem.
+            viewURLString: LunaDeepLink.mediaViewLink(
+                scheme: LunaDeepLink.ownScheme, sourceURLString: job.sourceURLString
+            )?.absoluteString
         )
     }
     #endif

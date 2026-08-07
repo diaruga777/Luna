@@ -471,6 +471,56 @@ allowed non-determinism is genuine network failure, which fails safely+consisten
   top guard already blocks re-detection. Paste and the extensions reach the same
   decision for a given URL.
 
+## Passive product snapshots seed history at save time
+
+Every product-page visit in a product-handling Safari extension is silently recorded
+(`claudedocs/safari-extension.md`'s "Passive product snapshots" section) into an App
+Group JSON file — `{name, price, currency, canonical url, host, keyed identifiers,
+day, capturedAt}`, one record per (url, day). NOT a save: no reading-list row is
+created, nothing is scheduled for refresh, and no alert can ever fire from one.
+`LunaHTMLClassification.ProductSnapshot` is the one Codable shape; `LunaPriceUI
+.ProductSnapshotStore` reads the shared file app-side (own mirrored App-Group path,
+since `LunaSafari` links no package — parity pinned by `SharedProductSnapshotsTests`).
+
+When `ProductTrackerIngestor.ingest` actually saves a product (new tracker OR merge),
+it matches snapshots against the just-detected `ProductInfo`
+(`LunaHTMLClassification.SnapshotMatcher` — same precedence as `ProductMatcher.
+bestMatch` but over KEYED identifiers: GTIN/ISBN → retailerItemID+host-family →
+mpn+brand → sku+host → canonical URL → fuzzy name+brand; the tracker's single flat
+`productID` participates via `ProductMatcher.normalizedID` against every keyed
+field). Matched snapshots are grouped by HOST: a host the tracker already has a store
+for gets its `priceHistory` MERGED in (`PriceTracker.mergeHistorySamples`,
+day-bucketed, lowest price wins per day — never touches `initialPrice`/`lastPrice`/
+`lastRefreshed`, which describe a live fetch, not a passive record); a new host gets a
+brand-new store seeded with that history. This is the ONE way a product can have a
+non-empty `priceHistory`/graph at the moment it's first saved, instead of waiting for
+the first background refresh. Snapshots are never deleted by matching — the same
+snapshot can seed a different product later, and remains available to the history
+pill.
+
+Immediately after persisting, ingestion regenerates `priceHistoryIndex.json` (see
+below) and fires a SINGLE-tracker refresh (`PriceRefresher.refreshTracker(itemID:)` /
+`PriceRefreshCoordinator.refreshTracker(itemID:)` — same `newlyAlerting`/notification
+semantics as a background cycle, scoped to one tracker) under a background task, so a
+product seeded from history — or bounced back to Safari immediately after
+(`claudedocs/safari-extension.md`) — still gets a LIVE price without waiting up to
+12h for the next cycle.
+
+### The compact history index (`PriceHistoryIndexWriter`)
+
+The Safari extension can't read `readingList.json` (package-free, and it's both too
+large and the wrong shape to hand-parse in an appex), so a product-handling app
+maintains a compact mirror, `priceHistoryIndex.json`, next to the snapshots file: per
+non-archived tracker, `{name, brand?, productID?, stores: [{url, host, points:
+[{day, price, currency}]}]}`, capped at the last 365 days per store. Regenerated
+whole-file (atomic) after `ProductTrackerIngestor` persists, after every
+`PriceRefreshCoordinator.refreshAndNotify`/`refreshTracker` cycle, and from the
+product apps' `KindWiring.appDidEnterBackground` (edits like clearing an alert
+threshold or archiving a tracker don't otherwise trigger a write). Presence of a
+matching product in this index is the extension's answer to "is this page already
+tracked" — see the history-pill flow in `claudedocs/safari-extension.md`. Only `Luna`
+and `LunaPriceTracker` link `LunaPriceUI`, so only those two ever write it.
+
 ## Background refresh (`AppDelegate`)
 
 `BGProcessingTaskRequest` id `com.hsanabria.luna.priceRefresh` (~every 12h, needs

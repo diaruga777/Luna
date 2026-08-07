@@ -283,6 +283,46 @@ The carousel observes both `.savedMediaChanged` and `.readingListChanged`.
 in another process; the carousel bridges it back to `.savedMediaChanged` and reloads on app
 activation because Darwin notifications may be dropped while suspended.
 
+## Bounce back to Safari, and tap-to-view on the Live Activity
+
+A media pill save (`&ret=safari` on the deep link, `claudedocs/safari-extension.md`)
+reopens the original https page in Safari once the download has actually started:
+`PlatformItemIngestor.ingest` is awaited all the way through
+`LiveMediaDownloadManager.shared.start` (which requests the Live Activity) before
+`SceneDelegate`'s save-press `Task` returns, so by the time
+`SafariReturnPolicy.shouldReturn` decides to bounce (`UIApplication.shared.open` on
+the original URL, never a private scheme), the transfer is already running in the
+background `URLSession` and the activity is already visible — bouncing away doesn't
+race either. The transfer and the activity's lifecycle are otherwise unaffected by
+whether the app is foreground, backgrounded, or suspended: a background-session
+delegate callback wakes the process briefly to advance the job regardless.
+
+The activity is tappable everywhere it renders (`.widgetURL` on the lock-screen view
+AND the Dynamic Island's expanded center region, `LunaDownloaderLiveActivityWidget
+.swift`), for every phase including `.finished`: `<ownScheme>://media?url=<encoded
+sourceURLString>`. The URL string is a prebuilt `ContentState.viewURLString` field
+(`LiveMediaDownloadManager.activityState(for:)` sets it — that file already imports
+`LunaDeepLink`, while the widget target links only `LunaMediaDownload` +
+`LunaDesignSystem`, mirroring how `actionURLString` is already populated for the
+Photos-permission failure link) rather than a widget-side `LunaDeepLink` call.
+`SceneDelegate.route`'s `media` host branch resolves it via
+`KindWiring.mediaDeepLinkAction(forURLString:)` — one answer per app, since only
+`Luna`/`LunaDownloader` link the media module (Reader/Price Tracker return `.none`,
+never actually reachable there since neither ever runs the Live Activity):
+`.localFile` centers the deck on that item and opens it (`ExternalItemOpening`,
+which every deck root now provides via the base `CardCarouselHostViewController`);
+`.photosReference` reuses the card's own "open in Photos" mechanism
+(`MediaCardFactory.openInPhotos`, the `photos-redirect://` scheme — no new scheme was
+invented); still-downloading or an unknown URL just lands on the deck, the same as
+any other cold/foreground launch.
+
+**The finished-state dismissal window is UNCHANGED** (`endActivity`'s 20s default) —
+tap-to-view instead rides the alert `endActivity` already sends on its final
+`.finished`/`.failed` update (title + body + sound, same shape as the download-started
+alert), which re-presents the activity prominently regardless of foreground/background
+state; the fix here was making sure that final alerting state carries the view URL, not
+lengthening how long the card lingers.
+
 ## In-app progress: embedded, never floating
 
 In-app download progress is drawn **on the item that is downloading**, not in

@@ -400,7 +400,62 @@ Product-page flow:
    retail page never shows "Read in Luna".
 2. On a product page the button says "Track in Luna" — shown only when the host app
    handles products (Price Tracker / central Luna), deep-linking
-   `<ownScheme>://read?url=<source>`.
+   `<ownScheme>://read?url=<source>&ret=safari` with `captureContent: true` (see
+   "Bounce back to Safari" below). Before deciding which pill(s) to show, `content.js`
+   extracts a passive product SNAPSHOT and sends it (see "Passive product snapshots"
+   below); the reply decides whether Track shows at all.
+
+### Passive product snapshots + the "Was $X on <date>" history pill
+
+Every time a product-handling extension (Price Tracker / central Luna) sees a product
+page, `extractProductSnapshot()` (next to `looksLikeProductPage`) pulls `{name, price,
+currency, keyed identifiers, canonical URL}` from the SAME structured tiers the
+classifier already checked — JSON-LD `Product`/offer, OpenGraph `product:price:*`, or
+microdata — with **no heuristic/rendered-DOM tier**: a page with no structured price
+yields no snapshot at all, mirroring `ProductInfo`'s "the price is mandatory" rule.
+Identifiers are keyed (`gtin`, `mpn`, `sku`, `productID`, `retailerItemID`, `brand`),
+never flattened, so matching scope rules (an ASIN only matches `amazon.*`, an SKU only
+the same host, …) stay applicable downstream. The canonical URL strips the same
+tracking params (`utm_*`, `gclid`, `srsltid`, `ref`, Amazon's `tag`) `content.js`
+already knows about from `GoogleShoppingProductParser`.
+
+One message, `{type: "productSnapshot", snapshot}`, does BOTH jobs in a single round
+trip: the native handler (gated `hostHandlesProducts`) validates and PERSISTS the
+snapshot into an App Group JSON file (`LunaSafari/SharedProductSnapshots.swift` —
+`Library/ProductSnapshots/productSnapshots.json`; deduped by (canonical url, day),
+pruned past 365 days / 2000 records), then ANSWERS the history-pill query by matching
+the page against (a) `priceHistoryIndex.json` (the app-written compact index of
+tracked products — `PriceHistoryIndexWriter`, LunaPriceUI, regenerated after every
+save/refresh/background) and (b) the snapshot file itself, using the SAME identifier
+precedence `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family → mpn+brand
+→ sku+host → canonical URL → fuzzy name) — `LunaSafari/SharedProductMatching.swift` is
+a THIRD hand-written copy of that logic (the extension links no package), pinned by
+`SharedProductMatchingParityTests`. The reply is
+`{hasHistory, isTracked, amount, currency, day}`: `isTracked` skips the Track pill
+entirely (`renderProductPills`); `hasHistory` — the lowest matched price strictly
+BELOW the page's current price, same currency only, ties broken by earliest date —
+shows a second, **non-interactive** (`pointer-events: none`) pill, `Was $79.99 on
+1/12/25`, stacked above Track when unsaved, alone when already tracked, absent
+entirely when tracked with no cheaper history. Snapshots are NEVER saves: no
+reading-list row, no scheduled refresh, no alert — they exist only to seed a
+tracker's history at save time (`claudedocs/price-tracking.md`) and to answer this
+query.
+
+### Bounce back to Safari after a media/product save
+
+A media or product pill tap — never the article pill's `readTarget`, where the reader
+IS the destination — carries `&ret=safari` on its deep link. Once
+`ReadingListIngestor.handleSavePress` returns (the download has started and the Live
+Activity is up, or the tracker is persisted and its single-tracker refresh is
+running), `SceneDelegate` decides via the pure `SafariReturnPolicy.shouldReturn`
+(LunaURLClassification) whether to reopen the original https page —
+`UIApplication.shared.open`, never a private `x-safari-https://`-style scheme, and
+never the `URLUnwrapper`-resolved URL. A failed or unsupported save keeps the user in
+the app to see the error surface; the article kind never bounces even if a flag
+somehow arrives on it (belt-and-suspenders in the policy itself, not just
+`content.js`'s omission). Known limitation: this opens the user's DEFAULT browser
+(Safari unless changed) and typically a NEW tab, not the tab the pill was tapped
+from — there's no supported "return to the previous app" API.
 
 Paywall unlock + toast:
 - The native handler answers `bypassEnabled` true only for article-handling hosts

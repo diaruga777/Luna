@@ -371,3 +371,61 @@ against every keyed value.
 - Update `claudedocs/safari-extension.md`, `claudedocs/price-tracking.md`,
   `claudedocs/media-download.md` sections your changes touch, and commit this plan as
   `claudedocs/safari-product-snapshots-plan.md`.
+
+## Deviations from this plan (recorded during implementation)
+
+- **Feature 1c's identifier research** distinguishes GTIN cross-host matching from
+  retailerItemID host-FAMILY matching. `SnapshotMatcher.hostFamilyMatches` approximates
+  "family" as a registrable-domain compare (last two labels, or three for a short list of
+  known compound suffixes — `co.uk`, `co.jp`, `co.nz`, `co.in`, `com.au`, `com.br`,
+  `com.mx`, `com.tr`) rather than a full public-suffix-list implementation. This correctly
+  separates `amazon.com`/`smile.amazon.com` from `amazon.co.jp`, which is the case that
+  matters (an ASIN is not guaranteed to carry across separate national storefronts), but
+  is not exhaustive against every real-world compound TLD.
+- **Testing `LunaSafari`'s package-free Swift copies** (`SharedProductSnapshots.swift`,
+  `SharedProductMatching.swift`) follows the codebase's EXISTING convention for this exact
+  situation (`SafariSetupCelebrationTests` vs. `SharedSafariURL`): pinning literal
+  constants/keys/behavior markers against the extension's SOURCE TEXT, rather than adding
+  dual Sources-phase membership so `LunaTests` could compile and execute those files
+  directly. The latter is achievable (the widget targets show the pattern for
+  cross-target shared build-file references) but is exactly the kind of `project.pbxproj`
+  surgery this repo's own guidance calls fragile, and no existing test does it. Net effect:
+  `SharedProductSnapshotsTests` executes the REAL validation/prune logic through the
+  app-side `ProductSnapshotStore` (identical Swift to the extension's copy) and pins the
+  extension's literal constants against it; `SharedProductMatchingParityTests` runs the
+  fixture matrix through the real `SnapshotMatcher`/`ProductMatcher` and pins the
+  extension's copy structurally (same tier markers, same thresholds, same stop-word/
+  tracking-param literals) rather than executing it. This is a real (documented) gap
+  relative to "runs a fixture matrix through this copy" read literally.
+- **Feature 3's plan item 12** ("JS-side logic that picks lower-price-same-currency
+  price") is tested as the JS-side RENDER decision (`renderProductPills`, driven via the
+  new `window.__lunaRenderProductPills` hook with a stubbed reply), not a price
+  computation — per section 3b, the lowest-price-same-currency computation itself is
+  native (`SharedProductMatching.historyAnswer`), which `ProductHistoryPillRenderTests`
+  does not re-verify (that's `SharedProductMatchingParityTests`'s job). No test stubs
+  `browser.runtime.sendMessage` itself: no existing LunaSafari test does, and the exposed
+  hook exercises the identical downstream code path.
+- **No SPA/soft-nav retry currently reaches the product branch** of `offerLunaButton`
+  (only the article and Reddit branches retry today), so Feature 1a's "also from the SPA
+  retry path if the product branch runs there" and Feature 3c's "remove/re-evaluate BOTH
+  pills on soft-nav" don't currently bind — there is nothing to wire up. If a product-page
+  soft-nav retry is added later, both pills need including in it.
+- **Feature 2c's "open" for a `.localFile` media item is centering the deck**
+  (`requestCentering`/`ExternalItemOpening`), not a second push into a fullscreen player:
+  reading `MediaCardPresenter`, a downloaded media save plays INLINE on its own card once
+  centered/visible (there is no separate "open the player" push for media the way an
+  article pushes into the reader) — `MediaCardPresenter.openExternally(_:host:)` is a
+  DIFFERENT thing (the "no local file yet" ladder: native app / embed / in-app browser for
+  the SOURCE platform link). Centering is therefore the correct and complete "open" for
+  this kind.
+- **No dedicated test for `KindWiring.mediaDeepLinkAction`**: its only state source is the
+  real `SavedMediaStore.shared` (App-Group-backed, shared across the whole test run), and
+  it takes no injectable seam — the risk of cross-test pollution from seeding real saved-
+  media rows outweighed adding one for this pass. Coverage is indirect: `LunaDeepLinkTests`
+  covers the URL round trip, `LiveMediaDownloadJobTests`/existing suites cover
+  `SavedMediaItem.storageState`, and the routing was reviewed by hand.
+- **The Live Activity finished-state dismissal window was, per an explicit correction
+  mid-task, left at its existing 20s default** — an earlier draft of this plan asked for
+  15 minutes; that instruction was revoked. Tap-to-view rides the alert `endActivity`
+  already sends on the final `.finished`/`.failed` update instead. See
+  `claudedocs/media-download.md`.

@@ -115,6 +115,10 @@ enum KindWiring {
         completionHandler()
     }
 
+    /// Price Tracker links no media module — no Live Activity, so this route
+    /// never actually fires here, but `SceneDelegate` is universal.
+    static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
+
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.

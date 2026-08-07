@@ -87,6 +87,38 @@ public enum LunaDeepLink {
         guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
         return url.host == "rescue"
     }
+
+    /// True for a `<scheme>://read?url=…&ret=safari` link — a media or product
+    /// pill tap (never the article pill's `readTarget`, which never carries the
+    /// flag), asking the app to reopen the original page in Safari once the
+    /// save is handled. Reading a bare `ret` query item rather than a fixed
+    /// position means extra/reordered query params still parse harmlessly, the
+    /// same guarantee `articleURL(from:)` already gives the `url` item.
+    public static func requestsReturnToSource(_ url: URL) -> Bool {
+        guard let scheme = url.scheme, allSchemes.contains(scheme), url.host == "read" else { return false }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "ret" })?.value == "safari"
+    }
+
+    /// `<scheme>://media?url=…` — the download Live Activity's tap-to-view
+    /// link (finished, running, suspended, or failed): opens the app on the
+    /// item downloading/downloaded from `sourceURLString`, without going
+    /// through a save. See `SceneDelegate.route`'s `media` host branch.
+    public static func mediaViewLink(scheme: String = ownScheme, sourceURLString: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = "media"
+        components.queryItems = [URLQueryItem(name: "url", value: sourceURLString)]
+        return components.url
+    }
+
+    /// The wrapped source URL string from a `<any Luna scheme>://media?url=…`
+    /// link, or nil if `url` isn't one.
+    public static func mediaViewURLString(from url: URL) -> String? {
+        guard let scheme = url.scheme, allSchemes.contains(scheme), url.host == "media" else { return nil }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "url" })?.value
+    }
 }
 
 public extension LunaApp {

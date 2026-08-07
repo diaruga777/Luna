@@ -226,6 +226,10 @@ enum KindWiring {
         completionHandler()
     }
 
+    /// Reader links no media module — no Live Activity, so this route never
+    /// actually fires here, but `SceneDelegate` is universal.
+    static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
+
     /// Reader handles no products — no runner ⇒ AppDelegate never registers or
     /// schedules the price-refresh BGTask.
     static let priceRefreshRunner: (() async -> Int)? = nil

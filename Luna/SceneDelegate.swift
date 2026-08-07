@@ -148,14 +148,37 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             return
         }
+        if url.host == "media" {
+            openMediaDeepLink(url)
+            return
+        }
         if let articleURL = LunaDeepLink.articleURL(from: url) {
-            openReader(articleURL: articleURL)
+            // Media/product pill taps carry `&ret=safari`; the article pill's
+            // `readTarget` never does (the reader IS the destination).
+            openReader(articleURL: articleURL, returnsToSource: LunaDeepLink.requestsReturnToSource(url))
+        }
+    }
+
+    /// The download Live Activity's tap-to-view link: centers the deck on the
+    /// saved item (a local file) or opens it in Photos (a Photos-backed save),
+    /// without a save. Still-downloading or an unknown URL simply lands on the
+    /// deck — today's behavior for any other cold/foreground launch.
+    private func openMediaDeepLink(_ url: URL) {
+        guard let urlString = LunaDeepLink.mediaViewURLString(from: url), let nav = mainNavigationController
+        else { return }
+        nav.popToRootViewController(animated: false)
+        if case let .centerAndOpen(itemID) = KindWiring.mediaDeepLinkAction(forURLString: urlString),
+           let item = ReadingListStore.shared.item(withID: itemID) {
+            (nav.viewControllers.first as? ExternalItemOpening)?.openExternally(item)
         }
     }
 
     /// Saves the article (if new), then opens it the way tapping its list row does.
     /// A UI-test or debug root has no main navigation controller — nothing to open into.
-    private func openReader(articleURL: String) {
+    /// `returnsToSource`: a media/product pill save bounces back to the original
+    /// https page in Safari once its own work (download start / price refresh)
+    /// has been kicked off — see `SafariReturnPolicy` and `claudedocs/safari-extension.md`.
+    private func openReader(articleURL: String, returnsToSource: Bool = false) {
         guard let nav = mainNavigationController,
               let normalizedURL = URLUnwrapper.ingestURL(from: articleURL) else { return }
         let urlString = normalizedURL.absoluteString
@@ -176,6 +199,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 // on-screen, so trust it past the (now-stale) publisher paywall signal.
                 trustsPrefetchedHTML: prefetchedHTML != nil)
             let itemID: UUID?
+            var outcome: SafariReturnPolicy.Outcome = .handled
             switch result {
             case .saved(let item),
                  .sentToEreaders(let item),
@@ -187,12 +211,26 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             case .ignored: itemID = ReadingListStore.shared.item(forURLString: urlString)?.id
             case .unsupportedKind:
                 // Foreign-kind save — discarded; the ingest gate has already
-                // shown the unsupported-kind error. Nothing to open.
+                // shown the unsupported-kind error. Nothing to open, and never
+                // a bounce (the error surface needs to be seen in-app).
                 return
             }
             nav.popToRootViewController(animated: false)
             guard let itemID, let item = ReadingListStore.shared.item(withID: itemID)
             else { return }
+            if item.state == .failed { outcome = .failedOrUnsupported }
+            let kind: SafariReturnPolicy.Kind = item.isPriceTracker
+                ? .product
+                : (ReadingListSectioning.rendersAsReader(item) ? .article : .media)
+            if SafariReturnPolicy.shouldReturn(outcome: outcome, kind: kind, flagged: returnsToSource),
+               let originalURL = URL(string: articleURL) {
+                // The page the user was ON — never `URLUnwrapper`'s resolved
+                // result — and skip the deck-centering leg below: the user
+                // won't see it, and a deck reload right as the app backgrounds
+                // is an animation with no audience.
+                await UIApplication.shared.open(originalURL)
+                return
+            }
             // Both root shapes (list / article cards) conform to
             // `ExternalItemOpening`, so no kind-specific downcast is needed.
             (nav.viewControllers.first as? ExternalItemOpening)?.openExternally(item)

@@ -50,12 +50,23 @@ struct ResumeLiveMediaDownloadIntent: AppIntent {
     }
 }
 
+/// Tap-anywhere-on-the-activity target, every phase including `.finished` —
+/// opening the app on the downloading/downloaded card is correct and
+/// harmless regardless of where the transfer is. Built once by
+/// `LiveMediaDownloadManager.activityState(for:)` (which can import
+/// `LunaDeepLink`; this target links only `LunaMediaDownload` +
+/// `LunaDesignSystem`) rather than assembled here.
+private func viewURL(for state: LiveMediaDownloadAttributes.ContentState) -> URL? {
+    state.viewURLString.flatMap(URL.init(string:))
+}
+
 struct LunaDownloaderLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LiveMediaDownloadAttributes.self) { context in
             DownloadActivityView(context: context)
                 .activityBackgroundTint(Color(.systemBackground))
                 .activitySystemActionForegroundColor(.primary)
+                .widgetURL(viewURL(for: context.state))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -74,6 +85,7 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                                 .lineLimit(2)
                         }
                     }
+                    .widgetURL(viewURL(for: context.state))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 4) {

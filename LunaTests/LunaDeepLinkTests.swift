@@ -90,6 +90,47 @@ final class LunaDeepLinkTests: XCTestCase {
         }
     }
 
+    // MARK: - Bounce-back flag (Feature 2)
+
+    func testRequestsReturnToSourceReadsTheRetQueryItem() {
+        let flagged = URL(string: "lunadownloader://read?url=https://example.com&ret=safari")!
+        let unflagged = URL(string: "lunapricetracker://read?url=https://example.com")!
+        XCTAssertTrue(LunaDeepLink.requestsReturnToSource(flagged))
+        XCTAssertFalse(LunaDeepLink.requestsReturnToSource(unflagged))
+    }
+
+    func testRequestsReturnToSourceIgnoresAnyOtherRetValue() {
+        let url = URL(string: "lunadownloader://read?url=https://example.com&ret=something-else")!
+        XCTAssertFalse(LunaDeepLink.requestsReturnToSource(url))
+    }
+
+    func testRequestsReturnToSourceIsFalseForANonReadHost() {
+        let url = URL(string: "luna://media?url=https://example.com&ret=safari")!
+        XCTAssertFalse(LunaDeepLink.requestsReturnToSource(url))
+    }
+
+    /// The extra `ret` query item must not affect `articleURL(from:)` at all —
+    /// extra query params parse harmlessly, exactly like every other one.
+    func testArticleURLIsUnaffectedByTheRetFlag() {
+        let url = URL(string: "lunareader://read?url=https://example.com/story&ret=safari")!
+        XCTAssertEqual(LunaDeepLink.articleURL(from: url), "https://example.com/story")
+        XCTAssertTrue(LunaDeepLink.requestsReturnToSource(url))
+    }
+
+    // MARK: - Media view link (Feature 2's Live Activity tap-to-view)
+
+    func testMediaViewLinkRoundTrips() {
+        let link = LunaDeepLink.mediaViewLink(
+            scheme: LunaDeepLink.downloaderScheme, sourceURLString: "https://example.com/video")
+        XCTAssertEqual(link?.absoluteString, "lunadownloader://media?url=https://example.com/video")
+        XCTAssertEqual(link.flatMap(LunaDeepLink.mediaViewURLString(from:)), "https://example.com/video")
+    }
+
+    func testMediaViewURLStringIsNilForAReadLink() {
+        let url = URL(string: "lunadownloader://read?url=https://example.com/video")!
+        XCTAssertNil(LunaDeepLink.mediaViewURLString(from: url))
+    }
+
     func testIsRescueLink() {
         var cases: [(url: String, isRescue: Bool)] =
             LunaDeepLink.allSchemes.map { ("\($0)://rescue", true) }

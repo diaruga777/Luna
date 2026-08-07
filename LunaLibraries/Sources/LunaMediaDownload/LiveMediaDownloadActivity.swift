@@ -37,6 +37,14 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
         public var thumbnailFileName: String?
         public var actionURLString: String?
         public var suspendDeadline: Date?
+        /// `<scheme>://media?url=…` — tap-to-view for the activity itself
+        /// (`.widgetURL` on the lock-screen view and the Dynamic Island
+        /// expanded region), set for every phase including `.finished`. A
+        /// prebuilt string rather than a `LunaDeepLink` call: the widget
+        /// target links `LunaMediaDownload` but not `LunaURLClassification`
+        /// directly, so `activityState(for:)` (which imports both here)
+        /// builds it once at the source instead.
+        public var viewURLString: String?
 
         public init(
             phase: Phase,
@@ -45,7 +53,8 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
             message: String,
             thumbnailFileName: String? = nil,
             actionURLString: String? = nil,
-            suspendDeadline: Date? = nil
+            suspendDeadline: Date? = nil,
+            viewURLString: String? = nil
         ) {
             self.phase = phase
             self.progress = min(1, max(0, progress))
@@ -54,6 +63,7 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
             self.thumbnailFileName = thumbnailFileName
             self.actionURLString = actionURLString
             self.suspendDeadline = suspendDeadline
+            self.viewURLString = viewURLString
         }
     }
 

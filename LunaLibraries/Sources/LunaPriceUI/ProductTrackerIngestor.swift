@@ -18,6 +18,19 @@ import UIKit
 public final class ProductTrackerIngestor {
     public static let shared = ProductTrackerIngestor()
 
+    /// Test seam: which snapshots history-seeding matches against. Production
+    /// reads the shared App Group file.
+    var snapshotProvider: () -> [ProductSnapshot] = { ProductSnapshotStore.shared.load() }
+    /// Test seam: the immediate post-seed refresh. Production drives the real
+    /// single-tracker `PriceRefreshCoordinator` (which also regenerates the
+    /// history index on completion).
+    var refreshRunner: (UUID) async -> PriceRefreshOutcome? = {
+        await PriceRefreshCoordinator.shared.refreshTracker(itemID: $0)
+    }
+    /// Test seam: the history-index regeneration `finishSeeding` fires right
+    /// after persisting. Production regenerates the real index.
+    var indexRegenerator: () -> Void = { PriceHistoryIndexWriter.regenerate() }
+
     public init() {}
 
     /// Turns a detected product page into a price tracker. Intelligent matching:
@@ -95,7 +108,7 @@ public final class ProductTrackerIngestor {
     func seedHistoryFromSnapshots(
         into tracker: inout PriceTracker, candidate: ProductInfo, candidateURL: URL
     ) {
-        let snapshots = ProductSnapshotStore.shared.load()
+        let snapshots = snapshotProvider()
         guard !snapshots.isEmpty else { return }
         let matched = SnapshotMatcher.matchingSnapshots(
             for: candidate, candidateURL: candidateURL,
@@ -136,7 +149,7 @@ public final class ProductTrackerIngestor {
     /// wrapped in a background task: Feature 2's bounce-back may background the
     /// app immediately after this call returns.
     private func finishSeeding(itemID: UUID) {
-        PriceHistoryIndexWriter.regenerate()
+        indexRegenerator()
         var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
         backgroundTaskID = UIApplication.shared.beginBackgroundTask(
             withName: "ProductSnapshotSeedRefresh"
@@ -147,9 +160,9 @@ public final class ProductTrackerIngestor {
         guard backgroundTaskID != .invalid else { return }
         Task {
             // Regenerates the index again on completion (`refreshTracker`
-            // does this itself) — a live price is exactly the kind of change
-            // the history pill's data should reflect right away.
-            _ = await PriceRefreshCoordinator.shared.refreshTracker(itemID: itemID)
+            // does this itself in production) — a live price is exactly the
+            // kind of change the history pill's data should reflect right away.
+            _ = await refreshRunner(itemID)
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
         }
     }

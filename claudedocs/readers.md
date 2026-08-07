@@ -469,6 +469,42 @@ standard Original-mode capability path still appends Original alongside Scroll a
 Original uses the frozen archive when one exists and otherwise the extracted local article
 snapshot; it never reopens the publisher URL.
 
+**The clip unlocks paywalls itself, and its routing is a PURE function the parity suite
+owns.** The clip's outcome switch is `ClipReaderRoute.route(for:)` (LunaReaderUI), not a
+switch written inside the clip target — because the clip is the one article surface a test
+bundle cannot drive (an `.app` inside an `.app`, hosted by nothing), and the one that
+therefore drifted: `.needsArchive` used to dead-end on "Download and open the Luna Reader
+app" while the app and both share-sheet extensions unlocked the same article in place.
+Nothing about that unlock needs the full app — [an App Clip may run a `WKWebView`, keep
+cookies, and open Safari](https://developer.apple.com/documentation/appclip/choosing-the-right-functionality-for-your-app-clip);
+the restriction list is background execution, ~20 no-op frameworks (AppIntents, Contacts,
+BackgroundTasks, HealthKit, …), tracking/privacy APIs, and size. So `.archiveUnlock`
+presents the same `ArchiveWebReaderViewController` every other surface does, pre-filled,
+with `onOpenInBrowser` wired (a clip HAS `UIApplication`, unlike the extensions). That
+route also carries the browser-recovery cases — an anti-bot front door such as Reuters
+resolves to `.needsArchive` with `webPreStages`, so the clip now gets the WKWebView
+direct-unlock tier too, not just archive.today.
+
+**The unlock writes to a SCRATCH store, not the App Group.**
+`ArchiveWebReaderViewController` extracts *through* a `ReadingListStore` (it saves the
+unlocked article onto an item and hands the item back), so the clip hands it a private
+`ReadingListStore(containerURL:)` under its own caches directory. The read-only contract
+holds — a clip unlock can never surface in the user's saved list — and the container goes
+away with the clip. Closing the unlock without solving returns to the clip's own failure
+screen, where `AppClip_reader_needsArchiveUnlockMessage` (the full app as the remaining
+route) is now the give-up message rather than the first answer, with Retry re-entering the
+unlock. Parity is pinned by `SurfaceParityTests
+.testAppClipRoutesEveryOutcomeLikeTheOtherArticleSurfaces` and
+`.testAppClipUnlocksAPaywalledArticleInsteadOfDeferringToTheFullApp`.
+
+**Size budget.** The clip links the archive/bypass stack already (LunaReaderUI depends on
+LunaArchiveReader), so this costs nothing new, but the ceiling is worth knowing: an
+uncompressed App Clip binary may be 100 MB on iOS 17+ **only** for digital invocations
+(a link, Spotlight) with no iOS 16 support — App Clip Codes / QR / NFC would drop the
+budget back to 15 MB. Luna's deployment target is iOS 18 and the clip is invoked by
+`LunaAppClipInvocationURL`, so the 100 MB tier applies; adding a physical invocation later
+would mean re-measuring, not just flipping a switch.
+
 ## Share-sheet reader experience
 
 Fixed behavior: the **share extension** (`com.apple.share-services`) always saves + dismisses, for every URL. The **"Read in Luna" action extension** (`com.apple.ui-services`) routes via `ShareViewController.presentSavedOrReader`:

@@ -1337,6 +1337,11 @@
         }
     }
 
+    // For the WKWebView harness -- drives the render decision directly from a
+    // stubbed `productSnapshot` reply, the same shape background.js hands
+    // back from the native round trip. See ProductHistoryPillRenderTests.
+    window.__lunaRenderProductPills = renderProductPills;
+
     // Extracts once, sends ONE `productSnapshot` message (recorded passively
     // AND answered against tracked/snapshot history in the same round trip --
     // see SharedProductSnapshots/SharedProductMatching), then renders. Falls

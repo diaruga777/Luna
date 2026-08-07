@@ -699,6 +699,178 @@ final class UtilCardTests: XCTestCase {
             imageData: nil)
     }
 
+    // MARK: - Where downloads are stored
+
+    /// The line tops the block whatever else is in it, and it takes the recents'
+    /// room — its options open over the space they would occupy.
+    func testStorageLineTopsTheBlockAndStandsDownTheRecents() throws {
+        seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
+        let card = makeCard(
+            showsOnboarding: false,
+            savedDates: [clock, clock, clock],
+            recents: [recent("a"), recent("b")],
+            storageChoice: FakeDownloadStorageChoice())
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let chooser = try XCTUnwrap(storageChooser(in: card))
+        let buttons = actionButtons(in: card)
+        XCTAssertFalse(buttons.isEmpty)
+        XCTAssertLessThan(chooser.frame.maxY, buttons[0].frame.minY)
+        let paste = try XCTUnwrap(card.view.descendant(
+            identifier: OnboardingStrings.Accessibility.introPaste.value()))
+        XCTAssertLessThan(chooser.frame.maxY, paste.frame.minY)
+        XCTAssertTrue(visibleRecentRows(in: card).isEmpty)
+    }
+
+    /// It is not a setup lesson: it does not wait for the first run to be over,
+    /// and it does not compete for the block's two-button budget.
+    func testStorageLineBelongsToBothCardVariants() {
+        for showsOnboarding in [true, false] {
+            let card = makeCard(
+                showsOnboarding: showsOnboarding,
+                storageChoice: FakeDownloadStorageChoice())
+            card.loadViewIfNeeded()
+            card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+            card.view.layoutIfNeeded()
+
+            XCTAssertNotNil(storageChooser(in: card))
+            XCTAssertEqual(actionButtons(in: card).count, 2)
+        }
+    }
+
+    func testStorageLineIsAbsentWithoutADownloadingAppOrOnceItIsAnswered() {
+        for choice in [
+            // Reader and Price Tracker install none.
+            nil,
+            FakeDownloadStorageChoice(isUnanswered: false),
+        ] as [FakeDownloadStorageChoice?] {
+            let card = makeCard(showsOnboarding: false, storageChoice: choice)
+            card.loadViewIfNeeded()
+            card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+            card.view.layoutIfNeeded()
+
+            XCTAssertNil(storageChooser(in: card))
+        }
+    }
+
+    /// The line shows the setting as it stands, which on a fresh install is
+    /// Luna's Photos default rather than anything the user has said.
+    func testStorageLineShowsTheSettingAsItStands() throws {
+        for usesPhotos in [true, false] {
+            let card = makeCard(
+                showsOnboarding: false,
+                storageChoice: FakeDownloadStorageChoice(usesPhotos: usesPhotos))
+            card.loadViewIfNeeded()
+            card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+            card.view.layoutIfNeeded()
+
+            let chooser = try XCTUnwrap(storageChooser(in: card))
+            XCTAssertEqual(chooser.selection, usesPhotos ? .photos : .luna)
+        }
+    }
+
+    /// Both options open over the card, and the SELECTED one lands exactly where
+    /// the collapsed selector was — that is what "in place" means here.
+    func testTappingTheSelectorOpensBothOptionsOverTheCardInPlace() throws {
+        let card = makeCard(
+            showsOnboarding: false,
+            storageChoice: FakeDownloadStorageChoice(usesPhotos: true))
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let chooser = try XCTUnwrap(storageChooser(in: card))
+        XCTAssertNil(card.view.descendant(identifier: "utilCard.storage.option.luna"))
+
+        try tapSelector(in: card)
+        XCTAssertTrue(chooser.isExpanded)
+        let luna = try XCTUnwrap(card.view.descendant(
+            identifier: "utilCard.storage.option.luna"))
+        let photos = try XCTUnwrap(card.view.descendant(
+            identifier: "utilCard.storage.option.photos"))
+        let selector = try XCTUnwrap(card.view.descendant(
+            identifier: "utilCard.storage.selector"))
+        XCTAssertEqual(
+            photos.convert(photos.bounds, to: card.view).minY,
+            selector.convert(selector.bounds, to: card.view).minY,
+            accuracy: 0.5)
+        XCTAssertLessThan(
+            luna.convert(luna.bounds, to: card.view).minY,
+            photos.convert(photos.bounds, to: card.view).minY)
+    }
+
+    /// The setting follows the system's answer, never leads it: a refusal leaves
+    /// the line reading "in Luna" rather than promising a destination Luna
+    /// cannot write to.
+    func testARefusedPhotosRequestLeavesTheLineOnLuna() throws {
+        let choice = FakeDownloadStorageChoice(usesPhotos: false, photosOutcome: .refused)
+        let card = makeCard(showsOnboarding: false, storageChoice: choice)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        try tapOption("photos", in: card)
+
+        XCTAssertEqual(choice.photosRequests, 1)
+        XCTAssertEqual(try XCTUnwrap(storageChooser(in: card)).selection, .luna)
+    }
+
+    /// iOS shows its Photos prompt once. The second attempt cannot ask, so the
+    /// card opens Luna's own page in Settings instead of failing silently.
+    func testASecondPhotosAttemptOpensLunasOwnSettingsPage() throws {
+        var openedSettings = 0
+        let choice = FakeDownloadStorageChoice(
+            usesPhotos: false, photosOutcome: .refusedBefore)
+        let card = makeCard(
+            showsOnboarding: false,
+            storageChoice: choice,
+            openSystemSettings: { openedSettings += 1 })
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        try tapOption("photos", in: card)
+
+        XCTAssertEqual(openedSettings, 1)
+        XCTAssertEqual(try XCTUnwrap(storageChooser(in: card)).selection, .luna)
+    }
+
+    func testChoosingLunaAppliesItAndClosesTheOptions() throws {
+        let choice = FakeDownloadStorageChoice(usesPhotos: true)
+        let card = makeCard(showsOnboarding: false, storageChoice: choice)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        try tapOption("luna", in: card)
+
+        XCTAssertTrue(choice.choseLuna)
+        let chooser = try XCTUnwrap(storageChooser(in: card))
+        XCTAssertEqual(chooser.selection, .luna)
+        XCTAssertFalse(chooser.isExpanded)
+    }
+
+    private func storageChooser(
+        in card: UtilCardContentViewController
+    ) -> UtilCardStorageChooserView? {
+        card.view.descendants(of: UtilCardStorageChooserView.self).first
+    }
+
+    private func tapSelector(in card: UtilCardContentViewController) throws {
+        let selector = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.storage.selector") as? UIControl)
+        selector.sendActions(for: .touchUpInside)
+    }
+
+    private func tapOption(_ name: String, in card: UtilCardContentViewController) throws {
+        try tapSelector(in: card)
+        let option = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.storage.option.\(name)") as? UIControl)
+        option.sendActions(for: .touchUpInside)
+    }
+
     // MARK: - Weekly helpers
 
     private func seedWeekly(
@@ -897,6 +1069,8 @@ final class UtilCardTests: XCTestCase {
         app: LunaApp = .reader,
         saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut,
         recents: [RecentURLPreview] = [],
+        storageChoice: (any DownloadStorageChoosing)? = nil,
+        openSystemSettings: @escaping () -> Void = {},
         saveHandler: UtilCardContentViewController.SaveHandler? = nil
     ) -> UtilCardContentViewController {
         UtilCardContentViewController(
@@ -914,7 +1088,43 @@ final class UtilCardTests: XCTestCase {
             savedDates: { savedDates },
             isEmailConnected: { emailConnected },
             recentMatches: { recents },
+            storageChoice: storageChoice,
+            openSystemSettings: openSystemSettings,
             saveHandler: saveHandler ?? { _, _, _, completion in completion(true) })
+    }
+}
+
+/// A download-storage choice the test drives directly, standing in for
+/// `MediaUtilCardStorageChoice` (whose own behaviour — the permission request,
+/// the revert, the inline age — is pinned in `AutoDownloadSettingsTests`).
+@MainActor
+final class FakeDownloadStorageChoice: DownloadStorageChoosing {
+    var isUnanswered: Bool
+    var usesPhotos: Bool
+    /// What a Photos request comes back with, and how many were made.
+    var photosOutcome: DownloadStoragePhotosOutcome
+    private(set) var photosRequests = 0
+    private(set) var choseLuna = false
+
+    init(
+        isUnanswered: Bool = true,
+        usesPhotos: Bool = true,
+        photosOutcome: DownloadStoragePhotosOutcome = .granted
+    ) {
+        self.isUnanswered = isUnanswered
+        self.usesPhotos = usesPhotos
+        self.photosOutcome = photosOutcome
+    }
+
+    func chooseInLuna() {
+        choseLuna = true
+        usesPhotos = false
+    }
+
+    func choosePhotos(completion: @escaping (DownloadStoragePhotosOutcome) -> Void) {
+        photosRequests += 1
+        if photosOutcome == .granted { usesPhotos = true } else { usesPhotos = false }
+        completion(photosOutcome)
     }
 }
 

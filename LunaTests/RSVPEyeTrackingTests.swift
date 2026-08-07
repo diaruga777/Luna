@@ -35,6 +35,10 @@ final class RSVPEyeTrackingTests: XCTestCase {
 
     private var tracker = StubGazeTracker()
     private var window: UIWindow?
+    /// The virtual clock the reader's gaze coordinator measures against — see
+    /// `feed`. Starts away from zero so nothing can pass by reading an
+    /// uninitialised timestamp as "ages ago".
+    private var clock: TimeInterval = 1_000
 
     override func setUp() {
         super.setUp()
@@ -44,6 +48,7 @@ final class RSVPEyeTrackingTests: XCTestCase {
         ReaderSettings.eyeTrackingEnabled = false
         ReaderSettings.rsvpMode = .words
         tracker = StubGazeTracker()
+        clock = 1_000
     }
 
     override func tearDown() {
@@ -59,6 +64,7 @@ final class RSVPEyeTrackingTests: XCTestCase {
     private func makeReader(audioEnabled: Bool = false) -> RSVPViewController {
         let reader = RSVPViewController(item: item, content: content, audioEnabled: audioEnabled)
         reader.gazeTrackerOverride = tracker
+        reader.gazeClockOverride = { [unowned self] in self.clock }
         window = UITestSupport.host(reader)
         return reader
     }
@@ -81,18 +87,26 @@ final class RSVPEyeTrackingTests: XCTestCase {
         view.subviews + view.subviews.flatMap { allSubviews(of: $0) }
     }
 
-    /// Feeds `sample` at display-ish cadence for up to `timeout` real seconds,
-    /// stopping as soon as `until` is satisfied. The coordinator times gaze
-    /// against the process clock, so this has to spend real time.
+    /// Feeds `sample` at display cadence for `timeout` seconds of the reader's
+    /// clock, stopping as soon as `until` is satisfied.
+    ///
+    /// Those seconds are VIRTUAL: `makeReader` hands the coordinator this
+    /// class's own clock (`gazeClockOverride`), so proving that four seconds of
+    /// a steady gaze never pauses playback costs 130 iterations rather than
+    /// four real seconds. The coordinator's pause/resume requests are delivered
+    /// synchronously from the sample, so `until` sees the effect immediately;
+    /// the run-loop turn is only there to let any queued main-queue work land.
     @discardableResult
     private func feed(
         _ sample: GazeSample, timeout: TimeInterval = 3, until: () -> Bool
     ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        let step: TimeInterval = 0.03
+        let deadline = clock + timeout
+        while clock < deadline {
             tracker.onSample?(sample)
             if until() { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+            clock += step
+            RunLoop.current.run(until: Date())
         }
         return until()
     }

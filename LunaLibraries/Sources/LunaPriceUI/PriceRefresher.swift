@@ -20,6 +20,9 @@ public protocol PriceTrackerPersisting: AnyObject {
     /// `bumpDate ?? dateAdded`, so this is what resurfaces a product whose alert
     /// has just fired.
     func bump(_ itemID: UUID)
+    /// Single-item lookup, for `PriceRefresher.refreshTracker(itemID:)` — a
+    /// just-seeded tracker doesn't wait for the stalest-first cycle to be found.
+    func item(withID itemID: UUID) -> ReadingListItem?
 }
 
 extension ReadingListStore: PriceTrackerPersisting {}
@@ -75,16 +78,26 @@ public struct PriceRefresher {
         var outcomes: [PriceRefreshOutcome] = []
         for item in store.priceTrackersStalestFirst() {
             guard let tracker = item.priceTracker else { continue }
-            if let outcome = await refresh(tracker, itemID: item.id) {
+            if let outcome = await refreshTracker(tracker, itemID: item.id) {
                 outcomes.append(outcome)
             }
         }
         return outcomes
     }
 
+    /// Refreshes exactly ONE tracker by item id, outside the stalest-first
+    /// cycle — used right after a save seeds a tracker's history from passive
+    /// snapshots, so the new/merged tracker doesn't wait for the next
+    /// background cycle to show a live price. Returns nil when the item has
+    /// no tracker (vanished, or never had one).
+    public func refreshTracker(itemID: UUID) async -> PriceRefreshOutcome? {
+        guard let tracker = store.item(withID: itemID)?.priceTracker else { return nil }
+        return await refreshTracker(tracker, itemID: itemID)
+    }
+
     /// Refreshes one tracker: fetches each store, re-extracts its price, persists,
     /// and computes the outcome. Returns nil only if the item vanished mid-refresh.
-    private func refresh(_ tracker: PriceTracker, itemID: UUID) async -> PriceRefreshOutcome? {
+    public func refreshTracker(_ tracker: PriceTracker, itemID: UUID) async -> PriceRefreshOutcome? {
         let wasAlerting = tracker.isAlerting
         let previousBest = tracker.currentBestPrice
         var updated = tracker

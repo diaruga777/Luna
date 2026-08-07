@@ -121,6 +121,25 @@ browser.runtime.onMessage.addListener(function (message) {
             .then(function () { return { ok: true }; })
             .catch(function () { return { ok: false }; });
     }
+    if (message.type === "productSnapshot") {
+        // One round trip: the native handler both records the passive
+        // snapshot (Feature 1) and answers the history-pill query against the
+        // tracked index + snapshot file (Feature 3).
+        return browser.runtime.sendNativeMessage("application.id",
+            { type: "productSnapshot", snapshot: message.snapshot })
+            .then(function (resp) {
+                return {
+                    hasHistory: !!(resp && resp.hasHistory),
+                    isTracked: !!(resp && resp.isTracked),
+                    amount: (resp && resp.amount) || null,
+                    currency: (resp && resp.currency) || null,
+                    day: (resp && resp.day) || null
+                };
+            })
+            .catch(function () {
+                return { hasHistory: false, isTracked: false, amount: null, currency: null, day: null };
+            });
+    }
 });
 
 syncBypassRuleset();

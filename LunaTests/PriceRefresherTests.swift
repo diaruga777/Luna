@@ -42,6 +42,10 @@ final class PriceRefresherTests: XCTestCase {
             guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
             items[index].bumpDate = Date()
         }
+
+        func item(withID itemID: UUID) -> ReadingListItem? {
+            items.first { $0.id == itemID }
+        }
     }
 
     private func price(_ amount: String, currency: String = "USD") -> ProductPrice {
@@ -141,5 +145,53 @@ final class PriceRefresherTests: XCTestCase {
         let outcomes = await PriceRefresher(store: store, priceFetcher: fetcher).refreshAll()
         XCTAssertTrue(outcomes.isEmpty)
         XCTAssertTrue(fetcher.requestedURLs.isEmpty)
+    }
+
+    // MARK: - Single-tracker refresh (Feature 1's post-seed immediate refresh)
+
+    func testRefreshTrackerByIDRefreshesExactlyOneTracker() async {
+        let seededURL = "https://shop.example/seeded"
+        let otherURL = "https://shop.example/other"
+        let seeded = trackerItem(url: seededURL, initialPrice: "100", threshold: 0.1,
+                                 refreshedAt: Date(timeIntervalSince1970: 5000))
+        let other = trackerItem(url: otherURL, initialPrice: "50", threshold: 0.1,
+                                refreshedAt: Date(timeIntervalSince1970: 0))
+        let store = FakeStore([seeded, other])
+        let fetcher = MockPriceFetcher()
+        fetcher.priceByURL[seededURL] = price("80")
+        fetcher.priceByURL[otherURL] = price("10")
+
+        let refresher = PriceRefresher(store: store, priceFetcher: fetcher)
+        let outcome = await refresher.refreshTracker(itemID: seeded.id)
+
+        XCTAssertEqual(outcome?.itemID, seeded.id)
+        XCTAssertEqual(outcome?.newBest, Decimal(string: "80"))
+        // The OTHER tracker must be untouched — this is a single-tracker
+        // refresh, not a scoped `refreshAll`.
+        XCTAssertEqual(store.updateOrder, [seeded.id])
+        XCTAssertEqual(store.items.first { $0.id == other.id }?.priceTracker?.currentBestPrice,
+                       Decimal(string: "50"))
+    }
+
+    func testRefreshTrackerByIDReturnsNilForAnUnknownItem() async {
+        let store = FakeStore([])
+        let outcome = await PriceRefresher(store: store, priceFetcher: MockPriceFetcher())
+            .refreshTracker(itemID: UUID())
+        XCTAssertNil(outcome)
+    }
+
+    /// `newlyAlerting` semantics are unchanged on the single-tracker path.
+    func testRefreshTrackerByIDDetectsNewlyAlerting() async {
+        let url = "https://shop.example/widget"
+        let item = trackerItem(url: url, initialPrice: "100", threshold: 0.10,
+                               refreshedAt: Date(timeIntervalSince1970: 0))
+        let store = FakeStore([item])
+        let fetcher = MockPriceFetcher()
+        fetcher.priceByURL[url] = price("80")
+
+        let outcome = await PriceRefresher(store: store, priceFetcher: fetcher)
+            .refreshTracker(itemID: item.id)
+        XCTAssertTrue(outcome?.isAlerting ?? false)
+        XCTAssertTrue(outcome?.newlyAlerting ?? false)
     }
 }

@@ -36,7 +36,7 @@ final class SafariPillLabelTests: XCTestCase {
     /// The keys `content.js` renders (extensionName/Description are manifest-only).
     private static let renderedKeys = [
         "readInLuna", "downloadInLuna", "trackInLuna", "openingLuna", "unlockedWithLuna",
-        "setupCompleteTitle", "returnToApp",
+        "setupCompleteTitle", "returnToApp", "wasPriceOnDate",
     ]
 
     // MARK: - The fallback

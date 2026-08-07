@@ -29,6 +29,30 @@ public final class PriceRefreshCoordinator {
     public func refreshAndNotify() async -> [PriceRefreshOutcome] {
         DiagnosticLog.shared.record("price refresh: runner started", category: "price")
         let outcomes = await refresher.refreshAll()
+        notify(outcomes)
+        // The history pill's data source: a refresh is exactly when a
+        // tracker's priceHistory changes, so the index the extension reads
+        // must be regenerated every cycle, not only at save time.
+        PriceHistoryIndexWriter.regenerate()
+        DiagnosticLog.shared.record("price refresh: runner completed", category: "price")
+        return outcomes
+    }
+
+    /// Refreshes exactly ONE tracker (by reading-list item id) and notifies if
+    /// it newly crosses its threshold — the same notification behavior as a
+    /// background cycle, scoped to one tracker. Used right after
+    /// `ProductTrackerIngestor` seeds a fresh/merged tracker's history from
+    /// passive Safari snapshots, so the user doesn't wait for the next
+    /// background cycle to see a live price.
+    @discardableResult
+    public func refreshTracker(itemID: UUID) async -> PriceRefreshOutcome? {
+        guard let outcome = await refresher.refreshTracker(itemID: itemID) else { return nil }
+        notify([outcome])
+        PriceHistoryIndexWriter.regenerate()
+        return outcome
+    }
+
+    private func notify(_ outcomes: [PriceRefreshOutcome]) {
         let dropped = outcomes.filter { $0.newlyAlerting }
         DiagnosticLog.shared.record(
             "price refresh: \(outcomes.count) trackers, \(dropped.count) newly alerting",
@@ -40,7 +64,5 @@ public final class PriceRefreshCoordinator {
                     amount: outcome.newBest, currency: outcome.displayCurrency),
                 discountPercent: Int((outcome.discountFraction * 100).rounded()))
         }
-        DiagnosticLog.shared.record("price refresh: runner completed", category: "price")
-        return outcomes
     }
 }

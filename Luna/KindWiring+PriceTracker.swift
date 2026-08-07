@@ -91,7 +91,12 @@ enum KindWiring {
         legacyOnboardingDemoSave.cleanup()
     }
 
-    static func appDidEnterBackground() {}
+    static func appDidEnterBackground() {
+        // Keeps the Safari extension's history-pill data current even between
+        // refresh cycles (e.g. after the user edits an alert threshold or
+        // archives a tracker, neither of which triggers a refresh).
+        PriceHistoryIndexWriter.regenerate()
+    }
 
     static func sceneDidForeground() {}
 

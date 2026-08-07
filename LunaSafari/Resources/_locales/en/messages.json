@@ -34,5 +34,9 @@
     "returnToApp": {
         "message": "Return to {app}",
         "description": "Button that reopens the containing app after setup. {app} is substituted by content.js with that app's own name, e.g. 'Luna Reader'. It is deliberately NOT written $APP$ -- see the note in content.js."
+    },
+    "wasPriceOnDate": {
+        "message": "Was {price} on {date}",
+        "description": "Non-interactive pill showing a lower historical price. {price} and {date} are substituted by content.js. Deliberately NOT written $PRICE$/$DATE$ -- see the note in content.js."
     }
 }

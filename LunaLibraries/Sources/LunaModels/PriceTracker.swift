@@ -321,6 +321,30 @@ public struct PriceTracker: Codable, Equatable {
         }
     }
 
+    /// Merges history samples for one HOST into whichever of this tracker's
+    /// stores already lives at that host (case-insensitive), or — when none
+    /// does — creates a new store there (`newStoreURLString`, with no live
+    /// `lastPrice`/`lastRefreshed`: these are passive samples, not a fetch).
+    /// A no-op deduping guarantee: this is the ONE way `ProductTrackerIngestor`
+    /// seeds snapshot history, so a product never gets two stores for the
+    /// same host.
+    public mutating func mergeHistorySamples(
+        _ samples: [(day: Date, price: Decimal, currency: String)],
+        forHost host: String,
+        newStoreURLString: String
+    ) {
+        guard let firstCurrency = samples.first?.currency else { return }
+        let lowerHost = host.lowercased()
+        if let index = stores.firstIndex(where: { URL(string: $0.urlString)?.host?.lowercased() == lowerHost }) {
+            stores[index].mergeHistorySamples(samples)
+        } else {
+            var newStore = PriceTrackerStore(
+                urlString: newStoreURLString, lastPrice: nil, currency: firstCurrency, lastRefreshed: nil)
+            newStore.mergeHistorySamples(samples)
+            upsertStore(newStore)
+        }
+    }
+
     /// Removes a store URL; no-ops if it would empty the tracker (the ≥1 invariant).
     @discardableResult
     public mutating func removeStore(urlString: String) -> Bool {

@@ -42,7 +42,10 @@
         // on every site, because the crash lands before the one-shot flag below is
         // recorded. Substitution is ours to do (see `presentSetupCelebration`), so
         // the catalog must never carry a `$…$` token. Guarded by SafariPillLabelTests.
-        returnToApp: "Return to {app}"
+        returnToApp: "Return to {app}",
+        // `{price}`/`{date}`, substituted the same way as `{app}` above --
+        // never `$`-style syntax (see the note on `returnToApp`).
+        wasPriceOnDate: "Was {price} on {date}"
     };
 
     function localizedMessage(key) {
@@ -137,8 +140,7 @@
         // publisher store cards and subscription components must not turn the
         // primary article into a Price Tracker hand-off.
         if (looksLikeProductPage()) {
-            var trackTarget = trackTargetFor(resp);
-            if (trackTarget) { injectLunaButton(trackTarget); }
+            handleProductPage(resp);
             return;
         }
         if (!isArticlePage()) {
@@ -1054,6 +1056,308 @@
         return "";
     }
 
+    // ── Passive product snapshots + the "Was $X" history pill ──────────────────
+    // Extraction is independent of the pill-suggestion mode: a snapshot is
+    // local, non-refreshing product data, never a save. Structured price data
+    // ONLY -- no heuristic/rendered-DOM tier, mirroring "the price is
+    // mandatory" (a ProductInfo never exists without one).
+
+    var TRACKING_QUERY_PARAM_NAMES = ["srsltid", "gclid", "ref"];
+    var TRACKING_QUERY_PARAM_PREFIXES = ["utm_"];
+
+    function stripTrackingParams(url) {
+        try {
+            var parsed = new URL(url);
+            var host = parsed.hostname.toLowerCase();
+            var toDelete = [];
+            parsed.searchParams.forEach(function (_value, key) {
+                var lower = key.toLowerCase();
+                if (TRACKING_QUERY_PARAM_NAMES.indexOf(lower) >= 0) { toDelete.push(key); return; }
+                for (var i = 0; i < TRACKING_QUERY_PARAM_PREFIXES.length; i++) {
+                    if (lower.indexOf(TRACKING_QUERY_PARAM_PREFIXES[i]) === 0) { toDelete.push(key); return; }
+                }
+                if (lower === "tag" && host.indexOf("amazon.") >= 0) { toDelete.push(key); }
+            });
+            for (var j = 0; j < toDelete.length; j++) { parsed.searchParams.delete(toDelete[j]); }
+            return parsed.toString();
+        } catch (e) { return url; }
+    }
+
+    function canonicalProductURL() {
+        var link = document.querySelector('link[rel="canonical"]');
+        var href = link && link.getAttribute("href");
+        if (href) {
+            try {
+                var resolved = new URL(href, location.href);
+                if (resolved.hostname === location.hostname) { return stripTrackingParams(resolved.href); }
+            } catch (e) {}
+        }
+        return stripTrackingParams(location.href);
+    }
+
+    function stringOrNumberField(obj, key) {
+        var value = obj && obj[key];
+        if (typeof value === "string" && value.trim()) { return value.trim(); }
+        if (typeof value === "number" && isFinite(value)) { return String(value); }
+        return null;
+    }
+
+    // Same walk as findProductNodeWithPrice, but returns the NODE (so its
+    // brand/identifiers/name can be read) instead of a boolean.
+    function findProductNode(node) {
+        if (!node || typeof node !== "object") { return null; }
+        if (Array.isArray(node)) {
+            for (var i = 0; i < node.length; i++) {
+                var found = findProductNode(node[i]);
+                if (found) { return found; }
+            }
+            return null;
+        }
+        if (typeContainsProduct(node["@type"]) && offerPrice(node) !== null) { return node; }
+        for (var key in node) {
+            if (Object.prototype.hasOwnProperty.call(node, key)) {
+                var nested = findProductNode(node[key]);
+                if (nested) { return nested; }
+            }
+        }
+        return null;
+    }
+
+    function jsonLDProductNode() {
+        var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (var i = 0; i < scripts.length; i++) {
+            var parsed;
+            try { parsed = JSON.parse(scripts[i].textContent || ""); } catch (e) { continue; }
+            var found = findProductNode(parsed);
+            if (found) { return found; }
+        }
+        return null;
+    }
+
+    // The offer's currency -- mirrors offerPrice's candidate walk.
+    function offerCurrency(node) {
+        var offers = node.offers;
+        var candidates = [];
+        if (!offers) {
+            candidates = [node];
+        } else if (Array.isArray(offers)) {
+            candidates = offers;
+        } else if (typeof offers === "object") {
+            if (offers.offers) {
+                candidates = Array.isArray(offers.offers) ? offers.offers.slice() : [offers.offers];
+            }
+            candidates.push(offers);
+        }
+        for (var i = 0; i < candidates.length; i++) {
+            var offer = candidates[i];
+            if (!offer || typeof offer !== "object") { continue; }
+            var currency = offer.priceCurrency;
+            if (!currency && offer.priceSpecification && typeof offer.priceSpecification === "object") {
+                currency = offer.priceSpecification.priceCurrency;
+            }
+            if (typeof currency === "string" && currency.trim()) { return currency.trim(); }
+        }
+        return null;
+    }
+
+    function jsonLDIdentifiers(node) {
+        var offers = node.offers;
+        var offerNode = null;
+        if (offers && typeof offers === "object" && !Array.isArray(offers)) {
+            offerNode = offers;
+        } else if (Array.isArray(offers) && offers.length > 0 && typeof offers[0] === "object") {
+            offerNode = offers[0];
+        }
+        var gtinKeys = ["gtin13", "gtin12", "gtin14", "gtin8", "gtin", "isbn"];
+        var gtin = null;
+        for (var i = 0; i < gtinKeys.length; i++) {
+            gtin = stringOrNumberField(node, gtinKeys[i])
+                || (offerNode && stringOrNumberField(offerNode, gtinKeys[i]));
+            if (gtin) { break; }
+        }
+        var mpn = stringOrNumberField(node, "mpn") || (offerNode && stringOrNumberField(offerNode, "mpn"));
+        var sku = stringOrNumberField(node, "sku") || (offerNode && stringOrNumberField(offerNode, "sku"));
+        var productID = stringOrNumberField(node, "productID")
+            || (offerNode && stringOrNumberField(offerNode, "productID"));
+        var brand = null;
+        if (node.brand) {
+            brand = (typeof node.brand === "string") ? node.brand : (node.brand.name || null);
+        }
+        return { gtin: gtin, mpn: mpn, sku: sku, productID: productID, brand: brand };
+    }
+
+    // Meta/microdata price + currency -- same tier as looksLikeProductPage's
+    // own checks, but keeps the actual value rather than a yes/no.
+    function metaPriceAndCurrency() {
+        var amountRaw = metaContent(productRuleArray("productPriceMetaNames"));
+        if (parsePriceNumber(amountRaw) === null) { return null; }
+        var currency = metaContent(["product:price:currency", "og:price:currency", "product:currency"]);
+        return { amount: amountRaw, currency: currency || null };
+    }
+
+    function microdataPriceAndCurrency() {
+        var el = document.querySelector('[itemprop="price"]');
+        if (!el) { return null; }
+        var raw = el.getAttribute("content") || el.textContent || "";
+        if (parsePriceNumber(raw) === null) { return null; }
+        var currencyEl = document.querySelector('[itemprop="priceCurrency"]');
+        var currency = currencyEl && (currencyEl.getAttribute("content") || currencyEl.textContent || "");
+        return { amount: raw, currency: (currency || "").trim() || null };
+    }
+
+    function microdataIdentifiers() {
+        var props = ["gtin13", "gtin12", "gtin14", "gtin8", "gtin", "sku", "mpn", "productID"];
+        var result = {};
+        for (var i = 0; i < props.length; i++) {
+            var el = document.querySelector('[itemprop="' + props[i] + '"]');
+            var value = el && (el.getAttribute("content") || el.textContent || "").trim();
+            if (value) {
+                var key = (props[i].indexOf("gtin") === 0 || props[i] === "isbn") ? "gtin" : props[i];
+                if (!result[key]) { result[key] = value; }
+            }
+        }
+        var brandEl = document.querySelector('[itemprop="brand"]');
+        var brand = brandEl && (brandEl.getAttribute("content") || brandEl.textContent || "").trim();
+        if (brand) { result.brand = brand; }
+        return result;
+    }
+
+    // Amazon ASIN / eBay item / Walmart / Target retailer item ids, read
+    // straight out of the URL path.
+    function retailerItemIDFromURL() {
+        var path = location.pathname || "";
+        var match;
+        if ((match = path.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{6,})/i))) { return match[1]; }
+        if ((match = path.match(/\/itm\/(\d{4,})/))) { return match[1]; }
+        if ((match = path.match(/\/ip\/[^/]*\/(\d{4,})/))) { return match[1]; }
+        if ((match = path.match(/-\/A-(\d+)/))) { return match[1]; }
+        return null;
+    }
+
+    function productSnapshotName() {
+        var node = jsonLDProductNode();
+        if (node && typeof node.name === "string" && node.name.trim()) { return node.name.trim(); }
+        var og = metaContent(["og:title"]);
+        if (og) { return og; }
+        return (document.title || "").trim();
+    }
+
+    // The passive product snapshot this page offers, or null with no
+    // STRUCTURED price (no heuristic/rendered-DOM tier).
+    function extractProductSnapshot() {
+        var name = productSnapshotName();
+        if (!name) { return null; }
+
+        var node = jsonLDProductNode();
+        var amount = null, currency = null, identifiers = {};
+        if (node) {
+            var offerAmount = offerPrice(node);
+            if (offerAmount === null) { return null; }
+            amount = String(offerAmount);
+            currency = offerCurrency(node);
+            identifiers = jsonLDIdentifiers(node);
+        } else {
+            var found = metaPriceAndCurrency() || microdataPriceAndCurrency();
+            if (!found) { return null; }
+            amount = found.amount;
+            currency = found.currency;
+            identifiers = microdataIdentifiers();
+        }
+        if (!currency) { return null; }
+
+        var retailerItemID = metaContent(["product:retailer_item_id"]) || retailerItemIDFromURL();
+        return {
+            name: name,
+            price: amount,
+            currency: currency,
+            url: canonicalProductURL(),
+            gtin: identifiers.gtin || null,
+            mpn: identifiers.mpn || null,
+            sku: identifiers.sku || null,
+            productID: identifiers.productID || null,
+            retailerItemID: retailerItemID || null,
+            brand: identifiers.brand || metaContent(["product:brand", "og:brand"]) || null
+        };
+    }
+
+    // For the WKWebView harness -- see ProductSnapshotJSFixtureParityTests.
+    window.__lunaExtractProductSnapshot = extractProductSnapshot;
+
+    function formatHistoryPrice(amount, currency) {
+        try {
+            return new Intl.NumberFormat(undefined, { style: "currency", currency: currency })
+                .format(parseFloat(amount));
+        } catch (e) { return amount + " " + currency; }
+    }
+
+    function formatHistoryDate(day) {
+        try {
+            var parts = (day || "").split("-").map(function (p) { return parseInt(p, 10); });
+            var date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+            return date.toLocaleDateString(undefined, { day: "numeric", month: "numeric", year: "2-digit" });
+        } catch (e) { return day || ""; }
+    }
+
+    // The history pill is informational only -- pointer-events:none, so it
+    // never swallows a tap the underlying page would otherwise get.
+    function injectHistoryPill(historyResp, stacked) {
+        if (document.getElementById("queue-history-pill")) { return; }
+        var label = localizedMessage("wasPriceOnDate")
+            .replace("{price}", formatHistoryPrice(historyResp.amount, historyResp.currency))
+            .replace("{date}", formatHistoryDate(historyResp.day));
+        var pill = document.createElement("div");
+        pill.id = "queue-history-pill";
+        pill.appendChild(document.createTextNode(label));
+        applyStyle(pill, {
+            position: "fixed", right: "16px",
+            bottom: stacked
+                ? "calc(70px + env(safe-area-inset-bottom))"
+                : "calc(20px + env(safe-area-inset-bottom))",
+            zIndex: "2147483647", background: "rgba(20,20,26,0.85)", color: "#ffffff",
+            font: "500 13px/1 -apple-system, system-ui, sans-serif",
+            boxSizing: "border-box", display: "inline-flex",
+            alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
+            border: "none", borderRadius: "999px", padding: "8px 14px",
+            margin: "0", boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+            pointerEvents: "none"
+        });
+        (document.body || document.documentElement).appendChild(pill);
+    }
+
+    // Renders whatever the productSnapshot round trip earned: the history
+    // pill (stacked above Track when both show; alone when the page is
+    // already tracked) and/or the Track pill (skipped once tracked).
+    function renderProductPills(context, historyResp) {
+        var hasHistory = !!(historyResp && historyResp.hasHistory);
+        var isTracked = !!(historyResp && historyResp.isTracked);
+        if (hasHistory) { injectHistoryPill(historyResp, !isTracked); }
+        if (!isTracked) {
+            var trackTarget = trackTargetFor(context);
+            if (trackTarget) { injectLunaButton(trackTarget); }
+        }
+    }
+
+    // Extracts once, sends ONE `productSnapshot` message (recorded passively
+    // AND answered against tracked/snapshot history in the same round trip --
+    // see SharedProductSnapshots/SharedProductMatching), then renders. Falls
+    // back to the plain Track pill when there's no browser host, no
+    // extraction, or the round trip fails.
+    function handleProductPage(context) {
+        var trackTarget = trackTargetFor(context);
+        if (!(context && context.supportsProducts) || typeof browser === "undefined") {
+            if (trackTarget) { injectLunaButton(trackTarget); }
+            return;
+        }
+        var snapshot = extractProductSnapshot();
+        if (!snapshot) {
+            if (trackTarget) { injectLunaButton(trackTarget); }
+            return;
+        }
+        browser.runtime.sendMessage({ type: "productSnapshot", snapshot: snapshot })
+            .then(function (resp) { renderProductPills(context, resp); })
+            .catch(function () { renderProductPills(context, null); });
+    }
+
     // ── The one-shot setup confirmation ─────────────────────────────────────────
     // The app's onboarding stamps the moment it sent the user to Safari; the native
     // handler stamps this extension's own first run and answers `celebrateSetup`
@@ -1240,22 +1544,32 @@
         };
     }
 
+    // Media and product pill taps bounce the user back to Safari once the app
+    // has finished handling the save (background download / price refresh) --
+    // never the article pill, whose reader UI IS the destination. `&ret=safari`
+    // rides the deep link itself rather than a separate message so the flag
+    // survives even when `saveContent` isn't sent (downloadTargetFor never
+    // captures content).
     function downloadTargetFor(context) {
         if (!(context && context.supportsMedia)) { return null; }
         return {
             label: localizedMessage("downloadInLuna"),
             captureContent: false,
-            url: function () { return ownSchemeTarget(context, location.href); }
+            url: function () { return ownSchemeTarget(context, location.href) + "&ret=safari"; }
         };
     }
 
-    // The "Track in Luna" button target for a recognized product page.
+    // The "Track in Luna" button target for a recognized product page. Sends
+    // the rendered DOM (`captureContent: true`) so the app's product save runs
+    // over prefetched, hydrated HTML -- fast, and client-rendered prices
+    // resolve without a WebView render tier -- exactly as the article pill
+    // already does.
     function trackTargetFor(context) {
         if (!(context && context.supportsProducts)) { return null; }
         return {
             label: localizedMessage("trackInLuna"),
-            captureContent: false,
-            url: function () { return ownSchemeTarget(context, location.href); }
+            captureContent: true,
+            url: function () { return ownSchemeTarget(context, location.href) + "&ret=safari"; }
         };
     }
 

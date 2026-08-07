@@ -307,6 +307,10 @@ enum KindWiring {
     static func appDidEnterBackground() {
         ArticleSendCoordinator.shared.retryPendingSends()
         LiveMediaDownloadManager.shared.resumeLiveActivities()
+        // Keeps the Safari extension's history-pill data current even between
+        // refresh cycles (e.g. after the user edits an alert threshold or
+        // archives a tracker, neither of which triggers a refresh).
+        PriceHistoryIndexWriter.regenerate()
     }
 
     static func sceneDidForeground() {

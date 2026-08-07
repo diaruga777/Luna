@@ -38,6 +38,37 @@ public enum MediaStorageSettings {
     /// new one doesn't).
     public static let defaultRetention: MediaRetentionOption = .oneMonth
 
+    /// The age "in Luna" means when it is picked from the util card's inline
+    /// row, which offers Luna-or-Photos and no clock. Deliberately shorter than
+    /// `defaultRetention`: the card's choice is made before the user has any
+    /// downloads to judge by, and a month of video is a lot to opt into blind.
+    public static let inlineRetention: MediaRetentionOption = .twoWeeks
+
+    private static let explicitChoiceKey = "mediaStorage.userChose.v1"
+
+    /// Whether the user has ever answered the Storage question themselves.
+    /// False on a fresh install — where `option` is the shipped default rather
+    /// than anything anyone said — which is what the util card's inline row
+    /// waits on.
+    public static var hasExplicitChoice: Bool {
+        AutoDownloadSettings.defaults.bool(forKey: explicitChoiceKey)
+    }
+
+    /// Records that the answer standing in `option` is the user's own, without
+    /// changing it. The one caller is a Photos refusal: the user answered the
+    /// row, the setting simply could not follow them there.
+    public static func recordExplicitChoice() {
+        AutoDownloadSettings.defaults.set(true, forKey: explicitChoiceKey)
+    }
+
+    /// `option`, set by the user rather than by Luna. Every user-facing control
+    /// writes through here so the util card's inline row retires once the
+    /// question has been answered ANYWHERE — the card or Settings → Downloads.
+    public static func choose(_ newValue: MediaStorageOption) {
+        option = newValue
+        recordExplicitChoice()
+    }
+
     /// Reads and writes the two underlying prefs
     /// (`AutoDownloadSettings.autoSaveDownloadsToPhotos` and
     /// `MediaRetentionSettings.option`) as one exclusive choice, so every

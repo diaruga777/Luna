@@ -70,7 +70,9 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         let current = MediaStorageSettings.option
         let menu = UIMenu(children: MediaStorageOption.allCases.map { option in
             UIAction(title: option.displayName, state: option == current ? .on : .off) { [weak self] _ in
-                MediaStorageSettings.option = option
+                // `choose`, not `option =`: answering here also retires the util
+                // card's inline "Store downloads …" line.
+                MediaStorageSettings.choose(option)
                 self?.reload(.storage)
             }
         })

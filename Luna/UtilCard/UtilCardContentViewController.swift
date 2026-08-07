@@ -46,6 +46,10 @@ enum UtilCardLayout {
     static let recentsToPasteGap: CGFloat = 12
     static let setupButtonHeight: CGFloat = 54
     static let setupButtonGap: CGFloat = 10
+    /// The seam under the "Store downloads …" line. Wider than the gap between
+    /// two buttons: the line is prose sitting over the block, not another item
+    /// in it.
+    static let storageChooserGap: CGFloat = 16
     /// The gap the setup block keeps above the paste field when no “or” stands
     /// between them.
     static let setupToPasteGap: CGFloat = 16
@@ -94,6 +98,13 @@ final class UtilCardContentViewController: CardContentViewController {
     /// The Safari-history rows the completed card offers. Injected so the block's
     /// geometry is assertable without a real history trail behind it.
     private let recentMatches: @MainActor () -> [RecentURLPreview]
+    /// Where finished downloads go, in the two apps that download them. Nil
+    /// everywhere else: Reader and Price Tracker do not link the media module,
+    /// so nothing installs one (`DownloadStorageChoice`).
+    private let storageChoice: (any DownloadStorageChoosing)?
+    /// Opens Luna's own page in system Settings — the only way back to a Photos
+    /// permission the user has already refused, since iOS will not prompt twice.
+    private let openSystemSettings: () -> Void
 
     private let headline: OnboardingIntroHeadlineView?
     private let weeklyHost: WeeklySaveRowHost
@@ -102,6 +113,11 @@ final class UtilCardContentViewController: CardContentViewController {
     private let emailButton = UIButton(type: .system)
     private let orLabel = UILabel()
     private let pasteRow = OnboardingPasteRow()
+    /// The inline "Store downloads …" line, present only while the download
+    /// destination is still Luna's own default rather than the user's answer.
+    /// Captured once per card, like the onboarding variant: answering it here
+    /// (or in Settings) takes it off the NEXT launch's card, not this one's.
+    private var storageChooser: UtilCardStorageChooserView?
     /// The setup lessons this card is currently offering, top to bottom. It is
     /// a LIST rather than a fixed pair: a device with no Action Button has no
     /// save lesson, and the block stacks up from the paste row, so whatever is
@@ -136,6 +152,14 @@ final class UtilCardContentViewController: CardContentViewController {
         recentMatches: @escaping @MainActor () -> [RecentURLPreview] = {
             RecentURLMatcher.shared.matches
         },
+        // No default: `DownloadStorageChoice.installed` is main-actor state and
+        // a default argument is evaluated outside the actor. The deck passes it;
+        // a test that says nothing gets no row, which is the quiet case.
+        storageChoice: (any DownloadStorageChoosing)? = nil,
+        openSystemSettings: @escaping () -> Void = {
+            guard let settings = URL(string: UIApplication.openSettingsURLString) else { return }
+            UIApplication.shared.open(settings)
+        },
         saveHandler: @escaping SaveHandler
     ) {
         self.showsOnboarding = showsOnboarding
@@ -149,6 +173,8 @@ final class UtilCardContentViewController: CardContentViewController {
         self.savedDates = savedDates
         self.isEmailConnected = isEmailConnected
         self.recentMatches = recentMatches
+        self.storageChoice = storageChoice
+        self.openSystemSettings = openSystemSettings
         self.saveHandler = saveHandler
         weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app, now: now)
         headline = showsOnboarding
@@ -200,6 +226,10 @@ final class UtilCardContentViewController: CardContentViewController {
         // first-run business, but the email nudge only becomes due once there
         // are saves — by which time this is the completed card.
         configureSetupButtons()
+        // Above the lessons, and outside their two-button budget: where saved
+        // media lands is a question about the app's own default, not a setup
+        // errand, so it belongs to BOTH variants and to neither's priority list.
+        installStorageChooserIfOffered()
         if showsOnboarding {
             configureOrLabel()
             view.addSubview(orLabel)
@@ -263,6 +293,7 @@ final class UtilCardContentViewController: CardContentViewController {
     /// headline itself is not here — it is the thing being waited on.
     private var introRevealElements: [UIView] {
         [weeklyHost, safariButton, saveSetupButton, orLabel, pasteRow]
+            + (storageChooser.map { [$0] } ?? [])
     }
 
     /// The headline's bloom has finished: the rest of the card fades in, in
@@ -373,9 +404,23 @@ final class UtilCardContentViewController: CardContentViewController {
                 height: buttonHeight)
             nextBottom = button.frame.minY - UtilCardLayout.setupButtonGap
         }
-        let setupBlockTop: CGFloat? = setupOffers.isEmpty
+        // The storage line always tops the block, whatever is (or isn't) under
+        // it — it is the one control here that is about the app rather than
+        // about setting the app up.
+        var setupBlockTop: CGFloat? = setupOffers.isEmpty
             ? nil
             : nextBottom + UtilCardLayout.setupButtonGap
+        if let storageChooser {
+            let top = (setupBlockTop ?? actionsBottom)
+                - (setupOffers.isEmpty ? 0 : UtilCardLayout.storageChooserGap)
+                - UtilCardStorageChooserView.height
+            storageChooser.frame = CGRect(
+                x: inset,
+                y: top,
+                width: width,
+                height: UtilCardStorageChooserView.height)
+            setupBlockTop = top
+        }
 
         if let headline {
             headline.frame = CGRect(
@@ -417,7 +462,11 @@ final class UtilCardContentViewController: CardContentViewController {
         let availableBottom = (setupBlockTop ?? pasteRow.frame.minY)
             - UtilCardLayout.recentsToPasteGap
         for row in recentRows {
-            let fits = nextY + UtilCardLayout.recentRowHeight <= availableBottom
+            // The storage line's options open over whatever is above it, so the
+            // card gives it that room outright rather than letting a stack of
+            // history rows sit under a panel.
+            let fits = storageChooser == nil
+                && nextY + UtilCardLayout.recentRowHeight <= availableBottom
             row.isHidden = !fits
             if fits {
                 row.frame = CGRect(
@@ -678,6 +727,51 @@ final class UtilCardContentViewController: CardContentViewController {
 
     @objc private func emailSetupTapped() {
         Self.emailSetupLauncher?(self)
+    }
+
+    // MARK: - Where downloads are stored
+
+    /// Puts the "Store downloads …" line on the card if this app downloads at
+    /// all and the user has never answered the question. Read once, at
+    /// construction: answering it retires the row from the next launch's card
+    /// rather than pulling it out from under the tap that answered it.
+    private func installStorageChooserIfOffered() {
+        guard let storageChoice, storageChoice.isUnanswered else { return }
+        let chooser = UtilCardStorageChooserView()
+        chooser.setSelection(storageChoice.usesPhotos ? .photos : .luna)
+        chooser.onSelect = { [weak self] option in
+            self?.applyStorageChoice(option)
+        }
+        view.addSubview(chooser)
+        storageChooser = chooser
+    }
+
+    /// Applies a tap on the storage line. "In Luna" is immediate; "in Photos"
+    /// is a REQUEST — the setting follows the system's answer, never leads it,
+    /// so a refusal leaves the line reading "in Luna" rather than promising a
+    /// destination Luna cannot write to.
+    private func applyStorageChoice(_ option: UtilCardStorageChooserView.Option) {
+        guard let storageChoice else { return }
+        switch option {
+        case .luna:
+            storageChoice.chooseInLuna()
+            storageChooser?.setSelection(.luna)
+        case .photos:
+            storageChoice.choosePhotos { [weak self] outcome in
+                guard let self else { return }
+                switch outcome {
+                case .granted:
+                    storageChooser?.setSelection(.photos)
+                case .refused:
+                    storageChooser?.setSelection(.luna)
+                case .refusedBefore:
+                    // iOS will not ask again in-process; Luna's own page in
+                    // Settings is the only place this can now be granted.
+                    storageChooser?.setSelection(.luna)
+                    openSystemSettings()
+                }
+            }
+        }
     }
 
     private func rebuildRecentRows() {

@@ -393,9 +393,13 @@
 /* ===== Onboarding_Card — the demo card's own small labels (Luna/UtilCard, OnboardingStrings.Card) ===== */
 "Onboarding_Card_savedArticle_Luna" = "Saved article";
 
-/* ===== Onboarding_Util — UtilCardContentViewController's own paste-row and accessibility strings ===== */
+/* ===== Onboarding_Util — UtilCardContentViewController's own paste-row,
+ * inline storage line, and accessibility strings ===== */
 "Onboarding_Util_invalidURL_Luna" = "Invalid URL";
 "Onboarding_Util_recentRowAccessibilityHint_Luna" = "Saves link in Luna";
+"Onboarding_Util_storage1Label_Luna" = "Store downloads";
+"Onboarding_Util_storage2InLuna_Luna" = "in Luna";
+"Onboarding_Util_storage3InPhotos_Luna" = "in Photos";
 "Onboarding_Util_unableToSaveURL_Luna" = "Unable to save URL";
 
 /* ===== Settings_diagnostics — Settings → (5-tap) Diagnostics screen: header

@@ -952,6 +952,7 @@ public final class LiveMediaDownloadManager: NSObject {
     private enum ResolveKind: String {
         case x
         case tiktok
+        case instagramGraphQL
         case instagramEmbed
         case facebookPlugin
         case facebookDesktop
@@ -984,11 +985,14 @@ public final class LiveMediaDownloadManager: NSObject {
             resolveURL = url
             kind = .tiktok
         case .instagram:
-            guard let code = recognized.itemID,
-                  let url = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/")
-            else { return nil }
-            resolveURL = url
-            kind = .instagramEmbed
+            // Mirror `SocialMediaResolver.resolveInstagram`: the persisted GraphQL
+            // query is the only keyless source that still returns a reel's
+            // `video_url`, so it leads and the embed page becomes the fallback stage
+            // (`startNextInstagramResolve`). Whoever reorders one must reorder both.
+            guard let code = recognized.itemID else { return nil }
+            return (SocialMediaResolver.instagramGraphQLRequest(
+                        shortcode: code, timeoutInterval: 60),
+                    ResolveKind.instagramGraphQL.rawValue)
         case .facebook:
             // Match SocialMediaResolver.resolveFacebook's foreground/extension path:
             // Facebook's logged-out reel page commonly returns HTTP 400 or a poster-only
@@ -1054,10 +1058,17 @@ public final class LiveMediaDownloadManager: NSObject {
         case .tiktok:
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return TikTokMediaParser.assets(fromHTML: html).first
+        case .instagramGraphQL:
+            return InstagramMediaParser.post(fromGraphQLJSON: data)?.assets.first
         case .instagramEmbed:
             guard let html = String(data: data, encoding: .utf8) else { return nil }
-            return InstagramMediaParser.assetsFromEmbedContextJSON(html).first
-                ?? InstagramMediaParser.assets(fromHTML: html).first
+            let post = InstagramMediaParser.post(fromEmbedHTML: html)
+            if let asset = post?.assets.first { return asset }
+            // A reel whose playable URL Instagram withheld: the loose markup scan
+            // below would match its cover frame, so let the job fail as "no media"
+            // rather than download a still in place of the video.
+            if post?.isVideoMissingItsPlayableURL == true { return nil }
+            return InstagramMediaParser.assets(fromHTML: html).first
         case .facebookPlugin, .facebookDesktop, .facebookMobile, .facebookCanonical,
              .facebookCrawler,
              .facebook, .facebookShort:
@@ -1298,6 +1309,7 @@ public final class LiveMediaDownloadManager: NSObject {
         guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
+            if startNextInstagramResolve(after: job, data: nil) { return }
             if startNextFacebookResolve(after: job, data: nil) { return }
             if startNextYouTubeResolve(after: job, data: nil) { return }
             Task {
@@ -1332,6 +1344,7 @@ public final class LiveMediaDownloadManager: NSObject {
             startMediaDownload(for: job, asset: asset)
             return
         }
+        if startNextInstagramResolve(after: job, data: data) { return }
         if startNextFacebookResolve(after: job, data: data) { return }
         if startNextYouTubeResolve(after: job, data: data) { return }
         Task { await failJob(job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia) }
@@ -1420,6 +1433,36 @@ public final class LiveMediaDownloadManager: NSObject {
         job.resolveKind = resolve.kind
         store.upsert(job)
         startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+        return true
+    }
+
+    /// Advances the durable Instagram resolver from the persisted GraphQL query to the
+    /// embed page, mirroring `SocialMediaResolver.resolveInstagram`'s two stages.
+    /// Returns true after starting the next background task.
+    ///
+    /// Deliberately does NOT advance when the query already answered that the post is
+    /// a video whose playable URL Instagram withheld: the embed page can only offer
+    /// that reel's cover frame, and downloading a still in place of the video is the
+    /// failure this ladder exists to prevent. The job fails as "no media" and the
+    /// saved link stays usable.
+    private func startNextInstagramResolve(
+        after persistedJob: LiveMediaDownloadJob, data: Data?
+    ) -> Bool {
+        guard persistedJob.resolveKind == ResolveKind.instagramGraphQL.rawValue,
+              let sourceURL = URL(string: persistedJob.sourceURLString),
+              let code = PlatformRecognizer.recognize(sourceURL.absoluteString)?.itemID,
+              let embedURL = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/")
+        else { return false }
+        if let data, InstagramMediaParser.post(fromGraphQLJSON: data)?
+            .isVideoMissingItsPlayableURL == true { return false }
+
+        var job = persistedJob
+        job.resolveKind = ResolveKind.instagramEmbed.rawValue
+        store.upsert(job)
+        var request = URLRequest(url: embedURL, timeoutInterval: 60)
+        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
         return true
     }
 

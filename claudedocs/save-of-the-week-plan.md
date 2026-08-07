@@ -232,7 +232,7 @@ Mirror the App Group exactly:
   place. Tap keeps the existing `save(urlString, source: .manual, ...)` path.
 - Subtitle label text (replaces the bare `L10n.string("Save of the week")`):
   per app × per age tier, via `L10n.string` with catalog entries added per
-  `claudedocs/localization.md` ownership rules:
+  `claudedocs/strings.md` ownership rules:
   | app | < 9 days | ≥ 9 days |
   |---|---|---|
   | Luna | Save of the week | Save of the month |
@@ -504,7 +504,7 @@ space in Settings — SettingsViewController.swift:77–89):
   sentence (§1). Update `claudedocs/settings.md` (new conditional category) and
   the BG-task list in whatever doc mentions the two existing ids.
 - New user-facing strings go through `L10n.string` with catalog entries per
-  `claudedocs/localization.md`.
+  `claudedocs/strings.md`.
 
 ## 15. Implementation order (commit-sized chunks, compile-gate each)
 

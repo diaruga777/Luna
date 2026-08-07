@@ -139,7 +139,7 @@ stable Xcode 26.2.
 > kinds, the drop behavior, and the composition mechanism are documented in
 > `claudedocs/surface-support.md`. UI prose says
 > "Luna"; each app has its own `AppIcon{Luna,Reader,Downloader,PriceTracker}` (PNG appiconsets in
-> `SharedIconAssets.xcassets`; `scripts/make_icons.py` is retired — update the PNGs directly).
+> `SharedIconAssets.xcassets` — there is no icon generator script; update the PNGs directly).
 > The ACTION extensions use separate `{Luna,Reader,Downloader,PriceTracker}ActionExtIcon`-style
 > sets (`ReaderActionExtIcon`, `LunaActionExtIcon`, …): iOS
 > renders action-extension icons as monochrome templates from the icon's ALPHA channel, so an

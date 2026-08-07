@@ -27,7 +27,16 @@
 #   scripts/run_tests.sh                       # pick/create a simulator
 #   scripts/run_tests.sh -d <udid>             # use a specific one
 #   scripts/run_tests.sh --fresh               # always create a throwaway sim
+#   scripts/run_tests.sh --changed [<base>]    # only the tests the diff reaches
 #   scripts/run_tests.sh -- -only-testing:...  # pass anything else through
+#
+# --changed is an INNER-LOOP convenience: it asks
+# scripts/select_changed_tests.py which classes a `git diff <base>` can reach
+# (default base HEAD, so it covers uncommitted work) and passes them as
+# -only-testing flags. When the selector cannot account for a changed file it
+# says so and this falls back to the whole suite — it never quietly runs less
+# than it should. A green partial run is not a green suite; run the full one
+# before calling a task done.
 #
 # Exit status is the suite's: 0 when it reported no failures, 1 when it did,
 # 2 when the run never produced a summary at all (a real infrastructure fail).
@@ -38,16 +47,39 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRACE=${LUNA_TEST_GRACE:-45}     # seconds to let xcodebuild finish after the summary
 DEVICE=""
 FRESH=0
+CHANGED=0
+CHANGED_BASE="HEAD"
 EXTRA=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -d|--device) DEVICE="$2"; shift 2 ;;
     --fresh) FRESH=1; shift ;;
+    --changed)
+      CHANGED=1; shift
+      # An optional base ref, but only if it isn't the next flag.
+      if [[ $# -gt 0 && "$1" != -* ]]; then CHANGED_BASE="$1"; shift; fi ;;
     --) shift; EXTRA+=("$@"); break ;;
     *) EXTRA+=("$1"); shift ;;
   esac
 done
+
+# ------------------------------------------------------------ test selection
+if [[ $CHANGED -eq 1 ]]; then
+  echo "selecting tests reachable from a diff against ${CHANGED_BASE}…"
+  SELECTION=$("$REPO/scripts/select_changed_tests.py" "$CHANGED_BASE")
+  case $? in
+    0)
+      while IFS= read -r flag; do
+        [[ -n "$flag" ]] && EXTRA+=("$flag")
+      done <<<"$SELECTION"
+      echo "PARTIAL RUN — this is the inner loop, not a verdict on the suite."
+      ;;
+    3) echo "WARNING: running the FULL suite instead (see the reason above)." ;;
+    4) echo "nothing to run."; exit 0 ;;
+    *) echo "selector failed — running the full suite." ;;
+  esac
+fi
 
 # ---------------------------------------------------------------- simulator
 if [[ $FRESH -eq 1 || -z "$DEVICE" ]]; then

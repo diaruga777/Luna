@@ -384,7 +384,21 @@ every kind processor is registered at launch). The `LunaReader` /
 ```sh
 scripts/run_tests.sh            # preferred — picks a simulator, reports the real verdict
 scripts/run_tests.sh --fresh    # throwaway simulator (the fix for most flake modes)
+scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff reaches
 ```
+
+> **`--changed` is for iterating, never for declaring a task done.** It asks
+> `scripts/select_changed_tests.py` which classes a `git diff <base>` (default
+> `HEAD`, so uncommitted work counts) can reach — by name convention
+> (`Foo.swift` → `FooTests`), by grepping LunaTests for every type the changed
+> file declares, and by a small path table for the non-Swift inputs (the strings
+> file → `LocalizableStringsTests`, the launch storyboard → the two geometry
+> suites, `.xcodeproj`/`Package.swift`/xcconfigs → everything). It always adds
+> `KindCompositionRootTests`. It prints what it picked and why, and when a
+> changed file matches no rule it says so and runs the WHOLE suite rather than
+> quietly running less — so a short selection is a claim it is prepared to
+> justify. A green partial run is not a green suite: finish with a full
+> `scripts/run_tests.sh --fresh`.
 
 Or by hand:
 

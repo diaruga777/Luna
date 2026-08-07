@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaModels
 import UIKit
 import WebKit
 
@@ -501,6 +502,6 @@ final class SafariReplicaViewController:
     <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
     <style>body{font:17px -apple-system;margin:24px;color:#202122}h1{font:36px Georgia}\
     li{margin:0 0 10px}</style>
-    \(OnboardingLunaArticleCopy.fallbackHTMLBody)
+    \(ShareSetupPractice.fallbackHTMLBody)
     """
 }

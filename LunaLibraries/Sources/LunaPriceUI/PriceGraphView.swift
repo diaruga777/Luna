@@ -107,14 +107,6 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         setNeedsDisplay()
     }
 
-    /// Kept for existing editor callers. New price cards use `setData` with a
-    /// threshold so their empty graph retains the alert control.
-    public func showPlaceholder() {
-        setData(
-            [], currency: currency, thresholdPrice: nil,
-            baselinePrice: nil, allowsThresholdEditing: false)
-    }
-
     public override func layoutSubviews() {
         super.layoutSubviews()
         layoutThresholdControls()

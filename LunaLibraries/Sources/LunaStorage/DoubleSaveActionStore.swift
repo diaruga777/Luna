@@ -44,25 +44,10 @@ public enum DoubleSaveAction: String, CaseIterable {
     }
 }
 
-/// How a `sendToFriend` double save picks its recipients.
-public enum DoubleSaveFriendMode: String, CaseIterable {
-    /// Send to the preset recipient emails immediately, no UI.
-    case preset
-    /// Open Luna and present the friend-selector share screen for the item.
-    case askEveryTime
-
-    public var displayName: String {
-        switch self {
-        case .preset: return L10n.string("ReadingList_doubleSave_friendModePresetTitle")
-        case .askEveryTime: return L10n.string("ReadingList_doubleSave_friendModeAskEveryTimeTitle")
-        }
-    }
-}
-
 /// App-Group-backed, per-surface settings for the double-save action, plus the
 /// one-shot "friend prompt pending" hand-off the Save App Intent writes right
-/// before it asks the Shortcut to open Luna (the `askEveryTime` path): the
-/// foregrounding scene consumes it and presents the friend selector.
+/// before it asks the Shortcut to open Luna: the foregrounding scene consumes
+/// it and presents the friend selector.
 public final class DoubleSaveActionStore {
 
     public static let shared = DoubleSaveActionStore()
@@ -84,10 +69,6 @@ public final class DoubleSaveActionStore {
 
     private func actionKey(forSurface surface: String) -> String {
         "doubleSave.action.\(surface)"
-    }
-
-    private func friendModeKey(forSurface surface: String) -> String {
-        "doubleSave.friendMode.\(surface)"
     }
 
     private func presetEmailsKey(forSurface surface: String) -> String {
@@ -118,15 +99,6 @@ public final class DoubleSaveActionStore {
 
     public func setAction(_ action: DoubleSaveAction, forSurface surface: String) {
         defaults.set(action.rawValue, forKey: actionKey(forSurface: surface))
-    }
-
-    public func friendMode(forSurface surface: String) -> DoubleSaveFriendMode {
-        defaults.string(forKey: friendModeKey(forSurface: surface))
-            .flatMap(DoubleSaveFriendMode.init(rawValue:)) ?? .askEveryTime
-    }
-
-    public func setFriendMode(_ mode: DoubleSaveFriendMode, forSurface surface: String) {
-        defaults.set(mode.rawValue, forKey: friendModeKey(forSurface: surface))
     }
 
     /// The preset recipient emails (lowercased addresses), in selection order.

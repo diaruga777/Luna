@@ -248,8 +248,9 @@ public enum ProvideContextOnScreenURL {
 /// |--------------------------------|------------------------------------------------------|--------------------|
 /// | nil / empty (trimmed)          | — (lock screen)                                      | `.unsupported`     |
 /// | Safari                          | `safariURLFresh`                                      | `.saveImmediately` |
-/// | Safari                          | !`safariURLFresh`, `visionModelAvailable`             | `.screenshotNeeded`|
-/// | Safari                          | !`safariURLFresh`, !`visionModelAvailable`            | `.unsupported`     |
+/// | Safari                          | !`safariURLFresh`, !`safariExtensionHasRun`           | `.unsupported`     |
+/// | Safari                          | !`safariURLFresh`, ran, `visionModelAvailable`        | `.screenshotNeeded`|
+/// | Safari                          | !`safariURLFresh`, ran, !`visionModelAvailable`       | `.noSafariURL`     |
 /// | Shortcuts                       | — (no meaningful screenshot of Shortcuts' own UI)     | `.unsupported`     |
 /// | recognized platform             | !`handlesMediaKind`                                   | `.unsupported`     |
 /// | recognized platform             | `handlesMediaKind`, !`visionModelAvailable`           | `.unsupported`     |
@@ -265,6 +266,10 @@ public enum ProvideContextDecision {
         case saveImmediately
         /// The Shortcut should take a screenshot and hand it to Save.
         case screenshotNeeded
+        /// Safari is frontmost, a Safari extension has proven itself by running
+        /// at least once, and there is still no page URL to save: the intent
+        /// reports that as an error rather than ending silently.
+        case noSafariURL
     }
 
     public static func decide(
@@ -273,6 +278,7 @@ public enum ProvideContextDecision {
         isShortcuts: Bool,
         platform: ContentPlatform?,
         safariURLFresh: Bool,
+        safariExtensionHasRun: Bool,
         handlesMediaKind: Bool,
         visionModelAvailable: Bool
     ) -> Result {
@@ -282,7 +288,17 @@ public enum ProvideContextDecision {
 
         if isSafari {
             if safariURLFresh { return .saveImmediately }
-            return visionModelAvailable ? .screenshotNeeded : .unsupported
+            // No extension has ever run, in ANY installed Luna app, so nothing
+            // was ever in a position to capture the page: Safari being frontmost
+            // is simply a situation this device isn't set up for. Reported as
+            // plainly unhandled — a first-run user who has not enabled the
+            // extension has done nothing wrong and gets no error dialog.
+            guard safariExtensionHasRun else { return .unsupported }
+            // An extension HAS run, so assume it is still enabled: the page URL
+            // should have been there. Take the screenshot when a model can read
+            // one off the screen (it reports its own failure), and otherwise say
+            // so rather than ending as though there was nothing to do.
+            return visionModelAvailable ? .screenshotNeeded : .noSafariURL
         }
 
         if isShortcuts {

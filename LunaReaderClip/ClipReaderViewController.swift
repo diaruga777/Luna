@@ -3,10 +3,12 @@
 //  LunaReaderClip
 //
 
+import LunaArchiveReader
 import LunaDesignSystem
 import LunaIngest
 import LunaModels
 import LunaReaderUI
+import LunaStorage
 import LunaURLClassification
 import UIKit
 
@@ -20,6 +22,21 @@ final class ClipReaderViewController: UIViewController {
 
     private var state: State = .waiting
     private var task: Task<Void, Never>?
+    /// The clip's OWN reading-list store, in the clip's own container — never the
+    /// App Group one the full app reads.
+    ///
+    /// `ArchiveWebReaderViewController` extracts THROUGH a store (it saves the
+    /// unlocked article to an item, then hands the item back), and the clip stays
+    /// read-only with respect to the user's saved list: no clip save may show up in
+    /// Luna Reader later. A private container satisfies both — the unlock writes
+    /// somewhere real, and that somewhere is thrown away with the clip.
+    private lazy var scratchStore: ReadingListStore = {
+        let directory = URL.cachesDirectory.appendingPathComponent(
+            "ClipArchiveUnlock", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        return ReadingListStore(containerURL: directory)
+    }()
     private let spinner = HorizonSpinnerView(side: 36)
     private let titleLabel = UILabel()
     private let detailLabel = UILabel()
@@ -62,31 +79,72 @@ final class ClipReaderViewController: UIViewController {
     }
 
     private func present(_ result: IngestResult) async {
-        switch result.outcome {
-        case let .article(content, _):
+        switch ClipReaderRoute.route(for: result.outcome) {
+        case .reader:
+            guard case let .article(content, _) = result.outcome else { return }
             var item = ReadingListItem(urlString: result.url.absoluteString)
             item.title = content.title
             item.state = .ready
             item.wordCount = content.wholeText.split(whereSeparator: \.isWhitespace).count
+            presentReader(item: item, content: content)
 
-            let reader = ReaderViewController(
-                item: item,
-                content: content,
-                forceMode: .scroll,
-                shareProvider: nil,
-                persistsModePreference: false,
-                marksOpenedOnLoad: false)
-            navigationController?.setViewControllers([reader], animated: false)
+        case .archiveUnlock:
+            guard case let .needsArchive(title) = result.outcome else { return }
+            presentArchiveUnlock(for: result.url, fallbackTitle: title)
 
-        case .needsArchive(_):
-            update(.failed(L10n.string("AppClip_reader_needsArchiveUnlockMessage")))
-
-        case .product(_, _), .video(_, _), .social(_, _), .document, .unsupported:
+        case .notReadable:
             update(.failed(L10n.string("AppClip_reader_notReadableArticleMessage")))
 
         case .failed:
             update(.failed(L10n.string("Common_couldntLoadThisArticle")))
         }
+    }
+
+    private func presentReader(item: ReadingListItem, content: ArticleContent) {
+        let reader = ReaderViewController(
+            item: item,
+            content: content,
+            forceMode: .scroll,
+            shareProvider: nil,
+            persistsModePreference: false,
+            marksOpenedOnLoad: false)
+        navigationController?.setViewControllers([reader], animated: false)
+    }
+
+    /// A hard paywall or a bot wall the silent tier couldn't pass: resolve it right
+    /// here, exactly as the app and both share-sheet extensions do. Nothing about
+    /// the unlock needs the full app — an App Clip may run a `WKWebView`, keep
+    /// cookies, and open Safari — so parking the user on "download the app" was
+    /// throwing away an article the clip can read.
+    private func presentArchiveUnlock(for url: URL, fallbackTitle: String) {
+        let item = scratchStore.add(urlString: url.absoluteString)
+        scratchStore.markNeedsCaptcha(item.id, title: fallbackTitle)
+
+        let archive = ArchiveWebReaderViewController(
+            articleURL: url, itemID: item.id, store: scratchStore)
+        // A clip lives in a window it doesn't own the root of, so — like the
+        // extensions — each screen pins the appearance itself.
+        AppearanceSettings.apply(to: archive)
+        archive.onClose = { [weak self] in
+            // There is nowhere to go back to in a clip: return to this screen with
+            // the full app offered as the remaining route, and the unlock one tap
+            // away again via Retry.
+            guard let self else { return }
+            self.navigationController?.setViewControllers([self], animated: false)
+            self.update(.failed(L10n.string("AppClip_reader_needsArchiveUnlockMessage")))
+        }
+        // Unlike the extensions, a clip IS an app: `UIApplication` is available, so
+        // the CAPTCHA-loop escape into real Safari works here.
+        archive.onOpenInBrowser = { archiveURL in
+            UIApplication.shared.open(archiveURL)
+        }
+        archive.onExtracted = { [weak self] in
+            guard let self,
+                  let unlocked = self.scratchStore.item(withID: item.id),
+                  let content = self.scratchStore.content(for: unlocked) else { return }
+            self.presentReader(item: unlocked, content: content)
+        }
+        navigationController?.setViewControllers([archive], animated: false)
     }
 
     private func configureLayout() {

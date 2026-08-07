@@ -15,12 +15,14 @@ final class ProvideContextDecisionTests: XCTestCase {
         isShortcuts: Bool = false,
         platform: ContentPlatform? = nil,
         safariURLFresh: Bool = false,
+        safariExtensionHasRun: Bool = true,
         handlesMediaKind: Bool = false,
         visionModelAvailable: Bool = false
     ) -> ProvideContextDecision.Result {
         ProvideContextDecision.decide(
             appName: appName, isSafari: isSafari, isShortcuts: isShortcuts, platform: platform,
-            safariURLFresh: safariURLFresh, handlesMediaKind: handlesMediaKind,
+            safariURLFresh: safariURLFresh, safariExtensionHasRun: safariExtensionHasRun,
+            handlesMediaKind: handlesMediaKind,
             visionModelAvailable: visionModelAvailable)
     }
 
@@ -58,10 +60,46 @@ final class ProvideContextDecisionTests: XCTestCase {
             .screenshotNeeded)
     }
 
-    func testSafariStaleURLWithoutVisionIsUnsupported() {
+    func testSafariStaleURLWithoutVisionIsAnError() {
         XCTAssertEqual(
             decide(appName: "Safari", isSafari: true, safariURLFresh: false, visionModelAvailable: false),
-            .unsupported)
+            .noSafariURL)
+    }
+
+    // MARK: - Safari before any extension has ever run
+
+    /// Nothing has ever been in a position to capture the page, so Safari being
+    /// frontmost is a situation this device isn't set up for — not a failure.
+    func testSafariWithoutAnyExtensionRunIsUnsupported() {
+        for visionAvailable in [false, true] {
+            XCTAssertEqual(
+                decide(
+                    appName: "Safari", isSafari: true, safariURLFresh: false,
+                    safariExtensionHasRun: false, visionModelAvailable: visionAvailable),
+                .unsupported,
+                "an unenabled extension should never error (vision=\(visionAvailable))")
+        }
+    }
+
+    /// A URL captured before the running app existed is still this app's to
+    /// save: freshness outranks the never-ran evidence, which is only about
+    /// whether an ABSENT URL deserves an error.
+    func testSafariFreshURLSavesEvenWithoutRecordedExtensionRun() {
+        XCTAssertEqual(
+            decide(
+                appName: "Safari", isSafari: true, safariURLFresh: true,
+                safariExtensionHasRun: false, visionModelAvailable: true),
+            .saveImmediately)
+    }
+
+    /// The extension gate is Safari's alone — a platform app's screenshot route
+    /// has nothing to do with whether Safari's extension was ever enabled.
+    func testExtensionRunDoesNotAffectNonSafariApps() {
+        XCTAssertEqual(
+            decide(
+                appName: "TikTok", platform: .tiktok, safariExtensionHasRun: false,
+                handlesMediaKind: true, visionModelAvailable: true),
+            .screenshotNeeded)
     }
 
     // MARK: - Shortcuts

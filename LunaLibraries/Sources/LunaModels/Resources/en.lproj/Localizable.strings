@@ -463,25 +463,25 @@
 
 /* ===== Settings_downloads — Settings → Downloads: auto-download policy and
  * storage/retention. Luna/Settings/DownloadsSettingsScreen.swift ===== */
-"Settings_downloads_autoDownloadLabel_Luna" = "Download Automatically";
-"Settings_downloads_autoDownloadFooter_Luna" = "Choose whether saved media downloads on its own. On Wi-Fi Only defers a download that starts on cellular until Wi-Fi is available. Downloads you start by tapping or long-pressing an item always begin right away.";
+"Settings_downloads_autoDownloadLabel_Luna" = "Begin Downloads";
+"Settings_downloads_autoDownloadFooter_Luna" = "Start downloading immediately when you save a link, or wait until you're on Wi-Fi or you tap to view.";
 "Settings_downloads_storageLabel_Luna" = "Storage";
-"Settings_downloads_storageFooter_Luna" = "Save to Photos puts every finished download in your photo library and keeps it there. Otherwise all downloads stay in Luna and are deleted automatically once they reach the age you pick.";
+"Settings_downloads_storageFooter_Luna" = "Store downloaded files in Photos or in Luna with auto-delete. Photos storage is managed by your device and iCloud.";
 
 /* ===== Settings_email — Settings → Email: the Sharing Account section (also
  * the inline sign-in form until an account exists), Import from Email, and
  * Subject Filters. Luna/Settings/EmailAndKindleSettingsScreen.swift ===== */
-"Settings_email_accountSectionHeader_Luna" = "Sharing Account";
-"Settings_email_accountFooterConnected_Luna" = "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.";
-"Settings_email_accountFooterUnconfigured_Luna" = "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you.\n\nEnter your address above; Luna asks for an app-specific password (or signs in with Outlook) next.";
-"Settings_email_accountFooterIssue_Luna" = "Your saved account is still here, but its login was rejected by the provider. Reconnect to resume sending and importing email.";
+"Settings_email_accountSectionHeader_Luna" = "Connected Email";
+"Settings_email_accountFooterConnected_Luna" = "Connected. Send and receive articles and newsletters.";
+"Settings_email_accountFooterUnconfigured_Luna" = "Connect your email account to automatically pull incoming newsletters into Luna.";
+"Settings_email_accountFooterIssue_Luna" = "Email login was rejected by the provider. Please reconnect.";
 "Settings_email_issueTitle_Luna" = "Email login needs attention";
 "Settings_email_issueCredentialsRejected_Luna" = "The provider rejected the saved app password.";
 "Settings_email_issueAuthorizationExpired_Luna" = "The provider authorization expired or was revoked.";
-"Settings_email_reconnectLabel_Luna" = "Reconnect Email";
+"Settings_email_reconnectLabel_Luna" = "Reconnect email";
 "Settings_email_reconnectSecondary_Luna" = "Sign in again with this account";
 "Settings_email_inboxFilterLabel_Luna" = "Inbox Filter";
-"Settings_email_inboxFilterSecondary_Luna" = "Keep Luna mail out of your inbox";
+"Settings_email_inboxFilterSecondary_Luna" = "When you receive a Luna share via email from a friend, skip your email inbox and show it only in Luna.";
 "Settings_email_signOutLabel_Luna" = "Sign Out";
 "Settings_email_connectButton_Luna" = "Connect";
 "Settings_email_filterActiveTitle_Luna" = "Filter Active";
@@ -489,35 +489,35 @@
 "Settings_email_openFilterSettingsButton_Luna" = "Open Filter Settings";
 
 "Settings_email_importFromEmailLabel_Luna" = "Import from Email";
-"Settings_email_importFooter_Luna" = "New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight.";
+"Settings_email_importFooter_Luna" = "Emails you receive from these senders (e.g. newsletters) are automatically imported into Luna, and optionally sent to your Kindle.";
 "Settings_email_autoSendToKindleLabel_Luna" = "Also Send to Kindle";
 "Settings_email_addSenderRow_Luna" = "Add Sender…";
 "Settings_email_addSenderTitle_Luna" = "Add Sender";
 "Settings_email_addSenderMessage_Luna" = "Emails from this address will be imported.";
 
-"Settings_email_subjectFiltersSectionHeader_Luna" = "Subject Filters";
-"Settings_email_subjectFiltersFooter_Luna" = "Also import any email whose subject contains one of these phrases, regardless of sender.";
-"Settings_email_addSubjectFilterRow_Luna" = "Add Subject Filter…";
-"Settings_email_addSubjectFilterTitle_Luna" = "Add Subject Filter";
-"Settings_email_addSubjectFilterMessage_Luna" = "Email whose subject contains this phrase will be imported, regardless of sender.";
+"Settings_email_subjectFiltersSectionHeader_Luna" = "Import matching";
+"Settings_email_subjectFiltersFooter_Luna" = "Additionally, auto-import emails whose subject contains one of these phrases, regardless of sender.";
+"Settings_email_addSubjectFilterRow_Luna" = "Add matching phrase…";
+"Settings_email_addSubjectFilterTitle_Luna" = "Add matching phrase";
+"Settings_email_addSubjectFilterMessage_Luna" = "Email whose subject contains this phrase will be imported.";
 "Settings_email_subjectFilterPlaceholder_Luna" = "Subject contains…";
 
 /* ===== Settings_email_kindle — Settings → Kindle: forwarding settings entry,
  * Kindle address, and send-test. Same file, KindleSettingsScreen.
  * Luna/Settings/EmailAndKindleSettingsScreen.swift ===== */
-"Settings_email_kindle_addressPlaceholder_Luna" = "name@kindle.com";
+"Settings_email_kindle_addressPlaceholder_Luna" = "my_id@kindle.com";
 "Settings_email_kindle_forwardingSettingsRow_Luna" = "Kindle forwarding settings";
-"Settings_email_kindle_footer_Luna" = "Articles are emailed from your connected Luna email account. That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings).";
+"Settings_email_kindle_footer_Luna" = "Articles are sent to Kindle via your connected email account. The connected email address must be on your Kindle account's approved-sender list (amazon.com → Manage Your Content & Devices → Preferences → Personal Document Settings).";
 "Settings_email_kindle_sendTestRow_Luna" = "Send Test to Kindle";
 "Settings_email_kindle_notConfiguredTitle_Luna" = "Not Configured";
-"Settings_email_kindle_notConfiguredMessage_Luna" = "Enter your Kindle address first.";
+"Settings_email_kindle_notConfiguredMessage_Luna" = "Enter your Kindle address first. You can find it at amazon.com → Manage Your Content & Devices → Preferences → Personal Document Settings";
 "Settings_email_kindle_testSentTitle_Luna" = "Test Sent";
 "Settings_email_kindle_testSentMessage_Luna" = "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list.";
 
 /* ===== Settings_importExport — Settings → Import & Export: export/import
  * buttons and their outcome alerts. Luna/Settings/ImportExportSettingsScreen.swift ===== */
 "Settings_importExport_title_Luna" = "Import & Export";
-"Settings_importExport_footer_Luna" = "Export writes every saved link as a Markdown file, with the archive kept as its own list. Import reads that file back, another app's CSV, or any text with links in it — you choose which ones to keep before anything is saved.";
+"Settings_importExport_footer_Luna" = "You can export a file with every link you've saved in Luna.\n\nYou can import any text file containing a list of links, including a Luna export.";
 "Settings_importExport_exportRow_Luna" = "Export Links";
 "Settings_importExport_importRow_Luna" = "Import Links";
 "Settings_importExport_nothingToExportTitle_Luna" = "Nothing to Export";
@@ -527,7 +527,7 @@
 "Settings_importExport_noLinksFoundTitle_Luna" = "No Links Found";
 "Settings_importExport_noLinksFoundMessage_Luna" = "That file didn't contain any links Luna could read.";
 "Settings_importExport_readFailedTitle_Luna" = "Couldn't Read That File";
-"Settings_importExport_readFailedMessage_Luna" = "Luna couldn't open it as text. Pick a Markdown, CSV or plain-text file.";
+"Settings_importExport_readFailedMessage_Luna" = "Luna couldn't open the file. Pick a Markdown, CSV or plain-text file.";
 
 /* ===== Settings_linkImport — the import-review/progress/summary sheet
  * pushed from Import & Export. Luna/Settings/LinkImportSheetViewController.swift ===== */
@@ -535,30 +535,30 @@
 "Settings_linkImport_importButton_Luna" = "Import";
 "Settings_linkImport_linksSectionHeader_Luna" = "Links (%lld)";
 "Settings_linkImport_archiveSectionHeader_Luna" = "Archive (%lld)";
-"Settings_linkImport_unstructuredFooter_Luna" = "This file didn't say which links were archived, so they'll all be saved as ordinary links.";
+"Settings_linkImport_unstructuredFooter_Luna" = "All links imported.";
 
 "Settings_linkImport_importingTitle_Luna" = "Importing…";
 "Settings_linkImport_stopButton_Luna" = "Stop";
 "Settings_linkImport_progressCount_Luna" = "%lld of %lld finished";
 "Settings_linkImport_savingStatus_Luna" = "Saving links…";
 "Settings_linkImport_downloadingStatus_Luna" = "Downloading content…";
-"Settings_linkImport_unlockingStatus_Luna" = "Unlocking paywalled articles…";
-"Settings_linkImport_rescuingStatus_Luna" = "Retrying what failed with Apple Intelligence…";
+"Settings_linkImport_unlockingStatus_Luna" = "Extracting website text…";
+"Settings_linkImport_rescuingStatus_Luna" = "Retrying with Apple Intelligence…";
 "Settings_linkImport_doneStatus_Luna" = "Finishing up…";
-"Settings_linkImport_finishingStartedStatus_Luna" = "Finishing the links already started…";
+"Settings_linkImport_finishingStartedStatus_Luna" = "Finishing a few links…";
 
 "Settings_linkImport_stoppedTitle_Luna" = "Import Stopped";
 "Settings_linkImport_finishedTitle_Luna" = "Import Finished";
-"Settings_linkImport_resultSectionHeader_Luna" = "Result";
+"Settings_linkImport_resultSectionHeader_Luna" = "Summary";
 "Settings_linkImport_importedCount_Luna" = "%lld imported";
 "Settings_linkImport_importedSubtitle_Luna" = "Saved, with their content ready.";
 "Settings_linkImport_failuresCount_Luna" = "%lld couldn't be downloaded yet";
-"Settings_linkImport_failuresSubtitle_Luna" = "Saved anyway — Luna keeps retrying these on its own.";
+"Settings_linkImport_failuresSubtitle_Luna" = "Saved anyway — will automatically retry later.";
 "Settings_linkImport_duplicatesCount_Luna" = "%lld already saved";
 "Settings_linkImport_duplicatesSubtitle_Luna" = "Left exactly as they were.";
-"Settings_linkImport_cancelledFooter_Luna" = "The links you stopped before are saved too — Luna finishes them in the background.";
+"Settings_linkImport_cancelledFooter_Luna" = "In progress links were saved and will load in the background.";
 "Settings_linkImport_notSavedSectionHeader_Luna" = "Not Saved (%lld)";
-"Settings_linkImport_rejectedFooter_Luna" = "These aren't a kind this app handles, so nothing was saved for them.";
+"Settings_linkImport_rejectedFooter_Luna" = "These could not be saved by Luna.";
 "Settings_linkImport_rejectedForeignKindGeneric_Luna" = "Another Luna app handles this kind of link.";
 "Settings_linkImport_rejectedForeignKindNamed_Luna" = "%@ handles this kind of link.";
 "Settings_linkImport_rejectedUnusableURL_Luna" = "Not a link Luna can open.";
@@ -577,9 +577,9 @@
 "Settings_reader_textSizeOptionXL_Luna" = "XL";
 "Settings_reader_highlightColorLabel_Luna" = "Highlight Color";
 "Settings_reader_preloadSectionHeader_Luna" = "Preload Links";
-"Settings_reader_preloadWiFiOnlyLabel_Luna" = "Wi-Fi Only";
+"Settings_reader_preloadWiFiOnlyLabel_Luna" = "Only on Wi-Fi";
 "Settings_reader_preloadDepthLabel_Luna" = "Preload Depth";
-"Settings_reader_preloadFooter_Luna" = "Preload the content of links in a saved article (and links on those pages, up to this depth) in the background, so tapping a link opens instantly. 0 turns preloading off. Preloading uses any network by default; turn on Wi-Fi Only to restrict it to Wi-Fi.";
+"Settings_reader_preloadFooter_Luna" = "Links in articles are preloaded so they're available offline instantly. Links within links are loaded, and so on, up to the depth setting.\n\nPreloading uses data. Set to Wi-Fi only or configure depth to conserve storage space and cellular data.";
 
 /* ===== Settings_safariSuggestion — the Safari-extension suggestion-button
  * visibility picker's non-Never options ("Common_never" covers Never).
@@ -602,23 +602,23 @@
 "Settings_shortcut_safariButtonName_Downloader" = "Download";
 "Settings_shortcut_safariButtonName_PriceTracker" = "Track in Luna";
 
-"Settings_shortcut_titleWithSetup_Luna" = "Shortcut & Safari";
+"Settings_shortcut_titleWithSetup_Luna" = "Safari & One-click save";
 "Settings_shortcut_titleSafariOnly_Luna" = "Safari";
 "Settings_shortcut_suggestionButtonSectionHeader_Luna" = "%@ Button";
-"Settings_shortcut_suggestionButtonFooter_Luna" = "When browsing in Safari (with the Luna extension enabled), show the \"%@\" button when it applies. Choose when it appears.";
-"Settings_shortcut_onScreenURLsSectionHeader_Luna" = "On-Screen URLs";
-"Settings_shortcut_onScreenURLsToggleLabel_Luna" = "Handle On-Screen URLs";
-"Settings_shortcut_onScreenURLsFooter_Luna" = "When enabled, Provide Context can save a complete URL detected on screen. Turn this off to ignore supplied on-screen URLs and use the normal app or screenshot handling.";
-"Settings_shortcut_doubleSaveSectionHeader_Luna" = "Double Save Articles";
-"Settings_shortcut_doubleSaveActionLabel_Luna" = "Second article save";
-"Settings_shortcut_doubleSaveFooter_Luna" = "For saved articles only: press the Action Button twice on the same article within 7 seconds. Send to Kindle emails the article; View immediately returns a self-contained Word document to the shortcut. Videos, posts, products, and imported documents ignore the second press.";
+"Settings_shortcut_suggestionButtonFooter_Luna" = "When browsing in Safari, choose when the \"%@\" button appears.";
+"Settings_shortcut_onScreenURLsSectionHeader_Luna" = "Apple Intelligence";
+"Settings_shortcut_onScreenURLsToggleLabel_Luna" = "On-Screen URLs";
+"Settings_shortcut_onScreenURLsFooter_Luna" = "When enabled, use Apple Intelligence to save any url on screen with the Action Button. URLs are identified on-device and may not be perfect.";
+"Settings_shortcut_doubleSaveSectionHeader_Luna" = "Double Save Action";
+"Settings_shortcut_doubleSaveActionLabel_Luna" = "Save 2x to:";
+"Settings_shortcut_doubleSaveFooter_Luna" = "Configure what happens when you press the Action Button to save twice in a row.";
 "Settings_shortcut_kindleSetupPromptTitle_Luna" = "Set up Kindle first";
-"Settings_shortcut_kindleSetupPromptMessage_Luna" = "Double Save Articles can't email an article until your Luna email account and Kindle address are set up.";
+"Settings_shortcut_kindleSetupPromptMessage_Luna" = "Can't send to Kindle until you connect your email account and set up Kindle.";
 "Settings_shortcut_kindleSetupPromptButton_Luna" = "Set Up";
-"Settings_shortcut_shortcutSectionHeader_Luna" = "Action Button Shortcut";
+"Settings_shortcut_shortcutSectionHeader_Luna" = "Action Button";
 "Settings_shortcut_openShortcutsRow_Luna" = "Open Shortcuts";
 "Settings_shortcut_refreshStatusRow_Luna" = "Refresh Last Visited Website";
-"Settings_shortcut_installFooter_Luna" = "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"%@\" in Settings → Action Button.\n\n%@";
+"Settings_shortcut_installFooter_Luna" = "Save any page in Safari with the Action Button:\n\n1. Enable the Luna Safari extension (Settings → Apps → Safari → Extensions)\n2. Install the shortcut above\n3. Pick \"%@\" in Settings → Action Button.\n\n%@";
 "Settings_shortcut_lastVisitedStatus_Luna" = "Last visited Safari URL (%@): %@";
 "Settings_shortcut_unknownTimeFallback_Luna" = "unknown time";
 "Settings_shortcut_noSafariURLStatus_Luna" = "No Safari URL tracked yet. Enable the Luna extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page.";
@@ -640,7 +640,7 @@
 "Settings_email_credential_credentialErrorMessage_Luna" = "Check the address and app password and try again.";
 
 /* ===== Email & Sending — Settings · Address/Outlook OAuth step (EmailAccountSetup.swift) ===== */
-"Settings_email_setup_outlookNotConfiguredMessage_Luna" = "Outlook isn't configured in this build.";
+"Settings_email_setup_outlookNotConfiguredMessage_Luna" = "Outlook isn't configured; please contact the app developer.";
 "Settings_email_setup_outlookStartFailedMessage_Luna" = "Couldn't start Outlook sign-in.";
 "Settings_email_setup_outlookSignInFailedMessage_Luna" = "Outlook sign-in failed. Please try again.";
 "Settings_email_setup_signInFailedTitle_Luna" = "Sign-in failed";
@@ -655,7 +655,7 @@
 "MailAccount_filterGuide_icloudInstructions_Luna" = "In iCloud Mail → Settings → Rules → Add a Rule that matches the Subject containing \"%@\" and moves it to a folder / marks it as read.";
 "MailAccount_filterGuide_yahooInstructions_Luna" = "In Yahoo Mail → Settings → Filters → Add, %@";
 "MailAccount_filterGuide_outlookInstructions_Luna" = "Luna sets this up automatically for Outlook.";
-"MailAccount_filterGuide_genericInstructions_Luna" = "If your provider supports filters (Sieve), add a rule to %@";
+"MailAccount_filterGuide_genericInstructions_Luna" = "If your provider supports filters, add a rule to %@";
 
 /* ===== Email & Sending — Mail account: provider registry (MailProvider.swift) ===== */
 "MailAccount_mailProvider_gmailDisplayName_Luna" = "Gmail";
@@ -669,7 +669,7 @@
 "MailAccount_mailProvider_genericSetupInstructions_Luna" = "Enter your mail server settings and password. If your provider requires an app password, create one first.";
 
 /* ===== Email & Sending — Action Button media handoff errors (MediaIntentHandoff.swift) ===== */
-"MediaIntentHandoff_downloadFailedMessage_Luna" = "Luna saved the link but couldn't download its media.";
+"MediaIntentHandoff_downloadFailedMessage_Luna" = "Luna saved the link but couldn't download media.";
 "MediaIntentHandoff_notAuthorizedMessage_Luna" = "Luna needs permission to save media to your photo library.";
 
 /* ===== App Intents metadata — ArticleEntity.swift (concrete _Luna keys, no runtime fallback) ===== */
@@ -688,13 +688,13 @@
 "Intents_saveResultEntity_mediaProperty_title_Luna" = "Media";
 
 /* ===== App Intents metadata — ProvideContextIntent.swift ===== */
-"Intents_provideContext_description_Luna" = "First step of the Action Button shortcut. Pass the current app (from Get Current App) and optionally URLs detected on screen. Returns a structured outcome telling the shortcut whether the page is done, unhandled, needs a screenshot, or must continue in Save.";
+"Intents_provideContext_description_Luna" = "Provide the current app and optionally URLs detected on screen. Returns a structured outcome:done, unhandled, screenshot required, or must continue using the Save intent.";
 "Intents_provideContext_currentAppParam_title_Luna" = "CurrentApp";
 "Intents_provideContext_currentAppParam_description_Luna" = "The current app, from Get Current App.";
 "Intents_provideContext_onScreenURLsParam_title_Luna" = "OnScreenURLs";
 "Intents_provideContext_onScreenURLsParam_description_Luna" = "The output from Get On-Screen URLs. Compatible complete values may be saved directly.";
-"Intents_provideContext_noTrackedPageError_Luna" = "No Safari page tracked yet. Is the Luna extension enabled?";
-"Intents_provideContext_multipleURLsError_Luna" = "Several different links are on screen. Open the one you want and try again.";
+"Intents_provideContext_noTrackedPageError_Luna" = "No link available. Is the Luna Safari extension disabled?";
+"Intents_provideContext_multipleURLsError_Luna" = "Multiple links are on screen. Open just one and try again.";
 "Intents_provideContext_saveFailedError_Luna" = "Luna couldn't save this link.";
 "Intents_provideContext_contentUnavailableError_Luna" = "Luna saved this link but couldn't fetch the page. Try again from the app.";
 
@@ -705,20 +705,20 @@
 "Intents_readArticle_notSupportedError_Luna" = "Reading articles aloud isn't available in this app.";
 
 /* ===== App Intents metadata — SaveIntent.swift ===== */
-"Intents_save_description_Luna" = "Long-running step of the Action Button shortcut. Pass the current app, optional screenshot, and optional Metadata from Provide Context. Luna resumes prepared work when possible, or reads the screenshot and saves from the top.";
+"Intents_save_description_Luna" = "Provide the current app, optional screenshot, and optional Metadata from Provide Context. Luna saves urls it finds, resuming in-progress downloads when possible, or reading the screenshot using Apple Intelligence for extractable url information.";
 "Intents_save_currentAppParam_title_Luna" = "CurrentApp";
 "Intents_save_currentAppParam_description_Luna" = "The current app, from Get Current App.";
 "Intents_save_screenshotParam_title_Luna" = "Screenshot";
-"Intents_save_screenshotParam_description_Luna" = "An optional screenshot of the current app's screen.";
+"Intents_save_screenshotParam_description_Luna" = "An optional screenshot of the current screen.";
 "Intents_save_metadataParam_title_Luna" = "Metadata";
-"Intents_save_metadataParam_description_Luna" = "Optional opaque state returned by Provide Context.";
+"Intents_save_metadataParam_description_Luna" = "Output from Provide Context.";
 "Intents_save_unsupportedAppError_Luna" = "Luna can't save from this app.";
-"Intents_save_saveFailedError_Luna" = "Luna found this on screen but couldn't save it.";
-"Intents_save_contentUnavailableError_Luna" = "Luna saved this but couldn't fetch its content. Try again from the app.";
+"Intents_save_saveFailedError_Luna" = "Luna found a link on screen but couldn't save it.";
+"Intents_save_contentUnavailableError_Luna" = "Luna saved a link but couldn't fetch its content. Try again from the app.";
 "Intents_save_modelUnavailableError_Luna" = "Screen analysis isn't available on this device.";
 "Intents_save_networkUnavailableError_Luna" = "Screen analysis needs a network connection. Try again when you're back online.";
-"Intents_save_quotaLimitReachedError_Luna" = "You've hit the screen-analysis limit for now. Try again later.";
-"Intents_save_serviceUnavailableError_Luna" = "Screen analysis is temporarily unavailable. Try again in a moment.";
+"Intents_save_quotaLimitReachedError_Luna" = "You've hit your Apple Intelligence usage limit for now. Try again later.";
+"Intents_save_serviceUnavailableError_Luna" = "Apple Intelligence is temporarily unavailable. Try again in a moment.";
 "Intents_save_nothingIdentifiableError_Luna" = "Couldn't identify anything to save on this screen.";
 "Intents_save_notFoundError_Luna" = "Couldn't find a matching post or page to save.";
 
@@ -746,16 +746,16 @@
 
 /* ===== Reader — card deck chrome, status text and locked-save overlay (ArticleCardsViewController) ===== */
 "Reader_senderFromSubtitle_Luna" = "From %@";
-"Reader_lockedCardCaption_Luna" = "Locked — tap to unlock";
+"Reader_lockedCardCaption_Luna" = "Content locked — tap to access full article text";
 "Reader_cardTapToOpenStatus_Luna" = "Tap to open";
 "Reader_cardFetchingStatus_Luna" = "Fetching…";
 "Reader_cardCouldntFetchStatus_Luna" = "Couldn't fetch this article";
 
 /* ===== Reader — archive.today unlock flow (ArchiveWebReaderViewController) ===== */
 "Reader_archiveUnlock_rateLimitMessage_Luna" = "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n•  Wait ~30 minutes\n•  Switch networks or turn on a VPN\n•  Tap Open in Safari below and view there";
-"Reader_archiveUnlock_cannotArchiveMessage_Luna" = "This site can't be archived right now. Try again in a little while, or open it in Safari.";
+"Reader_archiveUnlock_cannotArchiveMessage_Luna" = "This site can't be opened right now. Try again in a little while, or open it in Safari.";
 "Reader_archiveUnlock_stuckMessage_Luna" = "This archive is taking longer than usual. It may be stuck, but we’re still waiting.";
-"Reader_archiveUnlock_unlockingStatus_Luna" = "Unlocking article…";
+"Reader_archiveUnlock_unlockingStatus_Luna" = "Accessing full article…";
 
 /* ===== Reader — eye tracking toggle, RSVP reader (EyeTrackingToggleButton, RSVPGazeCoordinator) ===== */
 "Reader_rsvp_eyeTracking_turnOnAccessibilityLabel_Luna" = "Turn on eye tracking";
@@ -820,12 +820,12 @@
 "Reader_export_plainText_imageWithAltLine_Luna" = "[Image: %@]";
 "Reader_export_giveUpAfterAttemptsMessage_Luna" = "%@ Luna gave up after %lld attempts.";
 "Reader_export_deliveryFailedMessage_Luna" = "Delivery failed.";
-"Reader_export_testDocumentTitle_Luna" = "Luna Test Document";
-"Reader_export_testDocumentBody_Luna" = "If you can read this on your ereader, Luna's send setup works.";
-"Reader_export_testDocumentFileName_Luna" = "Luna Test Document.epub";
+"Reader_export_testDocumentTitle_Luna" = "Luna Setup Successful";
+"Reader_export_testDocumentBody_Luna" = "If you're seeting this on your Kindle, you're all set up in Luna!";
+"Reader_export_testDocumentFileName_Luna" = "Luna Setup Successful.epub";
 "Reader_export_sendModeOffTitle_Luna" = "Off";
 "Reader_export_sendModeAllSavesTitle_Luna" = "All Saved Articles";
-"Reader_export_sendModeDoubleSaveTitle_Luna" = "Double Save";
+"Reader_export_sendModeDoubleSaveTitle_Luna" = "2x Save";
 
 /* ===== Downloader_mediaCard — MediaCardFactory.swift / MediaCardPresenter.swift / PhotosReferenceBadgeView.swift (Downloader's + central app's media card) ===== */
 "Downloader_mediaCard_downloadAccessibilityLabel_Luna" = "Download media";
@@ -836,12 +836,12 @@
 "Downloader_mediaCard_photosAccess_title_Luna" = "Photos Access Needed";
 "Downloader_mediaCard_photosBadgeAccessibilityLabel_Luna" = "Open in Photos";
 "Downloader_mediaCard_rescueInProgressLabel_Luna" = "Trying harder with Apple Intelligence…";
-"Downloader_mediaCard_saveFailedAlert_message_Luna" = "Couldn't save this media to Photos.";
+"Downloader_mediaCard_saveFailedAlert_message_Luna" = "Couldn't save to Photos.";
 "Downloader_mediaCard_saveFailedAlert_title_Luna" = "Save Failed";
-"Downloader_mediaCard_savedToPhotosAlert_message_Luna" = "The media was added to your photo library.";
+"Downloader_mediaCard_savedToPhotosAlert_message_Luna" = "The media was added to your Photos library.";
 "Downloader_mediaCard_savedToPhotosAlert_title_Luna" = "Saved to Photos";
 "Downloader_mediaCard_shareCircleAccessibilityLabel_Luna" = "Share Current Media";
-"Downloader_mediaCard_shareFailedAlert_message_Luna" = "Couldn't prepare this media for sharing.";
+"Downloader_mediaCard_shareFailedAlert_message_Luna" = "Couldn't prepare for sharing.";
 "Downloader_mediaCard_shareFailedAlert_title_Luna" = "Share Failed";
 "Downloader_mediaCard_shareFile_audioTitle_Luna" = "Share audio";
 "Downloader_mediaCard_shareFile_gifTitle_Luna" = "Share GIF";
@@ -851,13 +851,13 @@
 /* ===== Downloader_liveActivity — LiveMediaDownloadJob.swift / LiveMediaDownloadManager.swift / LiveMediaDownloadManager+ActivityKit.swift (the download's Live Activity + its status line, shared with the Downloader footer view) ===== */
 "Downloader_liveActivity_alert_downloadFinishedTitle_Luna" = "Download finished";
 "Downloader_liveActivity_alert_downloadStartedTitle_Luna" = "Download started";
-"Downloader_liveActivity_defaultTitle_Luna" = "Media download";
+"Downloader_liveActivity_defaultTitle_Luna" = "Downloading";
 "Downloader_liveActivity_status_downloadFailed_Luna" = "Download failed";
 "Downloader_liveActivity_status_resolving_Luna" = "Preparing download";
 "Downloader_liveActivity_status_savedToPhotos_Luna" = "Saved to Photos";
 "Downloader_liveActivity_status_savingToLuna_Luna" = "Saving to Luna";
 "Downloader_liveActivity_status_savingToPhotos_Luna" = "Saving to Photos";
-"Downloader_liveActivity_status_suspended_Luna" = "Paused. Resume within 5 seconds.";
+"Downloader_liveActivity_status_suspended_Luna" = "Paused. Please resume.";
 "Downloader_liveActivity_status_waiting_Luna" = "Waiting to resume";
 
 /* ===== Settings_autoDownload — AutoDownloadSettings.swift / MediaStorageSettings.swift (Downloader Settings' "Download automatically" + "Storage" rows) ===== */
@@ -867,23 +867,23 @@
 "Settings_autoDownload_storageOption_photosTitle_Luna" = "Save to Photos";
 
 /* ===== Downloader_media — MediaDownload.swift / SavedMediaStore.swift / SavedNonTextualViewController.swift (download errors, retention ages, and the action/share extension's inline media preview) ===== */
-"Downloader_media_error_deleteFailed_Luna" = "Couldn't delete this media.";
-"Downloader_media_error_downloadFailed_Luna" = "Couldn't download the media.";
+"Downloader_media_error_deleteFailed_Luna" = "Couldn't delete.";
+"Downloader_media_error_downloadFailed_Luna" = "Couldn't download.";
 "Downloader_media_error_insufficientStorage_Luna" = "Not enough storage. Free at least %@ and try again.";
 "Downloader_media_error_noMedia_Luna" = "Couldn't find media to download.";
 "Downloader_media_error_permissionDenied_Luna" = "Allow Photos access in Settings to save media.";
-"Downloader_media_error_saveFailed_Luna" = "Couldn't save to your photo library.";
-"Downloader_media_error_saveMediaFailed_Luna" = "Couldn't save the media.";
+"Downloader_media_error_saveFailed_Luna" = "Couldn't save to your Photos library.";
+"Downloader_media_error_saveMediaFailed_Luna" = "Couldn't save.";
 "Downloader_media_error_unsupported_Luna" = "This link has no downloadable media.";
 "Downloader_media_preview_deletingStatus_Luna" = "Deleting…";
-"Downloader_media_preview_downloadButtonTitle_Luna" = "Download media";
+"Downloader_media_preview_downloadButtonTitle_Luna" = "Download";
 "Downloader_media_preview_downloadingStatus_Luna" = "Downloading…";
 "Downloader_media_preview_saveAccessibilityLabel_Luna" = "Save to Photos";
 "Downloader_media_preview_saveButtonTitleFormat_Luna" = "Save to %@ Photos";
 "Downloader_media_preview_savedAccessibilityLabel_Luna" = "Saved to Photos";
 "Downloader_media_preview_savedButtonTitleFormat_Luna" = "Saved to %@ Photos";
 "Downloader_media_preview_savingStatus_Luna" = "Saving to Photos…";
-"Downloader_media_preview_unavailableMessage_Luna" = "Unable to preview media";
+"Downloader_media_preview_unavailableMessage_Luna" = "Unable to preview";
 "Downloader_media_retention_oneDay_Luna" = "1 day";
 "Downloader_media_retention_oneMonth_Luna" = "1 month";
 "Downloader_media_retention_threeDays_Luna" = "3 days";
@@ -901,43 +901,43 @@
 "PriceTracker_alertThreshold_setButtonTitle_Luna" = "Set price alert";
 "PriceTracker_alertThreshold_sliderValueUnset_Luna" = "No price alert set";
 "PriceTracker_alertThreshold_title_Luna" = "Alert threshold";
-"PriceTracker_alertThreshold_unsetMessage_Luna" = "No price alert yet. Set one to be notified when the price drops.";
+"PriceTracker_alertThreshold_unsetMessage_Luna" = "Set a price alert to be notified when the price drops.";
 
 /* ===== PriceTracker_graph — PriceGraphView.swift (also used from ProductCardContent.swift + PriceTrackingViewController.swift for the shared "Price History" heading) ===== */
-"PriceTracker_graph_cancelThresholdLabel_Luna" = "Cancel threshold edit";
+"PriceTracker_graph_cancelThresholdLabel_Luna" = "Cancel";
 "PriceTracker_graph_emptyCaption_Luna" = "No price history yet";
 "PriceTracker_graph_historyTitle_Luna" = "Price History";
-"PriceTracker_graph_saveThresholdLabel_Luna" = "Save threshold";
+"PriceTracker_graph_saveThresholdLabel_Luna" = "Save";
 "PriceTracker_graph_setButtonHint_Luna" = "Starts watching for a price drop and asks to send notifications";
-"PriceTracker_graph_thresholdFieldLabel_Luna" = "Alert threshold price";
+"PriceTracker_graph_thresholdFieldLabel_Luna" = "Alert price threshold";
 "PriceTracker_graph_thresholdHandleHint_Luna" = "Drag vertically to edit the alert price";
 
 /* ===== PriceTracker_addSeller — shared between PriceTrackingViewController.swift and ProductSearchOverlayViewController.swift (identical "Already tracked" title in both add-seller flows) ===== */
 "PriceTracker_addSeller_alreadyTrackedTitle_Luna" = "Already tracked";
 
 /* ===== PriceTracker_tracking — PriceTrackingViewController.swift (the full-screen seller editor) ===== */
-"PriceTracker_tracking_addSellerAlertMessage_Luna" = "Track this product's price at another store.";
+"PriceTracker_tracking_addSellerAlertMessage_Luna" = "Track this product's price at another seller.";
 "PriceTracker_tracking_addSellerAlertTitle_Luna" = "Add a seller";
 "PriceTracker_tracking_addSellerButtonLabel_Luna" = "Add seller";
-"PriceTracker_tracking_alreadyTrackedMessage_Luna" = "This page is already a seller.";
+"PriceTracker_tracking_alreadyTrackedMessage_Luna" = "This seller is already tracked.";
 "PriceTracker_tracking_noPriceFoundTitle_Luna" = "No price found";
-"PriceTracker_tracking_noPriceMessage_Luna" = "We couldn't read a price on that page, so it wasn't added.";
-"PriceTracker_tracking_noPriceRescueMessage_Luna" = "We couldn't read a price on that page. Apple Intelligence can try to find it.";
+"PriceTracker_tracking_noPriceMessage_Luna" = "Unable to read a price. Please try another page.";
+"PriceTracker_tracking_noPriceRescueMessage_Luna" = "Unable to read a price. Apple Intelligence can try to find it.";
 "PriceTracker_tracking_notYetRefreshed_Luna" = "Not yet refreshed";
 "PriceTracker_tracking_readInsteadButtonTitle_Luna" = "Read instead";
 "PriceTracker_tracking_refreshedFormat_Luna" = "Refreshed %@";
 "PriceTracker_tracking_screenTitle_Luna" = "Price Tracker";
 "PriceTracker_tracking_searchActionTitle_Luna" = "Search";
 "PriceTracker_tracking_sellersHeaderTitle_Luna" = "Sellers";
-"PriceTracker_tracking_stillNoPriceMessage_Luna" = "Apple Intelligence couldn't find a price on this page either.";
+"PriceTracker_tracking_stillNoPriceMessage_Luna" = "Apple Intelligence couldn't find a price on this page.";
 "PriceTracker_tracking_stillNoPriceTitle_Luna" = "Still no price";
 "PriceTracker_tracking_urlFieldPlaceholder_Luna" = "https://…";
 
 /* ===== PriceTracker_search — ProductSearchOverlayViewController.swift (the in-app web search/browse overlay) ===== */
-"PriceTracker_search_addToTrackerActionTitle_Luna" = "Add to tracker";
+"PriceTracker_search_addToTrackerActionTitle_Luna" = "Add seller";
 "PriceTracker_search_addressFieldPlaceholder_Luna" = "Search or enter a URL";
-"PriceTracker_search_alreadyTrackedMessage_Luna" = "This page is already a seller for this product.";
-"PriceTracker_search_noPriceMessage_Luna" = "We couldn't find a price on this page, so it wasn't added. Try a product page that shows a price.";
+"PriceTracker_search_alreadyTrackedMessage_Luna" = "This seller is already tracked.";
+"PriceTracker_search_noPriceMessage_Luna" = "Unable to read a price. Please try another page.";
 "PriceTracker_search_noPriceTitle_Luna" = "Couldn't find a price";
 "PriceTracker_search_noThanksActionTitle_Luna" = "No thanks";
 "PriceTracker_search_useThisPageMessage_Luna" = "Add this page as a seller for this product.";
@@ -945,8 +945,8 @@
 
 /* ===== Sharing — NotificationManager.swift (LunaSocial) ===== */
 "Sharing_notification_priceDrop_headline_Luna" = "Price drop: %@";
-"Sharing_notification_priceDrop_message_Luna" = "Now %@ — %lld%% off what you were watching.";
-"Sharing_notification_shareReceived_headline_Luna" = "%@ shared an article";
+"Sharing_notification_priceDrop_message_Luna" = "Now %@ — %lld%% off the usual price.";
+"Sharing_notification_shareReceived_headline_Luna" = "%@ sent you an article";
 "Sharing_notification_shareReceived_message_Luna" = "Open Luna to read it.";
 
 /* ===== Sharing — FriendDetailViewController.swift (per-contact settings screen) ===== */
@@ -954,8 +954,8 @@
 "Sharing_friendDetail_notifyFooter_Luna" = "By default you're notified only the first time this contact shares with you.";
 "Sharing_friendDetail_notifyLabel_Luna" = "Notify on every share";
 "Sharing_friendDetail_removeAction_Luna" = "Remove Contact";
-"Sharing_friendDetail_renameTitle_Luna" = "Name";
-"Sharing_friendDetail_setNamePlaceholder_Luna" = "Set a name";
+"Sharing_friendDetail_renameTitle_Luna" = "Nickname";
+"Sharing_friendDetail_setNamePlaceholder_Luna" = "Set a nickname";
 "Sharing_friendDetail_unblockAction_Luna" = "Unblock Contact";
 
 /* ===== Sharing — FriendsViewController.swift (Contacts screen) ===== */
@@ -978,17 +978,17 @@
 /* ===== Sharing — RecipientPickerViewController.swift (pick email recipients) ===== */
 "Sharing_recipientPicker_action1EnterEmail_Luna" = "Enter email address…";
 "Sharing_recipientPicker_action2AddFromContacts_Luna" = "Add from Phone Contacts";
-"Sharing_recipientPicker_recipientEmailAlertTitle_Luna" = "Recipient email";
+"Sharing_recipientPicker_recipientEmailAlertTitle_Luna" = "Contact email";
 "Sharing_recipientPicker_screenTitle_Luna" = "Send to";
 "Sharing_recipientPicker_sendButton_Luna" = "Send";
 "Sharing_recipientPicker_sendButtonWithCount_Luna" = "Send (%lld)";
 
 /* ===== Sharing — SendToFriendSheet.swift (share entry point) ===== */
-"Sharing_sendToFriend_copiedToast_Luna" = "Copied";
+"Sharing_sendToFriend_copiedToast_Luna" = "Copied!";
 "Sharing_sendToFriend_otherOptionAction_Luna" = "Other…";
 "Sharing_sendToFriend_recentSheetTitle_Luna" = "Send to Contact";
 "Sharing_sendToFriend_sendErrorTitle_Luna" = "Couldn't send";
-"Sharing_sendToFriend_setupEmailMessage_Luna" = "Connect your email account in Luna → Settings → Email to send articles to contacts.";
+"Sharing_sendToFriend_setupEmailMessage_Luna" = "Connect your email account in settings to send articles to contacts.";
 
 /* ===== SaveOfWeek — WeeklySaveRefresher.swift (key-holder proposal notifications / errors) ===== */
 "SaveOfWeek_refresher_notKeyHolderError_Luna" = "This device doesn't have the Save of the Week key.";
@@ -1021,19 +1021,19 @@
 "AppClip_downloader_readySubtitle_Luna" = "Choose where to save or send it.";
 "AppClip_downloader_failedHeadline_Luna" = "Couldn't download";
 "AppClip_downloader_retryButtonTitle_Luna" = "Try Again";
-"AppClip_downloader_missingURLMessage_Luna" = "This Luna link is missing a downloadable URL.";
+"AppClip_downloader_missingURLMessage_Luna" = "This link is missing a downloadable URL.";
 "AppClip_downloader_saveSheetUnavailableMessage_Luna" = "The media downloaded, but iOS could not open the save sheet.";
 "AppClip_downloader_genericFailureMessage_Luna" = "Check the link and try again.";
 
 /* ===== AppClip_reader — the Reader App Clip's single screen (ClipReaderViewController.swift) ===== */
 "AppClip_reader_navigationTitle_Luna" = "Luna";
 "AppClip_reader_waitingHeadline_Luna" = "Ready to read";
-"AppClip_reader_waitingSubtitle_Luna" = "Open a Luna reader link to start.";
+"AppClip_reader_waitingSubtitle_Luna" = "Open a Luna Reader link to start.";
 "AppClip_reader_failedHeadline_Luna" = "Couldn't open";
 "AppClip_reader_retryButtonTitle_Luna" = "Try Again";
-"AppClip_reader_missingURLMessage_Luna" = "This Luna link is missing a readable URL.";
-"AppClip_reader_needsArchiveUnlockMessage_Luna" = "This article needs an archive unlock. Open it in Luna Reader to finish loading it.";
-"AppClip_reader_notReadableArticleMessage_Luna" = "This Luna link is not a readable article.";
+"AppClip_reader_missingURLMessage_Luna" = "This link is missing a readable URL.";
+"AppClip_reader_needsArchiveUnlockMessage_Luna" = "Download and open the Luna Reader app to access article contents.";
+"AppClip_reader_notReadableArticleMessage_Luna" = "This link is not a readable article.";
 
 /* ===== LiveActivity_downloader — non-intent-literal strings in LunaDownloaderLiveActivityWidget.swift ===== */
 "LiveActivity_downloader_openPhotosSettingsLabel_Luna" = "Open Photos Settings";
@@ -1044,7 +1044,7 @@
    as concrete already-suffixed literals directly in LunaDownloaderLiveActivityWidget.swift
    (the metadata processor requires Swift literals, so these keys ARE the source literals) ===== */
 "Intents_cancelLiveDownload_title_Luna" = "Cancel Download";
-"Intents_cancelLiveDownload_description_Luna" = "Pauses the active Luna download briefly before canceling it.";
+"Intents_cancelLiveDownload_description_Luna" = "Cancels this media download.";
 "Intents_cancelLiveDownload_jobIDParam_title_Luna" = "Download ID";
 "Intents_resumeLiveDownload_title_Luna" = "Resume Download";
 "Intents_resumeLiveDownload_description_Luna" = "Resumes a paused Luna download.";
@@ -1053,15 +1053,13 @@
 /* ===== ReadingList_emailShare — EmailShareCenter.swift ===== */
 "ReadingList_emailShare_setupNeededMessage_Luna" = "Set up your email account first.";
 "ReadingList_emailShare_noRecipientsMessage_Luna" = "Choose at least one recipient.";
-"ReadingList_emailShare_buildFailedMessage_Luna" = "Couldn't build the email.";
+"ReadingList_emailShare_buildFailedMessage_Luna" = "Couldn't compose the email. Try again later.";
 "ReadingList_emailShare_bestPriceLine_Luna" = "Best price: %@";
 
-/* ===== ReadingList_doubleSave — double-save action/friend-mode picker labels
+/* ===== ReadingList_doubleSave — double-save action picker labels
    (DoubleSaveActionStore.swift) ===== */
-"ReadingList_doubleSave_actionNothingTitle_Luna" = "Nothing";
+"ReadingList_doubleSave_actionNothingTitle_Luna" = "Do nothing";
 "ReadingList_doubleSave_actionViewImmediatelyTitle_Luna" = "View immediately";
-"ReadingList_doubleSave_friendModeAskEveryTimeTitle_Luna" = "Ask Every Time";
-"ReadingList_doubleSave_friendModePresetTitle_Luna" = "Preset Contacts";
 
 /* ===== ReadingList_store — ReadingListStore.swift ===== */
 "ReadingList_store_unknownSendErrorMessage_Luna" = "Unknown error";
@@ -1069,8 +1067,8 @@
 /* ===== ShareExtension_share — ShareViewController.swift ===== */
 "ShareExtension_share_noAttachmentsMessage_Luna" = "Nothing to read was shared.";
 "ShareExtension_share_unsupportedContentMessage_Luna" = "This type of content can't be read in Luna.";
-"ShareExtension_share_missingPageAddressMessage_Luna" = "Couldn't read the shared page's address.";
-"ShareExtension_share_missingLinkMessage_Luna" = "Couldn't read the shared link.";
+"ShareExtension_share_missingPageAddressMessage_Luna" = "Couldn't read the website's address.";
+"ShareExtension_share_missingLinkMessage_Luna" = "Couldn't read any link.";
 "ShareExtension_share_noLinkFoundMessage_Luna" = "No link found to save.";
 "ShareExtension_share_sharedTextFallbackTitle_Luna" = "Shared Text";
 "ShareExtension_share_missingFileMessage_Luna" = "Couldn't read the shared file.";

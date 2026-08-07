@@ -84,6 +84,17 @@ public final class LunaSetupStatusStore {
             || (app != .luna && safariHasRun(isCentral: true))
     }
 
+    /// Whether ANY installed Luna app's Safari extension has ever run, ignoring
+    /// which app owns it. Onboarding completion above is deliberately per-app —
+    /// a pill can only deep-link into its OWN containing app, so central Luna's
+    /// lesson isn't finished by the Reader's extension. Reading the tracked page
+    /// URL has no such ownership: every extension writes the one shared
+    /// `lastSafariURL`, so any app may treat any app's extension as its evidence
+    /// that a Safari URL should have been captured (`ProvideContextDecision`).
+    public var anySafariExtensionHasRun: Bool {
+        safariHasRun(isCentral: true) || safariHasRun(isCentral: false)
+    }
+
     public static func shortcutInstallPressedKey(for app: LunaApp) -> String {
         "setup.shortcut.installPressed.\(app.storageIdentifier)"
     }

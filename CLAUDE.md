@@ -386,6 +386,21 @@ scripts/run_tests.sh            # preferred — picks a simulator, reports the r
 scripts/run_tests.sh --fresh    # throwaway simulator (the fix for most flake modes)
 ```
 
+> **Looking at a screen, rather than testing it: `-LunaStage`.** Any app boots
+> straight into any named screen in any named state — populated, empty, frozen
+> mid-load, errored — with stubbed data and nothing to set up, so reviewing or
+> driving a screen costs one `simctl launch` instead of a navigation script.
+> DEBUG-only (the catalogs call the DEBUG fixture seams, so a release build
+> cannot compile them). `xcrun simctl launch --console-pty <sim>
+> com.hsanabria.luna -LunaStageList` prints the whole catalog as JSON; the same
+> JSON is committed at `Luna/Stage/StageManifest.json` and pinned by
+> `StageRegistryTests`. `scripts/stage_screenshots.py` captures every stage of
+> every app and writes a review guide. Stages follow the kind-pack rule — a
+> kind's stages live in `Stage/StageCatalog+<Kind>.swift`, compiled only into
+> the targets that link the kind. Full detail, including what is out of scope
+> (extensions, clips, the Live Activity — none launchable by argument), in
+> `claudedocs/staging.md`.
+
 Or by hand:
 
 ```sh

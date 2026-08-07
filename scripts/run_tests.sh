@@ -84,11 +84,20 @@ fi
 # ---------------------------------------------------------------- simulator
 if [[ $FRESH -eq 1 || -z "$DEVICE" ]]; then
   if [[ $FRESH -eq 1 ]]; then
-    RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "
-import json,sys
+    # The newest iOS 26.x, which is what the suite is measured and documented
+    # against — NOT simply the newest runtime installed. A throwaway sim built on
+    # an iOS 27 beta runtime aborted a full run mid-suite with "libc++abi: Pure
+    # virtual function called!" in a WebKit teardown, which reads like a code
+    # regression and is not one. Set LUNA_TEST_RUNTIME to a version prefix
+    # ("27", "26.2") to pick deliberately; anything else falls back to newest.
+    RUNTIME=$(LUNA_TEST_RUNTIME="${LUNA_TEST_RUNTIME:-26}" xcrun simctl list runtimes -j | python3 -c "
+import json,os,sys
+want = os.environ.get('LUNA_TEST_RUNTIME', '26')
 rs=[r for r in json.load(sys.stdin)['runtimes'] if r['isAvailable'] and 'iOS' in r['name']]
 rs.sort(key=lambda r: [int(x) for x in r['version'].split('.')])
-print(rs[-1]['identifier'] if rs else '')")
+preferred=[r for r in rs if r['version'] == want or r['version'].startswith(want + '.')]
+pick = (preferred or rs)
+print(pick[-1]['identifier'] if pick else '')")
     [[ -z "$RUNTIME" ]] && { echo "no available iOS runtime" >&2; exit 2; }
     DEVICE=$(xcrun simctl create "LunaTests-$$" "iPhone 17 Pro" "$RUNTIME") || exit 2
     echo "created throwaway simulator $DEVICE"

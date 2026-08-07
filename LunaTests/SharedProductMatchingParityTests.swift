@@ -78,9 +78,13 @@ final class SharedProductMatchingParityTests: XCTestCase {
             Case(name: "sku same host", expect: true,
                  candidate: candidate(productID: "SKU-1"),
                  snapshot: snapshot(url: "https://shop.example/p", sku: "SKU-1")),
+            // Different name too -- otherwise the fuzzy-name tier (both sides
+            // default to "Widget" with no brand set) would rescue this case
+            // and mask the sku/host check actually being exercised.
             Case(name: "sku different host", expect: false,
                  candidate: candidate(productID: "SKU-1"),
-                 snapshot: snapshot(url: "https://other.example/p", sku: "SKU-1")),
+                 snapshot: snapshot(
+                     name: "Unrelated Product Entirely", url: "https://other.example/p", sku: "SKU-1")),
             Case(name: "canonical url with tracking params", expect: true,
                  candidate: candidate(),
                  snapshot: snapshot(url: "https://shop.example/p/9?utm_source=x")),

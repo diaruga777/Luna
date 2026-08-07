@@ -1237,6 +1237,10 @@
     function productSnapshotName() {
         var node = jsonLDProductNode();
         if (node && typeof node.name === "string" && node.name.trim()) { return node.name.trim(); }
+        var microdataEl = document.querySelector('[itemprop="name"]');
+        var microdataName = microdataEl
+            && (microdataEl.getAttribute("content") || microdataEl.textContent || "").trim();
+        if (microdataName) { return microdataName; }
         var og = metaContent(["og:title"]);
         if (og) { return og; }
         return (document.title || "").trim();

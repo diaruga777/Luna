@@ -23,6 +23,7 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         super.setUp()
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ProductTrackerIngestorSnapshotSeedingTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
         ingestor.indexRegenerator = {}

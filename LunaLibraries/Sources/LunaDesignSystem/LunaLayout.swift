@@ -108,10 +108,4 @@ public enum LunaLayout {
         guard isWide(containerWidth: width) else { return proportional }
         return min(proportional, maximumDrawerWidth)
     }
-
-    /// Insets that center a phone-proportioned replica inside `width`.
-    public static func phoneReplicaHorizontalInset(forContainerWidth width: CGFloat) -> CGFloat {
-        guard isWide(containerWidth: width) else { return 0 }
-        return max(0, (width - min(width - wideEdgePadding * 2, phoneReplicaWidth)) / 2)
-    }
 }

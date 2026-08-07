@@ -201,6 +201,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private var gazeCoordinator: RSVPGazeCoordinator?
     /// Test seam: substitutes the gaze source. Must be set before the view loads.
     public var gazeTrackerOverride: GazeTracking?
+    /// Test seam: substitutes the clock the gaze coordinator measures its
+    /// away-threshold and resume-dwell against, so a test can prove what
+    /// happens after four seconds of staring without spending four seconds.
+    /// Must be set before the view loads.
+    public var gazeClockOverride: (() -> TimeInterval)?
 
     /// Words a skip button jumps from the current position.
     private static let skipWordCount = 25
@@ -619,7 +624,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// feature could never run. The coordinator is still created so the reader
     /// has one uniform place to report playback state to.
     private func configureEyeTracking() {
-        let coordinator = RSVPGazeCoordinator(tracker: gazeTrackerOverride)
+        let coordinator = gazeClockOverride.map {
+            RSVPGazeCoordinator(tracker: gazeTrackerOverride, now: $0)
+        } ?? RSVPGazeCoordinator(tracker: gazeTrackerOverride)
         coordinator.delegate = self
         coordinator.attach(to: view)
         coordinator.setAudioPlaybackOn(isSpeechMode)

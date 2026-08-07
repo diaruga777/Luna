@@ -334,14 +334,44 @@ final class SafariSetupCelebrationOverlayTests: XCTestCase {
             "1")
     }
 
+    /// The self-dismissal, without spending its five seconds — and without a
+    /// wait of any kind.
+    ///
+    /// `SETUP_CELEBRATION_DURATION` is a closure-scoped constant, so it can't be
+    /// shortened from outside; but the ONE thing the overlay does with it is
+    /// hand it to `setTimeout`, and that IS reachable. Stubbing `setTimeout`
+    /// across `present()` intercepts the dismissal timer instead of scheduling
+    /// it, which lets this assert three things the old six-second version could
+    /// only imply: the timer was armed with 5000 (not merely that a mirror
+    /// global says so), the overlay is still up until it fires, and firing it is
+    /// what takes the overlay down and hands the page back.
     func testItDismissesItselfAfterFiveSecondsAndHandsThePageBack() {
-        XCTAssertEqual(evaluate("String(window.__lunaSetupCelebrationDuration)"), "5000")
+        _ = evaluate("""
+            window.__lunaRealSetTimeout = window.setTimeout;
+            window.__lunaArmedDelay = null;
+            window.__lunaArmedCallback = null;
+            window.setTimeout = function (fn, delay) {
+                if (delay >= 1000 && window.__lunaArmedCallback === null) {
+                    window.__lunaArmedDelay = delay;
+                    window.__lunaArmedCallback = fn;
+                    return 0;
+                }
+                return window.__lunaRealSetTimeout.apply(window, arguments);
+            };
+            "stubbed"
+            """)
         present()
+        _ = evaluate("window.setTimeout = window.__lunaRealSetTimeout; 'restored'")
+
+        XCTAssertEqual(
+            evaluate("String(window.__lunaArmedDelay)"), "5000",
+            "the dismissal timer must be armed with the celebration's own duration")
+        XCTAssertEqual(evaluate("String(window.__lunaSetupCelebrationDuration)"), "5000")
+        // Nothing has fired yet, so the overlay is still up.
+        XCTAssertEqual(evaluate("\(overlayQuery) ? 'present' : 'absent'"), "present")
         XCTAssertEqual(evaluate("String(window.__lunaTestDismissed)"), "false")
 
-        let dismissed = expectation(description: "overlay dismissed itself")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { dismissed.fulfill() }
-        wait(for: [dismissed], timeout: 10)
+        _ = evaluate("window.__lunaArmedCallback(); 'fired'")
 
         XCTAssertEqual(evaluate("\(overlayQuery) ? 'present' : 'absent'"), "absent")
         // The callback is how the pill logic gets its turn.

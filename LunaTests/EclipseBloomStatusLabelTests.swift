@@ -71,16 +71,16 @@ final class EclipseBloomStatusLabelTests: XCTestCase {
         let label = EclipseBloomStatusLabel()
         label.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
         label.layoutIfNeeded()
+        // The rotation is what's under test, not the shipped three seconds; the
+        // interval is a parameter so this can watch one tick go by in 60ms.
         let cycler = ArticleLoadingStatusCycler(
-            label: label, initialText: "Opening in Luna…",
+            label: label, initialText: "Opening in Luna…", interval: 0.05,
             alternatives: ["Still going…", "Nearly there…"])
         cycler.start()
         XCTAssertEqual(label.text, "Opening in Luna…")
 
         let rotated = expectation(description: "phrase rotated")
-        // The cycler's own interval is 3s; wait past one tick rather than reaching
-        // into it, so this asserts the shipped pacing.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             XCTAssertNotEqual(label.text, "Opening in Luna…")
             XCTAssertTrue(["Still going…", "Nearly there…"].contains(label.text ?? ""),
                           "got \(label.text ?? "nil")")

@@ -192,9 +192,15 @@ public final class ArticleLoadingStatusCycler {
     private var timer: Timer?
     private var unusedAlternatives: [String] = []
 
+    /// How long each phrase holds before the next one takes over. A parameter
+    /// only so a test can watch a rotation happen without waiting out the
+    /// shipped pacing; every call site takes the default.
+    private let interval: TimeInterval
+
     public init(
         label: EclipseBloomStatusLabel,
         initialText: String,
+        interval: TimeInterval = 3,
         alternatives: [String] = [
             L10n.string("LoadingStatus_stage1_stillGoing"),
             L10n.string("LoadingStatus_stage2_justABitLonger"),
@@ -204,6 +210,7 @@ public final class ArticleLoadingStatusCycler {
     ) {
         self.label = label
         self.initialText = initialText
+        self.interval = interval
         self.alternatives = alternatives
     }
 
@@ -213,7 +220,7 @@ public final class ArticleLoadingStatusCycler {
         stop()
         label?.reveal(initialText)
         timer = Timer.scheduledTimer(
-            withTimeInterval: 3, repeats: true
+            withTimeInterval: interval, repeats: true
         ) { [weak self] _ in self?.showNextPhrase() }
     }
 

@@ -306,8 +306,6 @@ enum OnboardingStrings {
         static let setUpLater = Definition(key: "Onboarding_Instruction_setUpLater")
         static let externalOpenFailureTemplate = Definition(
             key: "Onboarding_Instruction_externalOpenFailureTemplate")
-        static let saveFailure = Definition(key: "Onboarding_Instruction_saveFailure")
-        static let tryAgain = Definition(key: "Onboarding_Instruction_tryAgain")
         static let done = Definition(key: "Common_done")
 
         static func safariPrompt(saveBenefit: String) -> String {
@@ -323,66 +321,6 @@ enum OnboardingStrings {
     enum Card {
         static let saved = Definition(key: "Common_saved")
         static let savedArticle = Definition(key: "Onboarding_Card_savedArticle")
-    }
-
-    enum Article {
-        // Reuses ShareSetupPractice's own keys verbatim — this article is the
-        // same share-sheet practice copy read back as a saved article, so it
-        // carries no wording of its own.
-        static let title = Definition(key: "ShareSetupPractice_articleSubjectLine")
-        static let byline = Definition(key: "ShareSetupPractice_bylineExample")
-        static let intro = Definition(key: "ShareSetupPractice_featuresHeading")
-        static let features = [
-            "ShareSetupPractice_feature01", "ShareSetupPractice_feature02",
-            "ShareSetupPractice_feature03", "ShareSetupPractice_feature04",
-            "ShareSetupPractice_feature05", "ShareSetupPractice_feature06",
-            "ShareSetupPractice_feature07", "ShareSetupPractice_feature08",
-            "ShareSetupPractice_feature09", "ShareSetupPractice_feature10",
-            "ShareSetupPractice_feature11", "ShareSetupPractice_feature12",
-            "ShareSetupPractice_feature13", "ShareSetupPractice_feature14",
-            "ShareSetupPractice_feature15", "ShareSetupPractice_feature16",
-            "ShareSetupPractice_feature17", "ShareSetupPractice_feature18",
-            "ShareSetupPractice_feature19", "ShareSetupPractice_feature20",
-            "ShareSetupPractice_feature21", "ShareSetupPractice_feature22",
-            "ShareSetupPractice_feature23",
-        ].map(Definition.init(key:))
-
-        static var featureValues: [String] {
-            features.map { $0.value() }
-        }
-
-        static var plainText: String {
-            ([intro.value()] + featureValues.map { "• " + $0 })
-                .joined(separator: "\n")
-        }
-
-        static var articleContent: ArticleContent {
-            ArticleContent(
-                title: title.value(),
-                blocks: [block(kind: .paragraph, intro.value())]
-                    + featureValues.map { block(kind: .listItem, $0) })
-        }
-
-        static var fallbackHTMLBody: String {
-            "<h1>\(escaped(title.value()))</h1>\n"
-                + "<p>\(escaped(intro.value()))</p>\n<ul>\n"
-                + featureValues.map { "<li>\(escaped($0))</li>" }
-                    .joined(separator: "\n")
-                + "\n</ul>"
-        }
-
-        private static func block(
-            kind: ArticleContent.Block.Kind,
-            _ text: String
-        ) -> ArticleContent.Block {
-            .init(kind: kind, text: text, links: [])
-        }
-
-        private static func escaped(_ text: String) -> String {
-            text.replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
-        }
     }
 
     enum Accessibility {
@@ -441,29 +379,6 @@ enum OnboardingStrings {
         }
     }
 
-    /// Words that belong to iOS rather than to Luna. The mock link menu and the
-    /// mock share sheet replicate system surfaces, so they spell every label
-    /// exactly as the OS does — and they are gathered here for the same reason
-    /// all the other copy is: so a change is one edit, not a hunt through views.
-    enum SystemUI {
-        static let openLink = Definition(key: "Common_openLink")
-        static let copy = Definition(key: "Onboarding_SystemUI_copy")
-        static let share = Definition(key: "Onboarding_SystemUI_share")
-        static let editActions = Definition(key: "Onboarding_SystemUI_editActions")
-        static let favorites = Definition(key: "Onboarding_SystemUI_favorites")
-        static let otherActions = Definition(key: "Onboarding_SystemUI_otherActions")
-        static let saveToFiles = Definition(key: "Onboarding_SystemUI_saveToFiles")
-        static let addToReadingList = Definition(key: "Onboarding_SystemUI_addToReadingList")
-        static let airDrop = Definition(key: "Onboarding_SystemUI_airDrop")
-        static let messages = Definition(key: "Onboarding_SystemUI_messages")
-        static let reminders = Definition(key: "Onboarding_SystemUI_reminders")
-        static let more = Definition(key: "Onboarding_SystemUI_more")
-        /// The two share targets the sheet always has: this user's own Mac and
-        /// somebody in Contacts.
-        static let laptop = Definition(key: "Onboarding_SystemUI_laptop")
-        static let contact = Definition(key: "Onboarding_SystemUI_contact")
-    }
-
     enum AnimationKeys {
         static let messageBubbleFlight = Definition(shared: "onboarding.bubble.flight")
         static let pillPulse = Definition(shared: "onboarding.pill.pulse")
@@ -476,9 +391,6 @@ enum OnboardingStrings {
         /// The visible front of the Action Button press wave.
         static let actionButtonPressWave = Definition(
             shared: "onboarding.press.wave")
-        /// The lift a context menu's preview and menu cast while they are up.
-        static let contextMenuShadow = Definition(
-            shared: "onboarding.contextMenu.shadow")
         static let switcherCorner = Definition(shared: "onboarding.switcher.corner")
         static let moonReveal = Definition(shared: "moonReveal")
         static let opaqueGlyphReveal = Definition(shared: "opaqueGlyphReveal")
@@ -492,19 +404,6 @@ enum OnboardingStrings {
 struct OnboardingIntroCopy: Equatable {
     let initialText: String
     let finalText: String
-}
-
-/// Compatibility façade for the article surfaces. The values themselves live
-/// above; these names keep the rendering code expressive without duplicating
-/// any copy.
-enum OnboardingLunaArticleCopy {
-    static var title: String { OnboardingStrings.Article.title.value() }
-    static var byline: String { OnboardingStrings.Article.byline.value() }
-    static var intro: String { OnboardingStrings.Article.intro.value() }
-    static var features: [String] { OnboardingStrings.Article.featureValues }
-    static var plainText: String { OnboardingStrings.Article.plainText }
-    static var articleContent: ArticleContent { OnboardingStrings.Article.articleContent }
-    static var fallbackHTMLBody: String { OnboardingStrings.Article.fallbackHTMLBody }
 }
 
 /// Compatibility façade for the Safari explainer page. Its definitions live

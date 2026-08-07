@@ -185,9 +185,9 @@ def main():
     parser.add_argument("--out", default=str(REPO / "build" / "stage-screenshots"))
     parser.add_argument("--derived-data", default=str(REPO / ".build-dd-stage"))
     parser.add_argument("--only", default=None, help="regex over stage ids")
-    parser.add_argument("--settle", type=float, default=1.5,
+    parser.add_argument("--settle", type=float, default=1.0,
                         help="seconds between successive settle polls")
-    parser.add_argument("--max-settle", type=float, default=15.0,
+    parser.add_argument("--max-settle", type=float, default=7.0,
                         help="give up waiting for the screen to settle after this")
     parser.add_argument("--no-build", action="store_true")
     args = parser.parse_args()

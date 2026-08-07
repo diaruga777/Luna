@@ -117,6 +117,47 @@ reaching the period beside it — long enough to read the wrong sentence. Each
 departing fragment's front starts advanced by the drop from the highest arriving
 ink (`frontLead(forDeparting:)`), so it goes out as the arrivals come in.
 
+### The light is composited off the main thread
+
+The glow is the expensive part of the whole animation, and it is expensive in a
+way that cannot be arranged away: `GlyphPixelBloomView` builds an emitter (the
+glyph raster clipped to the front's trailing bands) and then draws it eight times
+under stacked Quartz shadows. Measured, that is **~5ms a frame for one short
+fragment**, and it is almost all fixed cost per pass rather than blur width —
+halving the area or the radii barely moves it, and merging passes changes the
+look. A second beat blooms two fragments at once, so the old arrangement, which
+drew in `draw(_:)`, spent ~10ms of every frame on the main thread before Core
+Animation had committed anything. On a 60Hz simulator that measured **26.6ms
+mean between display-link ticks with 55% of frames later than 20ms** — the
+choppiness was real, and not a slow device.
+
+A frame is now composited on a background queue and handed to a `CALayer` as
+ready-made `contents` (`GlyphPixelBloomView.Pass`). The display link stays on the
+main thread, because it has to sample the occluder's *presentation* transform to
+keep the light on the mask edge, but it only asks for a frame; a tick arriving
+while one is still in flight is dropped rather than queued. Same measurement
+after: **16.67ms median, p99 16.67ms, one late tick in 371** — a locked 60Hz.
+
+Two things are worth knowing before touching that renderer:
+
+- **It is Core Graphics, not UIKit, and that is not a style choice.**
+  `UIGraphicsImageRenderer` and `UIImage.draw(in:)` composite *nothing at all*
+  off the main thread — no error, no warning, an empty buffer every frame and a
+  light that simply never appears. Hence the hand-applied y-down flip and the
+  `CGImage` draws.
+- **The halo radii are POINTS and had to be converted.** A view's `draw(_:)`
+  context carries its 2×/3× in the CTM, so `blur: 30` there means 30 points; a
+  bitmap context measures a shadow's blur in DEVICE PIXELS however its transform
+  is scaled afterwards. Miss the conversion and the white cores still land
+  perfectly while every outer halo comes in at a third of its reach — the broad
+  low-frequency wash that makes this read as sunrise disappears and the light
+  goes hard. (The old invalidation rect's `-34` inset was in points for the same
+  reason, which is where `glowReach` comes from.)
+
+Equivalence was checked by freezing both the old and new drawing at the same
+sweep phase and diffing the screens: a mean of 0.03 of one 255-level over the
+headline, total light within 0.1%, and every other pixel identical.
+
 The util card starts the animation from `cardDidBecomeCentered`, so it does not
 spend it while mounted only as a side peek. On the launch that animates it, the
 card's other elements wait at alpha 0 and fade in together, in place, from the

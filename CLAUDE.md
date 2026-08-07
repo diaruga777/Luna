@@ -139,7 +139,7 @@ stable Xcode 26.2.
 > kinds, the drop behavior, and the composition mechanism are documented in
 > `claudedocs/surface-support.md`. UI prose says
 > "Luna"; each app has its own `AppIcon{Luna,Reader,Downloader,PriceTracker}` (PNG appiconsets in
-> `SharedIconAssets.xcassets`; `scripts/make_icons.py` is retired — update the PNGs directly).
+> `SharedIconAssets.xcassets` — there is no icon generator script; update the PNGs directly).
 > The ACTION extensions use separate `{Luna,Reader,Downloader,PriceTracker}ActionExtIcon`-style
 > sets (`ReaderActionExtIcon`, `LunaActionExtIcon`, …): iOS
 > renders action-extension icons as monochrome templates from the icon's ALPHA channel, so an
@@ -384,7 +384,21 @@ every kind processor is registered at launch). The `LunaReader` /
 ```sh
 scripts/run_tests.sh            # preferred — picks a simulator, reports the real verdict
 scripts/run_tests.sh --fresh    # throwaway simulator (the fix for most flake modes)
+scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff reaches
 ```
+
+> **`--changed` is for iterating, never for declaring a task done.** It asks
+> `scripts/select_changed_tests.py` which classes a `git diff <base>` (default
+> `HEAD`, so uncommitted work counts) can reach — by name convention
+> (`Foo.swift` → `FooTests`), by grepping LunaTests for every type the changed
+> file declares, and by a small path table for the non-Swift inputs (the strings
+> file → `LocalizableStringsTests`, the launch storyboard → the two geometry
+> suites, `.xcodeproj`/`Package.swift`/xcconfigs → everything). It always adds
+> `KindCompositionRootTests`. It prints what it picked and why, and when a
+> changed file matches no rule it says so and runs the WHOLE suite rather than
+> quietly running less — so a short selection is a claim it is prepared to
+> justify. A green partial run is not a green suite: finish with a full
+> `scripts/run_tests.sh --fresh`.
 
 > **Looking at a screen, rather than testing it: `-LunaStage`.** Any app boots
 > straight into any named screen in any named state — populated, empty, frozen
@@ -498,7 +512,18 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   sleeps became injected seams. Re-measured 2026-08-06 after the one-card-frame
   change, plain recipe on a warm existing sim: **2279/21/0** — 0 failures, and the
   ~20 extra registered tests over the fresh-sim run are the registration variance
-  the bullet below describes rather than new coverage.
+  the bullet below describes rather than new coverage. Re-measured 2026-08-07
+  after a second timing pass, `--fresh` on a warm `-derivedDataPath`:
+  **2341/21/0 in 78s**, down from 140s for the SAME 2341 tests. Six suites were
+  waiting out a production constant rather than the behaviour it guards, and each
+  got a seam instead: a `now:` closure on `RSVPGazeCoordinator` (exposed as
+  `RSVPViewController.gazeClockOverride`), `ShareReaderViewController
+  .imagePreparationTimeout` and `WebArchiveCapturer.settleFirstTurn`/
+  `.settlePollInterval` as writable statics, an `interval:` on
+  `ArticleLoadingStatusCycler`, `BypassTests` moved onto the shared
+  `SafariJSTestHarness` web view, and the setup-celebration test intercepting its
+  `setTimeout` instead of sleeping through it. Nothing in the apps writes any of
+  those; they exist so a test can afford the assertion it already makes.
 - **The 21 skips are all intentional `XCTSkip`s, and all of them are env-gated
   tooling or on-demand coverage** — nothing is skipped because it is broken:
   `ArticleAudioEngineTests` (14, `RUN_AUDIO_ENGINE_TESTS=1`), the four

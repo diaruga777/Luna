@@ -65,13 +65,11 @@ final class FakeAudioEngine: ArticleAudioEngineControlling {
 
     private(set) var scheduledSegments: [(segment: RenderedSegment, rateMode: SegmentRateMode, completion: (() -> Void)?)] = []
     private(set) var scheduledTones: [(asset: ToneAsset, completion: (() -> Void)?)] = []
-    private(set) var resetOffsets: [TimeInterval] = []
     private(set) var pauseCount = 0
 
     func play() { isPlaying = true }
     func pause() { isPlaying = false; pauseCount += 1 }
     func resetAndSchedule(from time: TimeInterval) {
-        resetOffsets.append(time)
         currentTime = time
         isPlaying = true
     }
@@ -112,7 +110,6 @@ final class FakeSessionCoordinator: AudioSessionControlling {
 /// driven directly by `nextCandidateResult`.
 final class FakeAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
     var nextCandidateResult: QueueCandidate?
-    private(set) var prefetchedCandidates: [(item: ReadingListItem, content: ArticleContent)] = []
 
     func nextCandidate() -> QueueCandidate? { nextCandidateResult }
 
@@ -120,9 +117,7 @@ final class FakeAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
         AudioScript(passthrough: content)
     }
 
-    func prefetch(item: ReadingListItem, content: ArticleContent) {
-        prefetchedCandidates.append((item, content))
-    }
+    func prefetch(item: ReadingListItem, content: ArticleContent) {}
 }
 
 // MARK: - Fixture helpers

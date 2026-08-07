@@ -8,11 +8,7 @@ import Foundation
 
 /// Searches Bluesky posts (keyless public API) and returns the top match's web
 /// URL. Used by `PlatformFieldSave`'s Bluesky route.
-public protocol BlueskySearching {
-    func topPostURL(query: String) async throws -> URL
-}
-
-public struct BlueskySearchClient: BlueskySearching {
+public struct BlueskySearchClient {
     public struct NoResultError: Error {}
 
     private let session: URLSession

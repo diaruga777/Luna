@@ -130,18 +130,6 @@ public final class ReadingListStore {
         return result
     }
 
-    /// Reorders the stored list to match `orderedIDs` (items not listed keep
-    /// their relative order at the end). Backs manual drag-to-reorder.
-    public func setOrder(_ orderedIDs: [UUID]) {
-        coordinatedMutate { all in
-            let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            var reordered = orderedIDs.compactMap { byID[$0] }
-            let placed = Set(orderedIDs)
-            reordered.append(contentsOf: all.filter { !placed.contains($0.id) })
-            all = reordered
-        }
-    }
-
     /// The existing item for a URL, if it's already in the list.
     public func item(forURLString urlString: String) -> ReadingListItem? {
         items().first { $0.urlString == urlString }
@@ -600,20 +588,6 @@ public final class ReadingListStore {
                 }
             }
             return notices
-        }
-    }
-
-    /// Records a save press on an already-listed URL and returns the previous
-    /// press time (the item's save time, if this is the first repeat press).
-    /// New save-button entry points should use `reserveSaveAttempt`, which also
-    /// makes the initial insertion atomic; this remains for legacy callers.
-    @discardableResult
-    public func recordSaveAttempt(for itemID: UUID) -> Date? {
-        coordinatedMutate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
-            let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
-            all[index].lastSaveAttemptDate = Date()
-            return previous
         }
     }
 

@@ -75,8 +75,9 @@ public final class ShareReaderViewController: UIViewController {
     /// How long a surface holds its loading state waiting for the images whose
     /// size the page never declared. Bounded because an unreachable image CDN
     /// must not strand the sheet on a spinner; whatever landed by the deadline is
-    /// still baked in.
-    public static let imagePreparationTimeout: TimeInterval = 8
+    /// still baked in. A `var` only so a test can prove the bound holds without
+    /// spending eight seconds proving it; nothing in the app writes it.
+    public static var imagePreparationTimeout: TimeInterval = 8
 
     /// Replaces the blocking half of the image settling. Nil (production) runs
     /// the real bounded downloader; a test surface substitutes it so a fixture's

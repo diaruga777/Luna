@@ -115,12 +115,17 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         if case .divergent = plan { throw ProvideContextError.multipleURLs }
 
         let visionAvailable = ScreenCaptureModelSessionFactory.makeDefault().isAvailable
+        // Opportunistic on purpose: the tracked URL lives in the one shared App
+        // Group, so ANY installed Luna app's extension having run is evidence
+        // that this app should have had a page URL to read.
+        let safariExtensionHasRun = LunaSetupStatusStore.shared.anySafariExtensionHasRun
         let decision = ProvideContextDecision.decide(
             appName: currentApp,
             isSafari: isSafari,
             isShortcuts: currentApp.map { AppNamePlatform.isShortcuts(forAppName: $0) } ?? false,
             platform: currentApp.flatMap { AppNamePlatform.platform(forAppName: $0) },
             safariURLFresh: safariURLFresh,
+            safariExtensionHasRun: safariExtensionHasRun,
             // A recognized-platform save is media, so only media-handling apps
             // (Downloader, the central Luna app) proceed to a screenshot save.
             handlesMediaKind: LunaApp.current.handlesMedia,
@@ -132,6 +137,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         SharedDiagnosticLog.record(
             "provide context: decision=\(decision) app=\(currentApp ?? "nil") safari=\(isSafari) "
                 + "safariURLFresh=\(safariURLFresh) tracked=\(trackedURLString ?? "nil") "
+                + "safariExtensionHasRun=\(safariExtensionHasRun) "
                 + "plan=\(plan) vision=\(visionAvailable) "
                 + "handlesMedia=\(LunaApp.current.handlesMedia)",
             category: "intents")
@@ -139,6 +145,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         switch decision {
         case .unsupported:
             return ProvideContextResultEntity(outcome: .unhandled)
+        case .noSafariURL:
+            throw ProvideContextError.noTrackedPage
         case .screenshotNeeded:
             let metadata = CaptureIntentMetadata(
                 phase: .screenshot, currentApp: currentApp).opaqueString

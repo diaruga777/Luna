@@ -72,6 +72,22 @@ final class UtilCardStorageTests: XCTestCase {
         XCTAssertFalse(status.centralAppCoversAllOnboarding(for: .luna))
     }
 
+    /// Reading the shared tracked URL is opportunistic: a faceted app's
+    /// extension is evidence for central Luna too, which its per-app onboarding
+    /// completion (`safariRunApplies`) deliberately refuses to accept.
+    func testAnySafariExtensionRunCountsForEveryApp() {
+        let status = LunaSetupStatusStore(defaults: defaults)
+        XCTAssertFalse(status.anySafariExtensionHasRun)
+
+        defaults.set(true, forKey: LunaSetupStatusStore.sharedSafariKey)
+        XCTAssertTrue(status.anySafariExtensionHasRun)
+        XCTAssertFalse(status.safariRunApplies(to: .luna))
+
+        defaults.set(false, forKey: LunaSetupStatusStore.sharedSafariKey)
+        defaults.set(true, forKey: LunaSetupStatusStore.centralSafariKey)
+        XCTAssertTrue(status.anySafariExtensionHasRun)
+    }
+
     func testShareActionMarkersAreIndependentAndPostAChange() {
         let status = LunaSetupStatusStore(defaults: defaults)
         let changed = expectation(

@@ -389,25 +389,9 @@
 "Onboarding_Instruction_setActionButton_Luna" = "Set action button";
 "Onboarding_Instruction_setUpLater_Luna" = "Set up later";
 "Onboarding_Instruction_setUpSafari_Luna" = "Set up Safari";
-"Onboarding_Instruction_tryAgain_Luna" = "Try again";
 
 /* ===== Onboarding_Card — the demo card's own small labels (Luna/UtilCard, OnboardingStrings.Card) ===== */
 "Onboarding_Card_savedArticle_Luna" = "Saved article";
-
-/* ===== Onboarding_SystemUI — mock iOS chrome labels (link menu, share sheet) that must spell exactly as the OS does (Luna/UtilCard, OnboardingStrings.SystemUI) ===== */
-"Onboarding_SystemUI_addToReadingList_Luna" = "Add to Reading List";
-"Onboarding_SystemUI_airDrop_Luna" = "AirDrop";
-"Onboarding_SystemUI_contact_Luna" = "Johnny\nAppleseed";
-"Onboarding_SystemUI_copy_Luna" = "Copy";
-"Onboarding_SystemUI_editActions_Luna" = "Edit Actions";
-"Onboarding_SystemUI_favorites_Luna" = "Favorites";
-"Onboarding_SystemUI_laptop_Luna" = "Laptop";
-"Onboarding_SystemUI_messages_Luna" = "Messages";
-"Onboarding_SystemUI_more_Luna" = "More";
-"Onboarding_SystemUI_otherActions_Luna" = "Other Actions";
-"Onboarding_SystemUI_reminders_Luna" = "Reminders";
-"Onboarding_SystemUI_saveToFiles_Luna" = "Save to Files";
-"Onboarding_SystemUI_share_Luna" = "Share…";
 
 /* ===== Onboarding_Util — UtilCardContentViewController's own paste-row and accessibility strings ===== */
 "Onboarding_Util_invalidURL_Luna" = "Invalid URL";

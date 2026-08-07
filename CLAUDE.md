@@ -497,7 +497,18 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   sleeps became injected seams. Re-measured 2026-08-06 after the one-card-frame
   change, plain recipe on a warm existing sim: **2279/21/0** — 0 failures, and the
   ~20 extra registered tests over the fresh-sim run are the registration variance
-  the bullet below describes rather than new coverage.
+  the bullet below describes rather than new coverage. Re-measured 2026-08-07
+  after a second timing pass, `--fresh` on a warm `-derivedDataPath`:
+  **2341/21/0 in 78s**, down from 140s for the SAME 2341 tests. Six suites were
+  waiting out a production constant rather than the behaviour it guards, and each
+  got a seam instead: a `now:` closure on `RSVPGazeCoordinator` (exposed as
+  `RSVPViewController.gazeClockOverride`), `ShareReaderViewController
+  .imagePreparationTimeout` and `WebArchiveCapturer.settleFirstTurn`/
+  `.settlePollInterval` as writable statics, an `interval:` on
+  `ArticleLoadingStatusCycler`, `BypassTests` moved onto the shared
+  `SafariJSTestHarness` web view, and the setup-celebration test intercepting its
+  `setTimeout` instead of sleeping through it. Nothing in the apps writes any of
+  those; they exist so a test can afford the assertion it already makes.
 - **The 21 skips are all intentional `XCTSkip`s, and all of them are env-gated
   tooling or on-demand coverage** — nothing is skipped because it is broken:
   `ArticleAudioEngineTests` (14, `RUN_AUDIO_ENGINE_TESTS=1`), the four

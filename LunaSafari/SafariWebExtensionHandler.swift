@@ -3,16 +3,32 @@
 //  LunaSafari
 //
 
+import LunaMediaResolve
+import LunaModels
+import LunaStorage
 import SafariServices
 
 /// Receives native messages from the extension's JavaScript: persists the active
 /// Safari URL (for the SaveLink intent), answers the "Read in Luna" button-visibility
-/// and paywall-unlock settings the scripts ask for, and stashes the already-unlocked
-/// article HTML so the app can render it without re-fetching.
+/// and paywall-unlock settings the scripts ask for, stashes the already-unlocked
+/// article HTML so the app can render it without re-fetching, and — for the two
+/// media-handling hosts — resolves a social post's playable video for the in-page
+/// player.
+///
+/// Every branch here is an ADAPTER: parse the message, call shared package code,
+/// serialize the answer. No extraction, classification or parsing logic lives in
+/// this file — see the "Where the work runs" section of
+/// `claudedocs/safari-extension.md`.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static let appGroupID = SafariAppGroup.id
     private static let suggestionModeKey = "safariSuggestionMode"
+
+    /// A resolve is several chained network fetches (YouTube's is four), so it
+    /// needs a real budget — but an appex that never completes its request wedges
+    /// the page's `sendMessage` promise forever. The JS side sets a slightly
+    /// longer one of its own so a killed appex degrades too.
+    private static let resolveTimeout: TimeInterval = 20
 
     func beginRequest(with context: NSExtensionContext) {
         let (surface, scheme) = SharedSurfaceScheme.currentSurfaceAndScheme
@@ -58,6 +74,19 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                let html = message?["html"] as? String {
                 SharedSafariURL.recordUnlockedContent(urlString, html: html)
             }
+        case "resolveMedia":
+            // The in-page player's one round trip: resolve this post to a direct
+            // CDN asset with the SAME `SocialMediaResolver` the app and the
+            // share/action extensions run, cache the full result for a possible
+            // download, and answer with just the URL a `<video>` can stream.
+            // Completes from a Task — see `resolveMedia(…)`.
+            resolveMedia(message: message, context: context)
+            return
+        case "queueResolvedDownload":
+            // "Download what you resolved for this page." The assets never left
+            // Swift (`ResolvedMediaCache`), so the page hands back nothing but
+            // its own URL; the app drains the queue on the deep link that follows.
+            payload["queued"] = queueResolvedDownload(message: message)
         case "productSnapshot":
             // Passive product-page data: persisted (Feature 1, seeds a tracker's
             // history at save time) and answered against the app-written tracked
@@ -81,9 +110,91 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             }
         }
 
+        complete(context, with: payload)
+    }
+
+    private func complete(_ context: NSExtensionContext, with payload: [String: Any]) {
         let response = NSExtensionItem()
         response.userInfo = [SFExtensionMessageKey: payload]
         context.completeRequest(returningItems: [response], completionHandler: nil)
+    }
+
+    // MARK: - In-page video (media hosts only)
+
+    /// Resolves the post at `url` and answers the page with a streamable URL.
+    ///
+    /// The ONE asynchronous branch: it retains `self` and the context in the Task
+    /// (an `NSExtensionContext` outliving `beginRequest` is legal as long as it is
+    /// completed exactly once), and every path below completes exactly once —
+    /// including the timeout, so the page's promise always settles.
+    private func resolveMedia(message: [String: Any]?, context: NSExtensionContext) {
+        guard Self.hostHandlesMedia else {
+            complete(context, with: ["unsupported": true])
+            return
+        }
+        guard let urlString = message?["url"] as? String, urlString.hasPrefix("http"),
+              let url = URL(string: urlString) else {
+            complete(context, with: ["assets": []])
+            return
+        }
+        let title = (message?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        Task {
+            let assets = await Self.resolveWithinBudget(url)
+            if !assets.isEmpty {
+                ResolvedMediaCache.shared.store(ResolvedMediaRecord(
+                    sourceURLString: urlString, title: title, assets: assets,
+                    dateWritten: Date()))
+            }
+            // Only what the page can actually stream. `isDirectlyPlayable` is
+            // LunaMediaResolve's rule (no separate audio track to mux, not a
+            // still) rather than a platform list — which is why Reddit's split
+            // DASH streams answer empty here without this file naming Reddit.
+            let playable = assets.filter(\.isDirectlyPlayable)
+            self.complete(context, with: ["assets": playable.map(Self.messageDictionary(for:))])
+        }
+    }
+
+    /// JSON-safe projection of an asset for the page: what to play, and what to
+    /// show while it loads. Deliberately NOT the whole `MediaAsset` — the page
+    /// has no use for a byte estimate or a DASH manifest, and anything it does
+    /// not receive it cannot corrupt on the way back.
+    private static func messageDictionary(for asset: MediaAsset) -> [String: Any] {
+        var dictionary: [String: Any] = [
+            "url": asset.url.absoluteString,
+            "kind": asset.kind.rawValue,
+        ]
+        if let thumbnail = asset.thumbnailURL { dictionary["thumbnailURL"] = thumbnail.absoluteString }
+        return dictionary
+    }
+
+    /// `SocialMediaResolver` under a wall-clock budget. A resolve that overruns
+    /// is abandoned (the page falls back to handing the link to the app) rather
+    /// than leaving the request — and the page — hanging.
+    private static func resolveWithinBudget(_ url: URL) async -> [MediaAsset] {
+        await withTaskGroup(of: [MediaAsset]?.self) { group in
+            group.addTask { await SocialMediaResolver().resolveAssets(for: url) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(resolveTimeout * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? []
+        }
+    }
+
+    /// Promotes this page's cached resolve into the app's download queue.
+    /// Returns whether anything was queued — a resolve that expired, or a page
+    /// that was never resolved, leaves the page to fall back to the plain
+    /// hand-off. The FULL asset set is queued, including a split audio stream
+    /// the in-page player could not use: the app can mux, the browser can't.
+    private func queueResolvedDownload(message: [String: Any]?) -> Bool {
+        guard Self.hostHandlesMedia,
+              let urlString = message?["url"] as? String, urlString.hasPrefix("http"),
+              let record = ResolvedMediaCache.shared.record(forURLString: urlString)
+        else { return false }
+        PendingResolvedMediaStore.shared.append(record)
+        return !record.assets.isEmpty
     }
 
     /// Fallback name for the "Return to …" button when no app stamped one with its

@@ -1,0 +1,86 @@
+//
+//  StageContainer.swift
+//  LunaAppConfig
+//
+
+import Foundation
+
+/// The **statelessness half of staged mode** (`claudedocs/staging.md`): while a
+/// stage is running, every App-Group-backed store — files and `UserDefaults`
+/// alike — is pointed at a throwaway location that is created fresh at launch
+/// and never read again.
+///
+/// It lives in `LunaAppConfig`, at the very bottom of the layer stack, because
+/// that is where the two things every shared store resolves from already live:
+/// `AppConfig.appGroupID` (the `UserDefaults` suite name, read by two dozen
+/// stores) and `AppConfig.sharedContainerURL()` (the directory). Redirecting
+/// those two is the whole mechanism — no store needs a seam of its own, and
+/// nothing about the production path changes.
+///
+/// DEBUG-only: the type compiles to an empty shell in release, so a shipped
+/// build has no way to redirect its own container. See the `#if DEBUG` note in
+/// `claudedocs/staging.md` for why that, rather than a build setting, is the
+/// gate.
+public enum StageContainer {
+
+    #if DEBUG
+
+    /// The scratch directory standing in for the App Group container, or nil
+    /// when no stage is running. Set once, before anything touches a store.
+    public private(set) static var directory: URL?
+
+    /// The suite name standing in for the App Group's `UserDefaults`, or nil.
+    /// Distinct per activation, so two staged launches never see each other's
+    /// preferences.
+    public private(set) static var appGroupIDOverride: String?
+
+    /// Whether a stage owns the container right now.
+    public static var isActive: Bool { directory != nil }
+
+    /// Redirects the shared container to a freshly created scratch directory
+    /// and a scratch defaults suite, both named after `identifier`.
+    ///
+    /// Idempotent within a process (a second call is ignored) because the
+    /// redirect must be a launch-time fact: a store that already resolved a
+    /// path would keep writing to the old one.
+    ///
+    /// - Parameter identifier: a stable, filesystem-safe name for this staged
+    ///   run — the stage id, so a crash leaves an obvious breadcrumb.
+    @discardableResult
+    public static func activate(identifier: String) -> URL {
+        if let directory { return directory }
+        let safe = identifier.map { $0.isLetter || $0.isNumber ? $0 : "-" }
+        let name = "LunaStage-\(String(safe))-\(ProcessInfo.processInfo.processIdentifier)"
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(name, isDirectory: true)
+        // A fresh run must not inherit the previous one's files even if the
+        // temporary directory survived (the simulator's does).
+        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        directory = url
+        let suite = "\(AppConfig.provisionedAppGroupID).stage.\(name)"
+        UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+        appGroupIDOverride = suite
+        return url
+    }
+
+    /// Test seam: drops the redirect so a unit test that activated a stage
+    /// container doesn't leak it into the rest of the suite.
+    public static func deactivateForTesting() {
+        if let appGroupIDOverride {
+            UserDefaults(suiteName: appGroupIDOverride)?
+                .removePersistentDomain(forName: appGroupIDOverride)
+        }
+        if let directory { try? FileManager.default.removeItem(at: directory) }
+        directory = nil
+        appGroupIDOverride = nil
+    }
+
+    #else
+
+    /// Staged mode does not exist in release: nothing can redirect the
+    /// container, and every caller compiles down to the production path.
+    public static var isActive: Bool { false }
+
+    #endif
+}

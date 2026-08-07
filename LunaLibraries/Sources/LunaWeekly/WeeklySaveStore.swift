@@ -52,8 +52,7 @@ public final class WeeklySaveStore {
 
     public init(containerURL: URL? = nil, now: @escaping () -> Date = Date.init) {
         self.now = now
-        let base = containerURL ?? FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
+        let base = containerURL ?? AppConfig.sharedContainerURL()
         self.fileURL = base?.appendingPathComponent("weeklySaves.json")
         loadFromDisk()
     }

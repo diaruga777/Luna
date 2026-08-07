@@ -161,8 +161,7 @@ public final class RescueRuleStore: RescueRuleStoring {
     public init(containerURL: URL? = nil, now: @escaping () -> Date = Date.init) {
         self.memory = InMemoryRescueRuleStore(now: now)
         self.defaults = UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
-        let base = containerURL ?? FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
+        let base = containerURL ?? AppConfig.sharedContainerURL()
         self.fileURL = base?.appendingPathComponent("url-rescue-rules.json")
         loadFromDisk()
     }

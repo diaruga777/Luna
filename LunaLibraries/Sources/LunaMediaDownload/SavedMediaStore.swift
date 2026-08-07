@@ -271,9 +271,7 @@ public final class SavedMediaStore {
     public var directory: URL {
         let fallback = fm.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory
-        let base = overrideContainerURL
-            ?? fm.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
-            ?? fallback
+        let base = overrideContainerURL ?? AppConfig.sharedContainerURL(fm) ?? fallback
         let dir = base.appendingPathComponent("SavedMedia", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         BackupPolicy.excludeFromBackups(dir)

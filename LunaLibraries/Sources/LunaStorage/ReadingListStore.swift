@@ -80,8 +80,7 @@ public final class ReadingListStore {
         if let overrideContainerURL { return overrideContainerURL }
         // The App Group container is provisioned for this app; if it's missing the
         // build is misconfigured and nothing works anyway, so fall back to temp.
-        return fileManager.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupID)
-            ?? fileManager.temporaryDirectory
+        return AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory
     }
 
     private var listFileURL: URL {

@@ -19,8 +19,40 @@ import Foundation
 /// silently fall back and split the shared App Group container.
 public enum AppConfig {
     /// Shared App Group identifier, e.g. `group.com.hsanabria.luna`.
-    public static let appGroupID: String =
+    ///
+    /// A computed property rather than a stored `let` for one reason: **staged
+    /// mode** (`claudedocs/staging.md`) swaps it for a throwaway suite name so
+    /// every `UserDefaults(suiteName: AppConfig.appGroupID)` in the codebase —
+    /// there are two dozen — lands in a scratch domain instead of the user's
+    /// real one, with no per-store plumbing. The real value is resolved once
+    /// and cached in `provisionedAppGroupID`, so this stays a cheap read.
+    public static var appGroupID: String {
+        #if DEBUG
+        if let staged = StageContainer.appGroupIDOverride { return staged }
+        #endif
+        return provisionedAppGroupID
+    }
+
+    /// The App Group this build is actually entitled to — never the staged
+    /// override. Only the container/defaults resolution below and the
+    /// misconfiguration assert have any business reading it.
+    public static let provisionedAppGroupID: String =
         string(forInfoKey: appGroupInfoKey) ?? defaultAppGroupID
+
+    /// The shared App Group **directory** — `readingList.json`, `Articles/`,
+    /// saved media, the weekly mirror, every file-backed shared store.
+    ///
+    /// THE one resolution point, so staged mode can redirect the whole
+    /// container at once (a stage's App-Group id is not provisioned, so asking
+    /// the file manager for it would just return nil). Callers keep their own
+    /// fallbacks for the misconfigured-build case.
+    public static func sharedContainerURL(_ fileManager: FileManager = .default) -> URL? {
+        #if DEBUG
+        if let staged = StageContainer.directory { return staged }
+        #endif
+        return fileManager.containerURL(
+            forSecurityApplicationGroupIdentifier: provisionedAppGroupID)
+    }
 
     /// Shared iCloud/CloudKit container identifier, e.g. `iCloud.com.hsanabria.luna`.
     ///

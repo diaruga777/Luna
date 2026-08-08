@@ -28,11 +28,11 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
         // (2) Connecting a sending account — both credential paths.
         "Luna/Mail/CredentialViewController.swift": 1,
         "Luna/Mail/EmailAccountSetup.swift": 1,
-        // (3) Committing a price alert threshold — both editors. The card's
-        // graph has two commit paths for the one moment: dragging the line, and
-        // the "Set price alert" request a threshold-less tracker offers instead.
-        "Luna/PriceTracker/ProductCardContent.swift": 2,
-        "LunaLibraries/Sources/LunaPriceUI/PriceTrackingViewController.swift": 1,
+        // (3) Committing a price alert threshold. There are three ways to ask
+        // for one — the graph's line, the alert row's slider, and the "set an
+        // alert at all" offer either makes when there is none — and one product
+        // surface behind all of them, so they funnel through one call.
+        "LunaLibraries/Sources/LunaPriceUI/ProductDetailViewController.swift": 1,
     ]
 
     /// Where the function is DEFINED — excluded from the call-site scan.

@@ -18,6 +18,7 @@
 //
 
 import LunaDesignSystem
+import LunaFetch
 import LunaModels
 import LunaReaderUI
 import LunaReadingListUI
@@ -100,7 +101,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     ) {
         completion(ArticleSourceBadge.fallback(for: item))
         guard ArticleSourceBadge.wantsFavicon(item), let url = item.url else { return }
-        SourceIconCache.shared.icon(forPageURL: url) { image in
+        SiteIconCache.shared.icon(forPageURL: url) { image in
             if let image { completion(.icon(image)) }
         }
     }
@@ -196,7 +197,7 @@ final class ArticleCardPresenter: CardKindPresenting {
                     return
                 }
                 completion(UIImage(systemName: "globe"))
-                SourceIconCache.shared.icon(forPageURL: url) { image in
+                SiteIconCache.shared.icon(forPageURL: url) { image in
                     if let image { completion(image) }
                 }
             },

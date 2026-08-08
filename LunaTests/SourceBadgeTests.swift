@@ -41,7 +41,7 @@ final class SourceBadgeTests: XCTestCase {
         ]
         for (urlString, expected) in keys {
             XCTAssertEqual(
-                SourceIconCache.cacheKey(forPageURL: URL(string: urlString)!), expected,
+                SiteIconCache.cacheKey(forPageURL: URL(string: urlString)!), expected,
                 "cacheKey(forPageURL: \(urlString))")
         }
     }

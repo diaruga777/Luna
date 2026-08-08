@@ -37,7 +37,17 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     private var editingOriginalThreshold: Decimal?
 
     private let thresholdColor = LunaSurfacePalette.baseColor(for: .priceTracker)
-    private let plotInsets = UIEdgeInsets(top: 34, left: 58, bottom: 32, right: 14)
+    /// The margin the plot leaves for its own labels, and nothing more.
+    ///
+    /// It used to reserve 58pt on the left and 14 on the right — on a 320pt-wide
+    /// card that is a fifth of the chart spent on a gutter beside a "$200.00"
+    /// that measures 40. The left inset is now that measurement plus its 7pt
+    /// gap, the top is what the threshold's own price label needs to sit above
+    /// the line, and the bottom is one line of dates.
+    private let plotInsets = UIEdgeInsets(top: 26, left: 47, bottom: 24, right: 10)
+    /// Axis labels, in points. 9 was small enough that the price axis read as
+    /// texture at arm's length.
+    private static let axisFontSize: CGFloat = 10
 
     private let thresholdHandle = UIButton(type: .custom)
     /// Shown in place of the line's controls while the tracker has no threshold.
@@ -102,6 +112,26 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         // snapshot, the legacy editor's line) stay untouched.
         setThresholdButton.isHidden = !(thresholdPrice == nil && allowsThresholdEditing)
         calloutView.isHidden = true
+        syncThresholdText()
+        setNeedsLayout()
+        setNeedsDisplay()
+    }
+
+    /// Moves the alert line WITHOUT rebuilding the series.
+    ///
+    /// The alert row's slider and this line are two views of one number, so each
+    /// drives the other while it is being dragged. Going through `setData` would
+    /// work and would also drop the tapped-point callout and re-lay everything
+    /// out sixty times a second, which is what "the graph flickered while you
+    /// moved the slider" was.
+    public func setThresholdPrice(_ price: Decimal) {
+        let wasUnset = thresholdPrice == nil
+        thresholdPrice = price
+        if wasUnset {
+            thresholdLabel.isHidden = false
+            thresholdHandle.isHidden = false
+            setThresholdButton.isHidden = true
+        }
         syncThresholdText()
         setNeedsLayout()
         setNeedsDisplay()
@@ -614,14 +644,14 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         for candidate in candidates {
             let text = PriceFormatting.string(amount: Decimal(candidate.price), currency: currency)
             guard used.insert(text).inserted else { continue }
-            let y = min(max(candidate.y - 6, plot.minY - 1), plot.maxY - 12)
+    let y = min(max(candidate.y - 6, plot.minY - 1), plot.maxY - 12)
             drawAxisLabel(text, at: CGPoint(x: labelX, y: y), align: .right)
         }
     }
 
     private func drawAxisLabel(_ text: String, at origin: CGPoint, align: LabelAlign) {
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 9, weight: .medium),
+            .font: UIFont.systemFont(ofSize: Self.axisFontSize, weight: .medium),
             .foregroundColor: LunaColors.secondaryText,
         ]
         let size = (text as NSString).size(withAttributes: attributes)

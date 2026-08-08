@@ -1,0 +1,188 @@
+:root {
+  /* OnboardingSafariPagePalette */
+  --page: #4f5257;          /* background  (0.31, 0.32, 0.34) */
+  --paper: #fafafa;         /* paper       (white 0.98)       */
+  --ink: #1a1a1a;           /* ink         (white 0.10)       */
+  --quiet: rgba(255, 255, 255, 0.62);  /* quietCopy           */
+  --switch-on: #33c759;     /* OnboardingMockSwitchView.onColor */
+  --column: 680px;          /* LunaLayout.readableWidth */
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--column);
+  margin: 0 auto;
+  /* OnboardingSafariPageView.minimumTopInset, and the phone's 24pt column. */
+  padding: 40px 24px 64px;
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+}
+
+/* The header row: 60pt icon, 14pt gap, the two-line headline beside it. */
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.app-icon {
+  width: 60px;
+  height: 60px;
+  flex: 0 0 auto;
+  border-radius: 17px;   /* the app's own corner on a 60pt icon */
+  display: block;
+}
+
+h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.byline {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--quiet);
+}
+
+.prose {
+  margin: 10px 0 0;
+  font-size: 17px;
+  line-height: 1.42;      /* 17pt copy, 5pt lineSpacing */
+  max-width: 34em;
+}
+
+.steps { margin-top: 32px; }
+
+.steps-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--quiet);
+}
+
+.step-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* OnboardingSafariEnableStepRowView: a 70pt visual column, a 14pt gap, then
+   the copy — so all three lines of text start on one vertical. */
+.step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 38px;
+  margin-top: 8px;
+}
+
+.step:first-child { margin-top: 0; }
+
+.visual {
+  flex: 0 0 70px;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+}
+
+.step-text {
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+/* A picture of Safari's chrome: a light plate carrying a dark glyph. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 30px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chip-capsule { border-radius: 15px; }  /* Safari's address field is a capsule */
+.chip-rounded { border-radius: 9px; }   /* the menu row it opens is not */
+
+.chip .glyph {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.chip-rounded .glyph { width: 19px; height: 19px; }
+
+.app-visual {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: block;
+}
+
+/* Already on: the step is what the setting looks like once you've done it. */
+.switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--switch-on);
+  flex: 0 0 auto;
+}
+
+.knob {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+/* The index of setup pages. */
+.app-list {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.app-link img {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.app-link:hover span { text-decoration: underline; }

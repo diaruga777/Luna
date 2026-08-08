@@ -2087,7 +2087,41 @@
     // whether Safari should proactively show the "Download in Luna" pill.
     function shouldShowDownloadPillForPlatform(platform) {
         if (platform === "reddit") { return redditPostHasMedia(); }
+        if (pathIsInherentlyVideo(platform)) { return true; }
         return !looksLikeStaticImagePost();
+    }
+
+    // Surfaces whose URL SHAPE alone settles it: the page can only ever be a
+    // video, so the meta-tag heuristics below must not get a vote.
+    //
+    // This exists because Instagram serves a reel exactly the way it serves a
+    // photo post — `og:type` is literally "article", the only media meta is the
+    // JPG thumbnail, and there is no `og:video` / `twitter:player` anywhere in
+    // the document (verified against a live reel: the word "mp4" does not occur
+    // in the served HTML at all). Its <video> is hydrated by script well after
+    // this file runs, so `hasStaticImagePostSignal` matched and every reel lost
+    // its pill — while the same link, shared into the Downloader, downloaded
+    // fine. `/reel/`, `/reels/` and `/tv/` are video-only surfaces, so the path
+    // is the signal. `/p/` deliberately stays on the heuristics: it carries both
+    // photos and videos, and only a static-image verdict there is correct.
+    //
+    // Path shapes mirror PlatformRecognizer.instagram's media kinds — a leading
+    // username segment is allowed (`/<user>/reel/<code>/`, which is what
+    // Instagram's own og:url uses).
+    var INHERENTLY_VIDEO_PATH_SEGMENTS = {
+        instagram: ["reel", "reels", "tv"]
+    };
+
+    function pathIsInherentlyVideo(platform) {
+        var kinds = INHERENTLY_VIDEO_PATH_SEGMENTS[platform];
+        if (!kinds) { return false; }
+        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        for (var i = 0; i < segments.length - 1; i++) {
+            if (kinds.indexOf(segments[i].toLowerCase()) >= 0) {
+                return !!nonEmptySegment(segments[i + 1]);
+            }
+        }
+        return false;
     }
 
     function looksLikeStaticImagePost() {

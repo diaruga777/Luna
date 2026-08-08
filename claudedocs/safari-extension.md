@@ -414,6 +414,20 @@ Downloader-platform flow:
    the "Download in Luna" pill when a platform page is not a static-image post. Explicit
    video/player metadata, `<video>` nodes, and GIF/GIFV/video URLs are treated as
    downloadable/animated; preview-image-only posts are suppressed.
+   **A video-only URL SHAPE outranks that heuristic** (`pathIsInherentlyVideo`,
+   the `INHERENTLY_VIDEO_PATH_SEGMENTS` table): Instagram serves a reel with
+   markup identical to a photo post — `og:type` is literally `article`, the only
+   media meta is the JPG thumbnail, and no `og:video`/`twitter:player` appears
+   anywhere in the document, its `<video>` being hydrated by script long after
+   content.js runs — so the static-image signal matched and every reel lost its
+   pill while the same link downloaded fine when shared in. `/reel/`, `/reels/`
+   and `/tv/` (with a shortcode after them; a leading username segment is
+   allowed, as Instagram's own `og:url` uses it) are video-only surfaces and skip
+   the heuristics. Instagram `/p/` deliberately does NOT: it carries photos as
+   well as videos, and there the static-image verdict is the right one. Since
+   Instagram publishes no server-side video signal at all, a VIDEO under `/p/`
+   remains suppressed — the only way to tell would be to re-check the DOM after
+   hydration, which only Reddit does today.
 5. **Reddit is post-page + animated-media gated** (mirrors `PlatformRecognizer.reddit`, which
    now `recognizes:` only a post). The pill appears ONLY on an individual post permalink
    (`/comments/<id>`, `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, a

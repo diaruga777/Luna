@@ -317,6 +317,52 @@ final class ProductTitleHygieneTests: XCTestCase {
             "Sony WH-1000XM5 Wireless Headphones, Black")
         XCTAssertEqual(ProductTitleHygiene.cleaned("Widget | Shop"), "Widget | Shop")
     }
+
+    /// Amazon AU's `<title>` puts its own domain in a COLON-separated segment
+    /// AFTER the product name, with a category segment on the OTHER side of
+    /// it — neither a prefix nor a dash/pipe suffix, so this was passing
+    /// through uncleaned: a live save's retailer query was measured as the
+    /// full raw string, `coles-au q=Russell Hobbs … Chrome: Toasters:
+    /// Amazon.com.au`, which returns nothing on every retailer's search.
+    func testAmazonColonChromeWithCategoryBeforeTheDomainIsRemoved() {
+        XCTAssertEqual(
+            ProductTitleHygiene.cleaned(
+                "Russell Hobbs RHT82BRU Carlton 2 Slice Toaster, Wide Slots, 7 Browning "
+                    + "Controls, Defrost, Cancel & Reheat Functions, Chrome: Toasters: Amazon.com.au"),
+            "Russell Hobbs RHT82BRU Carlton 2 Slice Toaster, Wide Slots, 7 Browning "
+                + "Controls, Defrost, Cancel & Reheat Functions, Chrome")
+    }
+
+    /// The other real shape: the domain segment BEFORE the category segment.
+    func testAmazonColonChromeWithCategoryAfterTheDomainIsRemoved() {
+        XCTAssertEqual(
+            ProductTitleHygiene.cleaned(
+                "Panasonic spare blade men's shaver 6-blade ES9600 : Amazon.com.au: "
+                    + "Health, Household & Personal Care"),
+            "Panasonic spare blade men's shaver 6-blade ES9600")
+    }
+
+    /// A category segment that happens to share a word with the
+    /// `looksLikeStorefront` word list (`Books`) must NOT be mistaken for the
+    /// storefront itself when there is no ACTUAL domain segment alongside it
+    /// — the colon-tail stripper only fires on a domain-shaped fragment
+    /// (`amazon.com.au`), never a bare category word, so an ordinary colon in
+    /// a title survives exactly as it always did.
+    func testAnOrdinaryColonWithNoStorefrontDomainSegmentSurvives() {
+        XCTAssertEqual(
+            ProductTitleHygiene.cleaned(
+                "Amazon.com: Atomic Habits: An Easy & Proven Way to Build Good Habits "
+                    + "& Break Bad Ones | Clear, James: Books"),
+            "Atomic Habits: An Easy & Proven Way to Build Good Habits "
+                + "& Break Bad Ones | Clear, James: Books")
+    }
+
+    /// A title that is ONLY colon chrome (no real segment before the
+    /// storefront) keeps whatever text remains rather than losing the whole
+    /// title — the same conservatism the other strippers hold.
+    func testColonChromeAloneIsNotTurnedIntoNothing() {
+        XCTAssertEqual(ProductTitleHygiene.cleaned("Toasters: Amazon.com.au"), "Toasters")
+    }
 }
 
 // MARK: - The evidence tier

@@ -202,6 +202,56 @@ final class LeanProductPageParserTests: XCTestCase {
         XCTAssertTrue(LeanProductPageParser.productLinks(
             inSearchHTML: "<a href=\"/products/x\">x</a>", baseURL: searchURL, limit: 0).isEmpty)
     }
+
+    // MARK: - Query-token filtering of the weakest (loose) tier
+
+    /// A link recognized ONLY by the bare `/p/` needle (`looksLikeProductBySegment`,
+    /// weaker than the shared strict patterns and not the searched retailer's
+    /// own shape either) shares no word with the search query — a flyers/print
+    /// page a fridge query has no business linking to, and the officeworks/
+    /// jbhifi junk measured live. It is dropped rather than consuming a link
+    /// slot ahead of, or instead of, the real product.
+    func testLooseTierJunkSharingNoWordWithTheQueryIsDropped() {
+        let html = """
+        <a href="/print-copy/p/flyers-catalogue">Flyers &amp; Catalogues</a>
+        <a href="/p/hisense-fridge-listing">Hisense Fridge</a>
+        """
+        let links = LeanProductPageParser.productLinks(
+            inSearchHTML: html, baseURL: searchURL, limit: 5,
+            query: "Hisense HRFD634BW 634L PureFlat French Door Fridge")
+        XCTAssertEqual(links.map(\.path), ["/p/hisense-fridge-listing"])
+    }
+
+    /// No query (the default, and every EXISTING caller before this fix) means
+    /// no filter at all — the loose tier stays exactly as permissive as it was.
+    func testNoQueryMeansTheLooseTierIsUnfiltered() {
+        let html = #"<a href="/print-copy/p/flyers-catalogue">Flyers</a>"#
+        let links = LeanProductPageParser.productLinks(inSearchHTML: html, baseURL: searchURL, limit: 5)
+        XCTAssertEqual(links.map(\.path), ["/print-copy/p/flyers-catalogue"])
+    }
+
+    /// A purely-numeric query (a GTIN) has no words to compare a slug
+    /// against, so the filter does not apply — a slug rarely repeats the raw
+    /// barcode, and a link that DOES carry it is already promoted above this
+    /// tier by `preferring` regardless.
+    func testNumericGTINQueryDoesNotFilterTheLooseTier() {
+        let html = #"<a href="/print-copy/p/flyers-catalogue">Flyers</a>"#
+        let links = LeanProductPageParser.productLinks(
+            inSearchHTML: html, baseURL: searchURL, limit: 5, query: "9337640009775")
+        XCTAssertEqual(links.map(\.path), ["/print-copy/p/flyers-catalogue"])
+    }
+
+    /// Only the loose tier is filtered — a strict/retailer-shaped link (a
+    /// genuine product URL by SHAPE, not just a bare needle) is never dropped
+    /// for lacking word overlap with the query.
+    func testStrictAndRetailerShapedLinksAreNeverWordFiltered() {
+        let html = """
+        <a href="/products/completely-unrelated-name">Unrelated Product</a>
+        """
+        let links = LeanProductPageParser.productLinks(
+            inSearchHTML: html, baseURL: searchURL, limit: 5, query: "Hisense Fridge")
+        XCTAssertEqual(links.map(\.path), ["/products/completely-unrelated-name"])
+    }
 }
 
 /// The lean module hand-copies `ProductPageRules` and the two URL predicates

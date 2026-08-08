@@ -157,13 +157,27 @@ public enum LeanProductPageParser {
     /// already told us which of its fifty results is the right one, and taking
     /// its word is both cheaper and more accurate than fetching three
     /// neighbouring editions to find out.
+    /// `query` — the search actually used, GTIN digits or a product name —
+    /// gates the WEAKEST (`loose`) tier only: a link recognized only by
+    /// `looksLikeProductBySegment`'s bare needles (`/p/`, `/products/`, …)
+    /// must share at least one word with a NAME query, which is what keeps a
+    /// retailer's own unrelated furniture linked from the same page
+    /// (`officeworks.com.au/print-copy/p/flyers…`, a Microsoft 365 nav link
+    /// under `/p/`) from taking a candidate's link slot ahead of — or instead
+    /// of — the real product. A purely-numeric query (a GTIN) has no words to
+    /// compare, so the filter does not apply there; a link that actually
+    /// carries the identifier is already promoted to `identified` above this
+    /// tier regardless. Empty (the default) disables the filter entirely, so
+    /// every existing caller that doesn't pass one is unaffected.
     public static func productLinks(
-        inSearchHTML html: String, baseURL: URL, limit: Int, preferring: [String] = []
+        inSearchHTML html: String, baseURL: URL, limit: Int, preferring: [String] = [],
+        query: String = ""
     ) -> [URL] {
         guard limit > 0 else { return [] }
         let searchDomain = ProductIdentityMatching.registrableDomain(baseURL.host ?? "")
         let retailerRule = LeanProductURLRules.retailerRule(forHost: baseURL.host ?? "")
         let preferred = preferring.filter { $0.count >= 8 }
+        let queryTokens = slugFilterTokens(forQuery: query)
         var identified: [URL] = []
         var retailerShaped: [URL] = []
         var strict: [URL] = []
@@ -198,11 +212,29 @@ public enum LeanProductPageParser {
                 retailerShaped.append(canonical)
             } else if LeanProductURLRules.looksLikeProduct(canonical) {
                 strict.append(canonical)
-            } else {
+            } else if queryTokens.isEmpty || slugSharesToken(canonical, with: queryTokens) {
                 loose.append(canonical)
             }
         }
         return Array((identified + retailerShaped + strict + loose).prefix(limit))
+    }
+
+    /// Lowercased alphanumeric tokens (length > 1) of a NAME query, or empty
+    /// for a purely-numeric one (a GTIN) — a digit string has no words to
+    /// compare a slug against, so the loose tier is left unfiltered rather
+    /// than emptied outright.
+    static func slugFilterTokens(forQuery query: String) -> Set<String> {
+        guard query.contains(where: \.isLetter) else { return [] }
+        return Set(query.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 1 })
+    }
+
+    static func slugSharesToken(_ url: URL, with queryTokens: Set<String>) -> Bool {
+        let slugTokens = Set(url.path.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 1 })
+        return !slugTokens.isDisjoint(with: queryTokens)
     }
 
     static func matchesAny(_ patterns: [String], _ path: String) -> Bool {

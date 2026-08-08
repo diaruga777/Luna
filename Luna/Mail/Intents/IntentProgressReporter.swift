@@ -26,6 +26,9 @@ final class IntentProgressReporter: @unchecked Sendable {
     enum Stage {
         /// Screen read, post/page search, save + ingest.
         case saving
+        /// The product kind's alternative-seller work: refreshing day-old seller
+        /// prices and building the comparison summary.
+        case findingSellers
         /// An awaited media download.
         case downloading
         /// Post-save handoff (export, foregrounding).
@@ -38,10 +41,15 @@ final class IntentProgressReporter: @unchecked Sendable {
         /// real, honest measure, so the bar belongs almost entirely to the
         /// transfer. Giving the save half the bar (as this once did) made a
         /// failed save look like it died halfway through a download.
+        ///
+        /// `findingSellers` and `downloading` are alternatives, never a
+        /// sequence — a save is a product or it is media — so they deliberately
+        /// share the same wide band rather than splitting it and making each
+        /// look half as far along as it is.
         var band: ClosedRange<Double> {
             switch self {
             case .saving: return 0.0...0.02
-            case .downloading: return 0.02...0.99
+            case .findingSellers, .downloading: return 0.02...0.99
             case .finishing: return 0.99...1.0
             }
         }

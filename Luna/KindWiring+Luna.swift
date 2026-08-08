@@ -75,6 +75,9 @@ enum KindWiring {
         IngestorKindHandlers.article = ArticleKindHandler()
         IngestorKindHandlers.media = MediaKindHandler()
         IngestorKindHandlers.product = ProductKindHandler()
+        // Action Button intents hand a saved product back as its comparison
+        // summary (`claudedocs/price-comparison.md`).
+        ProductIntentHandoff.install()
         PasteboardSuggester.platformPreviewArt = { platform, itemID, urlString in
             await PlatformItemIngestor.shared.pasteboardPreviewArtData(
                 platform: platform, itemID: itemID, urlString: urlString)

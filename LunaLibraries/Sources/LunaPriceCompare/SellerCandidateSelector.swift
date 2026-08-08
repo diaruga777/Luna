@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaModels
+import LunaPriceMetadata
 
 /// A directory seller with the score that put it where it is in the ranking.
 public struct ScoredSeller: Equatable, Sendable {
@@ -46,11 +47,17 @@ public enum SellerCandidateSelector {
         public let region: String
         /// Maximum candidates to return (the profile's candidate budget).
         public let limit: Int
+        /// Whether sellers whose search results only exist after client-side
+        /// rendering are ineligible. True in a context that cannot render (the
+        /// Safari appex): the candidate budget is six, and spending one of them
+        /// on a page that is structurally empty is a slot the run never gets
+        /// back.
+        public let excludesClientRenderedSearch: Bool
 
         public init(
             sourceHost: String, identifiers: ProductIdentifiers, productName: String,
             categoryHints: [String] = [], excludedHosts: [String] = [],
-            region: String, limit: Int
+            region: String, limit: Int, excludesClientRenderedSearch: Bool = false
         ) {
             self.sourceHost = sourceHost
             self.identifiers = identifiers
@@ -59,6 +66,7 @@ public enum SellerCandidateSelector {
             self.excludedHosts = excludedHosts
             self.region = region
             self.limit = limit
+            self.excludesClientRenderedSearch = excludesClientRenderedSearch
         }
     }
 
@@ -76,6 +84,15 @@ public enum SellerCandidateSelector {
     /// the same product freely — so without a GTIN to anchor on, prefer
     /// first-party retailers.
     static let marketplaceWithoutGTINPenalty = -8
+    /// A specialist that shares NO category with the product, when the product
+    /// HAS a category, is not a shop that might stock it — it is a shop that
+    /// definitely does not. Without this, a book fanned out to a pet store, a
+    /// hardware chain, an auto-parts chain and a pharmacy, because tier alone
+    /// put four tier-1 specialists (30 + verified) above every tier-2 bookshop
+    /// (18 + overlap). Large enough that a tier-1 mismatch (34 → 12) sits below
+    /// a tier-3 match (8 + 12 = 20), and never applied to a mass merchant,
+    /// which by definition has no specialism to mismatch.
+    static let unrelatedSpecialistPenalty = -22
 
     // MARK: - Region
 
@@ -111,6 +128,7 @@ public enum SellerCandidateSelector {
         let hasGTIN = input.identifiers.normalizedGTIN != nil
 
         let eligible = directory.sellers(inRegion: input.region).filter { seller in
+            if input.excludesClientRenderedSearch, seller.searchRequiresRendering { return false }
             guard !excludedDomains.contains(
                 ProductIdentityMatching.registrableDomain(seller.domain)) else { return false }
             // Nothing suggests a category ⇒ ask the shops that sell everything,
@@ -142,6 +160,10 @@ public enum SellerCandidateSelector {
         var score = tierScores[seller.tier] ?? 0
         let overlap = categories.intersection(seller.categories).count
         score += min(overlap * categoryOverlapBonus, maximumCategoryBonus)
+        if !categories.isEmpty, overlap == 0,
+           !seller.categories.contains(SellerCategory.general.rawValue) {
+            score += unrelatedSpecialistPenalty
+        }
         if hasGTIN, seller.acceptsGTIN == true { score += acceptsGTINBonus }
         if seller.verified { score += verifiedBonus }
         if seller.marketplace, !hasGTIN { score += marketplaceWithoutGTINPenalty }
@@ -153,10 +175,37 @@ public enum SellerCandidateSelector {
     /// product name (a guess the match verifier still has to confirm).
     public static func query(for seller: Seller, identifiers: ProductIdentifiers, productName: String)
         -> String {
-        if seller.acceptsGTIN == true, let gtin = identifiers.gtin,
-           !gtin.isEmpty, gtin.allSatisfy(\.isNumber) {
-            return gtin
-        }
-        return productName
+        queries(for: seller, identifiers: identifiers, productName: productName)[0]
+    }
+
+    /// Every query worth trying on this seller, best first.
+    ///
+    /// A GTIN search is tried whenever we HAVE a GTIN and the directory does not
+    /// say the seller refuses one — including when `acceptsGTIN` is `nil`,
+    /// which means unknown rather than no. That is not optimism, it is the only
+    /// way most candidates can ever be verified: when the source declares a
+    /// GTIN, name-only matching is refused outright (it would be the accessory
+    /// or the other edition), so a candidate reached by a NAME search can only
+    /// pass if its page happens to publish structured identifiers — which, on
+    /// the real web, most do not. Asking by identifier is what unlocks the
+    /// `.gtinInPage` tier for it.
+    ///
+    /// The name is the fallback for the same candidate rather than a different
+    /// candidate: a shop that does not index barcodes answers a GTIN search
+    /// with an empty results page, and that costs one extra fetch to discover,
+    /// against a whole retailer's price to skip it.
+    public static func queries(
+        for seller: Seller, identifiers: ProductIdentifiers, productName: String
+    ) -> [String] {
+        let name = ProductTitleHygiene.cleaned(productName)
+        guard seller.acceptsGTIN != false, let gtin = identifiers.gtin,
+              !gtin.isEmpty, gtin.allSatisfy(\.isNumber)
+        else { return [name] }
+        // A seller KNOWN to accept barcodes is asked once. An empty answer from
+        // one of those means "not stocked", and asking again by name would just
+        // find a different product — while doubling this run's request rate at a
+        // retailer, which is itself how a bot wall gets tripped.
+        guard seller.acceptsGTIN == nil, !name.isEmpty else { return [gtin] }
+        return [gtin, name]
     }
 }

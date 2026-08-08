@@ -64,9 +64,7 @@ public enum SellerCategoryInference {
     public static func categories(
         hints: [String], productName: String, sourceCategories: [String] = []
     ) -> Set<String> {
-        let haystack = (hints + [productName])
-            .joined(separator: " ")
-            .lowercased()
+        let haystack = normalizedHaystack(from: hints + [productName])
         var found: Set<String> = []
         for (category, keywords) in keywordTable {
             for keyword in keywords where containsWord(haystack, keyword) {
@@ -78,6 +76,58 @@ public enum SellerCategoryInference {
             if SellerCategory(rawValue: raw) != nil { found.insert(raw) }
         }
         return found
+    }
+
+    /// Flattens the raw hint strings into one lowercase haystack the keyword
+    /// table can be run over.
+    ///
+    /// Real hints do not arrive as tidy taxonomy words. They are breadcrumb
+    /// trails (`Home › Books › Self-Help`), JSON-LD `category` strings
+    /// (`Books/Nonfiction`), and product titles, in whatever case the retailer
+    /// wrote them — so separators become spaces and everything is lowercased.
+    ///
+    /// The load-bearing part is the SINGULAR/PLURAL pass. `containsWord` already
+    /// lets a singular keyword fire on a plural hint (`book` on `books`), but
+    /// not the reverse and not the irregular endings: a hint of `groceries`
+    /// would never reach the keyword `grocery`, and `accessories` never reaches
+    /// `accessory`. Each token is therefore ALSO emitted in its de-pluralized
+    /// form, so both directions work regardless of which side wrote the plural.
+    static func normalizedHaystack(from parts: [String]) -> String {
+        // A hyphen is NOT a separator: it is part of the vocabulary
+        // ("blu-ray", "first aid"-adjacent model numbers), and only a spaced
+        // dash is ever a breadcrumb delimiter.
+        let separators = CharacterSet(charactersIn: ">|/\\,;:•·»→\u{00A0}")
+        let flattened = parts
+            .joined(separator: " ")
+            .lowercased()
+            .replacingOccurrences(of: " - ", with: " ")
+            .replacingOccurrences(of: " – ", with: " ")
+            .replacingOccurrences(of: " — ", with: " ")
+            .components(separatedBy: separators)
+            .joined(separator: " ")
+        var tokens: [String] = []
+        for token in flattened.split(whereSeparator: { $0.isWhitespace }) {
+            let word = String(token)
+            tokens.append(word)
+            if let singular = depluralized(word), singular != word { tokens.append(singular) }
+        }
+        return tokens.joined(separator: " ")
+    }
+
+    /// The singular of a simple English plural, or nil when the word is not one.
+    /// Deliberately tiny — this exists to bridge hint vocabulary to the keyword
+    /// table, not to conjugate English.
+    static func depluralized(_ word: String) -> String? {
+        guard word.count > 3 else { return nil }
+        if word.hasSuffix("ies") { return String(word.dropLast(3)) + "y" }
+        if word.hasSuffix("ses") || word.hasSuffix("xes") || word.hasSuffix("ches")
+            || word.hasSuffix("shes") {
+            return String(word.dropLast(2))
+        }
+        if word.hasSuffix("s"), !word.hasSuffix("ss"), !word.hasSuffix("us") {
+            return String(word.dropLast())
+        }
+        return nil
     }
 
     /// Word-boundary containment, with a plural "s" allowed at the end.
@@ -109,55 +159,76 @@ public enum SellerCategoryInference {
 
     /// Sorted by category so iteration order (and therefore the result) never
     /// depends on dictionary hashing.
+    ///
+    /// Each list carries both the *product* words a title would use and the
+    /// *shelf* words a breadcrumb or a JSON-LD `category` would use — they are
+    /// rarely the same word. A page that says nothing but `Category: Home &
+    /// Kitchen` has to reach `home`, and a title that says nothing but "Atomic
+    /// Habits" reaches `books` only through its breadcrumb.
     static let keywordTable: [(SellerCategory, [String])] = [
         (.appliances, ["appliance", "refrigerator", "fridge", "dishwasher", "washing machine",
-                       "dryer", "microwave", "oven", "cooktop", "freezer", "vacuum"]),
+                       "dryer", "microwave", "oven", "cooktop", "freezer", "vacuum",
+                       "air fryer", "washer"]),
         (.auto, ["automotive", "car parts", "tyre", "tire", "motor oil", "windscreen",
-                 "car battery", "brake pads"]),
+                 "car battery", "brake pads", "auto part", "vehicle", "engine oil"]),
         (.baby, ["baby", "infant", "toddler", "nursery", "stroller", "pushchair", "nappy",
-                 "diaper", "pram"]),
+                 "diaper", "pram", "car seat"]),
         (.beauty, ["beauty", "cosmetic", "makeup", "skincare", "fragrance", "perfume",
-                   "shampoo", "moisturiser", "moisturizer", "lipstick"]),
-        (.books, ["book", "paperback", "hardcover", "hardback", "novel", "isbn", "audiobook"]),
+                   "shampoo", "moisturiser", "moisturizer", "lipstick", "haircare",
+                   "nail polish", "toiletries"]),
+        (.books, ["book", "bookstore", "paperback", "hardcover", "hardback", "novel", "isbn",
+                  "audiobook", "textbook", "ebook", "e-book", "literature", "fiction",
+                  "nonfiction", "non-fiction", "cookbook", "comic", "manga", "biography",
+                  "self-help", "memoir"]),
         (.computers, ["laptop", "notebook computer", "desktop pc", "monitor", "keyboard",
-                      "mouse", "ssd", "graphics card", "cpu", "ram", "printer", "macbook"]),
-        (.crafts, ["craft", "sewing", "knitting", "yarn", "scrapbook", "quilting", "beading"]),
+                      "mouse", "ssd", "graphics card", "cpu", "ram", "printer", "macbook",
+                      "computer", "computing", "chromebook"]),
+        (.crafts, ["craft", "sewing", "knitting", "yarn", "scrapbook", "quilting", "beading",
+                   "embroidery", "fabric"]),
         (.diyHardware, ["hardware", "diy", "power tool", "drill", "hammer", "screwdriver",
-                        "timber", "lumber", "paint", "plumbing", "toolbox"]),
+                        "timber", "lumber", "paint", "plumbing", "toolbox", "tool",
+                        "home improvement"]),
         (.electronics, ["electronics", "headphone", "earbud", "speaker", "television",
                         "camera", "smartphone", "tablet", "smartwatch", "console",
-                        "soundbar", "charger"]),
+                        "soundbar", "charger", "electronic", "audio", "headset", "earphone",
+                        "tv", "hdtv"]),
         (.fashion, ["clothing", "apparel", "fashion", "dress", "shirt", "jacket", "coat",
-                    "jeans", "trousers", "sweater", "hoodie", "skirt"]),
+                    "jeans", "trousers", "sweater", "hoodie", "skirt", "clothes", "garment",
+                    "menswear", "womenswear", "t-shirt"]),
         (.furniture, ["furniture", "sofa", "couch", "armchair", "mattress", "bed frame",
-                      "wardrobe", "bookcase", "dining table", "desk"]),
-        (.gaming, ["gaming", "playstation", "xbox", "nintendo", "video game", "controller",
-                   "steam deck"]),
+                      "wardrobe", "bookcase", "dining table", "desk", "nightstand",
+                      "dresser", "shelving"]),
+        (.gaming, ["gaming", "playstation", "xbox", "nintendo", "video game", "videogame",
+                   "controller", "steam deck", "gamepad"]),
         (.garden, ["garden", "lawn", "mower", "plant pot", "seeds", "greenhouse", "patio",
-                   "barbecue", "bbq"]),
+                   "barbecue", "bbq", "gardening", "outdoor living"]),
         (.grocery, ["grocery", "groceries", "food", "snack", "coffee beans", "tea bags",
-                    "cereal", "pantry"]),
+                    "cereal", "pantry", "beverage", "drink", "candy"]),
         (.health, ["health", "supplement", "vitamin", "fitness tracker", "first aid",
-                   "wellness"]),
+                   "wellness", "nutrition", "medical", "personal care"]),
         (.home, ["home", "kitchen", "cookware", "bedding", "towel", "cushion", "curtain",
-                 "storage box", "homeware", "kettle", "blender"]),
+                 "storage box", "homeware", "kettle", "blender", "household", "decor"]),
         (.jewelry, ["jewelry", "jewellery", "necklace", "bracelet", "earring", "watch",
-                    "engagement ring", "pendant"]),
+                    "engagement ring", "pendant", "wristwatch"]),
         (.luxury, ["luxury", "designer", "couture", "haute"]),
-        (.media, ["blu-ray", "dvd", "vinyl", "cd album", "boxset", "box set"]),
+        (.media, ["blu-ray", "dvd", "vinyl", "cd album", "boxset", "box set", "movie", "film",
+                  "music", "album", "soundtrack"]),
         (.musicInstruments, ["guitar", "piano", "keyboard instrument", "drum kit", "violin",
-                             "ukulele", "amplifier", "synthesizer"]),
+                             "ukulele", "amplifier", "synthesizer", "instrument"]),
         (.office, ["office", "stationery", "notebook paper", "printer paper", "pen", "pencil",
-                   "binder", "envelope"]),
+                   "binder", "envelope", "school supply", "stationary"]),
         (.outdoors, ["outdoor", "camping", "tent", "hiking", "backpack", "sleeping bag",
-                     "kayak", "fishing"]),
-        (.pets, ["pet", "dog", "cat", "puppy", "kitten", "aquarium", "litter box"]),
+                     "kayak", "fishing", "cooler", "binoculars"]),
+        (.pets, ["pet", "dog", "cat", "puppy", "kitten", "aquarium", "litter box",
+                 "pet supply", "dog food", "cat food"]),
         (.pharmacy, ["pharmacy", "chemist", "prescription", "medicine", "painkiller",
                      "ibuprofen", "paracetamol"]),
-        (.shoes, ["shoe", "sneaker", "trainer", "boot", "sandal", "loafer", "heels"]),
+        (.shoes, ["shoe", "sneaker", "trainer", "boot", "sandal", "loafer", "heels",
+                  "footwear"]),
         (.sports, ["sport", "football", "soccer", "basketball", "running", "gym", "yoga",
-                   "cycling", "bicycle", "tennis", "golf"]),
+                   "cycling", "bicycle", "tennis", "golf", "sporting good", "athletic",
+                   "exercise", "workout"]),
         (.toys, ["toy", "lego", "puzzle", "board game", "doll", "action figure",
-                 "plush"]),
+                 "plush", "building set", "figurine", "playset"]),
     ]
 }

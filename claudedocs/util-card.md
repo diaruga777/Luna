@@ -293,13 +293,15 @@ duplicates are removed BEFORE either count: `SafariRecentHistoryStore.URLs`
 collapses repeated raw strings before its `limit` of 20, and
 `RecentURLMatcher.deduplicated` collapses previews before `publish`'s five. The
 first occurrence wins in both, and the trail is newest-first, so the survivor is
-the most recent visit. Previews compare by `RecentURLMatcher.identityKey` — host
-without `www.`, path without a trailing slash, no fragment, no scheme, all
-case-folded — because one page reaches the trail under several raw spellings (a
-share link and its canonical form, `?utm_…`, a fragment) and the pipeline
-resolves them all to the same preview. The query is deliberately kept: it is what
-separates one video or product from the next. The saved-URL filter uses the same
-key, so a save stored in a cosmetically different form still clears its row.
+the most recent visit. Previews compare by `RecentURLMatcher.identityKey`, which
+takes the fragment and the tracking params off through `URLCanonicalizer.strip`
+— THE place that decision lives, so a row can never disagree with what the store
+considers one page — and adds only the three cosmetic differences a raw Safari
+trail carries and a canonical URL does not: the scheme, a `www.`, a trailing
+slash, plus case-folding the host. Everything the canonicaliser kept is kept: a
+real query is what separates one video or product from the next. The saved-URL
+filter uses the same key, so a save stored in a cosmetically different form still
+clears its row.
 
 ## Completion and inheritance
 

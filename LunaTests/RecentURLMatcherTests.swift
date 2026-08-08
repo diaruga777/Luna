@@ -143,6 +143,9 @@ final class RecentURLMatcherTests: XCTestCase {
             "https://www.example.com/story",
             "https://example.com/story/",
             "http://EXAMPLE.com/story#section-2",
+            // Tracking params come off through `URLCanonicalizer`, so a row can
+            // never disagree with what the store considers one page.
+            "https://example.com/story?fbclid=abc123",
         ]
         XCTAssertEqual(
             Set(variants.map(RecentURLMatcher.identityKey(for:))).count, 1)

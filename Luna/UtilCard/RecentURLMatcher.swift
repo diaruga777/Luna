@@ -201,15 +201,22 @@ final class RecentURLMatcher {
         }
     }
 
-    /// The "same page" key two recent rows are compared by: scheme-insensitive,
-    /// `www.`-insensitive, case-insensitive in the host, fragment-free, and blind
-    /// to a trailing slash. Everything else — path case, query — is kept, because
-    /// a query is what distinguishes one product or video from the next.
+    /// The "same page" key two recent rows are compared by.
+    ///
+    /// The fragment and the tracking params come off through
+    /// `URLCanonicalizer.strip` rather than through a list of this screen's own:
+    /// that is THE place that decision lives, and a row that disagreed with it
+    /// would be offering a second save of a page the store already considers the
+    /// first one. What is added on top is the three cosmetic differences a raw
+    /// Safari trail carries and a canonical URL does not — scheme, a `www.`, a
+    /// trailing slash — plus case-folding the host. Everything the canonicaliser
+    /// KEPT is kept: a real query is what distinguishes one video or product
+    /// from the next.
     static func identityKey(for urlString: String) -> String {
-        guard var components = URLComponents(string: urlString) else {
-            return urlString.lowercased()
-        }
-        components.fragment = nil
+        guard let url = URL(string: urlString),
+              let components = URLComponents(
+                url: URLCanonicalizer.strip(url), resolvingAgainstBaseURL: false)
+        else { return urlString.lowercased() }
         let host = (components.host ?? "").lowercased()
             .replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
         var path = components.path

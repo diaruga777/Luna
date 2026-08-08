@@ -221,6 +221,28 @@ state cannot badge the row (`hasUnviewedAlert`). The notification side needs
 nothing: `PriceRefreshOutcome.newlyAlerting` fires only on a TRANSITION, and a
 seeded tracker is already alerting before its first refresh.
 
+## Whose baseline it is
+
+All of that reasoning describes the DEFAULT path — the user saved a product and
+left the alert alone. It stops the moment they touch the alert configuration
+themselves, and since the fan-out now runs in the background behind an open
+editor, they can do that while it is still out.
+
+`PriceTracker.PendingSellerComparison` records `thresholdFractionAtStart`, and
+`completePendingComparison` seeds the median **only if the tracker's threshold
+still equals it**. If they moved the slider, cleared the alert, or set one where
+there was none:
+
+- their threshold stands;
+- `initialPrice` stands — they chose a number against the price they could SEE,
+  and re-basing under them would silently retune it;
+- nothing is pre-acknowledged, so a cheaper seller arriving from the fan-out is
+  allowed to cross the line and fire a real alert. That is the intended
+  behaviour, not an accident: the alert-suppression stamp exists to keep the
+  DEFAULT from crying wolf, and they are not on the default.
+
+The marker is cleared either way — a finished run is a finished run.
+
 ---
 
 ## The surfaces (B2)
@@ -260,31 +282,82 @@ meaningless. `apply` also refuses a seller on a registrable domain the tracker
 already holds: the engine keys its own results per domain but cannot know what
 the tracker was already carrying.
 
+**Nobody waits for it except the intents.** A fan-out is up to 35 s of other
+people's web servers. It used to sit between the save and the UI: a share sheet
+that looked stuck, and an editor that opened half a minute after the tap. The
+save now lands immediately with the one seller the user was actually looking at,
+and the run goes out behind it.
+
 | surface | where | what the user sees |
 | --- | --- | --- |
-| app (paste / manual / intents) | `ProductTrackerIngestor.ingest`, new-tracker branch, between `savePriceTracker` and the save announcement | the util card's paste row stays in its loading state; the card that then appears is already finished |
-| share / action extensions | `ExtensionProductPresenter.presentPriceEditor`, between persisting the tracker and presenting the editor | "Finding other sellers…" on the wait screen, then the editor |
-| Action Button intents | the fan-out runs inside the save; the SUMMARY is the extra leg | the system progress bar, `Stage.findingSellers` |
+| app (paste / manual) | `ProductTrackerIngestor.ingest`, new-tracker branch, started before the save announcement | the card appears at once with its one seller and a "Checking for other sellers…" row; retailers fill in under it |
+| share / action extensions | `ExtensionProductPresenter.presentPriceEditor`, started before presenting | the editor, immediately, with the same waiting row in its seller list |
+| Action Button intents | `ProductIntentHandoff.document` joins the run before rendering | the system progress bar, `Stage.findingSellers` — this ONE surface still waits, because its answer is the comparison |
 
 The merge path is never compared: that tracker has already been through a
 fan-out, and re-running would spend a dozen candidates re-finding the stores it
 is excluding.
 
-`ExtensionHost.showLoadingPhase` is a new, defaulted-to-nothing host method, so
-adding a phase to one kind forces nothing on any other host or test fake. The
-zero-UI share extension BUILDS a wait screen for it — as it already does for a
-failure — because half a minute of a share sheet that looks stuck is worse than
-one that says what it is doing.
+### The pending marker
+
+`PriceTracker.pendingComparison` is the whole of the asynchronous machinery, and
+it is on the MODEL — on disk — because the process that starts a run is routinely
+gone before it ends: a share extension is torn down the moment the user is done
+with it, by design. The marker carries only what the tracker does not already
+know (the source URL, the start time, the threshold at the start); the request
+itself is reconstructible, and a resumed run excludes whatever the dead process
+had already attached.
+
+One fact, three readers:
+
+- the seller list's waiting row, in both product surfaces
+  (`PriceTrackingViewController`'s table and the deck card's `storesStack`);
+- `SellerComparison.completePending`, swept at app launch (the product
+  `KindWiring`s' `appDidLaunch`) and at the head of every background refresh
+  cycle — before the refresh, so the sellers it attaches arrive already priced
+  and the baseline it settles is what that cycle's alert decisions are made
+  against;
+- the intents, which join a run rather than start a second one.
+
+A run that FINISHES always clears the marker, even having found nothing — a
+marker that outlives its run is a spinner that never stops. A process with no
+runner installed leaves it alone, because nothing ran.
+
+`SellerComparisonTasks` is the in-process rendezvous: a second caller for the
+same tracker awaits the first rather than fanning out across the same dozen
+retailers again.
+
+### Streaming
+
+`SellerFanOut.OnResult` fires the moment a verified seller ENTERS the merged
+list — inside the actor that applies the merge rule, which is what makes "as it
+lands" true rather than aspirational. `SellerComparison` attaches and persists
+each one immediately, and `.readingListChanged` carries it to whichever list is
+open.
 
 ## The summary document
 
 `SellerComparisonDocument` (LunaPriceUI) renders ONE self-contained HTML file:
 inline CSS, the product photo and every favicon as `data:` URIs, and the price
-graph as inline SVG built from `PriceHistory.series` with labelled price and date
-axes. Self-containment is the whole requirement — a Shortcut result is Quick
+graph as inline SVG built from `PriceHistory.dailySeries` — the FULL day-
+resolution record rather than the on-screen graph's span-coarsened view, because
+this renderer is 640 points wide, read at any size, and a year of pruned history
+is at most 365 points. (The per-day dots retire past 60 points, where they merge
+into a bar and the line already carries the shape.) The y-domain is padded below
+the minimum so a low reads as a low rather than as a clipped line, and the price
+axis labels exactly three numbers — the high, the low and TODAY, deduplicated
+when they coincide, with today folded into the domain so a price below the
+record still lands inside the plot. Self-containment is the whole requirement — a Shortcut result is Quick
 Looked, saved to Files, AirDropped and mailed, all with no network, no base URL
 and no cache — and `SellerComparisonDocumentTests` asserts it directly (no
 `src="http`, no `<link`, no `<script`).
+
+Favicons are fetched CONCURRENTLY with a per-seller deadline
+(`faviconTimeout`). Sequentially and unbounded — three well-known icon paths per
+host, an 8 s timeout each, six sellers — is minutes of wall clock inside an
+intent that gives up first, which is the actual reason a document can come out
+iconless. A seller whose icon does not arrive gets an initial-letter badge, never
+an empty square.
 
 Two deliberate departures from the rest of Luna:
 
@@ -363,7 +436,9 @@ All in `LunaTests/`:
 | `ProductIdentifiersTests` | the keyed value type and its normalization |
 | `FreshComparablePricesTests` | the 24h window and the four refusals; a result's snapshot payload |
 | `ProductPageDetectorTests` / `ProductMatcherTests` | keyed extraction and the keyed-GTIN match tier |
-| `SellerComparisonTests` | the request, the median/no-badge seeding, the per-family refusal, the new-tracker-only rule, and the two no-op states |
+| `SellerComparisonTests` | the request, the pending marker's life, per-seller streaming, the median/no-badge seeding, the touched-threshold rule, the per-family refusal, the new-tracker-only rule, the launch/refresh sweeps, the rendezvous, and the two no-op states |
+| `LiveNetworkPolicyTests` | that the installed fan-out — and every other live fetcher — refuses to leave the machine from a test process |
 | `SellerComparisonDocumentTests` | the document's self-containment, ordering, flat-series graph and escaping |
 | `ProductComparisonIntentTests` | the `comparison` checkpoint, v1-decodes/v+1-refused, the seam's absence in non-product apps, the freshness rule |
-| `ShareSurfaceDriverTests` | the extension editor waits for the fan-out and names the phase |
+| `ShareSurfaceDriverTests` | the extension editor opens IMMEDIATELY and leaves the fan-out running behind it |
+| `PriceTrackingScreenTests` | the waiting row's presence and its removal, in both product surfaces |

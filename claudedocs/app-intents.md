@@ -59,12 +59,18 @@ refused, because its phase may name work this build cannot perform.
 **The product leg (`comparison`).** In the two price-tracking apps a product
 save's own `media` is the alternative-seller summary document
 (`claudedocs/price-comparison.md`) — one self-contained HTML file, returned
-through the same `IntentFile` seam as a double-save article export. The fan-out
-itself needs no plumbing here: it runs INSIDE the save, so the existing 20 s race
-over `performPreparedSavePress` already covers it. What gets its own race is the
-SUMMARY — refreshing any seller whose price is over a day old, then building the
-file — and on expiry that becomes a `comparison` checkpoint, resumed under Save's
-extended runtime. The whole leg hangs off
+through the same `IntentFile` seam as a double-save article export.
+
+**The intents are the one surface that still WAITS for the fan-out**, because
+their whole answer is a comparison between the sellers it finds. Everywhere else
+the save lands immediately and the run goes out in the background; here
+`ProductIntentHandoff.document` joins the run before rendering
+(`SellerComparison.complete`, a rendezvous — an extension's run already in flight
+is awaited rather than duplicated, and it clears the pending marker either way,
+so the launch and refresh sweeps do not repeat it). The wait needs no plumbing of
+its own: it happens inside the SUMMARY race — join the fan-out, refresh any
+seller whose price is over a day old, build the file — and on expiry that becomes
+a `comparison` checkpoint, resumed under Save's extended runtime. The whole leg hangs off
 `ActionButtonIntentSupport.productComparisonDocument`, installed by
 `ProductIntentHandoff` (the product twin of `MediaIntentHandoff`, compiled only
 into the two product apps), so Reader and Downloader never look for one.

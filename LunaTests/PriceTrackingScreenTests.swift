@@ -61,6 +61,84 @@ final class PriceTrackingScreenTests: XCTestCase {
         _ = window
     }
 
+    // MARK: - The waiting row while a fan-out is out
+
+    /// The seller list is where the user learns Luna is still looking. Both
+    /// product surfaces draw the row from the SAME fact — the tracker's pending
+    /// marker — so the editor and the card can never disagree about whether a
+    /// comparison is running.
+    @MainActor
+    func testTheEditorShowsAWaitingRowWhileAComparisonIsPendingAndDropsItAfter() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }),
+              var tracker = item.priceTracker else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let storeCount = tracker.stores.count
+        tracker.beginPendingComparison(sourceURLString: tracker.stores[0].urlString)
+        ReadingListStore.shared.updatePriceTracker(tracker, for: item.id)
+
+        let editor = PriceTrackingViewController(mode: .existing(itemID: item.id))
+        let window = UITestSupport.host(UINavigationController(rootViewController: editor))
+        editor.loadViewIfNeeded()
+        editor.view.layoutIfNeeded()
+
+        guard let table = editor.view.firstDescendant(ofType: UITableView.self) else {
+            XCTFail("no seller table"); return
+        }
+        XCTAssertEqual(
+            table.numberOfRows(inSection: 0), storeCount + 1,
+            "one row more than there are sellers, while the fan-out is out")
+        let waitingRow = table.cellForRow(at: IndexPath(row: storeCount, section: 0))
+        XCTAssertTrue(
+            waitingRow?.accessoryView is UIActivityIndicatorView,
+            "and it is a spinner, not a seller")
+        XCTAssertEqual(waitingRow?.selectionStyle, UITableViewCell.SelectionStyle.none)
+
+        // The run finishes; the row goes with the marker.
+        guard var finished = ReadingListStore.shared.item(withID: item.id)?.priceTracker else {
+            XCTFail("tracker vanished"); return
+        }
+        finished.completePendingComparison()
+        ReadingListStore.shared.updatePriceTracker(finished, for: item.id)
+        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        editor.view.layoutIfNeeded()
+        XCTAssertEqual(table.numberOfRows(inSection: 0), storeCount)
+        _ = window
+    }
+
+    @MainActor
+    func testTheProductCardShowsTheSameWaitingRow() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }),
+              var tracker = item.priceTracker else {
+            XCTFail("no price tracker seeded"); return
+        }
+        tracker.beginPendingComparison(sourceURLString: tracker.stores[0].urlString)
+        ReadingListStore.shared.updatePriceTracker(tracker, for: item.id)
+
+        let card = ProductCardContentViewController(itemID: item.id)
+        let window = UITestSupport.host(UINavigationController(rootViewController: card))
+        card.loadViewIfNeeded()
+        card.view.layoutIfNeeded()
+        XCTAssertNotNil(
+            card.view.firstDescendant(ofType: UIActivityIndicatorView.self),
+            "the card says it is still looking too")
+
+        guard var finished = ReadingListStore.shared.item(withID: item.id)?.priceTracker else {
+            XCTFail("tracker vanished"); return
+        }
+        finished.completePendingComparison()
+        ReadingListStore.shared.updatePriceTracker(finished, for: item.id)
+        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertNil(
+            card.view.firstDescendant(ofType: UIActivityIndicatorView.self),
+            "and stops saying it when the run ends")
+        _ = window
+    }
+
     // MARK: - Price Tracker card root
 
     /// One hosted deck answers both questions about the Price Tracker's root: it
@@ -415,5 +493,14 @@ final class PriceTrackingScreenTests: XCTestCase {
             }
         }
         return nil
+    }
+}
+
+/// Type-based descendant search — the waiting row is identified by WHAT it is
+/// (a spinner in a cell's accessory) rather than by a label.
+private extension UIView {
+    func firstDescendant<T: UIView>(ofType type: T.Type) -> T? {
+        if let match = self as? T { return match }
+        return subviews.lazy.compactMap { $0.firstDescendant(ofType: type) }.first
     }
 }

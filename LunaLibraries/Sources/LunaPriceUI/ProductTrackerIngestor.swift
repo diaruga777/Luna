@@ -30,11 +30,11 @@ public final class ProductTrackerIngestor {
     /// Test seam: the history-index regeneration `finishSeeding` fires right
     /// after persisting. Production regenerates the real index.
     var indexRegenerator: () -> Void = { PriceHistoryIndexWriter.regenerate() }
-    /// Test seam: the save-time alternative-seller fan-out. Production runs
-    /// whatever `ProductKindComposition.install()` installed — and NOTHING when
-    /// the product kind isn't composed in this process.
-    var comparisonRunner: (UUID, URL, ReadingListStore) async -> Int = {
-        await SellerComparison.runAndAttach(itemID: $0, sourceURL: $1, store: $2)
+    /// Test seam: STARTING the save-time alternative-seller fan-out. Production
+    /// stamps the pending marker and runs the fan-out in the background — and
+    /// does nothing at all when the product kind isn't composed in this process.
+    var comparisonStarter: (UUID, URL, ReadingListStore) -> Void = {
+        SellerComparison.beginAndRunInBackground(itemID: $0, sourceURL: $1, store: $2)
     }
 
     public init() {}
@@ -102,13 +102,13 @@ public final class ProductTrackerIngestor {
 
         // The alternative-seller fan-out, on the NEW-tracker path only (a merge
         // has already been compared once, and re-running would just re-find the
-        // stores it is excluding). It runs BEFORE the announcement so the card
-        // the announcement centers is the finished one, with its sellers and its
-        // median baseline already in place, rather than a one-store card that
-        // rewrites itself under the user half a minute later. The wait is
-        // covered by whatever save affordance the caller already has up — the
-        // util card's paste row, or the extensions' status screen.
-        _ = await comparisonRunner(item.id, url, store)
+        // stores it is excluding). It is STARTED here and finishes in the
+        // background: the save is the user's, and half a minute of other
+        // people's web servers is not something to make them watch. The card
+        // appears now with the one seller they were looking at, carries a
+        // "checking for other sellers" row while the run is out, and grows as
+        // the sellers land.
+        comparisonStarter(item.id, url, store)
 
         PriceTrackerSaveAnnouncement.post(
             itemID: item.id, source: item.effectiveCaptureSource,

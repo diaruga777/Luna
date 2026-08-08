@@ -449,10 +449,9 @@ plain article — never a broken tracker, never paywall-bypassed).
   runs `ProductPageDetector` then `PriceFetcher` on the fetched HTML **before**
   `ArticleResolver.resolve`. This is why the action extension never
   paywall-bypasses a product page. No fetchable price → article path. On a real
-  price it persists the tracker, holds its wait screen on "Finding other
-  sellers…" while the fan-out runs (below), then presents the SAME
-  `PriceTrackingViewController` the app shows —
-  `ExtensionProductPresenter.presentPriceEditor`.
+  price it persists the tracker, starts the alternative-seller fan-out in the
+  background (below) and presents the SAME `PriceTrackingViewController` the app
+  shows, IMMEDIATELY — `ExtensionProductPresenter.presentPriceEditor`.
 
 ## Save-time alternative-seller comparison
 
@@ -463,33 +462,45 @@ engine, the candidate ranking and the match rules are `LunaPriceCompare`; the
 whole feature is documented in `claudedocs/price-comparison.md`. What matters
 here is where it sits in THIS pipeline:
 
-- **New trackers only.** `ProductTrackerIngestor.ingest` runs it on the
-  new-tracker branch, between `savePriceTracker` and
-  `PriceTrackerSaveAnnouncement`, so the card the deck centres is already
-  finished. The merge branch does not: that tracker has been through a fan-out
-  once, and re-running it would spend a dozen candidates re-finding the stores it
-  is excluding.
-- **Source first, then sellers, then the baseline.** `SellerComparison.apply`
-  `upsertStore`s each verified seller with a live price AND a recorded day
-  sample, and only then calls `seedComparisonBaseline`. Building every store up
-  front instead would go through `PriceTracker`'s multi-store initializer, which
-  takes the CHEAPEST store's currency as `initialCurrency` — one foreign-currency
-  listing that happens to be numerically lowest would silently redenominate the
-  tracker.
-- **The baseline becomes the MEDIAN, and nothing badges.** See
-  `claudedocs/price-comparison.md` § The median baseline. Alerts still fire only
-  from a `PriceRefreshOutcome.newlyAlerting` transition on a later refresh.
+- **Nobody waits for it.** `ProductTrackerIngestor.ingest` STARTS the run
+  (`SellerComparison.beginAndRunInBackground`) and moves straight on to
+  `PriceTrackerSaveAnnouncement`. The card the deck centres is the one-seller
+  card the user was looking at, and it grows.
+- **New trackers only.** The merge branch runs nothing: that tracker has been
+  through a fan-out once, and re-running it would spend a dozen candidates
+  re-finding the stores it is excluding.
+- **Source first, then sellers, then the baseline.** Each verified seller is
+  `upsertStore`d — with a live price AND a recorded day sample — as it lands, and
+  the baseline is settled once at the end. Building every store up front instead
+  would go through `PriceTracker`'s multi-store initializer, which takes the
+  CHEAPEST store's currency as `initialCurrency` — one foreign-currency listing
+  that happens to be numerically lowest would silently redenominate the tracker.
+- **The baseline becomes the MEDIAN, unless the user has spoken.** See
+  `claudedocs/price-comparison.md` § The median baseline and § Whose baseline it
+  is. A tracker whose alert configuration the user changed while the run was out
+  keeps their number and their baseline — and a cheaper seller arriving from the
+  fan-out is then allowed to cross it and fire.
 - **One store per retailer family.** The engine keys its own results by
   registrable domain; `apply` additionally refuses a domain the tracker already
   holds, which the engine cannot know about.
 - **It is installed, not called.** `ProductKindComposition.install()` fills
-  `SellerComparisonRunner.installed`; a process without it compares nothing and
-  every surface behaves exactly as it did before.
+  `SellerComparisonRunner.installed`; a process without it compares nothing, and
+  stamps no pending marker either — a "checking for other sellers" row for a run
+  that will never happen is worse than no row.
 
-Surfacing the wait: the share/action extensions show "Finding other sellers…" on
-their wait screen (`ExtensionHost.showLoadingPhase`, defaulted to a no-op) and
-open the editor when the fan-out returns. In the app the util card's paste row is
-already in its loading state for the whole ingest, so nothing new is drawn.
+Surfacing the wait: both product surfaces draw one extra row while
+`tracker.pendingComparison` is set — a spinner and "Checking for other sellers…"
+under the seller list, in `PriceTrackingViewController`'s table and in the deck
+card's `storesStack`. Both reload on `.readingListChanged`, which every streamed
+seller posts, so the row fills in from underneath and disappears with the marker.
+
+Surviving the process: the marker is on the TRACKER, so a share extension torn
+down mid-run leaves the app something to resume from. `SellerComparison
+.completePending` is swept at app launch (the product `KindWiring`s'
+`appDidLaunch`) and at the head of every background refresh cycle
+(`PriceRefreshCoordinator.refreshAndNotify`, before the refresh, so the sellers
+it attaches arrive already priced). `SellerComparisonTasks` keeps two callers for
+the same tracker on ONE run.
 
 ## Determinism (same URL → same result, always)
 
@@ -592,10 +603,13 @@ notifies. See `social-sharing.md`.
 ## Tests
 
 - `SellerComparisonTests` — the save-time fan-out's effect on a tracker: the
-  median (odd/even, foreign-currency store attached but excluded from it),
-  alerting-without-badging at seed time, the per-retailer-family refusal, the
-  new-tracker-only rule, and the two indistinguishable no-op states (no runner
-  installed / nothing found).
+  pending marker's life (stamped, resumed, always cleared by a finished run, and
+  deliberately NOT cleared by a process that cannot run one), per-seller
+  streaming, the median (foreign-currency store attached but excluded from it),
+  alerting-without-badging on the untouched path, the touched-threshold rule and
+  its genuine alert, the per-retailer-family refusal, the new-tracker-only rule,
+  the launch/refresh sweeps, the two-callers-one-run rendezvous, and the two
+  indistinguishable no-op states (no runner installed / nothing found).
 - `SellerComparisonDocumentTests` — the summary document's structure, led by
   self-containment (no `src="http`, no `<link`, no `<script`), the flat-series
   graph, and markup escaping.

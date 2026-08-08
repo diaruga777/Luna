@@ -160,6 +160,42 @@ public struct PriceTracker: Codable, Equatable {
     /// the user opens an alerting tracker; cleared on a fresh drop (see
     /// `markAlertViewed`).
     public var alertAcknowledgedAt: Date?
+    /// A save-time alternative-seller fan-out that has been STARTED and not yet
+    /// finished. Nil the rest of the time.
+    ///
+    /// It is on the model, and therefore on disk, because the process that
+    /// starts it routinely dies before it ends: a share extension is torn down
+    /// the moment the user is done with it, by design. The marker is what lets
+    /// the app pick the run back up at its next launch or its next refresh
+    /// cycle, and it is what the seller list draws its "checking…" row from —
+    /// one fact, read by both.
+    public var pendingComparison: PendingSellerComparison?
+
+    /// The record of a fan-out in flight (`claudedocs/price-comparison.md`).
+    ///
+    /// Everything the run needs is reconstructible from the tracker itself —
+    /// the product name, the identifiers, the stores to exclude — so this
+    /// carries only what the tracker does NOT already know: where the save came
+    /// from, when it started, and what the alert configuration looked like at
+    /// that moment.
+    public struct PendingSellerComparison: Codable, Equatable, Sendable {
+        /// The page the save came from — the fan-out's `sourceURL`.
+        public var sourceURLString: String
+        public var startedAt: Date
+        /// The alert threshold when the run began. The whole of the "has the
+        /// user touched the alert configuration since the save?" test: if the
+        /// tracker's threshold no longer equals this, they have, and the median
+        /// baseline must not overwrite what they chose.
+        public var thresholdFractionAtStart: Double?
+
+        public init(
+            sourceURLString: String, startedAt: Date, thresholdFractionAtStart: Double?
+        ) {
+            self.sourceURLString = sourceURLString
+            self.startedAt = startedAt
+            self.thresholdFractionAtStart = thresholdFractionAtStart
+        }
+    }
 
     /// The current best (lowest) price across all stores that have a fetched price,
     /// falling back to `initialPrice` when none has refreshed yet.
@@ -276,6 +312,7 @@ public struct PriceTracker: Codable, Equatable {
         self.alertThresholdFraction = alertThresholdFraction.map(Self.clampedThresholdFraction)
         self.isArchived = false
         self.alertAcknowledgedAt = nil
+        self.pendingComparison = nil
     }
 
     /// Creates a tracker from multiple seller listings, preserving their display
@@ -307,6 +344,7 @@ public struct PriceTracker: Codable, Equatable {
         self.alertThresholdFraction = alertThresholdFraction.map(Self.clampedThresholdFraction)
         self.isArchived = false
         self.alertAcknowledgedAt = nil
+        self.pendingComparison = nil
     }
 
     /// Marks the current alert as viewed (the user opened the alerting tracker), so
@@ -444,12 +482,56 @@ public struct PriceTracker: Codable, Equatable {
         return true
     }
 
+    // MARK: - The pending fan-out
+
+    /// Records that a save-time fan-out has started, so a process that dies
+    /// mid-run leaves the app something to resume from.
+    public mutating func beginPendingComparison(
+        sourceURLString: String, at date: Date = Date()
+    ) {
+        pendingComparison = PendingSellerComparison(
+            sourceURLString: sourceURLString, startedAt: date,
+            thresholdFractionAtStart: alertThresholdFraction)
+    }
+
+    /// Whether the user has changed this tracker's alert configuration since the
+    /// pending fan-out began. False when nothing is pending.
+    public var alertConfigurationChangedSincePendingComparison: Bool {
+        guard let pendingComparison else { return false }
+        return alertThresholdFraction != pendingComparison.thresholdFractionAtStart
+    }
+
+    /// Finishes the pending fan-out: clears the marker and re-bases the alert
+    /// baseline onto the median — **but only if the user has not touched the
+    /// alert configuration since the save.**
+    ///
+    /// The seeding rule exists because the fan-out's stores are all "the price
+    /// right now", so on the DEFAULT path the cheapest of them is the going
+    /// rate rather than a drop worth hearing about. That reasoning stops the
+    /// moment the user sets a threshold themselves: they chose a number against
+    /// the price they could see, they are owed the alert it implies, and moving
+    /// the baseline under them would silently retune it. So a touched tracker
+    /// keeps its configuration, keeps its baseline, keeps its acknowledgement
+    /// state — and a cheaper seller arriving from the fan-out is allowed to
+    /// cross the line and fire, which is now the intended behaviour rather than
+    /// an accident.
+    ///
+    /// Returns whether the baseline was seeded.
+    @discardableResult
+    public mutating func completePendingComparison(at date: Date = Date()) -> Bool {
+        guard pendingComparison != nil else { return false }
+        let touched = alertConfigurationChangedSincePendingComparison
+        pendingComparison = nil
+        guard !touched else { return false }
+        return seedComparisonBaseline(at: date)
+    }
+
     // MARK: - Migration-safe decoding
 
     private enum CodingKeys: String, CodingKey {
         case productName, stores, brand, productID, identifiers, imageFileName
         case initialPrice, initialCurrency, alertThresholdFraction, isArchived
-        case alertAcknowledgedAt
+        case alertAcknowledgedAt, pendingComparison
     }
 
     public init(from decoder: Decoder) throws {
@@ -473,6 +555,10 @@ public struct PriceTracker: Codable, Equatable {
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         // Defaulted to nil so old payloads (no key) read as "alert not yet viewed".
         alertAcknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .alertAcknowledgedAt)
+        // Additive and short-lived: absent for every tracker saved before the
+        // fan-out went asynchronous, and absent again the moment a run finishes.
+        pendingComparison = try container.decodeIfPresent(
+            PendingSellerComparison.self, forKey: .pendingComparison)
         let decodedInitial = try container.decodeIfPresent(Decimal.self, forKey: .initialPrice)
         // Repair the ≥1-store invariant for any malformed persisted payload.
         if decodedStores.isEmpty {

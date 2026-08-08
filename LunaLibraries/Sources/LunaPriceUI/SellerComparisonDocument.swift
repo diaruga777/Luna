@@ -179,8 +179,10 @@ public enum SellerComparisonDocument {
         }
         body += "<h1>\(escape(content.productName))</h1>\n"
         body += "<p class=\"stamp\">\(escape(L10n.string("PriceTrackerCompareDoc_01_updatedFormat", Self.stamp(content.generatedAt))))</p>\n"
-        body += graphSection(content)
+        // Sellers first: the file exists to answer "where is this cheapest right
+        // now". The history is context for that answer, not the answer.
         body += sellerSection(content, lowest: lowest)
+        body += graphSection(content)
         return """
         <!DOCTYPE html>
         <html lang="en">

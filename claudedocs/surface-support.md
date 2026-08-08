@@ -269,8 +269,16 @@ mention of the registry inside a composition-root DIRECTORY is what
 is sharper than narrowing it to assignments. Three of the four apps link no media
 module, so both asks are no-ops there, which is correct — they have no media to
 preload or delete.
-- The Safari extensions link no packages; the native handler derives its host's
-  kinds from its own bundle id (see `claudedocs/safari-extension.md`).
+- The Safari extensions link only the Foundation-only floor (`LunaAppConfig`,
+  `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`, `LunaStorage`) — no
+  kind module, and in particular no kind UI. They still derive their host's kinds
+  from their own bundle id rather than from the link graph, because all four
+  appexes share one source file: `hostHandlesArticles`/`hostHandlesMedia`/
+  `hostHandlesProducts` gate every branch, including the in-page video player's
+  `resolveMedia` (media hosts only). The one package they link for a KIND is
+  `LunaMediaResolve`, and it is deliberately kind-neutral machinery — post URL to
+  CDN URL — shared so the extension can never disagree with the app about what a
+  link resolves to (see `claudedocs/safari-extension.md`, "Where the work runs").
 
 ## Regression coverage
 

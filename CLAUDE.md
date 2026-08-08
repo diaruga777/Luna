@@ -321,9 +321,19 @@ import's download watcher;
 `UITestScreen`/`NonArticleCardOpening`:
 central-app-only) are excluded from foreign targets via the same membership-exception
 mechanism. The Share/Action extensions
-link `LunaShareSurface` (+ transitive) plus their host's kind modules, `LunaSafari` links
-nothing (it reads the App
-Group id from its own Info.plist via `SafariAppGroup`). Cross-tier wiring uses injected
+link `LunaShareSurface` (+ transitive) plus their host's kind modules. **The four
+`LunaSafari` appexes used to link NOTHING; they now link the Foundation-only floor**
+— `LunaAppConfig`, `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`,
+`LunaStorage` — so the Safari extension runs the SAME `SocialMediaResolver` the app and
+the share/action extensions do rather than a Safari-local fork (it resolves a social
+post's video for the in-page player; see `claudedocs/safari-extension.md`'s "Where the
+work runs"). `LunaMediaResolve` exists for exactly that: post URL → direct CDN asset is
+Foundation + URLSession, while the rest of `LunaMediaDownload` pulls UIKit/Photos/
+ActivityKit/SwiftSoup that no appex can afford; `LunaMediaDownload` `@_exported import`s
+it, so nothing else changed. The `LunaSafari/Shared*.swift` HAND-COPIES (App-Group key
+formats, product matching) stay hand-copies and stay parity-tested — that pattern is for
+string constants, never for logic. `SafariAppGroup` still reads the App Group id from the
+extension's own Info.plist. Cross-tier wiring uses injected
 closures/protocols installed at launch in AppDelegate or KindWiring (e.g.
 `AudioPlaybackCenter.dataSource`, `ReadingListIngestor.unsupportedSavePresenter`,
 `DiagnosticLog.exportIdentityProvider`,
@@ -342,7 +352,7 @@ ReadingListUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own 
 | --- | --- |
 | `Luna` (central) | article + media + product (everything) |
 | `LunaReader` | LunaArticleIngest, LunaReaderUI, LunaArchiveReader, LunaPaywallBypass, LunaAudioPlayback, LunaReaderEngine, LunaEpub, LunaDocuments, LunaSend |
-| `LunaDownloader` | LunaMediaDownload, LunaPlatforms |
+| `LunaDownloader` | LunaMediaDownload (re-exports LunaMediaResolve), LunaPlatforms |
 | `LunaPriceTracker` | LunaPriceIngest, LunaPriceUI |
 
 `LunaTests` keeps everything (it hosts on the central app). No foreign-kind

@@ -245,7 +245,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// Instagram rotates `doc_id`s. When this one is retired the query returns no
     /// media rather than wrong media, and `resolveInstagram` stops instead of falling
     /// through to a still — a reel that can't be fetched stays a link.
-    static func instagramGraphQLRequest(
+    public static func instagramGraphQLRequest(
         shortcode: String, timeoutInterval: TimeInterval = 15
     ) -> URLRequest {
         var components = URLComponents(string: "https://www.instagram.com/graphql/query/")
@@ -275,7 +275,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// Stable Facebook content URL used by every resolver stage. Path-addressed
     /// permalinks and `fb.watch` short links need no query. `/watch/?v=<id>` retains
     /// only `v`, since it is content identity rather than share tracking.
-    static func facebookResolutionURL(for url: URL) -> URL {
+    public static func facebookResolutionURL(for url: URL) -> URL {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return url }
         let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value
@@ -286,7 +286,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
 
     /// The `/plugins/video.php?href=<url>` embed URL for a Facebook video/reel.
     /// Returns nil only if the URL can't be recomposed.
-    static func facebookVideoPluginURL(for url: URL) -> URL? {
+    public static func facebookVideoPluginURL(for url: URL) -> URL? {
         let href = facebookResolutionURL(for: url).absoluteString
         var plugin = URLComponents(string: "https://www.facebook.com/plugins/video.php")
         plugin?.queryItems = [URLQueryItem(name: "href", value: href)]
@@ -303,7 +303,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// cached wall can survive after the reel becomes publicly available. Keep this
     /// factory shared with the durable background resolver so both paths see the same
     /// response shape.
-    static func facebookPageRequest(
+    public static func facebookPageRequest(
         _ url: URL, userAgent: String, timeoutInterval: TimeInterval = 15
     ) -> URLRequest {
         var request = URLRequest(
@@ -669,7 +669,7 @@ public enum InstagramMediaParser {
 
     /// Unescapes the JSON/HTML-encoded URLs Instagram embeds in markup.
     public static func unescape(_ string: String) -> String {
-        LunaMediaDownload.unescape(string)
+        LunaMediaResolve.unescape(string)
     }
 }
 

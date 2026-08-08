@@ -121,6 +121,26 @@ browser.runtime.onMessage.addListener(function (message) {
             .then(function () { return { ok: true }; })
             .catch(function () { return { ok: false }; });
     }
+    if (message.type === "resolveMedia") {
+        // The in-page player's resolve. The native handler runs the app's own
+        // SocialMediaResolver and answers with the URLs a <video> can stream;
+        // an empty list (unsupported host, split audio/video, a failure, its
+        // own 20s budget) is the page's cue to fall back to the hand-off pill.
+        return browser.runtime.sendNativeMessage("application.id",
+            { type: "resolveMedia", url: message.url, title: message.title })
+            .then(function (resp) {
+                return { assets: (resp && Array.isArray(resp.assets)) ? resp.assets : [] };
+            })
+            .catch(function () { return { assets: [] }; });
+    }
+    if (message.type === "queueResolvedDownload") {
+        // "Download what you resolved for this page" — the assets themselves
+        // never leave Swift, so there is nothing to carry but the page URL.
+        return browser.runtime.sendNativeMessage("application.id",
+            { type: "queueResolvedDownload", url: message.url })
+            .then(function (resp) { return { queued: !!(resp && resp.queued) }; })
+            .catch(function () { return { queued: false }; });
+    }
     if (message.type === "productSnapshot") {
         // One round trip: the native handler both records the passive
         // snapshot (Feature 1) and answers the history-pill query against the

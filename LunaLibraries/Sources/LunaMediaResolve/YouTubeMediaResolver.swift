@@ -54,18 +54,18 @@ public struct YouTubeLink: Equatable {
         videoID.flatMap(Self.thumbnailURL(videoID:))
     }
 
-    static func watchURL(videoID: String) -> URL? {
+    public static func watchURL(videoID: String) -> URL? {
         guard var components = URLComponents(string: "https://www.youtube.com/watch")
         else { return nil }
         components.queryItems = [URLQueryItem(name: "v", value: videoID)]
         return components.url
     }
 
-    static func embedURL(videoID: String) -> URL? {
+    public static func embedURL(videoID: String) -> URL? {
         URL(string: "https://www.youtube.com/embed/\(videoID)?html5=1")
     }
 
-    static func thumbnailURL(videoID: String) -> URL? {
+    public static func thumbnailURL(videoID: String) -> URL? {
         URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
     }
 
@@ -90,13 +90,13 @@ public struct YouTubeLink: Equatable {
     }
 }
 
-struct YouTubeClipDescriptor: Equatable {
-    let videoID: String
-    let timeRange: MediaTimeRange
+public struct YouTubeClipDescriptor: Equatable {
+    public let videoID: String
+    public let timeRange: MediaTimeRange
 }
 
-enum YouTubeClipParser {
-    static func descriptor(fromHTML html: String) -> YouTubeClipDescriptor? {
+public enum YouTubeClipParser {
+    public static func descriptor(fromHTML html: String) -> YouTubeClipDescriptor? {
         let search: String
         if let marker = html.range(of: "clipConfig") {
             search = String(html[marker.lowerBound..<html.index(
@@ -125,8 +125,8 @@ enum YouTubeClipParser {
 /// Adaptive-only video/audio pairs are intentionally excluded: Luna's durable
 /// background engine is single-file/resumable, and returning a video-only stream
 /// would silently lose sound.
-enum YouTubePlayerResponseParser {
-    static func asset(
+public enum YouTubePlayerResponseParser {
+    public static func asset(
         from data: Data,
         videoID: String,
         timeRange: MediaTimeRange?
@@ -257,9 +257,9 @@ enum YouTubePlayerResponseParser {
     }
 }
 
-struct YouTubePlaybackBootstrap: Equatable {
-    let visitorData: String
-    let playerJavaScriptURL: URL
+public struct YouTubePlaybackBootstrap: Equatable {
+    public let visitorData: String
+    public let playerJavaScriptURL: URL
 }
 
 /// The normal mobile watch-page response currently advertises an `MWEB`
@@ -268,8 +268,8 @@ struct YouTubePlaybackBootstrap: Equatable {
 /// without a JS/PO-token provider is an ANDROID_VR player request. That request
 /// still needs the guest visitor session established by the watch page and the
 /// signature timestamp from its active player JavaScript.
-enum YouTubePlaybackBootstrapParser {
-    static func bootstrap(fromWatchData data: Data) -> YouTubePlaybackBootstrap? {
+public enum YouTubePlaybackBootstrapParser {
+    public static func bootstrap(fromWatchData data: Data) -> YouTubePlaybackBootstrap? {
         guard let html = String(data: data, encoding: .utf8),
               let visitorLiteral = firstGroup(
                 in: html,
@@ -287,7 +287,7 @@ enum YouTubePlaybackBootstrapParser {
             playerJavaScriptURL: playerURL)
     }
 
-    static func signatureTimestamp(fromPlayerJavaScript data: Data) -> Int? {
+    public static func signatureTimestamp(fromPlayerJavaScript data: Data) -> Int? {
         guard let source = String(data: data, encoding: .utf8),
               let raw = firstGroup(
                 in: source,
@@ -305,25 +305,25 @@ enum YouTubePlaybackBootstrapParser {
     }
 }
 
-struct YouTubeMediaResolver {
-    typealias Fetch = SocialMediaResolver.Fetch
-    let fetch: Fetch
+public struct YouTubeMediaResolver {
+    public typealias Fetch = SocialMediaResolver.Fetch
+    public let fetch: Fetch
 
     /// yt-dlp's current no-token player fallback. Versions newer than 1.65 can
     /// return SABR-only responses, so keep this exact client/version pairing.
-    static let androidVRClientVersion = "1.65.10"
-    static let androidVRUserAgent =
+    public static let androidVRClientVersion = "1.65.10"
+    public static let androidVRUserAgent =
         "com.google.android.apps.youtube.vr.oculus/1.65.10 " +
         "(Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
-    static let webSafariUserAgent =
+    public static let webSafariUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)"
 
-    init(fetch: @escaping Fetch = SocialMediaResolver.defaultFetch) {
+    public init(fetch: @escaping Fetch = SocialMediaResolver.defaultFetch) {
         self.fetch = fetch
     }
 
-    func resolveAssets(for sourceURL: URL) async -> [MediaAsset] {
+    public func resolveAssets(for sourceURL: URL) async -> [MediaAsset] {
         guard let link = YouTubeLink(url: sourceURL) else { return [] }
         var videoID = link.videoID
         var range = link.timeRange
@@ -392,7 +392,7 @@ struct YouTubeMediaResolver {
         return [asset]
     }
 
-    static func watchRequest(_ url: URL) -> URLRequest {
+    public static func watchRequest(_ url: URL) -> URLRequest {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         var query = components?.queryItems ?? []
         if !query.contains(where: { $0.name == "bpctr" }) {
@@ -405,7 +405,7 @@ struct YouTubeMediaResolver {
         return htmlRequest(components?.url ?? url)
     }
 
-    static func htmlRequest(_ url: URL) -> URLRequest {
+    public static func htmlRequest(_ url: URL) -> URLRequest {
         var request = URLRequest(
             url: url, cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: 30)
@@ -421,7 +421,7 @@ struct YouTubeMediaResolver {
         return request
     }
 
-    static func playerJavaScriptRequest(_ url: URL) -> URLRequest {
+    public static func playerJavaScriptRequest(_ url: URL) -> URLRequest {
         var request = URLRequest(
             url: url, cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: 30)
@@ -432,7 +432,7 @@ struct YouTubeMediaResolver {
         return request
     }
 
-    static func androidVRPlayerRequest(
+    public static func androidVRPlayerRequest(
         videoID: String,
         visitorData: String,
         signatureTimestamp: Int
@@ -475,7 +475,7 @@ struct YouTubeMediaResolver {
         return request
     }
 
-    static func playerRequest(fromWatchData data: Data, videoID: String) -> URLRequest? {
+    public static func playerRequest(fromWatchData data: Data, videoID: String) -> URLRequest? {
         guard let html = String(data: data, encoding: .utf8),
               let apiKey = firstGroup(
                 in: html, pattern: #"\"INNERTUBE_API_KEY\"\s*:\s*\"([^\"]+)\""#)

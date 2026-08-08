@@ -27,6 +27,18 @@
         "message": "Track in Luna",
         "description": "Button that adds a product to Luna Price Tracker."
     },
+    "findingVideo": {
+        "message": "Finding video…",
+        "description": "Status shown in the in-page player while the native handler resolves the post's video."
+    },
+    "videoUnplayable": {
+        "message": "This one can't play here",
+        "description": "Shown in the in-page player when the video can't be resolved or streamed in Safari. The Download button below it still hands the page to Luna."
+    },
+    "closeVideo": {
+        "message": "Close",
+        "description": "Accessibility label for the in-page player's X button."
+    },
     "setupCompleteTitle": {
         "message": "Nice!\nYou're all set up",
         "description": "Confirmation shown in the page the first time the extension runs after setup was started in the app. The line break is deliberate."

@@ -141,6 +141,16 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             URLRescueCoordinator.shared.drainPendingRequests()
             return
         }
+        if LunaDeepLink.isResolvedMediaLink(url) {
+            // Safari's in-page player already resolved the video and wrote the
+            // assets to the App Group; this link carries no payload, it just
+            // says "drain". An app with no media kind drains nothing — and
+            // nothing could have queued anything for it either.
+            mainNavigationController?.popToRootViewController(animated: false)
+            KindWiring.drainPendingResolvedMedia(
+                returningToSource: LunaDeepLink.requestsReturnToSource(url))
+            return
+        }
         if let scheme = url.scheme, LunaDeepLink.allSchemes.contains(scheme),
            url.host == "settings", url.path == "/photos" {
             if let settingsURL = URL(string: UIApplication.openSettingsURLString) {

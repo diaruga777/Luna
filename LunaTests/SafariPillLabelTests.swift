@@ -37,6 +37,7 @@ final class SafariPillLabelTests: XCTestCase {
     private static let renderedKeys = [
         "readInLuna", "downloadInLuna", "trackInLuna", "openingLuna", "unlockedWithLuna",
         "setupCompleteTitle", "returnToApp", "wasPriceOnDate",
+        "findingVideo", "videoUnplayable", "closeVideo",
     ]
 
     // MARK: - The fallback

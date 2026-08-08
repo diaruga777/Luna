@@ -8,6 +8,13 @@ import LunaModels
 import LunaStorage
 import Foundation
 
+// Re-exported so every existing `import LunaMediaDownload` call site keeps
+// seeing `SocialMediaResolver` / the per-platform parsers / `MediaAsset.direct`
+// unchanged. Those moved to LunaMediaResolve — a Foundation-only target the
+// Safari extension can link without dragging UIKit/Photos/ActivityKit in with
+// them (`claudedocs/safari-extension.md`).
+@_exported import LunaMediaResolve
+
 // `MediaAsset` + `MediaTimeRange` moved to LunaModels (kind-neutral payload
 // for LunaURLRescue's `.rescuedMedia` and the app shells' media seams). The
 // download-specific conveniences below stay here.
@@ -54,20 +61,8 @@ public enum MediaDownloadablePlatform {
     }
 }
 
-public extension MediaAsset {
-    /// Treats a directly hosted media URL as its own resolved asset.
-    static func direct(url: URL) -> MediaAsset? {
-        guard let directKind = DirectMediaURL.kind(for: url) else { return nil }
-        let kind: Kind
-        switch directKind {
-        case .image: kind = .image
-        case .gif: kind = .gif
-        case .video: kind = .video
-        case .audio: kind = .audio
-        }
-        return MediaAsset(url: url, kind: kind)
-    }
-}
+// `MediaAsset.direct(url:)` moved to LunaMediaResolve (the resolver's own
+// first step), and comes back through the `@_exported import` above.
 
 public extension MediaAsset.Kind {
     /// PhotoKit accepts still/animated images and video, but not standalone

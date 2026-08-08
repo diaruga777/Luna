@@ -33,6 +33,9 @@
         readInLuna: "📖  Read in Luna",
         downloadInLuna: "Download in Luna",
         trackInLuna: "Track in Luna",
+        findingVideo: "Finding video…",
+        videoUnplayable: "This one can't play here",
+        closeVideo: "Close",
         setupCompleteTitle: "Nice!\nYou're all set up",
         // `{app}`, NOT `$APP$`: `$NAME$` is WebExtension i18n PLACEHOLDER syntax, and
         // WebKit resolves it by asking the message entry's `placeholders` dictionary
@@ -125,7 +128,9 @@
         if (platform === "reddit") { handleReddit(resp); return; }
         if (platform) {
             if (!shouldShowDownloadPillForPlatform(platform)) { return; }
-            var downloadTarget = downloadTargetFor(resp);
+            // The pill opens the in-page player; it falls back to the hand-off
+            // navigation from inside the overlay when nothing is playable.
+            var downloadTarget = videoOverlayTargetFor(resp);
             if (downloadTarget) { injectLunaButton(downloadTarget); }
             return;
         }
@@ -1485,6 +1490,256 @@
     window.__lunaSetupCelebrationID = SETUP_CELEBRATION_ID;
     window.__lunaSetupCelebrationDuration = SETUP_CELEBRATION_DURATION;
 
+    // ── The in-page video player ────────────────────────────────────────────────
+    // On a media host (the central Luna app / Luna Downloader), the download pill
+    // opens a player right here instead of navigating: the native handler runs the
+    // app's own resolver over this post URL and hands back a direct CDN URL, which
+    // a plain <video> streams. The page's own CSP governs that load, which is why
+    // this only ever plays a SAME-PLATFORM asset — instagram.com allows
+    // *.cdninstagram.com, x.com allows *.twimg.com, and so on.
+    //
+    // Nothing here decides WHAT is playable: the handler answers with the assets
+    // `MediaAsset.isDirectlyPlayable` accepted, and an empty answer — for any
+    // reason at all — falls back to the hand-off this pill used to do.
+    var VIDEO_OVERLAY_ID = "luna-video-overlay";
+    // Longer than the handler's own 20s budget, so a native side that answers
+    // late still wins over this backstop and only a DEAD one trips it.
+    var RESOLVE_TIMEOUT = 25000;
+    var NIGHT_SURFACE = "#0b0b10";
+
+    // The native round trip, behind a swappable reference: the WKWebView test
+    // harness has no extension host at all (`browser` is undefined), so
+    // SafariVideoOverlayTests substitutes its own resolver here.
+    var resolveMediaRequest = function (url, title) {
+        if (typeof browser === "undefined") { return Promise.resolve({ assets: [] }); }
+        return browser.runtime.sendMessage({ type: "resolveMedia", url: url, title: title });
+    };
+    window.__lunaSetResolveMediaRequest = function (fn) { resolveMediaRequest = fn; };
+
+    /// Resolves to the reply, or to an empty result if the native side never
+    /// answers — a promise that never settles would leave the player spinning
+    /// with no way out.
+    function requestResolvedMedia(url, title) {
+        return new Promise(function (resolve) {
+            var settled = false;
+            var finish = function (result) {
+                if (settled) { return; }
+                settled = true;
+                resolve(result && Array.isArray(result.assets) ? result : { assets: [] });
+            };
+            setTimeout(function () { finish(null); }, RESOLVE_TIMEOUT);
+            try {
+                resolveMediaRequest(url, title).then(finish, function () { finish(null); });
+            } catch (e) {
+                finish(null);
+            }
+        });
+    }
+
+    function presentVideoOverlay(context, handoff) {
+        if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
+        var sourceURL = location.href;
+
+        var backdrop = document.createElement("div");
+        backdrop.id = VIDEO_OVERLAY_ID;
+        applyStyle(backdrop, {
+            position: "fixed", top: "0", left: "0", right: "0", bottom: "0",
+            zIndex: "2147483647", background: "rgba(0, 0, 0, 0.78)",
+            webkitBackdropFilter: "blur(4px)", backdropFilter: "blur(4px)",
+            boxSizing: "border-box", display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center",
+            margin: "0", padding: "12px", overscrollBehavior: "contain"
+        });
+
+        // Near the full width, and only as tall as what's in it.
+        var panel = document.createElement("div");
+        applyStyle(panel, {
+            boxSizing: "border-box", width: "calc(100vw - 24px)", maxWidth: "640px",
+            height: "auto", background: NIGHT_SURFACE, borderRadius: "20px",
+            border: "none", margin: "0", padding: "10px",
+            display: "flex", flexDirection: "column", alignItems: "stretch",
+            boxShadow: "0 24px 60px rgba(0,0,0,0.55)"
+        });
+        // A tap inside the panel is not a tap on the backdrop.
+        panel.addEventListener("click", function (event) { event.stopPropagation(); });
+
+        var header = document.createElement("div");
+        applyStyle(header, {
+            boxSizing: "border-box", display: "flex", justifyContent: "flex-start",
+            alignItems: "center", margin: "0", padding: "0 0 8px 0"
+        });
+
+        var close = document.createElement("div");
+        close.setAttribute("role", "button");
+        close.setAttribute("aria-label", localizedMessage("closeVideo"));
+        close.appendChild(document.createTextNode("✕"));
+        applyStyle(close, {
+            boxSizing: "border-box", display: "inline-flex",
+            alignItems: "center", justifyContent: "center",
+            width: "34px", height: "34px", minHeight: "0",
+            borderRadius: "999px", border: "none",
+            background: "rgba(255,255,255,0.12)", color: "#ffffff",
+            font: "500 17px/1 -apple-system, system-ui, sans-serif",
+            margin: "0", padding: "0", cursor: "pointer",
+            webkitTapHighlightColor: "transparent", touchAction: "manipulation",
+            webkitAppearance: "none", appearance: "none"
+        });
+        header.appendChild(close);
+        panel.appendChild(header);
+
+        // A fixed-shape stage, so swapping the status line for the player (or for
+        // the failure message) doesn't resize the panel under the user's thumb.
+        var stage = document.createElement("div");
+        applyStyle(stage, {
+            boxSizing: "border-box", position: "relative", width: "100%",
+            aspectRatio: "16 / 9", background: "#000000", borderRadius: "12px",
+            overflow: "hidden", margin: "0", padding: "0",
+            display: "flex", alignItems: "center", justifyContent: "center"
+        });
+        panel.appendChild(stage);
+
+        var status = document.createElement("div");
+        status.appendChild(document.createTextNode(localizedMessage("findingVideo")));
+        applyStyle(status, {
+            boxSizing: "border-box", color: "rgba(255,255,255,0.72)", textAlign: "center",
+            font: "500 15px/1.3 -apple-system, system-ui, sans-serif",
+            margin: "0", padding: "0 16px"
+        });
+        stage.appendChild(status);
+
+        var download = document.createElement("div");
+        download.setAttribute("role", "button");
+        download.appendChild(document.createTextNode(localizedMessage("downloadInLuna")));
+        applyStyle(download, {
+            boxSizing: "border-box", display: "inline-flex",
+            alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
+            background: QUEUE_INDIGO, color: "#ffffff",
+            font: "600 16px/1 -apple-system, system-ui, sans-serif",
+            border: "none", borderRadius: "999px",
+            minHeight: "44px", height: "auto", width: "100%",
+            margin: "10px 0 0 0", padding: "13px 22px",
+            cursor: "pointer", webkitTapHighlightColor: "transparent",
+            touchAction: "manipulation", webkitAppearance: "none", appearance: "none"
+        });
+        panel.appendChild(download);
+
+        backdrop.appendChild(panel);
+
+        var video = null;
+        var closed = false;
+        var didResolve = false;
+
+        // Every platform this pill appears on autoplays its own player, and that
+        // player keeps running behind an overlay — two videos, two soundtracks.
+        // Pause the page's, remember exactly which ones WE paused, and put them
+        // back on dismiss; a video the user had already paused stays paused.
+        var pausedByOverlay = [];
+        var pausePageVideos = function () {
+            var existing = document.querySelectorAll("video");
+            for (var i = 0; i < existing.length; i++) {
+                var element = existing[i];
+                if (element.paused) { continue; }
+                try { element.pause(); pausedByOverlay.push(element); } catch (e) {}
+            }
+        };
+        var resumePageVideos = function () {
+            for (var i = 0; i < pausedByOverlay.length; i++) {
+                // A play() this far from a user gesture can be refused; it
+                // returns a rejecting promise rather than throwing, so both.
+                try {
+                    var resumed = pausedByOverlay[i].play();
+                    if (resumed && resumed.catch) { resumed.catch(function () {}); }
+                } catch (e) {}
+            }
+            pausedByOverlay = [];
+        };
+
+        var dismiss = function () {
+            if (closed) { return; }
+            closed = true;
+            if (video) {
+                try { video.pause(); } catch (e) {}
+                video.removeAttribute("src");
+                try { video.load(); } catch (e) {}
+            }
+            if (backdrop.parentNode) { backdrop.parentNode.removeChild(backdrop); }
+            resumePageVideos();
+        };
+        backdrop.addEventListener("click", dismiss);
+        close.addEventListener("click", dismiss);
+
+        // The stage failed (or never resolved): keep the panel, say so, and let
+        // Download do exactly what the pill did before this feature existed.
+        var degrade = function () {
+            didResolve = false;
+            if (video && video.parentNode) { video.parentNode.removeChild(video); }
+            video = null;
+            status.textContent = localizedMessage("videoUnplayable");
+            if (!status.parentNode) { stage.appendChild(status); }
+        };
+
+        download.addEventListener("click", function () {
+            download.textContent = localizedMessage("openingLuna");
+            download.style.opacity = "0.7";
+            download.style.pointerEvents = "none";
+            if (video) { try { video.pause(); } catch (e) {} }
+            // Resolved: the handler already holds the assets, so the app is sent
+            // a payload-free link and drains them itself. Not resolved: the
+            // original hand-off, which makes the app do the whole job.
+            if (!didResolve) {
+                window.location.href = handoff.url();
+                return;
+            }
+            var open = function () { window.location.href = resolvedMediaTarget(context); };
+            if (typeof browser === "undefined") { open(); return; }
+            browser.runtime.sendMessage({ type: "queueResolvedDownload", url: sourceURL })
+                .then(function (resp) {
+                    if (resp && resp.queued) { open(); } else { window.location.href = handoff.url(); }
+                })
+                .catch(function () { window.location.href = handoff.url(); });
+        });
+
+        // Before our own <video> exists, so this only ever reaches the page's.
+        pausePageVideos();
+        (document.body || document.documentElement).appendChild(backdrop);
+
+        requestResolvedMedia(sourceURL, document.title || "").then(function (result) {
+            if (closed) { return; }
+            var asset = (result.assets || [])[0];
+            if (!asset || !asset.url) { degrade(); return; }
+            didResolve = true;
+            if (status.parentNode) { status.parentNode.removeChild(status); }
+            video = document.createElement("video");
+            video.setAttribute("controls", "");
+            video.setAttribute("playsinline", "");
+            video.setAttribute("webkit-playsinline", "");
+            video.setAttribute("preload", "metadata");
+            if (asset.thumbnailURL) { video.setAttribute("poster", asset.thumbnailURL); }
+            applyStyle(video, {
+                boxSizing: "border-box", display: "block", width: "100%", height: "100%",
+                objectFit: "contain", background: "#000000", margin: "0", padding: "0",
+                border: "none", borderRadius: "0"
+            });
+            // The page's CSP has the last word on the media load, and an expired
+            // googlevideo URL 403s — either way the element reports it here.
+            video.addEventListener("error", function () { if (!closed) { degrade(); } }, true);
+            video.setAttribute("src", asset.url);
+            stage.appendChild(video);
+        });
+    }
+
+    /// `<scheme>://resolvedmedia?ret=safari` — a payload-free hand-off, exactly
+    /// like `rescue`: the assets are already in the App Group, so the app drains
+    /// them and bounces back here (`SafariReturnPolicy`).
+    function resolvedMediaTarget(context) {
+        var scheme = (context && context.scheme) || "";
+        return scheme + "://resolvedmedia?ret=safari";
+    }
+
+    // For the WKWebView harness (no extension host) — see SafariVideoOverlayTests.
+    window.__lunaPresentVideoOverlay = presentVideoOverlay;
+    window.__lunaVideoOverlayID = VIDEO_OVERLAY_ID;
+
     function injectLunaButton(target) {
         if (document.getElementById("queue-read-button")) { return; }
         // A <div role="button"> (not a <button>) so the host page's `button {…}`
@@ -1508,6 +1763,13 @@
             webkitAppearance: "none", appearance: "none"
         });
         btn.addEventListener("click", function () {
+            // A target that presents something in-page (the video player) stays
+            // here: no navigation, and the pill keeps its label so it still
+            // reads correctly behind the overlay when that overlay is dismissed.
+            if (typeof target.present === "function") {
+                target.present();
+                return;
+            }
             btn.textContent = target.pressedLabel
                 || localizedMessage("openingLuna");
             btn.style.opacity = "0.7";
@@ -1565,6 +1827,24 @@
             label: localizedMessage("downloadInLuna"),
             captureContent: false,
             url: function () { return ownSchemeTarget(context, location.href) + "&ret=safari"; }
+        };
+    }
+
+    // The same pill, tapped to open the in-page player instead of leaving for
+    // the app — with `downloadTargetFor`'s hand-off carried along as the
+    // fallback the overlay uses when nothing turns out to be playable.
+    //
+    // Reddit deliberately does NOT come through here (see `handleReddit`): its
+    // video and audio are separate DASH streams, so there is nothing a single
+    // <video> can play, and its pill keeps the plain hand-off it has today.
+    function videoOverlayTargetFor(context) {
+        var handoff = downloadTargetFor(context);
+        if (!handoff) { return null; }
+        return {
+            label: handoff.label,
+            captureContent: false,
+            url: handoff.url,
+            present: function () { presentVideoOverlay(context, handoff); }
         };
     }
 

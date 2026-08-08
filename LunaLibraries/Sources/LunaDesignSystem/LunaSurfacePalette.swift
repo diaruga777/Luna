@@ -61,6 +61,45 @@ public enum LunaSurfacePalette {
         return blended(base, toward: .white, amount: amount)
     }
 
+    // MARK: - Ink on a filled tint
+
+    /// The near-black an identity colour is written on when it is bright.
+    public static let inkDark = UIColor(
+        red: 0x12 / 255, green: 0x12 / 255, blue: 0x1a / 255, alpha: 1)
+
+    /// The text colour a surface FILLED with `tint` has to carry to stay
+    /// legible — white on a deep one, `inkDark` on a bright one.
+    ///
+    /// The four identity colours span nearly the whole brightness range (the
+    /// Price Tracker's green is a near-neon, the Reader's periwinkle is pale,
+    /// the Luna indigo and the Downloader's amber are deep), so anything filled
+    /// with one of them cannot also have a fixed text colour. The threshold is
+    /// where white and `inkDark` tie on WCAG contrast, so each side is picked
+    /// only where it actually wins — which is what lets the colour itself go on
+    /// being exactly the app's, untempered.
+    ///
+    /// Hand-copied into `LunaSafari/Resources/content.js` as `tintForeground`
+    /// (that target links no package) and pinned by `SafariSurfaceTintTests`.
+    public static let inkCrossoverLuminance: CGFloat = 0.19
+
+    public static func ink(on tint: UIColor) -> UIColor {
+        relativeLuminance(of: tint) > inkCrossoverLuminance ? inkDark : .white
+    }
+
+    /// WCAG relative luminance. Resolved against the dark trait: these are
+    /// fixed brand colours with no appearance variants, and a filled control
+    /// must not change its text colour with the sky.
+    public static func relativeLuminance(of color: UIColor) -> CGFloat {
+        let resolved = color.resolvedColor(
+            with: UITraitCollection(userInterfaceStyle: .dark))
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        func linear(_ channel: CGFloat) -> CGFloat {
+            channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    }
+
     // MARK: - Night sky
 
     /// The colour the night sky leans toward: the starfield's cast, and the

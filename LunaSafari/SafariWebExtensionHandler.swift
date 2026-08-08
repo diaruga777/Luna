@@ -56,6 +56,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // and only for the content kinds that app handles: the central Luna
             // app handles everything; each single-content app handles one kind.
             payload["scheme"] = scheme
+            // Which app's chrome the page is rendering — the setup confirmation
+            // is the app's, not any page kind's, so it takes this app's own
+            // identity colour. A PILL never asks: it is coloured by the kind it
+            // saves (see `KIND_TINTS` in content.js).
+            payload["surface"] = surface
             payload["supportsArticles"] = Self.hostHandlesArticles
             payload["supportsMedia"] = Self.hostHandlesMedia
             payload["supportsProducts"] = Self.hostHandlesProducts

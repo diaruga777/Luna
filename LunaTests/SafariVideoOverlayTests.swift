@@ -27,7 +27,16 @@ final class SafariVideoOverlayTests: XCTestCase {
         super.setUp()
         // A fresh document per test (one overlay must not leak into the next) on
         // the ONE shared web view.
-        js.load(urlString: Self.pageURL)
+        loadFixture()
+    }
+
+    /// The fixture page, with the panel's growth animation turned off through the
+    /// seam `content.js` exposes for it. Every shape assertion below is about the
+    /// height the panel SETTLES at, and reading a `getBoundingClientRect` while a
+    /// 0.24s transition is still in flight measures the height it is leaving.
+    private func loadFixture(html: String = SafariJSSource.blankPage) {
+        js.load(html: html, urlString: Self.pageURL)
+        _ = js.evaluate("window.__lunaSetPlayerGrowthSeconds(0); \"instant\"")
     }
 
     // MARK: - Driving the overlay
@@ -322,6 +331,144 @@ final class SafariVideoOverlayTests: XCTestCase {
             "the panel must hug its contents, not fill the screen")
     }
 
+    // MARK: - The popup's height follows the clip
+
+    private func rect(_ selector: String) -> (width: Double, height: Double) {
+        let width = js.number("""
+            document.getElementById(window.__lunaVideoOverlayID)
+                .\(selector).getBoundingClientRect().width
+            """)
+        let height = js.number("""
+            document.getElementById(window.__lunaVideoOverlayID)
+                .\(selector).getBoundingClientRect().height
+            """)
+        return (width, height)
+    }
+
+    private func panelRect() -> (width: Double, height: Double) { rect("firstChild") }
+
+    /// The clip's real shape, as the element reports it once the stream opens.
+    private func reportMetadata(width: Int, height: Int) {
+        _ = js.evaluate("""
+            (function () {
+                var video = document.getElementById(window.__lunaVideoOverlayID)
+                    .querySelector("video");
+                Object.defineProperty(video, "videoWidth", { get: function () { return \(width); } });
+                Object.defineProperty(video, "videoHeight", { get: function () { return \(height); } });
+                video.dispatchEvent(new Event("loadedmetadata"));
+                return "reported";
+            })()
+            """)
+    }
+
+    /// The panel opens at 16:9 and a 16:9 clip leaves it exactly there — this
+    /// feature costs the shape that shipped nothing.
+    func testAWideClipKeepsThePanelItAlwaysHad() {
+        present(assets: playableAsset)
+        let before = panelRect().height
+        reportMetadata(width: 1920, height: 1080)
+        XCTAssertEqual(panelRect().height, before, accuracy: 1)
+    }
+
+    /// And neither does a clip WIDER than 16:9: the opening shape is a floor, not
+    /// a starting point, so a panel can only ever grow from it.
+    func testAnUltraWideClipDoesNotShrinkThePanel() {
+        present(assets: playableAsset)
+        let before = panelRect().height
+        reportMetadata(width: 2560, height: 400)
+        XCTAssertEqual(panelRect().height, before, accuracy: 1)
+    }
+
+    /// A 9:16 reel in a 16:9 letterbox is mostly black bars. Reported tall, the
+    /// stage takes the clip's own shape and the popup grows under it.
+    func testATallClipGrowsThePopup() {
+        present(assets: playableAsset)
+        let before = panelRect().height
+        reportMetadata(width: 1080, height: 1920)
+        let after = panelRect().height
+        XCTAssertGreaterThan(
+            after, before + 100,
+            "a 9:16 clip did not grow the popup at all — it is still letterboxed")
+    }
+
+    /// …but only as far as what is ON SCREEN. `100vh` and the backdrop's own
+    /// `position: fixed` box are both the LARGE viewport (toolbars retracted), so
+    /// a panel measured against either runs under Safari's chrome; the clamp is
+    /// taken from `visualViewport`, and leaves an inset top and bottom.
+    func testTheGrownPopupStaysInsideTheVisibleViewport() {
+        present(assets: playableAsset)
+        reportMetadata(width: 1080, height: 1920)
+
+        let visible = js.number("""
+            window.visualViewport ? window.visualViewport.height : window.innerHeight
+            """)
+        let panel = panelRect().height
+        XCTAssertLessThanOrEqual(
+            panel, visible - 20,
+            "the grown popup fills the visible viewport edge to edge — it owes an inset")
+        XCTAssertGreaterThan(
+            panel, visible * 0.7,
+            "a tall clip should take nearly the whole visible viewport, not a little more "
+                + "than 16:9")
+    }
+
+    /// The panel is centred in what the user can see rather than in the layout
+    /// viewport, so neither end of it is behind Safari's chrome.
+    func testTheGrownPopupIsCentredInWhatIsVisible() {
+        present(assets: playableAsset)
+        reportMetadata(width: 1080, height: 1920)
+
+        let top = js.number("""
+            document.getElementById(window.__lunaVideoOverlayID)
+                .firstChild.getBoundingClientRect().top
+            """)
+        let bottom = js.number("""
+            document.getElementById(window.__lunaVideoOverlayID)
+                .firstChild.getBoundingClientRect().bottom
+            """)
+        let box = js.number("""
+            window.__lunaVisiblePageBox().top + window.__lunaVisiblePageBox().height
+            """)
+        XCTAssertGreaterThan(top, 0, "the popup's top edge is off the top of the visible box")
+        XCTAssertLessThanOrEqual(
+            bottom, box, "the popup's bottom edge is under Safari's toolbar")
+    }
+
+    /// The page can sometimes say the shape before the stream opens (Open Graph
+    /// video dimensions), which is a beat earlier than `loadedmetadata`.
+    func testThePagesOwnVideoDimensionsSizeTheStageImmediately() {
+        loadFixture(html: """
+            <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta property="og:video:width" content="720">
+            <meta property="og:video:height" content="1280">
+            </head><body style="margin:0"><p>fixture</p></body></html>
+            """)
+        present(assets: playableAsset)
+        let visible = js.number("""
+            window.visualViewport ? window.visualViewport.height : window.innerHeight
+            """)
+        XCTAssertGreaterThan(
+            panelRect().height, visible * 0.7,
+            "the panel ignored the page's own declared video dimensions")
+    }
+
+    /// Whatever the page claimed, the element is the authority: a page whose
+    /// metadata lies about the clip must not leave the popup the wrong shape.
+    func testTheElementsMetadataOverridesThePages() {
+        loadFixture(html: """
+            <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta property="og:video:width" content="720">
+            <meta property="og:video:height" content="1280">
+            </head><body style="margin:0"><p>fixture</p></body></html>
+            """)
+        present(assets: playableAsset)
+        let claimed = panelRect().height
+        reportMetadata(width: 1920, height: 1080)
+        XCTAssertLessThan(
+            panelRect().height, claimed - 100,
+            "the panel kept the page's claimed shape after the clip reported a wide one")
+    }
+
     // MARK: - Which pages get it
 
 }
@@ -363,6 +510,33 @@ final class SafariVideoOverlayContractTests: XCTestCase {
         XCTAssertTrue(
             background.contains("return { queued: false }; }"),
             "the queueResolvedDownload relay must catch into a refusal")
+    }
+
+    // MARK: - Which viewport the panel is measured against
+
+    /// The one thing about the adaptive height that no rendering test can pin,
+    /// because a bare `WKWebView` has no browser chrome to be wrong about: the
+    /// clamp must come from `visualViewport`. `100vh` is the LARGE viewport (as
+    /// though the toolbars were retracted) and `position: fixed` is laid out
+    /// against that same box, so a popup sized by either runs under Safari's
+    /// address bar on a real device while every simulator test still passes.
+    func testTheHeightIsClampedToTheVisualViewport() {
+        XCTAssertTrue(
+            contentScript.contains("window.visualViewport"),
+            "the player no longer asks visualViewport how much of the page is on screen")
+        let builder = contentScript
+            .components(separatedBy: "function presentVideoOverlay(").last ?? ""
+        let panelSection = builder
+            .components(separatedBy: "\n    function autoPresentVideoOverlay(").first ?? ""
+        XCTAssertFalse(
+            panelSection.contains("100vh") || panelSection.contains("100dvh"),
+            "the panel is sized in viewport units again — those are the layout viewport, "
+                + "which includes the space Safari's toolbars sit in")
+        XCTAssertTrue(
+            panelSection.contains("env(safe-area-inset-top)")
+                && panelSection.contains("env(safe-area-inset-bottom)"),
+            "the panel must keep clear of the notch and the home indicator, which "
+                + "visualViewport reports as part of the visible box")
     }
 
     // MARK: - The deep link

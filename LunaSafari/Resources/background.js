@@ -86,6 +86,7 @@ browser.runtime.onMessage.addListener(function (message) {
                 return {
                     mode: (resp && resp.mode) || "all",
                     scheme: (resp && resp.scheme) || "",
+                    surface: (resp && resp.surface) || "",
                     supportsArticles: !!(resp && resp.supportsArticles),
                     supportsMedia: !!(resp && resp.supportsMedia),
                     supportsProducts: !!(resp && resp.supportsProducts),
@@ -97,6 +98,7 @@ browser.runtime.onMessage.addListener(function (message) {
                 return {
                     mode: "all",
                     scheme: "",
+                    surface: "",
                     supportsArticles: false,
                     supportsMedia: false,
                     supportsProducts: false,

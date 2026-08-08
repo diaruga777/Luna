@@ -42,12 +42,17 @@ final class CaptureIntentMetadataTests: XCTestCase {
         XCTAssertEqual(CaptureIntentMetadata.decode(encoded), value)
     }
 
+    /// A NEWER schema than this build knows falls back. Older ones deliberately
+    /// do not — the schema is additive by rule, so a v1 checkpoint held in a
+    /// Shortcut across an app update still describes a resumable save
+    /// (`ProductComparisonIntentTests` pins that side).
     func testUnknownSchemaFallsBackInsteadOfPartiallyResuming() throws {
         let value = CaptureIntentMetadata(
             phase: .screenshot, currentApp: "Instagram")
         let encoded = try XCTUnwrap(value.opaqueString)
             .replacingOccurrences(
-                of: "\"schemaVersion\":1", with: "\"schemaVersion\":999")
+                of: "\"schemaVersion\":\(CaptureIntentMetadata.currentSchemaVersion)",
+                with: "\"schemaVersion\":999")
 
         XCTAssertNil(CaptureIntentMetadata.decode(encoded))
     }

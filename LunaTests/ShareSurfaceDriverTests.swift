@@ -5,6 +5,7 @@
 
 import LunaShareSurface
 import LunaMediaDownload
+import LunaPriceCompare
 import LunaPriceUI
 import LunaReaderUI
 import LunaStorage
@@ -34,6 +35,8 @@ final class ShareSurfaceDriverTests: XCTestCase {
         private(set) var completedSilently = false
         private(set) var autoDownloadedURL: String?
         private(set) var error: String?
+        /// Every phase line a kind wrote onto the wait screen, in order.
+        private(set) var loadingPhases: [String] = []
 
         init(isActionExtension: Bool) {
             // Mirrors `ShareViewController.readerMode`: action ext opens a reader, the
@@ -54,6 +57,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
         func completeSilently() { completedSilently = true }
         func autoDownloadThenComplete(urlString: String) { autoDownloadedURL = urlString }
         func failOrComplete(_ message: String) { error = message }
+        func showLoadingPhase(_ message: String) { loadingPhases.append(message) }
         func openURL(_ url: URL) {}
     }
 
@@ -67,6 +71,11 @@ final class ShareSurfaceDriverTests: XCTestCase {
         // may hold its own framework copies, so no entry-class registration is
         // visible here).
         ShareKindPresenterTestSupport.registerAll()
+        // No fan-out unless a test asks for one. The test host is the central
+        // Luna app, so `ProductKindComposition.install()` has already put the
+        // LIVE runner in place — leaving it there would put real retailer
+        // traffic behind an assertion about presentation.
+        SellerComparisonRunner.installed = nil
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShareSurfaceDriver-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
@@ -74,6 +83,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
     }
 
     override func tearDown() {
+        SellerComparisonRunner.installed = nil
         try? FileManager.default.removeItem(at: scratch)
         super.tearDown()
     }
@@ -226,6 +236,35 @@ final class ShareSurfaceDriverTests: XCTestCase {
 
         XCTAssertTrue(host.presented.first is PriceTrackingViewController)
         XCTAssertNotNil(store.item(forURLString: urlString)?.priceTracker)
+    }
+
+    /// With a fan-out installed the editor WAITS for it, and the surface says
+    /// what it is waiting on — the tracker the editor opens on is the finished
+    /// one, sellers and re-based baseline included, rather than a list that
+    /// grows under an open editor.
+    func testProductEditorWaitsForTheSellerFanOutAndNamesThePhase() async {
+        let urlString = "https://www.amazon.com/dp/B0ACME1234"
+        _ = store.add(urlString: urlString)
+        let (driver, host) = makeDriver(isActionExtension: true)
+        SellerComparisonRunner.installed = { _ in
+            SellerFanOutOutcome(
+                results: [ComparableSellerResult(
+                    sellerID: "target", sellerName: "Target", domain: "target.example",
+                    url: URL(string: "https://target.example/p/1")!, price: 38, currency: "USD",
+                    productName: "Widget", identifiers: ProductIdentifiers(),
+                    imageURL: nil, confidence: .gtin, source: .directory)],
+                attemptedSellerIDs: ["target"], stopReason: .reachedTarget)
+        }
+        let presented = expectation(description: "price editor presented")
+        host.onPresent = { _ in presented.fulfill() }
+
+        driver.present(.product(sampleProduct(), html: "<html></html>"), url: url(urlString))
+
+        XCTAssertTrue(host.presented.isEmpty, "the editor must not open before the fan-out")
+        XCTAssertEqual(host.loadingPhases.count, 1, "and the wait must be named")
+        await fulfillment(of: [presented], timeout: 5)
+        XCTAssertTrue(host.presented.first is PriceTrackingViewController)
+        XCTAssertEqual(store.item(forURLString: urlString)?.priceTracker?.stores.count, 2)
     }
 
     func testGoogleShoppingProductPersistsSellerURLsAsTrackerStores() {

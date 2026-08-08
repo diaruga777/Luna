@@ -299,6 +299,8 @@
 "Onboarding_Demo_amayzonResourceName_Luna" = "Amayzon";
 "Onboarding_Demo_amayzonSearch_Luna" = "Search amayzon";
 "Onboarding_Demo_amayzonSeedTitle_Luna" = "eyePhone";
+"Onboarding_Demo_amayzonSellerName_Luna" = "Pearless";
+"Onboarding_Demo_amayzonSellerPrice_Luna" = "$729.00";
 "Onboarding_Demo_amayzonStock_Luna" = "In stock";
 "Onboarding_Demo_amayzonStore_Luna" = "Visit the Pearless Devices Store";
 "Onboarding_Demo_amayzonURL_Luna" = "https://amayzon.web/eyephone-air";
@@ -352,6 +354,8 @@
 "Onboarding_Safari_newsletterSubtitle_Luna" = "We promise to spam you";
 "Onboarding_Safari_newsletterTitle_Luna" = "Subscribe to our newsletter";
 "Onboarding_Safari_pageMenuStep_Luna" = "Tap the page menu in the address bar";
+"Onboarding_Safari_pricePillFoundTemplate_Luna" = "%@ at %@";
+"Onboarding_Safari_pricePillLooking_Luna" = "Finding other sellers…";
 "Onboarding_Safari_skip_Luna" = "Skip";
 "Onboarding_Safari_stepsHeading_Luna" = "Turn it on in Safari";
 "Onboarding_Safari_subscriptionBody_Luna" = "You've reached your free article limit for this month. Get unlimited access to independent journalism.";

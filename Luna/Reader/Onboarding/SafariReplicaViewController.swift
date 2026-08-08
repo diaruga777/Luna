@@ -55,6 +55,10 @@ final class SafariReplicaViewController:
 
     private let browserBar = SafariBottomBar()
     private let lunaPage: OnboardingSafariPageView
+    /// The price tracker's lesson, played over the mock product page instead of
+    /// the explainer's clutter wipe. Nil in every app whose lesson is the
+    /// explainer (`OnboardingSurfaceConfiguration.safariLesson`).
+    private var priceLesson: OnboardingPriceComparisonOverlayView?
     /// False from the extension's flip until the lesson stages the browser
     /// again: the bar has slid away and the page has taken back its strip.
     private var isBrowserBarVisible = true
@@ -98,6 +102,7 @@ final class SafariReplicaViewController:
             self?.onSkipSafariSetup?()
         }
         webView.navigationDelegate = self
+        configurePriceLessonIfNeeded()
         loadOfflinePage(at: 0)
     }
 
@@ -135,6 +140,29 @@ final class SafariReplicaViewController:
             browserBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             browserBar.heightAnchor.constraint(
                 equalToConstant: SafariBottomBar.reservedPageHeight),
+        ])
+    }
+
+    /// The lesson that plays over a real-looking product page rather than over
+    /// the explainer. Mounted with the browser rather than at its cue: the card
+    /// it ends on wears an eclipse corona, whose raster is worth building while
+    /// the replica is still hidden behind the intro card.
+    private func configurePriceLessonIfNeeded() {
+        guard onboardingConfiguration.safariLesson == .priceComparison else {
+            return
+        }
+        let lesson = OnboardingPriceComparisonOverlayView(
+            configuration: onboardingConfiguration)
+        lesson.onActivateSafari = { [weak self] in self?.onSetUpSafari?() }
+        lesson.onSkipSafariSetup = { [weak self] in self?.onSkipSafariSetup?() }
+        lesson.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(lesson)
+        priceLesson = lesson
+        NSLayoutConstraint.activate([
+            lesson.topAnchor.constraint(equalTo: view.topAnchor),
+            lesson.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            lesson.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            lesson.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
 
@@ -255,6 +283,7 @@ final class SafariReplicaViewController:
         guard didBeginDemonstration else { return }
         didBeginDemonstration = false
         cancelActionButtonSaveEffect()
+        priceLesson?.reset()
         pageTimer?.invalidate()
         pageTimer = nil
         // A buried page is a page in a browser: the bar is back before this
@@ -273,6 +302,10 @@ final class SafariReplicaViewController:
     func beginDemonstration() {
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
+        if let priceLesson {
+            priceLesson.begin()
+            return
+        }
         if onboardingConfiguration.demoPages[pageIndex] == .lunaPage {
             runExtensionEnableDemonstration()
             return
@@ -403,6 +436,7 @@ final class SafariReplicaViewController:
 
     func restoreInPageSafariSetup() {
         lunaPage.reactivateActions()
+        priceLesson?.reactivateActions()
     }
 
     func showShortcutAndActionSetup() {

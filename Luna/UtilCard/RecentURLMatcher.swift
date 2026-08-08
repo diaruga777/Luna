@@ -176,14 +176,46 @@ final class RecentURLMatcher {
         NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
-    /// Applies the reading-list half of recent-row publication. Keeping this a
-    /// pure operation makes the save/delete symmetry explicit: a committed save
-    /// removes its cached Safari preview, and deleting that save reveals the
-    /// same preview again without re-fetching or reclassifying the URL.
+    /// Applies the reading-list half of recent-row publication, and collapses the
+    /// candidates against EACH OTHER. Keeping this a pure operation makes the
+    /// save/delete symmetry explicit: a committed save removes its cached Safari
+    /// preview, and deleting that save reveals the same preview again without
+    /// re-fetching or reclassifying the URL.
+    ///
+    /// The trail holds raw URL strings, deduplicated exactly by whichever Safari
+    /// extension wrote them — but two distinct raw strings routinely name one page
+    /// (a share link and its canonical form, `?utm_…`, a trailing slash, `www.`,
+    /// a fragment), and the pipeline resolves them to the same preview. Collapsing
+    /// happens BEFORE the row cap in `publish`, so five duplicates of one article
+    /// can no longer fill the block; the FIRST occurrence wins, and the trail is
+    /// newest-first, so the survivor is the most recent visit.
     static func deduplicated(
         _ candidates: [RecentURLPreview], savedURLStrings: Set<String>
     ) -> [RecentURLPreview] {
-        candidates.filter { !savedURLStrings.contains($0.urlString) }
+        let savedKeys = Set(savedURLStrings.map(identityKey(for:)))
+        var seen: Set<String> = []
+        return candidates.filter { candidate in
+            let key = identityKey(for: candidate.urlString)
+            guard !savedKeys.contains(key), seen.insert(key).inserted else { return false }
+            return true
+        }
+    }
+
+    /// The "same page" key two recent rows are compared by: scheme-insensitive,
+    /// `www.`-insensitive, case-insensitive in the host, fragment-free, and blind
+    /// to a trailing slash. Everything else — path case, query — is kept, because
+    /// a query is what distinguishes one product or video from the next.
+    static func identityKey(for urlString: String) -> String {
+        guard var components = URLComponents(string: urlString) else {
+            return urlString.lowercased()
+        }
+        components.fragment = nil
+        let host = (components.host ?? "").lowercased()
+            .replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
+        var path = components.path
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        let query = components.query.map { "?\($0)" } ?? ""
+        return "\(host)\(path)\(query)"
     }
 
     /// The URL-only half of the pipeline's non-content veto, re-applied to a CACHED

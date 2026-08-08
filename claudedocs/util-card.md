@@ -287,6 +287,20 @@ ordering, and unsaved filtering are exactly the former recent-URL behavior:
 - if Safari is not configured and has produced no usable history, no recent rows
   appear.
 
+**Both caps apply to the collapsed list, never to the raw one.** A page the user
+visited twice must not take two rows or two of the twenty trail slots, so
+duplicates are removed BEFORE either count: `SafariRecentHistoryStore.URLs`
+collapses repeated raw strings before its `limit` of 20, and
+`RecentURLMatcher.deduplicated` collapses previews before `publish`'s five. The
+first occurrence wins in both, and the trail is newest-first, so the survivor is
+the most recent visit. Previews compare by `RecentURLMatcher.identityKey` — host
+without `www.`, path without a trailing slash, no fragment, no scheme, all
+case-folded — because one page reaches the trail under several raw spellings (a
+share link and its canonical form, `?utm_…`, a fragment) and the pipeline
+resolves them all to the same preview. The query is deliberately kept: it is what
+separates one video or product from the next. The saved-URL filter uses the same
+key, so a save stored in a cosmetically different form still clears its row.
+
 ## Completion and inheritance
 
 Completion remains per app, with setup evidence shared where appropriate.

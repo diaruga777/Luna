@@ -25,9 +25,15 @@ public final class SafariRecentHistoryStore {
 
     /// Newest first. Values are deliberately raw URL strings: classification
     /// and preview metadata belong to each app's independent evaluation cache.
+    ///
+    /// Repeats are collapsed BEFORE `limit` applies — the writer already keeps one
+    /// entry per raw URL, so this only catches a trail left by an older extension
+    /// build, but a duplicate must never cost a slot. First occurrence wins, which
+    /// on a newest-first trail is the most recent visit.
     public var URLs: [String] {
-        (defaults.stringArray(forKey: Self.historyKey) ?? [])
-            .filter { !$0.isEmpty }
+        var seen: Set<String> = []
+        return (defaults.stringArray(forKey: Self.historyKey) ?? [])
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
             .prefix(Self.limit)
             .map { $0 }
     }

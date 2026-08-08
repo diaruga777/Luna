@@ -306,6 +306,30 @@ Reachability note: the price kind cannot use `ArticleExportService`, because
 `LunaSend` is article-kind and `LunaPriceTracker` does not link it. Hence a
 renderer of its own rather than a shared document builder.
 
+## In Safari (B3)
+
+The constrained profile's one caller today. `LunaSafari/ComparableSellerFinder
+.swift` answers the extension's `comparableSellers` message: stored prices from
+the App Group first (the app-written history index + the passive snapshot file,
+matched by the extension's existing tiers), then — only if those have nothing —
+the fan-out, fetched through a bare ephemeral `URLSession` carrying
+`WebFetchConstants.safariUserAgent`. Results are written back as passive
+snapshots (`ComparableSellerResult.snapshotPayload`), so a price found for a pill
+feeds everything snapshots already feed.
+
+`FreshComparablePrices` is the answer rule, and every part of it is a refusal:
+older than **24h**, a different currency (there is no FX source), not strictly
+cheaper than the page, or the page's own retailer. It lives in this module rather
+than the appex because the appex is not compiled into `LunaTests` — the Safari
+sources are pinned by source-text parity tests, and this is the one piece of the
+feature worth executing (`FreshComparablePricesTests`).
+
+Two Safari-specific consequences of the profile: a page declaring **no GTIN and
+no MPN skips the live leg entirely** (with name-only matching off, the run could
+only end in refusals), and the budgets nest — 15s fan-out inside an 18s finder
+inside the handler's 20s inside the page's 25s backstop. Pill behaviour and the
+fallback contract are in `claudedocs/safari-extension.md`.
+
 ## Link set
 
 `LunaPriceCompare` is linked by: `Luna`, `LunaPriceTracker`, `LunaShare`,
@@ -337,15 +361,9 @@ All in `LunaTests/`:
 | `ComparableResultMergerTests` | the merge/supplant rule |
 | `PriceComparisonBaselineTests` | median semantics, no badge at seeding, no `newlyAlerting` on the first refresh |
 | `ProductIdentifiersTests` | the keyed value type and its normalization |
+| `FreshComparablePricesTests` | the 24h window and the four refusals; a result's snapshot payload |
 | `ProductPageDetectorTests` / `ProductMatcherTests` | keyed extraction and the keyed-GTIN match tier |
 | `SellerComparisonTests` | the request, the median/no-badge seeding, the per-family refusal, the new-tracker-only rule, and the two no-op states |
 | `SellerComparisonDocumentTests` | the document's self-containment, ordering, flat-series graph and escaping |
 | `ProductComparisonIntentTests` | the `comparison` checkpoint, v1-decodes/v+1-refused, the seam's absence in non-product apps, the freshness rule |
 | `ShareSurfaceDriverTests` | the extension editor waits for the fan-out and names the phase |
-
----
-
-## Still to come (B3)
-
-- **B3** — `LunaSafari` `comparableSellers` message, the constrained fan-out
-  behind it, snapshot-store writes, and the seller pill in `content.js`.

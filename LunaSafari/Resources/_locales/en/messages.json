@@ -50,5 +50,13 @@
     "wasPriceOnDate": {
         "message": "Was {price} on {date}",
         "description": "Non-interactive pill showing a lower historical price. {price} and {date} are substituted by content.js. Deliberately NOT written $PRICE$/$DATE$ -- see the note in content.js."
+    },
+    "findingSellers": {
+        "message": "Finding other sellers…",
+        "description": "Pill shown while the native handler looks for the same product on other retailers' sites."
+    },
+    "priceAtSeller": {
+        "message": "{price} at {seller}",
+        "description": "Tappable pill naming a cheaper current price on another retailer; tapping it opens that seller's page. {price} and {seller} are substituted by content.js. Deliberately NOT written $PRICE$/$SELLER$ -- see the note in content.js."
     }
 }

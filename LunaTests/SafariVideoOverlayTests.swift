@@ -241,6 +241,61 @@ final class SafariVideoOverlayTests: XCTestCase {
         XCTAssertTrue(opened.hasSuffix("&ret=safari"), "got \(opened)")
     }
 
+    // MARK: - The page's own player
+
+    /// Every platform this pill appears on autoplays its own video, and an
+    /// overlay does not stop it — two videos playing at once, two soundtracks.
+    func testThePagesOwnVideoIsPausedWhileTheOverlayIsUp() {
+        _ = js.evaluate("""
+            var page = document.createElement("video");
+            page.id = "page-video";
+            document.body.appendChild(page);
+            // No source to decode in the harness; fake the playing state the
+            // overlay reads, and record the pause it asks for.
+            Object.defineProperty(page, "paused", { get: function () { return this.__paused; } });
+            page.__paused = false;
+            page.pause = function () { this.__paused = true; };
+            page.play = function () { this.__paused = false; return Promise.resolve(); };
+            "seeded"
+            """)
+        present(assets: playableAsset)
+        XCTAssertTrue(js.bool("document.getElementById(\"page-video\").__paused"))
+    }
+
+    /// And it resumes when the overlay goes away.
+    func testThePagesOwnVideoResumesOnDismiss() {
+        _ = js.evaluate("""
+            var page = document.createElement("video");
+            page.id = "page-video";
+            document.body.appendChild(page);
+            Object.defineProperty(page, "paused", { get: function () { return this.__paused; } });
+            page.__paused = false;
+            page.pause = function () { this.__paused = true; };
+            page.play = function () { this.__paused = false; return Promise.resolve(); };
+            "seeded"
+            """)
+        present(assets: playableAsset)
+        _ = js.evaluate("document.getElementById(window.__lunaVideoOverlayID).click(); \"closed\"")
+        XCTAssertFalse(js.bool("document.getElementById(\"page-video\").__paused"))
+    }
+
+    /// A video the user had ALREADY paused must not be started for them.
+    func testAnAlreadyPausedPageVideoIsNotResumed() {
+        _ = js.evaluate("""
+            var page = document.createElement("video");
+            page.id = "page-video";
+            document.body.appendChild(page);
+            Object.defineProperty(page, "paused", { get: function () { return this.__paused; } });
+            page.__paused = true;
+            page.pause = function () { this.__paused = true; };
+            page.play = function () { this.__paused = false; return Promise.resolve(); };
+            "seeded"
+            """)
+        present(assets: playableAsset)
+        _ = js.evaluate("document.getElementById(window.__lunaVideoOverlayID).click(); \"closed\"")
+        XCTAssertTrue(js.bool("document.getElementById(\"page-video\").__paused"))
+    }
+
     // MARK: - Shape
 
     /// Near the full width, capped so it doesn't stretch across an iPad, and only

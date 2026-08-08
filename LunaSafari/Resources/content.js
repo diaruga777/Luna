@@ -1629,6 +1629,31 @@
         var closed = false;
         var didResolve = false;
 
+        // Every platform this pill appears on autoplays its own player, and that
+        // player keeps running behind an overlay — two videos, two soundtracks.
+        // Pause the page's, remember exactly which ones WE paused, and put them
+        // back on dismiss; a video the user had already paused stays paused.
+        var pausedByOverlay = [];
+        var pausePageVideos = function () {
+            var existing = document.querySelectorAll("video");
+            for (var i = 0; i < existing.length; i++) {
+                var element = existing[i];
+                if (element.paused) { continue; }
+                try { element.pause(); pausedByOverlay.push(element); } catch (e) {}
+            }
+        };
+        var resumePageVideos = function () {
+            for (var i = 0; i < pausedByOverlay.length; i++) {
+                // A play() this far from a user gesture can be refused; it
+                // returns a rejecting promise rather than throwing, so both.
+                try {
+                    var resumed = pausedByOverlay[i].play();
+                    if (resumed && resumed.catch) { resumed.catch(function () {}); }
+                } catch (e) {}
+            }
+            pausedByOverlay = [];
+        };
+
         var dismiss = function () {
             if (closed) { return; }
             closed = true;
@@ -1638,6 +1663,7 @@
                 try { video.load(); } catch (e) {}
             }
             if (backdrop.parentNode) { backdrop.parentNode.removeChild(backdrop); }
+            resumePageVideos();
         };
         backdrop.addEventListener("click", dismiss);
         close.addEventListener("click", dismiss);
@@ -1673,6 +1699,8 @@
                 .catch(function () { window.location.href = handoff.url(); });
         });
 
+        // Before our own <video> exists, so this only ever reaches the page's.
+        pausePageVideos();
         (document.body || document.documentElement).appendChild(backdrop);
 
         requestResolvedMedia(sourceURL, document.title || "").then(function (result) {

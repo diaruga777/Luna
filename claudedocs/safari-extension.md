@@ -458,6 +458,12 @@ same-platform asset — and every platform we resolve allows its own CDN
 `*.twimg.com`, tiktok.com's `default-src` covers `*.tiktokcdn*.com`, youtube.com
 ships no `media-src` at all).
 
+**The page's own player is paused while the overlay is up.** Every platform this
+pill appears on autoplays its own video, and an overlay does not stop it — the
+user would hear two soundtracks. The overlay pauses exactly the `<video>`s that
+were playing when it opened and resumes those on dismiss; one the user had
+already paused stays paused.
+
 **Everything that can go wrong lands in one place.** An empty resolve, the
 handler's 20s budget, the JS 25s backstop, a CSP refusal, or an expired
 IP-bound googlevideo URL all surface as either an empty asset list or a `video`

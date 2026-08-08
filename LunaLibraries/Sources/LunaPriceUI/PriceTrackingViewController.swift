@@ -204,6 +204,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         tableView.contentInsetAdjustmentBehavior = .never
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "store")
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "pendingComparison")
         view.addSubview(tableView)
 
         configureGraphContainer()
@@ -650,13 +651,21 @@ extension PriceTrackingViewController: ProductSearchOverlayDelegate {
 }
 
 extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegate {
+    /// The seller rows, plus ONE more while a fan-out is out: the list is where
+    /// the user finds out that Luna is still looking, and the row is the same
+    /// fact the tracker's pending marker is (`SellerComparison`).
+    private var isComparing: Bool { tracker?.pendingComparison != nil }
+
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        tracker?.stores.count ?? 0
+        (tracker?.stores.count ?? 0) + (isComparing ? 1 : 0)
     }
 
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        if isComparing, indexPath.row == (tracker?.stores.count ?? 0) {
+            return comparisonCell(tableView, at: indexPath)
+        }
         let cell = tableView.dequeueReusableCell(withIdentifier: "store", for: indexPath)
-        guard let storeListing = tracker?.stores[indexPath.row] else { return cell }
+        guard let storeListing = tracker?.stores[safe: indexPath.row] else { return cell }
         var config = cell.defaultContentConfiguration()
         config.text = storeListing.url?.host?.replacingOccurrences(of: "www.", with: "")
             ?? storeListing.urlString
@@ -685,17 +694,38 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
         40
     }
 
+    /// The waiting row: a spinner and a line of copy, going nowhere. Not
+    /// selectable and not swipe-deletable — there is no seller behind it yet.
+    private func comparisonCell(
+        _ tableView: UITableView, at indexPath: IndexPath
+    ) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(
+            withIdentifier: "pendingComparison", for: indexPath)
+        var config = cell.defaultContentConfiguration()
+        config.text = L10n.string("PriceTracker_comparison_checkingSellersRow")
+        config.textProperties.color = LunaColors.secondaryText
+        cell.contentConfiguration = config
+        cell.accessoryType = .none
+        cell.selectionStyle = .none
+        cell.backgroundColor = nil
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.startAnimating()
+        cell.accessoryView = spinner
+        return cell
+    }
+
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard let storeListing = tracker?.stores[indexPath.row] else { return }
+        guard let storeListing = tracker?.stores[safe: indexPath.row] else { return }
         InAppBrowser.present(urlString: storeListing.urlString, from: self)
     }
 
     public func tableView(
         _ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        guard let tracker, tracker.stores.count > 1 else { return nil }
-        let urlString = tracker.stores[indexPath.row].urlString
+        guard let tracker, tracker.stores.count > 1,
+              let urlString = tracker.stores[safe: indexPath.row]?.urlString
+        else { return nil }
         let delete = UIContextualAction(style: .destructive, title: L10n.string("Common_remove")) { [weak self] _, _, done in
             guard let self, var current = self.tracker else { return done(false) }
             let removed = current.removeStore(urlString: urlString)
@@ -703,6 +733,14 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
             done(removed)
         }
         return UISwipeActionsConfiguration(actions: [delete])
+    }
+}
+
+/// The table has one row that is not a store — the "checking for other sellers"
+/// row — so every store lookup by row index has to tolerate being off the end.
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

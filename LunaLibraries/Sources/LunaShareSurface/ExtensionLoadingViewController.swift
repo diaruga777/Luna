@@ -144,17 +144,6 @@ public final class ExtensionLoadingViewController: UIViewController {
     /// thought.
     private static let detailSpacing: CGFloat = 8
 
-    /// Names the phase the wait is currently in, and keeps waiting.
-    ///
-    /// The rotating reassurance stops, because a phase line is a FACT about what
-    /// is happening ("Finding other sellers…") and rotating it away a second
-    /// later would read as the phase having ended. The spinner is untouched:
-    /// nothing terminal has happened.
-    public func showPhase(_ message: String) {
-        articleLoadingStatus?.stop()
-        statusLabel.setTextImmediately(message)
-    }
-
     /// Stops the animation without changing the copy — for a handover to another
     /// screen that is about to replace this one.
     public func stopWaiting() {

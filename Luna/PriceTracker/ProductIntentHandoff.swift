@@ -44,7 +44,18 @@ enum ProductIntentHandoff {
     static func document(forURLString urlString: String) async -> URL? {
         let store = ReadingListStore.shared
         guard let match = store.priceTracker(containingStoreURL: urlString) else { return nil }
-        if isStale(match.tracker) {
+        // The ONE surface that still WAITS for the fan-out, because its whole
+        // answer is a comparison between the sellers it finds. Everywhere else
+        // the run is out in the background; here we join it (or start it) and
+        // let it finish. `SellerComparison.complete` is a rendezvous, so an
+        // extension's run already in flight is awaited rather than duplicated —
+        // and it clears the pending marker either way, so the launch and refresh
+        // sweeps do not run it again.
+        if match.tracker.pendingComparison != nil {
+            _ = await SellerComparison.complete(itemID: match.itemID, store: store)
+        }
+        guard let refreshed = store.item(withID: match.itemID)?.priceTracker else { return nil }
+        if isStale(refreshed) {
             await refreshRunner(match.itemID)
         }
         guard let tracker = store.item(withID: match.itemID)?.priceTracker else { return nil }

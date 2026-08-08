@@ -107,35 +107,14 @@ final class SellerComparisonTests: XCTestCase {
         XCTAssertEqual(attached?.priceHistory.count, 1)
     }
 
-    /// The baseline is the MEDIAN across every priced store, not the cheapest —
-    /// otherwise "we found somewhere cheaper" is indistinguishable from a price
-    /// drop, and every later real drop reads as flat.
-    func testTheBaselineBecomesTheMedianAcrossEveryStore() {
+    /// Attaching is now the STREAMING step — one seller at a time, as the
+    /// fan-out finds them — so it deliberately leaves the baseline alone. The
+    /// baseline is settled once, at the end, by `completePendingComparison`.
+    func testAttachingDoesNotTouchTheBaselineOnItsOwn() {
         var subject = tracker(price: "100")
-        SellerComparison.apply(
-            [result(domain: "a.example", price: "80"), result(domain: "b.example", price: "120")],
-            to: &subject)
+        SellerComparison.apply([result(domain: "a.example", price: "40")], to: &subject)
         XCTAssertEqual(subject.initialPrice, 100)
-        XCTAssertEqual(subject.initialCurrency, "USD")
-    }
-
-    func testAnEvenNumberOfStoresAveragesTheMiddleTwo() {
-        var subject = tracker(price: "100")
-        SellerComparison.apply([result(domain: "a.example", price: "80")], to: &subject)
-        XCTAssertEqual(subject.initialPrice, 90)
-    }
-
-    /// Seeding must not badge the row. The cheapest of a dozen sellers being
-    /// below the threshold is a fact about the market at the moment of saving,
-    /// not a drop the user asked to hear about.
-    func testSeedingNeverLeavesAnUnviewedAlert() {
-        var subject = tracker(price: "100")
-        subject.setAlertThresholdFraction(0.10)
-        SellerComparison.apply(
-            [result(domain: "a.example", price: "50"), result(domain: "b.example", price: "60")],
-            to: &subject)
-        XCTAssertTrue(subject.isAlerting, "the cheapest seller really is below the threshold")
-        XCTAssertFalse(subject.hasUnviewedAlert, "but that must not badge the row at save time")
+        XCTAssertNil(subject.alertAcknowledgedAt)
     }
 
     /// Two rows for the same shop is the one thing the store list must never
@@ -149,25 +128,173 @@ final class SellerComparisonTests: XCTestCase {
         XCTAssertEqual(subject.stores.count, 1)
     }
 
-    func testNothingFoundLeavesTheBaselineExactlyWhereTheSaveLeftIt() {
+    // MARK: - The pending marker
+
+    /// The marker is what survives the extension process that started the run.
+    func testBeginningARunStampsAResumableMarker() {
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(), for: item.id)
+        installRunner(results: [])
+        XCTAssertTrue(SellerComparison.begin(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store))
+        let pending = store.item(withID: item.id)?.priceTracker?.pendingComparison
+        XCTAssertEqual(pending?.sourceURLString, "https://source.example/p/1")
+    }
+
+    /// Nothing pending where nothing can run: a "checking for other sellers" row
+    /// for a run that will never happen is worse than no row.
+    func testNoMarkerIsStampedWithNoRunnerInstalled() {
+        SellerComparisonRunner.installed = nil
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(), for: item.id)
+        XCTAssertFalse(SellerComparison.begin(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store))
+        XCTAssertNil(store.item(withID: item.id)?.priceTracker?.pendingComparison)
+    }
+
+    /// The resume path, exactly as a launch or a refresh cycle runs it: a marker
+    /// left by a dead process, finished by a live one.
+    func testAMarkerLeftByADeadProcessIsResumedAndCleared() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        var subject = tracker()
+        subject.beginPendingComparison(sourceURLString: "https://source.example/p/1")
+        store.savePriceTracker(subject, for: item.id)
+        installRunner(results: [result(domain: "a.example", price: "80")])
+
+        let finished = await SellerComparison.completePending(store: store)
+
+        XCTAssertEqual(finished, 1)
+        let saved = store.item(withID: item.id)?.priceTracker
+        XCTAssertNil(saved?.pendingComparison, "the row must not wait forever")
+        XCTAssertEqual(saved?.stores.count, 2)
+    }
+
+    /// A run that found nothing is a FINISHED run. Leaving the marker would
+    /// leave a spinner turning until the end of time.
+    func testARunThatFoundNothingStillClearsTheMarker() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(), for: item.id)
+        installRunner(results: [])
+        _ = await SellerComparison.runAndAttach(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
+        XCTAssertNil(store.item(withID: item.id)?.priceTracker?.pendingComparison)
+    }
+
+    /// With no runner in THIS process the marker is left alone, so an app that
+    /// does compose the product kind can still pick the run up.
+    func testAMarkerSurvivesAProcessThatCannotRunTheFanOut() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        var subject = tracker()
+        subject.beginPendingComparison(sourceURLString: "https://source.example/p/1")
+        store.savePriceTracker(subject, for: item.id)
+        SellerComparisonRunner.installed = nil
+
+        let finished = await SellerComparison.completePending(store: store)
+        XCTAssertEqual(finished, 0)
+        XCTAssertNotNil(store.item(withID: item.id)?.priceTracker?.pendingComparison)
+    }
+
+    /// Sellers arrive one at a time, so the list fills in front of the user
+    /// rather than appearing all at once when the run ends.
+    func testEachSellerIsPersistedAsItLandsRatherThanAtTheEnd() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(), for: item.id)
+        let results = [result(domain: "a.example", price: "80"),
+                       result(domain: "b.example", price: "120")]
+        var countsSeenDuringTheRun: [Int] = []
+        SellerComparisonRunner.installed = { [store] _, onResult in
+            for found in results {
+                await onResult?(found)
+                countsSeenDuringTheRun.append(
+                    store?.item(withID: item.id)?.priceTracker?.stores.count ?? 0)
+            }
+            return SellerFanOutOutcome(
+                results: results, attemptedSellerIDs: [], stopReason: .reachedTarget)
+        }
+        _ = await SellerComparison.runAndAttach(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
+        XCTAssertEqual(countsSeenDuringTheRun, [2, 3], "persisted as each one landed")
+    }
+
+    // MARK: - The baseline, and whose decision it is
+
+    /// The default path: the user never touched the alert configuration, so the
+    /// median becomes the baseline — the cheapest of a dozen sellers is the
+    /// going rate at the moment of saving, not a drop worth hearing about.
+    func testAnUntouchedTrackerGetsTheMedianBaselineAndNoBadge() async {
+        let item = store.add(urlString: "https://source.example/p/1")
         var subject = tracker(price: "100")
-        let before = subject.alertAcknowledgedAt
-        XCTAssertEqual(SellerComparison.apply([], to: &subject), 0)
+        subject.setAlertThresholdFraction(0.10)
+        store.savePriceTracker(subject, for: item.id)
+        installRunner(results: [result(domain: "a.example", price: "50"),
+                                result(domain: "b.example", price: "60")])
+
+        _ = await SellerComparison.runAndAttach(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
+
+        let saved = store.item(withID: item.id)!.priceTracker!
+        XCTAssertEqual(saved.initialPrice, 60, "median of 100, 60, 50")
+        XCTAssertTrue(saved.isAlerting, "the cheapest seller really is below the threshold")
+        XCTAssertFalse(saved.hasUnviewedAlert, "but that must not badge the row at save time")
+    }
+
+    /// **The touched-threshold rule.** A user who adjusted the alert before the
+    /// fan-out came back chose a number against the price they could SEE. They
+    /// are owed the alert that number implies, so their configuration stands,
+    /// the baseline is not re-based under them, and a cheaper seller arriving
+    /// from the fan-out is allowed to cross the line — which is the intended
+    /// behaviour, not an accident.
+    func testATouchedThresholdIsRespectedAndTheArrivingSellerMayAlert() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        var subject = tracker(price: "100")
+        subject.setAlertThresholdFraction(0.10)
+        store.savePriceTracker(subject, for: item.id)
+        installRunner(
+            results: [result(domain: "a.example", price: "50")],
+            beforeReturning: {
+                // The user drags the slider while the fan-out is still out.
+                guard var live = self.store.item(withID: item.id)?.priceTracker else { return }
+                live.setAlertThresholdFraction(0.25)
+                self.store.updatePriceTracker(live, for: item.id)
+            })
+
+        _ = await SellerComparison.runAndAttach(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
+
+        let saved = store.item(withID: item.id)!.priceTracker!
+        XCTAssertEqual(saved.alertThresholdFraction, 0.25, "their number, untouched")
+        XCTAssertEqual(saved.initialPrice, 100, "and their baseline, untouched")
+        XCTAssertTrue(saved.isAlerting)
+        XCTAssertTrue(
+            saved.hasUnviewedAlert,
+            "a genuine alert: they set the threshold themselves and a seller crossed it")
+        XCTAssertNil(saved.pendingComparison)
+    }
+
+    /// Clearing the alert entirely counts as touching it.
+    func testClearingTheThresholdAlsoCountsAsTouchingIt() {
+        var subject = tracker(price: "100")
+        subject.setAlertThresholdFraction(0.10)
+        subject.beginPendingComparison(sourceURLString: "https://source.example/p/1")
+        subject.clearAlertThreshold()
+        XCTAssertTrue(subject.alertConfigurationChangedSincePendingComparison)
+        XCTAssertFalse(subject.completePendingComparison())
         XCTAssertEqual(subject.initialPrice, 100)
-        XCTAssertEqual(subject.alertAcknowledgedAt, before)
     }
 
     /// A foreign-currency seller is attached (it is a real place to buy the
     /// thing) but cannot enter the median — there is no FX source, so it would
     /// contribute a meaningless number.
-    func testAForeignCurrencySellerIsAttachedButDoesNotMoveTheMedian() {
-        var subject = tracker(price: "100", currency: "USD")
-        SellerComparison.apply(
-            [result(domain: "a.example", price: "1", currency: "GBP"),
-             result(domain: "b.example", price: "140", currency: "USD")],
-            to: &subject)
-        XCTAssertEqual(subject.stores.count, 3)
-        XCTAssertEqual(subject.initialPrice, 120, "median of the two USD stores")
+    func testAForeignCurrencySellerIsAttachedButDoesNotMoveTheMedian() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(price: "100", currency: "USD"), for: item.id)
+        installRunner(results: [result(domain: "a.example", price: "1", currency: "GBP"),
+                                result(domain: "b.example", price: "140", currency: "USD")])
+        _ = await SellerComparison.runAndAttach(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
+        let saved = store.item(withID: item.id)!.priceTracker!
+        XCTAssertEqual(saved.stores.count, 3)
+        XCTAssertEqual(saved.initialPrice, 120, "median of the two USD stores")
     }
 
     // MARK: - Through the ingestor
@@ -179,32 +306,20 @@ final class SellerComparisonTests: XCTestCase {
             identifiers: ProductIdentifiers(gtin: "0012345678905", brand: "Acme"))
     }
 
-    func testANewTrackerIsComparedAndSeeded() async {
+    /// The save does not WAIT for the fan-out any more: the ingestor starts it
+    /// and returns, and the card the announcement centers is already on screen.
+    func testANewTrackerStartsAComparisonWithoutWaitingForIt() async {
         let item = store.add(urlString: "https://source.example/p/1")
-        var seen: [String] = []
-        ingestor.comparisonRunner = { itemID, url, store in
-            seen.append(url.absoluteString)
-            guard var tracker = store.item(withID: itemID)?.priceTracker else { return 0 }
-            let added = SellerComparison.apply(
-                [ComparableSellerResult(
-                    sellerID: "a", sellerName: "A", domain: "a.example",
-                    url: URL(string: "https://a.example/p/1")!, price: 80, currency: "USD",
-                    productName: "Acme Widget", identifiers: ProductIdentifiers(),
-                    imageURL: nil, confidence: .gtin, source: .directory)],
-                to: &tracker)
-            store.updatePriceTracker(tracker, for: itemID)
-            return added
-        }
+        var started: [String] = []
+        ingestor.comparisonStarter = { _, url, _ in started.append(url.absoluteString) }
         ingestor.refreshRunner = { _ in nil }
 
         await ingestor.ingest(
             item, url: URL(string: "https://source.example/p/1")!,
             product: product(), store: store)
 
-        XCTAssertEqual(seen, ["https://source.example/p/1"])
-        let saved = store.item(withID: item.id)?.priceTracker
-        XCTAssertEqual(saved?.stores.count, 2)
-        XCTAssertEqual(saved?.initialPrice, 90, "median of 100 and 80")
+        XCTAssertEqual(started, ["https://source.example/p/1"])
+        XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 1)
     }
 
     /// The merge path is deliberately NOT compared: that tracker has been
@@ -219,7 +334,7 @@ final class SellerComparisonTests: XCTestCase {
             for: existing.id)
         let incoming = store.add(urlString: "https://source.example/p/1?ref=x")
         var ran = false
-        ingestor.comparisonRunner = { _, _, _ in ran = true; return 0 }
+        ingestor.comparisonStarter = { _, _, _ in ran = true }
         ingestor.refreshRunner = { _ in nil }
 
         await ingestor.ingest(
@@ -243,14 +358,119 @@ final class SellerComparisonTests: XCTestCase {
     func testAnInstalledRunnerAttachesWhatItFinds() async {
         let item = store.add(urlString: "https://source.example/p/1")
         store.savePriceTracker(tracker(), for: item.id)
-        SellerComparisonRunner.installed = { _ in
-            SellerFanOutOutcome(
-                results: [self.result(domain: "a.example", price: "80")],
-                attemptedSellerIDs: ["a"], stopReason: .reachedTarget)
-        }
+        installRunner(results: [result(domain: "a.example", price: "80")])
         let added = await SellerComparison.runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         XCTAssertEqual(added, 1)
         XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 2)
+    }
+
+    // MARK: - The opportunistic completion hooks
+
+    /// A refresh cycle opens by finishing whatever a dead process left behind.
+    /// It is the right moment for two reasons: the app is already awake with
+    /// the network, and the sellers a fan-out attaches arrive priced — so
+    /// running it FIRST spares the refresh from fetching them again, and the
+    /// baseline it settles is what this cycle's alert decisions are made
+    /// against.
+    func testARefreshCycleFinishesPendingComparisonsBeforeItRefreshes() async {
+        let coordinator = PriceRefreshCoordinator(
+            refresher: PriceRefresher(store: store, priceFetcher: MockPriceFetcher()))
+        var order: [String] = []
+        coordinator.pendingComparisonCompletion = {
+            order.append("comparisons")
+            return 1
+        }
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(), for: item.id)
+
+        _ = await coordinator.refreshAndNotify()
+
+        XCTAssertEqual(order, ["comparisons"])
+    }
+
+    /// The sweep both hooks call: it takes every tracker carrying a marker, and
+    /// nothing else.
+    func testTheSweepPicksUpEveryPendingTrackerAndSkipsTheRest() async {
+        let pending = store.add(urlString: "https://source.example/p/1")
+        var withMarker = tracker()
+        withMarker.beginPendingComparison(sourceURLString: "https://source.example/p/1")
+        store.savePriceTracker(withMarker, for: pending.id)
+
+        let settled = store.add(urlString: "https://other.example/p/1")
+        store.savePriceTracker(tracker(urlString: "https://other.example/p/1"), for: settled.id)
+
+        installRunner(results: [result(domain: "a.example", price: "80")])
+        let finished = await SellerComparison.completePending(store: store)
+
+        XCTAssertEqual(finished, 1)
+        XCTAssertEqual(store.item(withID: pending.id)?.priceTracker?.stores.count, 2)
+        XCTAssertEqual(
+            store.item(withID: settled.id)?.priceTracker?.stores.count, 1,
+            "a tracker with no marker is not re-compared")
+    }
+
+    /// An archived tracker is out of the background refresh; it is out of this
+    /// too, rather than spending a dozen retailers on something nobody watches.
+    func testAnArchivedTrackerIsNotSweptUp() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        var subject = tracker()
+        subject.beginPendingComparison(sourceURLString: "https://source.example/p/1")
+        subject.isArchived = true
+        store.savePriceTracker(subject, for: item.id)
+        installRunner(results: [result(domain: "a.example", price: "80")])
+
+        let finished = await SellerComparison.completePending(store: store)
+        XCTAssertEqual(finished, 0)
+    }
+
+    /// Two callers, one run. The intent's summary asking for a comparison the
+    /// share extension started a moment ago must WAIT for it rather than fan out
+    /// across the same dozen retailers again.
+    func testASecondCallerJoinsTheRunInFlightRatherThanStartingAnother() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        var subject = tracker()
+        subject.beginPendingComparison(sourceURLString: "https://source.example/p/1")
+        store.savePriceTracker(subject, for: item.id)
+
+        let runs = Counter()
+        SellerComparisonRunner.installed = { _, onResult in
+            await runs.increment()
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            let found = self.result(domain: "a.example", price: "80")
+            await onResult?(found)
+            return SellerFanOutOutcome(
+                results: [found], attemptedSellerIDs: [], stopReason: .reachedTarget)
+        }
+
+        async let first = SellerComparison.complete(itemID: item.id, store: store)
+        async let second = SellerComparison.complete(itemID: item.id, store: store)
+        _ = await (first, second)
+
+        let count = await runs.value
+        XCTAssertEqual(count, 1, "one fan-out, two callers")
+        XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 2)
+    }
+
+    private actor Counter {
+        private(set) var value = 0
+        func increment() { value += 1 }
+    }
+
+    // MARK: - Helpers
+
+    /// A stub fan-out that streams `results` and then returns them.
+    /// `beforeReturning` runs after the last one has landed and before the run
+    /// settles the baseline — the window in which the user can touch the alert.
+    private func installRunner(
+        results: [ComparableSellerResult],
+        beforeReturning: (@Sendable () -> Void)? = nil
+    ) {
+        SellerComparisonRunner.installed = { _, onResult in
+            for found in results { await onResult?(found) }
+            beforeReturning?()
+            return SellerFanOutOutcome(
+                results: results, attemptedSellerIDs: [], stopReason: .reachedTarget)
+        }
     }
 }

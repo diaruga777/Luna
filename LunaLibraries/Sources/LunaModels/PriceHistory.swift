@@ -66,11 +66,17 @@ public enum PriceHistory {
         }
     }
 
-    /// The display series for the tracker's graph (empty if no history).
-    public static func series(
-        for tracker: PriceTracker, now: Date = Date(), calendar: Calendar = .current
+    /// EVERY day the tracker has a sample for, at day resolution and with no
+    /// re-bucketing — the lowest price across all stores per calendar day.
+    ///
+    /// `series` coarsens this as the span grows because the on-screen graph is a
+    /// few hundred points wide and a year of daily dots is mush. A renderer with
+    /// room for all of them (the comparison document's inline SVG, where a
+    /// year's pruned history is at most 365 points) wants the full record
+    /// instead: the whole history, not a sampled view of it.
+    public static func dailySeries(
+        for tracker: PriceTracker
     ) -> [PriceGraphPoint] {
-        // 1. Per-day lowest across all stores.
         var perDay: [Date: PriceGraphPoint] = [:]
         for store in tracker.stores {
             for sample in store.priceHistory {
@@ -81,7 +87,15 @@ public enum PriceHistory {
                     storeURLString: store.urlString)
             }
         }
-        let daily = perDay.values.sorted { $0.date < $1.date }
+        return perDay.values.sorted { $0.date < $1.date }
+    }
+
+    /// The display series for the tracker's graph (empty if no history).
+    public static func series(
+        for tracker: PriceTracker, now: Date = Date(), calendar: Calendar = .current
+    ) -> [PriceGraphPoint] {
+        // 1. Per-day lowest across all stores.
+        let daily = dailySeries(for: tracker)
         guard let first = daily.first?.date, let last = daily.last?.date else { return [] }
 
         let spanDays = max(0, calendar.dateComponents([.day], from: first, to: last).day ?? 0)

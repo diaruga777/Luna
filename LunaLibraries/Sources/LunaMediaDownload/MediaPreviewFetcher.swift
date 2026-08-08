@@ -4,6 +4,7 @@
 //
 
 import ImageIO
+import LunaModels
 import UIKit
 
 /// Fetches a downsampled static preview image (e.g. a video thumbnail) so the
@@ -14,6 +15,7 @@ public enum MediaPreviewFetcher {
     /// sits fully decoded in the memory-constrained extension. Public so callers with
     /// a known image URL can reuse it.
     public static func image(from url: URL, maxPixelSize: CGFloat) async -> UIImage? {
+        guard LiveNetworkPolicy.allows(url, context: "MediaPreviewFetcher.image") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),

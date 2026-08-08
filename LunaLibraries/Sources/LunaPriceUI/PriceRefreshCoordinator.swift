@@ -28,6 +28,18 @@ public final class PriceRefreshCoordinator {
     @discardableResult
     public func refreshAndNotify() async -> [PriceRefreshOutcome] {
         DiagnosticLog.shared.record("price refresh: runner started", category: "price")
+        // Finish any seller fan-out a dead process left mid-run, BEFORE the
+        // refresh: the sellers it attaches are priced as it attaches them, so
+        // running it first spares the refresh from re-fetching them, and the
+        // baseline it settles is what this cycle's alert decisions are made
+        // against. A refresh cycle is exactly the right moment — the app is
+        // already awake with the network, on the same 12 h rhythm.
+        let finished = await pendingComparisonCompletion()
+        if finished > 0 {
+            DiagnosticLog.shared.record(
+                "price refresh: finished \(finished) pending seller comparison(s)",
+                category: "price")
+        }
         let outcomes = await refresher.refreshAll()
         notify(outcomes)
         // The history pill's data source: a refresh is exactly when a
@@ -50,6 +62,12 @@ public final class PriceRefreshCoordinator {
         notify([outcome])
         PriceHistoryIndexWriter.regenerate()
         return outcome
+    }
+
+    /// Test seam: the pending-fan-out sweep each cycle opens with. Production
+    /// finishes them against the shared store.
+    var pendingComparisonCompletion: () async -> Int = {
+        await SellerComparison.completePending(store: ReadingListStore.shared)
     }
 
     private func notify(_ outcomes: [PriceRefreshOutcome]) {

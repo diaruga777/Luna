@@ -155,6 +155,53 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         XCTAssertTrue(text.contains("Acme"), "pill text was: \(text)")
     }
 
+    /// **The label is the ANSWER, character for character.** Nothing about this
+    /// pill is an example: the amount, the currency and the retailer's name all
+    /// come from what the native finder reported, through the `{price}`/
+    /// `{seller}` substitution in `priceAtSeller`. A hardcoded `$` — the easiest
+    /// mistake in this file to make and the hardest to notice — would show a US
+    /// price on a UK product page.
+    func testTheLabelIsExactlyTheFindersAnswerInItsOwnCurrency() {
+        let cases: [(currency: String, price: String, expected: String)] = [
+            ("USD", "59.00", "$59.00 at Acme"),
+            ("GBP", "44.50", "£44.50 at Acme"),
+            ("EUR", "51.90", "€51.90 at Acme"),
+            // A currency with no minor unit must not be printed with cents.
+            ("JPY", "8900", "¥8,900 at Acme"),
+        ]
+        for testCase in cases {
+            // `beginLookup` loads a fresh document, so each case starts clean.
+            beginLookup()
+            finishLookup(sellerRespJSON: """
+                { found: true, price: "\(testCase.price)", currency: "\(testCase.currency)", \
+                sellerName: "Acme", url: "https://acme.example/p/1" }
+                """)
+            XCTAssertEqual(sellerPillText, testCase.expected, testCase.currency)
+        }
+    }
+
+    /// A name the directory does not know comes back as the registrable domain;
+    /// an EMPTY one would leave the label dangling after "at".
+    func testAnUnnamedSellerFallsBackToItsHostRatherThanAnEmptyLabel() {
+        beginLookup()
+        finishLookup(sellerRespJSON: """
+            { found: true, price: "59.00", currency: "USD", sellerName: "", \
+            url: "https://www.acme.example/p/1" }
+            """)
+        XCTAssertEqual(sellerPillText, "$59.00 at acme.example")
+    }
+
+    /// A price the native side could not express as a number must not print as
+    /// "$NaN".
+    func testAnUnreadablePriceFallsBackToThePlainPairRatherThanNaN() {
+        beginLookup()
+        finishLookup(sellerRespJSON: """
+            { found: true, price: "", currency: "USD", sellerName: "Acme", \
+            url: "https://acme.example/p/1" }
+            """)
+        XCTAssertEqual(sellerPillText, " USD at Acme")
+    }
+
     /// The whole point of this pill: it goes somewhere.
     func testAFoundSellerPillIsTappableAndCarriesTheSellersURL() {
         beginLookup()

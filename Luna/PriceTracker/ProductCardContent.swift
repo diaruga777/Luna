@@ -112,7 +112,17 @@ final class ProductCardContentViewController: CardContentViewController {
             contentStack.widthAnchor.constraint(
                 equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -36),
         ])
+        // A save-time seller fan-out lands its retailers one at a time, from a
+        // background task, straight into the store — so the card has to hear
+        // about a change it did not make.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(readingListChanged), name: .readingListChanged, object: nil)
         reloadContent()
+    }
+
+    @objc private func readingListChanged() {
+        if Thread.isMainThread { reloadContent() }
+        else { DispatchQueue.main.async { [weak self] in self?.reloadContent() } }
     }
 
     private func configureHeader() {
@@ -239,6 +249,31 @@ final class ProductCardContentViewController: CardContentViewController {
         for storeListing in tracker.stores {
             storesStack.addArrangedSubview(makeStoreRow(storeListing, canRemove: tracker.stores.count > 1))
         }
+        // While a fan-out is out, the list says so — the same pending marker the
+        // editor's table draws its own waiting row from.
+        if tracker.pendingComparison != nil {
+            storesStack.addArrangedSubview(makeCheckingRow())
+        }
+    }
+
+    /// The waiting row: a spinner and a line of copy. Not a button — there is no
+    /// seller behind it yet.
+    private func makeCheckingRow() -> UIView {
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.startAnimating()
+        let label = UILabel()
+        label.text = L10n.string("PriceTracker_comparison_checkingSellersRow")
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = LunaColors.secondaryText
+        let row = UIStackView(arrangedSubviews: [spinner, label, UIView()])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 10
+        row.isLayoutMarginsRelativeArrangement = true
+        row.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        row.accessibilityLabel = label.text
+        return row
     }
 
     private func makeStoreRow(_ listing: PriceTrackerStore, canRemove: Bool) -> UIView {

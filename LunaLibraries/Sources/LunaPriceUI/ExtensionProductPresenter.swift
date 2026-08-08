@@ -26,20 +26,18 @@ public final class ExtensionProductPresenter {
     /// the URL to the shared store (extension-safe: the main app ingests it on
     /// next launch); the editor handles the tracker delete.
     ///
-    /// Between the two there is now a phase: the alternative-seller fan-out,
-    /// announced on the surface's own wait screen. The editor opens on the
-    /// finished tracker — every seller found, the baseline already re-based onto
-    /// the median — because a store list that grows under an open editor is a
-    /// list the user cannot trust to still be there when they tap it.
+    /// The editor opens IMMEDIATELY, on the one seller the user was actually
+    /// looking at. The alternative-seller fan-out is started at the same moment
+    /// and runs behind it: its "checking for other sellers" row is already in
+    /// the list, and each retailer it verifies appears there as it lands.
     ///
-    /// `showLoadingPhase` is a no-op on a host with no wait screen, and the
-    /// whole leg is skipped when no fan-out is installed, so a surface that
-    /// cannot compare presents exactly as it did before. The engine's own
-    /// budget plus `SellerComparisonRunner.hardCapGrace` is the hard cap; when
-    /// it expires the editor opens with whatever had landed.
+    /// It used to hold a full-screen wait between the save and the editor — up
+    /// to half a minute of other people's web servers, in a share sheet, for a
+    /// tap the user had already made. What survives a share extension's early
+    /// death is not the Task but the PENDING MARKER on the tracker: the app
+    /// finishes the run at its next launch or its next refresh cycle.
     public func presentPriceEditor(
         product: ProductInfo, url: URL, store: ReadingListStore,
-        showLoadingPhase: @escaping (String) -> Void = { _ in },
         presentModally: @escaping (UIViewController) -> Void,
         complete: @escaping () -> Void
     ) {
@@ -52,25 +50,14 @@ public final class ExtensionProductPresenter {
             complete()
             return
         }
-        let present = { [weak self] in
-            guard self != nil else { return }
-            let editor = PriceTrackingViewController(
-                mode: .creation(itemID: itemID, host: .extension),
-                onReadInstead: { urlString in
-                    SharedReadingListAppender.append(urlString: urlString)
-                })
-            editor.onDone = complete
-            presentModally(editor)
-        }
-        guard SellerComparisonRunner.installed != nil else {
-            present()
-            return
-        }
-        showLoadingPhase(L10n.string("PriceTracker_comparison_findingSellersStatus"))
-        Task { @MainActor in
-            _ = await SellerComparison.runAndAttach(
-                itemID: itemID, sourceURL: url, store: store)
-            present()
-        }
+        SellerComparison.beginAndRunInBackground(
+            itemID: itemID, sourceURL: url, store: store)
+        let editor = PriceTrackingViewController(
+            mode: .creation(itemID: itemID, host: .extension),
+            onReadInstead: { urlString in
+                SharedReadingListAppender.append(urlString: urlString)
+            })
+        editor.onDone = complete
+        presentModally(editor)
     }
 }

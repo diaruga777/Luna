@@ -36,8 +36,11 @@ import LunaPriceCompare
 /// (the same shape as `ActionButtonIntentSupport`'s media seams).
 public enum SellerComparisonRunner {
 
-    /// One fan-out run. Nil where the product kind is not composed.
-    public typealias Run = @Sendable (SellerFanOutRequest) async -> SellerFanOutOutcome?
+    /// One fan-out run. Nil where the product kind is not composed. `onResult`
+    /// is called as each verified seller lands, which is what lets the store
+    /// list fill in front of the user instead of all at once at the end.
+    public typealias Run =
+        @Sendable (SellerFanOutRequest, SellerFanOut.OnResult?) async -> SellerFanOutOutcome?
 
     /// The installed runner. Written ONLY by `ProductKindComposition.install()`
     /// in production; tests substitute a stub.
@@ -45,15 +48,17 @@ public enum SellerComparisonRunner {
 
     /// Installs the live fan-out. Idempotent.
     public static func install() {
-        installed = { request in await liveRun(request) }
+        installed = { request, onResult in await liveRun(request, onResult: onResult) }
     }
 
     /// Runs the fan-out if one is installed. Nil means "no comparison ran" —
     /// which is not the same as "no other seller sells this", and callers must
     /// keep the distinction (nothing is seeded from a nil).
-    public static func run(_ request: SellerFanOutRequest) async -> SellerFanOutOutcome? {
+    public static func run(
+        _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult? = nil
+    ) async -> SellerFanOutOutcome? {
         guard let installed else { return nil }
-        return await installed(request)
+        return await installed(request, onResult)
     }
 
     // MARK: - The live wiring
@@ -68,14 +73,23 @@ public enum SellerComparisonRunner {
     /// surface open indefinitely.
     public static let hardCapGrace: TimeInterval = 5
 
-    private static func liveRun(_ request: SellerFanOutRequest) async -> SellerFanOutOutcome? {
+    private static func liveRun(
+        _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult?
+    ) async -> SellerFanOutOutcome? {
+        // Refuse the WHOLE run up front in a test process rather than letting a
+        // dozen candidate fetches each be refused individually. `installed` is
+        // filled at launch and the test host is the central Luna app, so any
+        // test that drives a product save reaches this — see `LiveNetworkPolicy`.
+        guard LiveNetworkPolicy.allows(
+            request.sourceURL, context: "SellerComparisonRunner.liveRun") else { return nil }
         guard let directory = try? SellerDirectory.bundled() else { return nil }
         let fanOut = SellerFanOut(
             directory: directory,
             profile: profile,
             fetch: fetchPage,
             webSearch: { await DuckDuckGoSearch.results(forQuery: $0) },
-            richResolve: richResolve)
+            richResolve: richResolve,
+            onResult: onResult)
         return await withDeadline(profile.totalBudget + hardCapGrace) {
             await fanOut.run(request)
         }

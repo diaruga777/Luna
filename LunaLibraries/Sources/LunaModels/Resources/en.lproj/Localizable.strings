@@ -903,8 +903,8 @@
 "PriceTracker_alertThreshold_title_Luna" = "Alert threshold";
 "PriceTracker_alertThreshold_unsetMessage_Luna" = "Set a price alert to be notified when the price drops.";
 
-/* ===== PriceTracker_comparison — the save-time alternative-seller fan-out (ExtensionProductPresenter.swift) ===== */
-"PriceTracker_comparison_findingSellersStatus_Luna" = "Finding other sellers…";
+/* ===== PriceTracker_comparison — the save-time alternative-seller fan-out, running behind the seller list (SellerComparison.swift) ===== */
+"PriceTracker_comparison_checkingSellersRow_Luna" = "Checking for other sellers…";
 
 /* ===== PriceTrackerCompareDoc — SellerComparisonDocument.swift (the self-contained HTML summary the Action Button intents return), in reading order ===== */
 "PriceTrackerCompareDoc_01_updatedFormat_Luna" = "Updated %@";

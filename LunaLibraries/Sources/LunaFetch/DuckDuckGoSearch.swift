@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// Shared keyless DuckDuckGo HTML search primitive: builds the request, unwraps
 /// DuckDuckGo's redirect-wrapped result URLs, and returns them in order. Used by
@@ -23,7 +24,9 @@ public enum DuckDuckGoSearch {
     public static func results(forQuery query: String) async -> [URL]? {
         guard var components = URLComponents(string: "https://html.duckduckgo.com/html/") else { return nil }
         components.queryItems = [URLQueryItem(name: "q", value: query)]
-        guard let url = components.url else { return nil }
+        guard let url = components.url,
+              LiveNetworkPolicy.allows(url, context: "DuckDuckGoSearch.results")
+        else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 12)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),

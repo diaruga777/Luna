@@ -332,6 +332,57 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.brand, "Acme")
     }
 
+    /// The pending fan-out marker is on disk precisely because the process that
+    /// starts a run is routinely gone before it ends. A marker that did not
+    /// round-trip would be a run that could never be resumed.
+    func testAPendingComparisonSurvivesACodableRoundTrip() throws {
+        var tracker = makeTracker()
+        tracker.setAlertThresholdFraction(0.2)
+        tracker.beginPendingComparison(
+            sourceURLString: "https://source.example/p/1",
+            at: Date(timeIntervalSince1970: 1_700_000_000))
+        let decoded = try JSONDecoder().decode(
+            PriceTracker.self, from: JSONEncoder().encode(tracker))
+        XCTAssertEqual(decoded, tracker)
+        XCTAssertEqual(
+            decoded.pendingComparison?.sourceURLString, "https://source.example/p/1")
+        XCTAssertEqual(decoded.pendingComparison?.thresholdFractionAtStart, 0.2)
+    }
+
+    /// Additive: every tracker persisted before the fan-out went asynchronous
+    /// carries no such key and must decode as "nothing pending".
+    func testPayloadWithoutAPendingComparisonDecodesAsNotPending() throws {
+        let json = #"""
+        {"productName":"X","initialPrice":42,"initialCurrency":"USD",
+         "stores":[{"urlString":"https://a.example/p","lastPrice":42,"currency":"USD"}]}
+        """#
+        let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))
+        XCTAssertNil(tracker.pendingComparison)
+        XCTAssertFalse(tracker.alertConfigurationChangedSincePendingComparison)
+    }
+
+    /// The two ends of the touched-threshold rule, on the model itself.
+    func testCompletingAnUntouchedRunSeedsTheMedianAndATouchedOneDoesNot() {
+        var untouched = makeTracker()
+        untouched.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: 20, currency: "USD"))
+        untouched.beginPendingComparison(sourceURLString: "https://a.example/p")
+        XCTAssertTrue(untouched.completePendingComparison())
+        XCTAssertNil(untouched.pendingComparison)
+        XCTAssertNotNil(untouched.alertAcknowledgedAt)
+
+        var touched = makeTracker()
+        let baselineBefore = touched.initialPrice
+        touched.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: 20, currency: "USD"))
+        touched.beginPendingComparison(sourceURLString: "https://a.example/p")
+        touched.setAlertThresholdFraction(0.33)
+        XCTAssertFalse(touched.completePendingComparison())
+        XCTAssertNil(touched.pendingComparison, "the run is still over")
+        XCTAssertEqual(touched.initialPrice, baselineBefore)
+        XCTAssertNil(touched.alertAcknowledgedAt, "and nothing was pre-acknowledged for them")
+    }
+
     func testClampsOutOfRangeThreshold() throws {
         let json = #"{"productName":"X","initialPrice":10,"initialCurrency":"USD","alertThresholdFraction":5.0}"#
         let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))

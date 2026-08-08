@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// Searches Reddit and returns the top post's permalink. Uses the public
 /// `search.json` endpoint (no OAuth — best-effort, rate-limited).
@@ -23,6 +24,7 @@ public struct RedditSearchClient {
             URLQueryItem(name: "type", value: "link"),
         ]
         guard let url = components.url else { throw NoResultError() }
+        try LiveNetworkPolicy.check(url, context: "RedditSearchClient")
         var request = URLRequest(url: url, timeoutInterval: 12)
         request.setValue("Luna/1.0 (reading list)", forHTTPHeaderField: "User-Agent")
 

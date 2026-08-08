@@ -1295,10 +1295,15 @@
     // For the WKWebView harness -- see ProductSnapshotJSFixtureParityTests.
     window.__lunaExtractProductSnapshot = extractProductSnapshot;
 
+    // The price EXACTLY as the native side reported it, in its own currency --
+    // never a hardcoded symbol. `Intl` throws on an unrecognised currency code,
+    // and formats NaN as "$NaN", so both fall back to the plain pair.
     function formatHistoryPrice(amount, currency) {
+        var value = parseFloat(amount);
+        if (!isFinite(value)) { return amount + " " + currency; }
         try {
             return new Intl.NumberFormat(undefined, { style: "currency", currency: currency })
-                .format(parseFloat(amount));
+                .format(value);
         } catch (e) { return amount + " " + currency; }
     }
 
@@ -1449,10 +1454,20 @@
     // rides a data attribute so the handler reads what was rendered rather than
     // a captured variable -- the pill is the one source of truth for where a
     // tap goes.
+    // The seller's name as the native side gave it. It is the directory's own
+    // display name, or the registrable domain -- but an empty one would render
+    // as "$59.00 at " with nothing after it, so the URL's host stands in.
+    function sellerPillName(sellerResp) {
+        var name = (sellerResp.sellerName || "").trim();
+        if (name) { return name; }
+        try { return new URL(sellerResp.url).hostname.replace(/^www\./, ""); }
+        catch (e) { return ""; }
+    }
+
     function fillSellerPill(pill, sellerResp, stacked) {
         var label = localizedMessage("priceAtSeller")
             .replace("{price}", formatHistoryPrice(sellerResp.price, sellerResp.currency))
-            .replace("{seller}", sellerResp.sellerName || "");
+            .replace("{seller}", sellerPillName(sellerResp));
         while (pill.firstChild) { pill.removeChild(pill.firstChild); }
         pill.setAttribute("data-luna-state", "found");
         pill.setAttribute("data-luna-seller-url", sellerResp.url);

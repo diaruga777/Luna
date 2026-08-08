@@ -319,6 +319,10 @@ enum KindWiring {
         }
         ArticleSendCoordinator.shared.retryPendingSends()
         LiveMediaDownloadManager.shared.resumeLiveActivities()
+        // A save-time seller fan-out that never finished — a share extension is
+        // torn down the moment the user is done with it — is resumed here, from
+        // the pending marker the tracker carries (`claudedocs/price-comparison.md`).
+        Task { await SellerComparison.completePending(store: ReadingListStore.shared) }
     }
 
     static func appDidEnterBackground() {

@@ -227,6 +227,12 @@ public struct SellerFanOut {
     /// through `ProductPageSuggestion.resolve` so a JS-rendered price still
     /// counts. Absent ⇒ the lean regex parser.
     public typealias RichResolve = @Sendable (URL) async -> ParsedProductPage?
+    /// Called the moment a verified seller ENTERS the merged list, so a surface
+    /// can show it before the run ends. A result that is later supplanted by a
+    /// better-verified one for the same retailer is reported again — the
+    /// callback is "this is the current answer for this domain", not "this is
+    /// final".
+    public typealias OnResult = @Sendable (ComparableSellerResult) async -> Void
 
     private let directory: SellerDirectory
     private let profile: SellerFanOutProfile
@@ -235,6 +241,7 @@ public struct SellerFanOut {
     private let richResolve: RichResolve?
     private let localeRegion: String?
     private let now: @Sendable () -> Date
+    private let onResult: OnResult?
 
     public init(
         directory: SellerDirectory,
@@ -242,6 +249,7 @@ public struct SellerFanOut {
         fetch: @escaping Fetch,
         webSearch: WebSearch? = nil,
         richResolve: RichResolve? = nil,
+        onResult: OnResult? = nil,
         localeRegion: String? = Locale.current.region?.identifier,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -252,6 +260,7 @@ public struct SellerFanOut {
         self.richResolve = richResolve
         self.localeRegion = localeRegion
         self.now = now
+        self.onResult = onResult
     }
 
     /// Shared mutable state for the two layers. An actor rather than a lock so
@@ -268,7 +277,10 @@ public struct SellerFanOut {
         func recordAttempt(_ sellerID: String) { attempted.append(sellerID) }
         func markBotWalled(_ domain: String) { botWalledDomains.insert(domain) }
         func isBotWalled(_ domain: String) -> Bool { botWalledDomains.contains(domain) }
-        func offer(_ result: ComparableSellerResult) { merger.offer(result) }
+        /// Whether the offer changed the merged list — the signal a streaming
+        /// surface needs, and the reason the merge rule is applied HERE rather
+        /// than after the run.
+        func offer(_ result: ComparableSellerResult) -> Bool { merger.offer(result) }
         var isSatisfied: Bool { merger.count >= target }
         var snapshot: (results: [ComparableSellerResult], attempted: [String]) {
             (merger.results, attempted)
@@ -397,11 +409,12 @@ public struct SellerFanOut {
                     candidate: page.identifiers, candidateName: page.name,
                     allowsNameOnlyMatch: profile.allowsNameOnlyMatch)
             else { continue }
-            await state.offer(ComparableSellerResult(
+            let result = ComparableSellerResult(
                 sellerID: seller.id, sellerName: seller.name, domain: sellerDomain,
                 url: page.url, price: price, currency: currency, productName: page.name,
                 identifiers: page.identifiers, imageURL: page.imageURL,
-                confidence: confidence, source: .directory))
+                confidence: confidence, source: .directory)
+            if await state.offer(result) { await onResult?(result) }
             return
         }
     }
@@ -439,11 +452,12 @@ public struct SellerFanOut {
                     allowsNameOnlyMatch: profile.allowsNameOnlyMatch)
             else { continue }
             let known = directory.seller(forHost: host)
-            await state.offer(ComparableSellerResult(
+            let result = ComparableSellerResult(
                 sellerID: known?.id, sellerName: known?.name ?? domain, domain: domain,
                 url: page.url, price: price, currency: currency, productName: page.name,
                 identifiers: page.identifiers, imageURL: page.imageURL,
-                confidence: confidence, source: .webSearch))
+                confidence: confidence, source: .webSearch)
+            if await state.offer(result) { await onResult?(result) }
         }
     }
 

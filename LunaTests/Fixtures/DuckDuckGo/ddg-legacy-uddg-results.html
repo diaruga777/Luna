@@ -1,0 +1,33 @@
+<!--
+  Crafted (not a live capture — DuckDuckGo did not serve this shape for any
+  query probed while diagnosing the fan-out): the HISTORICAL `html.duckduckgo
+  .com` result shape, which wraps every result's real destination behind a
+  same-origin redirect (`…/l/?uddg=<percent-encoded-url>&rut=…`) rather than
+  linking it directly. `DuckDuckGoSearch.resultURLs` has to keep understanding
+  this shape too — it is the one the code's own doc comments and the pre-fix
+  parser were written against, and the live site has been observed to serve
+  either shape depending on the request. Two paid results precede the organic
+  ones, same as the direct-href capture.
+-->
+<div class="results">
+  <div class="result results_links results_links_deep result--ad ">
+    <h2 class="result__title">
+      <a rel="nofollow" class="result__a" href="//duckduckgo.com/y.js?ad_domain=kogan.com&amp;ad_provider=bingv7aa&amp;ad_type=txad&amp;u3=https%3A%2F%2Fwww.bing.com%2Faclick%3Fld%3De8BNaHtL">Shop French Door Fridges - Kogan.com</a>
+    </h2>
+  </div>
+  <div class="result results_links results_links_deep web-result ">
+    <h2 class="result__title">
+      <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.binglee.com.au%2Fproducts%2F634l%2Dpureflat%2Dfrench%2Ddoor%2Ddark%2Dsteel%2Dhrfd634bw&amp;rut=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d">Hisense 634L PureFlat French Door Dark Steel HRFD634BW - Bing Lee</a>
+    </h2>
+  </div>
+  <div class="result results_links results_links_deep web-result ">
+    <h2 class="result__title">
+      <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.thegoodguys.com.au%2Fhisense%2D634l%2Dfrench%2Ddoor%2Drefrigerator%2Dhrfd634bw&amp;rut=2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e">Hisense 634L French Door Refrigerator Dark Steel (Black) HRFD634BW - The Good Guys</a>
+    </h2>
+  </div>
+  <div class="result results_links results_links_deep web-result ">
+    <h2 class="result__title">
+      <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.retravision.com.au%2Fhisense%2D634l%2Dfrench%2Ddoor%2Dfridge%2Ddark%2Dsteel%2Dhrfd634bw&amp;rut=3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f">Hisense 634L French Door Fridge (Dark Steel) - Retravision</a>
+    </h2>
+  </div>
+</div>

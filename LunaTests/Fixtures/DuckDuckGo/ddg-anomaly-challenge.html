@@ -1,0 +1,32 @@
+<!--
+  Trimmed real capture of DuckDuckGo's "unusual traffic" anomaly/challenge
+  page (2026-08-09), served with an HTTP 202 for one request and an ordinary
+  200 for another otherwise-identical one — DuckDuckGo does not commit to a
+  status code for it, so the parser must recognize the PAGE, not just the
+  202. It has zero `result__a` anchors (both shapes), so the old code's bare
+  2xx guard parsed this to an empty "successful" result rather than refusing
+  it as the anomaly it is.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>DuckDuckGo</title></head>
+<body>
+  <form action="/html/sortts=1&vqd=4-abc123&q=9337640009775&o=ICpK6p4wwzhHduN07ijznt547yDhN0b1LOxXIJ0a%2Bgc%3D&r=aue" method="POST">
+    <div class="anomaly-modal__mask">
+      <div class="anomaly-modal__modal is-ie" data-testid="anomaly-modal">
+        <div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>
+        <div class="anomaly-modal__description">Please complete the following challenge to confirm this search was made by a human.</div>
+        <div class="anomaly-modal__instructions">Select all squares containing a duck:</div>
+        <div class="anomaly-modal__puzzle-margins">
+          <div class="anomaly-modal__puzzle">
+            <div class="anomaly-modal__box" data-index="0">
+              <input type="checkbox" class="anomaly-modal__check" name="image-check_a756d136d7827e3e97a116faa638979f">
+              <label class="" for="image-check_a756d136d7827e3e97a116faa638979f" data-testid="anomaly-modal__box-label"></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+</body>
+</html>

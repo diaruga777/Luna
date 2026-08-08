@@ -48,7 +48,10 @@
         returnToApp: "Return to {app}",
         // `{price}`/`{date}`, substituted the same way as `{app}` above --
         // never `$`-style syntax (see the note on `returnToApp`).
-        wasPriceOnDate: "Was {price} on {date}"
+        wasPriceOnDate: "Was {price} on {date}",
+        findingSellers: "Finding other sellers…",
+        // `{price}`/`{seller}` -- same rule again, never `$`-style syntax.
+        priceAtSeller: "{price} at {seller}"
     };
 
     function localizedMessage(key) {
@@ -1351,11 +1354,160 @@
     // back from the native round trip. See ProductHistoryPillRenderTests.
     window.__lunaRenderProductPills = renderProductPills;
 
+    // ── The alternative-seller pill ─────────────────────────────────────────────
+    // "Is this cheaper somewhere else, right now?" -- answered natively by
+    // ComparableSellerFinder (stored prices first, then a constrained live
+    // fan-out). It occupies the SAME slot the history pill would, because both
+    // say something about this product's price and only one of them can be the
+    // more useful thing to say: a better price available NOW beats a lower one
+    // from the past. So the lookup runs first and the history pill is rendered
+    // only if the lookup comes back empty -- which is also the whole of the
+    // fallback contract (`renderProductPills`, untouched).
+    var SELLER_PILL_ID = "queue-seller-pill";
+    // Longer than the finder's own 18s budget, so a native side that answers
+    // late still wins over this backstop and only a DEAD one trips it.
+    var COMPARABLE_TIMEOUT = 25000;
+    // One-shot: a page gets ONE lookup. Set before any DOM work, for the same
+    // reason the setup celebration's flag is (see presentSetupCelebration).
+    var sellerLookupStarted = false;
+
+    // The native round trip, behind a swappable reference -- the WKWebView test
+    // harness has no extension host at all (`browser` is undefined).
+    var comparableSellersRequest = function (snapshot) {
+        if (typeof browser === "undefined") { return Promise.resolve({ found: false }); }
+        return browser.runtime.sendMessage({ type: "comparableSellers", snapshot: snapshot });
+    };
+    window.__lunaSetComparableSellersRequest = function (fn) { comparableSellersRequest = fn; };
+
+    // Resolves to the reply, or to "nothing found" if the native side never
+    // answers: a promise that never settles would leave the spinner pill up
+    // forever and the history pill permanently suppressed behind it.
+    function requestComparableSellers(snapshot) {
+        return new Promise(function (resolve) {
+            var settled = false;
+            var finish = function (result) {
+                if (settled) { return; }
+                settled = true;
+                resolve(result && result.found && result.url ? result : null);
+            };
+            setTimeout(function () { finish(null); }, COMPARABLE_TIMEOUT);
+            try {
+                comparableSellersRequest(snapshot).then(finish, function () { finish(null); });
+            } catch (e) {
+                finish(null);
+            }
+        });
+    }
+
+    function sellerPillStyle(stacked, tappable) {
+        return {
+            position: "fixed", right: "16px",
+            bottom: stacked
+                ? "calc(70px + env(safe-area-inset-bottom))"
+                : "calc(20px + env(safe-area-inset-bottom))",
+            zIndex: "2147483647", background: "rgba(20,20,26,0.85)", color: "#ffffff",
+            font: "500 13px/1 -apple-system, system-ui, sans-serif",
+            boxSizing: "border-box", display: "inline-flex",
+            alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
+            border: "none", borderRadius: "999px", padding: "8px 14px",
+            margin: "0", boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+            pointerEvents: tappable ? "auto" : "none",
+            cursor: tappable ? "pointer" : "default",
+            webkitTapHighlightColor: "transparent", touchAction: "manipulation"
+        };
+    }
+
+    // The waiting state: the same pill shape as the answer will be, with a
+    // pulsing dot, so the answer replaces it in place rather than making the
+    // page's bottom-right corner jump.
+    function injectSellerSpinnerPill(stacked) {
+        if (document.getElementById(SELLER_PILL_ID)) { return; }
+        var pill = document.createElement("div");
+        pill.id = SELLER_PILL_ID;
+        pill.setAttribute("data-luna-state", "loading");
+
+        var dot = document.createElement("span");
+        applyStyle(dot, {
+            display: "inline-block", width: "6px", height: "6px", borderRadius: "999px",
+            background: "#ffffff", marginRight: "8px", opacity: "0.6"
+        });
+        // Web Animations rather than a @keyframes stylesheet: no style element
+        // to inject into someone else's page, and a browser without it simply
+        // shows a static dot.
+        if (typeof dot.animate === "function") {
+            dot.animate(
+                [{ opacity: 0.3 }, { opacity: 1 }, { opacity: 0.3 }],
+                { duration: 1200, iterations: Infinity });
+        }
+        pill.appendChild(dot);
+        pill.appendChild(document.createTextNode(localizedMessage("findingSellers")));
+        applyStyle(pill, sellerPillStyle(stacked, false));
+        (document.body || document.documentElement).appendChild(pill);
+    }
+
+    // The answer: tappable, and it navigates to the seller's own page. The URL
+    // rides a data attribute so the handler reads what was rendered rather than
+    // a captured variable -- the pill is the one source of truth for where a
+    // tap goes.
+    function fillSellerPill(pill, sellerResp, stacked) {
+        var label = localizedMessage("priceAtSeller")
+            .replace("{price}", formatHistoryPrice(sellerResp.price, sellerResp.currency))
+            .replace("{seller}", sellerResp.sellerName || "");
+        while (pill.firstChild) { pill.removeChild(pill.firstChild); }
+        pill.setAttribute("data-luna-state", "found");
+        pill.setAttribute("data-luna-seller-url", sellerResp.url);
+        pill.setAttribute("role", "button");
+        pill.appendChild(document.createTextNode(label));
+        applyStyle(pill, sellerPillStyle(stacked, true));
+        pill.addEventListener("click", function () {
+            var destination = pill.getAttribute("data-luna-seller-url");
+            if (destination) { window.location.href = destination; }
+        });
+    }
+
+    // Puts the page into the waiting state: the spinner pill, plus the Track
+    // pill it stacks above (which is not waiting on anything and should not be
+    // held back by this lookup). Returns whether the lookup may proceed.
+    function beginSellerLookup(context, historyResp) {
+        if (sellerLookupStarted) { return false; }
+        if (!(context && context.supportsProducts)) { return false; }
+        sellerLookupStarted = true;
+        var isTracked = !!(historyResp && historyResp.isTracked);
+        injectSellerSpinnerPill(!isTracked);
+        if (!isTracked) {
+            var trackTarget = trackTargetFor(context);
+            if (trackTarget) { injectLunaButton(trackTarget); }
+        }
+        return true;
+    }
+
+    // An answer fills the pill in place. Anything else -- nothing found, a
+    // failure, the backstop -- removes it and hands the page to today's rules
+    // EXACTLY, `injectLunaButton`'s own id guard making the already-rendered
+    // Track pill a no-op.
+    function finishSellerLookup(context, historyResp, sellerResp) {
+        var pill = document.getElementById(SELLER_PILL_ID);
+        var isTracked = !!(historyResp && historyResp.isTracked);
+        if (pill && sellerResp && sellerResp.found && sellerResp.url) {
+            fillSellerPill(pill, sellerResp, !isTracked);
+            return;
+        }
+        if (pill && pill.parentNode) { pill.parentNode.removeChild(pill); }
+        renderProductPills(context, historyResp);
+    }
+
+    // For the WKWebView harness: the two halves of the lookup, observable
+    // between them. See ProductHistoryPillRenderTests.
+    window.__lunaBeginSellerLookup = beginSellerLookup;
+    window.__lunaFinishSellerLookup = finishSellerLookup;
+    window.__lunaRequestComparableSellers = requestComparableSellers;
+    window.__lunaSellerPillID = SELLER_PILL_ID;
+
     // Extracts once, sends ONE `productSnapshot` message (recorded passively
     // AND answered against tracked/snapshot history in the same round trip --
-    // see SharedProductSnapshots/SharedProductMatching), then renders. Falls
-    // back to the plain Track pill when there's no browser host, no
-    // extraction, or the round trip fails.
+    // see SharedProductSnapshots/SharedProductMatching), then asks for
+    // alternative sellers before rendering. Falls back to the plain Track pill
+    // when there's no browser host, no extraction, or the round trip fails.
     function handleProductPage(context) {
         var trackTarget = trackTargetFor(context);
         if (!(context && context.supportsProducts) || typeof browser === "undefined") {
@@ -1368,7 +1520,15 @@
             return;
         }
         browser.runtime.sendMessage({ type: "productSnapshot", snapshot: snapshot })
-            .then(function (resp) { renderProductPills(context, resp); })
+            .then(function (resp) {
+                if (!beginSellerLookup(context, resp)) {
+                    renderProductPills(context, resp);
+                    return;
+                }
+                requestComparableSellers(snapshot).then(function (sellerResp) {
+                    finishSellerLookup(context, resp, sellerResp);
+                });
+            })
             .catch(function () { renderProductPills(context, null); });
     }
 

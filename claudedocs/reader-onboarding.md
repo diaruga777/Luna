@@ -280,22 +280,42 @@ rewind cancels its pending beats. Its own beats:
 
 | beat | what is on screen |
 | --- | --- |
-| `pageHoldDuration` (1.0s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
-| `presentDuration` (0.3s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
-| `playbackHoldDuration` (1.0s) | the video plays, plainly, under a full-width "Download in Luna" |
-| `growDuration` (0.52s) | the download button goes, the three enable steps and the lesson's actions arrive in its place, and the panel's bottom edge travels down to hold them |
+| `pageHoldDuration` (3.2s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
+| `presentDuration` (0.45s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
+| `playbackHoldDuration` (4.0s) | the video plays, plainly, under a full-width "Download in Luna" |
+| `growDuration` (0.72s) | the download button goes, the three enable steps and the lesson's actions arrive in its place, and the panel's bottom edge travels down to hold them |
+
+**The two holds are the lesson; the two transitions are plumbing.** The lesson
+has three subjects in sequence — the wall, the video, the steps — and at the
+brisk timings it opened with, each was overtaken by the next before it
+registered: the wall read as a flash, and the panel had barely arrived before the
+instructions replaced its button. So the holds are counted in seconds and pinned
+that way by `testEachBeatIsLongEnoughToRead`. The playback hold is counted from
+the CLIP starting rather than from the panel finishing its arrival, because what
+it is holding for is a video the user has plainly watched play.
 
 **The panel is a replica, not a stylisation.** Every measurement in it is read
 straight off `presentVideoOverlay` in `LunaSafari/Resources/content.js` — the
-78%-black blurred backdrop, the `calc(100vw - 24px)` panel capped at 640 in
+`calc(100vw - 24px)` panel capped at 640 in
 `NIGHT_SURFACE` at radius 20 with 10pt padding, the 34pt round close button over
 an 8pt gap, the 16:9 black stage at radius 12, the `QUEUE_INDIGO` full-width
 capsule 10pt under it at `minHeight: 44`. A change to either one is a change to
 both, and `SafariVideoOverlayReplicaTests` pins the two files' shared numbers
 and the shared string to each other.
 
-Three things about it that are NOT the web panel:
+Four things about it that are NOT the web panel:
 
+- **The backdrop is half the extension's weight, and the post never goes away.**
+  `content.js` puts the panel over `rgba(0, 0, 0, 0.78)` and a 4px blur, which is
+  right in Safari: you are the person who opened that page, and burying it is how
+  the panel says "look here now". In the lesson that page is the QUESTION — the
+  wall refusing you is the whole premise — so blacking it out the moment the
+  answer arrives would show the user two unrelated screens. Both layers stay, so
+  the panel still reads as something Luna put in front of the page, at
+  `scrimAlpha` 0.34 and `backdropBlurAlpha` 0.45; the post plays on behind them
+  through both states, for the whole demonstration.
+  `testTheBlockedPostIsStillVisibleBehindThePanel` states the deviation against
+  the extension's own value, so it fails if either side moves.
 - **The stage's height is decided once, for both states.** It is 16:9 until the
   panel it has to fit inside runs out of room — on a 375×667 phone the setup
   block plus a full-height stage is taller than the page — and then the clip

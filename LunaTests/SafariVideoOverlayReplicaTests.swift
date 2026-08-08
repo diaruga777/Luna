@@ -143,6 +143,50 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
             parsed["downloadInLuna"]?["message"] as? String)
     }
 
+    // MARK: - The page it is an answer to stays on screen
+
+    /// The one place the replica deliberately parts company with `content.js`.
+    /// In Safari the backdrop buries the page you already know; in the lesson
+    /// that page is the question the panel answers, so it has to stay legible
+    /// behind it — in BOTH states, for the whole demonstration.
+    func testTheBlockedPostIsStillVisibleBehindThePanel() throws {
+        let builder = try videoOverlayBuilder()
+        XCTAssertTrue(
+            builder.contains(#"background: "rgba(0, 0, 0, 0.78)""#),
+            "the extension's own backdrop moved; the deviation below is stated against it")
+
+        let (overlay, window) = makeOverlay()
+        defer { window.isHidden = true }
+
+        for state in ["player", "setup"] {
+            XCTAssertLessThan(
+                overlay.backdropDarknessForTesting, 0.5,
+                "the \(state) state buries the post the lesson is about")
+            XCTAssertGreaterThan(
+                overlay.backdropDarknessForTesting, 0,
+                "the panel still has to read as something in FRONT of the page")
+            XCTAssertLessThan(overlay.backdropBlurWeightForTesting, 1)
+            overlay.revealSetupInstructions()
+            overlay.layoutIfNeeded()
+        }
+    }
+
+    /// Every beat is long enough to be taken in. The lesson has three subjects
+    /// in sequence — the wall, the video, the steps — and each was previously
+    /// overtaken by the next before it registered.
+    func testEachBeatIsLongEnoughToRead() {
+        XCTAssertGreaterThanOrEqual(
+            OnboardingVideoDownloadTiming.pageHoldDuration, 2.5,
+            "the sign-up wall is the lesson's premise and has to be read")
+        XCTAssertGreaterThanOrEqual(
+            OnboardingVideoDownloadTiming.playbackHoldDuration, 3,
+            "the clip has to plainly play before the panel changes under it")
+        XCTAssertGreaterThan(
+            OnboardingVideoDownloadTiming.playbackHoldDuration,
+            OnboardingVideoDownloadTiming.presentDuration * 4,
+            "the hold is what the panel is FOR; its arrival is a transition")
+    }
+
     // MARK: - The growth
 
     func testTheGrowthExtendsDownwardAndLeavesTheVideoWhereItWas() throws {

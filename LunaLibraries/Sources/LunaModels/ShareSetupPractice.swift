@@ -12,7 +12,7 @@ import Foundation
 public enum ShareSetupPractice {
     public static let lunaURLString = "https://luna.app/about"
     public static let instaTokURLString =
-        "https://instatok.web/@moonwatch/lunar-eclipse"
+        "https://instatok.com/@moonwatch/lunar-eclipse"
     public static let amayzonURLString =
         "https://amayzon.web/eyephone-air"
 

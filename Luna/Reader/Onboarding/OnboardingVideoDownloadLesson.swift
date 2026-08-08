@@ -126,10 +126,13 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         super.init(frame: .zero)
         accessibilityIdentifier =
             OnboardingStrings.Accessibility.safariVideoOverlay.value()
-        // Mounted with the browser, so the panel's corona-free but still
-        // expensive first layout is paid while the replica is hidden behind the
-        // intro card — and invisible until the post has had its beat.
-        alpha = 0
+        // Mounted with the browser, so the panel's first layout — three step
+        // rows, two buttons and a stage — is paid while the replica is still
+        // hidden behind the intro card. Nothing in it SHOWS until the post has
+        // had its beat, and each piece hides itself rather than the whole view
+        // fading: a panel arriving at partial opacity reads as a page element
+        // rendering rather than as something Luna put there.
+        hidePanel()
 
         blur.isUserInteractionEnabled = false
         addSubview(blur)
@@ -349,7 +352,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         generation += 1
         lessonStage = .idle
         stopPlayback()
-        alpha = 0
+        hidePanel()
         panel.transform = .identity
         controls.alpha = 0
         download.alpha = 1
@@ -360,12 +363,23 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         setNeedsLayout()
     }
 
+    /// The idle state: mounted and laid out, showing nothing.
+    private func hidePanel() {
+        blur.alpha = 0
+        scrim.alpha = 0
+        panel.alpha = 0
+    }
+
     private func presentPanel() {
         lessonStage = .player
         startPlayback()
 
         let reduceMotion = UIAccessibility.isReduceMotionEnabled
-        alpha = 0
+        // The panel is opaque from its first frame and arrives on its scale
+        // alone; only the backdrop fades. The extension's own panel is appended
+        // rather than animated, and a translucent one on the way in would show
+        // the sign-up wall through the video answering it.
+        panel.alpha = 1
         panel.transform = reduceMotion
             ? .identity
             : CGAffineTransform(scaleX: 0.94, y: 0.94)
@@ -376,7 +390,8 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             initialSpringVelocity: 0.2,
             options: [.curveEaseOut, .beginFromCurrentState]
         ) {
-            self.alpha = 1
+            self.blur.alpha = 1
+            self.scrim.alpha = 1
             self.panel.transform = .identity
         }
         UIView.animate(
@@ -520,7 +535,9 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     /// decoder: a test asserting on geometry has no business starting a video.
     func enterPlayerStateForTesting() {
         lessonStage = .player
-        alpha = 1
+        blur.alpha = 1
+        scrim.alpha = 1
+        panel.alpha = 1
         setNeedsLayout()
         layoutIfNeeded()
     }

@@ -131,6 +131,37 @@ final class LunaDeepLinkTests: XCTestCase {
         XCTAssertNil(LunaDeepLink.mediaViewURLString(from: url))
     }
 
+    // MARK: - Resolved-media link (Safari's in-page player download)
+
+    func testIsResolvedMediaLink() {
+        var cases: [(url: String, isResolvedMedia: Bool)] =
+            LunaDeepLink.allSchemes.map { ("\($0)://resolvedmedia", true) }
+        cases += [
+            ("lunadownloader://resolvedmedia?ret=safari", true),
+            ("lunadownloader://rescue", false),
+            ("lunadownloader://read?url=https://example.com", false),
+            ("https://example.com/resolvedmedia", false),
+        ]
+
+        for testCase in cases {
+            guard let url = URL(string: testCase.url) else {
+                XCTFail("unparseable test URL \(testCase.url)")
+                continue
+            }
+            XCTAssertEqual(
+                LunaDeepLink.isResolvedMediaLink(url), testCase.isResolvedMedia, testCase.url)
+        }
+    }
+
+    /// The drain link may bounce back to Safari, exactly as a media pill save
+    /// does — and only when it carries the flag.
+    func testResolvedMediaLinkHonorsTheReturnFlag() {
+        XCTAssertTrue(LunaDeepLink.requestsReturnToSource(
+            URL(string: "lunadownloader://resolvedmedia?ret=safari")!))
+        XCTAssertFalse(LunaDeepLink.requestsReturnToSource(
+            URL(string: "lunadownloader://resolvedmedia")!))
+    }
+
     func testIsRescueLink() {
         var cases: [(url: String, isRescue: Bool)] =
             LunaDeepLink.allSchemes.map { ("\($0)://rescue", true) }

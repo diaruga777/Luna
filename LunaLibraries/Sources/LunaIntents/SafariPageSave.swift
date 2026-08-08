@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaFetch
 
 /// Safari has no post-search API to fall back on the way X/TikTok/Reddit do — when
 /// the tracked page URL is stale (or never captured) and a screenshot had to be

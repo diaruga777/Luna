@@ -360,9 +360,12 @@ transitive edges remain: `SocialMediaResolving` lives with `MediaAsset` in
 LunaModels and the rescue engine takes an injected resolver
 (`URLRescueWiring.mediaResolverFactory`, installed by media KindWirings; the
 `NoMediaResolver` default keeps media rescues unrescuable elsewhere); the
-intent post-search machinery (`SocialPostFinder`/`DuckDuckGoSearch`/
-`Bluesky|RedditSearchClient`) moved into LunaIntents (URL search is
-kind-neutral); `BlueskyLink` moved to LunaURLClassification. Correctness never
+intent post-search machinery (`SocialPostFinder`/`Bluesky|RedditSearchClient`)
+moved into LunaIntents (URL search is kind-neutral), while `DuckDuckGoSearch`
+itself sits one tier lower in **LunaFetch** — only the four APPS link
+LunaIntents, and the share/action extensions run the same save-time seller
+fan-out that uses it as its Layer-2 leg; `BlueskyLink` moved to
+LunaURLClassification. Correctness never
 depended on the link graph — it comes from the `SurfaceSupport` ingest gate
 plus `LunaApp.includes` — but the graph now matches it.
 

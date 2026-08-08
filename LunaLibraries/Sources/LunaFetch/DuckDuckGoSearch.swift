@@ -1,15 +1,21 @@
 //
 //  DuckDuckGoSearch.swift
-//  LunaPlatforms
+//  LunaFetch
 //
 
-import LunaFetch
 import Foundation
 
 /// Shared keyless DuckDuckGo HTML search primitive: builds the request, unwraps
 /// DuckDuckGo's redirect-wrapped result URLs, and returns them in order. Used by
-/// `SocialPostFinder` (X/TikTok/Instagram/Facebook post lookup) and by
-/// `SafariPageSave` (Safari webpage title → article lookup).
+/// `SocialPostFinder` (X/TikTok/Instagram/Facebook post lookup), by
+/// `SafariPageSave` (Safari webpage title → article lookup), and as the Layer-2
+/// leg of the alternative-seller fan-out (`claudedocs/price-comparison.md`).
+///
+/// It lives in LunaFetch rather than LunaIntents because only the four APPS link
+/// LunaIntents: the share and action extensions run the same fan-out at save
+/// time, and a search primitive they cannot reach is a search primitive that
+/// silently does nothing there. LunaFetch is the lowest tier that already owns
+/// the User-Agent this sends.
 public enum DuckDuckGoSearch {
 
     /// Runs a DuckDuckGo HTML search and returns the result URLs in order, or nil

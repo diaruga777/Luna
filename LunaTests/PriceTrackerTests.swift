@@ -309,9 +309,27 @@ final class PriceTrackerTests: XCTestCase {
         var tracker = makeTracker(price: "129.99", currency: "EUR", threshold: 0.2)
         tracker.brand = "Acme"
         tracker.productID = "SKU-1"
+        tracker.identifiers = ProductIdentifiers(
+            gtin: "0123456789012", mpn: "XM-5", sku: "SKU-1", brand: "Acme")
         let data = try JSONEncoder().encode(tracker)
         let decoded = try JSONDecoder().decode(PriceTracker.self, from: data)
         XCTAssertEqual(decoded, tracker)
+        XCTAssertEqual(decoded.identifiers.gtin, "0123456789012")
+    }
+
+    /// Keyed identifiers are ADDITIVE: every tracker persisted before they
+    /// existed carries no such key, and must still decode (as "nothing
+    /// declared") rather than throwing `keyNotFound`.
+    func testPayloadWithoutKeyedIdentifiersDecodesAsEmpty() throws {
+        let json = #"""
+        {"productName":"X","initialPrice":42,"initialCurrency":"USD","brand":"Acme",
+         "productID":"0123456789012",
+         "stores":[{"urlString":"https://a.example/p","lastPrice":42,"currency":"USD"}]}
+        """#
+        let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))
+        XCTAssertTrue(tracker.identifiers.isEmpty)
+        XCTAssertEqual(tracker.productID, "0123456789012", "the flattened id still loads")
+        XCTAssertEqual(tracker.brand, "Acme")
     }
 
     func testClampsOutOfRangeThreshold() throws {

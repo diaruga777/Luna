@@ -126,7 +126,15 @@ public struct PriceTracker: Codable, Equatable {
     /// Brand, if known (used for fuzzy product matching).
     public var brand: String?
     /// Stable product id (GTIN/SKU/…), the strongest matching signal.
+    ///
+    /// FLATTENED: one string with no record of which kind of id it is. Kept
+    /// because every tracker persisted before `identifiers` existed has one and
+    /// nothing migrates; prefer `identifiers` for new matching.
     public var productID: String?
+    /// The KEYED identifiers the source page declared — the cross-seller match
+    /// evidence the alternative-seller comparison runs on. Empty for a tracker
+    /// saved before this field existed, or from a page that declared nothing.
+    public var identifiers: ProductIdentifiers
     /// Downloaded product image file name (inside the Articles directory).
     public var imageFileName: String?
     /// The best (lowest) price across stores at creation time — the baseline the
@@ -251,6 +259,7 @@ public struct PriceTracker: Codable, Equatable {
         currency: String,
         brand: String? = nil,
         productID: String? = nil,
+        identifiers: ProductIdentifiers = ProductIdentifiers(),
         imageFileName: String? = nil,
         alertThresholdFraction: Double? = PriceTracker.defaultAlertThresholdFraction,
         now: Date = Date()
@@ -260,6 +269,7 @@ public struct PriceTracker: Codable, Equatable {
             urlString: firstStoreURL, lastPrice: price, currency: currency, lastRefreshed: now)]
         self.brand = brand
         self.productID = productID
+        self.identifiers = identifiers
         self.imageFileName = imageFileName
         self.initialPrice = price
         self.initialCurrency = currency
@@ -275,6 +285,7 @@ public struct PriceTracker: Codable, Equatable {
         stores: [PriceTrackerStore],
         brand: String? = nil,
         productID: String? = nil,
+        identifiers: ProductIdentifiers = ProductIdentifiers(),
         imageFileName: String? = nil,
         alertThresholdFraction: Double? = PriceTracker.defaultAlertThresholdFraction
     ) {
@@ -285,6 +296,7 @@ public struct PriceTracker: Codable, Equatable {
         self.stores = nonEmptyStores
         self.brand = brand
         self.productID = productID
+        self.identifiers = identifiers
         self.imageFileName = imageFileName
         let baselineStore = nonEmptyStores
             .filter { $0.lastPrice != nil }
@@ -376,10 +388,66 @@ public struct PriceTracker: Codable, Equatable {
         stores[index].recordSample(price: price, currency: currency, at: date)
     }
 
+    // MARK: - Alternative-seller comparison baseline
+
+    /// The MEDIAN current price across this tracker's stores, in the tracker's
+    /// display currency — the baseline the save-time seller fan-out seeds
+    /// (`claudedocs/price-comparison.md`).
+    ///
+    /// Median, not lowest, because after a fan-out the cheapest of a dozen
+    /// sellers is the NORMAL state of the world, not a discount: taking it as
+    /// `initialPrice` would make every later price look flat, and taking the
+    /// source page's price would make "the fan-out found somewhere cheaper"
+    /// indistinguishable from "the price dropped". The median is the going rate.
+    ///
+    /// Odd count → the middle value; even → the average of the middle two. Only
+    /// stores priced in `initialCurrency` participate: there is no FX source
+    /// (see `PriceDaySnapshot.fxRate`), so a foreign-currency listing would
+    /// otherwise contribute a meaningless number. Nil when no store qualifies.
+    public var medianStorePrice: (amount: Decimal, currency: String)? {
+        let prices = stores
+            .filter { $0.currency == initialCurrency }
+            .compactMap { $0.lastPrice }
+            .sorted()
+        guard !prices.isEmpty else { return nil }
+        let middle = prices.count / 2
+        if prices.count % 2 == 1 { return (prices[middle], initialCurrency) }
+        return ((prices[middle - 1] + prices[middle]) / 2, initialCurrency)
+    }
+
+    /// Re-bases the alert baseline onto a comparison median, ONCE, at save time.
+    ///
+    /// This is the only mutator that moves `initialPrice` after creation, and it
+    /// exists solely for the save-time fan-out: the stores it attached are all
+    /// "the price right now", so any of them sitting below the threshold is a
+    /// fact about the market, not a drop the user asked to hear about. Stamping
+    /// `alertAcknowledgedAt` is what keeps that from badging the row
+    /// (`hasUnviewedAlert`); the notification side is already safe, because
+    /// `PriceRefreshOutcome.newlyAlerting` only fires on a TRANSITION and the
+    /// tracker is already alerting before the first refresh runs.
+    public mutating func seedComparisonBaseline(
+        medianPrice: Decimal, currency: String, at date: Date = Date()
+    ) {
+        guard medianPrice > 0 else { return }
+        initialPrice = medianPrice
+        initialCurrency = currency
+        alertAcknowledgedAt = date
+    }
+
+    /// `seedComparisonBaseline(medianPrice:currency:)` over this tracker's OWN
+    /// stores. Returns false (and changes nothing) when no store carries a price
+    /// in the display currency.
+    @discardableResult
+    public mutating func seedComparisonBaseline(at date: Date = Date()) -> Bool {
+        guard let median = medianStorePrice else { return false }
+        seedComparisonBaseline(medianPrice: median.amount, currency: median.currency, at: date)
+        return true
+    }
+
     // MARK: - Migration-safe decoding
 
     private enum CodingKeys: String, CodingKey {
-        case productName, stores, brand, productID, imageFileName
+        case productName, stores, brand, productID, identifiers, imageFileName
         case initialPrice, initialCurrency, alertThresholdFraction, isArchived
         case alertAcknowledgedAt
     }
@@ -390,6 +458,10 @@ public struct PriceTracker: Codable, Equatable {
         let decodedStores = try container.decodeIfPresent([PriceTrackerStore].self, forKey: .stores) ?? []
         brand = try container.decodeIfPresent(String.self, forKey: .brand)
         productID = try container.decodeIfPresent(String.self, forKey: .productID)
+        // Additive: absent for every tracker persisted before keyed identifiers
+        // existed, which reads as "nothing declared" rather than failing the decode.
+        identifiers = try container
+            .decodeIfPresent(ProductIdentifiers.self, forKey: .identifiers) ?? ProductIdentifiers()
         imageFileName = try container.decodeIfPresent(String.self, forKey: .imageFileName)
         initialCurrency = try container.decodeIfPresent(String.self, forKey: .initialCurrency) ?? "USD"
         // An ABSENT key is the unset state — which is both what a tracker saved with

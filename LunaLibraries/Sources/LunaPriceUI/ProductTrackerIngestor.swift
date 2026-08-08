@@ -46,35 +46,22 @@ public final class ProductTrackerIngestor {
     public func ingest(
         _ item: ReadingListItem, url: URL, product: ProductInfo, store: ReadingListStore
     ) async {
-        // Try to merge into an existing tracker for the same product.
-        let existing: [(id: UUID, tracker: PriceTracker)] = store.items().compactMap {
-            guard let tracker = $0.priceTracker, $0.id != item.id else { return nil }
-            return ($0.id, tracker)
-        }
-        if let matchID = ProductMatcher.bestMatch(for: product, among: existing),
-           var matched = store.item(withID: matchID)?.priceTracker {
-            let stores = product.trackerStores(fallbackURL: url)
-            let newStores = stores.filter { !matched.hasStore(urlString: $0.urlString) }
-            seedHistoryFromSnapshots(into: &matched, candidate: product, candidateURL: url)
-            guard !newStores.isEmpty else {
-                store.updatePriceTracker(matched, for: matchID)
-                store.delete(item)
-                PriceTrackerSaveAnnouncement.post(
-                    itemID: matchID, source: item.effectiveCaptureSource,
-                    isMerge: true, highlightedURL: stores.first?.urlString)
-                finishSeeding(itemID: matchID)
-                return
-            }
-            for storeListing in newStores {
-                matched.upsertStore(storeListing)
-            }
-            store.updatePriceTracker(matched, for: matchID)
+        // The merge decision (and its snapshot seeding + identifier union) is
+        // shared with the extension's immediate-editor path — see
+        // `ProductTrackerMerge`. The seam bridges this instance's own
+        // `snapshotProvider` (tests stub it per-instance) to the shared
+        // helper's, which every caller reads.
+        ProductTrackerMerge.snapshotProvider = snapshotProvider
+        let outcome = ProductTrackerMerge.mergeIfPossible(
+            product: product, url: url, excludingItemID: item.id, store: store,
+            comparisonStarter: comparisonStarter)
+        if case let .merged(matchID, highlightedURL) = outcome {
             // The just-saved item was a duplicate route into an existing tracker;
             // drop its placeholder item so only the merged tracker remains.
             store.delete(item)
             PriceTrackerSaveAnnouncement.post(
                 itemID: matchID, source: item.effectiveCaptureSource,
-                isMerge: true, highlightedURL: newStores.first?.urlString)
+                isMerge: true, highlightedURL: highlightedURL)
             finishSeeding(itemID: matchID)
             return
         }
@@ -88,6 +75,7 @@ public final class ProductTrackerIngestor {
         var tracker = PriceTracker(
             productName: product.name, stores: product.trackerStores(fallbackURL: url),
             brand: product.brand, productID: product.productID,
+            identifiers: product.identifiers.merging(ProductIdentifiers(brand: product.brand)),
             alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction(
                 notificationsEverRequested: notificationsRequested))
         if let imageURL = product.imageURL,
@@ -97,7 +85,7 @@ public final class ProductTrackerIngestor {
                 to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
             tracker.imageFileName = fileName
         }
-        seedHistoryFromSnapshots(into: &tracker, candidate: product, candidateURL: url)
+        ProductTrackerMerge.seedHistoryFromSnapshots(into: &tracker, candidate: product, candidateURL: url)
         store.savePriceTracker(tracker, for: item.id)
 
         // The alternative-seller fan-out, on the NEW-tracker path only (a merge
@@ -114,48 +102,6 @@ public final class ProductTrackerIngestor {
             itemID: item.id, source: item.effectiveCaptureSource,
             isMerge: false, highlightedURL: nil)
         finishSeeding(itemID: item.id)
-    }
-
-    /// Matches passive Safari snapshots against the just-saved product
-    /// (`SnapshotMatcher`) and folds any that match into the tracker's
-    /// per-store history, grouped by host so a product never gets two stores
-    /// for the same host. Snapshots are never deleted by matching — they
-    /// remain available as history for other products and for the history pill.
-    func seedHistoryFromSnapshots(
-        into tracker: inout PriceTracker, candidate: ProductInfo, candidateURL: URL
-    ) {
-        let snapshots = snapshotProvider()
-        guard !snapshots.isEmpty else { return }
-        let matched = SnapshotMatcher.matchingSnapshots(
-            for: candidate, candidateURL: candidateURL,
-            existingStoreURLStrings: tracker.stores.map(\.urlString),
-            among: snapshots)
-        guard !matched.isEmpty else { return }
-
-        let byHost = Dictionary(grouping: matched) { $0.host.lowercased() }
-        for (host, hostSnapshots) in byHost.sorted(by: { $0.key < $1.key }) {
-            let samples: [(day: Date, price: Decimal, currency: String)] = hostSnapshots
-                .sorted { $0.day < $1.day }
-                .compactMap { snapshot in
-                    guard let amount = snapshot.priceAmount,
-                          let day = Self.utcDayDate(fromDayString: snapshot.day)
-                    else { return nil }
-                    return (day, amount, snapshot.currency)
-                }
-            guard !samples.isEmpty else { continue }
-            tracker.mergeHistorySamples(
-                samples, forHost: host, newStoreURLString: hostSnapshots[0].url)
-        }
-    }
-
-    /// Parses a `yyyy-MM-dd` UTC day string (the snapshot file's bucketing) to
-    /// a `Date` at that day's UTC midnight.
-    static func utcDayDate(fromDayString day: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter.date(from: day)
     }
 
     /// Regenerates the compact history index (Feature 3's data source) and

@@ -52,8 +52,14 @@ public enum SnapshotMatcher {
         let candidateHost = candidateURL.host?.lowercased()
         let candidateNormalizedID = ProductMatcher.normalizedID(candidate.productID)
 
-        // 1. GTIN/ISBN — cross-host.
-        if let candidateGTIN = normalizedGTIN(candidateNormalizedID) {
+        // 1. GTIN/ISBN — cross-host. Prefers the KEYED identifier when the
+        // candidate declares one (an in-app save's `ProductInfo.identifiers`
+        // now carries it — see `claudedocs/price-comparison.md`'s "Keyed
+        // identifiers"); falls back to the flattened id exactly as before
+        // when it does not, so a candidate saved before `ProductIdentifiers`
+        // existed matches exactly as it always has.
+        let candidateKeyedGTIN = ProductMatcher.normalizedID(candidate.identifiers.gtin)
+        if let candidateGTIN = normalizedGTIN(candidateKeyedGTIN ?? candidateNormalizedID) {
             let matches = pool.filter {
                 guard let gtin = normalizedGTIN(ProductMatcher.normalizedID($0.gtin))
                 else { return false }
@@ -75,20 +81,24 @@ public enum SnapshotMatcher {
             if !matches.isEmpty { return matches }
         }
 
-        // 3. mpn — requires a compatible brand.
-        if let candidateNormalizedID {
+        // 3. mpn — requires a compatible brand. Prefers the keyed `mpn`,
+        // falling back to the flattened id.
+        let candidateKeyedMPN = ProductMatcher.normalizedID(candidate.identifiers.mpn)
+        if let candidateMPNID = candidateKeyedMPN ?? candidateNormalizedID {
             let matches = pool.filter { snapshot in
-                guard let mpn = ProductMatcher.normalizedID(snapshot.mpn), mpn == candidateNormalizedID
+                guard let mpn = ProductMatcher.normalizedID(snapshot.mpn), mpn == candidateMPNID
                 else { return false }
                 return ProductMatcher.brandsCompatible(candidate.brand, snapshot.brand)
             }
             if !matches.isEmpty { return matches }
         }
 
-        // 4. sku — same host only.
-        if let candidateNormalizedID, let candidateHost {
+        // 4. sku — same host only. Prefers the keyed `sku`, falling back to
+        // the flattened id.
+        let candidateKeyedSKU = ProductMatcher.normalizedID(candidate.identifiers.sku)
+        if let candidateSKUID = candidateKeyedSKU ?? candidateNormalizedID, let candidateHost {
             let matches = pool.filter { snapshot in
-                guard let sku = ProductMatcher.normalizedID(snapshot.sku), sku == candidateNormalizedID
+                guard let sku = ProductMatcher.normalizedID(snapshot.sku), sku == candidateSKUID
                 else { return false }
                 return snapshot.host.lowercased() == candidateHost
             }

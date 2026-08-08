@@ -572,7 +572,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             name: tracker?.productName ?? productName,
             priceAmount: tracker?.initialPrice ?? 0,
             priceCurrency: tracker?.initialCurrency ?? "USD",
-            imageURL: nil, brand: tracker?.brand, productID: tracker?.productID)
+            imageURL: nil, brand: tracker?.brand, productID: tracker?.productID,
+            identifiers: tracker?.identifiers ?? ProductIdentifiers())
         let overlay = ProductSearchOverlayViewController(
             initialURL: searchURL, trackedProduct: trackedProduct)
         overlay.delegate = self

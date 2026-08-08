@@ -74,6 +74,10 @@ PATH_RULES: list[tuple[str, object]] = [
                                                "SafariUnlockHeuristicTests"]),
     (r"^LunaLibraries/Sources/LunaPaywallBypass/Resources/", ["SiteUnlockTests",
                                                               "SafariJSParityTests"]),
+    # The bundled seller directory: validated as SHIPPED, and it is the seller
+    # universe the candidate ranking draws from.
+    (r"^LunaLibraries/Sources/LunaPriceCompare/Resources/", ["SellerDirectoryTests",
+                                                             "SellerCandidateSelectorTests"]),
     # Entitlements/Info.plists change what a surface may do, not what it computes.
     (r"\.entitlements$", ["KindCompositionRootTests"]),
     (r"Info\.plist$", ["KindCompositionRootTests"]),

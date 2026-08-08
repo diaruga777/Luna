@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "LunaHTMLClassification", targets: ["LunaHTMLClassification"]),
         .library(name: "LunaPaywallBypass", targets: ["LunaPaywallBypass"]),
         .library(name: "LunaPriceMetadata", targets: ["LunaPriceMetadata"]),
+        .library(name: "LunaPriceCompare", targets: ["LunaPriceCompare"]),
         .library(name: "LunaTransitions", targets: ["LunaTransitions"]),
         .library(name: "LunaFetch", targets: ["LunaFetch"]),
         .library(name: "LunaIngest", targets: ["LunaIngest"]),
@@ -61,6 +62,19 @@ let package = Package(
             "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch",
             .product(name: "SwiftSoup", package: "SwiftSoup"),], resources: [.process("Resources/site_unlock_rules.json")]),
         .target(name: "LunaPriceMetadata"),
+        // Alternative-seller price comparison (claudedocs/price-comparison.md):
+        // the bundled seller directory, the local candidate ranking, a regex-only
+        // page parser, and the fan-out orchestrator. DELIBERATELY LEAN — Models +
+        // URLClassification + PriceMetadata and nothing else, all Foundation-only,
+        // because the four Safari appexes link it under their ~80MB ceiling
+        // (`LunaMediaResolve` is the precedent). No SwiftSoup, no UIKit, no
+        // LunaFetch: every network call and the optional rich page resolution are
+        // INJECTED closures, so the app can route them through the shared pipeline
+        // while the appex uses URLSession + the regex parser.
+        .target(
+            name: "LunaPriceCompare",
+            dependencies: ["LunaModels", "LunaURLClassification", "LunaPriceMetadata"],
+            resources: [.process("Resources")]),
         .target(name: "LunaTransitions", dependencies: ["LunaDesignSystem"]),
         .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // The ONE shared classification pipeline every app bundles: unwrap +

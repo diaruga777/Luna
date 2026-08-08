@@ -295,7 +295,8 @@ final class ProductCardContentViewController: CardContentViewController {
             priceCurrency: tracker.initialCurrency,
             imageURL: nil,
             brand: tracker.brand,
-            productID: tracker.productID)
+            productID: tracker.productID,
+            identifiers: tracker.identifiers)
         let sourcePoint = addButton.convert(
             CGPoint(x: addButton.bounds.midX, y: addButton.bounds.midY), to: nil)
         let overlay = ProductSearchOverlayViewController(

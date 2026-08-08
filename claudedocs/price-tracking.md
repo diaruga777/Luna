@@ -9,6 +9,15 @@ top-of-list badge) when the price drops past a threshold.
 notification prompt has never been answered — see
 [Alert threshold and notification permission](#alert-threshold-and-notification-permission).
 
+**Finding OTHER retailers selling the same product** — the seller directory,
+candidate ranking, fan-out engine, keyed `ProductIdentifiers`, and the median
+alert baseline a save-time fan-out seeds — lives in
+[`price-comparison.md`](price-comparison.md). Two things documented here are
+extended there: `ProductMetadata`/`ProductInfo`/`PriceTracker` now carry KEYED
+identifiers alongside the flattened `productID`, and `PriceTracker.initialPrice`
+gains exactly one post-creation mutator (`seedComparisonBaseline`) for the
+save-time fan-out.
+
 ## Key files
 
 **The price is MANDATORY.** A tracker is only ever created from a real numeric

@@ -57,14 +57,18 @@ final class PriceComparisonBaselineTests: XCTestCase {
         XCTAssertEqual(forward.medianStorePrice?.amount, reversed.medianStorePrice?.amount)
     }
 
+    /// Built the way a save-time fan-out builds it — the SOURCE page's tracker
+    /// first (which fixes the display currency), then the found sellers merged
+    /// in — because `initialCurrency` is what the median is taken in.
     func testForeignCurrencyAndPricelessStoresAreExcluded() {
         // There is no FX source, so a GBP listing cannot join a USD median.
-        let subject = tracker([
-            store("https://a.example/p", "90"),
-            store("https://b.example/p", "100"),
-            store("https://c.example/p", "5", currency: "GBP"),
-            store("https://d.example/p", nil),
-        ])
+        var subject = PriceTracker(
+            productName: "Widget", firstStoreURL: "https://a.example/p",
+            price: 90, currency: "USD")
+        subject.upsertStore(store("https://b.example/p", "100"))
+        subject.upsertStore(store("https://c.example/p", "5", currency: "GBP"))
+        subject.upsertStore(store("https://d.example/p", nil))
+        XCTAssertEqual(subject.initialCurrency, "USD")
         XCTAssertEqual(subject.medianStorePrice?.amount, Decimal(string: "95"))
     }
 

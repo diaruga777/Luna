@@ -353,7 +353,22 @@ ReadingListUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own 
 | `Luna` (central) | article + media + product (everything) |
 | `LunaReader` | LunaArticleIngest, LunaReaderUI, LunaArchiveReader, LunaPaywallBypass, LunaAudioPlayback, LunaReaderEngine, LunaEpub, LunaDocuments, LunaSend |
 | `LunaDownloader` | LunaMediaDownload (re-exports LunaMediaResolve), LunaPlatforms |
-| `LunaPriceTracker` | LunaPriceIngest, LunaPriceUI |
+| `LunaPriceTracker` | LunaPriceIngest, LunaPriceUI, LunaPriceCompare |
+
+**`LunaPriceCompare` is the one kind module that also goes into the SAFARI
+appexes** (`claudedocs/price-comparison.md`): the alternative-seller fan-out —
+bundled seller directory, local candidate ranking, regex-only page parser, match
+verification — runs at save time in the app and the share/action extensions AND
+inside all four Safari extensions. It therefore depends on LunaModels /
+LunaURLClassification / LunaPriceMetadata and **nothing else**, all
+Foundation-only, the same ~80MB-ceiling trade `LunaMediaResolve` makes. Every
+network call and the optional rich page resolution are INJECTED closures, so the
+app can route them through the shared ingest pipeline while the appex uses
+URLSession plus the lean parser. Its link edges are added by
+`scripts/add_price_compare_links.rb`. Do not give it a heavier dependency: if a
+helper you want lives in LunaHTMLClassification or LunaFetch, re-implement the
+small piece locally with a parity test (`LeanProductURLParityTests`,
+`ComparisonMatchingParityTests` are the two worked examples).
 
 `LunaTests` keeps everything (it hosts on the central app). No foreign-kind
 transitive edges remain: `SocialMediaResolving` lives with `MediaAsset` in

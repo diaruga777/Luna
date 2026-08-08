@@ -586,7 +586,15 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         let candidate = ProductInfo(
             name: metadata.name, priceAmount: metadata.price.amount,
             priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
-            brand: metadata.brand, productID: metadata.productID)
+            brand: metadata.brand, productID: metadata.productID,
+            identifiers: metadata.identifiers)
+        // Keyed GTIN first, for the same reason `ProductMatcher` puts it there:
+        // two equal GTINs are the same physical product, while two equal
+        // flattened ids can be unrelated retailer SKUs that read alike.
+        if let candidateGTIN = candidate.identifiers.normalizedGTIN,
+           let trackedGTIN = tracked.identifiers.normalizedGTIN {
+            return candidateGTIN == trackedGTIN
+        }
         if let candidateID = ProductMatcher.normalizedID(candidate.productID),
            candidateID == ProductMatcher.normalizedID(tracked.productID) {
             return true

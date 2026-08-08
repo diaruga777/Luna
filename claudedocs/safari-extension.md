@@ -20,9 +20,56 @@ background.js (tabs.onActivated / tabs.onUpdated)
   `document_start` suppression for cookie consent and intrusive popovers; intentionally
   leaves ordinary inline/display ads intact.
 - `LunaSafari/SafariWebExtensionHandler.swift` — principal class (`NSExtensionPointIdentifier = com.apple.Safari.web-extension` in `LunaSafari/Info.plist`); writes via `SharedSafariURL`.
-- `LunaSafari/SharedSafariURL.swift` — App Group defaults writer (key constants duplicated in app-side `SafariURLStore` — no shared framework in this small project).
+- `LunaSafari/SharedSafariURL.swift` — App Group defaults writer (key constants duplicated in app-side `SafariURLStore` — see "Where the work runs" for when a hand-copy is acceptable and when it isn't).
 
 Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root — that suits Safari (manifest.json must be at the bundle root on iOS) but it is Xcode's synchronized-group resource copy doing it, indiscriminately, to nested folders too. **`_locales/en/messages.json` must NOT be left flattened**: `browser.i18n.getMessage` reads only `_locales/<locale>/messages.json`, and a root-level copy makes every key resolve to `""` — which is what once rendered the in-page pill as a text-less indigo stub (its width is its label plus padding) and dropped the extension's own name. `scripts/update_safari_extension_branding.sh` (an `alwaysOutOfDate` build phase on all four Safari targets) re-copies the `_locales` tree from `$SRCROOT`, deletes the flattened stray, and only then rewrites `extensionName` per host app. `content.js` additionally carries an inline English default for every string it renders, so an empty lookup degrades to correct copy instead of an empty pill; `SafariPillLabelTests` covers both halves — the fallbacks (and their parity with `messages.json`) and the built appex's directory layout.
+
+## Where the work runs
+
+**Extraction runs in shared Swift, in every process. It is never re-implemented
+for Safari.**
+
+The four Safari appex targets used to link no package at all, and the
+`LunaSafari/Shared*.swift` files hand-copy the app's App-Group key formats
+because of it. That pattern is fine for what it covers — a handful of string
+constants and a 24h window, each pinned by a parity test — and it is **not** the
+model for anything with logic in it. The extension now links the package
+(`LunaAppConfig`, `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`,
+`LunaStorage` — all Foundation-only, no UIKit, on all four host copies), so:
+
+- **`LunaMediaResolve`** is the ONE implementation of "post URL → direct CDN
+  asset" (`SocialMediaResolver`, `YouTubeMediaResolver`, the per-platform
+  parsers, `MediaAsset.direct`, `MediaAsset.isDirectlyPlayable`). The app, the
+  share extension, the action extension and the Safari native handler all call
+  it. It was split out of `LunaMediaDownload` for exactly this: resolution is
+  Foundation + `URLSession`, while the download machinery around it pulls UIKit,
+  Photos, ActivityKit and SwiftSoup, none of which belong in an appex with an
+  ~80MB ceiling. `LunaMediaDownload` `@_exported import`s it, so no call site
+  outside the extension changed.
+- **`SafariWebExtensionHandler` is an adapter and nothing more**: parse the
+  message, call the shared code, serialize the answer.
+  `SafariVideoOverlayContractTests` fails the build if that file ever mentions
+  `URLSession`, `JSONSerialization`, a string-splitting parse, or a platform
+  endpoint — and if any other `LunaSafari/*.swift` file starts naming
+  `MediaAsset` or a platform's JSON keys.
+
+**What genuinely has to be JavaScript**, and why:
+
+| In the page | Why it can't be Swift | What pins it |
+| --- | --- | --- |
+| Page/platform recognition (`recognizedPlatformPage`, `currentRedditIsPost`, `currentYouTubeIsVideo`) | Needs the live URL + DOM at the moment the user is looking at it; the host lists come from Swift | `platform_hosts.generated.js`, generated from `PlatformRecognizer.rules`; `PlatformHostsJSParityTests` |
+| Has-video / static-image signals (`hasVideoOrAnimatedImageSignal`, `redditPostHasMedia`) | Reads the rendered DOM (`<video>`, `og:` tags, `shreddit-post`) | `SafariRedditGatingTests`, `SafariArticleHeuristicTests` |
+| Article / product classification | Same — rendered DOM | `news_hosts.generated.js`, `product_rules.generated.js`; `ProductPageRulesJSParityTests`, `ProductPageJSFixtureParityTests` |
+| The pill and the video overlay | In-page UI has to be in-page | `SafariPillLabelTests`, `SafariVideoOverlayTests` |
+
+**The rule for the next platform.** New extraction logic goes into
+`LunaMediaResolve` once and every surface gets it for free — there is no Safari
+leg to add. If a platform ever genuinely needs page-context work (say a
+session-bound token that only exists on the live page), the JavaScript should
+capture the **minimal raw input** and hand it to shared Swift, which does all the
+parsing and processing; and that JS piece must then be either generated from its
+Swift source or pinned by a parity test that fails on drift — never a silent
+hand-mirror.
 
 ## The in-page setup confirmation
 
@@ -347,8 +394,10 @@ Downloader-platform flow:
    "Shared platform-host list" below. These pages are never classified as articles by
    text length, even when a caption/comment body is long.
 3. On a recognized platform URL, the button says "Download in Luna" — shown only when
-   the host app handles media (Downloader / central Luna), deep-linking
-   `<ownScheme>://read?url=...`.
+   the host app handles media (Downloader / central Luna). Tapping it opens the
+   **in-page video player** (below); the deep link `<ownScheme>://read?url=...&ret=safari`
+   is still what that overlay falls back to when nothing turns out to be playable, and
+   is still what Reddit's pill does directly.
 4. **Static-image posts are not proactively suggested.** The Downloader still accepts
    those URLs if the user adds/saves them manually, but the Safari extension only shows
    the "Download in Luna" pill when a platform page is not a static-image post. Explicit
@@ -370,6 +419,74 @@ Downloader-platform flow:
    client-side-navigating SPA, so
    `content.js` retries on hydration (bounded) and runs a ~1s soft-nav watcher (reddit
    hosts only) that drops/re-adds the pill as the URL changes between feed and post.
+
+### The in-page video player
+
+On a media-handling host (central Luna / Downloader), the "Download in Luna" pill
+does not leave the page. It opens an overlay that plays the post's video right
+there, with one Download button under it.
+
+```
+content.js (pill tap)
+  → runtime.sendMessage {type:"resolveMedia", url, title}
+  → background.js relay → sendNativeMessage
+  → SafariWebExtensionHandler: SocialMediaResolver().resolveAssets(for:)   ← the app's own resolver
+      ├─ ResolvedMediaCache (App Group)  ← the FULL [MediaAsset]
+      └─ reply {assets:[{url, kind, thumbnailURL?}]}  ← only what a <video> can stream
+  → content.js sets <video src>
+```
+
+**Shape.** A dimmed, blurred fixed backdrop (tap to close); a panel at
+`calc(100vw - 24px)` capped at 640px, near the full width and **only as tall as
+its contents**; an X at the top left; a 16:9 stage; a full-width Download button
+beneath. Built the same way the pill and the setup confirmation are — plain
+elements, every style assigned through `applyStyle` (CSSOM property assignment,
+so a page's `style-src` CSP can't strip it), all text via `createTextNode`,
+`<div role="button">` rather than `<button>`, `z-index: 2147483647`, idempotent
+by element id. **There is no Share button**: the thing worth sharing is the video
+file, which does not exist until it has been downloaded — sharing happens in the
+app afterwards.
+
+**Why the resolve happens before the user needs to tap play.** The overlay opens
+in a loading state and sets `src` when the answer arrives, so the play tap on the
+native controls is a genuine user gesture driving playback directly — which is
+what lets it play unmuted inline.
+
+**The page's own CSP governs the media load**, so this only ever plays a
+same-platform asset — and every platform we resolve allows its own CDN
+(instagram.com allows `*.cdninstagram.com` in `media-src`, x.com allows
+`*.twimg.com`, tiktok.com's `default-src` covers `*.tiktokcdn*.com`, youtube.com
+ships no `media-src` at all).
+
+**Everything that can go wrong lands in one place.** An empty resolve, the
+handler's 20s budget, the JS 25s backstop, a CSP refusal, or an expired
+IP-bound googlevideo URL all surface as either an empty asset list or a `video`
+`error` event: the stage is replaced with a short message and Download reverts to
+the navigation the pill did before this feature existed. Nothing is lost.
+
+**Reddit keeps exactly today's treatment** — the plain pill, navigating into the
+app — and does not enter the overlay path (`evaluateRedditPage` keeps building
+`downloadTargetFor`). Reddit hosts video and audio as two independent DASH
+streams, so a browser handed the video URL plays it silently; muxing is the
+download pipeline's job (`MediaMuxer`). This is expressed twice, deliberately:
+as the routing above, and as `MediaAsset.isDirectlyPlayable` in LunaMediaResolve
+(no separate audio track, not a still), which the handler filters its reply
+through — so the extension never names a platform to get this right.
+
+**Download.** The page never holds a `[MediaAsset]`: it says
+`{type:"queueResolvedDownload", url}`, and the handler promotes its own cached
+record — the **full** asset set, including a split audio stream the player could
+not use — into `PendingResolvedMediaStore`. The page then navigates
+`<scheme>://resolvedmedia?ret=safari`, a payload-free link exactly like
+`rescue`. `SceneDelegate.route` drains via `KindWiring.drainPendingResolvedMedia`
+→ `PendingResolvedMediaDownloads.drain` (LunaMediaDownload) →
+`LiveMediaDownloadManager.startWithResolvedAssets`, then bounces back to Safari
+through the same `SafariReturnPolicy` a media pill save uses. The drain also runs
+at launch and on foreground, because an appex-initiated app open can silently
+fail; Reader and Price Tracker answer the same deep link with a no-op (their
+handler gates `resolveMedia` on `hostHandlesMedia`, so nothing can ever queue for
+them). Store lifetimes: the cache is 1 hour / 12 entries (CDN URLs expire
+anyway), the pending queue is 3 days with take-semantics.
 
 Product-page flow:
 1. content.js mirrors `ProductPageDetector` (`looksLikeProductPage`). The declarative

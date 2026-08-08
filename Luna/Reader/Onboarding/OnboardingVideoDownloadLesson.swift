@@ -543,7 +543,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
 
     /// The same clip the mock page itself plays, so the panel is showing the
     /// post's own video rather than a second one.
-    private static let clipResourceName = "LunaEclipse"
+    static let clipResourceName = "LunaMoonPhases"
 
     #if DEBUG
     /// The panel as the player state renders it, with neither the clock nor the

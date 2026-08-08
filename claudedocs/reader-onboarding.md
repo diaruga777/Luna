@@ -332,12 +332,25 @@ Four things about it that are NOT the web panel:
   and the player's controls have no target and no gesture recognizer. A picture
   that answered a tap is a route out of a lesson into a page that does not exist.
 
-The clip itself is `LunaEclipse.mp4`, and the page and the panel play the same
-one — the panel is showing the post's video, not a second video. It is a recut
-of the original 90-second timelapse: totality only, crop-panned to hold the moon
-centred, boomeranged so the loop has no seam, so every frame of it carries a
-large blood moon rather than a small disc drifting through an empty field. The
-page shows it `object-fit: cover`, the way a vertical feed does.
+The clip itself is `LunaMoonPhases.mp4`, and the page and the panel play the same
+one — the panel is showing the post's video, not a second video. It is a recut of
+NASA SVS's "Moon Phase and Libration, 2026" (`LunaMoonPhasesAttribution.txt`
+records the source, the span and the exact `ffmpeg` recipe): the run from a
+22%-lit waxing crescent to December's full moon — the year's closest — every
+second hour, then played backwards to its own first frame. So it loops with no
+seam, and what it shows is **the Moon changing phase**, waxing and waning
+forever, over eight seconds.
+
+That is a deliberate replacement for the lunar-eclipse timelapse it opened with.
+An eclipse read as a moon vibrating: the frames of totality differ by a slow
+shift in the umbra and a tracking wobble, which at video speed is a jitter rather
+than an event, and nothing in it changed enough to be worth watching for the four
+seconds the lesson now holds. A phase cycle changes visibly every second, which
+is what a demonstration of "the video is worth having" needs its video to do.
+Both ends of the boomerang are a plainly lit crescent, deliberately: the loop
+never bottoms out at a new moon, which on the full-bleed page would be a black
+screen. The page shows it `object-fit: cover`, the way a vertical feed does —
+the disc is centred in a 16:9 frame, so a portrait crop lands it dead centre.
 
 Both lessons are reviewable without a device pass through onboarding:
 `-LunaStage onboarding.safari-lesson` boots any app straight into its browser

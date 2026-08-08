@@ -24,6 +24,10 @@
          shapes it. Anything that darkens it further leaves the page with
          nothing to show. */
       filter: saturate(.94) contrast(1.06);
+      /* The moon is centred in a 16:9 frame and `cover` on a portrait page
+         crops the sides away, so the disc lands dead centre and fills most of
+         the height — which is what a phone-shot moon post looks like. */
+      object-position: center;
     }
     .shade {
       position: fixed;
@@ -136,7 +140,7 @@
 </head>
 <body>
   <video autoplay muted loop playsinline preload="auto" poster="">
-    <source src="LunaEclipse.mp4" type="video/mp4">
+    <source src="LunaMoonPhases.mp4" type="video/mp4">
   </video>
   <div class="shade"></div>
   <header><span><i class="mark"></i>{{INSTADOMAIN_BRAND}}</span><span>•••</span></header>

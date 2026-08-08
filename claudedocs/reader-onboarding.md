@@ -191,10 +191,15 @@ launcher so the shared card does not own target composition.
 The setup controller is now a transient lesson presenter, not the app root. It
 uses the existing offline/native demonstrations:
 
-- Safari opens on the native `luna.app` explainer page in EVERY app, then rotates
-  to that app's own mock page (Downloader `[.lunaPage, .instaTok]`, Price Tracker
-  `[.lunaPage, .amayzon]`, Reader `[.lunaPage]`, central all three). It shows the
-  extension effect, then guides the user to Safari extension setup. Leaving for real
+- Safari opens on the native `luna.app` explainer page, then rotates to that app's
+  own mock page (Downloader `[.lunaPage, .instaTok]`, Reader `[.lunaPage]`, central
+  all three) — except in the Price Tracker, whose lesson is the product page itself
+  (`[.amayzon]`, see "The price tracker demonstrates instead of explaining" below).
+  Which one an app plays is `OnboardingSurfaceConfiguration.safariLesson`
+  (`.extensionExplainer` / `.priceComparison`), and an app that plays the price
+  lesson builds no explainer page at all (`SafariReplicaViewController.lunaPage` is
+  nil there). Either way it shows the extension effect, then guides the user to
+  Safari extension setup. Leaving for real
   Safari stamps `setup.safari.setupTapAt.<app>` + that app's display name, which the
   extension pairs with its OWN first run to confirm setup in the page and invite the
   user back — see `claudedocs/safari-extension.md`'s "in-page setup confirmation".
@@ -277,6 +282,50 @@ climbing front. Three things ride it:
    re-presentation (`prepareForPresentation`), because the Action-Button save
    demonstration lights that field; `highlightedLinkRegion` is nil while it is
    away, so a stray replay cannot isolate an empty strip.
+
+### The price tracker demonstrates instead of explaining
+
+The explainer argues for the extension in prose, under clutter, and clears it.
+A price tracker can make a better argument — run the extension's actual answer
+on an actual product page — so its lesson opens the browser straight on the
+mock Amayzon page and plays what the extension would do there
+(`OnboardingPriceComparisonLesson.swift`, one overlay over the browser holding
+three layers in this z-order, which is the whole trick):
+
+1. **The pill is page content.** `OnboardingSellerPillView` reproduces
+   `content.js`'s alternative-seller pill point for pixel — bottom-trailing,
+   16pt in, `rgba(20,20,26,.85)` capsule, 13pt medium, the pulsing 6pt dot —
+   and wears the extension's own two states in the extension's own words
+   (`findingSellers` → `Onboarding_Safari_pricePillLooking`, `priceAtSeller` →
+   `…_pricePillFoundTemplate`). It waits ~2.4s, then fills IN PLACE with the
+   same eyePhone cheaper at the manufacturer the page already names ("Visit the
+   Pearless Devices Store" → `$729.00 at Pearless`, against the page's $799.00).
+   It is UIKit rather than markup injected into the `WKWebView` because the
+   lesson has to measure it: the spotlight closes on its exact frame.
+2. **The scrim dims everything but that pill.** `OnboardingSpotlightScrimView`
+   is 70% black with ONE round hole, an even-odd mask (bounds rect + circle) —
+   only a mask puts a genuinely round edge on the light, and one path animates
+   into the next. It opens at the screen's full height, so its 0.3s arrival is
+   almost entirely the corners darkening rather than a flash, then closes over
+   0.85s to the pill's circumscribed circle plus 12pt. A mask layer has no view
+   to inherit UIKit's animation actions from, so every path assignment is
+   wrapped in a disabled-actions transaction or Core Animation's implicit fade
+   runs against the close.
+3. **The card sits over both.** `OnboardingSafariSetupCardView` carries the SAME
+   three enable steps and the same Activate Safari / Skip pair the explainer
+   prints down its page, on a body wearing the launch `EclipseCoronaView` as its
+   border and breathing the same `OnboardingAttentionPulse`. It hugs its
+   contents — widest step line at `OnboardingSafariEnableStepRowView.labelFont`,
+   floored by `OnboardingSafariActionsView.minimumActivateWidth`, capped at a
+   readable column — because it is a card over somebody else's page rather than
+   a page of its own, and it is laid out in the room ABOVE the closed circle so
+   it never covers the pill the spotlight just isolated.
+
+Both lessons end in the same place, so `openSafariSetup`, the skip, and the
+return leg with nothing to show for it (`restoreInPageSafariSetup`, which
+re-enables the card's actions and asks again) are shared. The lesson is
+re-enterable like the explainer's: `resetDemonstration` puts the pill back to
+looking, reopens the hole and takes the card back off screen.
 
 ### The save lesson performs a real save
 
@@ -428,7 +477,9 @@ Relevant tests:
 - `UtilCardTests`: launch variants, persistent controls, weekly save callback;
 - `ReaderOnboardingTests`: per-app markers, central inheritance, the Safari page's
   fitting/prefix contract, the hardware rule behind `.actionButtonShortcut` vs
-  `.unavailable`, and that entering either lesson stores nothing;
+  `.unavailable`, that entering either lesson stores nothing, and that the price
+  lesson ends on a setup card whose actions are hittable through — and above —
+  its own scrim;
 - `OnboardingSaveDemoTests`: link resolution's three branches, the hosted surface
   (practice preview, the real offline failure, one-shot completion, the evidence
   guard), the sheet's chrome-only contract, and the rehearsal's cleanup;

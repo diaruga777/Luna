@@ -661,8 +661,10 @@ final class SocialMediaResolverTests: XCTestCase {
     }
 
     func testLiveReportedYouTubeDownloads() async throws {
-        guard ProcessInfo.processInfo.environment["RUN_LIVE_YOUTUBE_TESTS"] == "1"
-        else {
+        // The gate and the network permission are the SAME switch: `LiveNetworkPolicy`
+        // treats this key as an opt-in, so a run that skips here is also a run in
+        // which every fetcher in the process refuses to leave the machine.
+        guard LiveNetworkPolicy.isOptedIn(key: "RUN_LIVE_YOUTUBE_TESTS") else {
             throw XCTSkip("Set RUN_LIVE_YOUTUBE_TESTS=1 for real YouTube transfers")
         }
         let reportedURLs = [
@@ -694,9 +696,7 @@ final class SocialMediaResolverTests: XCTestCase {
     }
 
     func testLiveBackgroundManagerDownloadsReportedYouTubeShort() async throws {
-        guard ProcessInfo.processInfo.environment[
-            "RUN_LIVE_YOUTUBE_BACKGROUND_TESTS"] == "1"
-        else {
+        guard LiveNetworkPolicy.isOptedIn(key: "RUN_LIVE_YOUTUBE_BACKGROUND_TESTS") else {
             throw XCTSkip(
                 "Set RUN_LIVE_YOUTUBE_BACKGROUND_TESTS=1 for the background transfer")
         }

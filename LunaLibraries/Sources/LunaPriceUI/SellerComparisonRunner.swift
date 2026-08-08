@@ -69,6 +69,12 @@ public enum SellerComparisonRunner {
     public static let hardCapGrace: TimeInterval = 5
 
     private static func liveRun(_ request: SellerFanOutRequest) async -> SellerFanOutOutcome? {
+        // Refuse the WHOLE run up front in a test process rather than letting a
+        // dozen candidate fetches each be refused individually. `installed` is
+        // filled at launch and the test host is the central Luna app, so any
+        // test that drives a product save reaches this — see `LiveNetworkPolicy`.
+        guard LiveNetworkPolicy.allows(
+            request.sourceURL, context: "SellerComparisonRunner.liveRun") else { return nil }
         guard let directory = try? SellerDirectory.bundled() else { return nil }
         let fanOut = SellerFanOut(
             directory: directory,

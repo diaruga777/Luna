@@ -203,6 +203,8 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// (not the injectable `fetch`, which exists to make the PARSERS testable
     /// against fixtures — there's no parsing here, just reading off the final URL).
     private static func resolveRedditShareLinkPostID(_ url: URL) async -> String? {
+        guard LiveNetworkPolicy.allows(
+            url, context: "SocialMediaResolver.resolveRedditShareLinkPostID") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (_, response) = try? await URLSession.shared.data(for: request),
@@ -317,7 +319,8 @@ public struct SocialMediaResolver: SocialMediaResolving {
     }
 
     public static let defaultFetch: Fetch = { request in
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard LiveNetworkPolicy.allows(request.url, context: "SocialMediaResolver.defaultFetch"),
+              let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
         else { return nil }
         return data

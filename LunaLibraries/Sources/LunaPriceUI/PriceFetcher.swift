@@ -5,6 +5,7 @@
 
 import LunaFetch
 import LunaHTMLClassification
+import LunaModels
 import Foundation
 import UIKit
 import WebKit
@@ -140,6 +141,10 @@ public enum WebViewPriceRenderer {
     /// rendered HTML. Returns nil on load failure or timeout.
     @MainActor
     public static func renderedHTML(for url: URL) async -> String? {
+        // The WKWebView tier is live traffic like any other, and an off-screen
+        // page load is the one that would be slowest to notice in a test.
+        guard LiveNetworkPolicy.allows(url, context: "WebViewPriceRenderer.renderedHTML")
+        else { return nil }
         let renderer = Renderer()
         return await renderer.render(
             url: url, userAgent: deviceSafariUserAgent,

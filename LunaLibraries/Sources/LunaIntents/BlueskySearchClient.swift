@@ -5,6 +5,7 @@
 
 import LunaURLClassification
 import Foundation
+import LunaModels
 
 /// Searches Bluesky posts (keyless public API) and returns the top match's web
 /// URL. Used by `PlatformFieldSave`'s Bluesky route.
@@ -33,6 +34,7 @@ public struct BlueskySearchClient {
             URLQueryItem(name: "limit", value: "1"),
         ]
         guard let url = components.url else { throw NoResultError() }
+        try LiveNetworkPolicy.check(url, context: "BlueskySearchClient")
 
         let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

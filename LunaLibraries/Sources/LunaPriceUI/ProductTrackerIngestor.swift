@@ -185,6 +185,8 @@ public final class ProductTrackerIngestor {
 
     /// Downloads a product image. Returns nil on any failure.
     private func downloadProductImage(_ imageURL: URL) async -> Data? {
+        guard LiveNetworkPolicy.allows(
+            imageURL, context: "ProductTrackerIngestor.downloadProductImage") else { return nil }
         var request = URLRequest(url: imageURL, timeoutInterval: 8)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),

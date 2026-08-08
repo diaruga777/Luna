@@ -117,7 +117,9 @@ public struct ArticleFetcher: HTMLFetching {
     /// returns nil when the TimeMap is unreachable/gated/empty (caller falls back).
     public func resolveNewestArchiveSnapshot(for url: URL) async -> URL? {
         let target = Self.canonicalForArchiving(url).absoluteString
-        guard let timeMapURL = URL(string: "https://archive.is/timemap/\(target)") else { return nil }
+        guard let timeMapURL = URL(string: "https://archive.is/timemap/\(target)"),
+              LiveNetworkPolicy.allows(timeMapURL, context: "ArticleFetcher.resolveNewestArchiveSnapshot")
+        else { return nil }
         var request = URLRequest(url: timeMapURL, timeoutInterval: 10)
         request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
@@ -198,6 +200,7 @@ public struct ArticleFetcher: HTMLFetching {
         var components = URLComponents(string: "https://archive.org/wayback/available")
         components?.queryItems = [URLQueryItem(name: "url", value: canonical)]
         guard let apiURL = components?.url,
+              LiveNetworkPolicy.allows(apiURL, context: "ArticleFetcher.availabilityReplayURL"),
               let (data, _) = try? await URLSession.shared.data(
                 for: URLRequest(url: apiURL, timeoutInterval: Self.waybackIndexTimeout)),
               data.count <= Self.maxBytes,
@@ -452,7 +455,9 @@ public struct ArticleFetcher: HTMLFetching {
             queryItems.append(URLQueryItem(name: "fastLatest", value: "true"))
         }
         components?.queryItems = queryItems
-        guard let cdxURL = components?.url else { return nil }
+        guard let cdxURL = components?.url,
+              LiveNetworkPolicy.allows(cdxURL, context: "ArticleFetcher.cdxTimestamp")
+        else { return nil }
         var request = URLRequest(url: cdxURL, timeoutInterval: timeout)
         request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
@@ -521,6 +526,7 @@ public struct ArticleFetcher: HTMLFetching {
         url: URL, userAgent: String, referer: String = "https://www.google.com/",
         xForwardedFor: String? = nil, timeout: TimeInterval = 20, session: URLSession = .shared
     ) async throws -> String {
+        try LiveNetworkPolicy.check(url, context: "ArticleFetcher.fetch")
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")

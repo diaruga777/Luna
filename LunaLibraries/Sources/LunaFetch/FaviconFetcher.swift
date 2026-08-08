@@ -15,6 +15,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import LunaModels
 import SwiftSoup
 
 public struct FaviconFetcher {
@@ -88,6 +89,7 @@ public struct FaviconFetcher {
     /// of a usable size — the well-known icon paths routinely 404 with an
     /// HTML body, and a 200 that isn't an image must not win.
     private func validatedIconData(at url: URL) async -> Data? {
+        guard LiveNetworkPolicy.allows(url, context: "FaviconFetcher") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 8)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),

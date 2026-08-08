@@ -7,11 +7,22 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
+/// What every practice rehearsal owes its host: one way out. Which rehearsal a
+/// practice link gets is `ShareViewController.practicePreview`.
+@MainActor
+protocol ShareSetupPracticePresenting: AnyObject {
+    var onDone: (() -> Void)? { get set }
+}
+
 /// The real extension-side counterpart of onboarding's mock preview. Practice
 /// URLs never enter the reading list; both extension points show this bundled
 /// content so the lesson is deterministic and works without a network fetch.
+///
+/// This is the ARTICLE rehearsal. The InstaTok practice link stands for a video
+/// post and gets `ShareSetupPracticeDownloadViewController` instead.
 @MainActor
-final class ShareSetupPracticePreviewViewController: UIViewController {
+final class ShareSetupPracticePreviewViewController: UIViewController,
+    ShareSetupPracticePresenting {
     var onDone: (() -> Void)?
 
     private let app: LunaApp

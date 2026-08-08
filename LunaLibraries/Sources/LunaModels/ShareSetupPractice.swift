@@ -22,6 +22,21 @@ public enum ShareSetupPractice {
         amayzonURLString,
     ]
 
+    /// The bundled clip the InstaTok practice link stands for — the video the
+    /// mock post plays, the onboarding panel plays, and the media rehearsal
+    /// "downloads". One name, because all three have to be showing the same
+    /// video for any of it to mean anything. `InstaTok.html` names the same file
+    /// in markup, which `ShareSetupPracticeMediaTests` checks.
+    public static let videoResourceName = "LunaMoonPhases"
+
+    /// That clip on disk, or nil in a bundle that does not carry it. Only the
+    /// four APPS do: a rehearsal is worth 400KB in the app that teaches it and
+    /// is not worth it in eight extension bundles that will never run one, so a
+    /// real appex handed a practice link falls back to the article preview.
+    public static var bundledVideoURL: URL? {
+        Bundle.main.url(forResource: videoResourceName, withExtension: "mp4")
+    }
+
     public static let title = L10n.string("ShareSetupPractice_articleSubjectLine")
     public static let byline = L10n.string("ShareSetupPractice_bylineExample")
     public static let intro = L10n.string("ShareSetupPractice_featuresHeading")
@@ -53,6 +68,14 @@ public enum ShareSetupPractice {
 
     public static func matches(_ url: URL) -> Bool {
         urlStrings.contains(canonicalString(for: url))
+    }
+
+    /// Whether this is the practice link that stands for a VIDEO POST, rather
+    /// than for a page. It decides which rehearsal the share/action surface
+    /// shows, so it is asked by URL and not by app: what a link IS does not
+    /// change with who opened it.
+    public static func matchesVideoPractice(_ url: URL) -> Bool {
+        canonicalString(for: url) == instaTokURLString
     }
 
     private static func canonicalString(for url: URL) -> String {

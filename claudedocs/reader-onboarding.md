@@ -445,7 +445,7 @@ taps in:
 | condition | link | what the surface does |
 |---|---|---|
 | online, live Save of the Week for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
-| online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → bundled preview, nothing stored |
+| online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → the bundled rehearsal for what that link IS, nothing stored |
 | offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline, under `wifi.slash`, in the surface's real error state |
 
 The offline terminal takes the failure's **headline** but not its `suggestion`:
@@ -461,6 +461,40 @@ other failure calls without them.
 Price Tracker amayzon). It used to be read off the browser's current demo page;
 now that every app's Safari lesson opens on `.lunaPage`, deriving it that way would
 have handed the Downloader an article to rehearse a media save with.
+
+**Which rehearsal.** Having the right link was only half of it: the practice
+short-circuit showed all four apps the same bundled ARTICLE, so the Downloader's
+lesson still ended on a page of prose about the video it had just been asked to
+fetch. A rehearsal has to rehearse what the app is FOR, so the choice is made
+from the link — `ShareSetupPractice.matchesVideoPractice`, since what a link IS
+does not change with who opened it — inside `ShareViewController.practicePreview`:
+
+| practice link | rehearsal |
+|---|---|
+| `luna.app`, `amayzon.web` | `ShareSetupPracticePreviewViewController` — the bundled article |
+| `instatok.com`, in an app that handles media | `ShareSetupPracticeDownloadViewController` — the bundled download |
+
+The media rehearsal keeps the real media screen's grammar (the "Saved to Luna"
+badge, the square preview with the progress bar drawn inside it, the full-width
+Done) over a fixed beat: `downloadDuration` (1.5s) of the bar filling under the
+media glyph, then the clip's own first frame under a play badge. It is
+deliberately NOT `SavedNonTextualViewController`: the practice URL names no real
+post, so there is nothing to resolve, nothing to transfer, and nothing that may
+be written into the user's media library — the same reason the article rehearsal
+is not the real reader.
+
+Two things it borrows rather than reimplements. It waits on
+`HostedShareSession.revealDate` before starting its bar, because the surface is
+built DETACHED well before the lesson's sheet opens and a beat begun at
+`viewDidLoad` would be over unseen; and it reports the clip through
+`onMediaFileReady`, so the finish is the host's ordinary media path — **the same
+video the Safari lesson taught, playing over the sheet**. `onReplayBeat` re-runs
+the whole beat on each pass of the looping demonstration.
+
+The clip lives in the APP bundle only (`ShareSetupPractice.bundledVideoURL`): a
+rehearsal is worth 400KB in the app that teaches it and is not worth it in eight
+extension bundles that will never run one, so a real appex handed the practice
+link falls back to the article preview.
 
 **Timing.** `start(in:)` mounts the surface hidden and lets `viewDidLoad` begin the
 work immediately, so the fetch overlaps the conversation animating in front of it;

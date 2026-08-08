@@ -69,9 +69,21 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"^Luna/CardCarouselHost/", ["CardDeckGeometryTests", "LaunchScreenGeometryTests",
                                   "CardCarouselHostViewControllerTests",
                                   "CardCarouselMetricsTests"]),
-    # The Safari extension's JavaScript and its generated rule tables.
+    # The Safari extension's JavaScript and its generated rule tables. Every
+    # suite that EVALUATES content.js belongs here: the three parity/label ones
+    # alone let a change to the in-page UI (the pill, the player, the product
+    # pills) through a green partial run.
     (r"^LunaSafari/Resources/.*\.(js|json)$", ["SafariJSParityTests", "SafariPillLabelTests",
-                                               "SafariUnlockHeuristicTests"]),
+                                               "SafariUnlockHeuristicTests",
+                                               "SafariMediaPillTests", "SafariVideoOverlayTests",
+                                               "SafariRedditGatingTests",
+                                               "SafariArticleHeuristicTests",
+                                               "SafariSubscribeInterstitialTests",
+                                               "SafariIndexVetoParityTests",
+                                               "ProductHistoryPillRenderTests",
+                                               "PlatformHostsJSFixtureParityTests",
+                                               "ProductPageJSFixtureParityTests",
+                                               "ProductSnapshotJSFixtureParityTests"]),
     (r"^LunaLibraries/Sources/LunaPaywallBypass/Resources/", ["SiteUnlockTests",
                                                               "SafariJSParityTests"]),
     # The bundled seller directory: validated as SHIPPED, and it is the seller

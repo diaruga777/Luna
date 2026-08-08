@@ -71,7 +71,7 @@ never reaches it).
 | Page/platform recognition (`recognizedPlatformPage`, `currentRedditIsPost`, `currentYouTubeIsVideo`) | Needs the live URL + DOM at the moment the user is looking at it; the host lists come from Swift | `platform_hosts.generated.js`, generated from `PlatformRecognizer.rules`; `PlatformHostsJSParityTests` |
 | Has-video / static-image signals (`hasVideoOrAnimatedImageSignal`, `redditPostHasMedia`) | Reads the rendered DOM (`<video>`, `og:` tags, `shreddit-post`) | `SafariRedditGatingTests`, `SafariArticleHeuristicTests` |
 | Article / product classification | Same — rendered DOM | `news_hosts.generated.js`, `product_rules.generated.js`; `ProductPageRulesJSParityTests`, `ProductPageJSFixtureParityTests` |
-| The pill and the video overlay | In-page UI has to be in-page | `SafariPillLabelTests`, `SafariVideoOverlayTests` |
+| The pill and the video overlay | In-page UI has to be in-page | `SafariPillLabelTests`, `SafariVideoOverlayTests` (the overlay, driven directly), `SafariMediaPillTests` (how a page GETS one: which target it earns, the auto-open, the pill as the way back) |
 
 **The rule for the next platform.** New extraction logic goes into
 `LunaMediaResolve` once and every surface gets it for free — there is no Safari
@@ -405,8 +405,10 @@ Downloader-platform flow:
    "Shared platform-host list" below. These pages are never classified as articles by
    text length, even when a caption/comment body is long.
 3. On a recognized platform URL, the button says "Download in Luna" — shown only when
-   the host app handles media (Downloader / central Luna). Tapping it opens the
-   **in-page video player** (below); the deep link `<ownScheme>://read?url=...&ret=safari`
+   the host app handles media (Downloader / central Luna). The **in-page video player**
+   (below) opens BY ITSELF on such a page when the page's subject is a video; the pill
+   is then how the user gets back to it after a dismissal, and the route on a page that
+   never earns an auto-open. The deep link `<ownScheme>://read?url=...&ret=safari`
    is still what that overlay falls back to when nothing turns out to be playable, and
    is still what Reddit's pill does directly.
 4. **Static-image posts are not proactively suggested.** The Downloader still accepts
@@ -433,12 +435,29 @@ Downloader-platform flow:
 
 ### The in-page video player
 
-On a media-handling host (central Luna / Downloader), the "Download in Luna" pill
-does not leave the page. It opens an overlay that plays the post's video right
-there, with one Download button under it.
+On a media-handling host (central Luna / Downloader), a recognized media page
+does not send the user to the app to watch what they are already looking at: an
+overlay plays the post's video right there, with one Download button under it.
+
+**It opens on its own, and the pill is the way back to it.** The player is not a
+reward for finding a button — on a page whose subject IS a video it is up before
+the user does anything, in its loading state, and the resolve is already running.
+The pill stays where it was: tapping it re-opens a player the user dismissed, and
+on a page that never earns an auto-open it does what it always did.
+
+Auto-open is gated on the video SIGNAL rather than on pill eligibility, and the
+two are not the same question. A bare platform host recognizes (`x.com/home`,
+`tiktok.com`) and a feed that slips past the static-image suppression can earn a
+pill — but covering someone's feed with a panel they did not ask for is a
+different act from offering them a button beside it. So the auto-open waits for
+`og:video` / player metadata / a `<video>` / a GIF, and because a
+client-rendered post frequently has none of those at `document_idle`, it looks
+again on a bounded schedule (`AUTO_PLAYER_RETRY_DELAYS`, three looks inside
+~2.5s) instead of giving up on the first one. A dismissal cancels whatever is
+still pending: closing it once means this page, not this instant.
 
 ```
-content.js (pill tap)
+content.js (recognized media page, or a pill tap)
   → runtime.sendMessage {type:"resolveMedia", url, title}
   → background.js relay → sendNativeMessage
   → SafariWebExtensionHandler: SocialMediaResolver().resolveAssets(for:)   ← the app's own resolver
@@ -473,7 +492,12 @@ ships no `media-src` at all).
 pill appears on autoplays its own video, and an overlay does not stop it — the
 user would hear two soundtracks. The overlay pauses exactly the `<video>`s that
 were playing when it opened and resumes those on dismiss; one the user had
-already paused stays paused.
+already paused stays paused. Since the panel now opens BEFORE the page's own
+player necessarily exists, that pause cannot be a one-shot sweep: a capture-phase
+`play` listener on the document (`play` does not bubble) pauses — and remembers —
+anything outside the panel that starts playing for as long as the panel is up.
+Without it, the auto-open's own earliness is what would leave a reel autoplaying,
+unmuted, behind the overlay.
 
 **Everything that can go wrong lands in one place.** An empty resolve, the
 handler's 20s budget, the JS 25s backstop, a CSP refusal, or an expired

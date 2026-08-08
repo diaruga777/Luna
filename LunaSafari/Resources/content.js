@@ -131,10 +131,14 @@
         if (platform === "reddit") { handleReddit(resp); return; }
         if (platform) {
             if (!shouldShowDownloadPillForPlatform(platform)) { return; }
-            // The pill opens the in-page player; it falls back to the hand-off
-            // navigation from inside the overlay when nothing is playable.
+            // The in-page player opens by ITSELF on a page whose subject is a
+            // video. The pill is then the way back to it after a dismissal —
+            // and on a page that never earns one, it still carries the hand-off
+            // navigation into the app that it always did.
             var downloadTarget = videoOverlayTargetFor(resp);
-            if (downloadTarget) { injectLunaButton(downloadTarget); }
+            if (!downloadTarget) { return; }
+            injectLunaButton(downloadTarget);
+            autoPresentVideoOverlay(downloadTarget, 0);
             return;
         }
         // Reddit feed / listing / comment-history pages are NOT posts: suppress
@@ -162,6 +166,11 @@
         var target = readTarget(resp);
         if (target) { injectLunaButton(target); }
     }
+
+    // The whole pill decision, for a test that wants the REAL route to the pill
+    // (which target a page earns, and what happens once it lands) rather than a
+    // hand-built target handed straight to an injector.
+    window.__lunaOfferLunaButton = offerLunaButton;
 
     // One-shot re-check of just the article branch (mirrors the tail of
     // `offerLunaButton` above) for the 2500ms SPA retry.
@@ -1651,12 +1660,12 @@
     window.__lunaSetupCelebrationDuration = SETUP_CELEBRATION_DURATION;
 
     // ── The in-page video player ────────────────────────────────────────────────
-    // On a media host (the central Luna app / Luna Downloader), the download pill
-    // opens a player right here instead of navigating: the native handler runs the
-    // app's own resolver over this post URL and hands back a direct CDN URL, which
-    // a plain <video> streams. The page's own CSP governs that load, which is why
-    // this only ever plays a SAME-PLATFORM asset — instagram.com allows
-    // *.cdninstagram.com, x.com allows *.twimg.com, and so on.
+    // On a media host (the central Luna app / Luna Downloader), a recognized post
+    // page opens a player right here instead of navigating: the native handler
+    // runs the app's own resolver over this post URL and hands back a direct CDN
+    // URL, which a plain <video> streams. The page's own CSP governs that load,
+    // which is why this only ever plays a SAME-PLATFORM asset — instagram.com
+    // allows *.cdninstagram.com, x.com allows *.twimg.com, and so on.
     //
     // Nothing here decides WHAT is playable: the handler answers with the assets
     // `MediaAsset.isDirectlyPlayable` accepted, and an empty answer — for any
@@ -1666,6 +1675,15 @@
     // late still wins over this backstop and only a DEAD one trips it.
     var RESOLVE_TIMEOUT = 25000;
     var NIGHT_SURFACE = "#0b0b10";
+    // When the auto-open looks for the page's video, counted from the moment the
+    // pill lands (document_idle). A client-rendered post frequently has neither
+    // its `<video>` nor its video metadata yet at that point, and giving up on
+    // the first look is what would make the player feel unreliable rather than
+    // automatic. The walk stops at the first look that finds a signal.
+    var AUTO_PLAYER_RETRY_DELAYS = [0, 900, 2500];
+    // A dismissal is the user saying "not this page": it stops any auto-open
+    // still pending. The PILL is unaffected — tapping it re-opens the player.
+    var videoOverlayDismissed = false;
 
     // The native round trip, behind a swappable reference: the WKWebView test
     // harness has no extension host at all (`browser` is undefined), so
@@ -1814,9 +1832,24 @@
             pausedByOverlay = [];
         };
 
+        // The player opens BEFORE the page's own has necessarily been created —
+        // an autoplaying post whose `<video>` hydrates a second later would
+        // otherwise start playing, unmuted, behind the panel. So the pause is not
+        // a one-shot sweep: for as long as the panel is up, anything that starts
+        // playing outside it is paused (and remembered) the moment it does.
+        var pageVideoPlayGuard = function (event) {
+            var element = event.target;
+            if (!element || element.tagName !== "VIDEO") { return; }
+            if (backdrop.contains(element)) { return; }
+            try { element.pause(); } catch (e) {}
+            if (pausedByOverlay.indexOf(element) < 0) { pausedByOverlay.push(element); }
+        };
+
         var dismiss = function () {
             if (closed) { return; }
             closed = true;
+            videoOverlayDismissed = true;
+            document.removeEventListener("play", pageVideoPlayGuard, true);
             if (video) {
                 try { video.pause(); } catch (e) {}
                 video.removeAttribute("src");
@@ -1861,6 +1894,9 @@
 
         // Before our own <video> exists, so this only ever reaches the page's.
         pausePageVideos();
+        // `play` does not bubble; a capture listener on the document still sees
+        // every one of them.
+        document.addEventListener("play", pageVideoPlayGuard, true);
         (document.body || document.documentElement).appendChild(backdrop);
 
         requestResolvedMedia(sourceURL, document.title || "").then(function (result) {
@@ -1888,6 +1924,27 @@
         });
     }
 
+    /// Opens the player without being asked, on a recognized post page whose
+    /// subject IS a video — the pill is then how the user gets back to it.
+    ///
+    /// The video SIGNAL, not merely pill eligibility, is the gate: a bare
+    /// platform host recognizes (`x.com/home`, `tiktok.com`), and a feed that
+    /// slips past the static-image suppression may earn a pill, but covering
+    /// someone's feed with a panel they did not ask for is a different thing from
+    /// offering them a button. So the auto-open waits for `og:video` /
+    /// player metadata / a `<video>` / a GIF — the same signal
+    /// `shouldShowDownloadPillForPlatform` reads, asked in the positive — and
+    /// looks again on a short bounded schedule while an SPA hydrates.
+    function autoPresentVideoOverlay(target, attempt) {
+        if (videoOverlayDismissed) { return; }
+        if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
+        if (hasVideoOrAnimatedImageSignal()) { target.present(); return; }
+        var next = attempt + 1;
+        if (next >= AUTO_PLAYER_RETRY_DELAYS.length) { return; }
+        setTimeout(function () { autoPresentVideoOverlay(target, next); },
+                   AUTO_PLAYER_RETRY_DELAYS[next]);
+    }
+
     /// `<scheme>://resolvedmedia?ret=safari` — a payload-free hand-off, exactly
     /// like `rescue`: the assets are already in the App Group, so the app drains
     /// them and bounces back here (`SafariReturnPolicy`).
@@ -1899,14 +1956,18 @@
     // For the WKWebView harness (no extension host) — see SafariVideoOverlayTests.
     window.__lunaPresentVideoOverlay = presentVideoOverlay;
     window.__lunaVideoOverlayID = VIDEO_OVERLAY_ID;
+    window.__lunaAutoPlayerRetryDelays = AUTO_PLAYER_RETRY_DELAYS;
+
+    var PILL_ID = "queue-read-button";
+    window.__lunaPillID = PILL_ID;
 
     function injectLunaButton(target) {
-        if (document.getElementById("queue-read-button")) { return; }
+        if (document.getElementById(PILL_ID)) { return; }
         // A <div role="button"> (not a <button>) so the host page's `button {…}`
         // CSS can't clamp its height and cut off the pill. Explicit resets +
         // inline-flex centering + a fully-rounded radius guarantee the pill shape.
         var btn = document.createElement("div");
-        btn.id = "queue-read-button";
+        btn.id = PILL_ID;
         btn.setAttribute("role", "button");
         btn.appendChild(document.createTextNode(target.label));
         applyStyle(btn, {
@@ -2325,7 +2386,7 @@
     }
 
     function removeLunaButton() {
-        var existing = document.getElementById("queue-read-button");
+        var existing = document.getElementById(PILL_ID);
         if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
     }
 

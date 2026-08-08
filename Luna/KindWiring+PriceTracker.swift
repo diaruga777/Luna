@@ -34,6 +34,13 @@ enum KindWiring {
         #endif
 
         ProductKindComposition.install()
+        // A re-save that merges into a tracker which has never been through
+        // a fan-out (still fewer than two stores) kicks a comparison instead
+        // of showing nothing forever — `LunaReadingList` cannot link
+        // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
+        ReadingListIngestor.priceTrackerComparisonKicker = { itemID, url, store in
+            SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
+        }
         // The product kind's CARD half, on the same principle — the one
         // definition the central app installs too (`CardKindPresenter.swift`).
         CardKindPresenters.product = ProductCardPresenter()

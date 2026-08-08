@@ -1,0 +1,152 @@
+//
+//  ReadingListIngestorTrackerDedupTests.swift
+//  LunaTests
+//
+
+import LunaIngest
+import LunaModels
+import LunaStorage
+import XCTest
+@testable import LunaReadingList
+
+/// The re-save dedup: a URL that is already a store inside an existing price
+/// tracker merges into it instead of creating a second row. Fix 8 adds a
+/// side effect to that path — a merge target that has never been through a
+/// fan-out and still holds fewer than two stores kicks a comparison, so a
+/// repeat save of (say) an Amazon product actually attempts seller discovery
+/// instead of showing nothing forever.
+final class ReadingListIngestorTrackerDedupTests: XCTestCase {
+
+    private var tempDirectory: URL!
+    private var store: ReadingListStore!
+    private var kicked: [(itemID: UUID, url: URL)] = []
+
+    override func setUp() {
+        super.setUp()
+        tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReadingListIngestorTrackerDedupTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        store = ReadingListStore(containerURL: tempDirectory)
+        kicked = []
+        ReadingListIngestor.priceTrackerComparisonKicker = { [weak self] itemID, url, _ in
+            self?.kicked.append((itemID, url))
+        }
+    }
+
+    override func tearDown() {
+        ReadingListIngestor.priceTrackerComparisonKicker = nil
+        try? FileManager.default.removeItem(at: tempDirectory)
+        super.tearDown()
+    }
+
+    private func makeIngestor() -> ReadingListIngestor {
+        ReadingListIngestor(store: store, surfaceDecision: { _ in .supported })
+    }
+
+    private func articleResult(url: URL) -> IngestResult {
+        IngestResult(
+            url: url,
+            outcome: .article(
+                ArticleContent(title: "T", blocks: [.init(kind: .paragraph, text: "x", links: [])]),
+                html: ""))
+    }
+
+    // MARK: - The dedup itself (unaffected by Fix 8)
+
+    func testAReSavedTrackedURLMergesRatherThanCreatingASecondRow() async {
+        let trackedURL = URL(string: "https://amazon.example/dp/B0ACME1")!
+        let trackerItem = store.add(urlString: trackedURL.absoluteString)
+        store.savePriceTracker(
+            PriceTracker(
+                productName: "Toaster", firstStoreURL: trackedURL.absoluteString,
+                price: 46, currency: "AUD"),
+            for: trackerItem.id)
+
+        let resave = store.add(urlString: trackedURL.absoluteString)
+        let ingestor = makeIngestor()
+        _ = await ingestor.applyResult(
+            articleResult(url: trackedURL), for: resave, forceArticle: false,
+            allowsInteractivePrompt: true)
+
+        XCTAssertNil(store.item(withID: resave.id), "the re-save's own placeholder must not survive")
+        XCTAssertNotNil(store.item(withID: trackerItem.id)?.priceTracker)
+    }
+
+    // MARK: - Fix 8: the comparison kick
+
+    func testAReSaveIntoASellerlessNeverComparedTrackerKicksAComparison() async {
+        let trackedURL = URL(string: "https://amazon.example/dp/B0ACME1")!
+        let trackerItem = store.add(urlString: trackedURL.absoluteString)
+        store.savePriceTracker(
+            PriceTracker(
+                productName: "Toaster", firstStoreURL: trackedURL.absoluteString,
+                price: 46, currency: "AUD"),
+            for: trackerItem.id)
+
+        let resave = store.add(urlString: trackedURL.absoluteString)
+        let ingestor = makeIngestor()
+        _ = await ingestor.applyResult(
+            articleResult(url: trackedURL), for: resave, forceArticle: false,
+            allowsInteractivePrompt: true)
+
+        XCTAssertEqual(kicked.map(\.itemID), [trackerItem.id])
+        XCTAssertEqual(kicked.first?.url, trackedURL)
+    }
+
+    func testAReSaveIntoATrackerWithTwoOrMoreStoresDoesNotKickAComparison() async {
+        let trackedURL = URL(string: "https://amazon.example/dp/B0ACME1")!
+        let trackerItem = store.add(urlString: trackedURL.absoluteString)
+        var tracker = PriceTracker(
+            productName: "Toaster", firstStoreURL: trackedURL.absoluteString,
+            price: 46, currency: "AUD")
+        tracker.upsertStore(PriceTrackerStore(urlString: "https://other.example/p/1", lastPrice: 42, currency: "AUD"))
+        store.savePriceTracker(tracker, for: trackerItem.id)
+
+        let resave = store.add(urlString: trackedURL.absoluteString)
+        let ingestor = makeIngestor()
+        _ = await ingestor.applyResult(
+            articleResult(url: trackedURL), for: resave, forceArticle: false,
+            allowsInteractivePrompt: true)
+
+        XCTAssertTrue(kicked.isEmpty, "a tracker that already has 2+ stores has already been compared")
+    }
+
+    func testAReSaveIntoATrackerWithAPendingComparisonDoesNotKickAnother() async {
+        let trackedURL = URL(string: "https://amazon.example/dp/B0ACME1")!
+        let trackerItem = store.add(urlString: trackedURL.absoluteString)
+        var tracker = PriceTracker(
+            productName: "Toaster", firstStoreURL: trackedURL.absoluteString,
+            price: 46, currency: "AUD")
+        tracker.beginPendingComparison(sourceURLString: trackedURL.absoluteString, at: Date())
+        store.savePriceTracker(tracker, for: trackerItem.id)
+
+        let resave = store.add(urlString: trackedURL.absoluteString)
+        let ingestor = makeIngestor()
+        _ = await ingestor.applyResult(
+            articleResult(url: trackedURL), for: resave, forceArticle: false,
+            allowsInteractivePrompt: true)
+
+        XCTAssertTrue(kicked.isEmpty, "a run already in flight must not be started twice")
+    }
+
+    /// nil (no product kind composed in this process) means nothing runs —
+    /// the optional call must not crash and must simply do nothing.
+    func testNoInstalledKickerIsANoOp() async {
+        ReadingListIngestor.priceTrackerComparisonKicker = nil
+        let trackedURL = URL(string: "https://amazon.example/dp/B0ACME1")!
+        let trackerItem = store.add(urlString: trackedURL.absoluteString)
+        store.savePriceTracker(
+            PriceTracker(
+                productName: "Toaster", firstStoreURL: trackedURL.absoluteString,
+                price: 46, currency: "AUD"),
+            for: trackerItem.id)
+
+        let resave = store.add(urlString: trackedURL.absoluteString)
+        let ingestor = makeIngestor()
+        let decision = await ingestor.applyResult(
+            articleResult(url: trackedURL), for: resave, forceArticle: false,
+            allowsInteractivePrompt: true)
+
+        XCTAssertEqual(decision, .supported)
+    }
+}

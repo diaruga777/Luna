@@ -51,6 +51,11 @@ enum OnboardingSafariLesson: Equatable {
     /// finds one, and the screen closes down to it before the setup card
     /// arrives (`OnboardingPriceComparisonOverlayView`).
     case priceComparison
+    /// The same idea for media: a post whose video is walled off behind a
+    /// sign-up prompt, and the extension's own video panel arriving over it,
+    /// playing the video the page would not
+    /// (`OnboardingVideoDownloadOverlayView`).
+    case videoDownload
 }
 
 /// The animation and setup journey are shared. Only copy, demo content, final
@@ -105,8 +110,12 @@ struct OnboardingSurfaceConfiguration {
                 saveSetupMode: saveSetupMode,
                 introCopy: OnboardingStrings.introCopy(for: app),
                 saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
-                demoPages: [.lunaPage, .instaTok],
-                safariLesson: .extensionExplainer,
+                // No explainer page: the lesson is the blocked post itself,
+                // with the extension's video panel answering it. A browser that
+                // rotated away would take the panel's own page out from under
+                // it, so there is exactly one.
+                demoPages: [.instaTok],
+                safariLesson: .videoDownload,
                 practiceURLString: ShareSetupPractice.instaTokURLString,
                 seedTitle: OnboardingStrings.Demo.instaTokSeedTitle.value(),
                 seedSymbol: "play.rectangle.fill")

@@ -191,18 +191,27 @@ launcher so the shared card does not own target composition.
 The setup controller is now a transient lesson presenter, not the app root. It
 uses the existing offline/native demonstrations:
 
-- Safari opens on the native `luna.app` explainer page, then rotates to that app's
-  own mock page (Downloader `[.lunaPage, .instaTok]`, Reader `[.lunaPage]`, central
-  all three) — except in the Price Tracker, whose lesson is the product page itself
-  (`[.amayzon]`, see "The price tracker demonstrates instead of explaining" below).
-  Which one an app plays is `OnboardingSurfaceConfiguration.safariLesson`
-  (`.extensionExplainer` / `.priceComparison`), and an app that plays the price
-  lesson builds no explainer page at all (`SafariReplicaViewController.lunaPage` is
-  nil there). Either way it shows the extension effect, then guides the user to
-  Safari extension setup. Leaving for real
-  Safari stamps `setup.safari.setupTapAt.<app>` + that app's display name, which the
-  extension pairs with its OWN first run to confirm setup in the page and invite the
-  user back — see `claudedocs/safari-extension.md`'s "in-page setup confirmation".
+- Safari runs ONE of three demonstrations, chosen by
+  `OnboardingSurfaceConfiguration.safariLesson` (`OnboardingSafariLesson`). All
+  three end in the same place — the three enable steps and the Activate Safari /
+  Skip pair — and differ only in what they show first:
+  - `.extensionExplainer` — the native `luna.app` page, buried under ads and
+    popups, then that app's own mock page (Reader `[.lunaPage]`, central all
+    three). What the extension takes AWAY, told by the clearing wave below.
+  - `.priceComparison` — the Price Tracker only, `[.amayzon]`: the product page
+    itself, with the seller pill finding a better price on it (see "The price
+    tracker demonstrates instead of explaining" below).
+  - `.videoDownload` — the Downloader only, `[.instaTok]`: the blocked post,
+    with the extension's video panel playing what the page would not (see "The
+    Downloader's lesson" below).
+
+  An app whose lesson is not the explainer builds no explainer page at all
+  (`SafariReplicaViewController.lunaPage` is nil there). Either way it shows the
+  extension effect, then guides the user to Safari extension setup. Leaving for
+  real Safari stamps `setup.safari.setupTapAt.<app>` + that app's display name,
+  which the extension pairs with its OWN first run to confirm setup in the page
+  and invite the user back — see `claudedocs/safari-extension.md`'s "in-page
+  setup confirmation".
 - The hop into REAL Safari opens `https://www.apple.com`
   (`AppOnboardingViewController.openSafariSetup`). The one requirement is a page
   Safari's own Reader is never offered on: Reader availability rearranges the
@@ -255,6 +264,65 @@ Per-app selection and the fit at {375×667, 393×852, 430×932, 744×1133, 1024�
 are asserted by `testSafariPageGrowsItsProseByWholeChunksAcrossEveryScreen`,
 `testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse` and
 `testSafariExplainerCopyIsPerAppAndChunked`.
+
+### The Downloader's lesson is the blocked post, answered
+
+Everything above about the explainer page is about a PAGE — clutter over prose,
+and a wave that takes the clutter off. The Downloader would never act on that
+page at all: its subject is the video ON a page, and a lesson that never showed
+one was teaching the Reader's story to someone who came for videos. So its
+browser loads exactly one thing, the bundled `InstaTok.html`, and the
+demonstration is the extension doing its actual job.
+
+It is the media sibling of the price lesson below and keeps its shape — mounted
+with the browser, `begin` / `reset` / `reactivateActions`, generation-guarded so a
+rewind cancels its pending beats. Its own beats:
+
+| beat | what is on screen |
+| --- | --- |
+| `pageHoldDuration` (1.0s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
+| `presentDuration` (0.3s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
+| `playbackHoldDuration` (1.0s) | the video plays, plainly, under a full-width "Download in Luna" |
+| `growDuration` (0.52s) | the download button goes, the three enable steps and the lesson's actions arrive in its place, and the panel's bottom edge travels down to hold them |
+
+**The panel is a replica, not a stylisation.** Every measurement in it is read
+straight off `presentVideoOverlay` in `LunaSafari/Resources/content.js` — the
+78%-black blurred backdrop, the `calc(100vw - 24px)` panel capped at 640 in
+`NIGHT_SURFACE` at radius 20 with 10pt padding, the 34pt round close button over
+an 8pt gap, the 16:9 black stage at radius 12, the `QUEUE_INDIGO` full-width
+capsule 10pt under it at `minHeight: 44`. A change to either one is a change to
+both, and `SafariVideoOverlayReplicaTests` pins the two files' shared numbers
+and the shared string to each other.
+
+Three things about it that are NOT the web panel:
+
+- **The stage's height is decided once, for both states.** It is 16:9 until the
+  panel it has to fit inside runs out of room — on a 375×667 phone the setup
+  block plus a full-height stage is taller than the page — and then the clip
+  letterboxes rather than the panel resizing between beats. A video that changed
+  size while the instructions arrived would be the one thing the growth must not
+  do.
+- **The panel's top is the PLAYER state's top in both states.** The growth is a
+  bottom edge travelling down; the top rises only as far as keeping the taller
+  panel on the page requires — 23pt on a 393×852 phone against 217pt of bottom
+  travel, and nothing at all on anything roomier. The video keeps its place
+  under the instructions arriving beneath it rather than being pushed up by
+  them.
+- **Only the two action buttons are live.** The close button, the download button
+  and the player's controls have no target and no gesture recognizer. A picture
+  that answered a tap is a route out of a lesson into a page that does not exist.
+
+The clip itself is `LunaEclipse.mp4`, and the page and the panel play the same
+one — the panel is showing the post's video, not a second video. It is a recut
+of the original 90-second timelapse: totality only, crop-panned to hold the moon
+centred, boomeranged so the loop has no seam, so every frame of it carries a
+large blood moon rather than a small disc drifting through an empty field. The
+page shows it `object-fit: cover`, the way a vertical feed does.
+
+Both lessons are reviewable without a device pass through onboarding:
+`-LunaStage onboarding.safari-lesson` boots any app straight into its browser
+with the demonstration about to run, and `-slowOnboardingAnimations` stretches
+the holds enough to see each beat.
 
 ### The wave takes the clutter away, not the page
 

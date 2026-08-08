@@ -63,6 +63,10 @@ final class SafariReplicaViewController:
     /// the explainer's clutter wipe. Nil in every app whose lesson is the
     /// explainer (`OnboardingSurfaceConfiguration.safariLesson`).
     private var priceLesson: OnboardingPriceComparisonOverlayView?
+    /// The Downloader's lesson, played over the mock post instead of the
+    /// explainer's clutter wipe. Nil in every app whose lesson is not
+    /// `.videoDownload`.
+    private var videoLesson: OnboardingVideoDownloadOverlayView?
     /// False from the extension's flip until the lesson stages the browser
     /// again: the bar has slid away and the page has taken back its strip.
     private var isBrowserBarVisible = true
@@ -99,7 +103,12 @@ final class SafariReplicaViewController:
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = OnboardingSafariPagePalette.background
+        // The strip under the status bar, which the page itself starts below:
+        // the explainer's own grey, or — for a lesson that only ever loads one
+        // bundled page — that page's black.
+        view.backgroundColor = onboardingConfiguration.safariLesson == .videoDownload
+            ? .black
+            : OnboardingSafariPagePalette.background
         configureBrowser()
         lunaPage?.onActivateSafari = { [weak self] in
             self?.onSetUpSafari?()
@@ -109,12 +118,22 @@ final class SafariReplicaViewController:
         }
         webView.navigationDelegate = self
         configurePriceLessonIfNeeded()
+        configureVideoLessonIfNeeded()
         loadOfflinePage(at: 0)
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         startPageRotationIfNeeded()
+        videoLesson?.setPlaying(true)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Nothing should be decoding behind a screen nobody is looking at — and
+        // the panel keeps its last frame, so coming back finds the video where
+        // it was rather than a black rectangle.
+        videoLesson?.setPlaying(false)
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -170,6 +189,31 @@ final class SafariReplicaViewController:
         priceLesson = lesson
         NSLayoutConstraint.activate([
             lesson.topAnchor.constraint(equalTo: view.topAnchor),
+            lesson.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            lesson.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            lesson.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
+
+    /// The Downloader's lesson, mounted with the browser for the same reason
+    /// the price one is: its first layout — three step rows, two buttons and a
+    /// 16:9 stage — is worth paying while the replica is still hidden behind the
+    /// intro card. Under the browser bar and over the page, because Safari's
+    /// chrome is not part of the page an extension draws into.
+    private func configureVideoLessonIfNeeded() {
+        guard onboardingConfiguration.safariLesson == .videoDownload else {
+            return
+        }
+        let lesson = OnboardingVideoDownloadOverlayView(
+            configuration: onboardingConfiguration)
+        lesson.onActivateSafari = { [weak self] in self?.onSetUpSafari?() }
+        lesson.onSkipSafariSetup = { [weak self] in self?.onSkipSafariSetup?() }
+        lesson.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(lesson, belowSubview: browserBar)
+        videoLesson = lesson
+        NSLayoutConstraint.activate([
+            lesson.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor),
             lesson.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             lesson.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             lesson.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -295,6 +339,7 @@ final class SafariReplicaViewController:
         didBeginDemonstration = false
         cancelActionButtonSaveEffect()
         priceLesson?.reset()
+        videoLesson?.reset()
         pageTimer?.invalidate()
         pageTimer = nil
         // A buried page is a page in a browser: the bar is back before this
@@ -315,6 +360,10 @@ final class SafariReplicaViewController:
         didBeginDemonstration = true
         if let priceLesson {
             priceLesson.begin()
+            return
+        }
+        if let videoLesson {
+            videoLesson.begin()
             return
         }
         if onboardingConfiguration.demoPages[pageIndex] == .lunaPage {
@@ -448,6 +497,8 @@ final class SafariReplicaViewController:
     func restoreInPageSafariSetup() {
         lunaPage?.reactivateActions()
         priceLesson?.reactivateActions()
+        videoLesson?.reactivateActions()
+        videoLesson?.setPlaying(true)
     }
 
     func showShortcutAndActionSetup() {

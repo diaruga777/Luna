@@ -25,7 +25,44 @@ enum SharedStageCatalog {
 
     @MainActor
     static func install() {
-        StageRegistry.register(deckStages + utilCardStages + cardStages + settingsStages)
+        StageRegistry.register(
+            deckStages + utilCardStages + cardStages + settingsStages
+                + safariLessonStages)
+    }
+
+    // MARK: - The Safari lesson
+
+    /// The setup lesson's browser, playing its own demonstration — the one
+    /// screen in onboarding that is a timed sequence rather than a state, and
+    /// so the one that cannot be reviewed by seeding a store. Which
+    /// demonstration runs is the app's own answer
+    /// (`OnboardingSurfaceConfiguration.SafariLesson`): the buried `luna.app`
+    /// page and its clearing wave in three of them, the blocked InstaTok post
+    /// and the extension's video panel in the Downloader.
+    @MainActor
+    private static var safariLessonStages: [StageDescriptor] {
+        [
+            StageDescriptor(
+                id: "onboarding.safari-lesson", screen: "Safari lesson",
+                variant: "full demonstration",
+                summary: "The mock browser from its first frame: this app's demonstration "
+                    + "runs, and the lesson settles on the enable steps and the Safari "
+                    + "button.",
+                kind: .shared,
+                seed: { StageFixtures.seedEmpty() },
+                make: {
+                    let safari = SafariReplicaViewController()
+                    // The real entry starts the sequence once the incoming card
+                    // has finished expanding; here, once the browser has been
+                    // laid out at its full size.
+                    DispatchQueue.main.asyncAfter(
+                        deadline: .now() + OnboardingAnimationClock.delay(0.4)
+                    ) { [weak safari] in
+                        safari?.beginDemonstration()
+                    }
+                    return safari
+                }),
+        ]
     }
 
     // MARK: - The deck

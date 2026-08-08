@@ -119,6 +119,10 @@ enum KindWiring {
     /// never actually fires here, but `SceneDelegate` is universal.
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
 
+    /// Price Tracker's Safari extension resolves no video (the native handler
+    /// gates on `hostHandlesMedia`), so nothing can ever queue a download for it.
+    static func drainPendingResolvedMedia(returningToSource: Bool) {}
+
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.

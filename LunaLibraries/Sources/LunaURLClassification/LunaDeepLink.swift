@@ -88,6 +88,33 @@ public enum LunaDeepLink {
         return url.host == "rescue"
     }
 
+    /// `<scheme>://resolvedmedia` — the Safari in-page player's download
+    /// hand-off. Payload-free for the same reason `rescueLink` is: the resolved
+    /// assets travel in `PendingResolvedMediaStore` (App Group), so a link this
+    /// short can't truncate them and a foreground drain still finds them if the
+    /// open silently fails. The `resolvedMediaHost` constant is mirrored in
+    /// `content.js` — pinned by `SafariVideoOverlayTests`.
+    public static let resolvedMediaHost = "resolvedmedia"
+
+    public static func resolvedMediaLink(scheme: String = ownScheme) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = resolvedMediaHost
+        return components.url
+    }
+
+    /// True for `<any Luna scheme>://resolvedmedia` — an app with no media kind
+    /// simply drains nothing, so the broad scheme check is correct here too.
+    public static func isResolvedMediaLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
+        return url.host == resolvedMediaHost
+    }
+
+    /// The hosts whose links may ask to bounce back to Safari: a pill save
+    /// (`read`) and the in-page player's download (`resolvedmedia`). Every other
+    /// host is refused even when it carries the flag.
+    private static let returnToSourceHosts = ["read", resolvedMediaHost]
+
     /// True for a `<scheme>://read?url=…&ret=safari` link — a media or product
     /// pill tap (never the article pill's `readTarget`, which never carries the
     /// flag), asking the app to reopen the original page in Safari once the
@@ -95,7 +122,8 @@ public enum LunaDeepLink {
     /// position means extra/reordered query params still parse harmlessly, the
     /// same guarantee `articleURL(from:)` already gives the `url` item.
     public static func requestsReturnToSource(_ url: URL) -> Bool {
-        guard let scheme = url.scheme, allSchemes.contains(scheme), url.host == "read" else { return false }
+        guard let scheme = url.scheme, allSchemes.contains(scheme),
+              let host = url.host, returnToSourceHosts.contains(host) else { return false }
         return URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?.first(where: { $0.name == "ret" })?.value == "safari"
     }

@@ -124,8 +124,17 @@ enum KindWiring {
 
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
+    /// Safari's in-page player queued these; the extension already resolved
+    /// them, so the drain hands the assets straight to the download manager.
+    /// Also runs at launch and on foreground, so a deep link that never arrived
+    /// (a responder-chain open can silently fail) still lands its download.
+    static func drainPendingResolvedMedia(returningToSource: Bool) {
+        PendingResolvedMediaDownloads.drain(returningToSource: returningToSource)
+    }
+
     static func appDidLaunch() {
         legacyOnboardingDemoSave.cleanup()
+        drainPendingResolvedMedia(returningToSource: false)
         // Sweep any downloaded-but-never-saved media preview files orphaned by a
         // previous run that was killed before its preview screen could clean up.
         // Also apply the saved-media retention policy. Safe at launch (no
@@ -142,6 +151,7 @@ enum KindWiring {
     }
 
     static func sceneDidForeground() {
+        drainPendingResolvedMedia(returningToSource: false)
         // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
         // keep it off the main thread (the store already posts its own change
         // notification back on main).

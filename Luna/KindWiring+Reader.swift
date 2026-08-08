@@ -230,6 +230,10 @@ enum KindWiring {
     /// actually fires here, but `SceneDelegate` is universal.
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
 
+    /// Reader's Safari extension resolves no video (the native handler gates on
+    /// `hostHandlesMedia`), so nothing can ever queue a download for it.
+    static func drainPendingResolvedMedia(returningToSource: Bool) {}
+
     /// Reader handles no products — no runner ⇒ AppDelegate never registers or
     /// schedules the price-refresh BGTask.
     static let priceRefreshRunner: (() async -> Int)? = nil

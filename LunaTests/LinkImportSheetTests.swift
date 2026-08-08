@@ -137,14 +137,14 @@ final class LinkImportSheetTests: XCTestCase {
         XCTAssertFalse(sheet.primaryButton.isEnabled)
     }
 
-    func testAScrapedFileWarnsThatItsArchiveIsUnknown() {
+    func testAScrapedFileShowsAFooterNoteAndAStructuredOneDoesNot() {
         let sheet = makeSheet(
             document(links: ["https://a.example/1"], structured: false))
         let footer = sheet.tableView(
             sheet.table, titleForFooterInSection: 0)
         XCTAssertEqual(
             footer,
-            "This file didn't say which links were archived, so they'll all be saved as ordinary links.")
+            "All links imported.")
     }
 
     func testAStructuredFileHasNoSuchWarning() {
@@ -173,7 +173,7 @@ final class LinkImportSheetTests: XCTestCase {
 
         await sheet.performImport()
 
-        XCTAssertEqual(sectionTitles(sheet), ["Result", "Not Saved (1)"])
+        XCTAssertEqual(sectionTitles(sheet), ["Summary", "Not Saved (1)"])
         XCTAssertEqual(rowTitles(sheet, section: 0), ["1 imported"])
         XCTAssertEqual(rowTitles(sheet, section: 1), ["video"])
         let cell = sheet.tableView(
@@ -189,7 +189,7 @@ final class LinkImportSheetTests: XCTestCase {
 
         await sheet.performImport()
 
-        XCTAssertEqual(sectionTitles(sheet), ["Result"])
+        XCTAssertEqual(sectionTitles(sheet), ["Summary"])
         XCTAssertEqual(
             rowTitles(sheet, section: 0), ["1 imported", "1 couldn't be downloaded yet"])
     }

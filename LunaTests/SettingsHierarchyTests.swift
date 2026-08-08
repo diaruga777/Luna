@@ -25,7 +25,7 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(screen.tableView.numberOfSections, 2)
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 5)
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 1), 2)
-        XCTAssertEqual(rowTitle(screen, row: 0, section: 1), "Wi-Fi Only")
+        XCTAssertEqual(rowTitle(screen, row: 0, section: 1), "Only on Wi-Fi")
         XCTAssertEqual(rowTitle(screen, row: 1, section: 1), "Preload Depth")
 
         let allTitles = (0..<screen.tableView.numberOfSections).flatMap { section in
@@ -53,7 +53,7 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(screen.tableView.numberOfSections, 2)
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 1)
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 1), 1)
-        XCTAssertEqual(rowTitle(screen, row: 0, section: 0), "Download Automatically")
+        XCTAssertEqual(rowTitle(screen, row: 0, section: 0), "Begin Downloads")
         XCTAssertEqual(rowTitle(screen, row: 0, section: 1), "Storage")
     }
 
@@ -129,12 +129,12 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(
             sectionTitles(screen),
             [
-                "Luna Button", "On-Screen URLs", "Double Save Articles",
-                "Action Button Shortcut",
+                "Luna Button", "Apple Intelligence", "Double Save Action",
+                "Action Button",
             ])
         XCTAssertEqual(
             ShortcutSettingsScreen.screenTitle(showsShortcutSetup: true),
-            "Shortcut & Safari")
+            "Safari & One-click save")
     }
 
     func testSettingsHasFiveTapDiagnosticsGesture() {

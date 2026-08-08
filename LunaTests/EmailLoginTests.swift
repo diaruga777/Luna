@@ -130,7 +130,7 @@ final class EmailLoginTests: XCTestCase {
         // issue inserts the explanation and the Reconnect action between them.
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 4)
         XCTAssertEqual(contentText(in: screen, row: 0), "person@gmail.com")
-        XCTAssertEqual(contentText(in: screen, row: 2), "Reconnect Email")
+        XCTAssertEqual(contentText(in: screen, row: 2), "Reconnect email")
         XCTAssertEqual(contentText(in: screen, row: 3), "Sign Out")
     }
 

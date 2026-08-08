@@ -138,7 +138,7 @@
             var downloadTarget = videoOverlayTargetFor(resp);
             if (!downloadTarget) { return; }
             injectLunaButton(downloadTarget);
-            autoPresentVideoOverlay(downloadTarget, 0);
+            autoPresentVideoOverlay(platform, downloadTarget, 0);
             return;
         }
         // Reddit feed / listing / comment-history pages are NOT posts: suppress
@@ -1942,21 +1942,33 @@
     /// Opens the player without being asked, on a recognized post page whose
     /// subject IS a video — the pill is then how the user gets back to it.
     ///
-    /// The video SIGNAL, not merely pill eligibility, is the gate: a bare
-    /// platform host recognizes (`x.com/home`, `tiktok.com`), and a feed that
-    /// slips past the static-image suppression may earn a pill, but covering
+    /// This asks a NARROWER question than pill eligibility, and deliberately: a
+    /// bare platform host recognizes (`x.com/home`, `tiktok.com`), and a feed
+    /// that slips past the static-image suppression may earn a pill, but covering
     /// someone's feed with a panel they did not ask for is a different thing from
-    /// offering them a button. So the auto-open waits for `og:video` /
-    /// player metadata / a `<video>` / a GIF — the same signal
-    /// `shouldShowDownloadPillForPlatform` reads, asked in the positive — and
-    /// looks again on a short bounded schedule while an SPA hydrates.
-    function autoPresentVideoOverlay(target, attempt) {
+    /// offering them a button beside it. It takes the same two authorities
+    /// `shouldShowDownloadPillForPlatform` takes, in the same order:
+    ///
+    ///  1. the URL SHAPE, where a platform has video-only surfaces
+    ///     (`pathIsInherentlyVideo`). This is load-bearing rather than an
+    ///     optimisation — an Instagram reel carries NO video metadata at all
+    ///     (`og:type` is "article", the only media meta is a JPG) and hydrates
+    ///     its `<video>` well after this file runs, so waiting for a signal
+    ///     there would mean waiting for one that never comes.
+    ///  2. otherwise the video signal — `og:video` / player metadata / a
+    ///     `<video>` / a GIF — looked for again on a short bounded schedule,
+    ///     since a client-rendered post often has none of it yet at
+    ///     `document_idle`.
+    function autoPresentVideoOverlay(platform, target, attempt) {
         if (videoOverlayDismissed) { return; }
         if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
-        if (hasVideoOrAnimatedImageSignal()) { target.present(); return; }
+        if (pathIsInherentlyVideo(platform) || hasVideoOrAnimatedImageSignal()) {
+            target.present();
+            return;
+        }
         var next = attempt + 1;
         if (next >= AUTO_PLAYER_RETRY_DELAYS.length) { return; }
-        setTimeout(function () { autoPresentVideoOverlay(target, next); },
+        setTimeout(function () { autoPresentVideoOverlay(platform, target, next); },
                    AUTO_PLAYER_RETRY_DELAYS[next]);
     }
 

@@ -26,6 +26,15 @@ final class SafariMediaPillTests: XCTestCase {
         </head><body style="margin:0"><p>fixture</p></body></html>
         """
 
+    /// A reel as Instagram actually serves it: `og:type` "article", a JPG as the
+    /// only media meta, and no `og:video` / `twitter:player` anywhere.
+    private static let instagramReelAsServed = """
+        <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta property="og:type" content="article">
+        <meta property="og:image" content="https://scontent.cdninstagram.com/cover.jpg">
+        </head><body style="margin:0"><p>caption</p></body></html>
+        """
+
     /// A recognized platform page with NO video signal: a bare host / feed shell.
     private static let noVideoSignal = """
         <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -126,11 +135,32 @@ final class SafariMediaPillTests: XCTestCase {
         XCTAssertTrue(pillExists())
     }
 
+    /// An Instagram reel carries NO video metadata whatsoever — `og:type` is
+    /// literally "article" and the only media meta is the JPG thumbnail — and
+    /// hydrates its `<video>` well after this file runs. Waiting for a signal
+    /// there is waiting for one that never arrives, so the URL shape has to
+    /// settle it (the same authority the pill itself uses).
+    func testAnInstagramReelOpensThePlayerWithNoVideoMetadataAtAll() {
+        offer(Self.instagramReelAsServed, at: "https://www.instagram.com/reel/ABC123/")
+        XCTAssertTrue(pillExists())
+        XCTAssertTrue(
+            waitForOverlay(), "a reel whose page says \"article\" still opened no player")
+    }
+
+    /// …and `/p/`, which carries both photos and videos, stays on the heuristics:
+    /// a page that looks like a static image post earns no pill and no panel.
+    func testAnInstagramPhotoPostGetsNeitherPillNorPlayer() {
+        offer(Self.instagramReelAsServed, at: "https://www.instagram.com/p/ABC123/")
+        XCTAssertFalse(pillExists(), "a static-image post is not proactively suggested")
+        XCTAssertFalse(waitForOverlay(within: 0.5))
+    }
+
     /// A client-rendered post often has neither `<video>` nor video metadata at
     /// `document_idle`; the bounded retry walk is what keeps the auto-open from
-    /// depending on hydration having finished first.
+    /// depending on hydration having finished first. (On an X post — a shape whose
+    /// path settles nothing, so the signal is all there is.)
     func testAVideoThatHydratesAfterThePillStillOpensThePlayer() {
-        offer(Self.noVideoSignal, at: Self.mediaPages[1])
+        offer(Self.noVideoSignal, at: "https://x.com/someone/status/1234567890")
         XCTAssertFalse(overlayExists(), "nothing to play yet — nothing should open")
         _ = js.evaluate("document.body.appendChild(document.createElement(\"video\")); \"hydrated\"")
         XCTAssertTrue(

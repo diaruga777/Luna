@@ -175,4 +175,50 @@ final class SafariRedditGatingTests: XCTestCase {
             shouldShowDownloadPill("<html><body><p>Post text</p></body></html>"),
             "no static-image signal at all")
     }
+
+    /// Instagram serves a reel with exactly the markup a photo post gets — the
+    /// `staticImage` fixture above IS a live reel's head, verbatim — so the
+    /// meta-tag heuristics suppressed every reel's pill. `/reel|reels|tv/<code>`
+    /// is a video-only surface, so the PATH settles it and the heuristics get no
+    /// vote. `/p/` keeps them: it carries photos too.
+    func testInstagramReelPathOverridesStaticImageHeuristic() {
+        // Verbatim head of https://www.instagram.com/reel/DbwB-E1MYKt/ — no
+        // og:video, no twitter:player, og:type "article", a JPG thumbnail.
+        let reelPage = """
+        <html><head>
+        <meta property="og:type" content="article">
+        <meta property="og:image" content="https://scontent.cdninstagram.com/v/t51.82787-15/769189704.jpg">
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:image" content="https://scontent.cdninstagram.com/v/t51.82787-15/769189704.jpg">
+        </head><body></body></html>
+        """
+        let videoPaths = [
+            "https://www.instagram.com/reel/DbwB-E1MYKt/",
+            // Instagram's own og:url puts the author ahead of the media kind.
+            "https://www.instagram.com/davi87dp/reel/DbwB-E1MYKt/",
+            "https://www.instagram.com/reels/DbwB-E1MYKt/",
+            "https://www.instagram.com/tv/DbwB-E1MYKt/",
+        ]
+        for url in videoPaths {
+            XCTAssertTrue(shouldShowDownloadPill(reelPage, urlString: url), url)
+        }
+
+        // A photo post's markup is indistinguishable, so `/p/` must still be
+        // decided by the heuristics — and suppressed.
+        XCTAssertFalse(
+            shouldShowDownloadPill(reelPage, urlString: "https://www.instagram.com/p/DbwB-E1MYKt/"),
+            "a /p/ post with only a static-image signal stays suppressed")
+
+        // The reels FEED is not a reel: no shortcode after the kind segment.
+        XCTAssertFalse(
+            shouldShowDownloadPill(reelPage, urlString: "https://www.instagram.com/reels/"),
+            "the reels feed is not an item")
+
+        // The override is Instagram-shaped, not a global path rule.
+        XCTAssertFalse(
+            shouldShowDownloadPill(
+                reelPage, platform: "tiktok",
+                urlString: "https://www.tiktok.com/reel/DbwB-E1MYKt/"),
+            "another platform's /reel/ path is not covered")
+    }
 }

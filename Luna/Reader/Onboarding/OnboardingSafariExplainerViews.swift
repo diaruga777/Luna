@@ -24,6 +24,9 @@ final class OnboardingSafariEnableStepRowView: UIView {
     /// vertical.
     static let visualColumnWidth: CGFloat = 70
     static let visualToTextGap: CGFloat = 14
+    /// THE step line's typography, defined once: the row draws with it, and the
+    /// price lesson's setup card measures its own width against it.
+    static let labelFont = UIFont.systemFont(ofSize: 15, weight: .regular)
 
     private let visual: UIView
     private let label = UILabel()
@@ -35,7 +38,7 @@ final class OnboardingSafariEnableStepRowView: UIView {
         addSubview(visual)
 
         label.text = step.text
-        label.font = .systemFont(ofSize: 15, weight: .regular)
+        label.font = Self.labelFont
         label.textColor = .white
         label.numberOfLines = 2
         label.adjustsFontSizeToFitWidth = true
@@ -194,7 +197,9 @@ final class OnboardingSafariActionsView: UIView {
     static var preferredHeight: CGFloat {
         activateHeight + interActionGap + skipHeight
     }
-    private static let minimumActivateWidth: CGFloat = 214
+    /// The prominent action never gets narrower than this, so a card sized to
+    /// hug its own copy still has room for the button underneath it.
+    static let minimumActivateWidth: CGFloat = 214
 
     var onActivate: (() -> Void)?
     var onSkip: (() -> Void)?

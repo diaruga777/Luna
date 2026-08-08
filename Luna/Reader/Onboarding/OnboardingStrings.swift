@@ -120,6 +120,12 @@ enum OnboardingStrings {
         static let instaTokSeedTitle = Definition(key: "Onboarding_Demo_instaTokSeedTitle")
         static let amayzonSeedTitle = Definition(key: "Onboarding_Demo_amayzonSeedTitle")
 
+        /// The cheaper seller the price tracker's Safari lesson "finds" for the
+        /// Amayzon page: the manufacturer whose store that page already names
+        /// (`amayzonStore`), and a price below the one printed on it.
+        static let amayzonSellerName = Definition(key: "Onboarding_Demo_amayzonSellerName")
+        static let amayzonSellerPrice = Definition(key: "Onboarding_Demo_amayzonSellerPrice")
+
         // Text rendered by the bundled InstaTok page.
         static let instaTokBrand = Definition(key: "Onboarding_Demo_instaTokBrand")
         static let instaTokHandle = Definition(key: "Onboarding_Demo_instaTokHandle")
@@ -228,6 +234,11 @@ enum OnboardingStrings {
         static let manageExtensionsStepTemplate = Definition(
             key: "Onboarding_Safari_manageExtensionsStepTemplate")
         static let appStepTemplate = Definition(key: "Onboarding_Safari_appStepTemplate")
+        /// The alternative-seller pill's two states, as the extension itself
+        /// words them (`_locales/en/messages.json`: `findingSellers`,
+        /// `priceAtSeller`) — the lesson is a replica of that pill, so the copy
+        /// has to be the copy.
+        static let pricePillLooking = Definition(key: "Onboarding_Safari_pricePillLooking")
         static let activate = Definition(key: "Onboarding_Safari_activate")
         static let skip = Definition(key: "Onboarding_Safari_skip")
 
@@ -244,6 +255,10 @@ enum OnboardingStrings {
         static let subscriptionBody = Definition(key: "Onboarding_Safari_subscriptionBody")
         static let subscriptionSubmit = Definition(key: "Onboarding_Safari_subscriptionSubmit")
         static let subscriptionSignIn = Definition(key: "Onboarding_Safari_subscriptionSignIn")
+
+        static func pricePillFound(price: String, seller: String) -> String {
+            L10n.string("Onboarding_Safari_pricePillFoundTemplate", price, seller)
+        }
 
         static func byline(appName: String) -> String {
             bylineTemplate.value().replacingOccurrences(of: "%@", with: appName)
@@ -373,6 +388,9 @@ enum OnboardingStrings {
         static let safariManageExtensionsSheet = Definition(shared: "onboarding.safari.manageExtensionsSheet")
         static let safariManageExtensionsToggle = Definition(shared: "onboarding.safari.manageExtensionsToggle")
         static let safariStepPrefix = Definition(shared: "onboarding.safari.page.step.")
+        static let safariPricePill = Definition(shared: "onboarding.safari.pricePill")
+        static let safariPriceSpotlight = Definition(shared: "onboarding.safari.priceSpotlight")
+        static let safariSetupCard = Definition(shared: "onboarding.safari.setupCard")
 
         static func safariStep(_ index: Int) -> String {
             "\(safariStepPrefix.value())\(index)"

@@ -610,6 +610,13 @@ only end in refusals), and the budgets nest — 15s fan-out inside an 18s finder
 inside the handler's 20s inside the page's 25s backstop. Pill behaviour and the
 fallback contract are in `claudedocs/safari-extension.md`.
 
+**The pill has a native replica, and it is deliberately a replica.** The price
+tracker's Safari onboarding lesson plays this whole exchange on its mock product
+page (`claudedocs/reader-onboarding.md`, "The price tracker demonstrates instead
+of explaining"): `OnboardingSellerPillView` reproduces `content.js`'s pill
+geometry and both its states, in its words, so what the lesson promises is what
+the extension delivers. Changing the pill's shape or copy means changing both.
+
 ## Link set
 
 `LunaPriceCompare` is linked by: `Luna`, `LunaPriceTracker`, `LunaShare`,

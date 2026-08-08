@@ -223,6 +223,89 @@ seeded tracker is already alerting before its first refresh.
 
 ---
 
+## The surfaces (B2)
+
+The engine makes no request and knows no surface. `LunaPriceUI` supplies both
+halves of the app side.
+
+**`SellerComparisonRunner`** is the wiring: `ArticleFetcher` for pages (its
+`FetchError.badResponse(status:)` is what carries a bot wall's status back into
+the engine, so a refusal stays a RESULT rather than becoming an error),
+`DuckDuckGoSearch.results` for Layer 2, and `ProductPageSuggestion.resolve` — the
+whole `IngestPipeline`, WKWebView render tier included — as the rich resolver, so
+a seller whose price only exists after client-side rendering still counts. The
+resolver is raced against twice the profile's per-fetch allowance, because it may
+spend `IngestPipeline.processTimeout` (28 s) on one URL, which is most of the
+run's entire budget; losing that race costs a page, not the run. The whole run is
+capped at `profile.totalBudget + hardCapGrace`.
+
+It is **installed** by `ProductKindComposition.install()`, not called. A process
+that did not compose the product kind has `installed == nil` and every surface
+skips the comparison — which is deliberately indistinguishable from a comparison
+that found nothing, because the save lands either way.
+
+**`SellerComparison`** owns the request and what happens to results. The ordering
+is the load-bearing part and it is not the obvious one:
+
+1. the tracker is created from the SOURCE page alone and persisted;
+2. each verified seller is `upsertStore`d with a live price and a recorded day
+   sample;
+3. `seedComparisonBaseline` runs last.
+
+Building every store up front instead would go through `PriceTracker`'s
+multi-store initializer, which takes the CHEAPEST store's currency as
+`initialCurrency` — so a single foreign-currency listing that happens to be
+numerically lowest would silently redenominate the tracker and make the median
+meaningless. `apply` also refuses a seller on a registrable domain the tracker
+already holds: the engine keys its own results per domain but cannot know what
+the tracker was already carrying.
+
+| surface | where | what the user sees |
+| --- | --- | --- |
+| app (paste / manual / intents) | `ProductTrackerIngestor.ingest`, new-tracker branch, between `savePriceTracker` and the save announcement | the util card's paste row stays in its loading state; the card that then appears is already finished |
+| share / action extensions | `ExtensionProductPresenter.presentPriceEditor`, between persisting the tracker and presenting the editor | "Finding other sellers…" on the wait screen, then the editor |
+| Action Button intents | the fan-out runs inside the save; the SUMMARY is the extra leg | the system progress bar, `Stage.findingSellers` |
+
+The merge path is never compared: that tracker has already been through a
+fan-out, and re-running would spend a dozen candidates re-finding the stores it
+is excluding.
+
+`ExtensionHost.showLoadingPhase` is a new, defaulted-to-nothing host method, so
+adding a phase to one kind forces nothing on any other host or test fake. The
+zero-UI share extension BUILDS a wait screen for it — as it already does for a
+failure — because half a minute of a share sheet that looks stuck is worse than
+one that says what it is doing.
+
+## The summary document
+
+`SellerComparisonDocument` (LunaPriceUI) renders ONE self-contained HTML file:
+inline CSS, the product photo and every favicon as `data:` URIs, and the price
+graph as inline SVG built from `PriceHistory.series` with labelled price and date
+axes. Self-containment is the whole requirement — a Shortcut result is Quick
+Looked, saved to Files, AirDropped and mailed, all with no network, no base URL
+and no cache — and `SellerComparisonDocumentTests` asserts it directly (no
+`src="http`, no `<link`, no `<script`).
+
+Two deliberate departures from the rest of Luna:
+
+- **It renders in the READER's appearance**, as a plain `prefers-color-scheme`
+  pair, not `LunaSkyTrait`. This is the only thing Luna ships that is read
+  outside Luna, and forcing black onto a light Quick Look looks broken rather
+  than considered.
+- **It leads with the sellers, not the graph.** The file answers one question —
+  where is this cheapest right now — so the answer is the first row as well as
+  the badged one. History is context for that answer. Unpriced stores are shown
+  last rather than dropped: a seller Luna is watching and currently cannot read
+  is a fact about the comparison.
+
+`html(_:)` is pure over an assembled `Content`, so structure is assertable
+without the network the assets come from. `write(for:articlesDirectory:)` returns
+nil for a single-store tracker — one price is not a comparison.
+
+Reachability note: the price kind cannot use `ArticleExportService`, because
+`LunaSend` is article-kind and `LunaPriceTracker` does not link it. Hence a
+renderer of its own rather than a shared document builder.
+
 ## Link set
 
 `LunaPriceCompare` is linked by: `Luna`, `LunaPriceTracker`, `LunaShare`,
@@ -255,16 +338,14 @@ All in `LunaTests/`:
 | `PriceComparisonBaselineTests` | median semantics, no badge at seeding, no `newlyAlerting` on the first refresh |
 | `ProductIdentifiersTests` | the keyed value type and its normalization |
 | `ProductPageDetectorTests` / `ProductMatcherTests` | keyed extraction and the keyed-GTIN match tier |
+| `SellerComparisonTests` | the request, the median/no-badge seeding, the per-family refusal, the new-tracker-only rule, and the two no-op states |
+| `SellerComparisonDocumentTests` | the document's self-containment, ordering, flat-series graph and escaping |
+| `ProductComparisonIntentTests` | the `comparison` checkpoint, v1-decodes/v+1-refused, the seam's absence in non-product apps, the freshness rule |
+| `ShareSurfaceDriverTests` | the extension editor waits for the fan-out and names the phase |
 
 ---
 
-## Still to come (B2 / B3)
+## Still to come (B3)
 
-- **B2** — `SellerComparisonRunner` in `LunaPriceUI` (feeds the engine
-  `ArticleFetcher`, `DuckDuckGoSearch.results` and `ProductPageSuggestion
-  .resolve`), installed via `ProductKindComposition.install()`;
-  `ProductTrackerIngestor` seeding; the "Finding other sellers…" spinner phase in
-  the extensions and the main app; App Intents participation + the self-contained
-  HTML summary document.
 - **B3** — `LunaSafari` `comparableSellers` message, the constrained fan-out
   behind it, snapshot-store writes, and the seller pill in `content.js`.

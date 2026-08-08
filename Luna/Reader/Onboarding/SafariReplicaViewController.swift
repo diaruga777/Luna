@@ -54,7 +54,12 @@ final class SafariReplicaViewController:
     }()
 
     private let browserBar = SafariBottomBar()
+    /// Mounted only by the apps whose lesson is the explainer page. A page the
+    /// browser will never load has no business in the hierarchy: its actions
+    /// carry the same labels the video panel's do, and two of each is one for a
+    /// test — or for VoiceOver — to find by accident.
     private let lunaPage: OnboardingSafariPageView
+    private var videoOverlay: OnboardingSafariVideoOverlayView?
     /// False from the extension's flip until the lesson stages the browser
     /// again: the bar has slid away and the page has taken back its strip.
     private var isBrowserBarVisible = true
@@ -66,6 +71,9 @@ final class SafariReplicaViewController:
     private var pageTimer: Timer?
 
     var hasInstructions: Bool { instructionOverlay != nil }
+    private var usesLunaPage: Bool {
+        onboardingConfiguration.demoPages.contains(.lunaPage)
+    }
     override var sharedURLString: String {
         let pages = onboardingConfiguration.demoPages
         guard !pages.isEmpty else { return OnboardingDemoPage.lunaPage.sharedURLString }
@@ -89,7 +97,10 @@ final class SafariReplicaViewController:
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = lunaPage.backgroundColor
+        // What the strip under the status bar shows, since the page itself
+        // starts at the safe area: the explainer page's own grey, or — for a
+        // lesson that only ever loads a bundled page — that page's black.
+        view.backgroundColor = usesLunaPage ? lunaPage.backgroundColor : .black
         configureBrowser()
         lunaPage.onActivateSafari = { [weak self] in
             self?.onSetUpSafari?()
@@ -104,6 +115,7 @@ final class SafariReplicaViewController:
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         startPageRotationIfNeeded()
+        videoOverlay?.setPlaying(true)
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -115,9 +127,18 @@ final class SafariReplicaViewController:
     private func configureBrowser() {
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
-        lunaPage.translatesAutoresizingMaskIntoConstraints = false
-        lunaPage.isHidden = true
-        view.addSubview(lunaPage)
+        if usesLunaPage {
+            lunaPage.translatesAutoresizingMaskIntoConstraints = false
+            lunaPage.isHidden = true
+            view.addSubview(lunaPage)
+            NSLayoutConstraint.activate([
+                lunaPage.topAnchor.constraint(
+                    equalTo: view.safeAreaLayoutGuide.topAnchor),
+                lunaPage.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                lunaPage.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                lunaPage.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+        }
         browserBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(browserBar)
         NSLayoutConstraint.activate([
@@ -125,10 +146,6 @@ final class SafariReplicaViewController:
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            lunaPage.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            lunaPage.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            lunaPage.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            lunaPage.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             browserBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             browserBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -255,6 +272,7 @@ final class SafariReplicaViewController:
         guard didBeginDemonstration else { return }
         didBeginDemonstration = false
         cancelActionButtonSaveEffect()
+        tearDownVideoOverlay()
         pageTimer?.invalidate()
         pageTimer = nil
         // A buried page is a page in a browser: the bar is back before this
@@ -273,6 +291,10 @@ final class SafariReplicaViewController:
     func beginDemonstration() {
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
+        if onboardingConfiguration.safariLesson == .videoOverlay {
+            runVideoOverlayDemonstration()
+            return
+        }
         if onboardingConfiguration.demoPages[pageIndex] == .lunaPage {
             runExtensionEnableDemonstration()
             return
@@ -282,6 +304,61 @@ final class SafariReplicaViewController:
         ) { [weak self] in
             self?.replayActionButtonSaveEffect()
         }
+    }
+
+    // MARK: - The blocked post, answered
+
+    /// The Downloader's lesson. The post loads with its own video walled off
+    /// behind a sign-up prompt; a beat later the extension's video panel arrives
+    /// over it — the same panel `content.js` builds, playing the post's video —
+    /// and once it has plainly played, the download button gives way to the
+    /// three steps that switch the extension on, the panel growing downward to
+    /// hold them.
+    ///
+    /// Nothing in it is tappable but those last two buttons: the whole point is
+    /// a picture of what happens on a real page, and a picture that answered a
+    /// tap would be a route out of the lesson into a page that does not exist.
+    private func runVideoOverlayDemonstration() {
+        enableDemoGeneration += 1
+        let generation = enableDemoGeneration
+        let overlay = OnboardingSafariVideoOverlayView(
+            configuration: onboardingConfiguration)
+        overlay.onActivateSafari = { [weak self] in self?.onSetUpSafari?() }
+        overlay.onSkipSafariSetup = { [weak self] in self?.onSkipSafariSetup?() }
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        videoOverlay = overlay
+        // Under the browser bar, over the page: Safari's chrome is not part of
+        // the page an extension draws into.
+        view.insertSubview(overlay, belowSubview: browserBar)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        overlay.alpha = 0
+        view.layoutIfNeeded()
+
+        afterEnableDelay(
+            OnboardingVideoOverlayTiming.pageHoldDuration,
+            generation: generation
+        ) {
+            overlay.present { [weak self] in
+                self?.afterEnableDelay(
+                    OnboardingVideoOverlayTiming.playbackHoldDuration,
+                    generation: generation
+                ) {
+                    overlay.revealSetupInstructions()
+                }
+            }
+        }
+    }
+
+    private func tearDownVideoOverlay() {
+        videoOverlay?.stop()
+        videoOverlay?.removeFromSuperview()
+        videoOverlay = nil
     }
 
     // MARK: - The mock extension-enable pass
@@ -356,6 +433,14 @@ final class SafariReplicaViewController:
         extensionsSheet = nil
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Nothing should be decoding behind a screen nobody is looking at —
+        // and the panel keeps its last frame, so coming back finds the video
+        // where it was rather than a black rectangle.
+        videoOverlay?.setPlaying(false)
+    }
+
     override func setURLHighlighted(_ highlighted: Bool) {
         browserBar.setURLHighlighted(highlighted)
     }
@@ -403,6 +488,8 @@ final class SafariReplicaViewController:
 
     func restoreInPageSafariSetup() {
         lunaPage.reactivateActions()
+        videoOverlay?.reactivateActions()
+        videoOverlay?.setPlaying(true)
     }
 
     func showShortcutAndActionSetup() {

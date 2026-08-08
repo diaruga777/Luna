@@ -230,6 +230,12 @@ enum OnboardingStrings {
         static let appStepTemplate = Definition(key: "Onboarding_Safari_appStepTemplate")
         static let activate = Definition(key: "Onboarding_Safari_activate")
         static let skip = Definition(key: "Onboarding_Safari_skip")
+        /// The extension's own in-page video panel, replicated by the
+        /// Downloader's lesson. It is the SAME wording `content.js` ships in
+        /// `_locales/en/messages.json` (`downloadInLuna`) — two files because
+        /// one of them is a web extension, one string because a user who sees
+        /// both must not be shown two.
+        static let playerDownload = Definition(key: "Onboarding_Safari_playerDownload")
 
         static let adSale = Definition(key: "Onboarding_Safari_adSale")
         static let adTrick = Definition(key: "Onboarding_Safari_adTrick")
@@ -349,6 +355,8 @@ enum OnboardingStrings {
         static let messagesSkipPill = Definition(shared: "onboarding.messages.skipPill")
 
         static let safariPage = Definition(shared: "onboarding.safari.lunaPage")
+        static let safariVideoOverlay = Definition(
+            shared: "onboarding.safari.videoOverlay")
         static let safariAppIcon = Definition(shared: "onboarding.safari.page.appIcon")
         static let safariHeadline = Definition(shared: "onboarding.safari.page.headline")
         static let safariByline = Definition(shared: "onboarding.safari.page.byline")

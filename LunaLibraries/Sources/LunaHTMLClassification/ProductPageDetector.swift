@@ -51,8 +51,13 @@ public struct ProductInfo: Equatable {
     /// Brand / manufacturer, if declared.
     public let brand: String?
     /// A stable product identifier (GTIN/UPC/EAN/ISBN/MPN/SKU), if declared —
-    /// the strongest signal for matching two store pages to the same product.
+    /// FLATTENED to one string, so which kind of id it is has been lost. Kept for
+    /// the existing match/merge paths; prefer `identifiers` for new matching.
     public let productID: String?
+    /// The KEYED identifiers the page declared. Unlike `productID` these keep
+    /// their scope (`ProductIdentifiers`), which is what makes a cross-seller
+    /// comparison possible: only a GTIN travels between retailers.
+    public let identifiers: ProductIdentifiers
     /// Seller listings discovered on an aggregate shopping page. Empty for ordinary
     /// single-store product pages, where the processed URL itself is the seller.
     public let sellers: [ProductSellerInfo]
@@ -65,6 +70,7 @@ public struct ProductInfo: Equatable {
         self.imageURL = candidate.imageURL
         self.brand = candidate.brand
         self.productID = candidate.productID
+        self.identifiers = candidate.identifiers
         self.sellers = []
     }
 
@@ -73,6 +79,7 @@ public struct ProductInfo: Equatable {
     public init(
         name: String, priceAmount: Decimal, priceCurrency: String,
         imageURL: URL?, brand: String?, productID: String?,
+        identifiers: ProductIdentifiers = ProductIdentifiers(),
         sellers: [ProductSellerInfo] = []
     ) {
         self.name = name
@@ -81,6 +88,7 @@ public struct ProductInfo: Equatable {
         self.imageURL = imageURL
         self.brand = brand
         self.productID = productID
+        self.identifiers = identifiers
         self.sellers = sellers
     }
 }
@@ -102,6 +110,9 @@ public struct ProductCandidate: Equatable {
     public let imageURL: URL?
     public let brand: String?
     public let productID: String?
+    /// The keyed identifiers the page declared, kept alongside the flattened
+    /// `productID` so a cross-seller comparison can tell a GTIN from an SKU.
+    public var identifiers: ProductIdentifiers = ProductIdentifiers()
 }
 
 /// Pure detection of whether a saved page is a purchasable *product page*. Given a
@@ -159,11 +170,18 @@ public struct ProductPageDetector {
     /// `ProductMetadataExtractor` so detection and extraction agree on them.
     public func metadataFields(
         document: Document, baseURL: URL?
-    ) -> (name: String, imageURL: URL?, brand: String?, productID: String?) {
-        (name: productName(document: document, baseURL: baseURL),
-         imageURL: productImage(document: document, baseURL: baseURL),
-         brand: brand(document: document),
-         productID: microdataProductID(document: document))
+    ) -> (name: String, imageURL: URL?, brand: String?, productID: String?,
+          identifiers: ProductIdentifiers) {
+        let brandName = brand(document: document)
+        // JSON-LD is richer than microdata when both are present, so prefer its
+        // keyed values and let microdata fill any gap.
+        let identifiers = jsonLDIdentifiers(document: document)
+            .merging(microdataIdentifiers(document: document, brand: brandName))
+        return (name: productName(document: document, baseURL: baseURL),
+                imageURL: productImage(document: document, baseURL: baseURL),
+                brand: brandName,
+                productID: microdataProductID(document: document),
+                identifiers: identifiers)
     }
 
     /// The GENERIC structured price — JSON-LD `Offer`, OpenGraph `product:price`,
@@ -192,12 +210,15 @@ public struct ProductPageDetector {
             return candidate
         }
         if let price = priceFromMetaOrMicrodata(document: document) {
+            let brandName = brand(document: document)
             return ProductCandidate(
                 name: productName(document: document, baseURL: baseURL),
                 staticPrice: price,
                 imageURL: productImage(document: document, baseURL: baseURL),
-                brand: brand(document: document),
-                productID: microdataProductID(document: document))
+                brand: brandName,
+                productID: microdataProductID(document: document),
+                identifiers: jsonLDIdentifiers(document: document)
+                    .merging(microdataIdentifiers(document: document, brand: brandName)))
         }
 
         // Tier 2: no structured price — score heuristic signals. A single product
@@ -206,12 +227,15 @@ public struct ProductPageDetector {
         // Tier 2 stays a standalone product classifier.
         let (score, embeddedPrice) = heuristicProductScore(document: document, baseURL: baseURL)
         guard score >= Self.minimumHeuristicScore else { return nil }
+        let brandName = brand(document: document)
         return ProductCandidate(
             name: productName(document: document, baseURL: baseURL),
             staticPrice: embeddedPrice,
             imageURL: productImage(document: document, baseURL: baseURL),
-            brand: brand(document: document),
-            productID: microdataProductID(document: document))
+            brand: brandName,
+            productID: microdataProductID(document: document),
+            identifiers: jsonLDIdentifiers(document: document)
+                .merging(microdataIdentifiers(document: document, brand: brandName)))
     }
 
     /// Resolves the price visible in the STATIC markup (Tier 1 structured data,
@@ -637,7 +661,34 @@ public struct ProductPageDetector {
 
         return ProductCandidate(
             name: name, staticPrice: ProductPrice(amount: amount, currency: currency),
-            imageURL: image, brand: brand, productID: productID)
+            imageURL: image, brand: brand, productID: productID,
+            identifiers: identifiers(from: node, offer: offer, brand: brand))
+    }
+
+    /// The KEYED identifiers of a JSON-LD `Product` node — the same family
+    /// `productID(from:offer:)` flattens, but each kind kept in its own slot.
+    /// `productID` itself is deliberately NOT folded in: it is an unqualified
+    /// "some id" whose scope the page never states, so promoting it to a GTIN
+    /// (which matches across retailers) would invent evidence.
+    static func identifiers(
+        from node: [String: Any], offer: [String: Any], brand: String?
+    ) -> ProductIdentifiers {
+        ProductIdentifiers(
+            gtin: firstStringValue(
+                in: [node, offer], keys: ["gtin13", "gtin12", "gtin14", "gtin8", "gtin", "isbn"]),
+            mpn: firstStringValue(in: [node, offer], keys: ["mpn"]),
+            sku: firstStringValue(in: [node, offer], keys: ["sku"]),
+            brand: brand)
+    }
+
+    private static func firstStringValue(in sources: [[String: Any]], keys: [String]) -> String? {
+        for source in sources {
+            for key in keys {
+                if let value = (source[key] as? String)?.trimmedNonEmpty { return value }
+                if let number = source[key] as? NSNumber { return number.stringValue }
+            }
+        }
+        return nil
     }
 
     /// The first offer object under a Product node — `offers` may be a single
@@ -747,6 +798,42 @@ public struct ProductPageDetector {
             if let value = itempropValue(document, prop)?.trimmedNonEmpty { return value }
         }
         return nil
+    }
+
+    /// The KEYED schema.org microdata identifiers — the microdata counterpart of
+    /// `identifiers(from:offer:brand:)`.
+    private func microdataIdentifiers(document: Document, brand: String?) -> ProductIdentifiers {
+        func first(_ props: [String]) -> String? {
+            for prop in props {
+                if let value = itempropValue(document, prop)?.trimmedNonEmpty { return value }
+            }
+            return nil
+        }
+        return ProductIdentifiers(
+            gtin: first(["gtin13", "gtin12", "gtin14", "gtin8", "gtin", "isbn"]),
+            mpn: first(["mpn"]),
+            sku: first(["sku"]),
+            brand: brand)
+    }
+
+    /// The keyed identifiers of the page's first JSON-LD `Product` node,
+    /// independent of whether that node carries a price — a per-host price rule
+    /// (Amazon/Target/Walmart) can win the price while JSON-LD is still the only
+    /// place the GTIN is stated.
+    private func jsonLDIdentifiers(document: Document) -> ProductIdentifiers {
+        guard let scripts = try? document.select("script[type=application/ld+json]") else {
+            return ProductIdentifiers()
+        }
+        for script in scripts {
+            guard let data = script.data().data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: data),
+                  let node = firstProductNode(in: parsed) else { continue }
+            let identifiers = Self.identifiers(
+                from: node, offer: Self.firstOffer(in: node) ?? [:],
+                brand: Self.brandName(from: node["brand"]))
+            if !identifiers.isEmpty { return identifiers }
+        }
+        return ProductIdentifiers()
     }
 
     private func brand(document: Document) -> String? {

@@ -21,6 +21,7 @@ extension ProductInfo {
         PriceTracker(
             productName: name, stores: trackerStores(fallbackURL: fallbackURL),
             brand: brand, productID: productID,
+            identifiers: identifiers.merging(ProductIdentifiers(brand: brand)),
             alertThresholdFraction: alertThresholdFraction)
     }
 

@@ -29,6 +29,7 @@ public final class ProductIngestProcessor: ProductIngestProcessing {
             name: metadata.name, priceAmount: metadata.price.amount,
             priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
             brand: metadata.brand, productID: metadata.productID,
+            identifiers: metadata.identifiers,
             sellers: metadata.sellers)
     }
 }

@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaHTMLClassification
+import LunaModels
 import LunaPriceMetadata
 import LunaURLClassification
 import SwiftSoup
@@ -20,12 +21,17 @@ public struct ProductMetadata: Equatable {
     public let imageURL: URL?
     public let brand: String?
     public let productID: String?
+    /// The KEYED identifiers the page declared (`ProductIdentifiers`) — what a
+    /// cross-seller comparison matches on, since only a GTIN travels between
+    /// retailers.
+    public let identifiers: ProductIdentifiers
     /// Seller listings discovered on an aggregate shopping page. Empty for ordinary
     /// product pages.
     public let sellers: [ProductSellerInfo]
 
     public init(
         name: String, price: ProductPrice, imageURL: URL?, brand: String?, productID: String?,
+        identifiers: ProductIdentifiers = ProductIdentifiers(),
         sellers: [ProductSellerInfo] = []
     ) {
         self.name = name
@@ -33,6 +39,7 @@ public struct ProductMetadata: Equatable {
         self.imageURL = imageURL
         self.brand = brand
         self.productID = productID
+        self.identifiers = identifiers
         self.sellers = sellers
     }
 }
@@ -109,7 +116,8 @@ public struct ProductMetadataExtractor {
         let fields = detector.metadataFields(document: document, baseURL: url)
         return ProductMetadata(
             name: fields.name, price: price, imageURL: fields.imageURL,
-            brand: fields.brand, productID: fields.productID)
+            brand: fields.brand, productID: fields.productID,
+            identifiers: fields.identifiers)
     }
 
     /// The single price source: the first matching host rule, else the generic

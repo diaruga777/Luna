@@ -57,6 +57,39 @@ final class ProductPageDetectorTests: XCTestCase {
         XCTAssertEqual(info.productID, "VDC-02W")
     }
 
+    // MARK: - Keyed identifiers
+
+    /// The flattened `productID` says WHAT the id is but not WHICH KIND, and only
+    /// a GTIN travels between retailers — so detection keeps the kinds apart in
+    /// `identifiers` for the alternative-seller comparison to match on.
+    func testJSONLDKeepsGTINAndSKUApart() throws {
+        let info = try XCTUnwrap(detect("amazon-jsonld.html", url: "https://www.amazon.com/dp/B09"))
+        XCTAssertEqual(info.identifiers.gtin, "0194644090876")
+        XCTAssertEqual(info.identifiers.sku, "A2663")
+        XCTAssertEqual(info.identifiers.brand, "Anker")
+        XCTAssertNil(info.identifiers.mpn)
+        // The flattened value is unchanged — nothing migrated.
+        XCTAssertEqual(info.productID, "0194644090876")
+    }
+
+    func testMicrodataSKUIsNotPromotedToAGTIN() throws {
+        let info = try XCTUnwrap(detect(
+            "bestbuy-microdata.html", url: "https://www.bestbuy.com/site/6505725.p"))
+        XCTAssertEqual(info.identifiers.sku, "6505725")
+        XCTAssertNil(info.identifiers.gtin, "a retailer SKU is not a cross-host identifier")
+        XCTAssertEqual(info.identifiers.brand, "Sony")
+        XCTAssertFalse(info.identifiers.hasCrossHostIdentifier)
+    }
+
+    func testJSONLDMPNIsKeptAsAnMPN() throws {
+        let info = try XCTUnwrap(detect(
+            "generic-jsonld-graph.html", url: "https://coffeegear.example/p/v60"))
+        XCTAssertEqual(info.identifiers.mpn, "VDC-02W")
+        XCTAssertNil(info.identifiers.gtin)
+        XCTAssertEqual(info.identifiers.brand, "Hario")
+        XCTAssertTrue(info.identifiers.hasCrossHostIdentifier, "an MPN + brand is cross-host")
+    }
+
     func testArticleWithoutPriceIsNotAProduct() {
         XCTAssertNil(detect("article-no-price.html", url: "https://news.example/grid"))
     }

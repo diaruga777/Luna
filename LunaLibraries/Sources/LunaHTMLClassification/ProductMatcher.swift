@@ -10,6 +10,11 @@ import Foundation
 /// product as an existing tracker — so a new save can be offered as a merge.
 ///
 /// Matching, strongest signal first:
+/// 0. KEYED GTIN equality (`ProductIdentifiers.gtin`, zero-padded to 14) — the
+///    only globally unique id, and the only one that is unambiguously the same
+///    KIND on both sides. It outranks tier 1 because a flattened `productID`
+///    collision can be two retailers' unrelated SKUs that happen to read alike,
+///    while two equal GTINs are the same physical product by definition.
 /// 1. `productID` (GTIN/SKU/…) equality — identical ids are the same product.
 /// 2. Fuzzy name+brand similarity above `nameThreshold` — normalized token
 ///    Jaccard, requiring a compatible brand (same brand, or one side unbranded).
@@ -29,6 +34,13 @@ public enum ProductMatcher {
         for candidate: ProductInfo,
         among existing: [(id: UUID, tracker: PriceTracker)]
     ) -> UUID? {
+        // 0) Keyed GTIN match — the strongest available evidence.
+        if let candidateGTIN = candidate.identifiers.normalizedGTIN {
+            let gtinMatches = existing
+                .filter { $0.tracker.identifiers.normalizedGTIN == candidateGTIN }
+                .map(\.id)
+            if let lowest = gtinMatches.min(by: { $0.uuidString < $1.uuidString }) { return lowest }
+        }
         // 1) Exact product-id match wins outright (lowest id when several match).
         if let candidateID = normalizedID(candidate.productID) {
             let idMatches = existing

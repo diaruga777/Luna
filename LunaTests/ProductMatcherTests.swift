@@ -37,6 +37,49 @@ final class ProductMatcherTests: XCTestCase {
         XCTAssertEqual(match, a, "normalized product id match beats name")
     }
 
+    private func trackerWithGTIN(_ gtin: String, name: String = "Tracked", id: String? = nil)
+        -> PriceTracker {
+        var subject = tracker(name: name, id: id)
+        subject.identifiers = ProductIdentifiers(gtin: gtin)
+        return subject
+    }
+
+    private func candidateWithGTIN(_ gtin: String, name: String = "Candidate", id: String? = nil)
+        -> ProductInfo {
+        ProductInfo(name: name, priceAmount: Decimal(10), priceCurrency: "USD",
+                    imageURL: nil, brand: nil, productID: id,
+                    identifiers: ProductIdentifiers(gtin: gtin))
+    }
+
+    /// A keyed GTIN outranks a flattened `productID` collision: two equal GTINs
+    /// are the same physical product by definition, while two equal flattened ids
+    /// can be unrelated retailer SKUs that happen to read alike.
+    func testKeyedGTINBeatsFlattenedProductIDMatch() {
+        let gtinTracker = UUID(), flatTracker = UUID()
+        let existing = [
+            (id: gtinTracker, tracker: trackerWithGTIN("0194644090876")),
+            (id: flatTracker, tracker: tracker(name: "Other", id: "SKU-1")),
+        ]
+        let candidate = candidateWithGTIN("0194644090876", id: "SKU1")
+        XCTAssertEqual(ProductMatcher.bestMatch(for: candidate, among: existing), gtinTracker)
+    }
+
+    /// GTIN-8/12/13/14 are the same numberspace at different widths.
+    func testKeyedGTINMatchesAcrossDeclaredWidths() {
+        let a = UUID()
+        let existing = [(id: a, tracker: trackerWithGTIN("0194644090876"))]
+        XCTAssertEqual(
+            ProductMatcher.bestMatch(for: candidateWithGTIN("194644090876"), among: existing), a)
+    }
+
+    func testDifferentKeyedGTINsDoNotMatch() {
+        let a = UUID()
+        let existing = [(id: a, tracker: trackerWithGTIN("0194644090876", name: "Sony Headphones"))]
+        XCTAssertNil(
+            ProductMatcher.bestMatch(
+                for: candidateWithGTIN("9999999999999", name: "Bose Speaker"), among: existing))
+    }
+
     func testFuzzyNameMatchWithCompatibleBrand() {
         let a = UUID()
         let existing = [(id: a, tracker: tracker(

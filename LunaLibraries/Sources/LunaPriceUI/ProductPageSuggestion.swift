@@ -47,6 +47,7 @@ public extension ProductPageSuggestion {
                 price: ProductPrice(amount: product.priceAmount, currency: product.priceCurrency),
                 imageURL: product.imageURL,
                 brand: product.brand,
-                productID: product.productID))
+                productID: product.productID,
+                identifiers: product.identifiers))
     }
 }

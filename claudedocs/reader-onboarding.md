@@ -298,8 +298,11 @@ it is holding for is a video the user has plainly watched play.
 straight off `presentVideoOverlay` in `LunaSafari/Resources/content.js` — the
 `calc(100vw - 24px)` panel capped at 640 in
 `NIGHT_SURFACE` at radius 20 with 10pt padding, the 34pt round close button over
-an 8pt gap, the 16:9 black stage at radius 12, the `QUEUE_INDIGO` full-width
-capsule 10pt under it at `minHeight: 44`. A change to either one is a change to
+an 8pt gap, the black stage at radius 12 (16:9 here, since the lesson's clip is
+16:9 — in Safari the stage takes the CLIP's shape, clamped between that 16:9 and
+the visible viewport), the full-width capsule 10pt under it at `minHeight: 44` in
+the media kind's tint (`LunaSurfacePalette.baseColor(for: .downloader)`, which is
+what `KIND_TINTS.media` hand-copies). A change to either one is a change to
 both, and `SafariVideoOverlayReplicaTests` pins the two files' shared numbers
 and the shared string to each other.
 

@@ -343,7 +343,8 @@ Article flow:
    A page is "locked" for `onlyLocked` when its host is a known
    hard-paywall site (`isKnownHardPaywallHost`) OR it shows paywall markers (`looksPaywalled`
    — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` + `content_tier`).
-3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping
+3. Otherwise it injects a "Read in Luna" capsule button in the article tint (the
+   Reader's periwinkle `#ADB5F6` — see "Colour" above). Tapping
    it opens `<ownScheme>://read?url=<encoded>` (`LunaDeepLink`) — the extension's own
    containing app.
 
@@ -851,7 +852,8 @@ Paywall unlock + toast:
   `amp_unhide_subscr_section`; removing a real gate counts as an unlock for the toast.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
-  content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered
+  content.js shows a brief "Unlocked with Luna" toast: a capsule in the article tint,
+  centered
   above the button's corner (bottom ≈84px + safe area, so the two never overlap),
   fading out after ~3s. The "Read in Luna" button still appears independently.
 

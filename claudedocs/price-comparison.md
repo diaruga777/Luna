@@ -79,7 +79,7 @@ GTIN, zero-padded to 14 so the same number declared as GTIN-8/12/13/14 matches.
 
 ## The seller directory
 
-`LunaPriceCompare/Resources/seller-directory.json` — 218 retailers across 9
+`LunaPriceCompare/Resources/seller-directory.json` — 222 retailers across 9
 English-speaking regions, bundled rather than fetched (a network round trip just
 to learn *where* to look would spend most of the appex's budget before the first
 real request).
@@ -87,11 +87,11 @@ real request).
 ```
 { version: 1,
   sellers: [{ id, name, region, domain, searchURL, acceptsGTIN, marketplace,
-              categories, tier, verified }] }
+              categories, tier, verified, searchIsClientRendered? }] }
 ```
 
 - `searchURL` carries exactly one `{query}` placeholder. It may sit in a query
-  VALUE (`?k={query}`) or in the PATH (`/s/{query}` — 11 of the 218), and those
+  VALUE (`?k={query}`) or in the PATH (`/s/{query}` — 11 of them), and those
   escape differently: `+` means "space" only inside a query string. `Seller
   .searchRequestURL(forQuery:)` looks at where the placeholder actually is.
   Everything outside RFC 3986 unreserved is percent-escaped, so a product name
@@ -99,6 +99,18 @@ real request).
 - `categories` draw from the fixed `SellerCategory` taxonomy; `general` marks a
   mass merchant.
 - `tier` is 1 (household name) … 3 (niche).
+- `searchIsClientRendered` (optional, additive — an entry written before it
+  decodes as `nil`, which reads as "not known to be") marks a shop whose search
+  RESULTS are drawn by JavaScript, so the served markup carries no product links
+  at all. 31 entries carry it, and each was MEASURED: a live search that returned
+  200, no bot wall, and zero extractable product links. Target's US search page is
+  123KB and Walmart's 248KB, and neither contains a single product URL.
+
+  Two consumers, and they want opposite things. A static-only context (the Safari
+  appex) excludes them at SELECTION — its candidate budget is six, and a slot
+  spent on a structurally empty page is one the run never gets back. The full
+  profile KEEPS them, because it can render (below). The flag is an observation
+  about markup, not a verdict on the retailer.
 
 `SellerDirectory.validate()` returns every structural problem as a line, and
 `SellerDirectoryTests` runs it against the SHIPPED file — a hand-edited entry
@@ -117,7 +129,12 @@ the same product answer differently depending on where it was saved.
    `amazon.co.uk` save is a UK shopping trip wherever the phone is), else the
    device region if any storefronts serve it, else `US`.
 2. **Categories.** Keyword inference over the page's category hints, breadcrumbs
-   and product name (word-boundary matching, plural "s" allowed), unioned with
+   and product name. Hints arrive as breadcrumb trails and JSON-LD `category`
+   strings, so separators become spaces and every token is ALSO emitted
+   de-pluralized — `containsWord` already let a singular keyword fire on a plural
+   hint, but never the reverse, so `groceries` could not reach `grocery`. The
+   keyword table carries the SHELF words a breadcrumb uses alongside the PRODUCT
+   words a title uses; they are rarely the same word. Unioned with
    the source retailer's own directory categories minus `general`. **Empty ⇒
    mass merchants only** — the shops that sell everything, rather than a dozen
    specialists chosen at random.
@@ -125,7 +142,12 @@ the same product answer differently depending on where it was saved.
    overlap capped at `+24`; `+10` when `acceptsGTIN` and we have a GTIN; `+4`
    when `verified`; `−8` for a marketplace when we have NO GTIN (third-party
    listings retitle the same product freely, so name matching there is the
-   noisiest thing the fan-out can do).
+   noisiest thing the fan-out can do); `−22` for a SPECIALIST that overlaps
+   nothing when the product HAS a category. That last one is not a tiebreak — it
+   is the difference between a book comparison and a live run that asked Chewy,
+   AutoZone, CVS and Home Depot, because tier alone put four tier-1 specialists
+   above every tier-2 bookshop. It never applies to a mass merchant, which has no
+   specialism to mismatch.
 4. **Order.** score desc → tier asc → id asc. The id tiebreak is the only thing
    standing between this and a directory-order dependency.
 5. **Take** the profile's candidate limit. The constrained list is a strict
@@ -141,11 +163,75 @@ retailer FAMILY (registrable domain), not exact host.
 `SellerFanOut.run(_:) -> SellerFanOutOutcome`. Two layers run concurrently.
 
 **Layer 1 — the retailers' own searches.** For each candidate in rank order,
-with the profile's concurrency: build the search URL (raw GTIN digits when the
-seller is known to accept them, else the product name), fetch it, extract up to
+with the profile's concurrency: build the search URL, fetch it, extract up to
 N plausible product links, resolve each, verify, take the first that is the same
 product AND has a price. Any failure consumes the candidate — nothing is ever
 retried.
+
+### Which question each shop is asked
+
+A seller is asked by IDENTIFIER first whenever the directory does not say it
+refuses barcodes — including when `acceptsGTIN` is `nil`, which means unknown
+rather than no. That is not optimism. When the source declares a GTIN, tier 4 is
+refused outright, so a candidate reached by a NAME search can only be verified if
+its page publishes structured identifiers — which most real pages do not. Asking
+by identifier is what makes tier 3 available to it at all.
+
+A shop of UNKNOWN barcode support gets the product NAME as a second question if
+the first found nothing; one KNOWN to take barcodes does not. An empty answer
+from a shop that indexes barcodes means "not stocked", and a second request is
+itself how a bot wall gets tripped.
+
+The name is always the CLEANED name (`ProductTitleHygiene`) — searching another
+retailer for the string "Amazon.com" returns nothing on anyone's first page.
+
+### Reading a search page
+
+`LeanProductPageParser.productLinks` is where a fan-out most easily returns
+nothing at all, and the first version did: measured against live captures it
+found 0 of eBay's 99 `/itm/` URLs and 1 of Barnes & Noble's 79 — a Nook e-reader
+SAMPLE on a different subdomain. Four rules, each from a measured failure:
+
+1. **The whole document, not just `<a href="…">`.** eBay writes its search hrefs
+   UNQUOTED (`href=https://…`), and product URLs sit in embedded JSON with
+   escaped slashes at least as often as in anchors. One regex pass covers quoted,
+   unquoted and bare absolute URLs, in document order, after JSON-unescaping.
+2. **Each retailer's own shape.** `LeanProductURLRules.retailerRules` maps ~130
+   registrable domains across all nine regions to their product paths (B&N's
+   `/w/`, Walmart's `/ip/`, Target's `/-/A-`, Costco's `.product.<id>.html`,
+   AbeBooks' `/<id>/bd`, …), plus per-retailer VETOES for shapes a shared pattern
+   wrongly accepts — eBay seeds "Shop on eBay" promo cards at `/itm/123456`,
+   which the shared `/itm/[0-9]{4,}` accepts and which ate every link slot.
+   Entries are ADDITIVE: a URL matching neither list falls through to the shared
+   tiers, so a guessed pattern costs nothing. That is why the table covers
+   retailers nobody has measured.
+3. **The retailer's own non-product pages are refused.** Reading the whole
+   document means reading the whole document: bundle, API and asset URLs match
+   `/products/[^/]+` as happily as products do (`gdx-api.costco.com/…/products/
+   summary` was a live candidate), and a search page links help, cart, careers,
+   gift cards and the store locator long before its first result. Excluded by
+   subdomain label, path segment and file extension.
+4. **Ranking.** Links carrying the SEARCHED identifier first — a retailer that
+   puts the id in the URL has already said which of its fifty results is right —
+   then retailer-shaped, then the shared strict patterns, then generic slugs,
+   with document order preserved inside each tier. Amazon URLs canonicalize to
+   `/dp/<ASIN>` so one product cannot fill three link slots under three slugs.
+
+### Rendering a search page
+
+The full profile carries a `renderSearch` closure. When a candidate's static
+markup yields ZERO links, the search page is re-read through an off-screen
+WebView and re-extracted — at most `renderedSearchLimit` times per run, claimed
+inside the state actor so three concurrent candidates cannot each decide they are
+first. `LunaPriceCompare` may not link WebKit, so the app supplies it
+(`WebViewPriceRenderer.renderedSearchHTML`), whose readiness test is "the
+rendered DOM yields a product link" rather than a fixed settle window. The
+constrained profile has no renderer and a budget of zero.
+
+The lean parser also reads the app-state JSON price tier (`current_retail`,
+`currentPrice.price`) that `TargetPriceRule`/`WalmartPriceRule` already read with
+SwiftSoup, with the storefront's REGION supplying the currency the bare number
+lacks (`SellerDirectory.currencies`) — a `.com` is not evidence of a country.
 
 **Layer 2 — keyless web search.** `DuckDuckGoSearch.results` (injected), which
 reaches retailers the directory has never heard of. Same verification, same
@@ -162,6 +248,36 @@ confidence is the only reason worth overriding it for.
 **Stopping**: `reachedTarget`, `exhausted`, or `budgetExpired` (wall clock,
 checked between candidates — a single hung fetch is the injected fetcher's
 problem to time out).
+
+### Diagnostics
+
+A run that finds nothing used to leave no trace: twelve candidates, zero results,
+and nothing anywhere to say which retailer refused, which served a shell, and
+which simply had the wrong product. "Nothing in the diagnostic logs" was how it
+was reported, and it was literally true.
+
+`SellerFanOutOutcome.attempts` carries one `SellerFanOutAttempt` per candidate —
+the query actually used, the HTTP status, the bytes, the links extracted, whether
+a render was needed, and either the `SellerMatchConfidence` it was ACCEPTED at or
+the `SellerFanOutRejection` that ended it:
+
+| rejection | means |
+| --- | --- |
+| `searchUnreachable` | the search page could not be fetched at all |
+| `searchBotWalled` | a refusal status, or a challenge served as a 200 |
+| `searchBadStatus` | a non-2xx that was not a refusal (an ordinary 404 miss) |
+| `clientRenderedSearchSkipped` | flagged shop, and this profile cannot render |
+| `noProductLinks` | fetched, and no recognizable product URL on it |
+| `noPriceOnAnyLink` | every link led to a page with no price |
+| `noVerifiedMatch` | pages were priced; none was the same product |
+| `runEndedFirst` | the target was reached or the budget spent first |
+
+The formatting lives on the value (`logLine`, `logSummary`, `compactLogLine`), not
+at the call sites, so the app and the appex say the same thing about the same run.
+`SellerComparisonRunner` writes each attempt AND the run summary to the app's
+shareable `DiagnosticLog` under the `SellerComparison` category; the Safari finder
+logs the one compact line an appex with a hard memory ceiling can afford. Tests
+assert on the rejections rather than on log text.
 
 **Bot walls are expected, not exceptional.** 401/403/405/429/503, or a
 challenge interstitial served with a 200, marks the whole host out for the run —
@@ -181,6 +297,9 @@ over-provisioned relative to the result target in BOTH profiles.
 | total budget | 35s | 15s (inside the appex's 20s native budget) |
 | per-fetch timeout | 10s | 8s |
 | name-only match | allowed | **refused** |
+| `.gtinInPage` match | allowed | **allowed** (it is identifier evidence) |
+| client-rendered sellers | asked, with a render fallback | skipped at selection |
+| rendered searches per run | 3 | 0 |
 | web-search layer | on | off |
 
 ---
@@ -194,12 +313,100 @@ on. A wrong "$9.50 at Amazon" is worse than no answer.
    DIFFER are a refusal, not a fall-through: both sides named the product
    globally and named different products.
 2. **MPN equality + compatible brand** → `.mpn`.
-3. **Name similarity ≥ 0.6 (Jaccard) + compatible brand** → `.name`, but only
+3. **The page STATES the GTIN without declaring it** → `.gtinInPage`. Three
+   conditions, all required: the page was reached by asking THIS retailer's own
+   search for the GTIN's digits, the page (or its URL) contains those digits, and
+   the name similarity in tier 4 already passes.
+4. **Name similarity ≥ 0.6 (Jaccard) + compatible brand** → `.name`, but only
    when the profile allows it AND **the source declared no GTIN or MPN**. If the
    source has a strong id and the candidate does not present the same one, a name
    coincidence is not evidence — it is the case, the older model, or the
    two-pack. (A retailer SKU is not a cross-host identifier, so it does not block
    this tier.)
+
+### Why tier 3 exists
+
+Tiers 1 and 2 are unreachable on most of the real web. The measured case: an
+Amazon `/dp/` page, found by searching amazon.com for the exact GTIN, whose
+markup and whose URL both carry that GTIN, with a matching title — refused,
+because Amazon publishes no JSON-LD and lean parsing therefore found
+`gtin == nil`. Demanding a STRUCTURED identifier is demanding something most
+retailers do not ship.
+
+The two halves of the evidence do different jobs and neither is sufficient. The
+SEARCH half — this page came back from asking this shop for these exact digits —
+is what makes the containment meaningful rather than coincidental. The
+CONTAINMENT half is what stops a shop's "related items" rail from being taken as
+an answer. Because it is identifier evidence and cheap string containment, the
+**constrained profile accepts it** while still refusing tier 4.
+
+Every written form is tried (`GTINForms.variants`): GTIN-14, EAN-13, UPC-12, and
+for books the ISBN-10 — which is how Amazon's `/dp/<isbn10>` counts, since a book
+ASIN IS the ISBN-10. A separator-tolerant second pass catches
+`978-0-7352-1129-2`. The obvious trap is pinned by a test: the AUDIOBOOK edition
+of a title matches by name and does not carry the paperback's ISBN, so it is
+refused.
+
+`requiresPageEvidence` is the same question asked cheaply, so the orchestrator
+can tell whether fetching a page's markup would change the answer before spending
+a request on it — which matters because the rich resolver returns a parse and no
+HTML.
+
+---
+
+## Amazon
+
+Amazon needed its own reader, in both directions, and did not have one.
+
+**It publishes no structured data.** No JSON-LD `Product`, no
+`product:price:amount`, no microdata. So a saved Amazon page produced NO keyed
+identifiers — leaving its own fan-out nothing to verify anybody against — and an
+Amazon CANDIDATE parsed with `price == nil`, so the lean profile could never
+price the retailer the whole feature most needs.
+
+`AmazonProductDetails` (LunaPriceMetadata — Foundation-only, and a dependency of
+both `LunaPriceIngest` and `LunaPriceCompare`, so the SwiftSoup tier and the lean
+tier read Amazon with the SAME code and cannot disagree) supplies:
+
+- **Identifiers** — ISBN-13/ISBN-10, UPC/EAN, "Item model number", brand — read
+  as plain text out of the product-details table. Wired into the rich save path
+  through `ProductMetadataExtractor`, which fills only what structured extraction
+  left empty, and into the lean path through `LeanProductPageParser.parse`.
+- **The buy-box price**, anchored on the buy box rather than on "the first price
+  on the page" (an Amazon page carries twenty-odd), including the current layout
+  that serves an EMPTY `a-offscreen` and splits the number across
+  `a-price-whole` / `a-price-fraction`. Currency comes from the markup, else from
+  `AmazonStorefronts`.
+
+Two details are what make label-window reading safe rather than approximate, and
+both were bugs first:
+
+- It **narrows to the detail containers** (`prodDetTable`,
+  `productOverview_feature_div`, `richProductInformation`, `detailBullets…`)
+  before looking for a label. The warranty paragraph contains the word
+  "Manufacturer" long before the details table does, and the first plausible text
+  after it is not a brand. Narrowing also took the extraction from ~1.5 s to
+  ~10 ms, which matters inside a 15 s appex budget.
+- It **refuses labels that sit inside markup**. The product-overview grid tags
+  its row `class="po-brand"`, and the first text node after that occurrence is
+  the word "Brand" — so without the check, the brand of every such page was the
+  string `Brand`.
+
+**ASIN ↔ ISBN.** For books, Amazon's ASIN *is* the ISBN-10, so `/dp/0735211299`
+states the product's global identifier even on a page whose details table did not
+load. `GTINForms.isbn13(fromISBN10:)` derives the ISBN-13 (978 prefix, recomputed
+EAN check digit), and `isValidISBN10` — a real checksum — is the whole safety
+margin: `B09XS7JWHH` fails it, so an ordinary ASIN is never promoted to a book
+number. The same fact serves as candidate-URL evidence in tier 3.
+
+**Titles.** `ProductTitleHygiene` strips storefront chrome (`Amazon.com: …`,
+`… - Walmart.com`, a trailing `(Paperback)`) before a title becomes a search query
+or one side of a name-similarity check. Searching another retailer for the string
+"Amazon.com" returns nothing on anyone's first page, and Jaccard overlap was
+docking the source for words that describe the SHOP. It is generic title hygiene,
+applied to every source. It is deliberately conservative — `(Anniversary Edition)`
+distinguishes products and survives; a title that is ONLY chrome keeps its
+original text rather than becoming empty.
 
 ---
 
@@ -431,6 +638,13 @@ All in `LunaTests/`:
 | `ComparisonMatchingParityTests` | `ProductIdentityMatching` vs `ProductMatcher`/`SnapshotMatcher` |
 | `BotWallDetectionTests` | blocked statuses, 200-served challenges, no false positive on a large page |
 | `SellerFanOutTests` | rank order, stop-at-target, budget expiry, bot-wall skip, verification refusals, exclusions, rich resolver, Layer 2 |
+| `RealWorldSearchLinkExtractionTests` | the captured eBay/B&N/Target search pages that returned nothing, the promo-card veto, asset/API and furniture refusals, JSON-escaped URLs, ASIN collapsing |
+| `AmazonProductDetailsTests` | identifiers and the buy box off two captured Amazon PDPs, the `po-brand` and warranty-prose false positives, the split-price layout, the lean parser end to end |
+| `GTINFormsTests` | ISBN-10 ↔ ISBN-13, UPC/EAN/GTIN-14 forms, and that an ordinary ASIN fails the checksum |
+| `ProductTitleHygieneTests` | storefront prefixes/suffixes and format tails, and what must survive |
+| `GTINInPageMatchingTests` | the evidence tier's three conditions and its five refusals, including the audiobook trap |
+| `SellerFanOutDiagnosticsTests` | every rejection reason, attempt streaming, the run summary, the client-rendered skip, the render fallback and its cap, the identifier-then-name questions |
+| `SellerCategoryRelevanceTests` | a book outranking unrelated specialists, and hint normalization |
 | `ComparableResultMergerTests` | the merge/supplant rule |
 | `PriceComparisonBaselineTests` | median semantics, no badge at seeding, no `newlyAlerting` on the first refresh |
 | `ProductIdentifiersTests` | the keyed value type and its normalization |

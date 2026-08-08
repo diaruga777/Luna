@@ -132,6 +132,28 @@ enum ProductStageCatalog {
                         host: .inApp))
                 }),
             StageDescriptor(
+                id: "price.editor.extension", screen: "Price editor",
+                variant: "in a share sheet",
+                summary: "The extension-hosted editor: no back chevron, the floating "
+                    + "glass exit standing the alert footer up, and a long marketplace "
+                    + "title held inside the column instead of hanging off both edges.",
+                kind: .product,
+                seed: {
+                    StageFixtures.seed([
+                        StageFixtures.pendingTracker(
+                            seed: "stage-longtitle",
+                            name: "Panasonic spare blade men's shaver 6-blade ES9600 : "
+                                + "Amazon.com.au: Health, Household & Personal Care",
+                            url: "https://www.amazon.com.au/dp/B003FGWPPS",
+                            price: 116.33, daysAgo: 0, alertThresholdFraction: nil),
+                    ])
+                },
+                make: {
+                    editor(mode: .creation(
+                        itemID: ReadingListItem.deterministicUUID(from: "stage-longtitle"),
+                        host: .extension))
+                }),
+            StageDescriptor(
                 id: "price.editor.merge", screen: "Price editor", variant: "second seller added",
                 summary: "A second store for a product already tracked: the added seller "
                     + "flashes, and 'Read instead' reverts only that one.",

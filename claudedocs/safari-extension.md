@@ -459,16 +459,21 @@ the user does anything, in its loading state, and the resolve is already running
 The pill stays where it was: tapping it re-opens a player the user dismissed, and
 on a page that never earns an auto-open it does what it always did.
 
-Auto-open is gated on the video SIGNAL rather than on pill eligibility, and the
-two are not the same question. A bare platform host recognizes (`x.com/home`,
-`tiktok.com`) and a feed that slips past the static-image suppression can earn a
-pill — but covering someone's feed with a panel they did not ask for is a
-different act from offering them a button beside it. So the auto-open waits for
-`og:video` / player metadata / a `<video>` / a GIF, and because a
-client-rendered post frequently has none of those at `document_idle`, it looks
-again on a bounded schedule (`AUTO_PLAYER_RETRY_DELAYS`, three looks inside
-~2.5s) instead of giving up on the first one. A dismissal cancels whatever is
-still pending: closing it once means this page, not this instant.
+Auto-open asks a NARROWER question than pill eligibility, and the two are not the
+same question. A bare platform host recognizes (`x.com/home`, `tiktok.com`) and a
+feed that slips past the static-image suppression can earn a pill — but covering
+someone's feed with a panel they did not ask for is a different act from offering
+them a button beside it. It takes the same two authorities the pill takes, in the
+same order: **the URL shape** where a platform has video-only surfaces
+(`pathIsInherentlyVideo`), otherwise **the video signal** (`og:video` / player
+metadata / a `<video>` / a GIF). Order matters here rather than being tidiness —
+an Instagram reel carries no video metadata at all and hydrates its `<video>`
+long after this file runs, so on the one platform where the signal never comes,
+the path is the whole answer. Where the signal IS the answer, a client-rendered
+post frequently has none of it at `document_idle`, so it looks again on a bounded
+schedule (`AUTO_PLAYER_RETRY_DELAYS`, three looks inside ~2.5s) instead of giving
+up on the first look. A dismissal cancels whatever is still pending: closing it
+once means this page, not this instant.
 
 ```
 content.js (recognized media page, or a pill tap)

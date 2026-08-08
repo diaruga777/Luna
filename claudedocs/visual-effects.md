@@ -187,6 +187,25 @@ Download surfaces show the traveling activity pulse. Playback uses of the UIKit 
 (the audio mini-player and video scrub overlay) disable it, leaving only determinate
 progress and its head point.
 
+**The pulse CHASES the head; it is not animated at it.** On every surface that shows it,
+the fraction is still climbing while the pulse is in flight, so a `CAKeyframeAnimation`
+over a path baked at launch ends short of the sun — and the merge flare, which does read
+the live head, lights further right. Together they read as a dot that creeps partway
+along and then teleports, which is what this replaced. `MoonHorizonProgressBar` steps the
+pulse from a `CADisplayLink` instead, re-reading the head every frame, and its speed is a
+function of the pulse's AGE rather than of the distance left:
+`pulseBaseSpeed + pulseAcceleration × secondsAlive` (`MoonHorizonPulseChase` holds the
+kinematics, so the chase is testable without a display link). Age-based acceleration is
+what makes the pulse able to close a gap that is itself still widening — the head is
+bounded at 1 and the pulse is not — and it spends the acceleration across the whole
+travel instead of in the last frames of a fixed duration. Two details that look
+incidental and aren't: the merge target is the head layer's PRESENTATION position, since
+`progress` runs up to `setProgress`'s 0.3s ease ahead of the drawn point; and the pulse
+will only merge once it has actually been *behind* the head, so a bar still easing toward
+a just-set fraction can't flare at the left edge the instant a pulse launches. The
+SwiftUI/WidgetKit renderer never had the problem — it re-derives the pulse's position
+from live progress on every render — and keeps its keyframe track.
+
 ## Lunar Eclipse navigation
 
 When Reduce Motion is off, a native reader opened from a real Reader list row always uses

@@ -92,6 +92,7 @@ private struct ProductPresenterAdapter: ShareProductPresenting {
     func presentPriceEditor(product: ProductInfo, url: URL, store: ReadingListStore, host: ExtensionHost) {
         presenter.presentPriceEditor(
             product: product, url: url, store: store,
+            showLoadingPhase: { [weak host] in host?.showLoadingPhase($0) },
             presentModally: { [weak host] in host?.presentModally($0) },
             complete: { [weak host] in host?.confirmSavedThenComplete() })
     }

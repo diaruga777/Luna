@@ -4,6 +4,7 @@
 //
 
 import LunaHTMLClassification
+import LunaModels
 import LunaStorage
 import UIKit
 
@@ -24,9 +25,22 @@ public final class ExtensionProductPresenter {
     /// plain save confirmation when the row is gone). "Read instead" re-appends
     /// the URL to the shared store (extension-safe: the main app ingests it on
     /// next launch); the editor handles the tracker delete.
+    ///
+    /// Between the two there is now a phase: the alternative-seller fan-out,
+    /// announced on the surface's own wait screen. The editor opens on the
+    /// finished tracker — every seller found, the baseline already re-based onto
+    /// the median — because a store list that grows under an open editor is a
+    /// list the user cannot trust to still be there when they tap it.
+    ///
+    /// `showLoadingPhase` is a no-op on a host with no wait screen, and the
+    /// whole leg is skipped when no fan-out is installed, so a surface that
+    /// cannot compare presents exactly as it did before. The engine's own
+    /// budget plus `SellerComparisonRunner.hardCapGrace` is the hard cap; when
+    /// it expires the editor opens with whatever had landed.
     public func presentPriceEditor(
         product: ProductInfo, url: URL, store: ReadingListStore,
-        presentModally: (UIViewController) -> Void,
+        showLoadingPhase: @escaping (String) -> Void = { _ in },
+        presentModally: @escaping (UIViewController) -> Void,
         complete: @escaping () -> Void
     ) {
         guard let itemID = store.savePriceTracker(
@@ -38,10 +52,25 @@ public final class ExtensionProductPresenter {
             complete()
             return
         }
-        let editor = PriceTrackingViewController(
-            mode: .creation(itemID: itemID, host: .extension),
-            onReadInstead: { urlString in SharedReadingListAppender.append(urlString: urlString) })
-        editor.onDone = complete
-        presentModally(editor)
+        let present = { [weak self] in
+            guard self != nil else { return }
+            let editor = PriceTrackingViewController(
+                mode: .creation(itemID: itemID, host: .extension),
+                onReadInstead: { urlString in
+                    SharedReadingListAppender.append(urlString: urlString)
+                })
+            editor.onDone = complete
+            presentModally(editor)
+        }
+        guard SellerComparisonRunner.installed != nil else {
+            present()
+            return
+        }
+        showLoadingPhase(L10n.string("PriceTracker_comparison_findingSellersStatus"))
+        Task { @MainActor in
+            _ = await SellerComparison.runAndAttach(
+                itemID: itemID, sourceURL: url, store: store)
+            present()
+        }
     }
 }

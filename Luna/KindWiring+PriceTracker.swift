@@ -38,6 +38,9 @@ enum KindWiring {
         // definition the central app installs too (`CardKindPresenter.swift`).
         CardKindPresenters.product = ProductCardPresenter()
         IngestorKindHandlers.product = ProductKindHandler()
+        // Action Button intents hand a saved product back as its comparison
+        // summary (`claudedocs/price-comparison.md`).
+        ProductIntentHandoff.install()
         // No price-graph email snapshot: Price Tracker shares a tracker as its
         // product link, never as a Luna email (see `LunaApp.sharesByEmail`).
 

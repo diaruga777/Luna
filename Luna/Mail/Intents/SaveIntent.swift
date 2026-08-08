@@ -350,6 +350,12 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                 reporter.enter(.finishing)
                 return (SaveResultEntity(media: exported), "Done.")
             }
+            if let comparison = await comparisonMedia(
+                for: savedURLString, reporter: reporter) {
+                IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
+                reporter.enter(.finishing)
+                return (SaveResultEntity(media: comparison), "Saved to Luna.")
+            }
             let media = try await downloadMedia(
                 for: savedURLString, checkpoint: state.media,
                 reporter: reporter)
@@ -367,7 +373,28 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             IntentIngestHelper.finishSaveAttempt(urlString: urlString)
             reporter.enter(.finishing)
             return (SaveResultEntity(media: media), "Saved to Luna.")
+        case .comparison:
+            // The product and its alternative sellers are already saved; the
+            // summary is what Provide Context ran out of time for. Under the
+            // extended runtime this has room to refresh day-old seller prices
+            // before it prints them.
+            guard let urlString = state.resolvedURLString else { return nil }
+            let media = await comparisonMedia(for: urlString, reporter: reporter)
+            IntentIngestHelper.finishSaveAttempt(urlString: urlString)
+            reporter.enter(.finishing)
+            return (SaveResultEntity(media: media), "Saved to Luna.")
         }
+    }
+
+    /// The alternative-seller comparison document for a saved product, or nil
+    /// for every save that isn't one (and in every app that doesn't track
+    /// prices, where the seam is never installed).
+    private func comparisonMedia(
+        for urlString: String, reporter: IntentProgressReporter
+    ) async -> IntentFile? {
+        guard ActionButtonIntentSupport.handlesProductComparison else { return nil }
+        reporter.enter(.findingSellers)
+        return await ActionButtonIntentSupport.comparisonFile(for: urlString)
     }
 
     private func downloadMedia(

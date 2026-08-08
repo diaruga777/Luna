@@ -447,10 +447,49 @@ plain article — never a broken tracker, never paywall-bypassed).
   note and falls through to `ArticleResolver`.
 - **Share / action extension** (`ShareKit/ShareViewController.ingestArticleThenComplete`):
   runs `ProductPageDetector` then `PriceFetcher` on the fetched HTML **before**
-  `ArticleResolver.resolve`; on a real price saves the tracker **silently**
-  (extensions can't present the main-app editor); the user edits it in the app. This
-  is why the action extension never paywall-bypasses a product page. No fetchable
-  price → article path.
+  `ArticleResolver.resolve`. This is why the action extension never
+  paywall-bypasses a product page. No fetchable price → article path. On a real
+  price it persists the tracker, holds its wait screen on "Finding other
+  sellers…" while the fan-out runs (below), then presents the SAME
+  `PriceTrackingViewController` the app shows —
+  `ExtensionProductPresenter.presentPriceEditor`.
+
+## Save-time alternative-seller comparison
+
+A new tracker does not stay a one-store tracker. Immediately after the initial
+save, every save surface runs the alternative-seller fan-out — the same product
+on other retailers' own sites, fetched now — and attaches what it verifies. The
+engine, the candidate ranking and the match rules are `LunaPriceCompare`; the
+whole feature is documented in `claudedocs/price-comparison.md`. What matters
+here is where it sits in THIS pipeline:
+
+- **New trackers only.** `ProductTrackerIngestor.ingest` runs it on the
+  new-tracker branch, between `savePriceTracker` and
+  `PriceTrackerSaveAnnouncement`, so the card the deck centres is already
+  finished. The merge branch does not: that tracker has been through a fan-out
+  once, and re-running it would spend a dozen candidates re-finding the stores it
+  is excluding.
+- **Source first, then sellers, then the baseline.** `SellerComparison.apply`
+  `upsertStore`s each verified seller with a live price AND a recorded day
+  sample, and only then calls `seedComparisonBaseline`. Building every store up
+  front instead would go through `PriceTracker`'s multi-store initializer, which
+  takes the CHEAPEST store's currency as `initialCurrency` — one foreign-currency
+  listing that happens to be numerically lowest would silently redenominate the
+  tracker.
+- **The baseline becomes the MEDIAN, and nothing badges.** See
+  `claudedocs/price-comparison.md` § The median baseline. Alerts still fire only
+  from a `PriceRefreshOutcome.newlyAlerting` transition on a later refresh.
+- **One store per retailer family.** The engine keys its own results by
+  registrable domain; `apply` additionally refuses a domain the tracker already
+  holds, which the engine cannot know about.
+- **It is installed, not called.** `ProductKindComposition.install()` fills
+  `SellerComparisonRunner.installed`; a process without it compares nothing and
+  every surface behaves exactly as it did before.
+
+Surfacing the wait: the share/action extensions show "Finding other sellers…" on
+their wait screen (`ExtensionHost.showLoadingPhase`, defaulted to a no-op) and
+open the editor when the fan-out returns. In the app the util card's paste row is
+already in its loading state for the whole ingest, so nothing new is drawn.
 
 ## Determinism (same URL → same result, always)
 
@@ -551,6 +590,15 @@ stored friend whose signing key matches) recreates the tracker via
 notifies. See `social-sharing.md`.
 
 ## Tests
+
+- `SellerComparisonTests` — the save-time fan-out's effect on a tracker: the
+  median (odd/even, foreign-currency store attached but excluded from it),
+  alerting-without-badging at seed time, the per-retailer-family refusal, the
+  new-tracker-only rule, and the two indistinguishable no-op states (no runner
+  installed / nothing found).
+- `SellerComparisonDocumentTests` — the summary document's structure, led by
+  self-containment (no `src="http`, no `<link`, no `<script`), the flat-series
+  graph, and markup escaping.
 
 - `ProductPageDetectorTests` — fixtures `LunaTests/Fixtures/Products/`
   (amazon JSON-LD, shopify OG, bestbuy microdata, generic `@graph`+AggregateOffer+EU

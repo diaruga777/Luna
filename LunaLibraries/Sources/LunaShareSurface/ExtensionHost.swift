@@ -51,9 +51,26 @@ public protocol ExtensionHost: AnyObject {
     /// quietly (share extension) — NEVER a misleading "Saved" checkmark on a failure.
     func failOrComplete(_ message: String)
 
+    /// Names what the surface is waiting ON, while it keeps waiting.
+    ///
+    /// A kind whose presentation has a long async phase before it (the product
+    /// kind's alternative-seller fan-out) says so here rather than leaving the
+    /// sheet apparently hung. Distinct from `failOrComplete`: this is NOT
+    /// terminal — the spinner keeps turning and the presentation still comes.
+    /// Defaulted to nothing, because most surfaces have no wait screen to write
+    /// on and a kind must not have to know which.
+    func showLoadingPhase(_ message: String)
+
     /// Best-effort deep link into the containing app (`extensionContext.open`
     /// on the real host — extensions have no `UIApplication.shared`). Used by
     /// the rescue-failure card's "Finish in Luna" step; a silent failure is fine
     /// because the card always shows manual fallback instructions too.
     func openURL(_ url: URL)
+}
+
+extension ExtensionHost {
+    /// A surface with no wait screen simply doesn't say. Defaulted so adding a
+    /// phase to one kind never forces every host — including the test fakes —
+    /// to grow a method it has nowhere to put.
+    public func showLoadingPhase(_ message: String) {}
 }

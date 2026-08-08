@@ -43,11 +43,31 @@ The transient return value has exactly three properties:
    and `.download`.
 
 `CaptureIntentMetadata` currently records schema version, phase (`screenshot`,
-`save`, or `download`), CurrentApp, resolved URL, the atomically decided
-double-save flag, a `ReadingListIngestor.PreparedSavePress`, and (when resolved)
-the direct `MediaAsset` plus expected byte count. Decode failure or an unknown
-schema version is deliberately treated as no metadata; Save then runs from the
-top. The string is a transport checkpoint, not Shortcut-facing API.
+`save`, `download`, or `comparison`), CurrentApp, resolved URL, the atomically
+decided double-save flag, a `ReadingListIngestor.PreparedSavePress`, and (when
+resolved) the direct `MediaAsset` plus expected byte count. Decode failure is
+deliberately treated as no metadata; Save then runs from the top. The string is a
+transport checkpoint, not Shortcut-facing API.
+
+**Schema versions: every version up to the current one decodes; a newer one does
+not.** The schema is additive by rule — v2 added `Phase.comparison` and nothing
+else — so a v1 checkpoint sitting in a Shortcut across an app update still
+describes a save that is genuinely resumable, and refusing it would silently
+restart work the user already waited through. A value from a FUTURE version is
+refused, because its phase may name work this build cannot perform.
+
+**The product leg (`comparison`).** In the two price-tracking apps a product
+save's own `media` is the alternative-seller summary document
+(`claudedocs/price-comparison.md`) — one self-contained HTML file, returned
+through the same `IntentFile` seam as a double-save article export. The fan-out
+itself needs no plumbing here: it runs INSIDE the save, so the existing 20 s race
+over `performPreparedSavePress` already covers it. What gets its own race is the
+SUMMARY — refreshing any seller whose price is over a day old, then building the
+file — and on expiry that becomes a `comparison` checkpoint, resumed under Save's
+extended runtime. The whole leg hangs off
+`ActionButtonIntentSupport.productComparisonDocument`, installed by
+`ProductIntentHandoff` (the product twin of `MediaIntentHandoff`, compiled only
+into the two product apps), so Reader and Downloader never look for one.
 
 **A sibling Luna app in the foreground outranks everything below.** All four apps
 register both intents, so a press made while another app in the family owns the
@@ -181,7 +201,14 @@ Before screenshot handling, Save decodes Metadata:
   Context task to leave the per-item in-flight set first;
 - `download` skips ingest and starts from the saved URL plus optional media
   checkpoint, avoiding repeated asset resolution and HEAD work;
+- `comparison` skips ingest entirely — the product and its alternative sellers
+  are already saved — and only builds the summary document, with room to refresh
+  day-old seller prices first;
 - `screenshot` deliberately falls through to screen analysis.
+
+A resumed `save` also produces a comparison document when the saved URL turns out
+to be a tracked product; that replaces the media handoff for the run, exactly as
+a double-save export does.
 
 `media` carries one other thing: when **Double Save Articles** (same article URL
 twice within 7 s) is configured as **View immediately**, a self-contained DOCX
@@ -296,7 +323,13 @@ The split is by intent, not by content surface:
 
 The synchronized-group exclusions for the long-running runtime were removed from
 Reader and Price Tracker because a slow article/product save can now be handed
-off too. `MediaIntentHandoff.swift` remains excluded from non-media apps. Verify
+off too. `MediaIntentHandoff.swift` remains excluded from non-media apps, and
+`PriceTracker/ProductIntentHandoff.swift` from non-product ones.
+
+`IntentProgressReporter.Stage` gained `findingSellers`, which shares
+`downloading`'s wide band rather than splitting it: a save is a product or it is
+media, never both in sequence, so splitting would make each look half as far
+along as it is. Verify
 built metadata with an Xcode 27 build: Provide Context must not list the
 long-running/session-starting protocols; Save must list them in every app.
 

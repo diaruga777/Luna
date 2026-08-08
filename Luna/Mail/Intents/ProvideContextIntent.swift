@@ -233,6 +233,33 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             return ProvideContextResultEntity(outcome: .done, media: exportedFile)
         }
 
+        // A product save's OWN media is the comparison summary. The fan-out
+        // itself already ran inside the save above (it is part of ingesting a
+        // product), so what is left here is the document: refreshing any seller
+        // whose price is over a day old, fetching favicons, drawing the graph.
+        // That is minutes of network in the worst case, which is precisely what
+        // the checkpoint is for — the save is durable either way.
+        if ActionButtonIntentSupport.handlesProductComparison {
+            do {
+                let file = try await CaptureIntentFastPath.run(
+                    timeout: deadline.timeIntervalSinceNow) {
+                        await ActionButtonIntentSupport.comparisonFile(for: savedURLString)
+                    }
+                if let file {
+                    IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
+                    return ProvideContextResultEntity(outcome: .done, media: file)
+                }
+            } catch CaptureIntentFastPathError.timedOut {
+                SharedDiagnosticLog.record(
+                    "provide context: 20 s fast path expired building the seller comparison; "
+                        + "handing off \(savedURLString)",
+                    category: "intents")
+                IntentIngestHelper.finishSaveAttempt(urlString: savedURLString)
+                return continuationResult(
+                    phase: .comparison, urlString: savedURLString, prepared: prepared)
+            }
+        }
+
         let preparation: ActionButtonIntentSupport.MediaPreparation
         do {
             preparation = try await CaptureIntentFastPath.run(
@@ -328,6 +355,31 @@ enum ActionButtonIntentSupport {
     ) async throws -> MediaPreparation {
         guard let mediaPreparation else { return .none }
         return try await mediaPreparation(urlString)
+    }
+
+    /// The product-kind comparison summary, installed by
+    /// `ProductIntentHandoff.install()` (product apps only — Price Tracker + the
+    /// central Luna app). Nil elsewhere, so an article/media-only app's intents
+    /// never look for one.
+    ///
+    /// Given a just-saved URL it answers with the self-contained HTML document
+    /// for the tracker that URL belongs to, refreshing any seller whose price is
+    /// over a day old first — and nil when the URL is not a tracked product, or
+    /// is a tracker with a single store (one price is not a comparison).
+    static var productComparisonDocument: ((String) async -> URL?)?
+
+    /// Whether this app can produce a comparison document at all. Read BEFORE
+    /// spending any deadline on one.
+    static var handlesProductComparison: Bool { productComparisonDocument != nil }
+
+    /// The comparison document as returnable intent media. Nil is the ordinary
+    /// answer for every non-product save.
+    static func comparisonFile(for urlString: String) async -> IntentFile? {
+        guard let fileURL = await productComparisonDocument?(urlString) else { return nil }
+        return IntentFile(
+            fileURL: fileURL,
+            filename: fileURL.lastPathComponent,
+            type: UTType(filenameExtension: fileURL.pathExtension) ?? .html)
     }
 
     /// Article-document export for a "View immediately" double save. Installed

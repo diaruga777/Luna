@@ -225,6 +225,17 @@ open class ShareViewController: UIViewController {
         }
     }
 
+    /// Names the phase a kind's presentation is waiting on, on the wait screen
+    /// itself — and BUILDS that screen when there isn't one, exactly as
+    /// `failOrComplete` does. The zero-UI share extension is zero-UI because
+    /// there is nothing to say while a save takes a moment; a fan-out across a
+    /// dozen retailers is half a minute, and half a minute of a share sheet that
+    /// looks stuck is worse than a sheet that says what it is doing.
+    public func showLoadingPhase(_ message: String) {
+        if loadingScreen == nil { setUpStatusUI() }
+        loadingScreen?.showPhase(message)
+    }
+
     /// Handles the Safari JavaScript-preprocessing result: a property-list whose
     /// `NSExtensionJavaScriptPreprocessingResultsKey` holds `{URL, title, Kind,
     /// ArticleText}`. Safari only sends the compact text snapshot after its cheap DOM

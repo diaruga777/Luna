@@ -162,7 +162,7 @@ let package = Package(
         // notifications through LunaSocial's `NotificationManager`. No reader
         // modules: product-kind UI stands alone so the Price Tracker
         // extensions don't drag the whole reader stack in.
-        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaPriceIngest", "LunaAppConfig", "LunaPriceMetadata", "LunaSocial", "LunaShareSurface", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaPriceIngest", "LunaPriceCompare", "LunaAppConfig", "LunaPriceMetadata", "LunaSocial", "LunaShareSurface", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // KIND-NEUTRAL extension surface: the share/action host chrome, the
         // `ShareSurfaceDriver` ingest+present flow, and the `ShareKindPresenters`
         // registry. The kind-specific presentation (readers, saved-media screen,

@@ -28,9 +28,16 @@ struct CaptureIntentMetadata: Codable, Equatable {
         case download
         /// Save still needs the screenshot analysis route to resolve a URL.
         case screenshot
+        /// The product is saved and its alternative sellers are attached; only
+        /// the comparison SUMMARY remains — refreshing day-old seller prices and
+        /// rendering the document (`claudedocs/price-comparison.md`). Added in
+        /// schema v2.
+        case comparison
     }
 
-    static let currentSchemaVersion = 1
+    /// v2 added `Phase.comparison`. Purely additive: a v1 value carries no new
+    /// field and no new case, so it still decodes — see `decode`.
+    static let currentSchemaVersion = 2
 
     let schemaVersion: Int
     var phase: Phase
@@ -71,8 +78,14 @@ struct CaptureIntentMetadata: Codable, Equatable {
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        // Every schema up to the current one is accepted, because the schema is
+        // additive by rule: a v1 checkpoint held in a Shortcut across an app
+        // update describes a save that is genuinely still resumable, and
+        // rejecting it would silently restart work the user already waited for.
+        // A value from a FUTURE version is refused — its phase may be one this
+        // build cannot perform.
         guard let value = try? decoder.decode(Self.self, from: data),
-              value.schemaVersion == currentSchemaVersion
+              (1...currentSchemaVersion).contains(value.schemaVersion)
         else { return nil }
         return value
     }

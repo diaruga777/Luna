@@ -903,6 +903,18 @@
 "PriceTracker_alertThreshold_title_Luna" = "Alert threshold";
 "PriceTracker_alertThreshold_unsetMessage_Luna" = "Set a price alert to be notified when the price drops.";
 
+/* ===== PriceTracker_comparison — the save-time alternative-seller fan-out (ExtensionProductPresenter.swift) ===== */
+"PriceTracker_comparison_findingSellersStatus_Luna" = "Finding other sellers…";
+
+/* ===== PriceTrackerCompareDoc — SellerComparisonDocument.swift (the self-contained HTML summary the Action Button intents return), in reading order ===== */
+"PriceTrackerCompareDoc_01_updatedFormat_Luna" = "Updated %@";
+"PriceTrackerCompareDoc_02_sellersHeading_Luna" = "Sellers";
+"PriceTrackerCompareDoc_03_lowestBadge_Luna" = "Lowest";
+"PriceTrackerCompareDoc_04_noPriceValue_Luna" = "No price";
+"PriceTrackerCompareDoc_05_noSellersCaption_Luna" = "No other sellers found.";
+"PriceTrackerCompareDoc_06_historyHeading_Luna" = "Price history";
+"PriceTrackerCompareDoc_07_noHistoryCaption_Luna" = "Not enough price history yet.";
+
 /* ===== PriceTracker_graph — PriceGraphView.swift (also used from ProductCardContent.swift + PriceTrackingViewController.swift for the shared "Price History" heading) ===== */
 "PriceTracker_graph_cancelThresholdLabel_Luna" = "Cancel";
 "PriceTracker_graph_emptyCaption_Luna" = "No price history yet";

@@ -57,8 +57,11 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"^Luna\.xcodeproj/", FULL),
     (r"^LunaLibraries/Package\.swift$", FULL),
     (r"^Config/.*\.xcconfig$", FULL),
-    # The one strings file, and the scripts that police it.
-    (r"Resources/en\.lproj/Localizable\.strings$", ["LocalizableStringsTests"]),
+    # The one strings file, and the scripts that police it. Onboarding is in
+    # here because its Safari page FITS its prose to the screen — a longer
+    # chunk one is a layout change, not just a copy change.
+    (r"Resources/en\.lproj/Localizable\.strings$", ["LocalizableStringsTests",
+                                                    "ReaderOnboardingTests"]),
     (r"^scripts/strings_sync\.py$", ["LocalizableStringsTests"]),
     (r"^scripts/add_strings_to_app_bundles\.rb$", ["LocalizableStringsTests"]),
     # Layout geometry is pinned from two directions at once.
@@ -89,6 +92,10 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"^\.gitignore$", None),
     (r"^SharedIconAssets\.xcassets/", None),
     (r"\.xcassets/", None),
+    # The Cloudflare Pages site: generated from the strings file and the icons,
+    # shipped to a web host, linked by no target.
+    (r"^site/", None),
+    (r"^wrangler\.toml$", None),
 ]
 
 DECL_RE = re.compile(

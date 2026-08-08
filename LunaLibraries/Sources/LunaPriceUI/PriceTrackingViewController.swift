@@ -216,20 +216,14 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
         // Every band of the editor sits in one centered column rather than
         // stretching: a threshold slider a thousand points wide, or a seller name
-        // that far from its price, is not a form any more. The cap is expressed
-        // as a constraint pair, so it needs no layout code and follows a rotation
-        // or a Split View resize on its own.
-        let column = UILayoutGuide()
-        view.addLayoutGuide(column)
-        let fullWidth = column.widthAnchor.constraint(equalTo: view.widthAnchor)
-        fullWidth.priority = .defaultHigh
+        // that far from its price, is not a form any more. `ReadableColumn` also
+        // makes the container a HARD ceiling — the threshold readout is a
+        // `numberOfLines = 0` label, and against a merely preferred full width it
+        // won the first layout pass with its single-line intrinsic size and hung
+        // the whole editor off both edges of the share sheet.
+        let column = ReadableColumn.install(in: view)
 
         NSLayoutConstraint.activate([
-            column.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            column.widthAnchor.constraint(
-                lessThanOrEqualToConstant: LunaLayout.readableWidth),
-            fullWidth,
-
             productHeader.topAnchor.constraint(equalTo: navHeader.bottomAnchor),
             productHeader.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             productHeader.trailingAnchor.constraint(equalTo: column.trailingAnchor),

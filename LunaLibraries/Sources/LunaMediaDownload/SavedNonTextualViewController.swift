@@ -213,15 +213,13 @@ public final class SavedNonTextualViewController: UIViewController {
     /// at the readable width so a wide iPad sheet doesn't stretch the media
     /// preview or its buttons the whole way across.
     private func installContentColumn() {
-        view.addLayoutGuide(contentColumn)
-        let fillsMargins = contentColumn.widthAnchor.constraint(
-            equalTo: view.layoutMarginsGuide.widthAnchor)
-        fillsMargins.priority = .defaultHigh
+        // Margin-wide by preference, readable-width capped, and never wider than
+        // the safe area whatever the status label below the preview asks for —
+        // that last clamp is what keeps the floating Share circle, which sits on
+        // the column's trailing edge, from riding off the screen.
+        ReadableColumn.install(
+            contentColumn, in: view, preferring: view.layoutMarginsGuide)
         NSLayoutConstraint.activate([
-            contentColumn.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            fillsMargins,
-            contentColumn.widthAnchor.constraint(
-                lessThanOrEqualToConstant: LunaLayout.readableWidth),
             contentColumn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             contentColumn.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])

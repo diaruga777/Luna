@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaModels
+import LunaPriceMetadata
 
 // MARK: - Inputs and outputs
 
@@ -45,11 +46,25 @@ public struct SellerFanOutProfile: Equatable, Sendable {
     public let allowsNameOnlyMatch: Bool
     /// Whether the Layer-2 web-search leg runs at all.
     public let usesWebSearchLayer: Bool
+    /// Whether a retailer whose search results only exist after client-side
+    /// rendering may be asked at all.
+    ///
+    /// Target's and Walmart's US search pages are JS shells: 123KB and 248KB of
+    /// bundle with literally zero product links in the served markup. A context
+    /// that cannot render (the Safari appex) should not spend one of six
+    /// candidate slots and a full fetch discovering that again on every run —
+    /// so it skips them, and a context that CAN render keeps them.
+    public let skipsClientRenderedSearch: Bool
+    /// How many client-rendered search pages the run may hand to an injected
+    /// renderer. A render is an off-screen WebView and seconds of wall clock;
+    /// this bounds the damage when several candidates need one.
+    public let renderedSearchLimit: Int
 
     public init(
         candidateLimit: Int, resultTarget: Int, concurrency: Int, productURLsPerCandidate: Int,
         totalBudget: TimeInterval, perFetchTimeout: TimeInterval,
-        allowsNameOnlyMatch: Bool, usesWebSearchLayer: Bool
+        allowsNameOnlyMatch: Bool, usesWebSearchLayer: Bool,
+        skipsClientRenderedSearch: Bool = false, renderedSearchLimit: Int = 0
     ) {
         self.candidateLimit = candidateLimit
         self.resultTarget = resultTarget
@@ -59,6 +74,8 @@ public struct SellerFanOutProfile: Equatable, Sendable {
         self.perFetchTimeout = perFetchTimeout
         self.allowsNameOnlyMatch = allowsNameOnlyMatch
         self.usesWebSearchLayer = usesWebSearchLayer
+        self.skipsClientRenderedSearch = skipsClientRenderedSearch
+        self.renderedSearchLimit = renderedSearchLimit
     }
 
     /// Save-time in the app and the share/action extensions: a user is watching
@@ -66,7 +83,8 @@ public struct SellerFanOutProfile: Equatable, Sendable {
     public static let full = SellerFanOutProfile(
         candidateLimit: 12, resultTarget: 6, concurrency: 3, productURLsPerCandidate: 3,
         totalBudget: 35, perFetchTimeout: 10,
-        allowsNameOnlyMatch: true, usesWebSearchLayer: true)
+        allowsNameOnlyMatch: true, usesWebSearchLayer: true,
+        skipsClientRenderedSearch: false, renderedSearchLimit: 3)
 
     /// The Safari extension: a page is already rendered and the native message
     /// must answer inside the appex's 20s budget, so everything shrinks and the
@@ -75,7 +93,8 @@ public struct SellerFanOutProfile: Equatable, Sendable {
     public static let constrained = SellerFanOutProfile(
         candidateLimit: 6, resultTarget: 3, concurrency: 2, productURLsPerCandidate: 2,
         totalBudget: 15, perFetchTimeout: 8,
-        allowsNameOnlyMatch: false, usesWebSearchLayer: false)
+        allowsNameOnlyMatch: false, usesWebSearchLayer: false,
+        skipsClientRenderedSearch: true, renderedSearchLimit: 0)
 }
 
 /// Where a comparison result came from.
@@ -131,20 +150,132 @@ public enum SellerFanOutStopReason: String, Equatable, Sendable {
     case budgetExpired
 }
 
+/// Why one candidate produced no price. Not an error type — most of these are
+/// the ordinary weather of asking a dozen retailers a question — but the whole
+/// difference between a fan-out you can debug and one that just returns nothing.
+public enum SellerFanOutRejection: String, Equatable, Sendable, Codable {
+    /// The retailer's search page could not be fetched at all.
+    case searchUnreachable
+    /// The search answered with a bot wall (or a challenge served as a 200).
+    case searchBotWalled
+    /// The search answered with a non-2xx that was not a refusal.
+    case searchBadStatus
+    /// The search page was fetched and contained no product links Luna could
+    /// recognize — usually a client-rendered shell.
+    case noProductLinks
+    /// The seller's search is known to be client-rendered and this profile
+    /// cannot render.
+    case clientRenderedSearchSkipped
+    /// Every product link led to a page with no price, or none at all.
+    case noPriceOnAnyLink
+    /// Pages were priced, but none verified as the same product.
+    case noVerifiedMatch
+    /// The run stopped (target reached or budget spent) before this candidate
+    /// finished.
+    case runEndedFirst
+}
+
+/// One candidate retailer's whole story: what was asked, what came back, and
+/// what became of every link followed.
+public struct SellerFanOutAttempt: Equatable, Sendable {
+    public let sellerID: String
+    public let sellerName: String
+    public let domain: String
+    public let searchURL: URL?
+    /// The query the search was actually made with — a GTIN or a product name.
+    public let query: String
+    public let statusCode: Int?
+    /// Size of the fetched search page, which is how a JS shell announces itself.
+    public let searchBytes: Int
+    public let productLinks: [URL]
+    /// Whether a rendered search page was used because the static one was empty.
+    public let usedRenderedSearch: Bool
+    public let rejection: SellerFanOutRejection?
+    public let accepted: SellerMatchConfidence?
+
+    public init(
+        sellerID: String, sellerName: String, domain: String, searchURL: URL?, query: String,
+        statusCode: Int?, searchBytes: Int, productLinks: [URL], usedRenderedSearch: Bool,
+        rejection: SellerFanOutRejection?, accepted: SellerMatchConfidence?
+    ) {
+        self.sellerID = sellerID
+        self.sellerName = sellerName
+        self.domain = domain
+        self.searchURL = searchURL
+        self.query = query
+        self.statusCode = statusCode
+        self.searchBytes = searchBytes
+        self.productLinks = productLinks
+        self.usedRenderedSearch = usedRenderedSearch
+        self.rejection = rejection
+        self.accepted = accepted
+    }
+
+    /// A single log line. Written here rather than at the two logging call
+    /// sites so the app's diagnostic log and the appex's console say the same
+    /// thing about the same run.
+    public var logLine: String {
+        var parts = ["\(sellerID) q=\(query)"]
+        if let statusCode { parts.append("http=\(statusCode)") }
+        parts.append("bytes=\(searchBytes)")
+        parts.append("links=\(productLinks.count)")
+        if usedRenderedSearch { parts.append("rendered") }
+        if let accepted { parts.append("ACCEPTED(\(accepted))") }
+        if let rejection { parts.append("rejected(\(rejection.rawValue))") }
+        return parts.joined(separator: " ")
+    }
+}
+
 /// What a run produced, plus enough about HOW it ran to be assertable: the
-/// candidates it actually asked, in the order it asked them.
+/// candidates it actually asked, in the order it asked them, and why each one
+/// that produced nothing produced nothing.
 public struct SellerFanOutOutcome: Equatable, Sendable {
     public let results: [ComparableSellerResult]
     public let attemptedSellerIDs: [String]
     public let stopReason: SellerFanOutStopReason
+    /// Per-candidate detail, in the order the candidates were launched.
+    public let attempts: [SellerFanOutAttempt]
+    /// Wall clock the run spent.
+    public let elapsed: TimeInterval
+    /// The region whose storefronts were searched.
+    public let region: String
 
     public init(
         results: [ComparableSellerResult], attemptedSellerIDs: [String],
-        stopReason: SellerFanOutStopReason
+        stopReason: SellerFanOutStopReason,
+        attempts: [SellerFanOutAttempt] = [], elapsed: TimeInterval = 0, region: String = ""
     ) {
         self.results = results
         self.attemptedSellerIDs = attemptedSellerIDs
         self.stopReason = stopReason
+        self.attempts = attempts
+        self.elapsed = elapsed
+        self.region = region
+    }
+
+    /// Why `sellerID` produced nothing, if it was asked and produced nothing.
+    public func rejection(for sellerID: String) -> SellerFanOutRejection? {
+        attempts.first { $0.sellerID == sellerID }?.rejection
+    }
+
+    /// The whole run in a handful of lines, for a diagnostic log.
+    public var logSummary: String {
+        var lines = [
+            "fan-out region=\(region) results=\(results.count) stop=\(stopReason.rawValue) "
+                + "elapsed=\(String(format: "%.1f", elapsed))s",
+        ]
+        lines.append(contentsOf: attempts.map { "  " + $0.logLine })
+        for result in results {
+            lines.append("  = \(result.domain) \(result.currency) \(result.price) "
+                + "[\(result.confidence)] \(result.url.absoluteString)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// One line, for a log that cannot afford the rest (the Safari appex).
+    public var compactLogLine: String {
+        "fanout region=\(region) asked=\(attempts.count) found=\(results.count) "
+            + "stop=\(stopReason.rawValue) elapsed=\(String(format: "%.1f", elapsed))s"
     }
 }
 
@@ -233,15 +364,25 @@ public struct SellerFanOut {
     /// callback is "this is the current answer for this domain", not "this is
     /// final".
     public typealias OnResult = @Sendable (ComparableSellerResult) async -> Void
+    /// Renders a search page's JS and returns the rendered markup. Injected
+    /// exactly like everything else that touches the network — the engine may
+    /// not link WebKit, and the Safari appex could not use it if it did.
+    public typealias RenderSearch = @Sendable (URL) async -> String?
+    /// Called as each candidate finishes. The run's own summary arrives through
+    /// the returned `SellerFanOutOutcome`; this is what makes a run watchable
+    /// while it is still going.
+    public typealias OnAttempt = @Sendable (SellerFanOutAttempt) async -> Void
 
     private let directory: SellerDirectory
     private let profile: SellerFanOutProfile
     private let fetch: Fetch
     private let webSearch: WebSearch?
     private let richResolve: RichResolve?
+    private let renderSearch: RenderSearch?
     private let localeRegion: String?
     private let now: @Sendable () -> Date
     private let onResult: OnResult?
+    private let onAttempt: OnAttempt?
 
     public init(
         directory: SellerDirectory,
@@ -249,7 +390,9 @@ public struct SellerFanOut {
         fetch: @escaping Fetch,
         webSearch: WebSearch? = nil,
         richResolve: RichResolve? = nil,
+        renderSearch: RenderSearch? = nil,
         onResult: OnResult? = nil,
+        onAttempt: OnAttempt? = nil,
         localeRegion: String? = Locale.current.region?.identifier,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -258,9 +401,11 @@ public struct SellerFanOut {
         self.fetch = fetch
         self.webSearch = webSearch
         self.richResolve = richResolve
+        self.renderSearch = renderSearch
         self.localeRegion = localeRegion
         self.now = now
         self.onResult = onResult
+        self.onAttempt = onAttempt
     }
 
     /// Shared mutable state for the two layers. An actor rather than a lock so
@@ -269,21 +414,37 @@ public struct SellerFanOut {
     private actor State {
         private var merger = ComparableResultMerger()
         private var attempted: [String] = []
+        private var attempts: [SellerFanOutAttempt] = []
         private var botWalledDomains: Set<String> = []
+        private var rendersUsed = 0
         let target: Int
+        let renderBudget: Int
 
-        init(target: Int) { self.target = target }
+        init(target: Int, renderBudget: Int) {
+            self.target = target
+            self.renderBudget = renderBudget
+        }
 
         func recordAttempt(_ sellerID: String) { attempted.append(sellerID) }
+        func record(_ attempt: SellerFanOutAttempt) { attempts.append(attempt) }
         func markBotWalled(_ domain: String) { botWalledDomains.insert(domain) }
         func isBotWalled(_ domain: String) -> Bool { botWalledDomains.contains(domain) }
+        /// Claims one of the run's render slots, or refuses. Claimed inside the
+        /// actor so three concurrent candidates cannot each decide they are the
+        /// first.
+        func claimRenderSlot() -> Bool {
+            guard rendersUsed < renderBudget else { return false }
+            rendersUsed += 1
+            return true
+        }
         /// Whether the offer changed the merged list — the signal a streaming
         /// surface needs, and the reason the merge rule is applied HERE rather
         /// than after the run.
         func offer(_ result: ComparableSellerResult) -> Bool { merger.offer(result) }
         var isSatisfied: Bool { merger.count >= target }
-        var snapshot: (results: [ComparableSellerResult], attempted: [String]) {
-            (merger.results, attempted)
+        var snapshot: (results: [ComparableSellerResult], attempted: [String],
+                       attempts: [SellerFanOutAttempt]) {
+            (merger.results, attempted, attempts)
         }
     }
 
@@ -304,14 +465,17 @@ public struct SellerFanOut {
                 categoryHints: request.categoryHints,
                 excludedHosts: excludedHosts,
                 region: region,
-                limit: profile.candidateLimit),
+                limit: profile.candidateLimit,
+                excludesClientRenderedSearch: profile.skipsClientRenderedSearch),
             in: directory)
 
         let excludedDomains = Set(
             ([sourceHost] + excludedHosts)
                 .filter { !$0.isEmpty }
                 .map(ProductIdentityMatching.registrableDomain))
-        let state = State(target: profile.resultTarget)
+        let state = State(
+            target: profile.resultTarget,
+            renderBudget: renderSearch == nil ? 0 : profile.renderedSearchLimit)
 
         await withTaskGroup(of: Void.self) { layers in
             if profile.usesWebSearchLayer, let webSearch {
@@ -341,7 +505,10 @@ public struct SellerFanOut {
         return SellerFanOutOutcome(
             results: snapshot.results,
             attemptedSellerIDs: snapshot.attempted,
-            stopReason: stopReason)
+            stopReason: stopReason,
+            attempts: snapshot.attempts,
+            elapsed: now().timeIntervalSince(start),
+            region: region)
     }
 
     // MARK: - Layer 1: the retailers' own searches
@@ -359,7 +526,8 @@ public struct SellerFanOut {
                 await state.recordAttempt(seller.id)
                 group.addTask {
                     await runCandidate(
-                        seller, request: request, excludedDomains: excludedDomains, state: state)
+                        seller, request: request, excludedDomains: excludedDomains,
+                        state: state, start: start)
                 }
                 return true
             }
@@ -378,44 +546,196 @@ public struct SellerFanOut {
 
     /// One retailer: search its site, follow the most plausible product links,
     /// and keep the first page that verifies as the same product AND has a
-    /// price. Any failure consumes the candidate — this never retries.
+    /// price. Any failure consumes the candidate — this never retries a FAILURE,
+    /// though it may ask the same shop a second QUESTION (see
+    /// `SellerCandidateSelector.queries`).
     private func runCandidate(
         _ seller: Seller, request: SellerFanOutRequest,
-        excludedDomains: Set<String>, state: State
+        excludedDomains: Set<String>, state: State, start: Date
     ) async {
         let sellerDomain = ProductIdentityMatching.registrableDomain(seller.domain)
-        guard !excludedDomains.contains(sellerDomain) else { return }
-        let query = SellerCandidateSelector.query(
-            for: seller, identifiers: request.identifiers, productName: request.productName)
-        guard let searchURL = seller.searchRequestURL(forQuery: query),
-              let searchPage = await fetch(searchURL) else { return }
-        if BotWallDetection.isBotWall(statusCode: searchPage.statusCode, html: searchPage.html) {
-            await state.markBotWalled(sellerDomain)
+        let record = AttemptRecord(seller: seller, domain: sellerDomain)
+        // The record is reported exactly once, however the body exits — which is
+        // why the body is a separate method: a `defer` cannot await, and the
+        // report has to reach an actor.
+        await runCandidateBody(
+            seller, request: request, sellerDomain: sellerDomain,
+            excludedDomains: excludedDomains, state: state, start: start, record: record)
+        let attempt = record.attempt
+        await state.record(attempt)
+        await onAttempt?(attempt)
+    }
+
+    private func runCandidateBody(
+        _ seller: Seller, request: SellerFanOutRequest, sellerDomain: String,
+        excludedDomains: Set<String>, state: State, start: Date, record: AttemptRecord
+    ) async {
+        guard !excludedDomains.contains(sellerDomain) else {
+            record.reject(.runEndedFirst)
             return
         }
-        guard (200..<300).contains(searchPage.statusCode) else { return }
+        if seller.searchRequiresRendering, profile.skipsClientRenderedSearch {
+            record.reject(.clientRenderedSearchSkipped)
+            return
+        }
 
-        let links = LeanProductPageParser.productLinks(
-            inSearchHTML: searchPage.html, baseURL: searchPage.url,
-            limit: profile.productURLsPerCandidate)
+        let queries = SellerCandidateSelector.queries(
+            for: seller, identifiers: request.identifiers, productName: request.productName)
+        let gtinDigits = GTINForms.digits(request.identifiers.gtin)
+        let preferred = GTINForms.variants(of: request.identifiers.gtin)
+
+        var links: [URL] = []
+        var reachedByGTINSearch = false
+
+        for query in queries {
+            if await state.isSatisfied || hasExpired(start) {
+                record.reject(.runEndedFirst)
+                return
+            }
+            record.query = query
+            guard let searchURL = seller.searchRequestURL(forQuery: query) else { continue }
+            record.searchURL = searchURL
+            guard let searchPage = await fetch(searchURL) else {
+                record.reject(.searchUnreachable)
+                continue
+            }
+            record.statusCode = searchPage.statusCode
+            record.searchBytes = searchPage.html.count
+            if BotWallDetection.isBotWall(
+                statusCode: searchPage.statusCode, html: searchPage.html) {
+                await state.markBotWalled(sellerDomain)
+                record.reject(.searchBotWalled)
+                return
+            }
+            guard (200..<300).contains(searchPage.statusCode) else {
+                record.reject(.searchBadStatus)
+                continue
+            }
+            links = LeanProductPageParser.productLinks(
+                inSearchHTML: searchPage.html, baseURL: searchPage.url,
+                limit: profile.productURLsPerCandidate, preferring: preferred)
+
+            // Nothing in the served markup. On a retailer whose results are drawn
+            // by JS this is not a miss, it is the entire page — so a context that
+            // can render is given one chance to see what a browser would have seen.
+            if links.isEmpty, let renderSearch, await state.claimRenderSlot(),
+               let rendered = await renderSearch(searchURL) {
+                record.usedRenderedSearch = true
+                record.searchBytes = rendered.count
+                links = LeanProductPageParser.productLinks(
+                    inSearchHTML: rendered, baseURL: searchPage.url,
+                    limit: profile.productURLsPerCandidate, preferring: preferred)
+            }
+            guard links.isEmpty else {
+                // The identifier question is the one that makes containment on
+                // the answer meaningful. Recorded per QUERY, not per candidate.
+                reachedByGTINSearch = gtinDigits.map { !$0.isEmpty && query == $0 } ?? false
+                record.reject(nil)
+                break
+            }
+            record.reject(.noProductLinks)
+        }
+
+        record.productLinks = links
+        guard !links.isEmpty else { return }
+
+        var sawPrice = false
         for link in links {
-            if await state.isSatisfied { return }
-            if await state.isBotWalled(sellerDomain) { return }
-            guard let page = await resolve(link, state: state, domain: sellerDomain),
-                  page.hasUsablePrice,
-                  let price = page.price, let currency = page.currency,
-                  let confidence = ComparisonMatching.verify(
-                    source: request.identifiers, sourceName: request.productName,
-                    candidate: page.identifiers, candidateName: page.name,
-                    allowsNameOnlyMatch: profile.allowsNameOnlyMatch)
+            if await state.isSatisfied || hasExpired(start) {
+                record.reject(sawPrice ? .noVerifiedMatch : .runEndedFirst)
+                return
+            }
+            if await state.isBotWalled(sellerDomain) {
+                record.reject(.searchBotWalled)
+                return
+            }
+            guard let resolved = await resolve(
+                link, state: state, domain: sellerDomain, currencyHint: seller.regionCurrency)
+            else { continue }
+            let page = resolved.page
+            guard page.hasUsablePrice, let price = page.price, let currency = page.currency
+            else { continue }
+            sawPrice = true
+            guard let confidence = await verify(
+                resolved, request: request, reachedByGTINSearch: reachedByGTINSearch)
             else { continue }
             let result = ComparableSellerResult(
                 sellerID: seller.id, sellerName: seller.name, domain: sellerDomain,
                 url: page.url, price: price, currency: currency, productName: page.name,
                 identifiers: page.identifiers, imageURL: page.imageURL,
                 confidence: confidence, source: .directory)
+            record.accept(confidence)
             if await state.offer(result) { await onResult?(result) }
             return
+        }
+        record.reject(sawPrice ? .noVerifiedMatch : .noPriceOnAnyLink)
+    }
+
+    /// Verifies a resolved candidate, fetching the page's markup if — and only
+    /// if — that is the one thing still standing between it and acceptance.
+    ///
+    /// The rich resolver (the app's full ingest pipeline) hands back a parse and
+    /// no HTML, which is exactly the case where the `.gtinInPage` tier has
+    /// nothing to read. Rather than fetching every page twice, the run asks
+    /// whether the evidence would decide the question and only then goes and
+    /// gets it.
+    private func verify(
+        _ resolved: Resolved, request: SellerFanOutRequest, reachedByGTINSearch: Bool
+    ) async -> SellerMatchConfidence? {
+        let page = resolved.page
+        var evidence = CandidatePageEvidence(
+            reachedByGTINSearch: reachedByGTINSearch, html: resolved.html, url: page.url)
+        if let confidence = ComparisonMatching.verify(
+            source: request.identifiers, sourceName: request.productName,
+            candidate: page.identifiers, candidateName: page.name,
+            evidence: evidence, allowsNameOnlyMatch: profile.allowsNameOnlyMatch) {
+            return confidence
+        }
+        guard resolved.html == nil, reachedByGTINSearch,
+              ComparisonMatching.requiresPageEvidence(
+                source: request.identifiers, sourceName: request.productName,
+                candidate: page.identifiers, candidateName: page.name),
+              let refetched = await fetch(page.url), (200..<300).contains(refetched.statusCode)
+        else { return nil }
+        evidence = CandidatePageEvidence(
+            reachedByGTINSearch: true, html: refetched.html, url: page.url)
+        return ComparisonMatching.verify(
+            source: request.identifiers, sourceName: request.productName,
+            candidate: page.identifiers, candidateName: page.name,
+            evidence: evidence, allowsNameOnlyMatch: profile.allowsNameOnlyMatch)
+    }
+
+    /// Accumulates one candidate's story and hands it to the state + the
+    /// diagnostics callback exactly once, however the candidate exits.
+    private final class AttemptRecord {
+        private let seller: Seller
+        private let domain: String
+        var searchURL: URL?
+        var query: String = ""
+        var statusCode: Int?
+        var searchBytes = 0
+        var productLinks: [URL] = []
+        var usedRenderedSearch = false
+        private var rejection: SellerFanOutRejection?
+        private var accepted: SellerMatchConfidence?
+        init(seller: Seller, domain: String) {
+            self.seller = seller
+            self.domain = domain
+        }
+
+        func reject(_ reason: SellerFanOutRejection?) { rejection = reason }
+        func accept(_ confidence: SellerMatchConfidence) {
+            accepted = confidence
+            rejection = nil
+        }
+
+        var attempt: SellerFanOutAttempt {
+            SellerFanOutAttempt(
+                sellerID: seller.id, sellerName: seller.name, domain: domain,
+                searchURL: searchURL, query: query, statusCode: statusCode,
+                searchBytes: searchBytes, productLinks: productLinks,
+                usedRenderedSearch: usedRenderedSearch,
+                rejection: rejection, accepted: accepted)
         }
     }
 
@@ -443,9 +763,13 @@ public struct SellerFanOut {
                   !LeanProductURLRules.isMultiProductListing(url)
             else { continue }
             examined += 1
-            guard let page = await resolve(url, state: state, domain: domain),
-                  page.hasUsablePrice,
+            guard let resolved = await resolve(url, state: state, domain: domain) else { continue }
+            let page = resolved.page
+            guard page.hasUsablePrice,
                   let price = page.price, let currency = page.currency,
+                  // A web-search hit was NOT reached by asking this retailer for
+                  // the identifier, so the `.gtinInPage` tier does not apply:
+                  // a search engine's result page can name any number.
                   let confidence = ComparisonMatching.verify(
                     source: request.identifiers, sourceName: request.productName,
                     candidate: page.identifiers, candidateName: page.name,
@@ -477,15 +801,29 @@ public struct SellerFanOut {
 
     // MARK: - Shared
 
-    private func resolve(_ url: URL, state: State, domain: String) async -> ParsedProductPage? {
-        if let richResolve, let resolved = await richResolve(url) { return resolved }
+    /// A candidate page, plus its raw markup when the resolution path still has
+    /// it. The rich resolver returns a parse and nothing else, which is why
+    /// `html` is optional rather than a field on `ParsedProductPage`.
+    private struct Resolved {
+        let page: ParsedProductPage
+        let html: String?
+    }
+
+    private func resolve(
+        _ url: URL, state: State, domain: String, currencyHint: String? = nil
+    ) async -> Resolved? {
+        if let richResolve, let resolved = await richResolve(url) {
+            return Resolved(page: resolved, html: nil)
+        }
         guard let page = await fetch(url) else { return nil }
         if BotWallDetection.isBotWall(statusCode: page.statusCode, html: page.html) {
             await state.markBotWalled(domain)
             return nil
         }
         guard (200..<300).contains(page.statusCode) else { return nil }
-        return LeanProductPageParser.parse(html: page.html, url: page.url)
+        guard let parsed = LeanProductPageParser.parse(
+            html: page.html, url: page.url, currencyHint: currencyHint) else { return nil }
+        return Resolved(page: parsed, html: page.html)
     }
 
     private func hasExpired(_ start: Date) -> Bool {

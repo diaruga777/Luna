@@ -137,6 +137,32 @@ public enum WebViewPriceRenderer {
             + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(major).0 Mobile/15E148 Safari/604.1"
     }
 
+    /// How long a SEARCH-page render may take. Shorter than the price render
+    /// because the fan-out is racing a whole run's budget across a dozen
+    /// retailers, not resolving one product.
+    private static let searchRenderTimeoutSeconds: UInt64 = 12
+
+    /// Renders a SEARCH page and returns its markup once `readyWhen` is
+    /// satisfied (or at the deadline).
+    ///
+    /// The price poll is the wrong readiness test for a results grid — there is
+    /// no single price to wait for — so the caller supplies its own: the
+    /// alternative-seller fan-out waits until the rendered DOM yields at least
+    /// one product link. Target's and Walmart's search pages are JS shells whose
+    /// served markup contains no product URLs at all, and this is the only way
+    /// the app tier can see what a browser would have seen.
+    @MainActor
+    public static func renderedSearchHTML(
+        for url: URL, readyWhen isReady: @escaping (String) -> Bool
+    ) async -> String? {
+        guard LiveNetworkPolicy.allows(url, context: "WebViewPriceRenderer.renderedSearchHTML")
+        else { return nil }
+        return await Renderer().render(
+            url: url, userAgent: deviceSafariUserAgent,
+            pollIntervalSeconds: pollIntervalSeconds,
+            timeoutSeconds: searchRenderTimeoutSeconds, hasPrice: isReady)
+    }
+
     /// Loads `url` in a fresh off-screen WebView, lets it render, and returns its
     /// rendered HTML. Returns nil on load failure or timeout.
     @MainActor

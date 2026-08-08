@@ -8,6 +8,7 @@ import LunaFetch
 import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
+import LunaStorage
 
 /// The alternative-seller fan-out as the APP surfaces run it: the lean engine
 /// (`LunaPriceCompare`) wired to real networking and to the whole shared ingest
@@ -89,9 +90,40 @@ public enum SellerComparisonRunner {
             fetch: fetchPage,
             webSearch: { await DuckDuckGoSearch.results(forQuery: $0) },
             richResolve: richResolve,
-            onResult: onResult)
-        return await withDeadline(profile.totalBudget + hardCapGrace) {
+            renderSearch: renderSearch,
+            onResult: onResult,
+            onAttempt: { attempt in
+                DiagnosticLog.shared.record(attempt.logLine, category: logCategory)
+            })
+        let outcome = await withDeadline(profile.totalBudget + hardCapGrace) {
             await fanOut.run(request)
+        }
+        DiagnosticLog.shared.record(
+            outcome.map(\.logSummary)
+                ?? "fan-out for \(request.sourceURL.host ?? "?") hit the hard cap",
+            category: logCategory)
+        return outcome
+    }
+
+    /// Everything the fan-out does goes to the app's shareable diagnostic log
+    /// under one category, because the question a failing comparison raises —
+    /// "it found nothing, why?" — is only answerable from the whole run: which
+    /// retailers were chosen, what each answered, and what became of every link.
+    /// Before this, twelve candidates and zero results left no trace at all.
+    public static let logCategory = "SellerComparison"
+
+    /// The render fallback, and the only reason this module is the one wiring
+    /// the engine up: a search page whose results are drawn by JavaScript is
+    /// empty markup to the lean extractor, and `LunaPriceCompare` may not link
+    /// WebKit (it has to fit in the Safari appex). So the engine asks for a
+    /// render through a closure, and only the app tier can answer.
+    ///
+    /// Readiness is "the rendered DOM yields a product link" rather than a fixed
+    /// settle window, so a fast page returns fast and a slow one is still caught.
+    static let renderSearch: SellerFanOut.RenderSearch = { url in
+        await WebViewPriceRenderer.renderedSearchHTML(for: url) { html in
+            !LeanProductPageParser.productLinks(
+                inSearchHTML: html, baseURL: url, limit: 1).isEmpty
         }
     }
 

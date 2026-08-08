@@ -226,6 +226,14 @@
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
+      "id": "onboarding.safari-lesson",
+      "screen": "Safari lesson",
+      "variant": "full demonstration",
+      "summary": "The mock browser from its first frame: this app's demonstration runs, and the lesson settles on the enable steps and the Safari button.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
       "id": "price.editor.alerting",
       "screen": "Price editor",
       "variant": "price drop",

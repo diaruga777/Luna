@@ -459,7 +459,15 @@ final class OnboardingSafariVideoOverlayView: UIView {
     #if DEBUG
     var isShowingSetupInstructionsForTesting: Bool { state == .setup }
     var panelFrameForTesting: CGRect { panel.frame }
+    /// In the overlay's own space, so the two states are directly comparable.
+    var stageFrameForTesting: CGRect { convert(stage.bounds, from: stage) }
+    var downloadFrameForTesting: CGRect { convert(download.bounds, from: download) }
+    var downloadColourForTesting: UIColor? { download.backgroundColor }
     var downloadAlphaForTesting: CGFloat { download.alpha }
+    var panelColourForTesting: UIColor? { panel.backgroundColor }
+    var closeFrameForTesting: CGRect { close.frame }
+    var panelCornerRadiusForTesting: CGFloat { panel.layer.cornerRadius }
+    var activateButtonForTesting: UIButton { actionsView.activateButton }
     #endif
 }
 

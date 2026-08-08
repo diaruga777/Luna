@@ -98,7 +98,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaReadingList can't present UI, so the app shell installs the
         // presenter (same injected-closure pattern as
-        // PriceTrackingViewController.intelligentPriceResolver above). Presents
+        // ProductPriceRescue.resolver above). Presents
         // over whatever is frontmost — the SAME card the share/action extensions
         // show, full screen so it reads as one of the deck's own cards rather
         // than a system alert.

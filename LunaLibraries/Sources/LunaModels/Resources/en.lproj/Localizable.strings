@@ -894,19 +894,17 @@
 "Downloader_media_retention_threeDays_Luna" = "3 days";
 "Downloader_media_retention_twoWeeks_Luna" = "2 weeks";
 
-/* ===== PriceTracker_productCard — ProductCardContent.swift (the in-deck product card) ===== */
-"PriceTracker_productCard_addTrackedSiteTitle_Luna" = "Add tracked site";
+/* ===== PriceTracker_productCard — ProductDetailViewController.swift + SellerRowView.swift (the product surface both apps and both extensions show) ===== */
+"PriceTracker_productCard_discountFormat_Luna" = "%lld%% off";
+"PriceTracker_productCard_noPriceValue_Luna" = "No price";
 "PriceTracker_productCard_openSiteHint_Luna" = "Opens this tracked site";
-"PriceTracker_productCard_priceUnavailableTitle_Luna" = "Price unavailable";
-"PriceTracker_productCard_removeSiteLabel_Luna" = "Remove %@";
 "PriceTracker_productCard_shareCurrentProductLabel_Luna" = "Share Current Product";
-"PriceTracker_productCard_trackedSitesTitle_Luna" = "Tracked Sites";
 
-/* ===== PriceTracker_alertThreshold — AlertThresholdSlider.swift (shared pill control; also lends title/setButtonTitle to PriceGraphView.swift) ===== */
+/* ===== PriceTracker_alertThreshold — AlertThresholdRow.swift (the one-line alert control; also lends title/setButtonTitle to PriceGraphView.swift) ===== */
+"PriceTracker_alertThreshold_rowTitle_Luna" = "Alert at";
 "PriceTracker_alertThreshold_setButtonTitle_Luna" = "Set price alert";
 "PriceTracker_alertThreshold_sliderValueUnset_Luna" = "No price alert set";
 "PriceTracker_alertThreshold_title_Luna" = "Alert threshold";
-"PriceTracker_alertThreshold_unsetMessage_Luna" = "Set a price alert to be notified when the price drops.";
 
 /* ===== PriceTracker_comparison — the save-time alternative-seller fan-out, running behind the seller list (SellerComparison.swift) ===== */
 "PriceTracker_comparison_checkingSellersRow_Luna" = "Checking for other sellers…";
@@ -920,10 +918,9 @@
 "PriceTrackerCompareDoc_06_historyHeading_Luna" = "Price history";
 "PriceTrackerCompareDoc_07_noHistoryCaption_Luna" = "Not enough price history yet.";
 
-/* ===== PriceTracker_graph — PriceGraphView.swift (also used from ProductCardContent.swift + PriceTrackingViewController.swift for the shared "Price History" heading) ===== */
+/* ===== PriceTracker_graph — PriceGraphView.swift ===== */
 "PriceTracker_graph_cancelThresholdLabel_Luna" = "Cancel";
 "PriceTracker_graph_emptyCaption_Luna" = "No price history yet";
-"PriceTracker_graph_historyTitle_Luna" = "Price History";
 "PriceTracker_graph_saveThresholdLabel_Luna" = "Save";
 "PriceTracker_graph_setButtonHint_Luna" = "Starts watching for a price drop and asks to send notifications";
 "PriceTracker_graph_thresholdFieldLabel_Luna" = "Alert price threshold";
@@ -932,13 +929,14 @@
 /* ===== PriceTracker_addSeller — shared between PriceTrackingViewController.swift and ProductSearchOverlayViewController.swift (identical "Already tracked" title in both add-seller flows) ===== */
 "PriceTracker_addSeller_alreadyTrackedTitle_Luna" = "Already tracked";
 
-/* ===== PriceTracker_tracking — PriceTrackingViewController.swift (the full-screen seller editor) ===== */
+/* ===== PriceTracker_tracking — the seller list and its add-a-seller flow (ProductDetailViewController.swift), plus the editor screen's own chrome (PriceTrackingViewController.swift) ===== */
 "PriceTracker_tracking_addSellerAlertMessage_Luna" = "Track this product's price at another seller.";
 "PriceTracker_tracking_addSellerAlertTitle_Luna" = "Add a seller";
 "PriceTracker_tracking_addSellerButtonLabel_Luna" = "Add seller";
 "PriceTracker_tracking_alreadyTrackedMessage_Luna" = "This seller is already tracked.";
 "PriceTracker_tracking_noPriceFoundTitle_Luna" = "No price found";
 "PriceTracker_tracking_noPriceMessage_Luna" = "Unable to read a price. Please try another page.";
+"PriceTracker_tracking_pasteLinkActionTitle_Luna" = "Paste a link";
 "PriceTracker_tracking_noPriceRescueMessage_Luna" = "Unable to read a price. Apple Intelligence can try to find it.";
 "PriceTracker_tracking_notYetRefreshed_Luna" = "Not yet refreshed";
 "PriceTracker_tracking_refreshedFormat_Luna" = "Refreshed %@";

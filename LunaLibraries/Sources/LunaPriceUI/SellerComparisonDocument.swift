@@ -200,15 +200,11 @@ public enum SellerComparisonDocument {
         }
     }
 
-    /// The seller's display name: its registrable domain with the public suffix
-    /// dropped and the first letter raised ("amazon.co.uk" → "Amazon"). The
-    /// directory's own name is not reachable from a persisted tracker — it stores
-    /// URLs, not seller ids — and a host is what the user recognises anyway.
+    /// The seller's display name — the same `SellerNaming` answer the product
+    /// card and the editor's seller rows show, so one retailer is called one
+    /// thing wherever Luna names it.
     public static func sellerName(forURLString urlString: String) -> String {
-        guard let host = URL(string: urlString)?.host else { return urlString }
-        let domain = ProductIdentityMatching.registrableDomain(host)
-        guard let label = domain.split(separator: ".").first, !label.isEmpty else { return host }
-        return label.prefix(1).uppercased() + label.dropFirst()
+        SellerNaming.displayName(forURLString: urlString)
     }
 
     /// Writes the document to a temporary file and returns its URL, or nil when
@@ -414,12 +410,10 @@ public enum SellerComparisonDocument {
             .replacingOccurrences(of: "'", with: "&#39;")
     }
 
-    /// The letter a seller's placeholder badge carries — its first alphanumeric
-    /// character, uppercased. "•" only for a name with none at all, so the badge
-    /// is never blank.
+    /// The letter a seller's placeholder badge carries (`SellerNaming` — the same
+    /// badge the seller rows draw).
     static func initial(forSellerName name: String) -> String {
-        guard let character = name.first(where: { $0.isLetter || $0.isNumber }) else { return "•" }
-        return String(character).uppercased()
+        SellerNaming.initial(forName: name)
     }
 
     static func dataURI(_ data: Data, mimeType: String) -> String {

@@ -103,8 +103,8 @@ enum ProductStageCatalog {
                 make: { editor(seed: "stage-gadget") }),
             StageDescriptor(
                 id: "price.editor.no-threshold", screen: "Price editor", variant: "no alert set",
-                summary: "No threshold yet: the slider parked and dimmed behind a 'set price "
-                    + "alert' offer, and no line on the graph.",
+                summary: "No threshold yet: the alert row parked and dimmed behind its "
+                    + "'Set price alert' button, and no line on the graph.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -116,8 +116,8 @@ enum ProductStageCatalog {
                 make: { editor(seed: "stage-nothreshold") }),
             StageDescriptor(
                 id: "price.editor.creation", screen: "Price editor", variant: "just saved",
-                summary: "The chrome a save-time editor wears: 'Read instead' discards the "
-                    + "whole tracker rather than going back.",
+                summary: "The chrome a save-time editor wears in the app: the header's "
+                    + "back chevron, and no floating exit.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -135,8 +135,8 @@ enum ProductStageCatalog {
                 id: "price.editor.extension", screen: "Price editor",
                 variant: "in a share sheet",
                 summary: "The extension-hosted editor: no back chevron, the floating "
-                    + "glass exit standing the alert footer up, and a long marketplace "
-                    + "title held inside the column instead of hanging off both edges.",
+                    + "glass exit standing the seller list up, and a marketplace title "
+                    + "trimmed to its product name with the rest kept underneath.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -156,7 +156,7 @@ enum ProductStageCatalog {
             StageDescriptor(
                 id: "price.editor.merge", screen: "Price editor", variant: "second seller added",
                 summary: "A second store for a product already tracked: the added seller "
-                    + "flashes, and 'Read instead' reverts only that one.",
+                    + "flashes green in the list.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -220,23 +220,24 @@ enum ProductStageCatalog {
                     return StageFixtures.hosting(graph, height: 240)
                 }),
             StageDescriptor(
-                id: "price.threshold.unset", screen: "Alert threshold slider", variant: "parked",
-                summary: "The slider before an alert is set: track dimmed, readout tertiary.",
+                id: "price.threshold.unset", screen: "Alert threshold row", variant: "parked",
+                summary: "The row before an alert is set: track dimmed, and a Set price "
+                    + "alert button where the threshold price goes.",
                 kind: .product,
                 make: {
-                    let slider = AlertThresholdSlider()
-                    slider.configure(fraction: nil, initialPrice: 200, currency: "USD")
-                    return StageFixtures.hosting(slider, height: 120)
+                    let row = AlertThresholdRow()
+                    row.configure(fraction: nil, initialPrice: 200, currency: "USD")
+                    return StageFixtures.hosting(row, height: 90)
                 }),
             StageDescriptor(
-                id: "price.threshold.set", screen: "Alert threshold slider", variant: "armed",
+                id: "price.threshold.set", screen: "Alert threshold row", variant: "armed",
                 summary: "A 25%-off threshold committed: accent track and the price it "
-                    + "resolves to.",
+                    + "resolves to, on one line.",
                 kind: .product,
                 make: {
-                    let slider = AlertThresholdSlider()
-                    slider.configure(fraction: 0.25, initialPrice: 200, currency: "USD")
-                    return StageFixtures.hosting(slider, height: 120)
+                    let row = AlertThresholdRow()
+                    row.configure(fraction: 0.25, initialPrice: 200, currency: "USD")
+                    return StageFixtures.hosting(row, height: 90)
                 }),
         ]
     }

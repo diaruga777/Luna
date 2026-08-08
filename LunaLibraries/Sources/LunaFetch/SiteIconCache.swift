@@ -1,24 +1,29 @@
 //
-//  SourceIconCache.swift
-//  Luna
+//  SiteIconCache.swift
+//  LunaFetch
 //
-//  Site icons for the Reader's mini-card scrub chips. Wraps LunaFetch's
-//  FaviconFetcher with the app-side layers it deliberately doesn't have:
-//  a memory cache, a disk cache (Caches/SourceIcons/<host>.png), a negative
-//  cache so hosts with no icon aren't re-probed every reload, and in-flight
-//  de-duplication so one strip reload fetches each host once.
+//  Site icons, for anything in Luna that shows WHERE something came from: the
+//  Reader's mini-card scrub chips and the price tracker's seller rows. Wraps
+//  `FaviconFetcher` with the layers it deliberately doesn't have: a memory
+//  cache, a disk cache (Caches/SourceIcons/<host>.png), a negative cache so
+//  hosts with no icon aren't re-probed every reload, and in-flight
+//  de-duplication so one reload fetches each host once.
+//
+//  It lives here rather than in the app shell because the seller rows also draw
+//  inside the share and action extensions, which have no app shell to borrow
+//  from — and a second copy of this file is how two surfaces start disagreeing
+//  about which hosts have icons.
 //
 //  Main-thread confined: call `icon(forPageURL:completion:)` on main;
 //  completions are delivered on main (synchronously on a memory/disk hit).
 //
 
 import ImageIO
-import LunaFetch
 import UIKit
 
-final class SourceIconCache {
+public final class SiteIconCache {
 
-    static let shared = SourceIconCache()
+    public static let shared = SiteIconCache()
 
     /// Failed hosts aren't re-probed until this much time passes.
     private static let missRetryInterval: TimeInterval = 7 * 24 * 3600
@@ -41,7 +46,7 @@ final class SourceIconCache {
 
     /// The icon for the site hosting `pageURL`. The completion fires exactly
     /// once: synchronously on a cache hit, after the network otherwise.
-    func icon(forPageURL pageURL: URL, completion: @escaping (UIImage?) -> Void) {
+    public func icon(forPageURL pageURL: URL, completion: @escaping (UIImage?) -> Void) {
         guard let host = Self.cacheKey(forPageURL: pageURL) else {
             completion(nil)
             return
@@ -95,7 +100,7 @@ final class SourceIconCache {
 
     /// One icon per site: the lowercased, `www.`-stripped host — reduced to
     /// safe filename characters so a hostile host string can't traverse paths.
-    static func cacheKey(forPageURL url: URL) -> String? {
+    public static func cacheKey(forPageURL url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
               var host = url.host?.lowercased(), !host.isEmpty
         else { return nil }
@@ -133,7 +138,7 @@ final class SourceIconCache {
     /// Decodes icon bytes, picking the LARGEST frame of a multi-size .ico
     /// (UIImage(data:) takes the first, often the 16px one), then downscales
     /// to the cache ceiling.
-    static func decodedIcon(from data: Data) -> UIImage? {
+    public static func decodedIcon(from data: Data) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(source) > 0
         else { return nil }

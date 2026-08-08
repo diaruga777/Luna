@@ -221,10 +221,10 @@ enum KindWiring {
     private static func installProductLaunchWiring() {
         // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
         // Rescue Phase 6 UI).
-        PriceTrackingViewController.intelligentPriceResolver = { urlString in
+        ProductPriceRescue.resolver = { urlString in
             guard let info = await URLRescueWiring.rescueProductInfo(urlString: urlString)
             else { return nil }
-            return PriceTrackingViewController.ResolvedPrice(
+            return ProductPriceRescue.ResolvedPrice(
                 amount: info.priceAmount, currency: info.priceCurrency)
         }
     }

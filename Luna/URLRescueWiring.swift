@@ -65,7 +65,7 @@ enum URLRescueWiring {
 
     /// Product-kind "no price" → "Ask Apple Intelligence" resolution (Phase 6
     /// UI). Product `KindWiring` variants wrap this into
-    /// `PriceTrackingViewController.intelligentPriceResolver`.
+    /// `ProductPriceRescue.resolver`.
     static func rescueProductInfo(urlString: String) async -> ProductInfo? {
         guard let engine, let url = URL(string: urlString) else { return nil }
         let request = RescueRequest(url: url, source: .manual, failureKind: .productNoPrice, hint: .product)

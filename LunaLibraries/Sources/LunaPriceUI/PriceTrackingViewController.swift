@@ -3,20 +3,19 @@
 //  LunaPriceUI
 //
 
-import LunaStorage
-import LunaHTMLClassification
-import LunaIngest
-import LunaURLClassification
-import LunaModels
 import LunaDesignSystem
-import LunaSocial
+import LunaModels
+import LunaStorage
 import UIKit
 
-/// Shows and edits one price tracker: a table of its seller URLs (each row shows
-/// the extracted price; tapping opens the URL in the in-app browser), an **Add
-/// seller** footer (paste a URL, or web-search/browse to one), and a bottom
-/// alert-config control (a threshold slider shown both as a percent and as an
-/// absolute price).
+/// The price editor as a SCREEN: a header bar, a way out, and — filling
+/// everything between them — the one `ProductDetailViewController` the in-deck
+/// product card is also made of.
+///
+/// This class used to be the other half of a split: its own product title, its
+/// own grouped `UITableView` of sellers, its own graph slot and its own
+/// threshold footer, none of which matched the card's. What survives here is
+/// only what a screen has and a card does not.
 ///
 /// The exit is decided by an explicit `PriceTrackingExitContext` (host + entry),
 /// so the right control lands in the right context regardless of the view
@@ -24,7 +23,7 @@ import UIKit
 /// chevron in the screen's own header pops to the reading list; in an extension
 /// there is nothing to pop to, so the header carries only the title and the exit
 /// is the floating glass `ExtensionExitButton` every other Luna extension surface
-/// shows — the threshold footer steps up to leave it its corner.
+/// shows — the content steps up to leave it its corner.
 public final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDelegate {
 
     /// How the screen was opened, mapped to a `PriceTrackingExitContext`.
@@ -34,7 +33,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         /// Save-time, a brand-new product saved as its OWN new tracker.
         case creation(itemID: UUID, host: PriceTrackingHost)
         /// Save-time, the just-saved URL was merged as a seller into an EXISTING
-        /// tracker. `addedStoreURLString` is flashed at the top.
+        /// tracker. `addedStoreURLString` is flashed in the seller list.
         case merge(itemID: UUID, addedStoreURLString: String, host: PriceTrackingHost)
 
         var itemID: UUID {
@@ -55,7 +54,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             }
         }
 
-        /// The just-added seller URL to flash at the top (merge only).
+        /// The just-added seller URL to flash (merge only).
         var highlightedURLString: String? {
             if case .merge(_, let url, _) = self { return url }
             return nil
@@ -63,85 +62,29 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     }
 
     private let mode: Mode
-    private let store = ReadingListStore.shared
-    /// Fetches the current price for a store URL the user adds to an existing
-    /// tracker. Protocol-based so this screen can be tested against a mock
-    /// without the network.
-    private let priceFetcher: PriceFetching
+    private let detail: ProductDetailViewController
+    /// In-content header in place of the nav bar (title + back).
+    private let navHeader = NavHeaderBar()
+    /// UIKit owns the navigation controller's normal interactive-pop delegate. Keep
+    /// it so this screen can temporarily opt in without changing other screens.
+    private weak var previousInteractivePopGestureDelegate: UIGestureRecognizerDelegate?
 
-    /// A resolved price from the URL-rescue engine (`claudedocs/url-rescue.md`).
-    public struct ResolvedPrice {
-        public let amount: Decimal
-        public let currency: String
-        public init(amount: Decimal, currency: String) {
-            self.amount = amount
-            self.currency = currency
-        }
-    }
-
-    /// The main app's "Ask Apple Intelligence to find the price" behavior for a
-    /// no-price page, installed once at launch (nil in extensions → the button is
-    /// hidden and behavior is unchanged). Returns a price or nil.
-    public static var intelligentPriceResolver: ((String) async -> ResolvedPrice?)?
+    private var exitContext: PriceTrackingExitContext { mode.exitContext }
 
     /// Invoked when the editor is dismissed via the extension's exit button, so the
     /// host can complete its request. nil in-app (the back chevron just pops). Set
     /// by the extension host after construction.
     public var onDone: (() -> Void)?
 
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
-    private let thresholdSlider = AlertThresholdSlider()
-    /// In-content header in place of the nav bar (title + back/done + "Read instead").
-    private let navHeader = NavHeaderBar()
-    private let productHeader = UIView()
-    private let productTitleLabel = UILabel()
-    /// Icon-only "+" that sits inline with the "Sellers" section header (right),
-    /// alongside the list it adds to.
-    private let addSellerButton = UIButton(type: .system)
-    /// Price-history graph slot, BELOW the table and ABOVE the alert footer, outside
-    /// the scroll view. It remains visible with an empty history so the threshold is
-    /// still legible while a newly saved tracker awaits its first refresh.
-    private let graphContainer = UIView()
-    private let graphTitleLabel = UILabel()
-    private let graphView = PriceGraphView()
-    /// The "Sellers" section header: a footnote title on the left and the icon-only
-    /// add button on the right, inset to align with the grouped list.
-    private lazy var sellersHeaderView: UIView = {
-        let container = UIView()
-        let label = UILabel()
-        label.text = L10n.string("PriceTracker_tracking_sellersHeaderTitle")
-        label.font = .preferredFont(forTextStyle: .footnote)
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = LunaColors.secondaryText
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(label)
-        container.addSubview(addSellerButton)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
-            addSellerButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            addSellerButton.centerYAnchor.constraint(equalTo: label.centerYAnchor),
-        ])
-        return container
-    }()
-    /// UIKit owns the navigation controller's normal interactive-pop delegate. Keep
-    /// it so this screen can temporarily opt in without changing other screens.
-    private weak var previousInteractivePopGestureDelegate: UIGestureRecognizerDelegate?
-
-    private var itemID: UUID { mode.itemID }
-    private var exitContext: PriceTrackingExitContext { mode.exitContext }
-
-    private var tracker: PriceTracker? { store.item(withID: itemID)?.priceTracker }
-
-    public init(itemID: UUID, priceFetcher: PriceFetching = PriceFetcher()) {
-        self.mode = .existing(itemID: itemID)
-        self.priceFetcher = priceFetcher
-        super.init(nibName: nil, bundle: nil)
+    public convenience init(itemID: UUID, priceFetcher: PriceFetching = PriceFetcher()) {
+        self.init(mode: .existing(itemID: itemID), priceFetcher: priceFetcher)
     }
 
     public init(mode: Mode, priceFetcher: PriceFetching = PriceFetcher()) {
         self.mode = mode
-        self.priceFetcher = priceFetcher
+        self.detail = ProductDetailViewController(
+            itemID: mode.itemID, priceFetcher: priceFetcher,
+            highlightedURLString: mode.highlightedURLString)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -155,89 +98,62 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         navHeader.title = L10n.string("PriceTracker_tracking_screenTitle")
         navHeader.mount(in: self)
 
-        productHeader.backgroundColor = LunaColors.groupedBackground
-        productHeader.translatesAutoresizingMaskIntoConstraints = false
-        productTitleLabel.font = .preferredFont(forTextStyle: .title3)
-        productTitleLabel.adjustsFontForContentSizeCategory = true
-        productTitleLabel.textColor = LunaColors.primaryText
-        productTitleLabel.numberOfLines = 0
-        productTitleLabel.lineBreakMode = .byWordWrapping
-        productTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        productHeader.addSubview(productTitleLabel)
+        addChild(detail)
+        detail.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(detail.view)
+        detail.didMove(toParent: self)
 
-        var addConfig = UIButton.Configuration.plain()
-        addConfig.image = UIImage(systemName: "plus", withConfiguration:
-            UIImage.SymbolConfiguration(textStyle: .body, scale: .medium))
-        addConfig.contentInsets = .zero
-        addSellerButton.configuration = addConfig
-        addSellerButton.setContentHuggingPriority(.required, for: .horizontal)
-        addSellerButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-        addSellerButton.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
-        addSellerButton.translatesAutoresizingMaskIntoConstraints = false
-        addSellerButton.accessibilityLabel = L10n.string("PriceTracker_tracking_addSellerButtonLabel")
-        view.addSubview(productHeader)
-
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.contentInsetAdjustmentBehavior = .never
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "store")
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "pendingComparison")
-        view.addSubview(tableView)
-
-        configureGraphContainer()
-        view.addSubview(graphContainer)
-
-        let footer = makeThresholdFooter()
-        footer.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(footer)
-
-        // Every band of the editor sits in one centered column rather than
-        // stretching: a threshold slider a thousand points wide, or a seller name
-        // that far from its price, is not a form any more. `ReadableColumn` also
-        // makes the container a HARD ceiling — a long marketplace product title
-        // in `productTitleLabel` used to out-argue a merely preferred full width
-        // and hang every band off both edges of the share sheet.
+        // Every band sits in one centred column rather than stretching: a
+        // threshold slider a thousand points wide, or a seller name that far
+        // from its price, is not a form any more. `ReadableColumn` also makes the
+        // container a HARD ceiling — a long marketplace product title used to
+        // out-argue a merely preferred full width and hang every band off both
+        // edges of the share sheet.
         let column = ReadableColumn.install(in: view)
-
+        let bottom = detail.view.bottomAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16)
         NSLayoutConstraint.activate([
-            productHeader.topAnchor.constraint(equalTo: navHeader.bottomAnchor),
-            productHeader.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            productHeader.trailingAnchor.constraint(equalTo: column.trailingAnchor),
-            productTitleLabel.topAnchor.constraint(equalTo: productHeader.topAnchor, constant: 12),
-            productTitleLabel.leadingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.leadingAnchor),
-            productTitleLabel.trailingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.trailingAnchor),
-            productTitleLabel.bottomAnchor.constraint(equalTo: productHeader.bottomAnchor, constant: -10),
-            tableView.topAnchor.constraint(equalTo: productHeader.bottomAnchor),
-            tableView.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: column.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: graphContainer.topAnchor),
-            graphContainer.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            graphContainer.trailingAnchor.constraint(equalTo: column.trailingAnchor),
-            graphContainer.bottomAnchor.constraint(equalTo: footer.topAnchor),
-            footer.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            footer.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            detail.view.topAnchor.constraint(equalTo: navHeader.bottomAnchor, constant: 12),
+            detail.view.leadingAnchor.constraint(equalTo: column.leadingAnchor, constant: 16),
+            detail.view.trailingAnchor.constraint(equalTo: column.trailingAnchor, constant: -16),
         ])
-        installExitChrome(above: footer)
+        installExitChrome(bottom: bottom)
+    }
 
-        // Responsive graph height: ~168pt preferred, but never more than 40% of the
-        // safe area, so on short screens (small phones / landscape) the sellers table
-        // and footer always remain visible. The table fills whatever's left.
-        let graphHeight = graphContainer.heightAnchor.constraint(equalToConstant: 168)
-        graphHeight.priority = .defaultHigh
-        graphHeight.isActive = true
-        graphContainer.heightAnchor.constraint(
-            lessThanOrEqualTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: 0.4).isActive = true
-
-        syncThresholdControl()
-        refreshGraph()
-        // Keep the shared "has the user ever been asked about notifications" latch
-        // true to the system while a price surface is open: it is what decides
-        // whether the NEXT tracked product starts with an alert threshold, and an
-        // install that granted permission before the latch existed heals here.
-        NotificationManager.refreshAuthorizationRequestedStateInBackground()
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
+    /// Installs the ONE way out, from the pure `PriceTrackingExitContext` decision,
+    /// and lands the content's bottom edge above whatever that turns out to be.
+    ///
+    /// In-app the editor was pushed, so the exit is a back chevron in the screen's
+    /// own header and the content keeps the bottom safe area to itself. In an
+    /// extension there is no stack to pop to and the exit is the floating glass
+    /// circle every other Luna extension surface shows — so the header carries only
+    /// the title, and the seller list stands the circle's corner down rather than
+    /// running underneath it.
+    private func installExitChrome(bottom: NSLayoutConstraint) {
+        guard exitContext.leftButton == .done else {
+            navHeader.setLeadingControls([
+                NavHeaderBar.backButton(target: self, action: #selector(leftButtonTapped)),
+            ])
+            bottom.isActive = true
+            return
+        }
+        let exitButton = ExtensionExitButton.make { [weak self] in self?.dismissOrPop() }
+        // The circle is the fixed thing in this pair and the content is what
+        // gives: without this it is a button with a default 250 hugging holding
+        // up a seller list that would happily take the whole screen, and the
+        // exit stretches into a 700pt lozenge.
+        exitButton.setContentHuggingPriority(.required, for: .vertical)
+        exitButton.setContentCompressionResistancePriority(.required, for: .vertical)
+        view.addSubview(exitButton)
+        NSLayoutConstraint.activate([
+            exitButton.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -ExtensionExitButton.edgeInset),
+            exitButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -ExtensionExitButton.edgeInset),
+            detail.view.bottomAnchor.constraint(equalTo: exitButton.topAnchor, constant: -12),
+        ])
     }
 
     /// Installing a custom left button (the explicit Back/Done decision above)
@@ -246,11 +162,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// left-edge swipe; extension-hosted editors still have no navigation stack.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // This screen draws its OWN in-content header (so it animates as part of the Dot
-        // Matrix wipe). Keep the shared nav bar hidden while we're visible — the header
-        // bar + back/done control live in our content.
+        // This screen draws its OWN in-content header (so it animates as part of the
+        // Dot Matrix wipe). Keep the shared nav bar hidden while we're visible.
         navigationController?.setNavigationBarHidden(true, animated: false)
-        refreshGraph()
+        detail.reload()
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -284,269 +199,6 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         return navigationController.transitionCoordinator == nil
     }
 
-    /// Installs the ONE way out, from the pure `PriceTrackingExitContext` decision,
-    /// and pins `footer` above whatever that turns out to be.
-    ///
-    /// In-app the editor was pushed, so the exit is a back chevron in the screen's
-    /// own header and the footer keeps the bottom safe area to itself. In an
-    /// extension there is no stack to pop to and the exit is the floating glass
-    /// circle every other Luna extension surface shows — so the header carries only
-    /// the title, and the footer stands the circle's corner down rather than
-    /// putting the alert readout underneath it.
-    private func installExitChrome(above footer: UIView) {
-        guard exitContext.leftButton == .done else {
-            navHeader.setLeadingControls([
-                NavHeaderBar.backButton(target: self, action: #selector(leftButtonTapped)),
-            ])
-            footer.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor).isActive = true
-            return
-        }
-        let exitButton = ExtensionExitButton.make { [weak self] in self?.dismissOrPop() }
-        view.addSubview(exitButton)
-        NSLayoutConstraint.activate([
-            exitButton.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -ExtensionExitButton.edgeInset),
-            exitButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -ExtensionExitButton.edgeInset),
-            footer.bottomAnchor.constraint(equalTo: exitButton.topAnchor, constant: -12),
-        ])
-    }
-
-    @objc private func reload() {
-        tableView.reloadData()
-        syncThresholdControl()
-        // A background price refresh can land while the editor is open — keep
-        // the history graph in sync with the rows, not just on (re)appear.
-        refreshGraph()
-    }
-
-
-    // MARK: - Price-history graph
-
-    private func configureGraphContainer() {
-        graphContainer.backgroundColor = LunaColors.groupedBackground
-        graphContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        graphTitleLabel.text = L10n.string("PriceTracker_graph_historyTitle")
-        graphTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        graphTitleLabel.textColor = LunaColors.secondaryText
-        graphTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        graphContainer.addSubview(graphTitleLabel)
-
-        graphView.translatesAutoresizingMaskIntoConstraints = false
-        graphContainer.addSubview(graphView)
-
-        NSLayoutConstraint.activate([
-            graphTitleLabel.topAnchor.constraint(equalTo: graphContainer.topAnchor, constant: 8),
-            graphTitleLabel.leadingAnchor.constraint(equalTo: graphContainer.layoutMarginsGuide.leadingAnchor),
-            graphTitleLabel.trailingAnchor.constraint(equalTo: graphContainer.layoutMarginsGuide.trailingAnchor),
-            graphView.topAnchor.constraint(equalTo: graphTitleLabel.bottomAnchor, constant: 2),
-            graphView.leadingAnchor.constraint(equalTo: graphContainer.leadingAnchor, constant: 12),
-            graphView.trailingAnchor.constraint(equalTo: graphContainer.trailingAnchor, constant: -12),
-            graphView.bottomAnchor.constraint(equalTo: graphContainer.bottomAnchor, constant: -8),
-        ])
-    }
-
-    /// The graph remains present from day one. Even without history it carries the
-    /// current alert line — or NO line, when the tracker has no threshold yet (the
-    /// footer's parked slider is then the only alert affordance). This legacy editor
-    /// keeps the line read-only because its separate threshold footer remains the
-    /// extension-safe editing control.
-    private func refreshGraph() {
-        guard let tracker else { graphContainer.isHidden = true; return }
-        graphContainer.isHidden = false
-        let series = PriceHistory.series(for: tracker)
-        graphView.setData(
-            series,
-            currency: tracker.displayCurrency,
-            thresholdPrice: tracker.alertThresholdPrice,
-            baselinePrice: tracker.initialPrice,
-            allowsThresholdEditing: false)
-    }
-
-    // MARK: - Threshold footer
-
-    private func makeThresholdFooter() -> UIView {
-        let container = UIView()
-        container.backgroundColor = LunaColors.groupedBackground
-
-        thresholdSlider.onCommitted = { [weak self] fraction in
-            guard let self, var tracker = self.tracker else { return }
-            tracker.setAlertThresholdFraction(fraction)
-            self.store.updatePriceTracker(tracker, for: self.itemID)
-            // Committing a threshold — whether it was unset or is being adjusted — is
-            // the opt-in moment for notifications: an alert the user just asked for is
-            // the first thing Luna has to tell them about this product (launch never
-            // asks). Idempotent, and a no-op in the extension-hosted copy of this
-            // editor (an `.appex` can't ask), so both paths just call it.
-            NotificationManager.requestAuthorization()
-        }
-        thresholdSlider.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(thresholdSlider)
-        NSLayoutConstraint.activate([
-            thresholdSlider.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-            thresholdSlider.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            thresholdSlider.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            thresholdSlider.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
-        ])
-        return container
-    }
-
-    private func syncThresholdControl() {
-        guard let tracker else { return }
-        thresholdSlider.configure(
-            fraction: tracker.alertThresholdFraction,
-            initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
-        productTitleLabel.text = tracker.productName
-    }
-
-    // MARK: - Add seller
-
-    /// The "Add seller" footer alert: a URL text field plus three vertically-stacked
-    /// actions — Add (paste a URL), Search (browse to one), Cancel.
-    @objc private func addSellerTapped() {
-        let alert = UIAlertController(
-            title: L10n.string("PriceTracker_tracking_addSellerAlertTitle"),
-            message: L10n.string("PriceTracker_tracking_addSellerAlertMessage"),
-            preferredStyle: .alert)
-        alert.addTextField {
-            $0.placeholder = L10n.string("PriceTracker_tracking_urlFieldPlaceholder")
-            $0.keyboardType = .URL
-        }
-        alert.addAction(UIAlertAction(title: L10n.string("Common_add"), style: .default) { [weak self, weak alert] _ in
-            guard let urlString = alert?.textFields?.first?.text, !urlString.isEmpty else { return }
-            self?.addSeller(urlString: urlString)
-        })
-        alert.addAction(UIAlertAction(title: L10n.string("PriceTracker_tracking_searchActionTitle"), style: .default) { [weak self] _ in
-            self?.presentSearchOverlay()
-        })
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        present(alert, animated: true)
-    }
-
-    /// Adds `urlString` as a seller: fetches its price (mandatory, via the same
-    /// `PriceFetcher` path the rest of the app uses) and only adds the store when a
-    /// price is readable; surfaces a message otherwise. Dedupes a URL already tracked.
-    /// `prefetchedHTML` (the search overlay's rendered `outerHTML`) lets the fetcher
-    /// take its fast static path and SEE JS-loaded prices without a re-fetch.
-    ///
-    /// `report` (the search-overlay add path) receives the typed outcome so the
-    /// overlay can dismiss on success or show a clear message — never a silent no-op.
-    /// When `report` shows the message itself, the paste path omits it and this method
-    /// presents its own alert.
-    private func addSeller(
-        urlString: String, prefetchedHTML: String? = nil,
-        report: ((ProductSearchAddOutcome) -> Void)? = nil
-    ) {
-        // No gate: trackers belong to product-handling apps, and this editor
-        // is only ever presented in one (Price Tracker or the central Luna
-        // app) — a product save is dropped before the editor elsewhere.
-        guard let tracker else { return }
-        if tracker.hasStore(urlString: urlString) {
-            if let report {
-                report(.duplicate)
-            } else {
-                presentPriceMessage(
-                    title: L10n.string("PriceTracker_addSeller_alreadyTrackedTitle"),
-                    message: L10n.string("PriceTracker_tracking_alreadyTrackedMessage"))
-            }
-            return
-        }
-        Task { [weak self] in
-            guard let self else { return }
-            let price = await self.priceFetcher.fetchPrice(
-                forURLString: urlString, prefetchedHTML: prefetchedHTML)
-            await MainActor.run {
-                guard var current = self.tracker else { return }
-                if current.hasStore(urlString: urlString) {
-                    report?(.duplicate)
-                    return
-                }
-                guard let price else {
-                    if let report {
-                        report(.noPrice)
-                    } else if Self.intelligentPriceResolver != nil {
-                        self.presentNoPriceWithRescueOption(urlString: urlString)
-                    } else {
-                        self.presentPriceMessage(
-                            title: L10n.string("PriceTracker_tracking_noPriceFoundTitle"),
-                            message: L10n.string("PriceTracker_tracking_noPriceMessage"))
-                    }
-                    return
-                }
-                current.upsertStore(PriceTrackerStore(
-                    urlString: urlString, lastPrice: price.amount,
-                    currency: price.currency, lastRefreshed: Date()))
-                self.store.updatePriceTracker(current, for: self.itemID)
-                report?(.added)
-            }
-        }
-    }
-
-
-    /// The no-price alert, plus a "Retry with AI" action (only shown when the
-    /// resolver is installed — i.e. the main app, never extensions). The label
-    /// matches every other error surface's offer
-    /// (`GlassStyle.retryWithAIConfiguration`); an alert can't carry the failed
-    /// card's chrome, but it can at least call the same thing the same name.
-    private func presentNoPriceWithRescueOption(urlString: String) {
-        let alert = UIAlertController(
-            title: L10n.string("PriceTracker_tracking_noPriceFoundTitle"),
-            message: L10n.string("PriceTracker_tracking_noPriceRescueMessage"),
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Common_retryWithAI"), style: .default) { [weak self] _ in
-            self?.askIntelligenceForPrice(urlString: urlString)
-        })
-        alert.addAction(UIAlertAction(title: L10n.string("Common_notNow"), style: .cancel))
-        present(alert, animated: true)
-    }
-
-    /// Runs the injected URL-rescue price resolver and, on success, adds the seller
-    /// through the same upsert tail the normal add path uses.
-    private func askIntelligenceForPrice(urlString: String) {
-        guard let resolver = Self.intelligentPriceResolver else { return }
-        Task { @MainActor [weak self] in
-            let resolved = await resolver(urlString)
-            guard let self, var current = self.tracker else { return }
-            guard let resolved else {
-                self.presentPriceMessage(
-                    title: L10n.string("PriceTracker_tracking_stillNoPriceTitle"),
-                    message: L10n.string("PriceTracker_tracking_stillNoPriceMessage"))
-                return
-            }
-            current.upsertStore(PriceTrackerStore(
-                urlString: urlString, lastPrice: resolved.amount,
-                currency: resolved.currency, lastRefreshed: Date()))
-            self.store.updatePriceTracker(current, for: self.itemID)
-            self.tableView.reloadData()
-        }
-    }
-
-    // MARK: - Search overlay
-
-    /// Presents the web search/browse overlay preloaded with a Google Shopping search
-    /// for this product. Confirming a page (via "+" or auto-detect) adds it as a
-    /// seller through the same mandatory-price add path.
-    private func presentSearchOverlay() {
-        let productName = tracker?.productName ?? ""
-        let searchURL = ProductSearchURL.googleShoppingURL(forProductName: productName)
-            ?? URL(string: "https://www.google.com")
-        guard let searchURL else { return }
-        let trackedProduct = ProductInfo(
-            name: tracker?.productName ?? productName,
-            priceAmount: tracker?.initialPrice ?? 0,
-            priceCurrency: tracker?.initialCurrency ?? "USD",
-            imageURL: nil, brand: tracker?.brand, productID: tracker?.productID,
-            identifiers: tracker?.identifiers ?? ProductIdentifiers())
-        let overlay = ProductSearchOverlayViewController(
-            initialURL: searchURL, trackedProduct: trackedProduct)
-        overlay.delegate = self
-        present(overlay, animated: true)
-    }
-
     // MARK: - Exit
 
     /// The in-app header's back chevron: pops back to the reading list. The tracker
@@ -567,127 +219,5 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         } else {
             dismiss(animated: true)
         }
-    }
-}
-
-extension PriceTrackingViewController: ProductSearchOverlayDelegate {
-    public func productSearchOverlay(
-        _ overlay: ProductSearchOverlayViewController,
-        didConfirmPage urlString: String, html: String,
-        completion: @escaping (ProductSearchAddOutcome) -> Void
-    ) {
-        addSeller(urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html, report: completion)
-    }
-}
-
-extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegate {
-    /// The seller rows, plus ONE more while a fan-out is out: the list is where
-    /// the user finds out that Luna is still looking, and the row is the same
-    /// fact the tracker's pending marker is (`SellerComparison`).
-    private var isComparing: Bool { tracker?.pendingComparison != nil }
-
-    public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        (tracker?.stores.count ?? 0) + (isComparing ? 1 : 0)
-    }
-
-    public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        if isComparing, indexPath.row == (tracker?.stores.count ?? 0) {
-            return comparisonCell(tableView, at: indexPath)
-        }
-        let cell = tableView.dequeueReusableCell(withIdentifier: "store", for: indexPath)
-        guard let storeListing = tracker?.stores[safe: indexPath.row] else { return cell }
-        var config = cell.defaultContentConfiguration()
-        config.text = storeListing.url?.host?.replacingOccurrences(of: "www.", with: "")
-            ?? storeListing.urlString
-        if let price = storeListing.lastPrice {
-            let formatted = PriceFormatting.string(amount: price, currency: storeListing.currency)
-            config.secondaryText = "\(formatted) · \(refreshDescription(for: storeListing))"
-        } else {
-            config.secondaryText = "Price unavailable · \(refreshDescription(for: storeListing))"
-        }
-        cell.contentConfiguration = config
-        cell.accessoryType = .disclosureIndicator
-
-        // Flash the just-added/merged URL at the top (reset on reuse — a recycled
-        // highlighted cell must not tint an unrelated row).
-        cell.backgroundColor = mode.highlightedURLString == storeListing.urlString
-            ? UIColor.systemYellow.withAlphaComponent(0.18)
-            : nil
-        return cell
-    }
-
-    public func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        sellersHeaderView
-    }
-
-    public func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        40
-    }
-
-    /// The waiting row: a spinner and a line of copy, going nowhere. Not
-    /// selectable and not swipe-deletable — there is no seller behind it yet.
-    private func comparisonCell(
-        _ tableView: UITableView, at indexPath: IndexPath
-    ) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(
-            withIdentifier: "pendingComparison", for: indexPath)
-        var config = cell.defaultContentConfiguration()
-        config.text = L10n.string("PriceTracker_comparison_checkingSellersRow")
-        config.textProperties.color = LunaColors.secondaryText
-        cell.contentConfiguration = config
-        cell.accessoryType = .none
-        cell.selectionStyle = .none
-        cell.backgroundColor = nil
-        let spinner = UIActivityIndicatorView(style: .medium)
-        spinner.startAnimating()
-        cell.accessoryView = spinner
-        return cell
-    }
-
-    public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        guard let storeListing = tracker?.stores[safe: indexPath.row] else { return }
-        InAppBrowser.present(urlString: storeListing.urlString, from: self)
-    }
-
-    public func tableView(
-        _ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
-    ) -> UISwipeActionsConfiguration? {
-        guard let tracker, tracker.stores.count > 1,
-              let urlString = tracker.stores[safe: indexPath.row]?.urlString
-        else { return nil }
-        let delete = UIContextualAction(style: .destructive, title: L10n.string("Common_remove")) { [weak self] _, _, done in
-            guard let self, var current = self.tracker else { return done(false) }
-            let removed = current.removeStore(urlString: urlString)
-            if removed { self.store.updatePriceTracker(current, for: self.itemID) }
-            done(removed)
-        }
-        return UISwipeActionsConfiguration(actions: [delete])
-    }
-}
-
-/// The table has one row that is not a store — the "checking for other sellers"
-/// row — so every store lookup by row index has to tolerate being off the end.
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}
-
-private extension PriceTrackingViewController {
-    // DateFormatter setup is expensive and this runs per row per reload.
-    static let refreshedFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = .current
-        formatter.setLocalizedDateFormatFromTemplate("MMM d, h:mm a")
-        return formatter
-    }()
-
-    public func refreshDescription(for store: PriceTrackerStore) -> String {
-        guard let refreshed = store.lastRefreshed else {
-            return L10n.string("PriceTracker_tracking_notYetRefreshed")
-        }
-        return L10n.string(
-            "PriceTracker_tracking_refreshedFormat", Self.refreshedFormatter.string(from: refreshed))
     }
 }

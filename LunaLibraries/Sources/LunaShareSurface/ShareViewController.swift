@@ -533,11 +533,27 @@ open class ShareViewController: UIViewController {
             "completed share-sheet onboarding practice", category: "share")
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let preview = ShareSetupPracticePreviewViewController(app: app)
+            let preview = Self.practicePreview(for: url, app: app)
             preview.onDone = { [weak self] in self?.completeSilently() }
             self.presentModally(preview)
         }
         return true
+    }
+
+    /// Which rehearsal a practice link stands for. The InstaTok link is a video
+    /// post, and an app that downloads videos has to rehearse downloading one —
+    /// showing it a page of prose was teaching the Reader's lesson to the
+    /// Downloader, the same way the Safari demonstration used to. Everything
+    /// else, and every bundle without the clip (see
+    /// `ShareSetupPractice.bundledVideoURL`), keeps the article preview.
+    private static func practicePreview(
+        for url: URL, app: LunaApp
+    ) -> UIViewController & ShareSetupPracticePresenting {
+        guard ShareSetupPractice.matchesVideoPractice(url),
+              app.handlesMedia,
+              let videoURL = ShareSetupPractice.bundledVideoURL
+        else { return ShareSetupPracticePreviewViewController(app: app) }
+        return ShareSetupPracticeDownloadViewController(app: app, videoURL: videoURL)
     }
 
     /// The stored document's file name — and so its title, which

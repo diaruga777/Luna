@@ -1,0 +1,31 @@
+Moon phase onboarding video
+
+Source: NASA Scientific Visualization Studio
+Title: "Moon Phase and Libration, 2026"
+Asset: phases_2026_plain_720p30.mp4 ("Just the Moon", no labels)
+Visualizer: Ernie Wright (USRA)
+Source page: https://svs.gsfc.nasa.gov/5587/
+Downloaded: 2026-08-08
+SHA-256 (of the downloaded source): dd857917389faba3afb716bf536da41a9cf555226f6109dfac89a75bbeda01f2
+
+NASA media usage guidance:
+https://www.nasa.gov/nasa-brand-center/images-and-media/
+
+The bundled clip is a recut, not the source file. The source renders one frame
+per hour of 2026; this takes the run from 14 Dec 2026 04:00 UT (a 22%-lit waxing
+crescent) to the full moon of 24 Dec 2026 02:00 UT, every second hour, scaled to
+960x540 — then plays it backwards to its own first frame, so the loop has no
+seam and the moon waxes and wanes forever. December's is the year's closest full
+moon (apparent diameter 2009"), which is why that lunation and not another.
+
+The clip is used for factual/educational demonstration. No NASA endorsement is
+stated or implied.
+
+Reproduce with:
+  curl -O https://svs.gsfc.nasa.gov/vis/a000000/a005500/a005587/phases_2026_plain_720p30.mp4
+  ffmpeg -i phases_2026_plain_720p30.mp4 \
+    -vf "select='between(n\,8332\,8570)*not(mod(n-8332\,2))'" -vsync 0 frames/f%04d.png
+  # concat frames forward, then reversed without its duplicated endpoints, at 30fps
+  ffmpeg -f concat -safe 0 -i list.txt -vf scale=960:540:flags=lanczos -r 30 \
+    -c:v libx264 -profile:v high -pix_fmt yuv420p -crf 26 -preset veryslow \
+    -tune film -movflags +faststart -an LunaMoonPhases.mp4

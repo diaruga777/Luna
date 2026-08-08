@@ -123,4 +123,54 @@ final class RecentURLMatcherTests: XCTestCase {
             candidates,
             "Deleting the save must reveal the cached recent without a relaunch")
     }
+
+    // MARK: - …and the candidates are collapsed against each other
+
+    /// The trail is newest-first, so the FIRST occurrence is the recent visit.
+    func testRepeatedPageIsOfferedOnceKeepingTheMostRecentVisit() {
+        let newest = preview("https://example.com/story?utm_source=share")
+        let older = preview("https://example.com/story")
+        let other = preview("https://example.com/other")
+
+        XCTAssertEqual(
+            RecentURLMatcher.deduplicated([newest, older, other], savedURLStrings: []),
+            [newest, other],
+            "One page must not take two rows")
+    }
+
+    func testSamenessIgnoresSchemeCaseWWWTrailingSlashAndFragment() {
+        let variants = [
+            "https://www.example.com/story",
+            "https://example.com/story/",
+            "http://EXAMPLE.com/story#section-2",
+            // Tracking params come off through `URLCanonicalizer`, so a row can
+            // never disagree with what the store considers one page.
+            "https://example.com/story?fbclid=abc123",
+        ]
+        XCTAssertEqual(
+            Set(variants.map(RecentURLMatcher.identityKey(for:))).count, 1)
+        XCTAssertEqual(
+            RecentURLMatcher.deduplicated(variants.map { preview($0) }, savedURLStrings: []),
+            [preview(variants[0])])
+    }
+
+    /// A query is what distinguishes one video or product from the next, so two
+    /// paths that differ only there stay two rows.
+    func testDistinctQueriesRemainDistinctRows() {
+        let candidates = [
+            preview("https://www.youtube.com/watch?v=aaaaaaaaaaa"),
+            preview("https://www.youtube.com/watch?v=bbbbbbbbbbb"),
+        ]
+        XCTAssertEqual(
+            RecentURLMatcher.deduplicated(candidates, savedURLStrings: []), candidates)
+    }
+
+    /// The saved-URL filter compares by the same key, so a save whose stored form
+    /// differs cosmetically from the trail's still removes its row.
+    func testSavedURLMatchesItsRecentByTheSameKey() {
+        let candidates = [preview("https://www.example.com/story/")]
+        XCTAssertTrue(
+            RecentURLMatcher.deduplicated(
+                candidates, savedURLStrings: ["https://example.com/story"]).isEmpty)
+    }
 }

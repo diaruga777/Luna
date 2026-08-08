@@ -12,14 +12,18 @@ import UIKit
 /// long enough to read what is wrong with it, the player arrives the way the
 /// extension's own does, plays, and only then does the panel say how to get it.
 enum OnboardingVideoDownloadTiming {
-    /// The blocked post stands on its own before Luna answers it.
-    static let pageHoldDuration: TimeInterval = 1.0
-    static let presentDuration: TimeInterval = 0.3
-    /// The video plays, plainly, before the panel changes underneath it.
-    static let playbackHoldDuration: TimeInterval = 1.0
+    /// The blocked post stands on its own before Luna answers it. Long enough
+    /// to READ the wall — the lesson's premise is that this page is refusing
+    /// you, and a beat that only registers as a flash states no premise at all.
+    static let pageHoldDuration: TimeInterval = 3.2
+    static let presentDuration: TimeInterval = 0.45
+    /// The video plays, plainly, before the panel changes underneath it. It has
+    /// to read as *the post's video, playing* — the scrubber moving, the moon
+    /// visibly further along than it was — which is seconds, not one.
+    static let playbackHoldDuration: TimeInterval = 4.0
     /// The download button leaving and the setup block arriving, while the
     /// panel's bottom edge travels down to meet it.
-    static let growDuration: TimeInterval = 0.52
+    static let growDuration: TimeInterval = 0.72
 }
 
 /// A native replica of the panel the Safari extension puts over a video post —
@@ -98,6 +102,20 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     private static let queueIndigo = UIColor(
         red: 0x58 / 255, green: 0x56 / 255, blue: 0xD6 / 255, alpha: 1)
 
+    /// **The one measurement the replica deliberately does not take from
+    /// `content.js`.** The extension's backdrop is `rgba(0, 0, 0, 0.78)` over a
+    /// 4px blur, which is right in Safari: you are the person who opened that
+    /// page, and burying it is how the panel says "look here now".
+    ///
+    /// In the lesson the page is the SUBJECT. The blocked post and its sign-up
+    /// wall are the thing the panel is an answer to, and a demonstration that
+    /// blacks out the question the moment it answers it has shown the user two
+    /// unrelated screens. So the two layers stay — the panel must still read as
+    /// something Luna put in FRONT of the page — at roughly half the weight,
+    /// and the post plays on behind them for the whole lesson.
+    private static let scrimAlpha: CGFloat = 0.34
+    private static let backdropBlurAlpha: CGFloat = 0.45
+
     private let blur = UIVisualEffectView(
         effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
     private let scrim = UIView()
@@ -136,10 +154,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
 
         blur.isUserInteractionEnabled = false
         addSubview(blur)
-        // `rgba(0, 0, 0, 0.78)` over `backdrop-filter: blur(4px)`. The blur is
-        // the thinnest material there is precisely because the black is what
-        // does the work; a heavier one would show through it.
-        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.78)
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(Self.scrimAlpha)
         scrim.isUserInteractionEnabled = false
         addSubview(scrim)
 
@@ -390,7 +405,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             initialSpringVelocity: 0.2,
             options: [.curveEaseOut, .beginFromCurrentState]
         ) {
-            self.blur.alpha = 1
+            self.blur.alpha = Self.backdropBlurAlpha
             self.scrim.alpha = 1
             self.panel.transform = .identity
         }
@@ -528,14 +543,14 @@ final class OnboardingVideoDownloadOverlayView: UIView {
 
     /// The same clip the mock page itself plays, so the panel is showing the
     /// post's own video rather than a second one.
-    private static let clipResourceName = "LunaEclipse"
+    static let clipResourceName = "LunaMoonPhases"
 
     #if DEBUG
     /// The panel as the player state renders it, with neither the clock nor the
     /// decoder: a test asserting on geometry has no business starting a video.
     func enterPlayerStateForTesting() {
         lessonStage = .player
-        blur.alpha = 1
+        blur.alpha = Self.backdropBlurAlpha
         scrim.alpha = 1
         panel.alpha = 1
         setNeedsLayout()
@@ -552,6 +567,11 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     var panelColourForTesting: UIColor? { panel.backgroundColor }
     var closeFrameForTesting: CGRect { close.frame }
     var panelCornerRadiusForTesting: CGFloat { panel.layer.cornerRadius }
+    /// How much of the page behind the panel the backdrop takes: the black's
+    /// own alpha times the layer's, plus the blur's weight. A test's way of
+    /// asserting that the blocked post is still on screen behind the answer.
+    var backdropDarknessForTesting: CGFloat { scrim.alpha * Self.scrimAlpha }
+    var backdropBlurWeightForTesting: CGFloat { blur.alpha }
     var activateButtonForTesting: UIButton { actionsView.activateButton }
     #endif
 }

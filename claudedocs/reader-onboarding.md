@@ -280,22 +280,42 @@ rewind cancels its pending beats. Its own beats:
 
 | beat | what is on screen |
 | --- | --- |
-| `pageHoldDuration` (1.0s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
-| `presentDuration` (0.3s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
-| `playbackHoldDuration` (1.0s) | the video plays, plainly, under a full-width "Download in Luna" |
-| `growDuration` (0.52s) | the download button goes, the three enable steps and the lesson's actions arrive in its place, and the panel's bottom edge travels down to hold them |
+| `pageHoldDuration` (3.2s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
+| `presentDuration` (0.45s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
+| `playbackHoldDuration` (4.0s) | the video plays, plainly, under a full-width "Download in Luna" |
+| `growDuration` (0.72s) | the download button goes, the three enable steps and the lesson's actions arrive in its place, and the panel's bottom edge travels down to hold them |
+
+**The two holds are the lesson; the two transitions are plumbing.** The lesson
+has three subjects in sequence — the wall, the video, the steps — and at the
+brisk timings it opened with, each was overtaken by the next before it
+registered: the wall read as a flash, and the panel had barely arrived before the
+instructions replaced its button. So the holds are counted in seconds and pinned
+that way by `testEachBeatIsLongEnoughToRead`. The playback hold is counted from
+the CLIP starting rather than from the panel finishing its arrival, because what
+it is holding for is a video the user has plainly watched play.
 
 **The panel is a replica, not a stylisation.** Every measurement in it is read
 straight off `presentVideoOverlay` in `LunaSafari/Resources/content.js` — the
-78%-black blurred backdrop, the `calc(100vw - 24px)` panel capped at 640 in
+`calc(100vw - 24px)` panel capped at 640 in
 `NIGHT_SURFACE` at radius 20 with 10pt padding, the 34pt round close button over
 an 8pt gap, the 16:9 black stage at radius 12, the `QUEUE_INDIGO` full-width
 capsule 10pt under it at `minHeight: 44`. A change to either one is a change to
 both, and `SafariVideoOverlayReplicaTests` pins the two files' shared numbers
 and the shared string to each other.
 
-Three things about it that are NOT the web panel:
+Four things about it that are NOT the web panel:
 
+- **The backdrop is half the extension's weight, and the post never goes away.**
+  `content.js` puts the panel over `rgba(0, 0, 0, 0.78)` and a 4px blur, which is
+  right in Safari: you are the person who opened that page, and burying it is how
+  the panel says "look here now". In the lesson that page is the QUESTION — the
+  wall refusing you is the whole premise — so blacking it out the moment the
+  answer arrives would show the user two unrelated screens. Both layers stay, so
+  the panel still reads as something Luna put in front of the page, at
+  `scrimAlpha` 0.34 and `backdropBlurAlpha` 0.45; the post plays on behind them
+  through both states, for the whole demonstration.
+  `testTheBlockedPostIsStillVisibleBehindThePanel` states the deviation against
+  the extension's own value, so it fails if either side moves.
 - **The stage's height is decided once, for both states.** It is 16:9 until the
   panel it has to fit inside runs out of room — on a 375×667 phone the setup
   block plus a full-height stage is taller than the page — and then the clip
@@ -312,12 +332,25 @@ Three things about it that are NOT the web panel:
   and the player's controls have no target and no gesture recognizer. A picture
   that answered a tap is a route out of a lesson into a page that does not exist.
 
-The clip itself is `LunaEclipse.mp4`, and the page and the panel play the same
-one — the panel is showing the post's video, not a second video. It is a recut
-of the original 90-second timelapse: totality only, crop-panned to hold the moon
-centred, boomeranged so the loop has no seam, so every frame of it carries a
-large blood moon rather than a small disc drifting through an empty field. The
-page shows it `object-fit: cover`, the way a vertical feed does.
+The clip itself is `LunaMoonPhases.mp4`, and the page and the panel play the same
+one — the panel is showing the post's video, not a second video. It is a recut of
+NASA SVS's "Moon Phase and Libration, 2026" (`LunaMoonPhasesAttribution.txt`
+records the source, the span and the exact `ffmpeg` recipe): the run from a
+22%-lit waxing crescent to December's full moon — the year's closest — every
+second hour, then played backwards to its own first frame. So it loops with no
+seam, and what it shows is **the Moon changing phase**, waxing and waning
+forever, over eight seconds.
+
+That is a deliberate replacement for the lunar-eclipse timelapse it opened with.
+An eclipse read as a moon vibrating: the frames of totality differ by a slow
+shift in the umbra and a tracking wobble, which at video speed is a jitter rather
+than an event, and nothing in it changed enough to be worth watching for the four
+seconds the lesson now holds. A phase cycle changes visibly every second, which
+is what a demonstration of "the video is worth having" needs its video to do.
+Both ends of the boomerang are a plainly lit crescent, deliberately: the loop
+never bottoms out at a new moon, which on the full-bleed page would be a black
+screen. The page shows it `object-fit: cover`, the way a vertical feed does —
+the disc is centred in a 16:9 frame, so a portrait crop lands it dead centre.
 
 Both lessons are reviewable without a device pass through onboarding:
 `-LunaStage onboarding.safari-lesson` boots any app straight into its browser
@@ -412,7 +445,7 @@ taps in:
 | condition | link | what the surface does |
 |---|---|---|
 | online, live Save of the Week for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
-| online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → bundled preview, nothing stored |
+| online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → the bundled rehearsal for what that link IS, nothing stored |
 | offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline, under `wifi.slash`, in the surface's real error state |
 
 The offline terminal takes the failure's **headline** but not its `suggestion`:
@@ -428,6 +461,40 @@ other failure calls without them.
 Price Tracker amayzon). It used to be read off the browser's current demo page;
 now that every app's Safari lesson opens on `.lunaPage`, deriving it that way would
 have handed the Downloader an article to rehearse a media save with.
+
+**Which rehearsal.** Having the right link was only half of it: the practice
+short-circuit showed all four apps the same bundled ARTICLE, so the Downloader's
+lesson still ended on a page of prose about the video it had just been asked to
+fetch. A rehearsal has to rehearse what the app is FOR, so the choice is made
+from the link — `ShareSetupPractice.matchesVideoPractice`, since what a link IS
+does not change with who opened it — inside `ShareViewController.practicePreview`:
+
+| practice link | rehearsal |
+|---|---|
+| `luna.app`, `amayzon.web` | `ShareSetupPracticePreviewViewController` — the bundled article |
+| `instatok.com`, in an app that handles media | `ShareSetupPracticeDownloadViewController` — the bundled download |
+
+The media rehearsal keeps the real media screen's grammar (the "Saved to Luna"
+badge, the square preview with the progress bar drawn inside it, the full-width
+Done) over a fixed beat: `downloadDuration` (1.5s) of the bar filling under the
+media glyph, then the clip's own first frame under a play badge. It is
+deliberately NOT `SavedNonTextualViewController`: the practice URL names no real
+post, so there is nothing to resolve, nothing to transfer, and nothing that may
+be written into the user's media library — the same reason the article rehearsal
+is not the real reader.
+
+Two things it borrows rather than reimplements. It waits on
+`HostedShareSession.revealDate` before starting its bar, because the surface is
+built DETACHED well before the lesson's sheet opens and a beat begun at
+`viewDidLoad` would be over unseen; and it reports the clip through
+`onMediaFileReady`, so the finish is the host's ordinary media path — **the same
+video the Safari lesson taught, playing over the sheet**. `onReplayBeat` re-runs
+the whole beat on each pass of the looping demonstration.
+
+The clip lives in the APP bundle only (`ShareSetupPractice.bundledVideoURL`): a
+rehearsal is worth 400KB in the app that teaches it and is not worth it in eight
+extension bundles that will never run one, so a real appex handed the practice
+link falls back to the article preview.
 
 **Timing.** `start(in:)` mounts the surface hidden and lets `viewDidLoad` begin the
 work immediately, so the fetch overlaps the conversation animating in front of it;

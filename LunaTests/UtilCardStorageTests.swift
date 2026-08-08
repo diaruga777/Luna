@@ -31,6 +31,20 @@ final class UtilCardStorageTests: XCTestCase {
         XCTAssertEqual(history.last, "https://example.com/19")
     }
 
+    /// A repeat must not cost one of the twenty slots.
+    func testSafariHistoryCollapsesRepeatsBeforeTheLimitApplies() {
+        let repeated = "https://example.com/repeat"
+        defaults.set(
+            [repeated, repeated] + (0..<21).map { "https://example.com/\($0)" },
+            forKey: SafariRecentHistoryStore.historyKey)
+
+        let history = SafariRecentHistoryStore(defaults: defaults).URLs
+
+        XCTAssertEqual(history.count, 20)
+        XCTAssertEqual(history.filter { $0 == repeated }.count, 1)
+        XCTAssertEqual(history.last, "https://example.com/18")
+    }
+
     func testShortcutInstallAndIntentMarkersArePerApp() {
         let status = LunaSetupStatusStore(defaults: defaults)
 

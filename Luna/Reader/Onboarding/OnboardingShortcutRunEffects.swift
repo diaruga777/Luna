@@ -20,8 +20,10 @@ enum OnboardingShortcutRunTiming {
     static let islandTapDelay: TimeInterval = 0.45
     static let mockTapDuration: TimeInterval = 0.58
     static let islandCollapseDuration: TimeInterval = 0.30
-    /// The Safari-to-Messages hop after setup completes or is skipped.
-    static let appSwitchDuration: TimeInterval = 0.85
+    /// The Safari-to-Messages hop after setup completes or is skipped. The
+    /// hop is a beat between two lessons rather than a thing to watch, so it
+    /// runs at half the length it was first drawn at.
+    static let appSwitchDuration: TimeInterval = 0.42
     static let sheetPresentDuration: TimeInterval = 0.55
     static let sheetDismissDuration: TimeInterval = 0.38
     /// The mock extension sheet rests long enough to register as "it's saved".
@@ -552,7 +554,14 @@ final class OnboardingAppSwitcherView: UIView {
     private let fromCard = UIImageView()
     private let toCard = UIImageView()
     private static let cardCornerRadius: CGFloat = 42
-    private static let cardScale: CGFloat = 0.58
+    /// How far the two screens zoom out at the middle of the hop. The real
+    /// switcher barely insets its cards from the screen edges; anything much
+    /// smaller reads as a slideshow of thumbnails rather than the two screens
+    /// the lesson just showed. At 0.74 the inset is 13% of the screen a side.
+    private static let cardScale: CGFloat = 0.74
+    /// Centre-to-centre travel, as a fraction of the width. It must stay
+    /// clear of `cardScale` or the two cards overlap while both are on
+    /// screen — the gap between them is `cardSlide - cardScale`.
     private static let cardSlide: CGFloat = 0.85
 
     init(frame: CGRect, from: UIImage, to: UIImage) {
@@ -616,9 +625,13 @@ final class OnboardingAppSwitcherView: UIView {
             .scaledBy(x: scale, y: scale)
         incoming.layer.cornerRadius = Self.cardCornerRadius
 
-        animateCornerRadius(of: outgoing, to: Self.cardCornerRadius, duration: 0.28)
+        // The corners round off as the outgoing screen shrinks and square up
+        // again as the incoming one fills, so both are stated as fractions of
+        // the hop rather than as constants that would outlive a timing change.
+        let hop = OnboardingShortcutRunTiming.appSwitchDuration
+        animateCornerRadius(of: outgoing, to: Self.cardCornerRadius, duration: hop * 0.33)
         UIView.animateKeyframes(
-            withDuration: OnboardingShortcutRunTiming.appSwitchDuration,
+            withDuration: hop,
             delay: 0,
             options: [.calculationModeCubic]
         ) {
@@ -641,8 +654,8 @@ final class OnboardingAppSwitcherView: UIView {
         animateCornerRadius(
             of: incoming,
             to: 0,
-            duration: 0.30,
-            delay: OnboardingShortcutRunTiming.appSwitchDuration * 0.66)
+            duration: hop * 0.35,
+            delay: hop * 0.66)
     }
 
     private func animateCornerRadius(

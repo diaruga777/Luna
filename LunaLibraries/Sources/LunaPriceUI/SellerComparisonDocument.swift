@@ -59,18 +59,26 @@ public enum SellerComparisonDocument {
         public let productImageDataURI: String?
         /// Rows in the order they are shown: cheapest first, then unpriced.
         public let sellers: [SellerRow]
+        /// EVERY day the tracker has history for (`PriceHistory.dailySeries`),
+        /// not a sampled view of it — this renderer has the room.
         public let series: [PriceGraphPoint]
+        /// The price the document is ABOUT: the cheapest a seller is asking right
+        /// now. Always labelled on the price axis, alongside the high and the low,
+        /// so the reader can place today against the record without a scrubber.
+        public let currentPrice: Decimal?
         public let displayCurrency: String
         public let generatedAt: Date
 
         public init(
             productName: String, productImageDataURI: String?, sellers: [SellerRow],
-            series: [PriceGraphPoint], displayCurrency: String, generatedAt: Date
+            series: [PriceGraphPoint], currentPrice: Decimal? = nil,
+            displayCurrency: String, generatedAt: Date
         ) {
             self.productName = productName
             self.productImageDataURI = productImageDataURI
             self.sellers = sellers
             self.series = series
+            self.currentPrice = currentPrice ?? sellers.compactMap(\.price).min()
             self.displayCurrency = displayCurrency
             self.generatedAt = generatedAt
         }
@@ -94,9 +102,15 @@ public enum SellerComparisonDocument {
     /// Cheapest-first ordering, with unpriced stores last: the document exists to
     /// answer "where is this cheapest right now", so the answer is the first row
     /// as well as the highlighted one.
+    /// How a seller's icon is fetched. `@Sendable` because the icons are fetched
+    /// CONCURRENTLY — see `favicons(forStoreURLStrings:loader:)`.
+    public typealias FaviconLoader = @Sendable (URL) async -> Data?
+
     public static func content(
         for tracker: PriceTracker, articlesDirectory: URL, now: Date = Date(),
-        faviconLoader: (URL) async -> Data? = { await FaviconFetcher().fetchIconData(forPageURL: $0) }
+        faviconLoader: @escaping FaviconLoader = {
+            await FaviconFetcher().fetchIconData(forPageURL: $0)
+        }
     ) async -> Content {
         let ordered = tracker.stores.sorted { lhs, rhs in
             switch (lhs.lastPrice, rhs.lastPrice) {
@@ -106,19 +120,14 @@ public enum SellerComparisonDocument {
             case (nil, nil): return lhs.urlString < rhs.urlString
             }
         }
-        var rows: [SellerRow] = []
-        for store in ordered {
-            let url = URL(string: store.urlString)
-            var favicon: String?
-            if let url, let data = await faviconLoader(url) {
-                favicon = dataURI(data, mimeType: mimeType(forImageData: data))
-            }
-            rows.append(SellerRow(
+        let icons = await favicons(forStoreURLStrings: ordered.map(\.urlString), loader: faviconLoader)
+        let rows = ordered.map { store in
+            SellerRow(
                 name: sellerName(forURLString: store.urlString),
                 urlString: store.urlString,
                 price: store.lastPrice,
                 currency: store.currency,
-                faviconDataURI: favicon))
+                faviconDataURI: icons[store.urlString])
         }
         var imageURI: String?
         if let fileName = tracker.imageFileName,
@@ -130,9 +139,65 @@ public enum SellerComparisonDocument {
             productName: tracker.productName,
             productImageDataURI: imageURI,
             sellers: rows,
-            series: PriceHistory.series(for: tracker, now: now),
+            // The FULL day-resolution record, not the on-screen graph's
+            // span-coarsened view: a year of pruned history is at most 365
+            // points and an SVG path costs nothing to make longer.
+            series: PriceHistory.dailySeries(for: tracker),
+            currentPrice: tracker.currentBestPrice,
             displayCurrency: tracker.displayCurrency,
             generatedAt: now)
+    }
+
+    /// How long ONE seller's icon may take before the document goes on without
+    /// it. Favicons live at up to three well-known paths per host, and fetching
+    /// six sellers' icons one after another is minutes of wall clock in the bad
+    /// case — which is the actual reason a document can come out iconless: the
+    /// intent it is built inside gives up first. So the fetches run CONCURRENTLY
+    /// and each one is bounded; a host that hangs costs its own row a badge and
+    /// nothing else.
+    public static let faviconTimeout: TimeInterval = 6
+
+    /// `data:` URIs keyed by store URL string, for every seller whose icon came
+    /// back inside the budget.
+    static func favicons(
+        forStoreURLStrings urlStrings: [String], loader: @escaping FaviconLoader
+    ) async -> [String: String] {
+        let urls = urlStrings.compactMap { string -> (String, URL)? in
+            guard let url = URL(string: string) else { return nil }
+            return (string, url)
+        }
+        return await withTaskGroup(of: (String, String)?.self) { group in
+            for (key, url) in urls {
+                group.addTask {
+                    guard let data = await withDeadline(faviconTimeout, { await loader(url) }) ?? nil,
+                          !data.isEmpty
+                    else { return nil }
+                    return (key, dataURI(data, mimeType: mimeType(forImageData: data)))
+                }
+            }
+            var result: [String: String] = [:]
+            for await entry in group {
+                guard let entry else { continue }
+                result[entry.0] = entry.1
+            }
+            return result
+        }
+    }
+
+    /// `operation`'s value, or nil at `seconds`. The loser is cancelled.
+    static func withDeadline<T: Sendable>(
+        _ seconds: TimeInterval, _ operation: @escaping @Sendable () async -> T
+    ) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await operation() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
     }
 
     /// The seller's display name: its registrable domain with the public suffix
@@ -215,7 +280,11 @@ public enum SellerComparisonDocument {
             if let favicon = row.faviconDataURI {
                 html += "<img class=\"icon\" src=\"\(escape(favicon))\" alt=\"\">"
             } else {
-                html += "<span class=\"icon placeholder\"></span>"
+                // Never an empty square. A host that serves no readable icon —
+                // or serves it too slowly — still gets a badge with its initial,
+                // so every row reads as a seller rather than as a gap.
+                html += "<span class=\"icon placeholder\" aria-hidden=\"true\">"
+                    + escape(initial(forSellerName: row.name)) + "</span>"
             }
             html += "<span class=\"name\">\(escape(row.name))</span>"
             if isLowest {
@@ -250,18 +319,33 @@ public enum SellerComparisonDocument {
     static let graphHeight: Double = 260
     private static let inset = (left: 58.0, right: 16.0, top: 16.0, bottom: 34.0)
 
+    /// How much room is left BELOW the lowest point, as a fraction of the value
+    /// range. A line that touches the floor of its own frame reads as clipped
+    /// rather than as a low.
+    static let graphFloorPadding = 0.12
+
     /// The price series as inline SVG, with a labelled price axis and a labelled
     /// date axis.
     ///
+    /// The value domain is the series PLUS the current price, padded below the
+    /// minimum, so all three labelled values are inside the plot and the lowest
+    /// one sits slightly off the bottom edge.
+    ///
     /// A flat series (every point the same price) is a real state and must not
-    /// divide by zero: it is drawn as a line through the middle of the plot,
-    /// which is what a price that never moved looks like.
+    /// divide by zero: it gets a symmetric domain, so the line runs through the
+    /// middle of the plot, which is what a price that never moved looks like.
     static func graphSVG(_ content: Content) -> String {
         let points = content.series
         let prices = points.map { NSDecimalNumber(decimal: $0.price).doubleValue }
-        let minPrice = prices.min() ?? 0
-        let maxPrice = prices.max() ?? 0
+        let current = content.currentPrice.map { NSDecimalNumber(decimal: $0).doubleValue }
+        let values = prices + (current.map { [$0] } ?? [])
+        let minPrice = values.min() ?? 0
+        let maxPrice = values.max() ?? 0
         let span = maxPrice - minPrice
+        let padding = span > 0 ? span * graphFloorPadding : max(abs(maxPrice) * 0.1, 1)
+        let domainMin = minPrice - padding
+        let domainMax = span > 0 ? maxPrice : maxPrice + padding
+        let domainSpan = max(domainMax - domainMin, .leastNormalMagnitude)
         let plotWidth = graphWidth - inset.left - inset.right
         let plotHeight = graphHeight - inset.top - inset.bottom
 
@@ -270,8 +354,7 @@ public enum SellerComparisonDocument {
             return inset.left + plotWidth * Double(index) / Double(points.count - 1)
         }
         func y(_ price: Double) -> Double {
-            guard span > 0 else { return inset.top + plotHeight / 2 }
-            return inset.top + plotHeight * (1 - (price - minPrice) / span)
+            inset.top + plotHeight * (1 - (price - domainMin) / domainSpan)
         }
 
         let path = prices.enumerated()
@@ -283,23 +366,31 @@ public enum SellerComparisonDocument {
 
         var svg = "<svg class=\"graph\" viewBox=\"0 0 \(Int(graphWidth)) \(Int(graphHeight))\""
             + " role=\"img\" xmlns=\"http://www.w3.org/2000/svg\">"
-        // Price axis: the two extremes plus the midpoint, which is all a series
-        // this small can label without the numbers colliding.
-        for (fraction, price) in [(0.0, maxPrice), (0.5, (maxPrice + minPrice) / 2), (1.0, minPrice)] {
-            let gridY = inset.top + plotHeight * fraction
+        // Price axis: the high, the low, and TODAY — the three numbers that make
+        // a history mean something, and no filler in between. Any two that
+        // coincide collapse into one label rather than overprinting.
+        var labelled: [String: Double] = [:]
+        for value in [maxPrice, minPrice] + (current.map { [$0] } ?? []) {
+            let text = PriceFormatting.string(
+                amount: Decimal(value), currency: content.displayCurrency)
+            if labelled[text] == nil { labelled[text] = value }
+        }
+        for (text, value) in labelled.sorted(by: { $0.value > $1.value }) {
+            let gridY = y(value)
             svg += "<line class=\"grid\" x1=\"\(round2(inset.left))\" y1=\"\(round2(gridY))\""
                 + " x2=\"\(round2(graphWidth - inset.right))\" y2=\"\(round2(gridY))\"/>"
-            svg += "<text class=\"axis price\" x=\"\(round2(inset.left - 8))\" y=\"\(round2(gridY + 4))\">"
-                + escape(PriceFormatting.string(
-                    amount: Decimal(price), currency: content.displayCurrency))
-                + "</text>"
+            svg += "<text class=\"axis price\" x=\"\(round2(inset.left - 8))\""
+                + " y=\"\(round2(gridY + 4))\">\(escape(text))</text>"
         }
         svg += "<path class=\"area\" d=\"\(area)\"/>"
         svg += "<path class=\"line\" d=\"\(path)\"/>"
-        for (index, point) in points.enumerated() {
-            svg += "<circle class=\"dot\" cx=\"\(round2(x(index)))\""
-                + " cy=\"\(round2(y(prices[index])))\" r=\"2.5\"/>"
-            _ = point
+        // A dot per day is unreadable past a couple of months; the line already
+        // carries the shape, so the markers retire once they would collide.
+        if points.count <= 60 {
+            for index in points.indices {
+                svg += "<circle class=\"dot\" cx=\"\(round2(x(index)))\""
+                    + " cy=\"\(round2(y(prices[index])))\" r=\"2.5\"/>"
+            }
         }
         // Date axis: first and last only. Every bucket labelled is unreadable at
         // a year's worth of points, and the span is what the reader needs.
@@ -321,6 +412,14 @@ public enum SellerComparisonDocument {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&#39;")
+    }
+
+    /// The letter a seller's placeholder badge carries — its first alphanumeric
+    /// character, uppercased. "•" only for a name with none at all, so the badge
+    /// is never blank.
+    static func initial(forSellerName name: String) -> String {
+        guard let character = name.first(where: { $0.isLetter || $0.isNumber }) else { return "•" }
+        return String(character).uppercased()
     }
 
     static func dataURI(_ data: Data, mimeType: String) -> String {
@@ -399,7 +498,11 @@ public enum SellerComparisonDocument {
     }
     .seller.lowest { background: var(--win-bg); }
     .icon { width: 22px; height: 22px; border-radius: 5px; flex: 0 0 auto; object-fit: contain; }
-    .icon.placeholder { background: var(--accent-soft); }
+    .icon.placeholder {
+      background: var(--accent-soft); color: var(--accent); display: inline-flex;
+      align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+      line-height: 1;
+    }
     .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge {
       flex: 0 0 auto; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;

@@ -96,6 +96,10 @@ public final class ProductDetailViewController: UIViewController {
     private let bandStack = UIStackView()
     /// The graph's ceiling — lowered while the tracker has no history to draw.
     private var graphCeiling: NSLayoutConstraint?
+    /// The seller list's bottom fade: the standing cue that there are more
+    /// retailers below. A scroll indicator only says so while a finger is down,
+    /// and the row the viewport cuts can land anywhere, including flush.
+    private let sellersFade = CAGradientLayer()
 
     private var tracker: PriceTracker? { store.item(withID: itemID)?.priceTracker }
 
@@ -141,6 +145,13 @@ public final class ProductDetailViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
+
+        sellersFade.colors = [
+            UIColor.white.cgColor, UIColor.white.cgColor,
+            UIColor.white.withAlphaComponent(0.05).cgColor,
+        ]
+        sellersFade.startPoint = CGPoint(x: 0.5, y: 0)
+        sellersFade.endPoint = CGPoint(x: 0.5, y: 1)
 
         bandStack.axis = .vertical
         bandStack.spacing = 12
@@ -342,6 +353,7 @@ public final class ProductDetailViewController: UIViewController {
     private func makeSellersViewport() -> UIView {
         sellersScrollView.showsVerticalScrollIndicator = true
         sellersScrollView.alwaysBounceVertical = false
+        sellersScrollView.delegate = self
         sellersScrollView.translatesAutoresizingMaskIntoConstraints = false
 
         sellersStack.axis = .vertical
@@ -375,6 +387,37 @@ public final class ProductDetailViewController: UIViewController {
         sellersScrollView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         return sellersScrollView
     }
+
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateSellersFade()
+    }
+
+    /// Positions the fade over the bottom of the viewport, and retires it when
+    /// there is nothing below to fade towards. The mask lives on the scrolling
+    /// layer, so its frame is stated in the scroll view's own bounds — which
+    /// move with the content offset.
+    private func updateSellersFade() {
+        let bounds = sellersScrollView.bounds
+        let below = sellersScrollView.contentSize.height - bounds.maxY
+        // Attached only while it has something to say. A mask that is present
+        // but transparent is one arithmetic slip away from hiding the list it
+        // was meant to hint at, and there is nothing to hint at here.
+        guard bounds.height > 1, below > 1 else {
+            sellersScrollView.layer.mask = nil
+            return
+        }
+        let fade = min(below, Self.sellerFadeHeight)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        sellersScrollView.layer.mask = sellersFade
+        sellersFade.frame = bounds
+        sellersFade.locations = [0, NSNumber(value: Double(1 - fade / bounds.height)), 1]
+        CATransaction.commit()
+    }
+
+    /// How much of the last visible row the fade covers.
+    static let sellerFadeHeight: CGFloat = 22
 
     // MARK: - Content
 
@@ -698,6 +741,12 @@ extension ProductDetailViewController: UIContextMenuInteractionDelegate {
                 ) { _ in self?.removeSeller(urlString: urlString) },
             ])
         }
+    }
+}
+
+extension ProductDetailViewController: UIScrollViewDelegate {
+    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateSellersFade()
     }
 }
 

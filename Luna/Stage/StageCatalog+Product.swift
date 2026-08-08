@@ -68,6 +68,15 @@ enum ProductStageCatalog {
                     ])
                 }),
             StageDescriptor(
+                id: "deck.product.compared", screen: "Card deck", variant: "many sellers",
+                summary: "What a save-time fan-out leaves behind: six retailers, the "
+                    + "cheapest tinted, and a seller list taller than its viewport.",
+                kind: .product,
+                seed: {
+                    StageFixtures.completeOnboarding()
+                    StageFixtures.seed([comparedTracker()])
+                }),
+            StageDescriptor(
                 id: "deck.product.pending", screen: "Card deck", variant: "never refreshed",
                 summary: "A tracker saved but not yet priced — what the card shows before "
                     + "the first refresh lands.",
@@ -154,6 +163,13 @@ enum ProductStageCatalog {
                         host: .extension))
                 }),
             StageDescriptor(
+                id: "price.editor.compared", screen: "Price editor", variant: "many sellers",
+                summary: "The same six retailers in the editor: the list scrolls, and the "
+                    + "cut lands mid-row rather than just past the first one.",
+                kind: .product,
+                seed: { StageFixtures.seed([comparedTracker()]) },
+                make: { editor(seed: "stage-compared") }),
+            StageDescriptor(
                 id: "price.editor.merge", screen: "Price editor", variant: "second seller added",
                 summary: "A second store for a product already tracked: the added seller "
                     + "flashes green in the list.",
@@ -172,6 +188,40 @@ enum ProductStageCatalog {
                         host: .inApp))
                 }),
         ]
+    }
+
+    /// A tracker the alternative-seller fan-out has finished with: one product,
+    /// six real retailers, one of them cheapest. Real hosts because the seller
+    /// rows name a retailer from the bundled directory and fetch its favicon —
+    /// `store.example.com` exercises neither.
+    private static func comparedTracker() -> ReadingListItem {
+        let sellers: [(String, Decimal)] = [
+            ("https://www.jbhifi.com.au/products/kettle", 129.99),
+            ("https://www.amazon.com.au/dp/B003FGWPPS", 124.50),
+            ("https://www.thegoodguys.com.au/kettle", 139.00),
+            ("https://www.myer.com.au/p/kettle", 145.00),
+            ("https://www.harveynorman.com.au/kettle", 132.95),
+            ("https://www.kmart.com.au/product/kettle", 149.00),
+        ]
+        var tracker = PriceTracker(
+            productName: "Smeg KLF03 50's Retro Style Electric Kettle, Pastel Blue "
+                + "| The Good Guys",
+            firstStoreURL: sellers[0].0, price: sellers[0].1, currency: "AUD",
+            brand: "Smeg", productID: "stage-compared", now: StageFixtures.ago(days: 6))
+        for offset in [5, 4, 3, 2, 1] {
+            tracker.recordPriceSample(
+                Decimal(129 - offset), currency: "AUD", urlString: sellers[0].0,
+                at: StageFixtures.ago(days: offset))
+        }
+        for (url, price) in sellers.dropFirst() {
+            tracker.upsertStore(PriceTrackerStore(
+                urlString: url, lastPrice: price, currency: "AUD",
+                lastRefreshed: StageFixtures.ago(hours: 5)))
+        }
+        return ReadingListItem(
+            seed: "stage-compared", urlString: sellers[0].0,
+            title: tracker.productName, dateAdded: StageFixtures.ago(days: 6),
+            state: .ready, captureSource: .manual, priceTracker: tracker)
     }
 
     @MainActor

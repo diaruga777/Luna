@@ -194,6 +194,14 @@
       "apps": ["luna", "pricetracker"]
     },
     {
+      "id": "deck.product.compared",
+      "screen": "Card deck",
+      "variant": "many sellers",
+      "summary": "What a save-time fan-out leaves behind: six retailers, the cheapest tinted, and a seller list taller than its viewport.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
       "id": "deck.product.empty",
       "screen": "Card deck",
       "variant": "no trackers",
@@ -238,6 +246,14 @@
       "screen": "Price editor",
       "variant": "price drop",
       "summary": "The full editor over a tracker past its threshold: graph, threshold line, seller list.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
+      "id": "price.editor.compared",
+      "screen": "Price editor",
+      "variant": "many sellers",
+      "summary": "The same six retailers in the editor: the list scrolls, and the cut lands mid-row rather than just past the first one.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },

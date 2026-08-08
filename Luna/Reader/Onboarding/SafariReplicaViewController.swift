@@ -54,7 +54,11 @@ final class SafariReplicaViewController:
     }()
 
     private let browserBar = SafariBottomBar()
-    private let lunaPage: OnboardingSafariPageView
+    /// The native `luna.app` explainer, and nil in an app whose Safari lesson
+    /// is not the explainer — an unused copy of it, mounted and hidden, is a
+    /// whole page of ads, popups and (identically labelled) setup buttons that
+    /// the lesson on screen has nothing to do with.
+    private let lunaPage: OnboardingSafariPageView?
     /// The price tracker's lesson, played over the mock product page instead of
     /// the explainer's clutter wipe. Nil in every app whose lesson is the
     /// explainer (`OnboardingSurfaceConfiguration.safariLesson`).
@@ -80,7 +84,9 @@ final class SafariReplicaViewController:
 
     init(configuration: OnboardingSurfaceConfiguration = .current) {
         self.onboardingConfiguration = configuration
-        lunaPage = OnboardingSafariPageView(configuration: configuration)
+        lunaPage = configuration.safariLesson == .extensionExplainer
+            ? OnboardingSafariPageView(configuration: configuration)
+            : nil
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -93,12 +99,12 @@ final class SafariReplicaViewController:
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = lunaPage.backgroundColor
+        view.backgroundColor = OnboardingSafariPagePalette.background
         configureBrowser()
-        lunaPage.onActivateSafari = { [weak self] in
+        lunaPage?.onActivateSafari = { [weak self] in
             self?.onSetUpSafari?()
         }
-        lunaPage.onSkipSafariSetup = { [weak self] in
+        lunaPage?.onSkipSafariSetup = { [weak self] in
             self?.onSkipSafariSetup?()
         }
         webView.navigationDelegate = self
@@ -120,9 +126,18 @@ final class SafariReplicaViewController:
     private func configureBrowser() {
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
-        lunaPage.translatesAutoresizingMaskIntoConstraints = false
-        lunaPage.isHidden = true
-        view.addSubview(lunaPage)
+        if let lunaPage {
+            lunaPage.translatesAutoresizingMaskIntoConstraints = false
+            lunaPage.isHidden = true
+            view.addSubview(lunaPage)
+            NSLayoutConstraint.activate([
+                lunaPage.topAnchor.constraint(
+                    equalTo: view.safeAreaLayoutGuide.topAnchor),
+                lunaPage.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                lunaPage.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                lunaPage.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+        }
         browserBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(browserBar)
         NSLayoutConstraint.activate([
@@ -130,11 +145,6 @@ final class SafariReplicaViewController:
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            lunaPage.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            lunaPage.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            lunaPage.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            lunaPage.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
             browserBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             browserBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             browserBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -181,7 +191,7 @@ final class SafariReplicaViewController:
     /// bottom half at that moment.
     private func setBrowserBarVisible(_ visible: Bool, animated: Bool) {
         isBrowserBarVisible = visible
-        lunaPage.setReservesBrowserChrome(visible)
+        lunaPage?.setReservesBrowserChrome(visible)
         let reduceMotion = UIAccessibility.isReduceMotionEnabled
         let changes = {
             self.browserBar.alpha = visible ? 1 : 0
@@ -215,14 +225,14 @@ final class SafariReplicaViewController:
         browserBar.setURL(
             page.sharedURLString,
             displayedHost: page.displayedHost)
-        if page == .lunaPage {
+        if page == .lunaPage, let lunaPage {
             webView.isHidden = true
             lunaPage.isHidden = false
             lunaPage.alpha = 1
             return
         }
 
-        lunaPage.isHidden = true
+        lunaPage?.isHidden = true
         webView.isHidden = false
         guard let resourceName = page.resourceName,
               let url = Bundle.main.url(
@@ -263,7 +273,8 @@ final class SafariReplicaViewController:
     }
 
     private var visiblePageView: UIView {
-        lunaPage.isHidden ? webView : lunaPage
+        guard let lunaPage, !lunaPage.isHidden else { return webView }
+        return lunaPage
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -289,7 +300,7 @@ final class SafariReplicaViewController:
         // A buried page is a page in a browser: the bar is back before this
         // entry's first frame, and the page reserves its strip again.
         setBrowserBarVisible(true, animated: false)
-        lunaPage.restoreBuriedPage()
+        lunaPage?.restoreBuriedPage()
         // Central Luna's rotation can have left the browser on another page.
         if pageIndex != 0 {
             loadOfflinePage(at: 0)
@@ -360,11 +371,11 @@ final class SafariReplicaViewController:
                     // The browser bar leaves on the same cue, before the
                     // page's geometry is measured for the wave.
                     self.setBrowserBarVisible(false, animated: true)
-                    self.lunaPage.prepareCleanUp()
+                    self.lunaPage?.prepareCleanUp()
                     sheet.dismiss { [weak self] in
                         self?.extensionsSheet = nil
                     }
-                    self.lunaPage.cleanUpClutter()
+                    self.lunaPage?.cleanUpClutter()
                 }
             }
         }
@@ -435,7 +446,7 @@ final class SafariReplicaViewController:
 
 
     func restoreInPageSafariSetup() {
-        lunaPage.reactivateActions()
+        lunaPage?.reactivateActions()
         priceLesson?.reactivateActions()
     }
 

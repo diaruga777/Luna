@@ -247,6 +247,10 @@ final class OnboardingSpotlightScrimView: UIView {
         setNeedsLayout()
     }
 
+    #if DEBUG
+    var isCollapsedForTesting: Bool { isCollapsed }
+    #endif
+
     private func path(radius: CGFloat) -> CGPath {
         let path = UIBezierPath(rect: bounds)
         let center = CGPoint(x: focusRect.midX, y: focusRect.midY)

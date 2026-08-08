@@ -548,6 +548,91 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertNil(safariIntroButton?.accessibilityValue)
     }
 
+    /// The price tracker's Safari lesson is a different demonstration with the
+    /// same ending. It runs on the mock product page instead of the explainer:
+    /// the seller pill answers there, the scrim closes on it, and the setup
+    /// card over the top offers the same two actions — which have to be
+    /// hittable through a scrim that covers the whole screen, and which have to
+    /// be ABOVE it, or the lesson ends on a card nobody can reach.
+    ///
+    /// The deadline is a failure cap, not a wait: the loop breaks the moment
+    /// the card is up.
+    @MainActor
+    func testPriceLessonEndsOnAHittableSetupCardOverTheAnsweredPill() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .priceTracker))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero,
+            size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = safari
+        window.makeKeyAndVisible()
+        safari.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        safari.beginDemonstration()
+        let overlay = try XCTUnwrap(
+            window.descendants(of: OnboardingPriceComparisonOverlayView.self)
+                .first,
+            "The price tracker's Safari lesson must mount its own overlay")
+
+        // The card's own buttons, not the window's: an app whose lesson is the
+        // explainer mounts a page carrying identically labelled ones.
+        func hitView(for label: String) -> (button: UIButton, hit: UIView?)? {
+            guard let action = overlay.descendants(of: UIButton.self).first(where: {
+                $0.accessibilityLabel == label
+            })
+            else { return nil }
+            let point = window.convert(
+                CGPoint(x: action.bounds.midX, y: action.bounds.midY),
+                from: action)
+            return (action, window.hitTest(point, with: nil))
+        }
+        func isHittable(_ label: String) -> Bool {
+            guard let probe = hitView(for: label) else { return false }
+            return probe.hit === probe.button
+                || probe.hit?.isDescendant(of: probe.button) == true
+        }
+
+        let labels = [
+            OnboardingStrings.Safari.activate.value(),
+            OnboardingStrings.Safari.skip.value(),
+        ]
+        let deadline = Date(timeIntervalSinceNow: 12)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            if labels.allSatisfy(isHittable) { break }
+        }
+
+        for label in labels {
+            let probe = try XCTUnwrap(hitView(for: label))
+            XCTAssertTrue(
+                probe.hit === probe.button
+                    || probe.hit?.isDescendant(of: probe.button) == true,
+                """
+                \(label) is shadowed by \(String(describing: probe.hit)); \
+                button in window: \(window.convert(probe.button.bounds, from: probe.button))
+                """)
+        }
+        XCTAssertFalse(
+            overlay.sellerPillForTesting.isLooking,
+            "The pill must have left its waiting state for the price it found")
+        XCTAssertTrue(
+            overlay.spotlightForTesting.isCollapsedForTesting,
+            "The spotlight must have closed on the pill")
+        let subviews = overlay.subviews
+        XCTAssertTrue(
+            (subviews.firstIndex(of: overlay.setupCardForTesting) ?? -1)
+                > (subviews.firstIndex(of: overlay.spotlightForTesting) ?? -1),
+            "The setup card must sit above the scrim it is offered over")
+
+        // The lesson is re-enterable, so a second entry looks for the price
+        // again rather than opening on the finished last frame.
+        safari.resetDemonstration()
+        XCTAssertTrue(overlay.sellerPillForTesting.isLooking)
+        XCTAssertFalse(overlay.spotlightForTesting.isCollapsedForTesting)
+        XCTAssertEqual(overlay.setupCardForTesting.alpha, 0)
+    }
+
     /// Every recovery route stays reachable when the external open fails, and
     /// the overlay that says so is modal to assistive technology (hiding its
     /// siblings while it's up, restoring them when it goes).

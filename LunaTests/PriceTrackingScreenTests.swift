@@ -83,17 +83,12 @@ final class PriceTrackingScreenTests: XCTestCase {
         editor.loadViewIfNeeded()
         editor.view.layoutIfNeeded()
 
-        guard let table = editor.view.firstDescendant(ofType: UITableView.self) else {
-            XCTFail("no seller table"); return
-        }
         XCTAssertEqual(
-            table.numberOfRows(inSection: 0), storeCount + 1,
-            "one row more than there are sellers, while the fan-out is out")
-        let waitingRow = table.cellForRow(at: IndexPath(row: storeCount, section: 0))
-        XCTAssertTrue(
-            waitingRow?.accessoryView is UIActivityIndicatorView,
-            "and it is a spinner, not a seller")
-        XCTAssertEqual(waitingRow?.selectionStyle, UITableViewCell.SelectionStyle.none)
+            editor.view.descendants(ofType: SellerRowView.self).count, storeCount,
+            "one row per seller — the waiting row is not one of them")
+        XCTAssertNotNil(
+            editor.view.firstDescendant(ofType: UIActivityIndicatorView.self),
+            "and a spinner says the fan-out is still out")
 
         // The run finishes; the row goes with the marker.
         guard var finished = ReadingListStore.shared.item(withID: item.id)?.priceTracker else {
@@ -104,7 +99,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         editor.view.layoutIfNeeded()
-        XCTAssertEqual(table.numberOfRows(inSection: 0), storeCount)
+        XCTAssertNil(
+            editor.view.firstDescendant(ofType: UIActivityIndicatorView.self),
+            "and stops saying it when the run ends")
+        XCTAssertEqual(editor.view.descendants(ofType: SellerRowView.self).count, storeCount)
         _ = window
     }
 
@@ -179,11 +177,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         }
         let editor = PriceTrackingViewController(itemID: tracker.id)
         let window = UITestSupport.host(editor)
-        guard let table = findTableView(in: editor.view) else {
-            XCTFail("price tracking editor has no table"); return
+        guard let row = findSubview(of: SellerRowView.self, in: editor.view) else {
+            XCTFail("price tracking editor has no seller rows"); return
         }
-        LayoutAssertions.assertVisibleAndInBounds(table, in: editor.view)
-        XCTAssertGreaterThan(table.numberOfSections, 0)
+        LayoutAssertions.assertVisibleAndInBounds(row, in: editor.view)
         _ = window
     }
 
@@ -279,10 +276,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         _ = extWindow
     }
 
-    /// The exit circle must not be laid over the alert-threshold footer it shares a
-    /// corner with — the footer stands down to leave it room.
+    /// The exit circle must not be laid over the seller list it shares a corner
+    /// with — the content stands down to leave it room.
     @MainActor
-    func testExtensionExitButtonDoesNotCoverTheAlertFooter() {
+    func testExtensionExitButtonDoesNotCoverTheSellerList() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
@@ -290,14 +287,16 @@ final class PriceTrackingScreenTests: XCTestCase {
         let editor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
         let window = UITestSupport.host(editor)
         guard let exit = Self.findExitButton(in: editor.view),
-              let threshold = Self.findFirstSubview(
-                ofType: AlertThresholdSlider.self, in: editor.view) else {
-            XCTFail("extension-hosted editor should show an exit button and a threshold control")
+              let sellers = editor.view.firstDescendant(ofType: SellerRowView.self) else {
+            XCTFail("extension-hosted editor should show an exit button and a seller row")
             return
         }
         LayoutAssertions.assertNoOverlap(
             exit.convert(exit.bounds, to: editor.view),
-            threshold.convert(threshold.bounds, to: editor.view))
+            sellers.convert(sellers.bounds, to: editor.view))
+        // And the circle is still a circle: it used to be pulled into a 700pt
+        // lozenge by the seller list's appetite for the space beneath it.
+        XCTAssertEqual(exit.bounds.height, exit.bounds.width, accuracy: 1)
         _ = window
     }
 
@@ -306,15 +305,6 @@ final class PriceTrackingScreenTests: XCTestCase {
     @MainActor
     private static func findExitButton(in view: UIView) -> UIButton? {
         view.subviews.compactMap { $0 as? UIButton }.first { $0.currentTitle == nil }
-    }
-
-    @MainActor
-    private static func findFirstSubview<T: UIView>(ofType type: T.Type, in view: UIView) -> T? {
-        if let match = view as? T { return match }
-        for subview in view.subviews {
-            if let match = findFirstSubview(ofType: type, in: subview) { return match }
-        }
-        return nil
     }
 
     /// Opening an alerting tracker marks its alert viewed, so it stops floating.
@@ -382,9 +372,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         _ = window
     }
 
-    /// The other editor's answer to the same state: the slider parks and shows its
-    /// own call to action, which commits the default threshold.
-    func testEditorSliderShowsCallToActionWhenNoAlertIsSet() {
+    /// The other control's answer to the same state: the alert row parks its
+    /// slider and shows its own call to action, which commits the default
+    /// threshold.
+    func testEditorAlertRowShowsCallToActionWhenNoAlertIsSet() {
         UITestSupport.seedSharedStore(.priceTracking)
         clearEverySeededThreshold()
         guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
@@ -392,10 +383,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         }
         let editor = PriceTrackingViewController(itemID: item.id)
         let window = UITestSupport.host(editor)
-        guard let slider = findSubview(of: AlertThresholdSlider.self, in: editor.view),
-              let setAlert = findButton(title: "Set price alert", in: slider)
+        guard let row = findSubview(of: AlertThresholdRow.self, in: editor.view),
+              let setAlert = findButton(title: "Set price alert", in: row)
         else {
-            XCTFail("the unset threshold slider should carry a call to action")
+            XCTFail("the unset threshold row should carry a call to action")
             return
         }
         XCTAssertFalse(setAlert.isHidden)
@@ -411,7 +402,7 @@ final class PriceTrackingScreenTests: XCTestCase {
 
     /// With a threshold set, neither editor shows the call to action — the set state
     /// is exactly what it was.
-    func testEditorSliderHasNoCallToActionWhenAlertIsSet() {
+    func testEditorAlertRowHasNoCallToActionWhenAlertIsSet() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let item = ReadingListStore.shared.items().first(where: {
             $0.priceTracker?.hasAlertThreshold == true
@@ -420,10 +411,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         }
         let editor = PriceTrackingViewController(itemID: item.id)
         let window = UITestSupport.host(editor)
-        guard let slider = findSubview(of: AlertThresholdSlider.self, in: editor.view) else {
-            XCTFail("the editor has no threshold slider"); return
+        guard let row = findSubview(of: AlertThresholdRow.self, in: editor.view) else {
+            XCTFail("the editor has no alert row"); return
         }
-        XCTAssertEqual(findButton(title: "Set price alert", in: slider)?.isHidden, true)
+        XCTAssertEqual(findButton(title: "Set price alert", in: row)?.isHidden, true)
         _ = window
     }
 
@@ -436,14 +427,6 @@ final class PriceTrackingScreenTests: XCTestCase {
             tracker.clearAlertThreshold()
             store.updatePriceTracker(tracker, for: item.id)
         }
-    }
-
-    private func findTableView(in view: UIView) -> UITableView? {
-        if let table = view as? UITableView { return table }
-        for subview in view.subviews {
-            if let found = findTableView(in: subview) { return found }
-        }
-        return nil
     }
 
     private func findSubview<T: UIView>(of type: T.Type, in view: UIView) -> T? {
@@ -486,5 +469,12 @@ private extension UIView {
     func firstDescendant<T: UIView>(ofType type: T.Type) -> T? {
         if let match = self as? T { return match }
         return subviews.lazy.compactMap { $0.firstDescendant(ofType: type) }.first
+    }
+
+    func descendants<T: UIView>(ofType type: T.Type) -> [T] {
+        var found: [T] = []
+        if let match = self as? T { found.append(match) }
+        for subview in subviews { found += subview.descendants(ofType: type) }
+        return found
     }
 }

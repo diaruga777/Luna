@@ -320,9 +320,9 @@ pipeline). Suite → 852, all green; Release (all extension targets) compiles.
 - **Bug 3 — action extension doesn't show the price-tracking UI for a `.product`.** Both
   extensions used to save the tracker silently + a checkmark. FIX: the driver's `.product`
   case PRESENTS the SAME `PriceTrackingViewController` the main app shows, hosted in the
-  extension via `PriceTrackingHost.extension` (Done chrome). The editor + its small deps
-  (`AlertThresholdSlider`, `PriceTrackingManager`, `InAppBrowser`) MOVED from `Luna/` into
-  `ShareKit/` (compiled into all targets); the one main-app-only call ("Read instead" →
+  extension via `PriceTrackingHost.extension` (Done chrome). The editor + its small deps MOVED
+  from `Luna/` into the shared libraries (today `LunaPriceUI`, whose
+  `ProductDetailViewController` is the surface both hosts show); the one main-app-only call ("Read instead" →
   `ReadingListIngestor.saveAsArticle`) became an injected closure, a static
   `PriceTrackingViewController.defaultSaveAsArticle` the app installed at launch.
   (Historical: the "Read instead" button and that seam have since been removed —

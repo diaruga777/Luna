@@ -66,7 +66,7 @@ final class ReadableColumnTests: XCTestCase {
             mode: .creation(itemID: tracker.id, host: .extension))
         let window = UITestSupport.host(editor)
 
-        let bands = editor.view.subviews.filter { !$0.bounds.isEmpty }
+        let bands = Self.bands(of: editor.view).filter { !$0.bounds.isEmpty }
         XCTAssertGreaterThanOrEqual(bands.count, 4, "expected the editor's bands to be laid out")
         for band in bands {
             let frame = band.convert(band.bounds, to: editor.view)
@@ -78,5 +78,15 @@ final class ReadableColumnTests: XCTestCase {
                 "\(type(of: band)) hangs off the trailing edge: \(frame) in \(editor.view.bounds)")
         }
         _ = window
+    }
+
+    /// The editor's own chrome plus the bands of the product surface it hosts.
+    /// The screen is three subviews deep now (header, the hosted controller's
+    /// view, the exit circle), so a one-level scan would check the container
+    /// that is pinned to the column and nothing that is laid out inside it.
+    @MainActor
+    private static func bands(of view: UIView, depth: Int = 3) -> [UIView] {
+        guard depth > 0 else { return [] }
+        return view.subviews + view.subviews.flatMap { bands(of: $0, depth: depth - 1) }
     }
 }

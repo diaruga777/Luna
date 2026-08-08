@@ -62,8 +62,14 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         + (LunaApp.current.sharesByEmail
             ? [SettingsCategory(title: L10n.string("Common_contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
+        // Shortcut & Safari holds the suggestion-button toggle (article apps
+        // only) and the Action Button shortcut sections (any device that can
+        // run one) — omit the whole row rather than risk landing on a screen
+        // with nothing in it.
+        + (LunaApp.current.handlesArticles || ShortcutSettingsScreen.deviceHasShortcutSetup
+            ? [SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() }]
+            : [])
         + [
-            SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() },
             SettingsCategory(title: L10n.string("Settings_appearance_title"), symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
             // Universal: every app can hand its own links out and take a file
             // back, and each keeps only its own kinds either way.
@@ -241,7 +247,9 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     private let showsShortcutSetup: Bool
 
     private var visibleSections: [Section] {
-        var sections: [Section] = [.suggestionButton]
+        // The suggestion pill only ever fires on article pages, so its toggle
+        // is meaningless outside the two apps that handle articles.
+        var sections: [Section] = LunaApp.current.handlesArticles ? [.suggestionButton] : []
         guard showsShortcutSetup else { return sections }
         sections.append(.onScreenURLs)
         // Double save is a behavior of the Action Button shortcut, so it

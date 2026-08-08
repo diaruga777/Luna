@@ -42,7 +42,15 @@ and finished by `SettingsViewController`.
 - Shortcut & Safari contains Safari suggestion visibility, on-screen URL
   handling, Double Save Articles, and shortcut actions. Media download size is
   automatic, so there is no Download in Background setting. Double Save Articles appears
-  only in Luna and Reader (see double-save.md) and defaults to Nothing.
+  only in Luna and Reader (see double-save.md) and defaults to Nothing. Safari
+  suggestion visibility appears only in Luna and Reader too — the pill it
+  governs only ever fires on article pages, so `ShortcutSettingsScreen
+  .visibleSections` omits that section for Downloader/Price Tracker, and the
+  native Safari-extension handler withholds the shared App-Group mode value
+  from those hosts so a Reader-set "never"/"onlyLocked" can never silence
+  their own media/product pills. On a device with neither article handling
+  nor an Action Button to set up, the whole "Shortcut & Safari" row is
+  omitted from the top-level menu rather than pushing an empty screen.
 - Appearance contains only the theme choice. Reader eclipse navigation is always
   enabled unless the system Reduce Motion accessibility setting is on.
 - Import & Export is two buttons: share every link this app is responsible for as

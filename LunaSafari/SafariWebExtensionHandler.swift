@@ -40,9 +40,18 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
         switch message?["type"] as? String {
         case "buttonMode", "buttonContext":
-            // The app stores SafariSuggestionMode's rawValue here (default "all").
-            payload["mode"] = UserDefaults(suiteName: Self.appGroupID)?
-                .string(forKey: Self.suggestionModeKey) ?? "all"
+            // The app stores SafariSuggestionMode's rawValue here (default "all"),
+            // in the App-Group-shared defaults every host reads — so a non-article
+            // host must not receive it: its own "never"/"onlyLocked" would
+            // otherwise silence the Downloader/Price Tracker pills too. The
+            // setting itself is exposed only in Reader and the central app's
+            // Settings (`ShortcutSettingsScreen.visibleSections`), and its mode
+            // only ever gates the article branch of `offerLunaButton` — this
+            // mirrors that here, on the native side.
+            if Self.hostHandlesArticles {
+                payload["mode"] = UserDefaults(suiteName: Self.appGroupID)?
+                    .string(forKey: Self.suggestionModeKey) ?? "all"
+            }
             // The pill deep-links ONLY into this extension's own containing app,
             // and only for the content kinds that app handles: the central Luna
             // app handles everything; each single-content app handles one kind.

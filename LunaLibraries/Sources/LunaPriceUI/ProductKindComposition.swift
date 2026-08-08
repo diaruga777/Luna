@@ -19,7 +19,14 @@ import Foundation
 public enum ProductKindComposition {
 
     /// Registers every product-kind entry: the price-extraction pipeline
-    /// processor and the extension price editor.
+    /// processor, the extension price editor, and the alternative-seller
+    /// fan-out.
+    ///
+    /// The fan-out belongs here for exactly the reason the other two do — it is
+    /// consulted from the ingestor, from the extension presenter and from the
+    /// Action Button intents, each in a different process, and the one thing
+    /// that must never differ between them is whether a save gets compared at
+    /// all (`claudedocs/price-comparison.md`).
     ///
     /// Not included: `IngestorKindHandlers.product`, the app-shell persistence
     /// handler, which is built from app-shell types and stays in `KindWiring+*`.
@@ -27,6 +34,7 @@ public enum ProductKindComposition {
     public static func install() {
         IngestKindProcessors.product = ProductIngestProcessor()
         ShareKindPresenters.product = ProductSharePresenter()
+        SellerComparisonRunner.install()
     }
 }
 
@@ -42,6 +50,7 @@ struct ProductSharePresenter: ShareProductPresenting {
     ) {
         presenter.presentPriceEditor(
             product: product, url: url, store: store,
+            showLoadingPhase: { [weak host] in host?.showLoadingPhase($0) },
             presentModally: { [weak host] in host?.presentModally($0) },
             complete: { [weak host] in host?.confirmSavedThenComplete() })
     }

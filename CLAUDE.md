@@ -337,7 +337,7 @@ extension's own Info.plist. Cross-tier wiring uses injected
 closures/protocols installed at launch in AppDelegate or KindWiring (e.g.
 `AudioPlaybackCenter.dataSource`, `ReadingListIngestor.unsupportedSavePresenter`,
 `DiagnosticLog.exportIdentityProvider`,
-`PriceTrackingViewController.defaultSaveAsArticle`). Component-boundary communication
+`PriceTrackingViewController.intelligentPriceResolver`). Component-boundary communication
 inside the UI layers uses delegate protocols (e.g. `RabbitHoleLayerDelegate`,
 `ReaderCompletionDelegate`, `InlineReaderPresentationCoordinating`,
 `CarouselScrubberViewDelegate`), not stored closures. The package is pinned to Swift

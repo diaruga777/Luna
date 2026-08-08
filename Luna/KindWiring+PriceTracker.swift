@@ -44,12 +44,6 @@ enum KindWiring {
         // No price-graph email snapshot: Price Tracker shares a tracker as its
         // product link, never as a Luna email (see `LunaApp.sharesByEmail`).
 
-        // Install the in-app "Read instead" behavior for the price-tracking editor
-        // (shared with the extensions, which can't reference the ingestor): a
-        // forced-article re-save, no re-detection back into a tracker.
-        PriceTrackingViewController.defaultSaveAsArticle = { urlString in
-            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
-        }
         // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
         // Rescue Phase 6 UI).
         PriceTrackingViewController.intelligentPriceResolver = { urlString in

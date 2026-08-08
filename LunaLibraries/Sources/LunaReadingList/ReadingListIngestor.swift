@@ -28,7 +28,7 @@ public final class ReadingListIngestor {
     /// save (`.paste`/`.manual` sources only — App Intents get a dialog from
     /// the intent layer, background sweeps have no UI). Installed by the app
     /// shell at launch (AppDelegate), same injected-closure pattern as
-    /// `PriceTrackingViewController.defaultSaveAsArticle` — LunaReadingList
+    /// `PriceTrackingViewController.intelligentPriceResolver` — LunaReadingList
     /// can't know how the app presents modals.
     public static var unsupportedSavePresenter: (@MainActor (_ owner: LunaApp) -> Void)?
 

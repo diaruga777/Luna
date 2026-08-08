@@ -22,25 +22,17 @@ public enum PriceTrackingHost: Equatable {
     case `extension`
 }
 
-/// Why the editor was opened, which (with the host) decides whether the top-right
-/// "Read instead" button appears.
-///
-/// "Read instead" is a SAVE-TIME affordance: a brand-new product was just classified
-/// as a tracker, and the user can override that decision and read it as a normal
-/// article instead. It must NEVER appear when the user merely returns to an
-/// already-saved tracker from within the app.
+/// Why the editor was opened. Save-time entries (`creation`, `merge`) are what
+/// distinguish a tracker the user is meeting for the first time from one they
+/// came back to; `merge` additionally names the seller URL that was just added,
+/// which the editor flashes at the top so the user can see what changed.
 public enum PriceTrackingEntry: Equatable {
-    /// A brand-new product saved as its OWN new tracker. "Read instead" discards the
-    /// whole new tracker and saves the URL as a normal article.
+    /// A brand-new product saved as its OWN new tracker.
     case creation
     /// The just-saved URL was matched & added as a seller to an EXISTING tracker.
-    /// "Read instead" reverts ONLY that newly-added seller URL (leaving the existing
-    /// tracker otherwise intact) and saves that URL as a normal article.
-    /// `addedStoreURLString` is the exact URL that was just added, so it can be
-    /// reverted precisely.
+    /// `addedStoreURLString` is the exact URL that was just added.
     case merge(addedStoreURLString: String)
     /// Opened from within the app on an already-saved tracker — NOT a save-time flow.
-    /// No "Read instead" button; the top-left back button is the only chrome.
     case existing
 }
 
@@ -52,23 +44,13 @@ public enum PriceTrackingLeftButton: Equatable {
     case done
 }
 
-/// What the top-right "Read instead" button should do (or that it should be absent).
-public enum PriceTrackingReadInsteadAction: Equatable {
-    /// No "Read instead" button (the `existing` entry — just viewing a saved tracker).
-    case hidden
-    /// Discard the whole new tracker and save its URL as a normal article.
-    case discardTracker
-    /// Remove exactly `urlString` from the existing tracker (leaving the rest intact)
-    /// and save that one URL as a normal article.
-    case revertAddedStore(urlString: String)
-}
-
-/// Pure mapping from the editor's host + entry to its navigation chrome, so the
-/// decisions can be unit-tested without building the view controller.
+/// Pure mapping from the editor's host + entry to its exit chrome, so the
+/// decision can be unit-tested without building the view controller.
 ///
-/// The host decides the LEFT button (back in-app vs Done in an extension). The
-/// entry decides the RIGHT "Read instead" button — present only at save time
-/// (creation/merge), absent when returning to an existing tracker.
+/// The host is what decides it: in-app the editor was pushed and goes BACK, in an
+/// extension it is the whole sheet and the only way out is to complete the
+/// request. The entry carries no chrome of its own — it used to decide a
+/// top-right "Read instead" button, which is gone.
 public struct PriceTrackingExitContext: Equatable {
     public let host: PriceTrackingHost
     public let entry: PriceTrackingEntry
@@ -83,17 +65,6 @@ public struct PriceTrackingExitContext: Equatable {
         switch host {
         case .inApp: return .back
         case .extension: return .done
-        }
-    }
-
-    /// The top-right "Read instead" behaviour for this entry. Hidden when simply
-    /// viewing an existing tracker; otherwise discards (creation) or reverts just the
-    /// newly-added seller (merge).
-    public var readInsteadAction: PriceTrackingReadInsteadAction {
-        switch entry {
-        case .creation: return .discardTracker
-        case .merge(let urlString): return .revertAddedStore(urlString: urlString)
-        case .existing: return .hidden
         }
     }
 }

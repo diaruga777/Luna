@@ -69,33 +69,16 @@ final class PriceTrackingExitContextTests: XCTestCase {
              PriceTrackingExitContext(host: .inApp, entry: .existing), .back),
             ("extension host shows Done",
              PriceTrackingExitContext(host: .extension, entry: .creation), .done),
+            // The entry never speaks here — it used to decide a "Read instead"
+            // button, which is gone; only the host does.
+            ("the entry does not change the in-app answer",
+             PriceTrackingExitContext(host: .inApp, entry: .merge(addedStoreURLString: "x")), .back),
+            ("the entry does not change the extension answer",
+             PriceTrackingExitContext(host: .extension, entry: .existing), .done),
         ]
 
         for testCase in cases {
             XCTAssertEqual(testCase.context.leftButton, testCase.expected, testCase.name)
-        }
-    }
-
-    // MARK: - Read instead (entry)
-
-    func testReadInsteadActionFollowsTheEntry() {
-        let added = "https://store.example/p/123"
-        let cases: [(name: String, context: PriceTrackingExitContext,
-                     expected: PriceTrackingReadInsteadAction)] = [
-            ("creation discards the tracker",
-             PriceTrackingExitContext(host: .inApp, entry: .creation), .discardTracker),
-            ("merge reverts exactly the added URL",
-             PriceTrackingExitContext(host: .inApp, entry: .merge(addedStoreURLString: added)),
-             .revertAddedStore(urlString: added)),
-            // Hidden regardless of host — returning to a saved tracker is never save-time.
-            ("existing hides it (in-app)",
-             PriceTrackingExitContext(host: .inApp, entry: .existing), .hidden),
-            ("existing hides it (extension)",
-             PriceTrackingExitContext(host: .extension, entry: .existing), .hidden),
-        ]
-
-        for testCase in cases {
-            XCTAssertEqual(testCase.context.readInsteadAction, testCase.expected, testCase.name)
         }
     }
 }

@@ -936,7 +936,6 @@
 "PriceTracker_tracking_noPriceMessage_Luna" = "Unable to read a price. Please try another page.";
 "PriceTracker_tracking_noPriceRescueMessage_Luna" = "Unable to read a price. Apple Intelligence can try to find it.";
 "PriceTracker_tracking_notYetRefreshed_Luna" = "Not yet refreshed";
-"PriceTracker_tracking_readInsteadButtonTitle_Luna" = "Read instead";
 "PriceTracker_tracking_refreshedFormat_Luna" = "Refreshed %@";
 "PriceTracker_tracking_screenTitle_Luna" = "Price Tracker";
 "PriceTracker_tracking_searchActionTitle_Luna" = "Search";

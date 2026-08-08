@@ -20,7 +20,7 @@ import Foundation
 ///
 /// This is the injected-composition pattern the app shell already uses
 /// elsewhere (`SendToFriendSheet.accountSetupLauncher`,
-/// `DiagnosticLog.export*`, `PriceTrackingViewController.defaultSaveAsArticle`):
+/// `DiagnosticLog.export*`, `PriceTrackingViewController.intelligentPriceResolver`):
 /// `LunaAudioPlayback` cannot know about `ReadingListSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {

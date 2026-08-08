@@ -18,26 +18,23 @@ import UIKit
 /// alert-config control (a threshold slider shown both as a percent and as an
 /// absolute price).
 ///
-/// Navigation chrome is decided by an explicit `PriceTrackingExitContext` (host +
-/// entry), so the right control lands in the right context regardless of the view
-/// hierarchy (see `ReaderKit/PriceTrackingExitContext.swift`):
-/// - **Top-left** — Back chevron in-app (pops), Done in an extension (dismisses).
-/// - **Top-right "Read instead"** — only at save time. **Creation** discards the
-///   whole new tracker and saves the URL as a normal article; **merge** reverts
-///   ONLY the just-added seller and saves that one URL as an article. **Existing**
-///   (returning to a saved tracker) shows no "Read instead" button.
+/// The exit is decided by an explicit `PriceTrackingExitContext` (host + entry),
+/// so the right control lands in the right context regardless of the view
+/// hierarchy (see `LunaModels/PriceTrackingExitContext.swift`): in-app, a back
+/// chevron in the screen's own header pops to the reading list; in an extension
+/// there is nothing to pop to, so the header carries only the title and the exit
+/// is the floating glass `ExtensionExitButton` every other Luna extension surface
+/// shows — the threshold footer steps up to leave it its corner.
 public final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDelegate {
 
     /// How the screen was opened, mapped to a `PriceTrackingExitContext`.
     public enum Mode {
-        /// Viewing/editing an already-saved tracker (in-app). No "Read instead".
+        /// Viewing/editing an already-saved tracker (in-app).
         case existing(itemID: UUID)
-        /// Save-time, a brand-new product saved as its OWN new tracker. "Read instead"
-        /// discards the whole tracker and saves the URL as an article.
+        /// Save-time, a brand-new product saved as its OWN new tracker.
         case creation(itemID: UUID, host: PriceTrackingHost)
         /// Save-time, the just-saved URL was merged as a seller into an EXISTING
-        /// tracker. "Read instead" reverts ONLY `addedStoreURLString` and saves that
-        /// one URL as an article. `addedStoreURLString` is flashed at the top.
+        /// tracker. `addedStoreURLString` is flashed at the top.
         case merge(itemID: UUID, addedStoreURLString: String, host: PriceTrackingHost)
 
         var itemID: UUID {
@@ -72,18 +69,6 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// without the network.
     private let priceFetcher: PriceFetching
 
-    /// Re-saves a URL as a normal article when the user taps "Read instead". Injected
-    /// so the editor stays extension-safe (ShareKit has no `ReadingListIngestor`): the
-    /// main app installs `defaultSaveAsArticle` (→ the ingestor's forced-article save);
-    /// the action extension passes a per-instance handler that re-appends + lets the app
-    /// ingest. Falls back to the static default when no per-instance handler is given.
-    private let saveAsArticleOverride: ((String) -> Void)?
-
-    /// The main app's "Read instead" save-as-article behavior, installed once at launch
-    /// so in-app `PriceTrackingViewController`s need no per-instance handler. Lives as a
-    /// static hook (not a hard reference) to keep ShareKit free of main-app deps.
-    public static var defaultSaveAsArticle: ((String) -> Void)?
-
     /// A resolved price from the URL-rescue engine (`claudedocs/url-rescue.md`).
     public struct ResolvedPrice {
         public let amount: Decimal
@@ -99,9 +84,9 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// hidden and behavior is unchanged). Returns a price or nil.
     public static var intelligentPriceResolver: ((String) async -> ResolvedPrice?)?
 
-    /// Invoked when the editor is dismissed via the extension **Done** button, so the
-    /// host (action extension) can complete its request. nil in-app (the back chevron
-    /// just pops). Set by the extension host after construction.
+    /// Invoked when the editor is dismissed via the extension's exit button, so the
+    /// host can complete its request. nil in-app (the back chevron just pops). Set
+    /// by the extension host after construction.
     public var onDone: (() -> Void)?
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -151,19 +136,12 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     public init(itemID: UUID, priceFetcher: PriceFetching = PriceFetcher()) {
         self.mode = .existing(itemID: itemID)
         self.priceFetcher = priceFetcher
-        self.saveAsArticleOverride = nil
         super.init(nibName: nil, bundle: nil)
     }
 
-    /// `onReadInstead` overrides the "Read instead" re-save (extension surfaces inject
-    /// their own; in-app callers omit it to use the static `defaultSaveAsArticle`).
-    public init(
-        mode: Mode, priceFetcher: PriceFetching = PriceFetcher(),
-        onReadInstead: ((String) -> Void)? = nil
-    ) {
+    public init(mode: Mode, priceFetcher: PriceFetching = PriceFetcher()) {
         self.mode = mode
         self.priceFetcher = priceFetcher
-        self.saveAsArticleOverride = onReadInstead
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -217,10 +195,9 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         // Every band of the editor sits in one centered column rather than
         // stretching: a threshold slider a thousand points wide, or a seller name
         // that far from its price, is not a form any more. `ReadableColumn` also
-        // makes the container a HARD ceiling — the threshold readout is a
-        // `numberOfLines = 0` label, and against a merely preferred full width it
-        // won the first layout pass with its single-line intrinsic size and hung
-        // the whole editor off both edges of the share sheet.
+        // makes the container a HARD ceiling — a long marketplace product title
+        // in `productTitleLabel` used to out-argue a merely preferred full width
+        // and hang every band off both edges of the share sheet.
         let column = ReadableColumn.install(in: view)
 
         NSLayoutConstraint.activate([
@@ -240,8 +217,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             graphContainer.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             footer.trailingAnchor.constraint(equalTo: column.trailingAnchor),
-            footer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
+        installExitChrome(above: footer)
 
         // Responsive graph height: ~168pt preferred, but never more than 40% of the
         // safe area, so on short screens (small phones / landscape) the sellers table
@@ -252,7 +229,6 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         graphContainer.heightAnchor.constraint(
             lessThanOrEqualTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: 0.4).isActive = true
 
-        configureNavigationChrome()
         syncThresholdControl()
         refreshGraph()
         // Keep the shared "has the user ever been asked about notifications" latch
@@ -308,39 +284,35 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         return navigationController.transitionCoordinator == nil
     }
 
-    /// Installs the top-left (back/done) and top-right ("Read instead") controls from
-    /// the pure `PriceTrackingExitContext` decision into the in-content header bar.
-    private func configureNavigationChrome() {
-        let leftControl: UIView
-        switch exitContext.leftButton {
-        case .back:
-            leftControl = NavHeaderBar.backButton(target: self, action: #selector(leftButtonTapped))
-        case .done:
-            // NOT the extensions' floating glass exit (`ExtensionExitButton`):
-            // this screen's bottom-right corner is its alert-threshold footer,
-            // and the editor is the same object in-app, where the header control
-            // is the one the user already knows.
-            leftControl = NavHeaderBar.textButton(
-                title: L10n.string("Common_done"), target: self, action: #selector(leftButtonTapped), bold: true)
-        }
-        navHeader.setLeadingControls([leftControl])
-
-        // "Read instead" re-saves the URL as an article — a Reader-owned kind —
-        // so the button only exists in apps that handle articles (Reader and
-        // the central Luna app). Elsewhere the tracker stays a tracker.
-        let readInsteadSupported =
-            SurfaceSupport.evaluateForCurrentProcess(owner: .reader) == .supported
-        switch exitContext.readInsteadAction {
-        case .discardTracker where readInsteadSupported,
-             .revertAddedStore where readInsteadSupported:
-            navHeader.setTrailingControls([
-                NavHeaderBar.textButton(
-                    title: L10n.string("PriceTracker_tracking_readInsteadButtonTitle"), target: self,
-                    action: #selector(readInsteadTapped)),
+    /// Installs the ONE way out, from the pure `PriceTrackingExitContext` decision,
+    /// and pins `footer` above whatever that turns out to be.
+    ///
+    /// In-app the editor was pushed, so the exit is a back chevron in the screen's
+    /// own header and the footer keeps the bottom safe area to itself. In an
+    /// extension there is no stack to pop to and the exit is the floating glass
+    /// circle every other Luna extension surface shows — so the header carries only
+    /// the title, and the footer stands the circle's corner down rather than
+    /// putting the alert readout underneath it.
+    private func installExitChrome(above footer: UIView) {
+        guard exitContext.leftButton == .done else {
+            navHeader.setLeadingControls([
+                NavHeaderBar.backButton(target: self, action: #selector(leftButtonTapped)),
             ])
-        case .hidden, .discardTracker, .revertAddedStore:
-            navHeader.setTrailingControls([])
+            footer.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor).isActive = true
+            return
         }
+        let exitButton = ExtensionExitButton.make { [weak self] in self?.dismissOrPop() }
+        view.addSubview(exitButton)
+        NSLayoutConstraint.activate([
+            exitButton.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -ExtensionExitButton.edgeInset),
+            exitButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -ExtensionExitButton.edgeInset),
+            footer.bottomAnchor.constraint(equalTo: exitButton.topAnchor, constant: -12),
+        ])
     }
 
     @objc private func reload() {
@@ -577,46 +549,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     // MARK: - Exit
 
-    /// Top-left button: pops back to the reading list (in-app) or dismisses/completes
-    /// the hosting extension (extension). The tracker is already saved and every edit
-    /// persists as it's made, so this just leaves the screen.
+    /// The in-app header's back chevron: pops back to the reading list. The tracker
+    /// is already saved and every edit persists as it's made, so this just leaves
+    /// the screen. (The extension's exit button calls `dismissOrPop` directly.)
     @objc public func leftButtonTapped() {
-        dismissOrPop()
-    }
-
-    /// Top-right "Read instead": overrides the save-time tracker classification.
-    /// - **Creation**: discard the whole new tracker (delete its item) and re-save its
-    ///   URL as a normal article.
-    /// - **Merge**: revert ONLY the just-added seller (remove that URL from the
-    ///   existing tracker, leaving it otherwise intact) and save that one URL as an
-    ///   article.
-    /// Then leave the screen. Never shown for the existing entry.
-    /// Article saves belong to Reader-capable apps; `configureNavigationChrome`
-    /// only shows the button where `SurfaceSupport` allows the re-save, so the
-    /// tap performs the revert + re-save directly.
-    @objc public func readInsteadTapped() {
-        performReadInstead()
-    }
-
-    /// The body of `readInsteadTapped` — the actual revert + re-save.
-    private func performReadInstead() {
-        // The re-save is injected (extension-safe): a per-instance handler wins, else
-        // the static default the main app installs. ShareKit holds no `ReadingListIngestor`.
-        let saveAsArticle = saveAsArticleOverride ?? Self.defaultSaveAsArticle
-        switch exitContext.readInsteadAction {
-        case .hidden:
-            return
-        case .discardTracker:
-            guard let item = store.item(withID: itemID) else { dismissOrPop(); return }
-            let urlString = item.urlString
-            store.delete(item)
-            saveAsArticle?(urlString)
-        case .revertAddedStore(let urlString):
-            if var current = tracker, current.removeStore(urlString: urlString) {
-                store.updatePriceTracker(current, for: itemID)
-            }
-            saveAsArticle?(urlString)
-        }
         dismissOrPop()
     }
 

@@ -79,7 +79,7 @@ link only `LunaShareSurface` (+ transitive), `LunaSafari` links nothing (it read
 Group id from its own Info.plist via `SafariAppGroup`). Cross-tier wiring uses injected
 closures/protocols installed at launch in AppDelegate (e.g.
 `SocialMessageCenter.ingestHandler`/`shareRecorder`, `DiagnosticLog.export*`,
-`PriceTrackingViewController.defaultSaveAsArticle`). The package is pinned to Swift
+`PriceTrackingViewController.intelligentPriceResolver`). The package is pinned to Swift
 5 language mode. Reusable modules need `public` API + explicit `public init`s.
 
 ## Running the unit tests (CLI — works headless, no Blitz needed)

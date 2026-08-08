@@ -212,10 +212,10 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   `PriceTrackingHost` (`.inApp`/`.extension`) + `PriceTrackingEntry`
   (`.creation` / `.merge(addedStoreURLString:)` / `.existing`) → a
   `PriceTrackingExitContext` exposing `leftButton` (`.back` in-app / `.done` in an
-  extension) and `readInsteadAction` (`.discardTracker` for creation /
-  `.revertAddedStore(urlString:)` for merge / `.hidden` for existing). Unit-tested,
-  no UIKit — the editor's chrome is a function of host + entry, decided independent
-  of the view hierarchy.
+  extension). Unit-tested, no UIKit — the editor's exit is a function of the host,
+  decided independent of the view hierarchy. The entry no longer decides chrome of
+  its own (it used to add a top-right "Read instead"); `merge` still names the
+  seller URL the editor flashes at the top.
 - `ReaderKit/ProductSearchURL.swift` — **pure** URL builders. `googleShoppingURL(forProductName:)`
   (`…/search?tbm=shop&q=<+-encoded name>`, escaping `&=+?#/`); `navigationURL(fromBarText:)`
   (scheme → load; bare `host.tld[/…]` → https; else a Google web search). Unit-tested.
@@ -272,11 +272,13 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
 - `ShareKit/PriceTrackingViewController.swift` — the tracker editor (in `ShareKit/` so
   it compiles into the main app AND the extension targets), PUSHED onto the reading-list
   nav stack in-app, or PRESENTED modally by the action/share extension's
-  `ShareSurfaceDriver` on a `.product` outcome (`PriceTrackingHost.extension`, Done chrome
-  via the injected `onDone`). Extension-safe: "Read instead" re-saves via an injected
-  closure — the static `defaultSaveAsArticle` the main app installs at launch (→
-  `ReadingListIngestor.saveAsArticle`), or a `SharedReadingListAppender.append` re-add in
-  the extension (ShareKit holds no `ReadingListIngestor`). `AlertThresholdSlider`,
+  `ShareSurfaceDriver` on a `.product` outcome (`PriceTrackingHost.extension`, exiting via
+  the injected `onDone`). **The exit differs by host and nothing else**: in-app, a back
+  chevron in the screen's own `NavHeaderBar`; in an extension, the floating glass
+  `ExtensionExitButton` every other Luna extension surface shows, with the alert-threshold
+  footer pinned above it so the circle never covers the readout. There is **no "Read
+  instead" button** — the editor no longer re-saves a tracker as an article, and the
+  `defaultSaveAsArticle` seam it needed is gone with it. `AlertThresholdSlider`,
   `PriceTrackingManager`, and `InAppBrowser` moved to `ShareKit/` alongside it.
   `Mode.existing(itemID:)` (tap a row) / `.creation(itemID:host:)` /
   `.merge(itemID:addedStoreURLString:host:)` (save-time). Each `Mode` maps to a

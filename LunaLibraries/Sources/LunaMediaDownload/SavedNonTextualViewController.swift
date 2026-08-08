@@ -214,9 +214,9 @@ public final class SavedNonTextualViewController: UIViewController {
     /// preview or its buttons the whole way across.
     private func installContentColumn() {
         // Margin-wide by preference, readable-width capped, and never wider than
-        // the safe area whatever the status label below the preview asks for —
-        // that last clamp is what keeps the floating Share circle, which sits on
-        // the column's trailing edge, from riding off the screen.
+        // the safe area whatever the labels inside ask for — that last clamp is
+        // what keeps the floating Share circle, which sits on the column's
+        // trailing edge, from riding off the screen (`ReadableColumn`).
         ReadableColumn.install(
             contentColumn, in: view, preferring: view.layoutMarginsGuide)
         NSLayoutConstraint.activate([

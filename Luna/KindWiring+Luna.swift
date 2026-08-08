@@ -219,12 +219,6 @@ enum KindWiring {
 
     /// Product-kind launch wiring (identical in the Price Tracker variant).
     private static func installProductLaunchWiring() {
-        // Install the in-app "Read instead" behavior for the price-tracking editor
-        // (shared with the extensions, which can't reference the ingestor): a
-        // forced-article re-save, no re-detection back into a tracker.
-        PriceTrackingViewController.defaultSaveAsArticle = { urlString in
-            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
-        }
         // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
         // Rescue Phase 6 UI).
         PriceTrackingViewController.intelligentPriceResolver = { urlString in

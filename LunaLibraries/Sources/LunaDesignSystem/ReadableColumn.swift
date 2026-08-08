@@ -12,15 +12,19 @@ import UIKit
 /// That last clause is why this exists rather than three hand-rolled copies. The
 /// obvious spelling of "fill the width, but cap it" is a `.defaultHigh` `width ==
 /// container.width` under a required `width <= readableWidth`, and it is wrong: a
-/// high-priority constraint is one Auto Layout is allowed to BREAK, and the things
-/// inside a column break it routinely. A `numberOfLines = 0` label reports its
-/// single-line width as its intrinsic size on the first layout pass (UIKit only
-/// learns the wrapping width from the frame it is given afterwards) and defends it
-/// at 750 — the same priority as the preferred width. The tie went to the label:
-/// the column grew to fit a whole sentence on one line, centred itself on a
-/// container narrower than that, and hung the same distance off BOTH edges. The
-/// price editor in the share sheet had every band clipped left and right that way,
-/// and the media screen's floating Share circle rode off the right edge with it.
+/// high-priority constraint is one Auto Layout is allowed to BREAK, and a
+/// `numberOfLines = 0` label defends its intrinsic width at exactly the same
+/// priority. That argument is settled somewhere in the middle, and the middle can
+/// be wider than the screen.
+///
+/// Measured, in the price editor, on the save that surfaced this: a marketplace
+/// product title reported a 634pt intrinsic width and dragged the column to
+/// **428pt inside a 393pt share sheet**. The column is centred, so it hung 17.7pt
+/// off BOTH edges and every band went with it — title, seller row, history
+/// heading, alert footer, each clipped left and right at once. The media screen
+/// builds its column the same way, and its floating Share circle sits on that
+/// column's trailing edge, which is how that button rode off the right of the
+/// screen.
 ///
 /// So the ceiling is stated as required inequalities against the safe area. The
 /// preferred width still does the ordinary work; when content disagrees with it,

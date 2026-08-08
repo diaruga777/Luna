@@ -323,9 +323,10 @@ pipeline). Suite → 852, all green; Release (all extension targets) compiles.
   extension via `PriceTrackingHost.extension` (Done chrome). The editor + its small deps
   (`AlertThresholdSlider`, `PriceTrackingManager`, `InAppBrowser`) MOVED from `Luna/` into
   `ShareKit/` (compiled into all targets); the one main-app-only call ("Read instead" →
-  `ReadingListIngestor.saveAsArticle`) is now an injected closure — a static
-  `PriceTrackingViewController.defaultSaveAsArticle` the app installs at launch, a re-append
-  in the extension.
+  `ReadingListIngestor.saveAsArticle`) became an injected closure, a static
+  `PriceTrackingViewController.defaultSaveAsArticle` the app installed at launch.
+  (Historical: the "Read instead" button and that seam have since been removed —
+  see `claudedocs/price-tracking.md`.)
   extension routed `.video` straight to auto-download and persisted only a bare URL (no
   platform/videoID), so the saved item was incomplete and the main app had to re-classify.
   `savePlatformMetadata` — an extension save is now shaped IDENTICALLY to a main-app save.

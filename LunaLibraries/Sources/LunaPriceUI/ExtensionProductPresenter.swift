@@ -22,9 +22,7 @@ public final class ExtensionProductPresenter {
     public init() {}
 
     /// Persists the tracker first so the editor has an item (falling back to a
-    /// plain save confirmation when the row is gone). "Read instead" re-appends
-    /// the URL to the shared store (extension-safe: the main app ingests it on
-    /// next launch); the editor handles the tracker delete.
+    /// plain save confirmation when the row is gone).
     ///
     /// The editor opens IMMEDIATELY, on the one seller the user was actually
     /// looking at. The alternative-seller fan-out is started at the same moment
@@ -53,10 +51,7 @@ public final class ExtensionProductPresenter {
         SellerComparison.beginAndRunInBackground(
             itemID: itemID, sourceURL: url, store: store)
         let editor = PriceTrackingViewController(
-            mode: .creation(itemID: itemID, host: .extension),
-            onReadInstead: { urlString in
-                SharedReadingListAppender.append(urlString: urlString)
-            })
+            mode: .creation(itemID: itemID, host: .extension))
         editor.onDone = complete
         presentModally(editor)
     }

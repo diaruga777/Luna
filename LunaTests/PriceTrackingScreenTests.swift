@@ -187,11 +187,10 @@ final class PriceTrackingScreenTests: XCTestCase {
         _ = window
     }
 
-    // MARK: - Exit (Back / Read instead)
+    // MARK: - Exit
 
-    /// Existing mode shows a Back chevron that pops back to the pushing root, and NO
-    /// "Read instead" button (just viewing a saved tracker).
-    func testExistingModeBackPopsAndNoReadInstead() {
+    /// Existing mode shows a Back chevron that pops back to the pushing root.
+    func testExistingModeBackPops() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
@@ -238,84 +237,25 @@ final class PriceTrackingScreenTests: XCTestCase {
         _ = window
     }
 
-    /// Creation-mode "Read instead" discards the whole new tracker: the item is
-    /// removed (re-saved as an article) and the screen pops.
-    func testCreationModeReadInsteadDiscardsTrackerAndPops() {
+    /// The extension host exits through the floating glass circle every other Luna
+    /// extension surface shows — NOT a header control. In-app the same editor exits
+    /// through the header's Back chevron and grows no circle.
+    @MainActor
+    func testExtensionHostExitsByFloatingGlassButtonInAppByBack() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
-        let root = UIViewController()   // stands in for whatever pushed the editor
-        let nav = UINavigationController(rootViewController: root)
-        let window = UITestSupport.host(nav)
-        let editor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
-        nav.pushViewController(editor, animated: false)
-        editor.loadViewIfNeeded()
-
-        // "Read instead" now lives in the in-content NavHeaderBar; drive its action seam.
-        editor.perform(#selector(PriceTrackingViewController.readInsteadTapped))
-        // The pop is an animated `popViewController`; under full-suite load it can need
-        // more than one run-loop turn to settle, so poll (bounded) instead of a fixed wait.
-        let popDeadline = Date().addingTimeInterval(2.0)
-        while nav.topViewController !== root && Date() < popDeadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
-        XCTAssertTrue(nav.topViewController === root, "Read instead should pop back to the pushing root")
-        XCTAssertNil(ReadingListStore.shared.item(withID: tracker.id),
-                     "Read instead (creation) should drop the whole tracker save")
-        _ = window
-    }
-
-    /// Merge-mode "Read instead" reverts ONLY the just-added seller, leaving the rest
-    /// of the existing tracker intact, and pops.
-    func testMergeModeReadInsteadRevertsOnlyAddedSeller() {
-        UITestSupport.seedSharedStore(.priceTracking)
-        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }),
-              var tracker = item.priceTracker else {
-            XCTFail("no price tracker seeded"); return
-        }
-        let originalURL = tracker.stores[0].urlString
-        let addedURL = "https://merge-revert.example.com/product/abc"
-        tracker.upsertStore(PriceTrackerStore(
-            urlString: addedURL, lastPrice: 10, currency: tracker.initialCurrency, lastRefreshed: Date()))
-        ReadingListStore.shared.updatePriceTracker(tracker, for: item.id)
-
-        let root = UIViewController()   // stands in for whatever pushed the editor
-        let nav = UINavigationController(rootViewController: root)
-        let window = UITestSupport.host(nav)
-        let editor = PriceTrackingViewController(
-            mode: .merge(itemID: item.id, addedStoreURLString: addedURL, host: .inApp))
-        nav.pushViewController(editor, animated: false)
-        editor.loadViewIfNeeded()
-
-        // "Read instead" now lives in the in-content NavHeaderBar; drive its action seam.
-        editor.perform(#selector(PriceTrackingViewController.readInsteadTapped))
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        let after = ReadingListStore.shared.item(withID: item.id)?.priceTracker
-        XCTAssertNotNil(after, "merge revert must keep the existing tracker")
-        XCTAssertEqual(after?.hasStore(urlString: addedURL), false,
-                       "the just-added seller should be reverted")
-        XCTAssertEqual(after?.hasStore(urlString: originalURL), true,
-                       "the existing seller must remain intact")
-        _ = window
-    }
-
-    /// The action/share extension host exits via Done (its `onDone` completion), while
-    /// in-app exits via Back (pops the nav stack). The chrome now lives in the
-    /// in-content NavHeaderBar, so this verifies the exit BEHAVIOR rather than the bar
-    /// item kind.
-    func testExtensionHostShowsDoneInAppShowsBack() {
-        UITestSupport.seedSharedStore(.priceTracking)
-        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
-            XCTFail("no price tracker seeded"); return
-        }
-        // In-app: left control pops the nav stack.
+        // In-app: the header's back control pops the nav stack, and there is no
+        // floating exit anywhere in the hierarchy.
         let root = UIViewController()   // stands in for whatever pushed the editor
         let nav = UINavigationController(rootViewController: root)
         let window = UITestSupport.host(nav)
         let inAppEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
         nav.pushViewController(inAppEditor, animated: false)
         inAppEditor.loadViewIfNeeded()
+        XCTAssertNil(Self.findExitButton(in: inAppEditor.view),
+                     "the in-app editor keeps its Back chevron, not an extension exit circle")
         inAppEditor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
         let popDeadline = Date().addingTimeInterval(2.0)
         while nav.topViewController !== root && Date() < popDeadline {
@@ -323,14 +263,58 @@ final class PriceTrackingScreenTests: XCTestCase {
         }
         XCTAssertTrue(nav.topViewController === root, "in-app Back pops to the pushing root")
 
-        // Extension host: left control hands off to the `onDone` completion.
+        // Extension host: the exit is a titleless floating button that hands off to
+        // the `onDone` completion.
         let extEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
         var didCallOnDone = false
         extEditor.onDone = { didCallOnDone = true }
-        extEditor.loadViewIfNeeded()
-        extEditor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
-        XCTAssertTrue(didCallOnDone, "extension host Done invokes the onDone completion")
+        let extWindow = UITestSupport.host(extEditor)
+        guard let exit = Self.findExitButton(in: extEditor.view) else {
+            XCTFail("extension-hosted editor should install an ExtensionExitButton"); return
+        }
+        XCTAssertNil(exit.currentTitle, "the extension exit is a glyph, not a 'Done' text button")
+        exit.sendActions(for: .touchUpInside)
+        XCTAssertTrue(didCallOnDone, "the extension exit invokes the onDone completion")
         _ = window
+        _ = extWindow
+    }
+
+    /// The exit circle must not be laid over the alert-threshold footer it shares a
+    /// corner with — the footer stands down to leave it room.
+    @MainActor
+    func testExtensionExitButtonDoesNotCoverTheAlertFooter() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let editor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
+        let window = UITestSupport.host(editor)
+        guard let exit = Self.findExitButton(in: editor.view),
+              let threshold = Self.findFirstSubview(
+                ofType: AlertThresholdSlider.self, in: editor.view) else {
+            XCTFail("extension-hosted editor should show an exit button and a threshold control")
+            return
+        }
+        LayoutAssertions.assertNoOverlap(
+            exit.convert(exit.bounds, to: editor.view),
+            threshold.convert(threshold.bounds, to: editor.view))
+        _ = window
+    }
+
+    /// The exit circle: a floating `UIButton` that is a DIRECT subview of the
+    /// screen's view (the header's controls are nested inside the header bar).
+    @MainActor
+    private static func findExitButton(in view: UIView) -> UIButton? {
+        view.subviews.compactMap { $0 as? UIButton }.first { $0.currentTitle == nil }
+    }
+
+    @MainActor
+    private static func findFirstSubview<T: UIView>(ofType type: T.Type, in view: UIView) -> T? {
+        if let match = view as? T { return match }
+        for subview in view.subviews {
+            if let match = findFirstSubview(ofType: type, in: subview) { return match }
+        }
+        return nil
     }
 
     /// Opening an alerting tracker marks its alert viewed, so it stops floating.

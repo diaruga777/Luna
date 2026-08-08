@@ -33,9 +33,20 @@ The four Safari appex targets used to link no package at all, and the
 `LunaSafari/Shared*.swift` files hand-copy the app's App-Group key formats
 because of it. That pattern is fine for what it covers — a handful of string
 constants and a 24h window, each pinned by a parity test — and it is **not** the
-model for anything with logic in it. The extension now links the package
-(`LunaAppConfig`, `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`,
-`LunaStorage` — all Foundation-only, no UIKit, on all four host copies), so:
+model for anything with logic in it. The extension now links the package, so:
+
+| linked product | what it buys the appex |
+| --- | --- |
+| `LunaAppConfig` | the App Group id (`SafariAppGroup` reads the Info.plist key) |
+| `LunaModels` | `ProductIdentifiers` / `ProductIdentityMatching`, the shared identity primitives |
+| `LunaStorage` | the App Group containers the app also writes |
+| `LunaURLClassification` | URL shape rules + `WebFetchConstants` (the Safari UA and byte cap) |
+| `LunaMediaResolve` | "post URL → direct CDN asset", the in-page player's one round trip |
+| `LunaPriceCompare` | the alternative-seller fan-out, its bundled seller directory and lean page parser — and, through it, `LunaPriceMetadata` |
+
+All Foundation-only, no UIKit, on all four host copies (the per-kind gates are
+runtime, so the Downloader's extension links the price engine too and simply
+never reaches it).
 
 - **`LunaMediaResolve`** is the ONE implementation of "post URL → direct CDN
   asset" (`SocialMediaResolver`, `YouTubeMediaResolver`, the per-platform
@@ -563,6 +574,72 @@ entirely when tracked with no cheaper history. Snapshots are NEVER saves: no
 reading-list row, no scheduled refresh, no alert — they exist only to seed a
 tracker's history at save time (`claudedocs/price-tracking.md`) and to answer this
 query.
+
+### The alternative-seller pill ("$59.00 at Acme")
+
+A second message on the same product pages, `{type: "comparableSellers", snapshot}`,
+asks the one question the history pill cannot: **is this cheaper somewhere else right
+now?** It is deliberately a SECOND round trip rather than a rider on `productSnapshot`
+— that reply is answered from two local files and is instant, while this one may take
+seconds, and a page should not wait to learn what Luna already knows.
+
+```
+content.js (after the productSnapshot reply)  → spinner pill + Track pill
+  → runtime.sendMessage {type:"comparableSellers", snapshot}
+  → background.js relay → sendNativeMessage
+  → SafariWebExtensionHandler → ComparableSellerFinder.answer(forPageSnapshot:)
+      ├─ 1. priceHistoryIndex.json + productSnapshots.json, <24h            ← no network
+      ├─ 2. else SellerFanOut(.constrained) over URLSession                 ← LunaPriceCompare
+      │      └─ results written back via SharedProductSnapshots.record
+      └─ reply {found, price, currency, sellerName, url}
+  → content.js fills the pill in place, or removes it and renders today's pills
+```
+
+Natively (`LunaSafari/ComparableSellerFinder.swift`, gated `hostHandlesProducts`) it
+runs two legs in order:
+
+1. **What is already stored.** The app-written `priceHistoryIndex.json` and the
+   passive snapshot file, matched to this page by `SharedProductMatching`'s existing
+   tiers. Costs no network, and after one visit to a rival's page it is usually enough.
+2. **A constrained fan-out**, only if leg 1 has nothing: `SellerFanOut` with
+   `.constrained` (6 candidate retailers, 3 results, no web-search layer, **no
+   name-only matches**), fetched with a bare ephemeral `URLSession` carrying
+   `WebFetchConstants.safariUserAgent` and its byte cap — the appex cannot link
+   `LunaFetch`, and the engine takes its fetching injected precisely so this
+   environment exists. A page declaring **no GTIN and no MPN skips this leg
+   entirely**: with name-only matching off, the run could only end in refusals after
+   spending 15s and six retailers' bandwidth. Everything it fetches is written back
+   through `SharedProductSnapshots.record` — a fan-out result IS a snapshot — so it
+   prunes with everything else and feeds the "Was $X" pill on the next visit.
+
+`FreshComparablePrices` (LunaPriceCompare) is the whole decision, and all four of its
+conditions are refusals: **>24h stale** (the pill claims a price is better *now*, and
+a year of snapshot material cannot support that), **a different currency** (Luna has
+no FX source anywhere — see the unpopulated `PriceDaySnapshot.fxRate`), **not strictly
+cheaper** than the page, or **the page's own retailer**. Ties break on the registrable
+domain so the same inputs never name two different shops. An index point records a
+DAY, not an instant, so it is dated to that day's UTC start — which makes "fresh"
+exactly "recorded today", since today's start is always under 24h ago and yesterday's
+never is.
+
+Budgets nest: the fan-out's `.constrained` 15s sits inside the finder's 18s, which
+sits inside the handler's 20s, which sits inside the page's 25s backstop. Only a dead
+appex reaches the outermost one.
+
+In the page, `beginSellerLookup` puts up a spinner pill (a pulsing dot via the Web
+Animations API — no stylesheet injected into someone else's document) in the SAME slot
+the history pill would take, plus the Track pill, which is not waiting on anything.
+`finishSellerLookup` then either fills that pill in place — `<price> at <Seller>`,
+`role="button"`, `pointer-events: auto`, the destination on a `data-luna-seller-url`
+attribute so the tap reads what was rendered — or removes it and calls
+`renderProductPills` **entirely unchanged**. That last sentence is the fallback
+contract: nothing found, an answer with no URL, a rejection, or the backstop all land
+in the same place, and the page ends up exactly as it was before this feature (cheaper-
+historical pill, or nothing). The seller pill and the history pill never coexist: both
+speak about this product's price, and a better price available NOW is the more useful
+of the two. One lookup per page, its flag set before any DOM work.
+`ProductHistoryPillRenderTests` drives both halves through the shared
+`SafariJSTestHarness` web view.
 
 ### Bounce back to Safari after a media/product save
 

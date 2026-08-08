@@ -98,9 +98,14 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     /// value rather than by name, since one of them is CSS.
     private static let nightSurface = UIColor(
         red: 0x0b / 255, green: 0x0b / 255, blue: 0x10 / 255, alpha: 1)
-    /// `QUEUE_INDIGO`.
-    private static let queueIndigo = UIColor(
-        red: 0x58 / 255, green: 0x56 / 255, blue: 0xD6 / 255, alpha: 1)
+    /// `KIND_TINTS.media` — the download button's fill in the extension's own
+    /// panel, which is the Downloader's identity colour because a pill there is
+    /// coloured by the kind it saves. Read from `LunaSurfacePalette` rather than
+    /// written out: `content.js` hand-copies the same table by value (it links no
+    /// package), and `SafariSurfaceTintTests` holds the copy to this.
+    private static let downloadTint = LunaSurfacePalette.baseColor(for: .downloader)
+    /// Its text colour, by the same rule `tintForeground` applies in CSS.
+    private static let downloadInk = LunaSurfacePalette.ink(on: downloadTint)
 
     /// **The one measurement the replica deliberately does not take from
     /// `content.js`.** The extension's backdrop is `rgba(0, 0, 0, 0.78)` over a
@@ -190,9 +195,9 @@ final class OnboardingVideoDownloadOverlayView: UIView {
 
         download.text = OnboardingStrings.Safari.playerDownload.value()
         download.font = .systemFont(ofSize: 16, weight: .semibold)
-        download.textColor = .white
+        download.textColor = Self.downloadInk
         download.textAlignment = .center
-        download.backgroundColor = Self.queueIndigo
+        download.backgroundColor = Self.downloadTint
         download.layer.cornerRadius = Metrics.downloadHeight / 2
         download.clipsToBounds = true
         download.isAccessibilityElement = false

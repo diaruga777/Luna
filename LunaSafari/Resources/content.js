@@ -12,7 +12,114 @@
     if (window.__queueContentScriptRan) { return; }
     window.__queueContentScriptRan = true;
 
-    var QUEUE_INDIGO = "#5856D6";
+    // ── Colour ──────────────────────────────────────────────────────────────────
+    // Luna's per-app identity colours, hand-copied by VALUE from
+    // `LunaSurfacePalette.baseColor(for:)` (LunaDesignSystem) because this target
+    // links no package — the same tolerable hand-copy as the App-Group key
+    // formats, and pinned to the Swift by `SafariSurfaceTintTests`.
+    var SURFACE_TINTS = {
+        luna: "#5856D6",
+        reader: "#ADB5F6",
+        downloader: "#CC7609",
+        pricetracker: "#07FF9D"
+    };
+    // The central app's Luna indigo is also the fallback anywhere the native
+    // handler didn't say which surface this is.
+    var QUEUE_INDIGO = SURFACE_TINTS.luna;
+
+    // **A pill is coloured by the KIND it saves, never by the app showing it.**
+    // Those two rules agree everywhere it matters and only one of them is
+    // expressible: a single-content app shows exactly one kind of pill, so the
+    // Downloader's is always orange and the Price Tracker's always green — while
+    // the central Luna app, the only host that shows all three, colours each pill
+    // by the save it would make. App CHROME (the setup confirmation) is the other
+    // way round: it belongs to the app, not to any page, and takes `surface`.
+    var KIND_TINTS = {
+        article: SURFACE_TINTS.reader,
+        media: SURFACE_TINTS.downloader,
+        product: SURFACE_TINTS.pricetracker
+    };
+
+    function surfaceTint(context) {
+        var surface = context && context.surface;
+        return (surface && SURFACE_TINTS[surface]) || QUEUE_INDIGO;
+    }
+
+    /// `#rrggbb` → [r, g, b]. Anything unparseable reads as the Luna indigo
+    /// rather than as black, so a typo can never render an invisible pill.
+    function tintChannels(hex) {
+        var match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+        if (!match) { return [0x58, 0x56, 0xD6]; }
+        return [parseInt(match[1], 16), parseInt(match[2], 16), parseInt(match[3], 16)];
+    }
+
+    /// WCAG relative luminance, which is what decides the text colour below.
+    function tintLuminance(hex) {
+        var channels = tintChannels(hex);
+        var linear = channels.map(function (value) {
+            var unit = value / 255;
+            return unit <= 0.03928 ? unit / 12.92 : Math.pow((unit + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+    }
+
+    // The identity colours span nearly the whole brightness range — the Price
+    // Tracker's green is a near-neon and the Reader's periwinkle is pale, while
+    // the Downloader's amber and the Luna indigo are deep — so a pill filled with
+    // one of them cannot also have a fixed text colour. 0.19 is where white and
+    // this near-black tie on contrast (1.05/(L+0.05) == (L+0.05)/0.0555), so
+    // picking the winner keeps every pill legible without tempering the colour
+    // the app is actually identified by.
+    var TINT_INK = "#12121a";
+    var TINT_CROSSOVER_LUMINANCE = 0.19;
+
+    function tintForeground(hex) {
+        return tintLuminance(hex) > TINT_CROSSOVER_LUMINANCE ? TINT_INK : "#ffffff";
+    }
+
+    function tintRGBA(hex, alpha) {
+        return "rgba(" + tintChannels(hex).join(", ") + ", " + alpha + ")";
+    }
+
+    /// `hex` mixed `amount` of the way into `baseHex` — how the two INFORMATIONAL
+    /// chips carry the app's colour. They report a price rather than offering an
+    /// action, so they stay the dark chip they have always been and take the tint
+    /// as a cast in it; filling them would make them read as a second button.
+    function tintMixed(hex, baseHex, amount) {
+        var tint = tintChannels(hex);
+        var base = tintChannels(baseHex);
+        // Back to `#rrggbb` rather than `rgb(…)`, so a mix stays a valid input to
+        // every other helper here.
+        return "#" + tint.map(function (value, index) {
+            var mixed = Math.round(value * amount + base[index] * (1 - amount));
+            return ("0" + Math.max(0, Math.min(255, mixed)).toString(16)).slice(-2);
+        }).join("");
+    }
+
+    var CHIP_BASE = "#14141a";
+    var CHIP_TINT_AMOUNT = 0.22;
+
+    function chipBackground(hex) {
+        return tintMixed(hex, CHIP_BASE, CHIP_TINT_AMOUNT);
+    }
+
+    /// The same tint, darkened only as far as it takes to be readable AS TEXT on
+    /// white (4.5:1). A colour already dark enough is returned untouched, so the
+    /// Luna indigo and the Downloader's amber are exactly themselves.
+    function readableOnWhite(hex) {
+        var candidate = hex;
+        for (var step = 0; step < 12; step++) {
+            if (1.05 / (tintLuminance(candidate) + 0.05) >= 4.5) { return candidate; }
+            candidate = tintMixed(candidate, TINT_INK, 0.82);
+        }
+        return TINT_INK;
+    }
+
+    // For the WKWebView harnesses, which have no extension host.
+    window.__lunaSurfaceTints = SURFACE_TINTS;
+    window.__lunaKindTints = KIND_TINTS;
+    window.__lunaTintForeground = tintForeground;
+
     // Generated from ProductPageRules.swift and injected immediately before this
     // script. No local fallback is intentional: a missing artifact must not silently
     // resurrect an independently-maintained Safari rule set.
@@ -445,7 +552,10 @@
             // The button pill is ~48px tall at bottom 20px; 84px clears it plus a gap.
             bottom: "calc(84px + env(safe-area-inset-bottom))",
             transform: "translateX(-50%)",
-            zIndex: "2147483647", background: QUEUE_INDIGO, color: "#ffffff",
+            // Unlocking IS article handling (only article-capable hosts reveal at
+            // all), so the toast carries the article tint the pill below it does.
+            zIndex: "2147483647", background: KIND_TINTS.article,
+            color: tintForeground(KIND_TINTS.article),
             font: "600 15px/1 -apple-system, system-ui, sans-serif",
             boxSizing: "border-box", display: "inline-flex",
             alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
@@ -1339,7 +1449,8 @@
             bottom: stacked
                 ? "calc(70px + env(safe-area-inset-bottom))"
                 : "calc(20px + env(safe-area-inset-bottom))",
-            zIndex: "2147483647", background: "rgba(20,20,26,0.85)", color: "#ffffff",
+            zIndex: "2147483647", background: chipBackground(KIND_TINTS.product),
+            color: "#ffffff",
             font: "500 13px/1 -apple-system, system-ui, sans-serif",
             boxSizing: "border-box", display: "inline-flex",
             alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
@@ -1419,7 +1530,8 @@
             bottom: stacked
                 ? "calc(70px + env(safe-area-inset-bottom))"
                 : "calc(20px + env(safe-area-inset-bottom))",
-            zIndex: "2147483647", background: "rgba(20,20,26,0.85)", color: "#ffffff",
+            zIndex: "2147483647", background: chipBackground(KIND_TINTS.product),
+            color: "#ffffff",
             font: "500 13px/1 -apple-system, system-ui, sans-serif",
             boxSizing: "border-box", display: "inline-flex",
             alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
@@ -1582,14 +1694,21 @@
             browser.runtime.sendMessage({ type: "setupCelebrationShown" }).catch(function () {});
         }
 
+        // App chrome, not a save — so this one is coloured by the SURFACE this
+        // extension belongs to rather than by any page kind.
+        var tint = surfaceTint(context);
+
         var overlay = document.createElement("div");
         overlay.id = SETUP_CELEBRATION_ID;
         applyStyle(overlay, {
             position: "fixed", top: "0", left: "0", right: "0", bottom: "0",
             zIndex: "2147483647",
             // Semi-transparent so the page the extension just proved it can reach
-            // stays visible behind the confirmation, tinted with Luna's indigo.
-            background: "rgba(26, 24, 66, 0.85)",
+            // stays visible behind the confirmation, tinted with the app's own
+            // colour taken most of the way down toward the night sky — the tint
+            // has to read as a wash over someone else's page, and three of the
+            // four identity colours are far too bright to be one undimmed.
+            background: tintRGBA(tintMixed(tint, "#0b0b10", 0.28), 0.85),
             webkitBackdropFilter: "blur(6px)", backdropFilter: "blur(6px)",
             boxSizing: "border-box", display: "flex", flexDirection: "column",
             alignItems: "center", justifyContent: "center", margin: "0",
@@ -1641,7 +1760,11 @@
             applyStyle(button, {
                 boxSizing: "border-box", display: "inline-flex",
                 alignItems: "center", justifyContent: "center", textAlign: "center",
-                background: "#ffffff", color: QUEUE_INDIGO,
+                // The one filled control on a tinted wash, so it inverts: the
+                // app's colour as the WORD on white, rather than a second wash.
+                // Taken to its ink-dark mix when the raw tint would be too pale
+                // to read on white (the Reader's periwinkle, the Tracker's green).
+                background: "#ffffff", color: readableOnWhite(tint),
                 font: "600 17px/1 -apple-system, system-ui, sans-serif",
                 border: "none", borderRadius: "999px",
                 padding: "16px 28px", minHeight: "44px", maxWidth: "100%",
@@ -1696,6 +1819,20 @@
     // the first look is what would make the player feel unreliable rather than
     // automatic. The walk stops at the first look that finds a signal.
     var AUTO_PLAYER_RETRY_DELAYS = [0, 900, 2500];
+    // The stage's FLOOR, and the shape it opens at: the 16:9 this panel has
+    // always been. A wide clip therefore gets exactly the panel that shipped;
+    // only a taller-than-16:9 one grows the popup.
+    var PLAYER_MIN_ASPECT = 9 / 16;
+    // How much of the visible page the grown panel may take. It stops short of
+    // the whole of it in both directions so the page it is over still frames it.
+    var PLAYER_VIEWPORT_INSET = 14;
+    // How long the panel takes to CORRECT its height — a rotation, a toolbar
+    // collapsing, a second opinion about the clip's shape. Learning the shape in
+    // the first place is not a correction and never animates (see
+    // `setStageAspect`). Writable so a test can assert on a settled layout
+    // instead of waiting one out.
+    var PLAYER_GROWTH_SECONDS = 0.24;
+    window.__lunaSetPlayerGrowthSeconds = function (value) { PLAYER_GROWTH_SECONDS = value; };
     // A dismissal is the user saying "not this page": it stops any auto-open
     // still pending. The PILL is unaffected — tapping it re-opens the player.
     var videoOverlayDismissed = false;
@@ -1729,9 +1866,69 @@
         });
     }
 
+    /// What the user can actually SEE, in CSS px — not the screen, and not the
+    /// layout viewport either.
+    ///
+    /// Both of the obvious answers are wrong here. `100vh` is the LARGE viewport
+    /// (as though Safari's toolbars were retracted), so a panel measured against
+    /// it runs under the address bar. And `position: fixed` is laid out against
+    /// the layout viewport, which is that same tall box — so the backdrop's own
+    /// height is no better an answer than `100vh` is. `visualViewport` is the one
+    /// thing that reports the box that is on screen right now, toolbars and all;
+    /// the safe-area insets are then subtracted from it as PADDING (below), since
+    /// they describe the unsafe part of exactly that box.
+    function visiblePageBox() {
+        var viewport = window.visualViewport;
+        if (viewport && viewport.height > 0) {
+            return { top: viewport.offsetTop || 0, height: viewport.height };
+        }
+        var fallback = window.innerHeight || document.documentElement.clientHeight || 0;
+        return { top: 0, height: fallback };
+    }
+    window.__lunaVisiblePageBox = visiblePageBox;
+
+    /// The clip's height ÷ width as the PAGE already knows it, or 0.
+    ///
+    /// Worth asking before the stream opens because it costs nothing and lands a
+    /// beat earlier than `loadedmetadata` — but it is only ever an optimisation:
+    /// most posts declare no video dimensions (an Instagram reel declares no
+    /// video at all), and the element's own metadata overrides whatever this
+    /// says the moment it arrives. `exclude` keeps our own panel out of the DOM
+    /// walk.
+    function pageMediaAspect(exclude) {
+        var pairs = [
+            ["og:video:width", "og:video:height"],
+            ["twitter:player:width", "twitter:player:height"]
+        ];
+        for (var i = 0; i < pairs.length; i++) {
+            var width = metaNumber(pairs[i][0]);
+            var height = metaNumber(pairs[i][1]);
+            if (width > 0 && height > 0) { return height / width; }
+        }
+        var existing = document.querySelectorAll("video");
+        for (var j = 0; j < existing.length; j++) {
+            var element = existing[j];
+            if (exclude && exclude.contains(element)) { continue; }
+            if (element.videoWidth > 0 && element.videoHeight > 0) {
+                return element.videoHeight / element.videoWidth;
+            }
+        }
+        return 0;
+    }
+
+    /// A `<meta>` value as a number, under either the `property` (Open Graph) or
+    /// the `name` (Twitter card) spelling. 0 when absent or not a number.
+    function metaNumber(key) {
+        var node = document.querySelector('meta[property="' + key + '"]')
+            || document.querySelector('meta[name="' + key + '"]');
+        var value = node && parseFloat(node.getAttribute("content"));
+        return value > 0 ? value : 0;
+    }
+
     function presentVideoOverlay(context, handoff) {
         if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
         var sourceURL = location.href;
+        var tint = (handoff && handoff.tint) || KIND_TINTS.media;
 
         var backdrop = document.createElement("div");
         backdrop.id = VIDEO_OVERLAY_ID;
@@ -1740,8 +1937,17 @@
             zIndex: "2147483647", background: "rgba(0, 0, 0, 0.78)",
             webkitBackdropFilter: "blur(4px)", backdropFilter: "blur(4px)",
             boxSizing: "border-box", display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center",
-            margin: "0", padding: "12px", overscrollBehavior: "contain"
+            alignItems: "center", justifyContent: "center", margin: "0",
+            // The inset the panel is allowed to grow into, plus whatever of this
+            // box the system says is unsafe. On an ordinary page both insets
+            // resolve to 0 and this is the padding it always had; on a
+            // `viewport-fit=cover` page they are the notch and the home
+            // indicator, which `visualViewport` includes and nothing should
+            // render under.
+            paddingTop: "calc(" + PLAYER_VIEWPORT_INSET + "px + env(safe-area-inset-top))",
+            paddingBottom: "calc(" + PLAYER_VIEWPORT_INSET + "px + env(safe-area-inset-bottom))",
+            paddingLeft: "12px", paddingRight: "12px",
+            overscrollBehavior: "contain"
         });
 
         // Near the full width, and only as tall as what's in it.
@@ -1780,8 +1986,11 @@
         header.appendChild(close);
         panel.appendChild(header);
 
-        // A fixed-shape stage, so swapping the status line for the player (or for
-        // the failure message) doesn't resize the panel under the user's thumb.
+        // The stage opens at 16:9 and is the ONLY part of the panel that ever
+        // changes size — swapping the status line for the player (or for the
+        // failure message) still doesn't resize anything under the user's thumb.
+        // What does resize it is learning the clip's real shape: see
+        // `setStageAspect`, which is the whole of the popup's height.
         var stage = document.createElement("div");
         applyStyle(stage, {
             boxSizing: "border-box", position: "relative", width: "100%",
@@ -1806,7 +2015,8 @@
         applyStyle(download, {
             boxSizing: "border-box", display: "inline-flex",
             alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
-            background: QUEUE_INDIGO, color: "#ffffff",
+            // The same tint the pill that opened this panel carries.
+            background: tint, color: tintForeground(tint),
             font: "600 16px/1 -apple-system, system-ui, sans-serif",
             border: "none", borderRadius: "999px",
             minHeight: "44px", height: "auto", width: "100%",
@@ -1821,6 +2031,85 @@
         var video = null;
         var closed = false;
         var didResolve = false;
+
+        // ── The popup's height ──────────────────────────────────────────────
+        // A 9:16 reel in a 16:9 letterbox is mostly black bars, so the stage
+        // takes the clip's own shape — clamped at BOTH ends. It never goes below
+        // the 16:9 it opens at (a wide clip keeps the panel exactly as it was),
+        // and never past what `visiblePageBox` says is on screen.
+        var stageAspect = 0;
+
+        /// Everything in the panel that is not the stage: its padding, the header
+        /// and the download button. Measured rather than added up from the
+        /// constants above, so a wrapped button label or a large accessibility
+        /// font is already accounted for in what's left over for the stage.
+        var panelChromeHeight = function () {
+            return Math.max(0, panel.offsetHeight - stage.offsetHeight);
+        };
+
+        /// The tallest the stage may be and still leave the whole panel inside
+        /// the visible box, insets and all.
+        var stageCeiling = function () {
+            var box = visiblePageBox();
+            var style = window.getComputedStyle(backdrop);
+            var padding = (parseFloat(style.paddingTop) || 0)
+                + (parseFloat(style.paddingBottom) || 0);
+            return box.height - padding - panelChromeHeight();
+        };
+
+        // The backdrop is `position: fixed`, so it covers the LAYOUT viewport —
+        // taller than what's on screen, and centring in it puts the panel behind
+        // Safari's toolbar. Pin it to the visible box instead, and the flex
+        // centring inside it is then centring in what the user can see.
+        var layoutBackdrop = function () {
+            var box = visiblePageBox();
+            if (!(box.height > 0)) { return; }
+            backdrop.style.top = box.top + "px";
+            backdrop.style.bottom = "auto";
+            backdrop.style.height = box.height + "px";
+        };
+
+        var applyStageHeight = function () {
+            var width = stage.clientWidth;
+            if (!(width > 0)) { return; }
+            var floor = width * PLAYER_MIN_ASPECT;
+            var wanted = stageAspect > 0 ? width * stageAspect : floor;
+            // The floor wins over the ceiling, not the other way round: a landscape
+            // phone has less room than 16:9 needs, and shrinking the stage there
+            // would make the panel smaller than the one this feature shipped with.
+            var height = Math.min(Math.max(wanted, floor), Math.max(floor, stageCeiling()));
+            // An explicit height overrides the opening `aspect-ratio`; clearing it
+            // keeps the two from arguing about the same box.
+            stage.style.aspectRatio = "auto";
+            stage.style.height = Math.round(height) + "px";
+        };
+
+        /// `ratio` is the clip's height ÷ width. Ignored unless it actually says
+        /// something new, so a repeated `loadedmetadata` costs no layout.
+        var setStageAspect = function (ratio) {
+            if (!(ratio > 0) || Math.abs(ratio - stageAspect) < 0.005) { return; }
+            // LEARNING the shape is the panel arriving at its size and must not
+            // animate: it lands within a few hundred ms of the panel opening,
+            // while the stage still says "Finding video…", and a transition there
+            // is only a way for the first paint to be the wrong size. Changing
+            // its mind afterwards is a correction, and that one has to be a
+            // movement — the panel is already something the user is looking at.
+            if (stageAspect > 0) {
+                stage.style.transition = "height " + PLAYER_GROWTH_SECONDS + "s ease";
+            }
+            stageAspect = ratio;
+            applyStageHeight();
+        };
+
+        // A toolbar collapsing, a rotation, or a pinch all change the visible box
+        // under a panel that is already up. `scroll` only ever moves it (cheap,
+        // writes only); `resize` may also change how much room the stage has.
+        var onViewportScroll = function () { if (!closed) { layoutBackdrop(); } };
+        var onViewportResize = function () {
+            if (closed) { return; }
+            layoutBackdrop();
+            applyStageHeight();
+        };
 
         // Every platform this pill appears on autoplays its own player, and that
         // player keeps running behind an overlay — two videos, two soundtracks.
@@ -1865,6 +2154,11 @@
             closed = true;
             videoOverlayDismissed = true;
             document.removeEventListener("play", pageVideoPlayGuard, true);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener("scroll", onViewportScroll);
+                window.visualViewport.removeEventListener("resize", onViewportResize);
+            }
+            window.removeEventListener("orientationchange", onViewportResize);
             if (video) {
                 try { video.pause(); } catch (e) {}
                 video.removeAttribute("src");
@@ -1914,6 +2208,18 @@
         document.addEventListener("play", pageVideoPlayGuard, true);
         (document.body || document.documentElement).appendChild(backdrop);
 
+        // In the document, so everything below can measure. The clip's shape is
+        // taken from the page if the page happens to know it — most don't, and an
+        // Instagram reel carries no video metadata at all — and corrected the
+        // moment our own element reports the real thing.
+        layoutBackdrop();
+        setStageAspect(pageMediaAspect(backdrop));
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("scroll", onViewportScroll);
+            window.visualViewport.addEventListener("resize", onViewportResize);
+        }
+        window.addEventListener("orientationchange", onViewportResize);
+
         requestResolvedMedia(sourceURL, document.title || "").then(function (result) {
             if (closed) { return; }
             var asset = (result.assets || [])[0];
@@ -1930,6 +2236,15 @@
                 boxSizing: "border-box", display: "block", width: "100%", height: "100%",
                 objectFit: "contain", background: "#000000", margin: "0", padding: "0",
                 border: "none", borderRadius: "0"
+            });
+            // The authority on the clip's shape, and usually the FIRST word on it
+            // too: `preload="metadata"` means this lands well before the first
+            // frame, so a reel's panel grows while it is still opening the stream.
+            video.addEventListener("loadedmetadata", function () {
+                if (closed || !video) { return; }
+                if (video.videoWidth > 0 && video.videoHeight > 0) {
+                    setStageAspect(video.videoHeight / video.videoWidth);
+                }
             });
             // The page's CSP has the last word on the media load, and an expired
             // googlevideo URL 403s — either way the element reports it here.
@@ -1997,10 +2312,14 @@
         btn.id = PILL_ID;
         btn.setAttribute("role", "button");
         btn.appendChild(document.createTextNode(target.label));
+        // The kind's own colour (see KIND_TINTS) — a target that names none is
+        // not a save, so it falls back to the central app's indigo.
+        var tint = target.tint || QUEUE_INDIGO;
+        btn.setAttribute("data-luna-tint", tint);
         applyStyle(btn, {
             position: "fixed", right: "16px",
             bottom: "calc(20px + env(safe-area-inset-bottom))",
-            zIndex: "2147483647", background: QUEUE_INDIGO, color: "#ffffff",
+            zIndex: "2147483647", background: tint, color: tintForeground(tint),
             font: "600 16px/1 -apple-system, system-ui, sans-serif",
             boxSizing: "border-box", display: "inline-flex",
             alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
@@ -2058,6 +2377,7 @@
         if (!(context && context.supportsArticles)) { return null; }
         return {
             label: localizedMessage("readInLuna"),
+            tint: KIND_TINTS.article,
             captureContent: true,
             url: function () { return ownSchemeTarget(context, location.href); }
         };
@@ -2073,6 +2393,7 @@
         if (!(context && context.supportsMedia)) { return null; }
         return {
             label: localizedMessage("downloadInLuna"),
+            tint: KIND_TINTS.media,
             captureContent: false,
             url: function () { return ownSchemeTarget(context, location.href) + "&ret=safari"; }
         };
@@ -2090,6 +2411,7 @@
         if (!handoff) { return null; }
         return {
             label: handoff.label,
+            tint: handoff.tint,
             captureContent: false,
             url: handoff.url,
             present: function () { presentVideoOverlay(context, handoff); }
@@ -2105,11 +2427,19 @@
         if (!(context && context.supportsProducts)) { return null; }
         return {
             label: localizedMessage("trackInLuna"),
+            tint: KIND_TINTS.product,
             captureContent: true,
             url: function () { return ownSchemeTarget(context, location.href) + "&ret=safari"; }
         };
     }
 
+
+    // For the WKWebView harnesses (no extension host), which drive the real
+    // targets rather than hand-building one — see SafariSurfaceTintTests.
+    window.__lunaInjectLunaButton = injectLunaButton;
+    window.__lunaReadTarget = readTarget;
+    window.__lunaDownloadTarget = downloadTargetFor;
+    window.__lunaTrackTarget = trackTargetFor;
 
     // The app's canonical platform table (PlatformRecognizer.rules, LunaURLClassification)
     // shared through the generated platform_hosts.generated.js (self.__LUNA_PLATFORM_HOSTS),

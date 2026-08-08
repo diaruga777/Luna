@@ -120,15 +120,20 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
         XCTAssertEqual(stage.width, panel.width - 20, accuracy: 0.5)
         XCTAssertEqual(stage.height, (stage.width * 9 / 16).rounded(), accuracy: 1)
 
-        // The download button: full width, 44 tall at least, in QUEUE_INDIGO.
+        // The download button: full width, 44 tall at least, in the media kind's
+        // tint — which is the Downloader's identity colour, so the lesson's
+        // button and the extension's are the same button.
         XCTAssertTrue(builder.contains(#"minHeight: "44px""#))
-        XCTAssertTrue(content.contains(##"QUEUE_INDIGO = "#5856D6""##))
+        XCTAssertTrue(content.contains(##"downloader: "#CC7609""##))
         XCTAssertTrue(content.contains(##"NIGHT_SURFACE = "#0b0b10""##))
+        XCTAssertTrue(
+            builder.contains(#"background: tint, color: tintForeground(tint)"#),
+            "the extension's download button no longer takes the pill's tint")
         let download = overlay.downloadFrameForTesting
         XCTAssertEqual(download.width, stage.width, accuracy: 0.5)
         XCTAssertGreaterThanOrEqual(download.height, 44)
         assertColour(
-            overlay.downloadColourForTesting, isHex: 0x5856D6, "download button")
+            overlay.downloadColourForTesting, isHex: 0xCC7609, "download button")
         assertColour(overlay.panelColourForTesting, isHex: 0x0b0b10, "panel")
     }
 
